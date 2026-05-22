@@ -9,7 +9,7 @@
 
 Phase 2 turns the walking-skeleton foundation into a usable first-run experience. A new user installs FinSight, picks one of three onboarding paths, and ends up at Today with real data:
 
-- **Try with sample data** — generates a procedural Mira & Adam household (6 accounts, ~250 transactions across 12 months).
+- **Try with sample data** — generates a procedural "Mira & Adam" household (6 accounts, ~250 transactions across 12 months). These are fictional placeholders — not modelled on anyone. The names are hardcoded in `sample.rs`; an i18n pass in a later phase can localize them.
 - **Import a statement** — picks a CSV file, assigns columns to fields in a mapping dialog, imports with deduplication.
 - **Add manually** — uses the same drawers the Accounts/Transactions screens will surface to power users.
 
@@ -35,6 +35,44 @@ Either path lands the user on `/today` with non-empty state. The wizard also wal
 
 ## 2. Backend additions
 
+### 2.0 New dependencies
+
+**Tauri plugins** (declared and registered in `src-tauri/`):
+
+| Crate                       | npm peer                       | Why |
+|-----------------------------|--------------------------------|-----|
+| `tauri-plugin-dialog`       | `@tauri-apps/plugin-dialog`    | Native CSV file picker (`FilePicker.tsx`) |
+| `tauri-plugin-opener`       | `@tauri-apps/plugin-opener`    | Step 4 "Install Ollama →" opens https://ollama.com in the default browser |
+
+Wiring checklist (covered by the implementation plan):
+- Add the crates to `src-tauri/Cargo.toml`.
+- Register them in `configure_app`: `.plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init())`.
+- Add capability permissions to `src-tauri/capabilities/default.json`:
+  ```json
+  { "permissions": ["dialog:default", "opener:default"] }
+  ```
+- Add the npm peers to `ui/package.json`.
+
+**Frontend libraries** added to `ui/package.json`:
+
+| Package             | Version pin     | Why |
+|---------------------|-----------------|-----|
+| `react-hook-form`   | `^7`            | Form state for both drawers and the import dialog |
+| `zod`               | `^3`            | Schema validation paired with `react-hook-form` |
+| `react-focus-lock`  | `^2`            | Drawer focus trap (Section 3.3) |
+
+`@hookform/resolvers/zod` is also installed to glue the two together. No other new frontend runtime deps.
+
+**Rust crates** added to `crates/finsight-providers/Cargo.toml`:
+
+| Crate          | Why |
+|----------------|-----|
+| `csv`          | The actual CSV parser (delimiter detection, quoting, RFC 4180) |
+| `encoding_rs`  | Decoding non-UTF-8 statements (Section 4.7); BOM-aware UTF-8 still goes through `std::str` |
+| `chrono`       | Date parsing for `parse_row`; already a workspace dep from Phase 1 |
+
+The deterministic RNG dep (`rand_chacha`) is already a workspace transitive — re-asserted in 2.1.
+
 ### 2.1 New files
 
 ```
@@ -50,10 +88,23 @@ crates/finsight-providers/src/
 └── csv/
     ├── mod.rs               # NEW — CsvProvider, CsvImportMapping, CsvPreview
     ├── parse.rs             # NEW — pure CSV row → NewTransaction
-    └── mapping.rs           # NEW — CsvImportMapping persistence + dedup hash
+    ├── encoding.rs          # NEW — BOM sniffing + encoding_rs fallback (see Section 4.7)
+    └── mapping.rs           # NEW — CsvImportMapping persistence
 ```
 
 The Phase 1 `walking_skeleton` seed in `finsight-core::seed` remains, but is **removed from the app startup chain**. `sample_household` replaces it as the "intentional demo path" triggered by the user.
+
+**Deterministic RNG pin.** `sample::seed_household` constructs its RNG explicitly via:
+
+```rust
+use rand_chacha::ChaCha20Rng;
+use rand::SeedableRng;
+
+const SAMPLE_SEED: u64 = 0xF1_5165_8AAA_0001;     // pinned constant; do not change
+let mut rng = ChaCha20Rng::seed_from_u64(SAMPLE_SEED);
+```
+
+`ChaCha20Rng` is stream-stable across `rand_chacha` minor versions, unlike `thread_rng` (which may change algorithm under a `rand` major bump). The determinism test in §5.1 will catch any regression early.
 
 ### 2.2 V002 migration
 
@@ -61,15 +112,15 @@ The Phase 1 `walking_skeleton` seed in `finsight-core::seed` remains, but is **r
 
 ```sql
 CREATE TABLE imports (
-  id            TEXT PRIMARY KEY,
-  source        TEXT NOT NULL,       -- 'csv' | 'manual' | 'sample'
-  filename      TEXT,                -- NULL for manual/sample
-  account_id    TEXT REFERENCES accounts(id),
-  started_at    TEXT NOT NULL,
-  finished_at   TEXT,                -- NULL until run completes
-  row_count     INTEGER NOT NULL DEFAULT 0,
-  duplicates    INTEGER NOT NULL DEFAULT 0,
-  error         TEXT
+  id                       TEXT PRIMARY KEY,
+  source                   TEXT NOT NULL,    -- 'csv' | 'manual' | 'sample'
+  filename                 TEXT,             -- NULL for manual/sample
+  account_id               TEXT REFERENCES accounts(id),
+  started_at               TEXT NOT NULL,
+  finished_at              TEXT,             -- NULL until run completes
+  rows_imported            INTEGER NOT NULL DEFAULT 0,
+  rows_skipped_duplicates  INTEGER NOT NULL DEFAULT 0,
+  error                    TEXT
 );
 CREATE INDEX idx_imports_unfinished ON imports(finished_at) WHERE finished_at IS NULL;
 
@@ -78,9 +129,15 @@ CREATE TABLE csv_import_mappings (
   mapping_json  TEXT NOT NULL,
   last_used_at  TEXT NOT NULL
 );
+
+ALTER TABLE accounts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+-- 'manual' | 'csv' | 'sample' — written by the code path that created the account.
+-- Default 'manual' is safe for Phase 1 walking-skeleton rows.
 ```
 
-Both migrations are forward-only. The `imports` table is referenced by the "an import didn't finish" recovery banner; `csv_import_mappings` lets re-imports skip the column-mapping step per-account.
+Both migrations are forward-only. The `imports` table is referenced by the "an import didn't finish" recovery banner; `csv_import_mappings` lets re-imports skip the column-mapping step per-account. Column names mirror the `ImportSummary` Rust struct so the row maps directly without a translation layer.
+
+**Cleanup on account archive.** `csv_import_mappings.account_id` has `ON DELETE CASCADE`, so if the user hard-deletes an account the mapping goes with it. Phase 3's "archive account" flow (soft-delete) MUST also delete the row from `csv_import_mappings` for the archived account — a stale mapping pointing at an archived account would silently shadow a fresh import attempt onto a new account with the same id.
 
 ### 2.3 Tauri commands (added to `finsight-app/src/commands/`)
 
@@ -137,26 +194,74 @@ pub struct RowError {
 
 ### 2.4 Events emitted
 
-- `import.progress { import_id, rows_done, rows_total }` — emitted every 50 rows during CSV import.
+- `import.progress { import_id, rows_done, rows_total }` — emitted at an **adaptive interval**: `max(1, rows_total / 20)`. A 5000-row import fires roughly 20 events; a 30-row import still fires every row so the UI feels responsive on tiny files. The batch-commit boundary (Section 2.6) is the natural emission point.
 - `import.complete { import_id }` — emitted when the import row's `finished_at` is set. Frontend invalidates `transactions`, `accounts`, `today-summary` queries.
 - `onboarding.complete` — emitted when wizard finishes. Frontend invalidates queries.
 
 ### 2.5 Duplicate detection
 
-`mapping.rs` computes a duplicate hash per row before insert:
+Duplicate key: `(account_id, posted_at, amount_cents, merchant_raw)`. Before inserting each row, the importer runs:
+
+```sql
+SELECT 1 FROM transactions
+WHERE account_id = ?1 AND posted_at = ?2 AND amount_cents = ?3 AND merchant_raw = ?4
+LIMIT 1
+```
+
+If a row exists, increment `rows_skipped_duplicates` and skip insertion. This lets the user re-import overlapping statements safely.
+
+**Index for the dedup query** — V002 adds a covering composite index:
+
+```sql
+CREATE INDEX idx_txn_dedup ON transactions(account_id, posted_at, amount_cents, merchant_raw);
+```
+
+Without this, the `EXISTS` check degrades to a per-row scan once the transaction table has more than a few thousand rows. With it, dedup stays sub-millisecond even at 100k+ rows.
+
+### 2.6 Batched import transactions
+
+CSV imports MUST run inside a SQLite transaction, committed in batches. Each row insert as its own implicit transaction would `fsync` every row in WAL mode — a 5000-row import becomes minutes.
+
+**Pool note (re-asserted from Phase 1).** The connection pool is built with `Pool::builder().min_idle(Some(0))`. Without it, r2d2's default of `min_idle = max_size` runs the pragma block on every connection concurrently at startup, racing on WAL setup. Phase 2 introduces nothing that changes this; the assertion lives here so a future contributor adding a `Pool::new(...)` shortcut sees the rationale in the same place as the batched-write code that depends on it.
+
+Pattern (Rust pseudocode):
 
 ```rust
-fn dedup_hash(account_id: &str, posted_at: &DateTime<Utc>, amount_cents: i64, merchant_raw: &str) -> u64 {
-    // SipHash via DefaultHasher — deterministic per process, fine for in-memory dedup within an import.
-    // For cross-import dedup we use a SQL EXISTS check.
+const BATCH_SIZE: usize = 500;
+
+let mut tx = conn.transaction()?;
+for (i, row) in rows.enumerate() {
+    if i > 0 && i % BATCH_SIZE == 0 {
+        tx.commit()?;
+        emit_progress_event(i, total);
+        tx = conn.transaction()?;
+    }
+    insert_or_skip_dupe(&tx, &row)?;
 }
+tx.commit()?;
 ```
 
-Cross-import deduplication: before inserting, the importer runs
-```sql
-SELECT 1 FROM transactions WHERE account_id = ?1 AND posted_at = ?2 AND amount_cents = ?3 AND merchant_raw = ?4
+This bounds memory (each batch holds at most 500 prepared statements' worth of state) and produces real `import.progress` events every 500 rows. On fatal error mid-batch, the open transaction rolls back, so the import is atomic at batch granularity — the user might see partial data on a hard crash, but the deduplication on re-import makes that recoverable.
+
+### 2.7 Streaming preview + file size cap
+
+`preview_csv_columns` and `import_csv` MUST stream the file rather than `read_to_string`. A 200 MB QFX-converted CSV would otherwise wedge the renderer thread and balloon memory.
+
+```rust
+use std::io::{BufRead, BufReader};
+
+const MAX_BYTES: u64 = 50 * 1024 * 1024;   // 50 MiB hard cap
+let meta = std::fs::metadata(&path)?;
+if meta.len() > MAX_BYTES {
+    return Err(ProviderError::FileTooLarge { bytes: meta.len(), cap: MAX_BYTES });
+}
+let file = std::fs::File::open(&path)?;
+let reader = BufReader::with_capacity(64 * 1024, decoded_stream(file)?);
 ```
-If a row exists, increment `rows_skipped_duplicates` and skip insertion. This lets the user re-import overlapping statements safely.
+
+`decoded_stream` is the encoding-handling wrapper from Section 4.7. The 50 MiB cap is generous — Chase's largest annual statement export sits around 4 MiB — but bounded so a runaway file never OOMs the renderer process. The error is surfaced as a toast: "File is too large (NN MiB). Maximum is 50 MiB."
+
+`preview_csv_columns` reads only the first 10 data rows for the table preview but still streams the rest with a counter to populate `CsvPreview.total_rows` (capped at 10_000 to avoid full-scanning huge files just for a count).
 
 ## 3. Frontend additions
 
@@ -341,10 +446,10 @@ Both drawers use `react-hook-form` + `zod` schemas. Submit calls the correspondi
 
 ### 4.4 Onboarding interrupted
 
-- State lives in the DB, not in Zustand persistence. If the user quits mid-wizard:
+- State lives in the DB, not in Zustand persistence. The completion flag is the boolean `settings.onboarding_completion_marked` (key in the `settings` key-value table from V001). If the user quits mid-wizard:
   - `accounts` count > 0 → wizard won't auto-show; user can manually navigate to `/onboarding` to continue if they want
-  - `accounts` count == 0 AND `completion_marked` false → wizard auto-shows again on next launch
-  - `completion_marked` true (set by clicking "Use these" in Step 3 or finishing Step 4) → wizard never auto-shows again; available via Settings link
+  - `accounts` count == 0 AND `onboarding_completion_marked` false → wizard auto-shows again on next launch
+  - `onboarding_completion_marked` true (set by clicking "Use these" in Step 3 or finishing Step 4) → wizard never auto-shows again; reachable via Settings → Re-run onboarding (§4.8)
 
 ### 4.5 Ollama probe
 
@@ -357,6 +462,37 @@ Both drawers use `react-hook-form` + `zod` schemas. Submit calls the correspondi
 - File picker denied or path unreadable → toast "Couldn't read the file. Please try again."
 - Disk write errors during import → import marked failed, `error` column populated, banner shown on next launch.
 
+### 4.7 CSV character encoding
+
+Bank CSV exports are *usually* UTF-8 but the long tail includes UTF-16 LE (Excel "Save As CSV"), Windows-1252 (older European banks), and ISO-8859-1. The decoding strategy is layered:
+
+1. **Read first 4 KiB into a buffer.**
+2. **BOM sniff** in this order: UTF-8 BOM (`EF BB BF`), UTF-16 LE (`FF FE`), UTF-16 BE (`FE FF`). On a match, strip the BOM and decode the rest with `encoding_rs` using the matched encoding. UTF-8 BOM is the dominant non-pure-UTF-8 case (Excel's default) and must be handled silently.
+3. **No BOM → try UTF-8 strict.** If the 4 KiB sample decodes cleanly, proceed as UTF-8.
+4. **UTF-8 strict failed → fall back to Windows-1252** via `encoding_rs` (it's the closest superset of ISO-8859-1 used by older bank software, and `encoding_rs` maps it lossy-but-deterministically). Log a `tracing::warn!` and surface a one-line note in the preview header: "Decoded as Windows-1252 (no UTF-8 BOM detected)."
+
+No user-facing encoding picker. If the heuristic gets it wrong on some exotic export, that's a bug to fix in `encoding.rs` — not a UI choice we want to push at users on Step 2 of onboarding.
+
+### 4.8 "Re-run onboarding" from Settings
+
+`Settings.tsx` exposes a `Re-run onboarding` button. Clicking it:
+
+1. Confirms via a small dialog: "This will re-open the welcome wizard. Your existing accounts, transactions, and categories are kept."
+2. On confirm, calls a new command `reset_onboarding_completion()` which sets `settings.onboarding_completion_marked = false` (does NOT touch `accounts`, `categories`, or `transactions`).
+3. Navigates to `/onboarding`.
+
+Because account_count is now > 0, the auto-redirect effect in `App.tsx` (§3.1) won't fire on its own — only this explicit user action surfaces the wizard. The wizard's Step 2 still works in that state; it just shows the running tally starting from the existing data.
+
+### 4.9 Switching from sample data to real data
+
+Users who picked "Try with sample data" need a graceful path off it. Settings exposes a `Replace sample data with my own` button (visible only when at least one account has `source = 'sample'`). Clicking it:
+
+1. Confirms via dialog: "This will permanently delete the Mira & Adam sample accounts and their transactions. Anything you added manually or imported is kept."
+2. On confirm, calls `clear_sample_data()` (Tauri command) which deletes `accounts WHERE source = 'sample'` (cascade removes their transactions).
+3. Resets `settings.onboarding_completion_marked = false` and navigates to `/onboarding`.
+
+The `accounts.source` column does NOT exist yet — V002 adds it: `ALTER TABLE accounts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';` and `seed_household` writes `source = 'sample'` for the accounts it creates. CSV-imported accounts use `source = 'csv'`. Without this column, "delete only the sample data" is impossible to express safely.
+
 ## 5. Testing
 
 ### 5.1 Rust
@@ -364,6 +500,7 @@ Both drawers use `react-hook-form` + `zod` schemas. Submit calls the correspondi
 - **`finsight-core::sample`** — unit test asserts the seed is deterministic (same RNG seed → same row count and same first row's `id`/`merchant_raw`). Integration test: open empty encrypted DB, run migrations, run `seed_household`, assert 6 accounts + 250+ transactions.
 - **`finsight-core::repos::imports`** — CRUD test for insert/finish/list_unfinished.
 - **`finsight-providers::csv::parse`** — pure function, ≥10 unit tests against fixture rows covering: standard CSV, semicolon-delimited, quoted commas, MM/DD/YYYY dates, separate debit/credit columns, signed-positive convention, missing optional columns.
+- **`finsight-providers::csv::encoding`** — unit tests for UTF-8-with-BOM strip, UTF-16 LE BOM, no-BOM-UTF-8, no-BOM-Windows-1252 fallback. Use small in-memory byte slices, not files.
 - **`finsight-providers::csv::CsvProvider::import`** — integration test against a fixture file: import once, count rows; import again, assert all skipped as duplicates.
 - **`finsight-app::commands::import`** — happy-path command test + error-path (nonexistent file).
 
@@ -381,6 +518,7 @@ Test fixtures live at `crates/finsight-providers/tests/fixtures/csv/`:
 - **`AccountDrawer.test.tsx`** — form validation, submit calls mutation.
 - **`Onboarding.test.tsx`** — Welcome step renders, "Try sample" path calls hook, advances to Step 2.
 - **`ImportMappingDialog.test.tsx`** — preview rendering, column assignment, validation gating the Import button, parsed preview live-updates.
+- **`a11y.test.tsx`** — runs `vitest-axe`'s `expectNoA11yViolations()` against Drawer, AccountDrawer, TransactionDrawer, Onboarding shell. Adds `vitest-axe` + `axe-core` as dev deps.
 
 Tauri invoke remains mocked at the `@tauri-apps/api/core` boundary as established in Phase 1.
 
@@ -444,17 +582,19 @@ Effort estimates assume a developer fluent in both Rust and React. Not calendar 
 - `StepCategories.tsx` with inline-edit + add/delete
 - `StepAgent.tsx` with Ollama probe (`/api/tags` via Tauri command for CORS-safety)
 - Settings stores `llm_provider` config
-- Accessibility audit on new components (focus management, ARIA, keyboard nav)
+- Settings `Re-run onboarding` button + `Replace sample data with my own` button (Sections 4.8/4.9)
+- `clear_sample_data` + `reset_onboarding_completion` commands
+- Accessibility audit on new components using **`vitest-axe`** assertions in unit tests (focus management, ARIA, keyboard nav) — at least Drawer, AccountDrawer, TransactionDrawer, Onboarding shell
 - Toast notifications wired for import complete, account created, etc.
 
-**Exit:** all four onboarding steps work end-to-end on a fresh install.
+**Exit:** all four onboarding steps work end-to-end on a fresh install; user can switch back to a clean slate via Settings.
 
 ## 7. Risks
 
 1. **CSV parsing edge cases** — banks export wildly different formats. The 6 fixture files cover common cases but the long tail will surface real bugs in user testing. Mitigation: the row-level error reporting in `ImportSummary` lets users see exactly which rows failed and why.
 2. **Ollama probe latency on offline machines** — a 2s timeout is reasonable but feels long. Mitigation: render the loading state with a "Checking for Ollama…" message.
 3. **Drawer focus trap edge cases** — react-focus-lock can conflict with inputs inside modal dialogs. Mitigation: test thoroughly with the nested "AccountDrawer inside ImportMappingDialog" case.
-4. **Determinism of `sample_household`** — RNG seeded from a constant string. If `rand` updates its algorithm, deterministic test assertions will break. Mitigation: pin `rand`'s minor version and use `ChaCha20Rng` explicitly (not `thread_rng`).
+4. **Determinism of `sample_household`** — see §2.1 RNG pin. Test against `SAMPLE_SEED` produces a known first-row id; the test fails loud if `rand_chacha`'s stream changes. We pin `rand_chacha` minor version in `Cargo.toml` (workspace dep) and avoid `thread_rng` anywhere in `sample.rs`.
 5. **Migrations against the Phase 1 walking-skeleton DB** — V002 must apply cleanly even if `accounts` already has rows from Phase 1's auto-seed. Mitigation: V002 only adds tables; no schema changes to existing tables. Test by booting a Phase 1 build to seed, then running V002.
 
 ## 8. Open follow-ups (tracked for later phases)
