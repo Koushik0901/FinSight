@@ -18,11 +18,13 @@ impl TransactionStatus {
             Self::Manual => "manual",
         }
     }
+    /// Unknown DB strings default to `Pending` — safer than `Cleared`, which
+    /// would silently include garbage in cleared balances.
     pub fn from_db(s: &str) -> Self {
         match s {
-            "pending" => Self::Pending,
+            "cleared" => Self::Cleared,
             "manual" => Self::Manual,
-            _ => Self::Cleared,
+            _ => Self::Pending,
         }
     }
 }

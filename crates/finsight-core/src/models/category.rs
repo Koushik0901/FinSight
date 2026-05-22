@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -17,5 +18,5 @@ pub struct Category {
     pub color: String,
     pub icon: Option<String>,
     pub sort_order: i32,
-    pub archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
 }
