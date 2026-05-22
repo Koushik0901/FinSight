@@ -1,8 +1,11 @@
 use crate::error::{CoreError, CoreResult};
 use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
+use refinery::embed_migrations;
 use rusqlite::Connection;
 use std::path::Path;
+
+embed_migrations!("./migrations");
 
 #[derive(Clone)]
 pub struct Db {
@@ -73,4 +76,15 @@ impl Db {
         }
         Ok(out.join("\n"))
     }
+
+    /// Apply all pending migrations.
+    pub fn run_migrations_self(&self) -> CoreResult<()> {
+        run_migrations(self)
+    }
+}
+
+pub fn run_migrations(db: &Db) -> CoreResult<()> {
+    let mut conn = db.get()?;
+    migrations::runner().run(&mut *conn)?;
+    Ok(())
 }
