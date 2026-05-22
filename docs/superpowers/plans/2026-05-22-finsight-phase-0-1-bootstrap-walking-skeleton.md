@@ -148,12 +148,13 @@ Create `Cargo.toml`:
 [workspace]
 resolver = "2"
 members = [
-  "crates/core",
-  "crates/providers",
-  "crates/agent",
-  "crates/app",
+  "crates/finsight-core",
+  "crates/finsight-providers",
+  "crates/finsight-agent",
+  "crates/finsight-app",
   "src-tauri",
 ]
+default-members = ["src-tauri"]
 
 [workspace.package]
 edition = "2021"
@@ -248,7 +249,7 @@ Create `package.json`:
     "test": "pnpm --filter ui test && cargo test --workspace",
     "typecheck": "pnpm --filter ui typecheck",
     "lint": "pnpm --filter ui lint && cargo clippy --workspace --all-targets -- -D warnings",
-    "bindings": "cargo run -p app --bin export_bindings"
+    "bindings": "cargo run -p finsight-app --bin export_bindings"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"
@@ -285,20 +286,130 @@ git commit -m "chore: workspace scaffold (Cargo + pnpm)"
 
 ---
 
+### Task 1b: OSS hygiene files (LICENSE, SECURITY, rustfmt, clippy, editorconfig)
+
+Required by AGPL distribution clause and by basic OSS expectations for an app holding bank data. Cheap to add now; awkward later.
+
+**Files:**
+- Create: `LICENSE`
+- Create: `SECURITY.md`
+- Create: `rustfmt.toml`
+- Create: `clippy.toml`
+- Create: `.editorconfig`
+
+- [ ] **Step 1: LICENSE**
+
+Fetch the canonical AGPL-3.0 text and save as `LICENSE`. From a shell:
+
+```bash
+curl -fsSL https://www.gnu.org/licenses/agpl-3.0.txt -o LICENSE
+wc -l LICENSE  # should be ~660+ lines
+```
+
+- [ ] **Step 2: SECURITY.md**
+
+```markdown
+# Security Policy
+
+FinSight holds private financial data on the user's machine. We take security
+reports seriously.
+
+## Supported versions
+
+| Version | Supported |
+|---------|-----------|
+| Latest release | Yes |
+| Pre-release / main | Best effort |
+| Older releases | No |
+
+## Reporting a vulnerability
+
+Email **security@finsight.app** (or, if not yet set up, the maintainer at the
+email listed in `Cargo.toml`).
+
+- Please include reproduction steps and the affected version.
+- We aim to acknowledge reports within 3 business days and to ship a fix or
+  mitigation within 30 days for confirmed high-severity issues.
+- Do **not** open a public GitHub issue for security-sensitive reports.
+
+## Scope
+
+In-scope: the FinSight desktop app, its bundled SQLCipher database handling,
+keychain integration, LLM provider integrations.
+
+Out of scope: vulnerabilities in upstream dependencies (please report to their
+maintainers), social-engineering attacks against the user's OS or bank.
+
+## Disclosure
+
+We follow coordinated disclosure: we publish the advisory once a fix is
+released. Reporters who follow this policy are credited in the release notes
+unless they prefer anonymity.
+```
+
+- [ ] **Step 3: rustfmt.toml**
+
+```toml
+edition = "2021"
+max_width = 100
+use_field_init_shorthand = true
+use_try_shorthand = true
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+```
+
+- [ ] **Step 4: clippy.toml**
+
+```toml
+# Allow up to 7 args before warning — repos sometimes need this.
+too-many-arguments-threshold = 8
+# Tighter limits on cognitive complexity than the default.
+cognitive-complexity-threshold = 20
+```
+
+- [ ] **Step 5: .editorconfig**
+
+```ini
+root = true
+
+[*]
+end_of_line = lf
+charset = utf-8
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.rs]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add LICENSE SECURITY.md rustfmt.toml clippy.toml .editorconfig
+git commit -m "chore: OSS hygiene (LICENSE, SECURITY, rustfmt, clippy, editorconfig)"
+```
+
+---
+
 ### Task 2: SQLCipher build verification (de-risk Phase 0's biggest unknown)
 
 The spec calls out SQLCipher cross-platform builds as Risk #1. This task verifies the `bundled-sqlcipher-vendored-openssl` feature actually compiles + links on the current machine, with a smoke test that opens an encrypted DB, writes, and reads.
 
 **Files:**
-- Create: `crates/core/Cargo.toml`
-- Create: `crates/core/src/lib.rs`
-- Create: `crates/core/tests/sqlcipher_smoke.rs`
+- Create: `crates/finsight-core/Cargo.toml`
+- Create: `crates/finsight-core/src/lib.rs`
+- Create: `crates/finsight-core/tests/sqlcipher_smoke.rs`
 
-- [ ] **Step 1: Create crates/core/Cargo.toml**
+- [ ] **Step 1: Create crates/finsight-core/Cargo.toml**
 
 ```toml
 [package]
-name = "core"
+name = "finsight-core"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
@@ -325,7 +436,7 @@ rstest.workspace = true
 tempfile.workspace = true
 ```
 
-- [ ] **Step 2: Create crates/core/src/lib.rs (minimal stub)**
+- [ ] **Step 2: Create crates/finsight-core/src/lib.rs (minimal stub)**
 
 ```rust
 //! FinSight core: domain types, SQLCipher storage, repositories.
@@ -333,16 +444,26 @@ tempfile.workspace = true
 
 - [ ] **Step 3: Write the failing smoke test**
 
-Create `crates/core/tests/sqlcipher_smoke.rs`:
+Create `crates/finsight-core/tests/sqlcipher_smoke.rs`:
 
 ```rust
 //! Verifies SQLCipher links and encrypts data on this machine.
 //! Smoke test — failure here blocks Phase 0.
+//!
+//! Note on PRAGMA key: SQLCipher's raw-key syntax is `PRAGMA key = "x'AABB...'";`
+//! (the inner `x'...'` is a blob literal). `pragma_update("key", "x'...'")` would
+//! bind the value as a SQL string, causing SQLCipher to run PBKDF2 over the
+//! literal characters — silently downgrading the encryption to a passphrase.
+//! We use execute_batch with a formatted statement to keep the raw-key form.
 
 use rusqlite::Connection;
 use tempfile::tempdir;
 
-const KEY: &str = "x'2DD29CA851E7B56E4697B0E1F08507293D761A05CE4D1B628663F411A8086D99'";
+const KEY_HEX: &str = "2DD29CA851E7B56E4697B0E1F08507293D761A05CE4D1B628663F411A8086D99";
+
+fn set_key(conn: &Connection, hex: &str) {
+    conn.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";")).unwrap();
+}
 
 #[test]
 fn open_encrypts_writes_and_reads_back() {
@@ -352,7 +473,7 @@ fn open_encrypts_writes_and_reads_back() {
     // Open + key + create + insert.
     {
         let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "key", KEY).unwrap();
+        set_key(&conn, KEY_HEX);
         conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)", [])
             .unwrap();
         conn.execute("INSERT INTO t (v) VALUES (?1)", ["hello"]).unwrap();
@@ -361,7 +482,7 @@ fn open_encrypts_writes_and_reads_back() {
     // Reopen with same key, read it back.
     {
         let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "key", KEY).unwrap();
+        set_key(&conn, KEY_HEX);
         let v: String = conn
             .query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0))
             .unwrap();
@@ -371,8 +492,7 @@ fn open_encrypts_writes_and_reads_back() {
     // Reopen with WRONG key — must fail to read.
     {
         let conn = Connection::open(&path).unwrap();
-        conn.pragma_update(None, "key", "x'0000000000000000000000000000000000000000000000000000000000000000'")
-            .unwrap();
+        set_key(&conn, "0000000000000000000000000000000000000000000000000000000000000000");
         let res: Result<String, _> = conn.query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0));
         assert!(res.is_err(), "Wrong key must fail to read the encrypted DB");
     }
@@ -382,7 +502,7 @@ fn open_encrypts_writes_and_reads_back() {
 - [ ] **Step 4: Run the test — expect a compile or link failure if SQLCipher build is broken**
 
 ```bash
-cargo test -p core --test sqlcipher_smoke -- --nocapture
+cargo test -p finsight-core --test sqlcipher_smoke -- --nocapture
 ```
 
 Expected: **PASS**. If it fails to compile, the build needs OpenSSL / perl on Windows for the vendored build. On Windows, install Strawberry Perl + use `cargo install cargo-vcpkg`. On macOS/Linux, the vendored OpenSSL build usually just works.
@@ -390,7 +510,7 @@ Expected: **PASS**. If it fails to compile, the build needs OpenSSL / perl on Wi
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/core/Cargo.toml crates/core/src/lib.rs crates/core/tests/sqlcipher_smoke.rs
+git add crates/finsight-core/Cargo.toml crates/finsight-core/src/lib.rs crates/finsight-core/tests/sqlcipher_smoke.rs
 git commit -m "feat(core): SQLCipher smoke test (encrypts, reads back, rejects wrong key)"
 ```
 
@@ -434,8 +554,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - run: cargo test -p core
-      - run: cargo clippy -p core --all-targets -- -D warnings
+      - run: cargo test -p finsight-core
+      - run: cargo clippy -p finsight-core --all-targets -- -D warnings
 ```
 
 - [ ] **Step 2: Commit**
@@ -454,14 +574,14 @@ Push to a remote (or run `act` locally if no remote yet). Confirm the matrix is 
 ### Task 4: Keychain key load/create
 
 **Files:**
-- Create: `crates/core/src/error.rs`
-- Create: `crates/core/src/keychain.rs`
-- Modify: `crates/core/src/lib.rs`
-- Create: `crates/core/tests/keychain.rs`
+- Create: `crates/finsight-core/src/error.rs`
+- Create: `crates/finsight-core/src/keychain.rs`
+- Modify: `crates/finsight-core/src/lib.rs`
+- Create: `crates/finsight-core/tests/keychain.rs`
 
 - [ ] **Step 1: Define CoreError**
 
-Create `crates/core/src/error.rs`:
+Create `crates/finsight-core/src/error.rs`:
 
 ```rust
 use thiserror::Error;
@@ -489,13 +609,13 @@ pub type CoreResult<T> = Result<T, CoreError>;
 
 - [ ] **Step 2: Write the failing keychain test**
 
-Create `crates/core/tests/keychain.rs`:
+Create `crates/finsight-core/tests/keychain.rs`:
 
 ```rust
 //! Unit test for keychain load_or_create.
 //! Uses a unique service name per test run so we don't collide with real installs.
 
-use core::keychain;
+use finsight_core::keychain;
 use uuid::Uuid;
 
 #[test]
@@ -513,14 +633,14 @@ fn load_or_create_returns_same_key_across_calls() {
 - [ ] **Step 3: Run the test — expect "module `keychain` not found"**
 
 ```bash
-cargo test -p core --test keychain
+cargo test -p finsight-core --test keychain
 ```
 
 Expected: FAIL with compile error.
 
 - [ ] **Step 4: Implement keychain.rs**
 
-Create `crates/core/src/keychain.rs`:
+Create `crates/finsight-core/src/keychain.rs`:
 
 ```rust
 use crate::error::CoreResult;
@@ -553,7 +673,7 @@ pub fn delete_key(service: &str, user: &str) -> CoreResult<()> {
 
 - [ ] **Step 5: Wire module in lib.rs**
 
-Replace `crates/core/src/lib.rs`:
+Replace `crates/finsight-core/src/lib.rs`:
 
 ```rust
 //! FinSight core: domain types, SQLCipher storage, repositories.
@@ -567,7 +687,7 @@ pub use error::{CoreError, CoreResult};
 - [ ] **Step 6: Run the test**
 
 ```bash
-cargo test -p core --test keychain -- --nocapture
+cargo test -p finsight-core --test keychain -- --nocapture
 ```
 
 Expected: PASS. (On Linux CI without a keyring daemon, the keyring crate uses a mock — this is fine for tests.)
@@ -575,7 +695,7 @@ Expected: PASS. (On Linux CI without a keyring daemon, the keyring crate uses a 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/core/src/error.rs crates/core/src/keychain.rs crates/core/src/lib.rs crates/core/tests/keychain.rs
+git add crates/finsight-core/src/error.rs crates/finsight-core/src/keychain.rs crates/finsight-core/src/lib.rs crates/finsight-core/tests/keychain.rs
 git commit -m "feat(core): keychain load_or_create_key"
 ```
 
@@ -584,37 +704,47 @@ git commit -m "feat(core): keychain load_or_create_key"
 ### Task 5: Connection pool with SQLCipher key + pragmas
 
 **Files:**
-- Create: `crates/core/src/db.rs`
-- Modify: `crates/core/src/lib.rs`
-- Create: `crates/core/tests/db.rs`
+- Create: `crates/finsight-core/src/db.rs`
+- Modify: `crates/finsight-core/src/lib.rs`
+- Create: `crates/finsight-core/tests/db.rs`
 
 - [ ] **Step 1: Write the failing pool test**
 
-Create `crates/core/tests/db.rs`:
+Create `crates/finsight-core/tests/db.rs`:
 
 ```rust
-use core::db::Db;
+use finsight_core::db::Db;
 use std::path::PathBuf;
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
-#[test]
-fn opens_pool_runs_pragmas_and_creates_table() {
+fn open() -> (Db, TempDir) {
     let dir = tempdir().unwrap();
     let path: PathBuf = dir.path().join("data.sqlcipher");
     let key = "abcd".repeat(16); // 64-char hex
     let db = Db::open(&path, &key).expect("open pool");
+    (db, dir)
+}
 
+#[test]
+fn opens_pool_runs_pragmas_and_creates_table() {
+    let (db, _dir) = open();
     let conn = db.get().unwrap();
+
     let mode: String = conn
         .query_row("PRAGMA journal_mode;", [], |r| r.get(0))
         .unwrap();
     assert_eq!(mode.to_lowercase(), "wal");
 
-    // Foreign keys on?
     let fk: i64 = conn.query_row("PRAGMA foreign_keys;", [], |r| r.get(0)).unwrap();
     assert_eq!(fk, 1);
 
-    // Create-and-read smoke
+    let sd: i64 = conn.query_row("PRAGMA secure_delete;", [], |r| r.get(0)).unwrap();
+    assert_eq!(sd, 1, "secure_delete must be enabled");
+
+    // mmap MUST NOT be enabled with SQLCipher.
+    let mmap: i64 = conn.query_row("PRAGMA mmap_size;", [], |r| r.get(0)).unwrap();
+    assert_eq!(mmap, 0, "mmap_size must remain 0 under SQLCipher");
+
     conn.execute("CREATE TABLE t (id INTEGER, v TEXT)", []).unwrap();
     conn.execute("INSERT INTO t VALUES (1, 'ok')", []).unwrap();
     let v: String = conn.query_row("SELECT v FROM t WHERE id=1", [], |r| r.get(0)).unwrap();
@@ -640,19 +770,27 @@ fn wrong_key_fails_on_query() {
     let res: Result<i64, _> = conn.query_row("SELECT id FROM t WHERE id=1", [], |r| r.get(0));
     assert!(res.is_err(), "wrong key must reject queries");
 }
+
+#[test]
+fn invalid_key_format_rejected() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("bad.sqlcipher");
+    assert!(Db::open(&path, "not-hex").is_err());
+    assert!(Db::open(&path, "abc").is_err()); // wrong length
+}
 ```
 
 - [ ] **Step 2: Run the test — expect compile error**
 
 ```bash
-cargo test -p core --test db
+cargo test -p finsight-core --test db
 ```
 
 Expected: FAIL with "no module `db`".
 
 - [ ] **Step 3: Implement db.rs**
 
-Create `crates/core/src/db.rs`:
+Create `crates/finsight-core/src/db.rs`:
 
 ```rust
 use crate::error::{CoreError, CoreResult};
@@ -669,21 +807,38 @@ pub struct Db {
 impl Db {
     /// Open a SQLCipher-encrypted pool at `path` using `key_hex` (64 hex chars = 32 bytes).
     /// Runs initial PRAGMAs on every new connection.
+    ///
+    /// IMPORTANT: SQLCipher's raw-key syntax requires `PRAGMA key = "x'AABB...'";`.
+    /// We use `execute_batch` for the key (parameter-bound PRAGMA values trigger PBKDF2)
+    /// and `pragma_update` for the rest.
     pub fn open(path: &Path, key_hex: &str) -> CoreResult<Self> {
-        let key_pragma = format!("x'{}'", key_hex);
+        if key_hex.len() != 64 || !key_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(CoreError::InvalidState(
+                "key_hex must be 64 ASCII hex chars (32 bytes)".into(),
+            ));
+        }
+        let key_hex = key_hex.to_owned();
 
         let manager = SqliteConnectionManager::file(path).with_init(move |conn: &mut Connection| {
-            conn.pragma_update(None, "key", &key_pragma)?;
+            // Raw 256-bit key. MUST come first, before any other PRAGMA touches the DB.
+            conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))?;
+
+            // SQLCipher hygiene
+            conn.execute_batch("PRAGMA cipher_memory_security = ON;")?;
+            conn.pragma_update(None, "secure_delete", true)?;
+
+            // Standard SQLite tuning. NOTE: do NOT set mmap_size with SQLCipher —
+            // SQLCipher 4 does not support memory-mapped I/O and can leak
+            // unencrypted pages to swap if enabled.
             conn.pragma_update(None, "journal_mode", "WAL")?;
             conn.pragma_update(None, "synchronous", "NORMAL")?;
-            conn.pragma_update(None, "mmap_size", 268_435_456_i64)?;
             conn.pragma_update(None, "cache_size", -65536_i64)?;
             conn.pragma_update(None, "foreign_keys", true)?;
             conn.pragma_update(None, "busy_timeout", 5000_i64)?;
             Ok(())
         });
 
-        let pool = Pool::builder().max_size(8).build(manager).map_err(|e| {
+        let pool = Pool::builder().max_size(4).build(manager).map_err(|e| {
             CoreError::InvalidState(format!("failed to build connection pool: {e}"))
         })?;
 
@@ -695,12 +850,19 @@ impl Db {
     pub fn get(&self) -> CoreResult<PooledConnection<SqliteConnectionManager>> {
         Ok(self.pool.get()?)
     }
+
+    /// Run SQLite's integrity check. Returns "ok" on success, or the first error string.
+    pub fn integrity_check(&self) -> CoreResult<String> {
+        let conn = self.get()?;
+        let v: String = conn.query_row("PRAGMA integrity_check;", [], |r| r.get(0))?;
+        Ok(v)
+    }
 }
 ```
 
 - [ ] **Step 4: Wire db module**
 
-Update `crates/core/src/lib.rs`:
+Update `crates/finsight-core/src/lib.rs`:
 
 ```rust
 //! FinSight core: domain types, SQLCipher storage, repositories.
@@ -716,7 +878,7 @@ pub use error::{CoreError, CoreResult};
 - [ ] **Step 5: Run the test**
 
 ```bash
-cargo test -p core --test db -- --nocapture
+cargo test -p finsight-core --test db -- --nocapture
 ```
 
 Expected: PASS (both cases).
@@ -724,7 +886,7 @@ Expected: PASS (both cases).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/core/src/db.rs crates/core/src/lib.rs crates/core/tests/db.rs
+git add crates/finsight-core/src/db.rs crates/finsight-core/src/lib.rs crates/finsight-core/tests/db.rs
 git commit -m "feat(core): r2d2 SQLCipher pool with pragmas"
 ```
 
@@ -735,14 +897,14 @@ git commit -m "feat(core): r2d2 SQLCipher pool with pragmas"
 This migration covers only the Phase 1 surface: `accounts`, `transactions`, `categories`, `category_groups`, `merchants`, plus the `audit_log` because it's referenced by all repos. Other tables ship in their phase.
 
 **Files:**
-- Create: `crates/core/migrations/V001__initial_schema.sql`
-- Modify: `crates/core/Cargo.toml`
-- Modify: `crates/core/src/db.rs`
-- Create: `crates/core/tests/migrations.rs`
+- Create: `crates/finsight-core/migrations/V001__initial_schema.sql`
+- Modify: `crates/finsight-core/Cargo.toml`
+- Modify: `crates/finsight-core/src/db.rs`
+- Create: `crates/finsight-core/tests/migrations.rs`
 
 - [ ] **Step 1: Write the migration SQL**
 
-Create `crates/core/migrations/V001__initial_schema.sql`:
+Create `crates/finsight-core/migrations/V001__initial_schema.sql`:
 
 ```sql
 -- FinSight initial schema (Phase 1 surface)
@@ -827,14 +989,14 @@ CREATE TABLE audit_log (
 
 - [ ] **Step 2: Add migrations build script to core**
 
-We embed migrations using `refinery`. Add to `crates/core/Cargo.toml` build dependency block at the end:
+We embed migrations using `refinery`. Add to `crates/finsight-core/Cargo.toml` build dependency block at the end:
 
 ```toml
 [build-dependencies]
 refinery = { version = "0.8", features = ["rusqlite"] }
 ```
 
-Create `crates/core/build.rs`:
+Create `crates/finsight-core/build.rs`:
 
 ```rust
 // refinery_migrations! is sufficient via `embed_migrations!` at runtime;
@@ -846,10 +1008,10 @@ fn main() {
 
 - [ ] **Step 3: Write the failing migration test**
 
-Create `crates/core/tests/migrations.rs`:
+Create `crates/finsight-core/tests/migrations.rs`:
 
 ```rust
-use core::Db;
+use finsight_core::Db;
 use tempfile::tempdir;
 
 #[test]
@@ -859,7 +1021,7 @@ fn migrations_run_and_create_expected_tables() {
     let key = "ab".repeat(32);
 
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).expect("migrations should apply cleanly");
+    finsight_core::db::run_migrations(&db).expect("migrations should apply cleanly");
 
     let conn = db.get().unwrap();
     let count: i64 = conn
@@ -880,22 +1042,22 @@ fn migrations_idempotent() {
     let key = "ab".repeat(32);
 
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).unwrap();
-    core::db::run_migrations(&db).unwrap(); // running again must be a no-op
+    finsight_core::db::run_migrations(&db).unwrap();
+    finsight_core::db::run_migrations(&db).unwrap(); // running again must be a no-op
 }
 ```
 
 - [ ] **Step 4: Run the test — expect compile failure ("run_migrations not found")**
 
 ```bash
-cargo test -p core --test migrations
+cargo test -p finsight-core --test migrations
 ```
 
 Expected: FAIL.
 
 - [ ] **Step 5: Add `run_migrations` to db.rs**
 
-Append to `crates/core/src/db.rs`:
+Append to `crates/finsight-core/src/db.rs`:
 
 ```rust
 use refinery::embed_migrations;
@@ -919,7 +1081,7 @@ pub fn run_migrations(db: &Db) -> CoreResult<()> {
 - [ ] **Step 6: Run the test**
 
 ```bash
-cargo test -p core --test migrations -- --nocapture
+cargo test -p finsight-core --test migrations -- --nocapture
 ```
 
 Expected: PASS for both tests.
@@ -927,7 +1089,7 @@ Expected: PASS for both tests.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/core/migrations/V001__initial_schema.sql crates/core/build.rs crates/core/Cargo.toml crates/core/src/db.rs crates/core/tests/migrations.rs
+git add crates/finsight-core/migrations/V001__initial_schema.sql crates/finsight-core/build.rs crates/finsight-core/Cargo.toml crates/finsight-core/src/db.rs crates/finsight-core/tests/migrations.rs
 git commit -m "feat(core): initial schema migration (accounts/txns/categories/audit)"
 ```
 
@@ -938,11 +1100,11 @@ git commit -m "feat(core): initial schema migration (accounts/txns/categories/au
 ### Task 7: Models
 
 **Files:**
-- Create: `crates/core/src/models/mod.rs`
-- Create: `crates/core/src/models/account.rs`
-- Create: `crates/core/src/models/transaction.rs`
-- Create: `crates/core/src/models/category.rs`
-- Modify: `crates/core/src/lib.rs`
+- Create: `crates/finsight-core/src/models/mod.rs`
+- Create: `crates/finsight-core/src/models/account.rs`
+- Create: `crates/finsight-core/src/models/transaction.rs`
+- Create: `crates/finsight-core/src/models/category.rs`
+- Modify: `crates/finsight-core/src/lib.rs`
 
 - [ ] **Step 1: Create models/mod.rs**
 
@@ -1131,7 +1293,7 @@ pub struct NewTransaction {
 
 - [ ] **Step 5: Wire models module in lib.rs**
 
-Update `crates/core/src/lib.rs`:
+Update `crates/finsight-core/src/lib.rs`:
 
 ```rust
 //! FinSight core: domain types, SQLCipher storage, repositories.
@@ -1148,7 +1310,7 @@ pub use error::{CoreError, CoreResult};
 - [ ] **Step 6: Compile-only check**
 
 ```bash
-cargo check -p core
+cargo check -p finsight-core
 ```
 
 Expected: compiles. No tests for pure-data types in this task; repo tests in Task 8 cover them.
@@ -1156,7 +1318,7 @@ Expected: compiles. No tests for pure-data types in this task; repo tests in Tas
 - [ ] **Step 7: Commit**
 
 ```bash
-git add crates/core/src/models crates/core/src/lib.rs
+git add crates/finsight-core/src/models crates/finsight-core/src/lib.rs
 git commit -m "feat(core): Account/Transaction/Category models with specta types"
 ```
 
@@ -1165,13 +1327,13 @@ git commit -m "feat(core): Account/Transaction/Category models with specta types
 ### Task 8: Repositories — list + insert
 
 **Files:**
-- Create: `crates/core/src/repos/mod.rs`
-- Create: `crates/core/src/repos/accounts.rs`
-- Create: `crates/core/src/repos/transactions.rs`
-- Create: `crates/core/src/repos/categories.rs`
-- Modify: `crates/core/src/lib.rs`
-- Create: `crates/core/tests/repos_accounts.rs`
-- Create: `crates/core/tests/repos_transactions.rs`
+- Create: `crates/finsight-core/src/repos/mod.rs`
+- Create: `crates/finsight-core/src/repos/accounts.rs`
+- Create: `crates/finsight-core/src/repos/transactions.rs`
+- Create: `crates/finsight-core/src/repos/categories.rs`
+- Modify: `crates/finsight-core/src/lib.rs`
+- Create: `crates/finsight-core/tests/repos_accounts.rs`
+- Create: `crates/finsight-core/tests/repos_transactions.rs`
 
 - [ ] **Step 1: Create repos/mod.rs**
 
@@ -1428,7 +1590,9 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
         Ok(Transaction {
             id: r.get(0)?,
             account_id: r.get(1)?,
-            posted_at: DateTime::parse_from_rfc3339(&posted_at_s).unwrap().with_timezone(&Utc),
+            posted_at: DateTime::parse_from_rfc3339(&posted_at_s)
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?
+                .with_timezone(&Utc),
             amount_cents: r.get(3)?,
             merchant_raw: r.get(4)?,
             merchant_id: r.get(5)?,
@@ -1443,7 +1607,9 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
             ai_confidence: r.get(14)?,
             ai_explanation: r.get(15)?,
             is_anomaly: r.get::<_, i64>(16)? != 0,
-            created_at: DateTime::parse_from_rfc3339(&created_at_s).unwrap().with_timezone(&Utc),
+            created_at: DateTime::parse_from_rfc3339(&created_at_s)
+                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e)))?
+                .with_timezone(&Utc),
         })
     })?;
     let mut out = Vec::new();
@@ -1471,28 +1637,26 @@ pub use error::{CoreError, CoreResult};
 
 - [ ] **Step 6: Write tests**
 
-Create `crates/core/tests/repos_accounts.rs`:
+Create `crates/finsight-core/tests/repos_accounts.rs`:
 
 ```rust
-use core::models::{AccountType, NewAccount};
-use core::repos::accounts;
-use core::Db;
+use finsight_finsight_core::models::{AccountType, NewAccount};
+use finsight_core::repos::accounts;
+use finsight_core::Db;
 use tempfile::tempdir;
 
-fn open() -> Db {
+fn open() -> (Db, tempfile::TempDir) {
     let dir = tempdir().unwrap();
     let path = dir.path().join("a.sqlcipher");
     let key = "ab".repeat(32);
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).unwrap();
-    // Keep tempdir alive — leak it for the test scope.
-    std::mem::forget(dir);
-    db
+    finsight_finsight_core::db::run_migrations(&db).unwrap();
+    (db, dir)
 }
 
 #[test]
 fn insert_then_list_summaries_returns_one() {
-    let db = open();
+    let (db, _dir) = open();
     let mut conn = db.get().unwrap();
 
     accounts::insert(
@@ -1517,28 +1681,27 @@ fn insert_then_list_summaries_returns_one() {
 }
 ```
 
-Create `crates/core/tests/repos_transactions.rs`:
+Create `crates/finsight-core/tests/repos_transactions.rs`:
 
 ```rust
 use chrono::Utc;
-use core::models::{AccountType, NewAccount, NewTransaction, TransactionStatus};
-use core::repos::{accounts, transactions};
-use core::Db;
+use finsight_finsight_core::models::{AccountType, NewAccount, NewTransaction, TransactionStatus};
+use finsight_core::repos::{accounts, transactions};
+use finsight_core::Db;
 use tempfile::tempdir;
 
-fn open() -> Db {
+fn open() -> (Db, tempfile::TempDir) {
     let dir = tempdir().unwrap();
     let path = dir.path().join("t.sqlcipher");
     let key = "cd".repeat(32);
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).unwrap();
-    std::mem::forget(dir);
-    db
+    finsight_finsight_core::db::run_migrations(&db).unwrap();
+    (db, dir)
 }
 
 #[test]
 fn insert_and_list_returns_descending_by_posted_at() {
-    let db = open();
+    let (db, _dir) = open();
     let mut conn = db.get().unwrap();
     let acct = accounts::insert(
         &mut conn,
@@ -1592,7 +1755,7 @@ fn insert_and_list_returns_descending_by_posted_at() {
 - [ ] **Step 7: Run tests**
 
 ```bash
-cargo test -p core
+cargo test -p finsight-core
 ```
 
 Expected: all green.
@@ -1600,7 +1763,7 @@ Expected: all green.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/core/src/repos crates/core/src/lib.rs crates/core/tests/repos_accounts.rs crates/core/tests/repos_transactions.rs
+git add crates/finsight-core/src/repos crates/finsight-core/src/lib.rs crates/finsight-core/tests/repos_accounts.rs crates/finsight-core/tests/repos_transactions.rs
 git commit -m "feat(core): account + transaction + category repositories"
 ```
 
@@ -1609,17 +1772,17 @@ git commit -m "feat(core): account + transaction + category repositories"
 ### Task 9: Seed module (Phase 1 fixture data)
 
 **Files:**
-- Create: `crates/core/src/seed.rs`
-- Modify: `crates/core/src/lib.rs`
-- Create: `crates/core/tests/seed.rs`
+- Create: `crates/finsight-core/src/seed.rs`
+- Modify: `crates/finsight-core/src/lib.rs`
+- Create: `crates/finsight-core/tests/seed.rs`
 
 - [ ] **Step 1: Write the failing seed test**
 
-Create `crates/core/tests/seed.rs`:
+Create `crates/finsight-core/tests/seed.rs`:
 
 ```rust
-use core::repos::{accounts, categories, transactions};
-use core::Db;
+use finsight_core::repos::{accounts, categories, transactions};
+use finsight_core::Db;
 use tempfile::tempdir;
 
 #[test]
@@ -1628,9 +1791,9 @@ fn seed_walks_skeleton_creates_expected_counts() {
     let path = dir.path().join("seed.sqlcipher");
     let key = "ef".repeat(32);
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).unwrap();
+    finsight_core::db::run_migrations(&db).unwrap();
 
-    core::seed::walking_skeleton(&db).unwrap();
+    finsight_core::seed::walking_skeleton(&db).unwrap();
 
     let mut conn = db.get().unwrap();
     assert_eq!(accounts::list_summaries(&mut conn).unwrap().len(), 1);
@@ -1646,10 +1809,10 @@ fn seed_is_idempotent_no_duplicates() {
     let path = dir.path().join("seed2.sqlcipher");
     let key = "ef".repeat(32);
     let db = Db::open(&path, &key).unwrap();
-    core::db::run_migrations(&db).unwrap();
+    finsight_core::db::run_migrations(&db).unwrap();
 
-    core::seed::walking_skeleton(&db).unwrap();
-    core::seed::walking_skeleton(&db).unwrap();
+    finsight_core::seed::walking_skeleton(&db).unwrap();
+    finsight_core::seed::walking_skeleton(&db).unwrap();
 
     let mut conn = db.get().unwrap();
     assert_eq!(accounts::list_summaries(&mut conn).unwrap().len(), 1);
@@ -1659,14 +1822,14 @@ fn seed_is_idempotent_no_duplicates() {
 - [ ] **Step 2: Run test — expect compile error**
 
 ```bash
-cargo test -p core --test seed
+cargo test -p finsight-core --test seed
 ```
 
 Expected: FAIL.
 
 - [ ] **Step 3: Implement seed.rs**
 
-Create `crates/core/src/seed.rs`:
+Create `crates/finsight-core/src/seed.rs`:
 
 ```rust
 use crate::error::CoreResult;
@@ -1776,7 +1939,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
 
 - [ ] **Step 4: Wire module**
 
-Update `crates/core/src/lib.rs`:
+Update `crates/finsight-core/src/lib.rs`:
 
 ```rust
 //! FinSight core: domain types, SQLCipher storage, repositories.
@@ -1795,7 +1958,7 @@ pub use error::{CoreError, CoreResult};
 - [ ] **Step 5: Run tests**
 
 ```bash
-cargo test -p core
+cargo test -p finsight-core
 ```
 
 Expected: all green.
@@ -1803,7 +1966,7 @@ Expected: all green.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/core/src/seed.rs crates/core/src/lib.rs crates/core/tests/seed.rs
+git add crates/finsight-core/src/seed.rs crates/finsight-core/src/lib.rs crates/finsight-core/tests/seed.rs
 git commit -m "feat(core): walking-skeleton seed (4 cats, 1 account, 3 txns)"
 ```
 
@@ -1814,22 +1977,22 @@ git commit -m "feat(core): walking-skeleton seed (4 cats, 1 account, 3 txns)"
 These crates ship in later phases; we add minimal Cargo.toml + lib.rs so the workspace compiles and the file structure matches the spec.
 
 **Files:**
-- Create: `crates/providers/Cargo.toml`
-- Create: `crates/providers/src/lib.rs`
-- Create: `crates/agent/Cargo.toml`
-- Create: `crates/agent/src/lib.rs`
+- Create: `crates/finsight-providers/Cargo.toml`
+- Create: `crates/finsight-providers/src/lib.rs`
+- Create: `crates/finsight-agent/Cargo.toml`
+- Create: `crates/finsight-agent/src/lib.rs`
 
 - [ ] **Step 1: providers/Cargo.toml**
 
 ```toml
 [package]
-name = "providers"
+name = "finsight-providers"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-core = { path = "../core" }
+finsight-core = { path = "../finsight-core" }
 async-trait.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
@@ -1853,13 +2016,13 @@ pub trait SyncProvider: Send + Sync {
 
 ```toml
 [package]
-name = "agent"
+name = "finsight-agent"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-core = { path = "../core" }
+finsight-core = { path = "../finsight-core" }
 async-trait.workspace = true
 anyhow.workspace = true
 serde.workspace = true
@@ -1895,7 +2058,7 @@ Expected: compiles clean.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/providers crates/agent
+git add crates/finsight-providers crates/finsight-agent
 git commit -m "chore: stub providers + agent crates"
 ```
 
@@ -1909,9 +2072,9 @@ git commit -m "chore: stub providers + agent crates"
 - Create: `src-tauri/build.rs`
 - Create: `src-tauri/src/main.rs`
 - Create: `src-tauri/icons/icon.png` (32×32 placeholder)
-- Create: `crates/app/Cargo.toml`
-- Create: `crates/app/src/lib.rs`
-- Create: `crates/app/src/error.rs`
+- Create: `crates/finsight-app/Cargo.toml`
+- Create: `crates/finsight-app/src/lib.rs`
+- Create: `crates/finsight-app/src/error.rs`
 
 - [ ] **Step 1: Create icons placeholder**
 
@@ -1945,7 +2108,7 @@ New-Item -ItemType Directory -Force src-tauri/icons | Out-Null
 
 ```toml
 [package]
-name = "app"
+name = "finsight-app"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
@@ -1958,9 +2121,9 @@ name = "export_bindings"
 path = "src/bin/export_bindings.rs"
 
 [dependencies]
-core = { path = "../core" }
-providers = { path = "../providers" }
-agent = { path = "../agent" }
+finsight-core = { path = "../finsight-core" }
+finsight-providers = { path = "../finsight-providers" }
+finsight-agent = { path = "../finsight-agent" }
 anyhow.workspace = true
 thiserror.workspace = true
 serde.workspace = true
@@ -1975,29 +2138,64 @@ tauri-specta.workspace = true
 tauri = { version = "2", features = [] }
 ```
 
-- [ ] **Step 3: Create crates/app/src/error.rs**
+- [ ] **Step 3: Create crates/finsight-app/src/error.rs**
 
 ```rust
+use finsight_core::CoreError;
 use serde::Serialize;
+use serde_json::Value;
 use specta::Type;
 
+/// Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
+/// `message` is human-readable; `details` is structured context for logging
+/// and possible inline rendering.
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppError {
     pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
 }
 
-impl<E: std::fmt::Display> From<E> for AppError {
-    fn from(e: E) -> Self {
-        Self { code: "internal".into(), message: e.to_string() }
+impl AppError {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self { code: code.into(), message: message.into(), details: None }
+    }
+    pub fn with_details(mut self, details: Value) -> Self {
+        self.details = Some(details);
+        self
     }
 }
+
+/// Explicit conversion from CoreError. Mapping preserves the cause kind so
+/// the frontend can distinguish "db locked" from "keychain denied" etc.
+impl From<CoreError> for AppError {
+    fn from(e: CoreError) -> Self {
+        let code = match &e {
+            CoreError::Keychain(_) => "core.keychain",
+            CoreError::Database(_) => "core.db",
+            CoreError::Pool(_) => "core.pool",
+            CoreError::Migration(_) => "core.migration",
+            CoreError::InvalidState(_) => "core.invalid_state",
+        };
+        AppError::new(code, e.to_string())
+    }
+}
+
+impl From<tauri::Error> for AppError {
+    fn from(e: tauri::Error) -> Self {
+        AppError::new("tauri", e.to_string())
+    }
+}
+
+// Deliberately NOT a blanket From<E: Display> — we want each error source
+// to map to a meaningful machine-readable code.
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
 ```
 
-- [ ] **Step 4: Create crates/app/src/lib.rs (minimal)**
+- [ ] **Step 4: Create crates/finsight-app/src/lib.rs (minimal)**
 
 ```rust
 //! FinSight Tauri app — command surface + lifecycle.
@@ -2005,7 +2203,7 @@ pub type AppResult<T> = std::result::Result<T, AppError>;
 pub mod commands;
 pub mod error;
 
-use core::Db;
+use finsight_core::Db;
 use std::sync::Arc;
 
 pub struct AppState {
@@ -2021,7 +2219,7 @@ impl AppState {
 
 - [ ] **Step 5: Create commands mod stub**
 
-Create `crates/app/src/commands/mod.rs`:
+Create `crates/finsight-app/src/commands/mod.rs`:
 
 ```rust
 pub mod accounts;
@@ -2030,11 +2228,11 @@ pub mod transactions;
 ```
 
 Create empty stubs (filled in Task 13):
-- `crates/app/src/commands/accounts.rs` containing `// filled in Task 13`
-- `crates/app/src/commands/transactions.rs` containing `// filled in Task 13`
-- `crates/app/src/commands/meta.rs` containing `// filled in Task 13`
+- `crates/finsight-app/src/commands/accounts.rs` containing `// filled in Task 13`
+- `crates/finsight-app/src/commands/transactions.rs` containing `// filled in Task 13`
+- `crates/finsight-app/src/commands/meta.rs` containing `// filled in Task 13`
 
-- [ ] **Step 6: Tauri config**
+- [ ] **Step 6: Tauri config (with real CSP)**
 
 Create `src-tauri/tauri.conf.json`:
 
@@ -2063,7 +2261,7 @@ Create `src-tauri/tauri.conf.json`:
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -2079,6 +2277,26 @@ Create `src-tauri/tauri.conf.json`:
   }
 }
 ```
+
+- [ ] **Step 6b: Capability file (required by Tauri 2)**
+
+Without this file, `invoke()` calls fail at runtime with permission errors.
+
+Create `src-tauri/capabilities/default.json`:
+
+```json
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
+```
+
+tauri-specta auto-generates per-command permissions; once Task 13/14 lands the bindings, an additional capability file referencing the generated command permissions will be added.
 
 - [ ] **Step 7: src-tauri/Cargo.toml**
 
@@ -2101,13 +2319,15 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-app = { path = "../crates/app" }
-core = { path = "../crates/core" }
+finsight-app = { path = "../crates/finsight-app" }
+finsight-core = { path = "../crates/finsight-core" }
 tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+serde.workspace = true
 ```
 
 - [ ] **Step 8: src-tauri/build.rs**
@@ -2151,7 +2371,7 @@ Expected: compiles. If Tauri pulls a system dep on Linux, install it per the CI 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add src-tauri crates/app
+git add src-tauri crates/finsight-app
 git commit -m "chore: Tauri 2 scaffold + app crate skeleton"
 ```
 
@@ -2654,21 +2874,21 @@ git commit -m "feat(ui): Vite+React+TS shell with sidebar, routing, theme, query
 ### Task 13: Tauri commands + AppState wiring (one for accounts, one for transactions, one ready-probe)
 
 **Files:**
-- Modify: `crates/app/src/commands/accounts.rs`
-- Modify: `crates/app/src/commands/transactions.rs`
-- Modify: `crates/app/src/commands/meta.rs`
-- Modify: `crates/app/src/lib.rs`
+- Modify: `crates/finsight-app/src/commands/accounts.rs`
+- Modify: `crates/finsight-app/src/commands/transactions.rs`
+- Modify: `crates/finsight-app/src/commands/meta.rs`
+- Modify: `crates/finsight-app/src/lib.rs`
 - Modify: `src-tauri/src/main.rs`
 
 - [ ] **Step 1: Implement accounts command**
 
-`crates/app/src/commands/accounts.rs`:
+`crates/finsight-app/src/commands/accounts.rs`:
 
 ```rust
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use core::models::AccountSummary;
-use core::repos::{accounts, run};
+use finsight_finsight_core::models::AccountSummary;
+use finsight_core::repos::{accounts, run};
 
 #[tauri::command]
 #[specta::specta]
@@ -2676,20 +2896,20 @@ pub async fn list_accounts(state: tauri::State<'_, AppState>) -> AppResult<Vec<A
     let db = state.db.clone();
     let result = run(&db, |conn| accounts::list_summaries(conn))
         .await
-        .map_err(|e| AppError { code: "core".into(), message: e.to_string() })?;
+        .map_err(AppError::from)?;
     Ok(result)
 }
 ```
 
 - [ ] **Step 2: Implement transactions command**
 
-`crates/app/src/commands/transactions.rs`:
+`crates/finsight-app/src/commands/transactions.rs`:
 
 ```rust
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use core::models::Transaction;
-use core::repos::{run, transactions};
+use finsight_finsight_core::models::Transaction;
+use finsight_core::repos::{run, transactions};
 use serde::Deserialize;
 use specta::Type;
 
@@ -2725,7 +2945,7 @@ pub async fn list_transactions(
 
 - [ ] **Step 3: Implement meta command**
 
-`crates/app/src/commands/meta.rs`:
+`crates/finsight-app/src/commands/meta.rs`:
 
 ```rust
 use crate::error::AppResult;
@@ -2746,7 +2966,7 @@ pub async fn app_ready() -> AppResult<AppReady> {
 
 - [ ] **Step 4: app/src/lib.rs — add `run` factory + specta export**
 
-Replace `crates/app/src/lib.rs`:
+Replace `crates/finsight-app/src/lib.rs`:
 
 ```rust
 //! FinSight Tauri app — command surface + lifecycle.
@@ -2754,7 +2974,7 @@ Replace `crates/app/src/lib.rs`:
 pub mod commands;
 pub mod error;
 
-use core::{db::run_migrations, Db};
+use finsight_core::{db::run_migrations, Db};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -2778,6 +2998,14 @@ pub fn run() -> anyhow::Result<()> {
     let builder = build_specta_builder();
 
     let app = tauri::Builder::default()
+        // Reject second instances so two windows can't fight over the same SQLite WAL.
+        // The callback fires in the FIRST process when someone tries to launch a SECOND;
+        // we focus our window instead of opening a new one.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
@@ -2790,7 +3018,7 @@ pub fn run() -> anyhow::Result<()> {
             let db = Db::open(&db_path, &key)
                 .map_err(|e| anyhow::anyhow!("db open error: {e}"))?;
             run_migrations(&db).map_err(|e| anyhow::anyhow!("migrations: {e}"))?;
-            core::seed::walking_skeleton(&db).map_err(|e| anyhow::anyhow!("seed: {e}"))?;
+            finsight_core::seed::walking_skeleton(&db).map_err(|e| anyhow::anyhow!("seed: {e}"))?;
 
             app.manage(AppState { db: Arc::new(db) });
             Ok(())
@@ -2810,7 +3038,7 @@ Replace `src-tauri/src/main.rs`:
 
 fn main() {
     tracing_subscriber::fmt::init();
-    if let Err(e) = app::run() {
+    if let Err(e) = finsight_app::run() {
         eprintln!("fatal: {e}");
         std::process::exit(1);
     }
@@ -2819,11 +3047,11 @@ fn main() {
 
 - [ ] **Step 6: Add specta export binary**
 
-Create `crates/app/src/bin/export_bindings.rs`:
+Create `crates/finsight-app/src/bin/export_bindings.rs`:
 
 ```rust
 //! Exports TypeScript bindings for the frontend.
-//! Invoked by `cargo run -p app --bin export_bindings` or `pnpm bindings`.
+//! Invoked by `cargo run -p finsight-app --bin export_bindings` or `pnpm bindings`.
 
 fn main() -> anyhow::Result<()> {
     let builder = app::build_specta_builder();
@@ -2851,7 +3079,7 @@ Expected: compiles.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add crates/app src-tauri/src/main.rs
+git add crates/finsight-app src-tauri/src/main.rs
 git commit -m "feat(app): list_accounts + list_transactions commands wired to AppState"
 ```
 
@@ -2868,7 +3096,7 @@ git commit -m "feat(app): list_accounts + list_transactions commands wired to Ap
 - [ ] **Step 1: Run the bindings exporter**
 
 ```bash
-cd crates/app && cargo run --bin export_bindings
+cd crates/finsight-app && cargo run --bin export_bindings
 cd ../..
 ```
 
@@ -3321,10 +3549,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --all -- --check
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: pnpm --filter ui typecheck
       - run: pnpm --filter ui test
+      - run: pnpm --filter ui build
+      - run: pnpm tauri:build --debug
+        env:
+          CI: "true"
 ```
 
 - [ ] **Step 2: Commit**
@@ -3365,8 +3598,8 @@ If a target fails on CI but works locally, fix CI before merging.
 - Privacy mode keystroke binding (Phase 6)
 
 **Type consistency check:**
-- `AccountSummary` shape in `core::models` matches the mock used in `Today.test.tsx` ✓
-- `Transaction` shape in `core::models` matches mock in `Transactions.test.tsx` ✓
+- `AccountSummary` shape in `finsight_core::models` matches the mock used in `Today.test.tsx` ✓
+- `Transaction` shape in `finsight_core::models` matches mock in `Transactions.test.tsx` ✓
 - `TransactionStatus` rendering uses lowercase ("cleared") matching `as_db` ✓
 - `commands::listAccounts` (camelCase from tauri-specta) referenced consistently ✓
 
@@ -3377,6 +3610,24 @@ If a target fails on CI but works locally, fix CI before merging.
 - Keychain on a Linux CI runner may use a mock — fine for tests.
 
 ---
+
+## Post-advisor cleanup tracker
+
+The advisor review surfaced findings that aren't fully resolved by this plan and need either follow-up tasks or judgment during execution:
+
+| Finding | Where to handle |
+|---|---|
+| Inline styles in Today/Transactions regress prototype CSS | During Tasks 15/16: lift hero + transaction-row classes into `app.css` from `design/plutus/project/styles.css` rather than writing inline `style={...}` |
+| No `ErrorBoundary` around `<Routes>` | Add to `main.tsx` during Task 12 review |
+| `audit_log` table created but never written in MVP | Add a one-line comment in the migration; first writers land in Phase 2 (CSV import) and Phase 3 (agent writes) |
+| Tracing field-redaction (no amounts/merchants at INFO) | Document as Phase 6 task; current `tracing_subscriber::fmt::init()` is acceptable for development |
+| Accessibility: `scope="col"` on `<th>`, `aria-label` on icon-only controls | Add during Task 16; full accessibility audit in Phase 6 |
+| Specta RC version pinning policy | Documented in spec §7.6; revisit on every dependency bump |
+| `Cargo.lock` policy | Commit it (binary project); add a sentence to CONTRIBUTING.md when it's created |
+| `tauri build --debug` packaging step | Added to CI in Task 18; if Linux Tauri packaging fails on first run, install `libsoup-3.0-dev` and `libjavascriptcoregtk-4.1-dev` |
+| Per-command capability file from tauri-specta | Verify in Task 14 that the bindings export also writes a `permissions/` directory; add a second capability file referencing those permissions |
+
+These are real and worth addressing — they just don't need to gate Phase 0+1 execution.
 
 ## Execution Handoff
 

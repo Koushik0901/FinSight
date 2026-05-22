@@ -43,12 +43,12 @@ Rust workspace + React/TypeScript frontend, wrapped in Tauri 2.
 finsight/
 ├── src-tauri/                       # Tauri shell (thin)
 │   ├── tauri.conf.json
-│   └── src/main.rs                  # registers crates::app
+│   └── src/main.rs                  # calls finsight_app::run()
 ├── crates/
-│   ├── core/                        # domain types, SQLCipher, migrations, repos
-│   ├── providers/                   # data ingestion (CSV/OFX/QIF; trait for future Plaid/SimpleFin)
-│   ├── agent/                       # LLM provider trait + impls, categorizer, anomaly, palette
-│   └── app/                         # Tauri command handlers, event emission, glue
+│   ├── finsight-core/               # domain types, SQLCipher, migrations, repos
+│   ├── finsight-providers/          # data ingestion (CSV/OFX/QIF; trait for future Plaid/SimpleFin)
+│   ├── finsight-agent/              # LLM provider trait + impls, categorizer, anomaly, palette
+│   └── finsight-app/                # Tauri command handlers, event emission, glue
 ├── ui/                              # React + Vite frontend
 │   ├── src/
 │   │   ├── api/                     # tauri-specta bindings + Tanstack Query hooks
@@ -63,30 +63,42 @@ finsight/
 
 ### 3.2 Why this shape
 
-- **Clean swap points.** `CompletionProvider`, `EmbeddingProvider`, and `SyncProvider` are pure traits in their own crates. Swapping Ollama → Anthropic or adding Plaid does not touch `core`, `app`, or the frontend.
-- **Independently testable.** Each crate exposes a small public API; no crate depends on Tauri except `app`.
+- **Clean swap points.** `CompletionProvider`, `EmbeddingProvider`, and `SyncProvider` are pure traits in their own crates. Swapping Ollama → Anthropic or adding Plaid does not touch `finsight-core`, `finsight-app`, or the frontend.
+- **Independently testable.** Each crate exposes a small public API; no crate depends on Tauri except `finsight-app`.
+- **Crate naming.** All crates are namespaced with `finsight-` prefix to avoid shadowing Rust stdlib (`core`) and to make `use` paths self-documenting.
 - **Type contract.** `tauri-specta` generates TypeScript types from Rust command signatures. There is one source of truth for the data shapes that cross the IPC boundary.
 
 ### 3.3 Crate responsibilities
 
 | Crate | Owns | Depends on |
 |---|---|---|
-| `core` | DB connection pool, migrations, domain models, repositories, SQLCipher key loading | (none) |
-| `providers` | `SyncProvider` trait, `CsvProvider` impl, OFX/QIF parsers | `core` (types only) |
-| `agent` | `CompletionProvider` + `EmbeddingProvider` traits, `OllamaProvider`, `AnthropicProvider`, categorizer, anomaly detector, palette query handler | `core` (repos), `reqwest` |
-| `app` | Tauri commands, event emission, lifecycle wiring | all of the above + `tauri` |
+| `finsight-core` | DB connection pool, migrations, domain models, repositories, SQLCipher key loading | (none) |
+| `finsight-providers` | `SyncProvider` trait, `CsvProvider` impl, OFX/QIF parsers | `finsight-core` (types only) |
+| `finsight-agent` | `CompletionProvider` + `EmbeddingProvider` traits, `OllamaProvider`, `AnthropicProvider`, categorizer, anomaly detector, palette query handler | `finsight-core` (repos), `reqwest` |
+| `finsight-app` | Tauri commands, event emission, lifecycle wiring | all of the above + `tauri` |
 
 ## 4. Data layer
 
 ### 4.1 Database
 
 - **Engine:** SQLite (latest) compiled with SQLCipher.
-- **Driver:** `rusqlite` with the `sqlcipher` feature, plus `r2d2` for connection pooling. (`sqlx` was considered and rejected: `sqlx` builds against vanilla `libsqlite3-sys`; getting it to link `libsqlcipher` is fragile and breaks on `sqlx` updates. `rusqlite + sqlcipher` is the path that actually works across mac/Windows/Linux. We lose compile-time query macros but gain a working build.)
+- **Driver:** `rusqlite` with the `bundled-sqlcipher-vendored-openssl` feature, plus `r2d2` for connection pooling. (`sqlx` was considered and rejected: `sqlx` builds against vanilla `libsqlite3-sys`; getting it to link `libsqlcipher` is fragile and breaks on `sqlx` updates. `rusqlite + sqlcipher` is the path that actually works across mac/Windows/Linux. We lose compile-time query macros but gain a working build.)
 - **Async bridge:** queries run on a `tokio::task::spawn_blocking` boundary inside the repo layer so the synchronous `rusqlite` API does not block the Tauri runtime.
-- **At-rest encryption:** SQLCipher with a 32-byte random key per install. Key stored in OS keychain via `keyring-rs` (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux).
+- **Pool:** `r2d2` with `max_size = 4` (single-user app — larger pools waste memory and increase WAL contention).
+- **At-rest encryption:** SQLCipher with a 32-byte random key per install. Key stored in OS keychain via `keyring-rs` (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux). Applied via `conn.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";"))` so SQLCipher treats it as a raw key, not a passphrase. (`pragma_update("key", ...)` would bind it as a SQL string and trigger PBKDF2 — incorrect.)
 - **Keychain failure path:** if the OS denies keychain access (typical first-run prompt the user can deny), the app surfaces a modal explaining the choice and offers a single retry. A second denial blocks app start with a clear "FinSight needs keychain access to keep your data encrypted" screen — no plaintext fallback path. Documented in Settings → Privacy.
-- **Pragmas:** `journal_mode=WAL`, `synchronous=NORMAL`, `mmap_size=268435456` (256MB), `cache_size=-65536` (64MB), `foreign_keys=ON`, `busy_timeout=5000`. `sqlite-vec` extension loaded per-connection via `load_extension` (enabled at pool init; SQLCipher allows this but extension loading is off by default).
-- **Migrations:** `refinery` (or hand-rolled migration runner — choice deferred to plan) against `crates/core/migrations/`. Forward-only in production; reversible in dev.
+- **Pragmas (per connection):**
+  - `journal_mode = WAL`
+  - `synchronous = NORMAL`
+  - `cache_size = -65536` (64MB)
+  - `foreign_keys = ON`
+  - `busy_timeout = 5000`
+  - `secure_delete = ON` — overwrites deleted rows with zeros so plaintext does not linger in the encrypted file
+  - `cipher_memory_security = ON` — additional in-memory protection (SQLCipher 4+)
+  - **No `mmap_size`** — SQLCipher 4 explicitly does not support memory-mapped I/O; using it risks leaking unencrypted pages to swap.
+  - `sqlite-vec` extension loaded per-connection via `load_extension` (enabled at pool init; SQLCipher allows this but extension loading is off by default)
+- **Migrations:** `refinery` (or hand-rolled migration runner — choice deferred to plan) against `crates/finsight-core/migrations/`. Forward-only in production; reversible in dev.
+- **Integrity + backup:** `integrity_check()` repo method exposed as a Settings command (Phase 6). Export-everything (encrypted SQLCipher dump + plaintext JSON option for portability) is a Settings command in Phase 2; the app does not silently auto-backup but surfaces "Last backup: never / N days ago" prominently.
 
 ### 4.2 Schema
 
@@ -339,16 +351,27 @@ The mapping UI presents the first 10 rows of the CSV in a table, lets the user a
 - Font scaling: `rem`-based throughout; respects browser zoom.
 - Screen-reader: semantic landmarks (`<nav>`, `<main>`, `<aside>`), `aria-live="polite"` for the agent-activity stream, `aria-label` on icon-only controls.
 
-### 7.2 Privacy
+### 7.2 Privacy & security
 
 - All data lives in `~/<app-data>/finsight/data.sqlcipher`. Key in OS keychain. Nothing leaves the machine.
 - Anthropic provider, if configured, is the **only** outbound network destination, and only when the user invokes ⌘K, categorization, or anomaly explanation while that provider is selected. Settings includes a clear indicator.
 - Privacy mode (⌘.) replaces every numeric amount with a blurred placeholder. Toggleable globally; state in `settings.privacy`.
 - "Screen-share mode" (deferred to follow-on spec) is foreshadowed by the privacy primitive.
 
+**Webview hardening:**
+- **CSP:** `tauri.conf.json` ships with a real Content Security Policy: `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ipc: http://ipc.localhost`. Outbound LLM hosts (Ollama localhost, Anthropic api host) are added via Tauri capability scopes when the user enables them, not by relaxing CSP globally.
+- **Capabilities:** `src-tauri/capabilities/default.json` declares the exact permissions the main window has access to. No wildcard permissions.
+- **Single-instance:** `tauri-plugin-single-instance` is required. Two windows pointed at the same encrypted SQLite file would deadlock on WAL locks or corrupt the DB.
+- **No DevTools in release builds.** Debug builds have devtools enabled for development; release bundles ship without.
+
+**Backups & integrity:**
+- `integrity_check()` repo method exposed as a Settings → "Verify database" command.
+- Export-everything (encrypted SQLCipher dump + plaintext JSON option) lives in Settings (Phase 2). The app does **not** silently auto-backup, but the Settings screen surfaces "Last backup: …" prominently to nudge the habit.
+
 ### 7.3 Error handling
 
-- All Tauri commands return `Result<T, AppError>`. `AppError` is a flat enum with `code`, `message`, `details`. The frontend renders an error toast with the message; details are logged.
+- All Tauri commands return `Result<T, AppError>`. `AppError` is a struct with `code: String` (machine-readable, e.g. `core.db.locked`), `message: String` (human-readable), and `details: serde_json::Value` (structured context). The frontend renders an error toast with the message; the full `details` is logged.
+- `From` impls into `AppError` are **explicit** per source error type (`From<CoreError>`, `From<ProviderError>`, etc.) — not a blanket `From<E: Display>`, which would erase error-source info.
 - Long-running operations (CSV import, batch categorization) emit `*.error` events alongside `*.progress` events. Frontend shows an inline error in the progress UI rather than a global toast.
 - LLM-provider unavailability is not an error — it's a known state surfaced as a quiet banner.
 
@@ -365,7 +388,16 @@ The mapping UI presents the first 10 rows of the CSV in a table, lets the user a
 - **`agent`:** trait-level tests using `MockCompletionProvider` + `MockEmbeddingProvider` that return canned responses; integration tests against Ollama gated by an env var.
 - **`app`:** Tauri command tests via the Tauri test harness.
 - **Frontend:** Vitest for hooks/utilities; Playwright for one E2E smoke (onboarding → import sample → see Today).
-- **CI:** `cargo test`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `cargo clippy --all-targets -- -D warnings`.
+- **CI:** `cargo test`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `cargo clippy --all-targets -- -D warnings`, plus `cargo tauri build --debug` on each OS so packaging breakage is caught before merge.
+
+### 7.6 OSS hygiene
+
+- **LICENSE** — AGPL-3.0-or-later text at repo root from first commit. Required by AGPL distribution clause.
+- **SECURITY.md** — documented disclosure channel and response SLA for an app holding bank data.
+- **CONTRIBUTING.md, CODE_OF_CONDUCT.md, PR template** — deferred to polish phase but tracked.
+- **`rustfmt.toml`, `clippy.toml`, `.editorconfig`** — standard files OSS readers expect; ship from Phase 0.
+- **`Cargo.lock` is committed** (binary project).
+- **Specta RC versions pinned to exact tags** with documentation explaining the pin. Move off RCs once specta 2.0 stable lands.
 
 ## 8. Build order (walking skeleton)
 
