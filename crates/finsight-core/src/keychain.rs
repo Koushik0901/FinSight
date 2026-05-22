@@ -22,8 +22,12 @@ pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<String> {
     }
 }
 
+/// Removes the keychain entry, if any. Returns Ok(()) whether or not an entry existed.
 pub fn delete_key(service: &str, user: &str) -> CoreResult<()> {
     let entry = Entry::new(service, user)?;
-    entry.delete_credential()?;
-    Ok(())
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
