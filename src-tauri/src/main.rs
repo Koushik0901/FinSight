@@ -2,9 +2,10 @@
 
 fn main() {
     tracing_subscriber::fmt::init();
-    // Real lifecycle (DB, single-instance, commands) wired in Task 13.
-    tauri::Builder::default()
-        .setup(|_app| Ok(()))
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+
+    let builder = finsight_app::configure_app(tauri::Builder::default());
+    if let Err(e) = builder.run(tauri::generate_context!()) {
+        eprintln!("fatal: {e}");
+        std::process::exit(1);
+    }
 }
