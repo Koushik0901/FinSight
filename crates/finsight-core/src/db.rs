@@ -49,10 +49,21 @@ impl Db {
                 Ok(())
             });
 
-        // 4 connections is plenty for a single-user desktop app; r2d2 defaults (min_idle = max_size, 30s connection_timeout) are fine.
-        let pool = Pool::builder().max_size(4).build(manager).map_err(|e| {
-            CoreError::InvalidState(format!("failed to build connection pool: {e}"))
-        })?;
+        // 4 connections is plenty for a single-user desktop app.
+        //
+        // min_idle = Some(0): r2d2's default is min_idle = max_size, which builds
+        // all 4 connections eagerly in parallel during Pool::build(). Each runs
+        // with_init, and on SQLCipher + WAL the first connection holds the *-shm
+        // file briefly while setting up WAL mode; the other three race for the
+        // same lock and surface a transient "database is locked" error at
+        // startup. Lazy construction (min_idle = 0) sidesteps the race entirely.
+        let pool = Pool::builder()
+            .max_size(4)
+            .min_idle(Some(0))
+            .build(manager)
+            .map_err(|e| {
+                CoreError::InvalidState(format!("failed to build connection pool: {e}"))
+            })?;
 
         // Touch a connection once now to surface key/file errors immediately.
         let _ = pool.get()?;
