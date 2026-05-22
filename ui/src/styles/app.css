@@ -1,0 +1,51 @@
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  border-right: 1px solid var(--hairline);
+  padding: var(--pad-3) var(--pad-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  background: var(--surface);
+}
+
+.sidebar h1 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 var(--pad-2) 0;
+  letter-spacing: -0.01em;
+}
+
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+
+.sidebar a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+.sidebar a:hover { background: var(--surface-2); color: var(--text); }
+.sidebar a[aria-current="page"] {
+  background: var(--accent-2);
+  color: var(--text);
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+.main { padding: var(--pad-3); overflow: auto; }
+
+.stub {
+  display: grid;
+  place-items: center;
+  height: 60vh;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.privacy-on .money { filter: blur(8px); }
