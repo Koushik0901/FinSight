@@ -36,3 +36,4 @@ specta-typescript = { version = "=0.0.9" }
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 rstest = "0.21"
 tempfile = "3"
+zeroize = { version = "1.8", features = ["zeroize_derive"] }

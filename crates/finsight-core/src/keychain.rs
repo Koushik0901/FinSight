@@ -1,13 +1,15 @@
 use crate::error::CoreResult;
 use keyring::Entry;
 use rand::RngCore;
+use zeroize::Zeroizing;
 
-/// Returns a 64-char hex string (32 random bytes).
+/// Returns a 64-char hex string (32 random bytes) wrapped in `Zeroizing` so
+/// the in-memory copy is securely wiped when dropped.
 /// If a key already exists for (service, user), returns it; otherwise creates one.
-pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<String> {
+pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<Zeroizing<String>> {
     let entry = Entry::new(service, user)?;
     match entry.get_password() {
-        Ok(existing) => Ok(existing),
+        Ok(existing) => Ok(Zeroizing::new(existing)),
         Err(keyring::Error::NoEntry) => {
             let mut bytes = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut bytes);
@@ -16,7 +18,11 @@ pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<String> {
                 .map(|b| format!("{:02x}", b))
                 .collect::<String>();
             entry.set_password(&hex)?;
-            Ok(hex)
+            // Zero the local copy of the raw bytes.
+            for b in bytes.iter_mut() {
+                *b = 0;
+            }
+            Ok(Zeroizing::new(hex))
         }
         Err(e) => Err(e.into()),
     }

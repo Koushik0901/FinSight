@@ -1105,6 +1105,8 @@ dependencies = [
  "finsight-agent",
  "finsight-core",
  "finsight-providers",
+ "keyring",
+ "rusqlite",
  "serde",
  "serde_json",
  "specta",
@@ -1139,6 +1141,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

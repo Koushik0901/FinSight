@@ -4,6 +4,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use refinery::embed_migrations;
 use rusqlite::Connection;
 use std::path::Path;
+use zeroize::Zeroizing;
 
 embed_migrations!("./migrations");
 
@@ -25,12 +26,15 @@ impl Db {
                 "key_hex must be 64 ASCII hex chars (32 bytes)".into(),
             ));
         }
-        let key_hex = key_hex.to_owned();
+        let key_hex = Zeroizing::new(key_hex.to_owned());
 
         let manager =
             SqliteConnectionManager::file(path).with_init(move |conn: &mut Connection| {
                 // Raw 256-bit key. MUST come first, before any other PRAGMA touches the DB.
-                conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))?;
+                // The format! produces a String that contains the key — wrap in Zeroizing
+                // so it's wiped from memory when the closure invocation returns.
+                let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", &*key_hex));
+                conn.execute_batch(&pragma)?;
 
                 // SQLCipher hygiene
                 conn.execute_batch("PRAGMA cipher_memory_security = ON;")?;

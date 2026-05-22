@@ -20,6 +20,7 @@ rand.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 specta = { workspace = true, features = ["derive", "chrono", "uuid"] }
+zeroize.workspace = true
 
 [dev-dependencies]
 rstest.workspace = true
