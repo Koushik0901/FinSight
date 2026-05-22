@@ -27,7 +27,7 @@ rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"]
 r2d2 = "0.8"
 r2d2_sqlite = { version = "0.24", features = ["bundled-sqlcipher"] }
 refinery = { version = "0.8", features = ["rusqlite"] }
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 rand = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
