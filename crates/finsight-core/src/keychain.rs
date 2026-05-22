@@ -11,18 +11,9 @@ pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<Zeroizing<Str
     match entry.get_password() {
         Ok(existing) => Ok(Zeroizing::new(existing)),
         Err(keyring::Error::NoEntry) => {
-            let mut bytes = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut bytes);
-            let hex = bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>();
-            entry.set_password(&hex)?;
-            // Zero the local copy of the raw bytes.
-            for b in bytes.iter_mut() {
-                *b = 0;
-            }
-            Ok(Zeroizing::new(hex))
+            let hex = generate_random_key();
+            entry.set_password(&*hex)?;
+            Ok(hex)
         }
         Err(e) => Err(e.into()),
     }
@@ -40,6 +31,7 @@ pub fn delete_key(service: &str, user: &str) -> CoreResult<()> {
 
 /// Generate a fresh random 64-char hex key (32 bytes) without touching the OS keychain.
 /// Intended for tests. In production code, use `load_or_create_key` instead.
+#[doc(hidden)]
 pub fn generate_random_key() -> Zeroizing<String> {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
