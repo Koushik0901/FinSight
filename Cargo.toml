@@ -2,12 +2,12 @@
 resolver = "2"
 members = [
   "crates/finsight-core",
-  "crates/finsight-providers",
-  "crates/finsight-agent",
-  "crates/finsight-app",
-  "src-tauri",
+  # Re-added by subsequent tasks as each crate is created:
+  # "crates/finsight-providers",
+  # "crates/finsight-agent",
+  # "crates/finsight-app",
+  # "src-tauri",
 ]
-default-members = ["src-tauri"]
 
 [workspace.package]
 edition = "2021"
@@ -25,7 +25,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 rusqlite = { version = "0.31", features = ["bundled-sqlcipher-vendored-openssl"] }
 r2d2 = "0.8"
-r2d2_sqlite = { version = "0.24", features = ["bundled-sqlcipher-vendored-openssl"] }
+r2d2_sqlite = { version = "0.24", features = ["bundled-sqlcipher"] }
 refinery = { version = "0.8", features = ["rusqlite"] }
 keyring = "3"
 rand = "0.8"
