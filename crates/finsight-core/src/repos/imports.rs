@@ -23,12 +23,20 @@ impl ImportSource {
             Self::Sample => "sample",
         }
     }
+
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "manual" => Self::Manual,
+            "sample" => Self::Sample,
+            _ => Self::Csv,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Import {
     pub id: String,
-    pub source: String,
+    pub source: ImportSource,
     pub filename: Option<String>,
     pub account_id: Option<String>,
     pub started_at: DateTime<Utc>,
@@ -87,7 +95,7 @@ pub fn list_unfinished(conn: &Connection) -> CoreResult<Vec<Import>> {
     let rows = stmt.query_map([], |r| {
         Ok(Import {
             id: r.get(0)?,
-            source: r.get(1)?,
+            source: ImportSource::from_db(&r.get::<_, String>(1)?),
             filename: r.get(2)?,
             account_id: r.get(3)?,
             started_at: parse_rfc3339(&r.get::<_, String>(4)?),
