@@ -37,3 +37,56 @@ fn insert_then_list_summaries_returns_one() {
     assert_eq!(list[0].balance_cents, 1_482_042);
     assert_eq!(list[0].name, "Joint Checking");
 }
+
+#[test]
+fn list_summaries_returns_empty_when_no_accounts() {
+    let (db, _dir) = open();
+    let mut conn = db.get().unwrap();
+    assert!(accounts::list_summaries(&mut conn).unwrap().is_empty());
+}
+
+#[test]
+fn list_summaries_excludes_archived_accounts() {
+    let (db, _dir) = open();
+    let mut conn = db.get().unwrap();
+
+    let live = accounts::insert(
+        &mut conn,
+        NewAccount {
+            owner: "joint".into(),
+            bank: "Mercury".into(),
+            r#type: AccountType::Checking,
+            name: "Live".into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#fff".into(),
+            opening_balance_cents: 100,
+        },
+    )
+    .unwrap();
+    let archived = accounts::insert(
+        &mut conn,
+        NewAccount {
+            owner: "joint".into(),
+            bank: "Mercury".into(),
+            r#type: AccountType::Checking,
+            name: "Gone".into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#000".into(),
+            opening_balance_cents: 0,
+        },
+    )
+    .unwrap();
+
+    // Mark one archived.
+    conn.execute(
+        "UPDATE accounts SET archived_at = ?1 WHERE id = ?2",
+        rusqlite::params![chrono::Utc::now().to_rfc3339(), archived.id],
+    )
+    .unwrap();
+
+    let list = accounts::list_summaries(&mut conn).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].id, live.id);
+}

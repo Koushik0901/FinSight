@@ -4,6 +4,9 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+/// Insert a new account and seed today's `account_balances` row with the
+/// opening balance. Must be called at most once per account-id; the seed
+/// row's PK is (account_id, as_of_date), so a same-day repeat would fail.
 pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();

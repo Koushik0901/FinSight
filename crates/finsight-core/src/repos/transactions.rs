@@ -62,82 +62,69 @@ impl Default for TxnFilter {
 }
 
 pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transaction>> {
-    let (sql, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = match &filter.account_id {
-        Some(aid) => (
-            "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
-                    t.merchant_id, m.canonical_name, m.color, m.initials, \
-                    t.category_id, c.label, c.color, t.status, t.notes, \
-                    t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at \
-             FROM transactions t \
-             LEFT JOIN merchants m ON m.id = t.merchant_id \
-             LEFT JOIN categories c ON c.id = t.category_id \
-             WHERE t.account_id = ?1 \
-             ORDER BY t.posted_at DESC \
-             LIMIT ?2 OFFSET ?3"
-                .to_string(),
-            vec![
-                Box::new(aid.clone()),
-                Box::new(filter.limit),
-                Box::new(filter.offset),
-            ],
-        ),
-        None => (
-            "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
-                    t.merchant_id, m.canonical_name, m.color, m.initials, \
-                    t.category_id, c.label, c.color, t.status, t.notes, \
-                    t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at \
-             FROM transactions t \
-             LEFT JOIN merchants m ON m.id = t.merchant_id \
-             LEFT JOIN categories c ON c.id = t.category_id \
-             ORDER BY t.posted_at DESC \
-             LIMIT ?1 OFFSET ?2"
-                .to_string(),
-            vec![Box::new(filter.limit), Box::new(filter.offset)],
-        ),
-    };
+    let mut sql = String::from(
+        "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
+                t.merchant_id, m.canonical_name, m.color, m.initials, \
+                t.category_id, c.label, c.color, t.status, t.notes, \
+                t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at \
+         FROM transactions t \
+         LEFT JOIN merchants m ON m.id = t.merchant_id \
+         LEFT JOIN categories c ON c.id = t.category_id ",
+    );
+
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(aid) = filter.account_id.as_ref() {
+        sql.push_str("WHERE t.account_id = ? ");
+        params.push(Box::new(aid.clone()));
+    }
+    sql.push_str("ORDER BY t.posted_at DESC LIMIT ? OFFSET ?");
+    params.push(Box::new(filter.limit));
+    params.push(Box::new(filter.offset));
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
-    let rows = stmt.query_map(params_refs.as_slice(), |r| {
-        let posted_at_s: String = r.get(2)?;
-        let created_at_s: String = r.get(17)?;
-        Ok(Transaction {
-            id: r.get(0)?,
-            account_id: r.get(1)?,
-            posted_at: DateTime::parse_from_rfc3339(&posted_at_s)
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        2,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?
-                .with_timezone(&Utc),
-            amount_cents: r.get(3)?,
-            merchant_raw: r.get(4)?,
-            merchant_id: r.get(5)?,
-            merchant_label: r.get(6)?,
-            merchant_color: r.get(7)?,
-            merchant_initials: r.get(8)?,
-            category_id: r.get(9)?,
-            category_label: r.get(10)?,
-            category_color: r.get(11)?,
-            status: TransactionStatus::from_db(&r.get::<_, String>(12)?),
-            notes: r.get(13)?,
-            ai_confidence: r.get(14)?,
-            ai_explanation: r.get(15)?,
-            is_anomaly: r.get::<_, i64>(16)? != 0,
-            created_at: DateTime::parse_from_rfc3339(&created_at_s)
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        17,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?
-                .with_timezone(&Utc),
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())),
+        |r| {
+            let posted_at_s: String = r.get(2)?;
+            let created_at_s: String = r.get(17)?;
+            Ok(Transaction {
+                id: r.get(0)?,
+                account_id: r.get(1)?,
+                posted_at: DateTime::parse_from_rfc3339(&posted_at_s)
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            2,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?
+                    .with_timezone(&Utc),
+                amount_cents: r.get(3)?,
+                merchant_raw: r.get(4)?,
+                merchant_id: r.get(5)?,
+                merchant_label: r.get(6)?,
+                merchant_color: r.get(7)?,
+                merchant_initials: r.get(8)?,
+                category_id: r.get(9)?,
+                category_label: r.get(10)?,
+                category_color: r.get(11)?,
+                status: TransactionStatus::from_db(&r.get::<_, String>(12)?),
+                notes: r.get(13)?,
+                ai_confidence: r.get(14)?,
+                ai_explanation: r.get(15)?,
+                is_anomaly: r.get::<_, i64>(16)? != 0,
+                created_at: DateTime::parse_from_rfc3339(&created_at_s)
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            17,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?
+                    .with_timezone(&Utc),
+            })
+        },
+    )?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
