@@ -6,7 +6,12 @@ use chrono::{Duration, Utc};
 use rusqlite::params;
 
 /// Seed the walking-skeleton fixture: 4 category groups + 4 categories,
-/// 3 merchants, 1 account, 3 transactions. Idempotent.
+/// 3 merchants, 1 account, 3 transactions.
+///
+/// Idempotent: if any account already exists, returns immediately. Otherwise
+/// uses `INSERT OR IGNORE` on the reference data (category groups, categories,
+/// merchants) so partial state from an earlier interrupted run does not block
+/// recovery — and then writes one account + three transactions.
 pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
     let mut conn = db.get()?;
 
@@ -36,7 +41,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
         ("wellbeing", "Wellbeing", Some("health, body, mind"), 4),
     ] {
         tx.execute(
-            "INSERT INTO category_groups (id, label, hint, sort_order) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT OR IGNORE INTO category_groups (id, label, hint, sort_order) VALUES (?1, ?2, ?3, ?4)",
             params![id, label, hint, sort],
         )?;
     }
@@ -49,7 +54,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
         ("subs", "fixed", "Subscriptions", "#F472B6", Some("📦")),
     ] {
         tx.execute(
-            "INSERT INTO categories (id, group_id, label, color, icon, sort_order) VALUES (?1,?2,?3,?4,?5,0)",
+            "INSERT OR IGNORE INTO categories (id, group_id, label, color, icon, sort_order) VALUES (?1,?2,?3,?4,?5,0)",
             params![id, group, label, color, icon],
         )?;
     }
@@ -61,7 +66,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
         ("m_netflix", "Netflix", "#F472B6", "NF"),
     ] {
         tx.execute(
-            "INSERT INTO merchants (id, canonical_name, color, initials) VALUES (?1,?2,?3,?4)",
+            "INSERT OR IGNORE INTO merchants (id, canonical_name, color, initials) VALUES (?1,?2,?3,?4)",
             params![id, name, color, initials],
         )?;
     }
