@@ -63,9 +63,6 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             run_migrations(&db).map_err(|e| -> Box<dyn std::error::Error> {
                 format!("migrations: {e}").into()
             })?;
-            finsight_core::seed::walking_skeleton(&db).map_err(
-                |e| -> Box<dyn std::error::Error> { format!("seed: {e}").into() },
-            )?;
 
             app.manage(AppState { db: Arc::new(db) });
             Ok(())

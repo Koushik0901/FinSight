@@ -28,3 +28,4 @@ tauri-plugin-single-instance = "2"
 [dev-dependencies]
 keyring.workspace = true
 rusqlite.workspace = true
+tempfile.workspace = true
