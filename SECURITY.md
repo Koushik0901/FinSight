@@ -13,8 +13,9 @@ reports seriously.
 
 ## Reporting a vulnerability
 
-Email **security@finsight.app** (or, if not yet set up, the maintainer at the
-email listed in `Cargo.toml`).
+Email **security@finsight.app** (or, until that address is set up, open a
+private security advisory on the project's GitHub repository — see the
+**Security** tab on the repo page).
 
 - Please include reproduction steps and the affected version.
 - We aim to acknowledge reports within 3 business days and to ship a fix or

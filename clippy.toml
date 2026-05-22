@@ -1,4 +1,4 @@
-# Allow up to 7 args before warning — repos sometimes need this.
+# Warn when a function has more than 8 args (clippy default is 7).
 too-many-arguments-threshold = 8
 # Tighter limits on cognitive complexity than the default.
 cognitive-complexity-threshold = 20
