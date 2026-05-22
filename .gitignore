@@ -1,0 +1,30 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Node / pnpm
+node_modules/
+**/node_modules/
+ui/dist/
+.pnpm-store/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local data
+*.sqlite
+*.sqlcipher
+*.db
+.env
+.env.local
+
+# Generated bindings — committed in this project
+# ui/src/api/bindings.ts is committed; do not ignore.
