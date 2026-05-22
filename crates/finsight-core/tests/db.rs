@@ -72,3 +72,9 @@ fn invalid_key_format_rejected() {
     assert!(Db::open(&path, "not-hex").is_err());
     assert!(Db::open(&path, "abc").is_err()); // wrong length
 }
+
+#[test]
+fn integrity_check_returns_ok_on_clean_db() {
+    let (db, _dir) = open();
+    assert_eq!(db.integrity_check().unwrap(), "ok");
+}

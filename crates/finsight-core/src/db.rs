@@ -38,12 +38,15 @@ impl Db {
                 // unencrypted pages to swap if enabled.
                 conn.pragma_update(None, "journal_mode", "WAL")?;
                 conn.pragma_update(None, "synchronous", "NORMAL")?;
+                // negative value = KiB → 64 MiB
                 conn.pragma_update(None, "cache_size", -65536_i64)?;
                 conn.pragma_update(None, "foreign_keys", true)?;
+                // ms
                 conn.pragma_update(None, "busy_timeout", 5000_i64)?;
                 Ok(())
             });
 
+        // 4 connections is plenty for a single-user desktop app; r2d2 defaults (min_idle = max_size, 30s connection_timeout) are fine.
         let pool = Pool::builder().max_size(4).build(manager).map_err(|e| {
             CoreError::InvalidState(format!("failed to build connection pool: {e}"))
         })?;
@@ -57,10 +60,17 @@ impl Db {
         Ok(self.pool.get()?)
     }
 
-    /// Run SQLite's integrity check. Returns "ok" on success, or the first error string.
+    /// Runs SQLite's integrity check. Returns "ok" when the database is clean.
+    /// On corruption, SQLite returns multiple rows describing each problem;
+    /// they are joined by newlines so the caller logs everything.
     pub fn integrity_check(&self) -> CoreResult<String> {
         let conn = self.get()?;
-        let v: String = conn.query_row("PRAGMA integrity_check;", [], |r| r.get(0))?;
-        Ok(v)
+        let mut stmt = conn.prepare("PRAGMA integrity_check;")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out.join("\n"))
     }
 }
