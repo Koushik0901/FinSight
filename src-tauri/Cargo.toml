@@ -1,0 +1,27 @@
+[package]
+name = "finsight-tauri"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "app_main"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "finsight"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+finsight-app = { path = "../crates/finsight-app" }
+finsight-core = { path = "../crates/finsight-core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+serde.workspace = true
