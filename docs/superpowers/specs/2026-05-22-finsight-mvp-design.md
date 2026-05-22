@@ -63,7 +63,7 @@ finsight/
 
 ### 3.2 Why this shape
 
-- **Clean swap points.** `LlmProvider` and `SyncProvider` are pure traits in their own crates. Swapping Ollama → Anthropic or adding Plaid does not touch `core`, `app`, or the frontend.
+- **Clean swap points.** `CompletionProvider`, `EmbeddingProvider`, and `SyncProvider` are pure traits in their own crates. Swapping Ollama → Anthropic or adding Plaid does not touch `core`, `app`, or the frontend.
 - **Independently testable.** Each crate exposes a small public API; no crate depends on Tauri except `app`.
 - **Type contract.** `tauri-specta` generates TypeScript types from Rust command signatures. There is one source of truth for the data shapes that cross the IPC boundary.
 
@@ -73,7 +73,7 @@ finsight/
 |---|---|---|
 | `core` | DB connection pool, migrations, domain models, repositories, SQLCipher key loading | (none) |
 | `providers` | `SyncProvider` trait, `CsvProvider` impl, OFX/QIF parsers | `core` (types only) |
-| `agent` | `LlmProvider` trait, `OllamaProvider`, `AnthropicProvider`, categorizer, anomaly detector, palette query handler | `core` (repos), `reqwest` |
+| `agent` | `CompletionProvider` + `EmbeddingProvider` traits, `OllamaProvider`, `AnthropicProvider`, categorizer, anomaly detector, palette query handler | `core` (repos), `reqwest` |
 | `app` | Tauri commands, event emission, lifecycle wiring | all of the above + `tauri` |
 
 ## 4. Data layer
@@ -81,10 +81,12 @@ finsight/
 ### 4.1 Database
 
 - **Engine:** SQLite (latest) compiled with SQLCipher.
-- **Driver:** `sqlx` with `sqlite` + `sqlcipher` features (async, compile-time-checked queries).
+- **Driver:** `rusqlite` with the `sqlcipher` feature, plus `r2d2` for connection pooling. (`sqlx` was considered and rejected: `sqlx` builds against vanilla `libsqlite3-sys`; getting it to link `libsqlcipher` is fragile and breaks on `sqlx` updates. `rusqlite + sqlcipher` is the path that actually works across mac/Windows/Linux. We lose compile-time query macros but gain a working build.)
+- **Async bridge:** queries run on a `tokio::task::spawn_blocking` boundary inside the repo layer so the synchronous `rusqlite` API does not block the Tauri runtime.
 - **At-rest encryption:** SQLCipher with a 32-byte random key per install. Key stored in OS keychain via `keyring-rs` (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux).
-- **Pragmas:** `journal_mode=WAL`, `synchronous=NORMAL`, `mmap_size=268435456` (256MB), `cache_size=-65536` (64MB), `foreign_keys=ON`, `busy_timeout=5000`.
-- **Migrations:** `sqlx::migrate!` against `crates/core/migrations/`. Forward-only in production; reversible in dev.
+- **Keychain failure path:** if the OS denies keychain access (typical first-run prompt the user can deny), the app surfaces a modal explaining the choice and offers a single retry. A second denial blocks app start with a clear "FinSight needs keychain access to keep your data encrypted" screen — no plaintext fallback path. Documented in Settings → Privacy.
+- **Pragmas:** `journal_mode=WAL`, `synchronous=NORMAL`, `mmap_size=268435456` (256MB), `cache_size=-65536` (64MB), `foreign_keys=ON`, `busy_timeout=5000`. `sqlite-vec` extension loaded per-connection via `load_extension` (enabled at pool init; SQLCipher allows this but extension loading is off by default).
+- **Migrations:** `refinery` (or hand-rolled migration runner — choice deferred to plan) against `crates/core/migrations/`. Forward-only in production; reversible in dev.
 
 ### 4.2 Schema
 
@@ -96,14 +98,14 @@ Money is **always `INTEGER` cents**, never float. Multi-currency uses `amount_ce
 |---|---|
 | `accounts` | Owner (joint/mira/adam/…), bank, type, name, last4, currency, color, `archived_at` |
 | `account_balances` | `(account_id, as_of_date, balance_cents)` — one row per day per account; sparkline = `ORDER BY as_of_date` |
-| `assets` | Manual assets (home, vehicles, crypto). `value_cents`, `last_updated_at`, note |
+| `assets` | Manual assets (home, vehicles, crypto). `value_cents` (fiat-equivalent net worth contribution), `quantity_scaled` (INTEGER, 8-decimal scaled for crypto / fractional units; NULL for non-fractional), `unit` (e.g. `BTC`, `ETH`, NULL for fiat-valued), `last_updated_at`, note. Net-worth math reads `value_cents`; `quantity_scaled + unit` are display-only for the asset card. |
 | `liabilities` | Mortgage/loan/card. `balance_cents`, `apr_bps`, `monthly_payment_cents`, `payoff_date` |
 | `category_groups` | Fixed / Daily / Lifestyle / Wellbeing |
 | `categories` | `id`, `group_id`, label, color, icon, `archived_at` |
-| `merchants` | `canonical_name`, `logo_url` (nullable), color |
+| `merchants` | `canonical_name`, `color`, `initials` (auto-computed display fallback). MVP does **not** ship a logo pack and does **not** fetch logos at render time (local-first). Transaction list renders a colored square with merchant initials. A future spec may add a bundled logo pack. |
 | `transactions` | `account_id`, `posted_at`, `amount_cents` (signed; negative = outflow), `merchant_raw`, `merchant_id`, `category_id`, `status` (cleared/pending/manual), `notes`, `ai_confidence`, `ai_explanation`, `is_anomaly` |
 | `transaction_splits` | `txn_id`, `category_id`, `amount_cents`, `note` |
-| `transaction_attachments` | `txn_id`, `file_path` (under app data dir), `mime`, `size_bytes` |
+| `transaction_attachments` | `txn_id`, `blob` (the file bytes, stored inline as BLOB), `mime`, `size_bytes`, `filename`. Attachments are stored inside the encrypted DB rather than on the filesystem so they inherit SQLCipher encryption. MVP caps individual attachments at 10MB and total attachments at 100MB; larger limits and on-disk encrypted storage come later if needed. |
 | `transaction_tags` | `(txn_id, tag)` — e.g. `trip:italy-2026`, `reimbursable:work` |
 | `categorizations` | Append-only audit: `txn_id`, `category_id`, `source` (rule/vector/agent/user), `confidence`, `at` |
 | `budgets` | `month` (YYYY-MM), `mode` (envelope/tracking) |
@@ -137,23 +139,39 @@ Money is **always `INTEGER` cents**, never float. Multi-currency uses `amount_ce
 
 ## 5. Agent workflow
 
-### 5.1 LLM provider trait
+### 5.1 LLM provider traits
+
+Completions and embeddings are split into two traits because Anthropic does not expose an embeddings API (its docs route embeddings to Voyage). Keeping them separate also lets a user run completions against Anthropic while embeddings stay local.
 
 ```rust
 #[async_trait]
-pub trait LlmProvider: Send + Sync {
+pub trait CompletionProvider: Send + Sync {
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse>;
+    fn model_id(&self) -> &str;
+    fn capabilities(&self) -> Capabilities; // supports_json_mode, max_context_tokens, …
+}
+
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
     fn model_id(&self) -> &str;
-    fn capabilities(&self) -> Capabilities;
+    fn dimensions(&self) -> usize;
 }
 ```
 
-`CompletionRequest` includes a `response_format: Option<JsonSchema>` field. Both providers must honor it (Ollama: JSON mode; Anthropic: tool-use forced output or response prefill). Embeddings are required for both.
+`CompletionRequest` includes a `response_format: Option<JsonSchema>` field. `OllamaProvider` honors it via JSON mode; `AnthropicProvider` honors it via tool-use forced output or response prefill.
+
+**Default configuration:**
+- Completion: `OllamaProvider` pointed at `http://localhost:11434`, model `llama3.1:8b-instruct-q4_K_M` (configurable in Settings)
+- Embedding: `OllamaProvider` (same endpoint), model `nomic-embed-text` (137M params, 768-dim, well-supported by Ollama, decent for short text)
+
+`AnthropicProvider` is `CompletionProvider`-only. If selected for completions, the user keeps an Ollama embedding model installed for vector NN; we surface this in Settings ("Embeddings always use a local model — configure here"). The embedding model is small (~270MB) so this is reasonable even for users who otherwise prefer cloud completions.
 
 **Provider selection** at agent-construction time from `settings`. Switching providers is a config change + restart of the agent task; no app restart needed.
 
-**Failure handling:** if no provider is configured or the configured one is unreachable, the agent surfaces a quiet banner ("Local model not detected — install Ollama, or configure in Settings") and the categorizer falls back to `needs_review` for new transactions. The app remains fully functional without an LLM; the agent features simply pause.
+**Onboarding pulls the embedding model on first run** so categorization works out of the box. The "Try with sample data" path skips this (sample DB ships with embeddings pre-computed).
+
+**Failure handling:** if neither provider is reachable, the agent surfaces a quiet banner ("Local model not detected — install Ollama, or configure in Settings") and the categorizer falls back to `needs_review` for new transactions. The app remains fully functional without an LLM; the agent features simply pause.
 
 ### 5.2 Categorization
 
@@ -181,7 +199,7 @@ pub trait LlmProvider: Send + Sync {
 
 **Detection is statistical. The LLM only writes the prose.**
 
-Trigger: a nightly background job, plus on-demand from the Today screen's "Re-run scan" action.
+Trigger: on app launch if the last scan completed more than 24 hours ago, plus on-demand from the Today screen's "Re-run scan" action. Desktop apps don't reliably run at fixed times, so we hook the launch event instead of a literal scheduler.
 
 1. For each `(account_id, category_id)` pair, compute trailing 12-month median and MAD (median absolute deviation).
 2. If this month's running total exceeds `median + 3·MAD`, flag the pair.
@@ -207,7 +225,15 @@ The hardest agent surface. Pattern: **structured retrieval → LLM synthesis wit
    ```
 4. **Actions** are pre-defined, whitelisted commands (`navigate_to`, `create_rule_proposal`, `mark_anomaly_reviewed`, etc.). The LLM proposes; the user confirms by clicking. The LLM cannot execute arbitrary writes.
 
-### 5.5 Agent boundaries
+### 5.5 Agent task lifecycle
+
+A single long-lived `tokio::spawn` task runs at app start and consumes an `mpsc::Receiver<AgentJob>` queue. Tauri commands enqueue jobs (categorize-batch, anomaly-scan, ask-question) and receive results either synchronously (via `oneshot`) for ⌘K Ask, or via emitted events (categorization, anomaly) for long-running work.
+
+On provider config change, the agent task drops its current providers, rebuilds them from the new settings, and continues processing the queue. No app restart.
+
+On unrecoverable provider error (e.g., Ollama process killed mid-batch), the in-flight job is marked failed in `imports`/`agent_insights` and the task continues. The frontend gets an `agent.error` event.
+
+### 5.6 Agent boundaries
 
 - No agent-initiated writes to the DB. Every change requires user confirmation.
 - No streaming token-by-token in MVP — responses arrive whole, easier to validate.
@@ -252,7 +278,7 @@ rerun_anomaly_scan() -> ScanSummary
 
 get_settings() -> Settings
 update_settings(patch) -> ()
-set_llm_provider(provider: LlmConfig) -> ()
+set_agent_providers(config: AgentProviderConfig) -> ()  // sets completion and embedding providers
 ```
 
 **Events** (Rust → frontend):
@@ -268,7 +294,35 @@ set_llm_provider(provider: LlmConfig) -> ()
 - Optimistic updates for category edits and splits — UI snaps immediately; rollback on failure via toast.
 - Tauri events trigger targeted invalidations.
 
-### 6.4 Sample data path
+### 6.4 Onboarding (4 steps)
+
+1. **Welcome.** Short prose ("a quiet way to understand your money"), single primary action: "Get started." Tertiary: "Try with sample data."
+2. **Connect your money.** Two cards: "Import a statement" (CSV/OFX/QIF picker → column mapping screen) or "Add manually" (account form). Repeatable — user can add more before continuing.
+3. **Confirm your categories.** Pre-populated category list (10 starter categories grouped Fixed / Daily / Lifestyle / Wellbeing). User can rename, delete, add. Skippable.
+4. **Set up the agent.** Detect Ollama; if found, pick a completion model from installed list and confirm `nomic-embed-text` is available (offer to pull it). If not found, show "Install Ollama" instructions + "Configure later" link. Skippable (agent stays paused until configured).
+
+Finishes with "→ Today." Onboarding is re-launchable from Settings.
+
+### 6.5 CSV import mapping
+
+```rust
+pub struct CsvImportMapping {
+    pub posted_at_col: usize,                 // required
+    pub amount_col: usize,                    // required; positive/negative convention picked below
+    pub merchant_col: usize,                  // required
+    pub notes_col: Option<usize>,
+    pub category_col: Option<usize>,          // some banks export a category; used as hint, not authoritative
+    pub balance_col: Option<usize>,           // some banks include running balance per row
+    pub date_format: String,                  // strftime-style, e.g. "%Y-%m-%d"
+    pub amount_convention: AmountConvention,  // PositiveIsInflow | NegativeIsInflow | SeparateDebitCredit { debit_col, credit_col }
+    pub skip_header_rows: usize,              // typically 1
+    pub remembered_as: Option<String>,        // when set, saved to settings keyed by account_id so re-imports skip the mapping step
+}
+```
+
+The mapping UI presents the first 10 rows of the CSV in a table, lets the user assign each required field by clicking column headers, and lives at `/onboarding/import/map` plus `/transactions/import` for ongoing imports.
+
+### 6.6 Sample data path
 
 - `resources/sample-data/sample.sqlcipher` baked into the bundle, encrypted with a known test key.
 - Onboarding "Try with sample data" copies the file to app data dir, writes the test key to keychain, reopens the pool.
@@ -308,7 +362,7 @@ set_llm_provider(provider: LlmConfig) -> ()
 
 - **`core`:** unit tests on repositories using an in-memory SQLite DB. Migration tests assert forward-only application.
 - **`providers`:** parser tests with fixture CSV/OFX/QIF files covering 8–10 real-world bank exports.
-- **`agent`:** trait-level tests using a `MockLlmProvider` that returns canned responses; integration tests against Ollama gated by an env var.
+- **`agent`:** trait-level tests using `MockCompletionProvider` + `MockEmbeddingProvider` that return canned responses; integration tests against Ollama gated by an env var.
 - **`app`:** Tauri command tests via the Tauri test harness.
 - **Frontend:** Vitest for hooks/utilities; Playwright for one E2E smoke (onboarding → import sample → see Today).
 - **CI:** `cargo test`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `cargo clippy --all-targets -- -D warnings`.
@@ -317,16 +371,18 @@ set_llm_provider(provider: LlmConfig) -> ()
 
 The failure mode here is "every crate is gorgeous, nothing renders for three weeks." The build sequence is one thin vertical slice first, then thicken.
 
-### Phase 0 — Bootstrap (1–2 days)
+**Effort estimates below are focused-work weeks for someone fluent in both Rust and React; not calendar weeks.**
+
+### Phase 0 — Bootstrap (1–2 effort-days)
 - Cargo workspace, Tauri 2 init, Vite+React+TS scaffold
-- SQLCipher build wired (`sqlx` with `sqlite` + `sqlcipher` features)
+- **`rusqlite + sqlcipher` build green on mac/Windows/Linux CI matrix before any feature code.** This is the biggest single risk; de-risk on day one. `sqlite-vec` extension load also verified here.
 - `tauri-specta` codegen pipeline
 - Sidebar shell + routing + theme/accent/density wiring (ports prototype's `app.jsx` chrome)
 - All routes render a stub panel
 
-**Exit:** `pnpm tauri dev` opens a window, sidebar navigates 7 empty routes, theme tweaks work.
+**Exit:** `pnpm tauri dev` opens a window, sidebar navigates 7 empty routes, theme tweaks work, a smoke test inserts and reads a row from an encrypted DB on all three platforms.
 
-### Phase 1 — Walking skeleton (1 week)
+### Phase 1 — Walking skeleton (~1 effort-week)
 - `accounts`, `transactions`, `categories` tables migrated
 - Hard-coded seed: 1 account, 3 transactions, 4 categories
 - `list_accounts`, `list_transactions` commands
@@ -335,7 +391,7 @@ The failure mode here is "every crate is gorgeous, nothing renders for three wee
 
 **Exit:** Data flows Rust → SQLCipher → command → query hook → render.
 
-### Phase 2 — Ingest path (1 week)
+### Phase 2 — Ingest path (~1 effort-week)
 - CSV import provider + `import_csv` command + column-mapping UI
 - Onboarding: Welcome → Try sample / Import CSV → confirm mapping → finish
 - Sample DB ship path working
@@ -343,8 +399,8 @@ The failure mode here is "every crate is gorgeous, nothing renders for three wee
 
 **Exit:** A new user can install, choose import-or-sample, and see their data.
 
-### Phase 3 — Agent foundation (1 week)
-- `LlmProvider` trait + `OllamaProvider` impl
+### Phase 3 — Agent foundation (~1 effort-week)
+- `CompletionProvider` + `EmbeddingProvider` traits + `OllamaProvider` impl of both
 - Categorizer pipeline: rules → vec NN → LLM batch, with progress events
 - Settings: LLM provider config (Ollama URL test + model picker)
 - Today's "agent activity" stream subscribed to events
@@ -352,7 +408,7 @@ The failure mode here is "every crate is gorgeous, nothing renders for three wee
 
 **Exit:** Importing a CSV triggers background categorization with visible progress; category labels with confidence land.
 
-### Phase 4 — Budget + Categories (1 week)
+### Phase 4 — Budget + Categories (~1 effort-week)
 - `budgets`, `budget_envelopes` migrations
 - Budget screen: envelope cards grouped by Fixed/Daily/Lifestyle/Wellbeing (2026 card design from chat1)
 - Categories screen: monthly breakdown + stream chart
@@ -360,14 +416,14 @@ The failure mode here is "every crate is gorgeous, nothing renders for three wee
 
 **Exit:** Spending in a category updates the envelope; under/over states render correctly.
 
-### Phase 5 — Agent surfaces (1 week)
+### Phase 5 — Agent surfaces (~1 effort-week)
 - Anomaly detection (stats + LLM prose)
 - ⌘K palette: navigate + Ask (retrieval → synthesis)
 - Insights screen with reasoning-trace cards
 
 **Exit:** ⌘K answers "what did I spend on dining in May" with prose + bar viz; anomalies show on Today.
 
-### Phase 6 — Polish + accessibility (3–5 days)
+### Phase 6 — Polish + accessibility (3–5 effort-days)
 - Privacy mode (⌘.) blurs amounts everywhere
 - Keyboard nav across sidebar + lists
 - Focus traps
@@ -379,12 +435,15 @@ The failure mode here is "every crate is gorgeous, nothing renders for three wee
 
 ## 9. Risks
 
-1. **SQLCipher build across mac/Windows/Linux** is finicky. Phase 0 must de-risk on day one — build CI matrix for all three targets before any feature work.
-2. **Ollama not installed** is the common case for new users. Onboarding needs a clear "no LLM detected — install Ollama, or skip" path. Categorization gracefully falls back to `needs_review`.
-3. **CSV column mapping** — banks export wildly different schemas. The mapping UI must be flexible (drag column headers onto required fields; remember mappings per bank/account).
-4. **Embedding generation cost** — embedding thousands of imported transactions takes time. Run in background with progress events; never block the UI.
-5. **Tauri 2 maturity** — Tauri 2 is current but still moves fast. Pin to a specific minor and test plugin compatibility (especially `tauri-plugin-store` and any keychain plugin) before depending on it.
-6. **Mobile target shape** is deliberately out of scope here but the layout system (CSS variables, responsive breakpoints already in the prototype) should not paint us into a desktop-only corner.
+1. **SQLCipher build across mac/Windows/Linux** is the single biggest Phase 0 risk. `rusqlite + sqlcipher` is the chosen path; verify the CI matrix on all three targets on day one before any feature work.
+2. **`sqlite-vec` extension loading** requires `load_extension` which is off by default. Enable per-connection at pool init. Verify it loads against the SQLCipher build (not just stock SQLite).
+3. **Ollama not installed** is the common case for new users. Onboarding's step 4 handles this with a clear "Install Ollama" CTA + "Configure later" link. Categorization gracefully pauses with `needs_review` for new transactions until a provider is configured.
+4. **CSV column mapping** — banks export wildly different schemas. The mapping UI (Section 6.5) must be flexible and remember mappings per account.
+5. **Embedding generation cost** — embedding thousands of imported transactions takes time. Run in background with progress events; never block the UI. Cache embeddings by `hash(merchant_raw + rounded_amount)` so re-imports skip work.
+6. **First-run Ollama embedding-model pull** is ~270MB for `nomic-embed-text`. Onboarding step 4 surfaces this with a progress indicator; user can skip and the agent stays paused.
+7. **Keychain denial on macOS first launch** — handled by retry + hard-block flow (Section 4.1). Document the choice in Settings → Privacy.
+8. **Tauri 2 maturity** — pin to a specific minor and test plugin compatibility (especially `tauri-plugin-store` and the keychain plugin) before depending on it.
+9. **Mobile target shape** is out of scope but the layout system (CSS variables + responsive breakpoints already in the prototype) should not paint us into a desktop-only corner.
 
 ## 10. Out of scope (follow-on specs)
 
