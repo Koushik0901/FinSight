@@ -63,6 +63,10 @@ pub struct AccountSummary {
     pub color: String,
 }
 
+fn default_source() -> String {
+    "manual".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize, Type)]
 pub struct NewAccount {
     pub owner: String,
@@ -73,4 +77,6 @@ pub struct NewAccount {
     pub currency: String,
     pub color: String,
     pub opening_balance_cents: i64,
+    #[serde(default = "default_source")]
+    pub source: String,
 }

@@ -24,7 +24,14 @@ impl AppState {
 pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         commands::accounts::list_accounts,
+        commands::accounts::create_account,
         commands::transactions::list_transactions,
+        commands::transactions::create_transaction,
+        commands::onboarding::get_onboarding_state,
+        commands::onboarding::seed_sample_household,
+        commands::onboarding::mark_onboarding_complete,
+        commands::onboarding::reset_onboarding_completion,
+        commands::onboarding::clear_sample_data,
         commands::meta::app_ready,
     ])
 }

@@ -11,8 +11,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     conn.execute(
-        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             &id,
             &input.owner,
@@ -22,6 +22,7 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
             &input.last4,
             &input.currency,
             &input.color,
+            &input.source,
             now.to_rfc3339(),
         ],
     )?;

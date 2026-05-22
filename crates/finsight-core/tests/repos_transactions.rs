@@ -28,6 +28,7 @@ fn insert_and_list_returns_descending_by_posted_at() {
             currency: "USD".into(),
             color: "#fff".into(),
             opening_balance_cents: 0,
+            source: "manual".into(),
         },
     )
     .unwrap();
@@ -80,6 +81,7 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             currency: "USD".into(),
             color: "#fff".into(),
             opening_balance_cents: 0,
+            source: "manual".into(),
         },
     )
     .unwrap();
@@ -94,6 +96,7 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             currency: "USD".into(),
             color: "#000".into(),
             opening_balance_cents: 0,
+            source: "manual".into(),
         },
     )
     .unwrap();
@@ -152,6 +155,7 @@ fn list_respects_limit() {
             currency: "USD".into(),
             color: "#fff".into(),
             opening_balance_cents: 0,
+            source: "manual".into(),
         },
     )
     .unwrap();

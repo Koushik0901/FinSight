@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::Transaction;
+use finsight_core::models::{NewTransaction, Transaction};
 use finsight_core::repos::{run, transactions};
 use serde::Deserialize;
 use specta::Type;
@@ -33,4 +33,16 @@ pub async fn list_transactions(
     .await
     .map_err(AppError::from)?;
     Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_transaction(
+    state: tauri::State<'_, AppState>,
+    input: NewTransaction,
+) -> AppResult<Transaction> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| transactions::insert(conn, input))
+        .await
+        .map_err(AppError::from)
 }

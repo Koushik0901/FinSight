@@ -85,6 +85,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
             currency: "USD".into(),
             color: "#C9F950".into(),
             opening_balance_cents: 1_482_042,
+            source: "manual".into(),
         },
     )?;
 

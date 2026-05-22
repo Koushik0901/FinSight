@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::AccountSummary;
+use finsight_core::models::{Account, AccountSummary, NewAccount};
 use finsight_core::repos::{accounts, run};
 
 #[tauri::command]
@@ -13,4 +13,16 @@ pub async fn list_accounts(state: tauri::State<'_, AppState>) -> AppResult<Vec<A
         .await
         .map_err(AppError::from)?;
     Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_account(
+    state: tauri::State<'_, AppState>,
+    input: NewAccount,
+) -> AppResult<Account> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| accounts::insert(conn, input))
+        .await
+        .map_err(AppError::from)
 }
