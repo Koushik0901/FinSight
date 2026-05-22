@@ -2,11 +2,11 @@
 resolver = "2"
 members = [
   "crates/finsight-core",
+  "crates/finsight-providers",
+  "crates/finsight-agent",
   # Re-added by subsequent tasks as each crate is created:
-  # "crates/finsight-providers",
-  # "crates/finsight-agent",
-  # "crates/finsight-app",
-  # "src-tauri",
+  # "crates/finsight-app",    # added in Task 11
+  # "src-tauri",              # added in Task 11
 ]
 
 [workspace.package]
