@@ -37,3 +37,19 @@ pub fn delete_key(service: &str, user: &str) -> CoreResult<()> {
         Err(e) => Err(e.into()),
     }
 }
+
+/// Generate a fresh random 64-char hex key (32 bytes) without touching the OS keychain.
+/// Intended for tests. In production code, use `load_or_create_key` instead.
+pub fn generate_random_key() -> Zeroizing<String> {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let hex = bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    // Zero raw bytes before returning.
+    for b in bytes.iter_mut() {
+        *b = 0;
+    }
+    Zeroizing::new(hex)
+}
