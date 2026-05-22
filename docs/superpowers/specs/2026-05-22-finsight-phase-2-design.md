@@ -133,6 +133,15 @@ CREATE TABLE csv_import_mappings (
 ALTER TABLE accounts ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
 -- 'manual' | 'csv' | 'sample' — written by the code path that created the account.
 -- Default 'manual' is safe for Phase 1 walking-skeleton rows.
+
+CREATE TABLE settings (
+  key    TEXT PRIMARY KEY,
+  value  TEXT NOT NULL          -- JSON-encoded; readers parse per-key
+);
+-- Known keys (Phase 2):
+--   onboarding_completion_marked  ->  "true" | "false"
+--   llm_provider                  ->  {"kind":"ollama","base_url":"...","completion_model":"...","embedding_model":"..."}
+--                                     | {"kind":"unconfigured"}
 ```
 
 Both migrations are forward-only. The `imports` table is referenced by the "an import didn't finish" recovery banner; `csv_import_mappings` lets re-imports skip the column-mapping step per-account. Column names mirror the `ImportSummary` Rust struct so the row maps directly without a translation layer.
@@ -446,7 +455,7 @@ Both drawers use `react-hook-form` + `zod` schemas. Submit calls the correspondi
 
 ### 4.4 Onboarding interrupted
 
-- State lives in the DB, not in Zustand persistence. The completion flag is the boolean `settings.onboarding_completion_marked` (key in the `settings` key-value table from V001). If the user quits mid-wizard:
+- State lives in the DB, not in Zustand persistence. The completion flag is the boolean `settings.onboarding_completion_marked` — a JSON-encoded `"true"`/`"false"` value in the `settings` key-value table introduced in V002. If the user quits mid-wizard:
   - `accounts` count > 0 → wizard won't auto-show; user can manually navigate to `/onboarding` to continue if they want
   - `accounts` count == 0 AND `onboarding_completion_marked` false → wizard auto-shows again on next launch
   - `onboarding_completion_marked` true (set by clicking "Use these" in Step 3 or finishing Step 4) → wizard never auto-shows again; reachable via Settings → Re-run onboarding (§4.8)
