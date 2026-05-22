@@ -1160,6 +1160,7 @@ dependencies = [
  "finsight-app",
  "finsight-core",
  "serde",
+ "specta-typescript",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",

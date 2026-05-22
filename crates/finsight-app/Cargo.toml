@@ -7,10 +7,6 @@ license.workspace = true
 [lib]
 crate-type = ["lib"]
 
-[[bin]]
-name = "export_bindings"
-path = "src/bin/export_bindings.rs"
-
 [dependencies]
 finsight-core = { path = "../finsight-core" }
 finsight-providers = { path = "../finsight-providers" }
