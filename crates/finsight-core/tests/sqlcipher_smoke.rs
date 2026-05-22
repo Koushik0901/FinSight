@@ -13,7 +13,8 @@ use tempfile::tempdir;
 const KEY_HEX: &str = "2DD29CA851E7B56E4697B0E1F08507293D761A05CE4D1B628663F411A8086D99";
 
 fn set_key(conn: &Connection, hex: &str) {
-    conn.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";")).unwrap();
+    conn.execute_batch(&format!("PRAGMA key = \"x'{hex}'\";"))
+        .unwrap();
 }
 
 #[test]
@@ -25,9 +26,13 @@ fn open_encrypts_writes_and_reads_back() {
     {
         let conn = Connection::open(&path).unwrap();
         set_key(&conn, KEY_HEX);
-        conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)", [])
+        conn.execute(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO t (v) VALUES (?1)", ["hello"])
             .unwrap();
-        conn.execute("INSERT INTO t (v) VALUES (?1)", ["hello"]).unwrap();
     }
 
     // Reopen with same key, read it back.
@@ -43,8 +48,12 @@ fn open_encrypts_writes_and_reads_back() {
     // Reopen with WRONG key — must fail to read.
     {
         let conn = Connection::open(&path).unwrap();
-        set_key(&conn, "0000000000000000000000000000000000000000000000000000000000000000");
-        let res: Result<String, _> = conn.query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0));
+        set_key(
+            &conn,
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
+        let res: Result<String, _> =
+            conn.query_row("SELECT v FROM t WHERE id = 1", [], |r| r.get(0));
         assert!(res.is_err(), "Wrong key must fail to read the encrypted DB");
     }
 }
