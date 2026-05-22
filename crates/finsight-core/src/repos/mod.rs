@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod categories;
+pub mod imports;
 pub mod transactions;
 
 use crate::error::CoreResult;
