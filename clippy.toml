@@ -1,0 +1,4 @@
+# Allow up to 7 args before warning — repos sometimes need this.
+too-many-arguments-threshold = 8
+# Tighter limits on cognitive complexity than the default.
+cognitive-complexity-threshold = 20
