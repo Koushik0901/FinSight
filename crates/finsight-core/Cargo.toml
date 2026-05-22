@@ -17,6 +17,7 @@ r2d2_sqlite.workspace = true
 refinery.workspace = true
 keyring.workspace = true
 rand.workspace = true
+rand_chacha.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 specta = { workspace = true, features = ["derive", "chrono", "uuid"] }
