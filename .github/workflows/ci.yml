@@ -13,18 +13,27 @@ permissions:
   contents: read
 
 jobs:
-  rust:
+  build:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Install perl (Windows) for OpenSSL vendored build
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install perl (Windows)
         if: matrix.os == 'windows-latest'
         uses: shogo82148/actions-setup-perl@v1
         with:
@@ -40,10 +49,21 @@ jobs:
           sudo apt-get install -y gnome-keyring dbus-x11
           echo -n "" | gnome-keyring-daemon --unlock
           echo -n "" | gnome-keyring-daemon --start --daemonize --components=secrets
+      - run: pnpm install --frozen-lockfile
+      - run: cargo fmt --all -- --check
       - name: cargo test (Linux, under dbus session)
         if: matrix.os == 'ubuntu-latest'
-        run: dbus-run-session -- cargo test -p finsight-core
+        run: dbus-run-session -- cargo test --workspace
       - name: cargo test (non-Linux)
         if: matrix.os != 'ubuntu-latest'
-        run: cargo test -p finsight-core
-      - run: cargo clippy -p finsight-core --all-targets -- -D warnings
+        run: cargo test --workspace
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: pnpm --filter ui typecheck
+      - run: pnpm --filter ui test
+      - run: pnpm --filter ui build
+      - name: Tauri debug build (Linux, under dbus session)
+        if: matrix.os == 'ubuntu-latest'
+        run: dbus-run-session -- cargo tauri build --debug
+      - name: Tauri debug build (non-Linux)
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo tauri build --debug
