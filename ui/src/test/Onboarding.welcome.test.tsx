@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Onboarding from "../screens/Onboarding";
+import { useOnboardingStore } from "../state/onboarding";
 
 vi.mock("../api/client", () => ({
   commands: {
@@ -33,7 +34,10 @@ function renderOnboarding() {
 }
 
 describe("Onboarding · Welcome step", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    useOnboardingStore.getState().reset();
+    vi.clearAllMocks();
+  });
 
   it("renders the welcome heading", () => {
     renderOnboarding();

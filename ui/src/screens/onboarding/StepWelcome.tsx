@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSeedSampleHousehold, useMarkOnboardingComplete } from "../../api/hooks/onboarding";
 
 interface Props {
@@ -8,11 +9,17 @@ interface Props {
 export default function StepWelcome({ onNext, onSkipToToday }: Props) {
   const seedSample = useSeedSampleHousehold();
   const markComplete = useMarkOnboardingComplete();
+  const [seedError, setSeedError] = useState<string | null>(null);
 
   async function trySample() {
-    await seedSample.mutateAsync();
-    await markComplete.mutateAsync();
-    onSkipToToday();
+    setSeedError(null);
+    try {
+      await seedSample.mutateAsync();
+      await markComplete.mutateAsync();
+      onSkipToToday();
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    }
   }
 
   return (
@@ -34,6 +41,7 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
           {seedSample.isPending ? "Seeding…" : "Try with sample data"}
         </button>
       </div>
+      {seedError && <p role="alert" className="error-message">{seedError}</p>}
     </div>
   );
 }
