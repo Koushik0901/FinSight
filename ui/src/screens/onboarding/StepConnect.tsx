@@ -10,14 +10,24 @@ export default function StepConnect({ onNext }: Props) {
   const [acctOpen, setAcctOpen] = useState(false);
   const [txnOpen, setTxnOpen]   = useState(false);
 
-  const { data: accounts = [] } = useAccounts();
-  const { data: txns = [] }     = useTransactions();
+  const { data: accounts = [], isLoading: acctLoading, error: acctError } = useAccounts();
+  const { data: txns = [], isLoading: txnLoading, error: txnError }       = useTransactions();
+
+  const isLoading = acctLoading || txnLoading;
+  const hasError  = !!acctError || !!txnError;
 
   const canContinue = accounts.length > 0;
 
   return (
     <div className="step-connect">
       <h2>Connect your money</h2>
+
+      {isLoading && <p>Loading…</p>}
+      {hasError && (
+        <p role="alert" style={{ color: "var(--error, red)" }}>
+          Failed to load data. Please try again.
+        </p>
+      )}
 
       <div className="connect-cards">
         <article className="card">
@@ -42,16 +52,20 @@ export default function StepConnect({ onNext }: Props) {
         </article>
       </div>
 
-      <aside className="connect-tally" aria-live="polite">
-        <strong>{accounts.length}</strong> account{accounts.length === 1 ? "" : "s"} added,{" "}
-        <strong>{txns.length}</strong> transaction{txns.length === 1 ? "" : "s"} so far
-      </aside>
+      {!isLoading && (
+        <>
+          <aside className="connect-tally" aria-live="polite">
+            <strong>{accounts.length}</strong> account{accounts.length === 1 ? "" : "s"} added,{" "}
+            <strong>{txns.length}</strong> transaction{txns.length === 1 ? "" : "s"} so far
+          </aside>
 
-      <footer>
-        <button className="primary" disabled={!canContinue} onClick={onNext}>
-          Continue →
-        </button>
-      </footer>
+          <footer>
+            <button className="primary" disabled={!canContinue} onClick={onNext}>
+              Continue →
+            </button>
+          </footer>
+        </>
+      )}
 
       <AccountDrawer open={acctOpen} onClose={() => setAcctOpen(false)} />
       <TransactionDrawer open={txnOpen} onClose={() => setTxnOpen(false)} />

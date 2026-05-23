@@ -44,20 +44,22 @@ export default function Transactions() {
             {data.map((t) => (
               <tr key={t.id} style={{ borderTop: "1px solid var(--hairline)" }}>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{formatDate(t.posted_at)}</td>
-                <td style={{ padding: "12px 0", display: "flex", alignItems: "center", gap: 12 }}>
-                  <span
-                    aria-label={`${t.merchant_label ?? t.merchant_raw} merchant tile`}
-                    style={{
-                      width: 28, height: 28, borderRadius: 6,
-                      background: t.merchant_color ?? "var(--surface-2)",
-                      color: "var(--accent-ink)",
-                      fontSize: 11, fontWeight: 600,
-                      display: "grid", placeItems: "center",
-                    }}
-                  >
-                    {t.merchant_initials ?? "?"}
-                  </span>
-                  <span>{t.merchant_label ?? t.merchant_raw}</span>
+                <td style={{ padding: "12px 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span
+                      aria-label={`${t.merchant_label ?? t.merchant_raw} merchant tile`}
+                      style={{
+                        width: 28, height: 28, borderRadius: 6,
+                        background: t.merchant_color ?? "var(--surface-2)",
+                        color: "var(--accent-ink)",
+                        fontSize: 11, fontWeight: 600,
+                        display: "grid", placeItems: "center",
+                      }}
+                    >
+                      {t.merchant_initials ?? "?"}
+                    </span>
+                    <span>{t.merchant_label ?? t.merchant_raw}</span>
+                  </div>
                 </td>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>
                   {t.category_label ?? "Uncategorized"}
