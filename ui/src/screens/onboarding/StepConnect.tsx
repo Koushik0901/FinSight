@@ -3,12 +3,15 @@ import { useAccounts } from "../../api/hooks/accounts";
 import { useTransactions } from "../../api/hooks/transactions";
 import AccountDrawer from "../../components/AccountDrawer";
 import TransactionDrawer from "../../components/TransactionDrawer";
+import FilePicker from "../../components/FilePicker";
+import ImportMappingDialog from "./ImportMappingDialog";
 
 interface Props { onNext: () => void; }
 
 export default function StepConnect({ onNext }: Props) {
   const [acctOpen, setAcctOpen] = useState(false);
   const [txnOpen, setTxnOpen]   = useState(false);
+  const [csvPath, setCsvPath]   = useState<string | null>(null);
 
   const { data: accounts = [], isLoading: acctLoading, error: acctError } = useAccounts();
   const { data: txns = [], isLoading: txnLoading, error: txnError }       = useTransactions();
@@ -33,7 +36,7 @@ export default function StepConnect({ onNext }: Props) {
         <article className="card">
           <h3>Import a statement</h3>
           <p>Pick a CSV exported from your bank and map its columns.</p>
-          <button disabled title="Filled in Task 19">Pick a file…</button>
+          <FilePicker onPicked={setCsvPath} label="Pick a file…" />
         </article>
 
         <article className="card">
@@ -69,6 +72,13 @@ export default function StepConnect({ onNext }: Props) {
 
       <AccountDrawer open={acctOpen} onClose={() => setAcctOpen(false)} />
       <TransactionDrawer open={txnOpen} onClose={() => setTxnOpen(false)} />
+      {csvPath && (
+        <ImportMappingDialog
+          path={csvPath}
+          onClose={() => setCsvPath(null)}
+          onImported={() => setCsvPath(null)}
+        />
+      )}
     </div>
   );
 }

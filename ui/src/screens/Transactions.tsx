@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTransactions } from "../api/hooks/transactions";
 import TransactionDrawer from "../components/TransactionDrawer";
+import FilePicker from "../components/FilePicker";
+import ImportMappingDialog from "./onboarding/ImportMappingDialog";
 
 function formatMoney(cents: number) {
   const sign = cents < 0 ? "-" : "";
@@ -13,6 +15,7 @@ function formatDate(iso: string) {
 
 export default function Transactions() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [csvPath, setCsvPath] = useState<string | null>(null);
   const { data, isLoading, error } = useTransactions();
 
   if (isLoading) return <div className="stub">Loading…</div>;
@@ -23,7 +26,7 @@ export default function Transactions() {
       <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Transactions</h1>
         <div className="actions" style={{ display: "flex", gap: 8 }}>
-          <button data-testid="import-csv-trigger" disabled title="Filled in Task 19">Import CSV</button>
+          <FilePicker onPicked={setCsvPath} label="Import CSV" />
           <button className="primary" onClick={() => setDrawerOpen(true)}>+ Add transaction</button>
         </div>
       </header>
@@ -74,6 +77,13 @@ export default function Transactions() {
       )}
 
       <TransactionDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      {csvPath && (
+        <ImportMappingDialog
+          path={csvPath}
+          onClose={() => setCsvPath(null)}
+          onImported={() => setCsvPath(null)}
+        />
+      )}
     </div>
   );
 }
