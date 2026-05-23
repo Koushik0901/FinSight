@@ -86,6 +86,22 @@ async commitStarterCategories(categories: StarterCategory[]) : Promise<Result<nu
     else return { status: "error", error: e  as any };
 }
 },
+async probeOllama(baseUrl: string) : Promise<Result<OllamaProbeResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("probe_ollama", { baseUrl }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveLlmProvider(config: LlmProviderConfig) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_llm_provider", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async appReady() : Promise<Result<AppReady, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("app_ready") };
@@ -156,8 +172,10 @@ export type Import = { id: string; source: ImportSource; filename: string | null
 export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
+export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type RowError = { row_number: number; reason: string }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }

@@ -82,6 +82,90 @@ pub async fn clear_sample_data(state: tauri::State<'_, AppState>) -> AppResult<(
     .map_err(AppError::from)
 }
 
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct OllamaProbeResult {
+    pub reachable: bool,
+    pub models: Vec<String>,
+    pub has_nomic_embed: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn probe_ollama(base_url: String) -> AppResult<OllamaProbeResult> {
+    let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| AppError::new("http", e.to_string()))?;
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => {
+            return Ok(OllamaProbeResult {
+                reachable: false,
+                models: vec![],
+                has_nomic_embed: false,
+            })
+        }
+    };
+    if !resp.status().is_success() {
+        return Ok(OllamaProbeResult {
+            reachable: false,
+            models: vec![],
+            has_nomic_embed: false,
+        });
+    }
+    #[derive(serde::Deserialize)]
+    struct TagsResp {
+        models: Vec<Tag>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Tag {
+        name: String,
+    }
+    let body: TagsResp = match resp.json().await {
+        Ok(b) => b,
+        Err(_) => {
+            return Ok(OllamaProbeResult {
+                reachable: false,
+                models: vec![],
+                has_nomic_embed: false,
+            })
+        }
+    };
+    let models: Vec<String> = body.models.into_iter().map(|m| m.name).collect();
+    let has_nomic_embed = models.iter().any(|m| m.starts_with("nomic-embed-text"));
+    Ok(OllamaProbeResult {
+        reachable: true,
+        models,
+        has_nomic_embed,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(tag = "kind")]
+pub enum LlmProviderConfig {
+    #[serde(rename = "ollama")]
+    Ollama {
+        base_url: String,
+        completion_model: String,
+        embedding_model: String,
+    },
+    #[serde(rename = "unconfigured")]
+    Unconfigured,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn save_llm_provider(
+    state: tauri::State<'_, AppState>,
+    config: LlmProviderConfig,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| settings::set(conn, "llm_provider", &config))
+        .await
+        .map_err(AppError::from)
+}
+
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 pub struct StarterCategory {
     pub id: String,
