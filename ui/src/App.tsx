@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { ThemeProvider } from "./components/ThemeProvider";
 import Today from "./screens/Today";
@@ -8,8 +9,21 @@ import Budget from "./screens/Budget";
 import Categories from "./screens/Categories";
 import Settings from "./screens/Settings";
 import Onboarding from "./screens/Onboarding";
+import { useOnboardingState } from "./api/hooks/onboarding";
 
 export function App() {
+  const { data: onboarding } = useOnboardingState();
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    if (!onboarding) return;
+    const shouldShow =
+      onboarding.account_count === 0 && !onboarding.completion_marked;
+    if (shouldShow && location.pathname !== "/onboarding") {
+      navigate("/onboarding", { replace: true });
+    }
+  }, [onboarding, location.pathname, navigate]);
+
   return (
     <ThemeProvider>
       <div className="app">
