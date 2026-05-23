@@ -1,2 +1,50 @@
-import { Stub } from "../components/Stub";
-export default function Onboarding() { return <Stub name="Onboarding" />; }
+import { useNavigate } from "react-router-dom";
+import { STEP_ORDER, useOnboardingStore } from "../state/onboarding";
+import { useOnboardingState } from "../api/hooks/onboarding";
+import StepWelcome from "./onboarding/StepWelcome";
+import StepConnect from "./onboarding/StepConnect";
+import StepCategories from "./onboarding/StepCategories";
+import StepAgent from "./onboarding/StepAgent";
+
+const STEP_TITLES: Record<string, string> = {
+  welcome: "Welcome",
+  connect: "Connect",
+  categories: "Categories",
+  agent: "Agent",
+};
+
+export default function Onboarding() {
+  const navigate = useNavigate();
+  const { step, setStep, reachedSteps } = useOnboardingStore();
+  const { data: _state } = useOnboardingState();
+
+  return (
+    <div className="onboarding-shell" data-testid="onboarding-shell">
+      <nav className="onboarding-stepper" aria-label="Onboarding progress">
+        {STEP_ORDER.map((s, idx) => {
+          const reached = reachedSteps.has(s);
+          const isCurrent = s === step;
+          return (
+            <button
+              key={s}
+              className={`step-chip ${isCurrent ? "current" : ""} ${reached ? "reached" : "locked"}`}
+              disabled={!reached}
+              onClick={() => reached && setStep(s)}
+              aria-current={isCurrent ? "step" : undefined}
+            >
+              <span className="step-index">{idx + 1}</span>
+              <span className="step-title">{STEP_TITLES[s]}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <section className="onboarding-step">
+        {step === "welcome"    && <StepWelcome onNext={() => setStep("connect")} onSkipToToday={() => navigate("/")} />}
+        {step === "connect"    && <StepConnect onNext={() => setStep("categories")} />}
+        {step === "categories" && <StepCategories onNext={() => setStep("agent")} />}
+        {step === "agent"      && <StepAgent onDone={() => navigate("/")} />}
+      </section>
+    </div>
+  );
+}
