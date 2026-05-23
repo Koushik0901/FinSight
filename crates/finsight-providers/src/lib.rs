@@ -1,9 +1,7 @@
 //! finsight-providers — pluggable transaction sources.
 //! Phase 2 ships the csv module; Plaid/SimpleFin land in later phases.
 
-pub mod csv {
-    // Filled in Task 8.
-}
+pub mod csv;
 pub mod error;
 pub mod provider;
 
