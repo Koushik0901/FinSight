@@ -50,6 +50,12 @@ impl From<tauri::Error> for AppError {
     }
 }
 
+impl From<finsight_providers::ProviderError> for AppError {
+    fn from(err: finsight_providers::ProviderError) -> Self {
+        AppError::new("provider", err.to_string())
+    }
+}
+
 // Deliberately NOT a blanket From<E: Display> — we want each error source
 // to map to a meaningful machine-readable code.
 
