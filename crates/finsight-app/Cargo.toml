@@ -22,6 +22,7 @@ specta = { workspace = true, features = ["derive", "serde_json"] }
 specta-typescript.workspace = true
 tauri-specta.workspace = true
 
+uuid.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 

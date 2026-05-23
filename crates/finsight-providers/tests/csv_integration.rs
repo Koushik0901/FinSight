@@ -38,12 +38,14 @@ fn chase_csv_imports_then_dedupes_on_reimport() {
         delimiter: Some(','),
     };
 
-    let s = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &mapping, &db, |_| {}).unwrap();
+    let id1 = uuid::Uuid::new_v4().to_string();
+    let s = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &id1, &mapping, &db, |_| {}).unwrap();
     assert_eq!(s.rows_imported, 3);
     assert_eq!(s.rows_skipped_duplicates, 0);
     assert!(s.errors.is_empty());
 
-    let s2 = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &mapping, &db, |_| {}).unwrap();
+    let id2 = uuid::Uuid::new_v4().to_string();
+    let s2 = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &id2, &mapping, &db, |_| {}).unwrap();
     assert_eq!(s2.rows_imported, 0);
     assert_eq!(s2.rows_skipped_duplicates, 3);
 }
@@ -59,7 +61,8 @@ fn semicolon_german_csv_parses_with_comma_decimal() {
         decimal_separator: ',',
         delimiter: Some(';'),
     };
-    let s = CsvProvider::import(&fixture("simple-semicolon.csv"), &acct, &mapping, &db, |_| {}).unwrap();
+    let id = uuid::Uuid::new_v4().to_string();
+    let s = CsvProvider::import(&fixture("simple-semicolon.csv"), &acct, &id, &mapping, &db, |_| {}).unwrap();
     assert_eq!(s.rows_imported, 2);
 }
 

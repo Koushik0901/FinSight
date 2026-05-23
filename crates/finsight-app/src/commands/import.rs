@@ -6,6 +6,7 @@ use serde::Serialize;
 use specta::Type;
 use std::path::PathBuf;
 use tauri::Emitter;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct ProgressPayload {
@@ -39,13 +40,16 @@ pub async fn import_csv(
     let db = (*state.db).clone();
     let path = PathBuf::from(path);
     let app_emit = app.clone();
+    // Pre-generate the import_id so progress events carry it before the summary is returned.
+    let import_id = Uuid::new_v4().to_string();
+    let import_id_for_progress = import_id.clone();
 
     let summary = tokio::task::spawn_blocking(move || {
-        CsvProvider::import(&path, &account_id, &mapping, &db, |p| {
+        CsvProvider::import(&path, &account_id, &import_id, &mapping, &db, |p| {
             let _ = app_emit.emit(
                 "import.progress",
                 ProgressPayload {
-                    import_id: String::new(), // unknown until summary returned
+                    import_id: import_id_for_progress.clone(),
                     rows_done: p.rows_done,
                     rows_total: p.rows_total,
                 },
@@ -57,7 +61,7 @@ pub async fn import_csv(
     .map_err(|e| AppError::new("internal", format!("join: {e}")))?;
 
     let summary = summary?;
-    app.emit("import.complete", &summary.import_id).ok();
+    app.emit("import.complete", &summary).ok();
     Ok(summary)
 }
 
