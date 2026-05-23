@@ -10,6 +10,8 @@ import Categories from "./screens/Categories";
 import Settings from "./screens/Settings";
 import Onboarding from "./screens/Onboarding";
 import { useOnboardingState } from "./api/hooks/onboarding";
+import ImportProgress from "./components/ImportProgress";
+import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
 
 export function App() {
   const { data: onboarding } = useOnboardingState();
@@ -29,6 +31,8 @@ export function App() {
       <div className="app">
         <Sidebar />
         <main className="main">
+          <UnfinishedImportBanner />
+          <ImportProgress />
           <Routes>
             <Route path="/" element={<Today />} />
             <Route path="/accounts" element={<Accounts />} />

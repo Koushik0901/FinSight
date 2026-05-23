@@ -7,3 +7,10 @@ vi.mock("@tauri-apps/api/core", () => ({
     throw new Error("invoke not mocked — set per-test with vi.mocked(invoke).mockResolvedValue(...)");
   }),
 }));
+
+// Provide a no-op mock for tauri event listeners (used by ImportProgress).
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+  once: vi.fn(() => Promise.resolve(() => {})),
+  emit: vi.fn(() => Promise.resolve()),
+}));
