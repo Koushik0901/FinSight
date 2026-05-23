@@ -42,14 +42,14 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const [amountConvention, setAmountConvention] =
     useState<"negative_is_outflow" | "positive_is_outflow" | "split_debit_credit">("negative_is_outflow");
 
-  // Initialize columns to "Skip" when preview first arrives
+  // Reset columns whenever the column count changes (e.g. after skipHeaderRows changes),
+  // but preserve existing role assignments when the same file is re-fetched.
   useEffect(() => {
     if (!preview) return;
-    if (columns.length === 0) {
-      const colCount = preview.headers?.length ?? preview.rows[0]?.length ?? 0;
-      setColumns(Array(colCount).fill("Skip" as ColumnRole));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const colCount = preview.headers?.length ?? preview.rows[0]?.length ?? 0;
+    setColumns((prev) =>
+      prev.length === colCount ? prev : Array<ColumnRole>(colCount).fill("Skip")
+    );
   }, [preview]);
 
   const importCsv = useImportCsv();
@@ -67,20 +67,30 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   async function submit() {
     const mapping: CsvImportMapping = {
       skip_header_rows: skipHeaderRows,
-      columns: columns,
+      columns: columns as CsvImportMapping["columns"],
       date_format: finalDateFormat,
       amount_convention: amountConvention,
       decimal_separator: ".",
       delimiter: null,
     };
-    const summary = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
-    onImported(summary);
+    try {
+      const summary = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
+      onImported(summary);
+    } catch {
+      // importCsv.error is now set; rendered in the footer
+    }
   }
 
   return (
     <FocusLock returnFocus>
       <div className="dialog-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="map-title">
+      <div
+        className="dialog-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="map-title"
+        onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+      >
         <header>
           <h2 id="map-title">Map CSV columns</h2>
         </header>
@@ -177,6 +187,11 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
         )}
 
         <footer>
+          {importCsv.error && (
+            <p role="alert" className="error-text" style={{ color: "var(--error, red)", margin: "0 0 8px" }}>
+              {importCsv.error.message}
+            </p>
+          )}
           <button onClick={onClose}>Cancel</button>
           <button
             className="primary"

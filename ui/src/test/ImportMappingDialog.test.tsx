@@ -61,6 +61,53 @@ describe("ImportMappingDialog", () => {
     expect(btn).toBeDisabled();
   });
 
+  it("resets column mapping when skipHeaderRows changes column count", async () => {
+    const { commands } = await import("../api/client");
+    // First call returns 3 columns (already set by default mock)
+    // Second call returns 2 columns
+    (commands.previewCsvColumns as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        status: "ok",
+        data: {
+          headers: ["Date", "Merchant", "Amount"],
+          rows: [["2026-05-19", "Safeway", "-8.42"]],
+          detected_delimiter: ",",
+          total_rows: 1,
+          encoding_note: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        status: "ok",
+        data: {
+          headers: ["Date", "Amount"],
+          rows: [["2026-05-19", "-8.42"]],
+          detected_delimiter: ",",
+          total_rows: 1,
+          encoding_note: null,
+        },
+      });
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    // Change skipHeaderRows to trigger a re-fetch
+    const skipInput = screen.getByRole("spinbutton");
+    fireEvent.change(skipInput, { target: { value: "2" } });
+
+    // Wait for the new preview to render (2 columns, not 3)
+    await waitFor(() => {
+      const headers = screen.getAllByRole("columnheader");
+      expect(headers).toHaveLength(2);
+    });
+
+    // The column dropdowns should reset to Skip (no sparse array)
+    const headers = screen.getAllByRole("columnheader");
+    const dropdowns = headers.map((h) => h.querySelector("select") as HTMLSelectElement);
+    expect(dropdowns).toHaveLength(2);
+    expect(dropdowns[0]!.value).toBe("Skip");
+    expect(dropdowns[1]!.value).toBe("Skip");
+  });
+
   it("becomes enabled once required mapping is complete and submits", async () => {
     renderDialog();
     await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
