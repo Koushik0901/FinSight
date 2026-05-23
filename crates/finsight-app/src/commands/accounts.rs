@@ -19,8 +19,12 @@ pub async fn list_accounts(state: tauri::State<'_, AppState>) -> AppResult<Vec<A
 #[specta::specta]
 pub async fn create_account(
     state: tauri::State<'_, AppState>,
-    input: NewAccount,
+    mut input: NewAccount,
 ) -> AppResult<Account> {
+    // Always force source to "manual" — the frontend cannot create sample accounts.
+    // Without this, a caller passing source:"sample" would have their account silently
+    // wiped by clear_sample_data.
+    input.source = "manual".to_string();
     let db = (*state.db).clone();
     run(&db, move |conn| accounts::insert(conn, input))
         .await

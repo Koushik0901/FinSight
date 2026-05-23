@@ -173,6 +173,14 @@ pub fn seed_household(db: &Db) -> CoreResult<SeedSummary> {
         }
     }
 
+    // Finish the import row atomically — same transaction as the sample data so a
+    // crash between seed and finish cannot leave an unfinished banner on next launch.
+    tx.execute(
+        "UPDATE imports SET finished_at = ?1, rows_imported = ?2, rows_skipped_duplicates = 0 \
+         WHERE id = ?3",
+        params![Utc::now().to_rfc3339(), tx_count, &import_id],
+    )?;
+
     tx.commit()?;
     Ok(SeedSummary {
         accounts_created: ACCOUNTS.len() as u32,

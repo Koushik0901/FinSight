@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::repos::{imports as imports_repo, run};
+use finsight_core::repos::run;
 use finsight_core::{sample, settings};
 use serde::Serialize;
 use specta::Type;
@@ -47,15 +47,8 @@ pub async fn seed_sample_household(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<sample::SeedSummary> {
     let db = (*state.db).clone();
-    let summary = sample::seed_household(&db).map_err(AppError::from)?;
-    let txns = summary.transactions_created;
-    let id = summary.import_id.clone();
-    run(&db, move |conn| {
-        imports_repo::finish(conn, &id, txns, 0, None)
-    })
-    .await
-    .map_err(AppError::from)?;
-    Ok(summary)
+    // seed_household finishes its own import row atomically inside its transaction.
+    sample::seed_household(&db).map_err(AppError::from)
 }
 
 #[tauri::command]
