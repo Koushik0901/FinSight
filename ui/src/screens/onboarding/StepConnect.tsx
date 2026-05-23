@@ -1,10 +1,60 @@
+import { useState } from "react";
+import { useAccounts } from "../../api/hooks/accounts";
+import { useTransactions } from "../../api/hooks/transactions";
+import AccountDrawer from "../../components/AccountDrawer";
+import TransactionDrawer from "../../components/TransactionDrawer";
+
 interface Props { onNext: () => void; }
+
 export default function StepConnect({ onNext }: Props) {
+  const [acctOpen, setAcctOpen] = useState(false);
+  const [txnOpen, setTxnOpen]   = useState(false);
+
+  const { data: accounts = [] } = useAccounts();
+  const { data: txns = [] }     = useTransactions();
+
+  const canContinue = accounts.length > 0;
+
   return (
-    <div>
+    <div className="step-connect">
       <h2>Connect your money</h2>
-      <p>This step gets filled in by Tasks 16 (manual entry) and 19 (CSV import).</p>
-      <button onClick={onNext}>Skip for now →</button>
+
+      <div className="connect-cards">
+        <article className="card">
+          <h3>Import a statement</h3>
+          <p>Pick a CSV exported from your bank and map its columns.</p>
+          <button disabled title="Filled in Task 19">Pick a file…</button>
+        </article>
+
+        <article className="card">
+          <h3>Add manually</h3>
+          <p>Walk through accounts and a few recent transactions by hand.</p>
+          <div className="button-row">
+            <button onClick={() => setAcctOpen(true)}>+ Account</button>
+            <button onClick={() => setTxnOpen(true)} disabled={accounts.length === 0}>+ Transaction</button>
+          </div>
+        </article>
+
+        <article className="card">
+          <h3>Skip for now</h3>
+          <p>You can always add or import later from the Accounts screen.</p>
+          <button onClick={onNext}>Skip →</button>
+        </article>
+      </div>
+
+      <aside className="connect-tally" aria-live="polite">
+        <strong>{accounts.length}</strong> account{accounts.length === 1 ? "" : "s"} added,{" "}
+        <strong>{txns.length}</strong> transaction{txns.length === 1 ? "" : "s"} so far
+      </aside>
+
+      <footer>
+        <button className="primary" disabled={!canContinue} onClick={onNext}>
+          Continue →
+        </button>
+      </footer>
+
+      <AccountDrawer open={acctOpen} onClose={() => setAcctOpen(false)} />
+      <TransactionDrawer open={txnOpen} onClose={() => setTxnOpen(false)} />
     </div>
   );
 }
