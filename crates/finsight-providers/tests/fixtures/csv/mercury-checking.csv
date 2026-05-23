@@ -1,0 +1,3 @@
+Date (UTC),Description,Amount,Status,Source Account,Reference
+2026-05-19,"Stripe payout",1250.00,Sent,Mercury Checking,abc123
+2026-05-18,"AWS",-189.43,Sent,Mercury Checking,def456

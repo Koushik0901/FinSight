@@ -1,8 +1,11 @@
-//! FinSight data ingestion providers (CSV/OFX/QIF in Phase 2; Plaid/SimpleFin later).
+//! finsight-providers — pluggable transaction sources.
+//! Phase 2 ships the csv module; Plaid/SimpleFin land in later phases.
 
-use async_trait::async_trait;
-
-#[async_trait]
-pub trait SyncProvider: Send + Sync {
-    fn id(&self) -> &str;
+pub mod csv {
+    // Filled in Task 8.
 }
+pub mod error;
+pub mod provider;
+
+pub use error::{ProviderError, ProviderResult};
+pub use provider::SyncProvider;
