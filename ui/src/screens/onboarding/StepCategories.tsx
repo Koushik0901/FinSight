@@ -29,7 +29,7 @@ export default function StepCategories({ onNext }: Props) {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   }
   function add() {
-    setRows((r) => [...r, { id: `custom-${r.length}`, label: "", group_id: "daily" }]);
+    setRows((r) => [...r, { id: crypto.randomUUID(), label: "", group_id: "daily" }]);
   }
   function remove(i: number) {
     setRows((r) => r.filter((_, idx) => idx !== i));
