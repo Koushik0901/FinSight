@@ -19,3 +19,5 @@ rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+uuid.workspace = true
+finsight-core = { path = "../finsight-core" }
