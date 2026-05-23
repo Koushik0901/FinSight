@@ -29,8 +29,7 @@ pub async fn get_onboarding_state(state: tauri::State<'_, AppState>) -> AppResul
             [],
             |r| r.get(0),
         )?;
-        let completion_marked: bool =
-            settings::get::<bool>(conn, KEY_COMPLETION)?.unwrap_or(false);
+        let completion_marked: bool = settings::get::<bool>(conn, KEY_COMPLETION)?.unwrap_or(false);
         Ok(OnboardingState {
             account_count,
             category_count,
@@ -161,9 +160,11 @@ pub async fn save_llm_provider(
     config: LlmProviderConfig,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| settings::set(conn, "llm_provider", &config))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        settings::set(conn, "llm_provider", &config)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]

@@ -57,7 +57,13 @@ pub fn start(
     conn.execute(
         "INSERT INTO imports(id, source, filename, account_id, started_at) \
          VALUES(?1, ?2, ?3, ?4, ?5)",
-        params![&id, source.as_db(), filename, account_id, Utc::now().to_rfc3339()],
+        params![
+            &id,
+            source.as_db(),
+            filename,
+            account_id,
+            Utc::now().to_rfc3339()
+        ],
     )?;
     Ok(id)
 }
@@ -113,7 +119,9 @@ pub fn list_unfinished(conn: &Connection) -> CoreResult<Vec<Import>> {
 }
 
 fn parse_rfc3339(s: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(s).unwrap_or_else(|_| Utc::now().into()).into()
+    DateTime::parse_from_rfc3339(s)
+        .unwrap_or_else(|_| Utc::now().into())
+        .into()
 }
 
 #[cfg(test)]
@@ -148,9 +156,13 @@ mod tests {
         let conn = db.get().unwrap();
         let id = start(&conn, ImportSource::Csv, Some("bad.csv"), None).unwrap();
         finish(&conn, &id, 0, 0, Some("file not utf8")).unwrap();
-        let row: (i64, i64, Option<String>) = conn.query_row(
-            "SELECT rows_imported, rows_skipped_duplicates, error FROM imports WHERE id = ?1",
-            params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        let row: (i64, i64, Option<String>) = conn
+            .query_row(
+                "SELECT rows_imported, rows_skipped_duplicates, error FROM imports WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
         assert_eq!(row, (0, 0, Some("file not utf8".to_string())));
     }
 }

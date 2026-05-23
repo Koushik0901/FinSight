@@ -5,11 +5,11 @@ use crate::error::{ProviderError, ProviderResult};
 /// Result of sniffing the first bytes of a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DetectedEncoding {
-    Utf8,           // No BOM, decodes as UTF-8.
-    Utf8Bom,        // EF BB BF prefix.
-    Utf16Le,        // FF FE prefix.
-    Utf16Be,        // FE FF prefix.
-    Windows1252,    // No BOM, didn't decode as UTF-8; fallback.
+    Utf8,        // No BOM, decodes as UTF-8.
+    Utf8Bom,     // EF BB BF prefix.
+    Utf16Le,     // FF FE prefix.
+    Utf16Be,     // FE FF prefix.
+    Windows1252, // No BOM, didn't decode as UTF-8; fallback.
 }
 
 /// Decode the entire byte buffer to a String using the layered strategy.

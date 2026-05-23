@@ -16,8 +16,10 @@ fn sample_seed_is_byte_for_byte_deterministic() {
     let b = seed_household(&db_b).unwrap();
 
     assert_eq!(a.accounts_created, b.accounts_created);
-    assert_eq!(a.transactions_created, b.transactions_created,
-               "transaction count drift — RNG stream changed; pin rand_chacha");
+    assert_eq!(
+        a.transactions_created, b.transactions_created,
+        "transaction count drift — RNG stream changed; pin rand_chacha"
+    );
 
     // First merchant_raw (ordered by posted_at then by RNG-derived columns to
     // avoid non-deterministic tie-breaking on random UUIDs) must match across runs.

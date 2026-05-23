@@ -17,10 +17,7 @@ pub struct ProgressPayload {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn preview_csv_columns(
-    path: String,
-    skip_header_rows: u32,
-) -> AppResult<CsvPreview> {
+pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResult<CsvPreview> {
     let path_buf = PathBuf::from(path);
     tokio::task::spawn_blocking(move || CsvProvider::preview(&path_buf, skip_header_rows))
         .await

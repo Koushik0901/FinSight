@@ -27,57 +27,99 @@ struct AccountSpec {
     name: &'static str,
     bank: &'static str,
     owner: &'static str,
-    r#type: &'static str,    // matches AccountType::as_db values
+    r#type: &'static str, // matches AccountType::as_db values
     color: &'static str,
     opening_cents: i64,
 }
 
 const ACCOUNTS: &[AccountSpec] = &[
-    AccountSpec { name: "Joint Checking",  bank: "Chase",    owner: "joint", r#type: "Checking",   color: "#3B82F6", opening_cents:  450_000 },
-    AccountSpec { name: "Emergency Fund",  bank: "Marcus",   owner: "joint", r#type: "Savings",    color: "#10B981", opening_cents: 1_200_000 },
-    AccountSpec { name: "Mira's Card",     bank: "Amex",     owner: "mira",  r#type: "Credit",     color: "#F59E0B", opening_cents:    -8_500 },
-    AccountSpec { name: "Adam's Card",     bank: "Chase",    owner: "adam",  r#type: "Credit",     color: "#EF4444", opening_cents:   -12_300 },
-    AccountSpec { name: "Brokerage",       bank: "Fidelity", owner: "joint", r#type: "Investment", color: "#8B5CF6", opening_cents: 8_750_000 },
-    AccountSpec { name: "Wallet Cash",     bank: "Cash",     owner: "joint", r#type: "Cash",       color: "#6B7280", opening_cents:    18_000 },
+    AccountSpec {
+        name: "Joint Checking",
+        bank: "Chase",
+        owner: "joint",
+        r#type: "Checking",
+        color: "#3B82F6",
+        opening_cents: 450_000,
+    },
+    AccountSpec {
+        name: "Emergency Fund",
+        bank: "Marcus",
+        owner: "joint",
+        r#type: "Savings",
+        color: "#10B981",
+        opening_cents: 1_200_000,
+    },
+    AccountSpec {
+        name: "Mira's Card",
+        bank: "Amex",
+        owner: "mira",
+        r#type: "Credit",
+        color: "#F59E0B",
+        opening_cents: -8_500,
+    },
+    AccountSpec {
+        name: "Adam's Card",
+        bank: "Chase",
+        owner: "adam",
+        r#type: "Credit",
+        color: "#EF4444",
+        opening_cents: -12_300,
+    },
+    AccountSpec {
+        name: "Brokerage",
+        bank: "Fidelity",
+        owner: "joint",
+        r#type: "Investment",
+        color: "#8B5CF6",
+        opening_cents: 8_750_000,
+    },
+    AccountSpec {
+        name: "Wallet Cash",
+        bank: "Cash",
+        owner: "joint",
+        r#type: "Cash",
+        color: "#6B7280",
+        opening_cents: 18_000,
+    },
 ];
 
 const MERCHANTS: &[(&str, i64, i64)] = &[
     // (merchant, bound_a, bound_b) — negative = outflow.
     // NOTE: bounds may be in either order; gen_amount() normalises them so the
     // smaller value is always used as range start.
-    ("Safeway",         -2_200, -12_500),
-    ("Whole Foods",     -3_500, -18_000),
-    ("Starbucks",         -350,  -1_200),
-    ("Chipotle",        -1_100,  -2_400),
-    ("Shell",           -3_500,  -7_500),
-    ("PG&E",           -11_000, -18_500),
-    ("Comcast",         -6_500,  -9_500),
-    ("Netflix",         -1_599,  -1_599),
-    ("Spotify",         -1_099,  -1_099),
-    ("Amazon",          -2_000, -45_000),
-    ("Target",          -2_500, -28_000),
-    ("Uber",            -1_200,  -3_800),
-    ("Apple",           -9_900, -29_900),
-    ("Acme Payroll",   220_000, 380_000),  // bi-weekly inflow
+    ("Safeway", -2_200, -12_500),
+    ("Whole Foods", -3_500, -18_000),
+    ("Starbucks", -350, -1_200),
+    ("Chipotle", -1_100, -2_400),
+    ("Shell", -3_500, -7_500),
+    ("PG&E", -11_000, -18_500),
+    ("Comcast", -6_500, -9_500),
+    ("Netflix", -1_599, -1_599),
+    ("Spotify", -1_099, -1_099),
+    ("Amazon", -2_000, -45_000),
+    ("Target", -2_500, -28_000),
+    ("Uber", -1_200, -3_800),
+    ("Apple", -9_900, -29_900),
+    ("Acme Payroll", 220_000, 380_000), // bi-weekly inflow
 ];
 
 const CATEGORIES: &[(&str, &str, &str)] = &[
     // (id, group_id, label)
-    ("groceries",     "daily",     "Groceries"),
-    ("dining",        "daily",     "Dining"),
-    ("transport",     "daily",     "Transport"),
-    ("housing",       "fixed",     "Housing"),
-    ("utilities",     "fixed",     "Utilities"),
-    ("subscriptions", "fixed",     "Subscriptions"),
-    ("shopping",      "lifestyle", "Shopping"),
-    ("travel",        "lifestyle", "Travel"),
-    ("gifts",         "lifestyle", "Gifts"),
-    ("health",        "wellbeing", "Health"),
+    ("groceries", "daily", "Groceries"),
+    ("dining", "daily", "Dining"),
+    ("transport", "daily", "Transport"),
+    ("housing", "fixed", "Housing"),
+    ("utilities", "fixed", "Utilities"),
+    ("subscriptions", "fixed", "Subscriptions"),
+    ("shopping", "lifestyle", "Shopping"),
+    ("travel", "lifestyle", "Travel"),
+    ("gifts", "lifestyle", "Gifts"),
+    ("health", "wellbeing", "Health"),
 ];
 
 const CATEGORY_GROUPS: &[(&str, &str)] = &[
-    ("fixed",     "Fixed"),
-    ("daily",     "Daily"),
+    ("fixed", "Fixed"),
+    ("daily", "Daily"),
     ("lifestyle", "Lifestyle"),
     ("wellbeing", "Wellbeing"),
 ];
@@ -165,7 +207,7 @@ pub fn seed_household(db: &Db) -> CoreResult<SeedSummary> {
                     posted.to_rfc3339(),
                     amount,
                     mname,
-                    cat,                      // rusqlite maps Option<&str> → NULL when None
+                    cat, // rusqlite maps Option<&str> → NULL when None
                     Utc::now().to_rfc3339(),
                 ],
             )?;
@@ -193,14 +235,14 @@ pub fn seed_household(db: &Db) -> CoreResult<SeedSummary> {
 /// All returned ids MUST exist in CATEGORIES above (FK constraint on transactions.category_id).
 fn category_for(merchant: &str) -> Option<&'static str> {
     match merchant {
-        "Safeway" | "Whole Foods"     => Some("groceries"),
-        "Starbucks" | "Chipotle"      => Some("dining"),
-        "Shell" | "Uber"              => Some("transport"),
-        "PG&E" | "Comcast"            => Some("utilities"),
-        "Netflix" | "Spotify"         => Some("subscriptions"),
+        "Safeway" | "Whole Foods" => Some("groceries"),
+        "Starbucks" | "Chipotle" => Some("dining"),
+        "Shell" | "Uber" => Some("transport"),
+        "PG&E" | "Comcast" => Some("utilities"),
+        "Netflix" | "Spotify" => Some("subscriptions"),
         "Amazon" | "Target" | "Apple" => Some("shopping"),
-        "Acme Payroll"                => None,  // inflow — no category until Phase 3
-        _                             => Some("shopping"),
+        "Acme Payroll" => None, // inflow — no category until Phase 3
+        _ => Some("shopping"),
     }
 }
 
@@ -226,8 +268,11 @@ mod tests {
         assert_eq!(s.accounts_created, 6);
         // RNG is pinned; assert tight envelope — the determinism integration test pins the exact count.
         // gen_range(0..=2) has mean 1, so expected ~365 per year; actual is 346 for SAMPLE_SEED.
-        assert!(s.transactions_created >= 300 && s.transactions_created <= 400,
-                "got {} txns", s.transactions_created);
+        assert!(
+            s.transactions_created >= 300 && s.transactions_created <= 400,
+            "got {} txns",
+            s.transactions_created
+        );
     }
 
     #[test]
@@ -235,7 +280,11 @@ mod tests {
         let (_d, db) = fresh_db();
         {
             let conn = db.get().unwrap();
-            conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('daily','Daily',0)", []).unwrap();
+            conn.execute(
+                "INSERT INTO category_groups(id,label,sort_order) VALUES('daily','Daily',0)",
+                [],
+            )
+            .unwrap();
         }
         // Should not panic on the duplicate group_id.
         seed_household(&db).unwrap();

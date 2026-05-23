@@ -4,10 +4,10 @@ pub mod encoding;
 pub mod mapping;
 pub mod parse;
 
-use crate::error::{ProviderError, ProviderResult};
 use crate::csv::encoding::{decode_layered, DetectedEncoding};
 use crate::csv::mapping::CsvImportMapping;
 use crate::csv::parse::{into_new_transaction, parse_row};
+use crate::error::{ProviderError, ProviderResult};
 use chrono::Utc;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -60,8 +60,9 @@ impl CsvProvider {
         let (text, encoding) = decode_layered(&bytes)?;
         let delimiter = detect_delimiter(&text);
         let encoding_note = match encoding {
-            DetectedEncoding::Windows1252 =>
-                Some("Decoded as Windows-1252 (no UTF-8 BOM detected)".into()),
+            DetectedEncoding::Windows1252 => {
+                Some("Decoded as Windows-1252 (no UTF-8 BOM detected)".into())
+            }
             _ => None,
         };
 
@@ -86,16 +87,27 @@ impl CsvProvider {
                 if rows.len() < PREVIEW_ROWS {
                     rows.push(rec.iter().map(str::to_owned).collect());
                 }
-                if total >= PREVIEW_COUNT_CAP { break; }
+                if total >= PREVIEW_COUNT_CAP {
+                    break;
+                }
             }
         }
 
-        Ok(CsvPreview { headers, rows, detected_delimiter: delimiter, total_rows: total, encoding_note })
+        Ok(CsvPreview {
+            headers,
+            rows,
+            detected_delimiter: delimiter,
+            total_rows: total,
+            encoding_note,
+        })
     }
 
+    /// `import_id` must be a pre-generated UUID supplied by the caller so that
+    /// progress callbacks can include it in events before the summary is returned.
     pub fn import(
         path: &Path,
         account_id: &str,
+        import_id: &str,
         mapping: &CsvImportMapping,
         db: &finsight_core::Db,
         mut on_progress: impl FnMut(BatchProgress),
@@ -127,12 +139,12 @@ impl CsvProvider {
 
         let mut conn = db.get().map_err(ProviderError::Core)?;
         let filename = path.file_name().map(|s| s.to_string_lossy().into_owned());
-        let import_id = Uuid::new_v4().to_string();
         conn.execute(
             "INSERT INTO imports(id, source, filename, account_id, started_at) \
              VALUES(?1, 'csv', ?2, ?3, ?4)",
-            params![&import_id, filename, account_id, Utc::now().to_rfc3339()],
-        ).map_err(|e| ProviderError::Internal(format!("imports insert: {e}")))?;
+            params![import_id, filename, account_id, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| ProviderError::Internal(format!("imports insert: {e}")))?;
 
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
@@ -148,20 +160,36 @@ impl CsvProvider {
         // commit every BATCH_SIZE rows without the monotonic `processed` check.
         let mut in_batch: usize = 0;
 
-        let mut tx = conn.transaction().map_err(|e| ProviderError::Internal(format!("begin: {e}")))?;
+        let mut tx = conn
+            .transaction()
+            .map_err(|e| ProviderError::Internal(format!("begin: {e}")))?;
 
         for (idx, rec) in reader.records().enumerate() {
             let row_number = (idx + 1) as u32;
             let rec = match rec {
                 Ok(r) => r,
-                Err(e) => { errors.push(RowError { row_number, reason: e.to_string() }); continue; }
+                Err(e) => {
+                    errors.push(RowError {
+                        row_number,
+                        reason: e.to_string(),
+                    });
+                    continue;
+                }
             };
-            if idx < mapping.skip_header_rows as usize { continue; }
+            if idx < mapping.skip_header_rows as usize {
+                continue;
+            }
 
             let fields: Vec<&str> = rec.iter().collect();
             let parsed = match parse_row(&fields, mapping) {
                 Ok(p) => p,
-                Err(e) => { errors.push(RowError { row_number, reason: e.to_string() }); continue; }
+                Err(e) => {
+                    errors.push(RowError {
+                        row_number,
+                        reason: e.to_string(),
+                    });
+                    continue;
+                }
             };
             let new_tx = into_new_transaction(parsed, account_id.to_string());
 
@@ -200,29 +228,44 @@ impl CsvProvider {
             processed += 1;
             in_batch += 1;
 
-            let should_emit = emit_every > 0 && (processed as usize) % emit_every == 0;
+            let should_emit = emit_every > 0 && (processed as usize).is_multiple_of(emit_every);
             if in_batch >= BATCH_SIZE || should_emit {
-                tx.commit().map_err(|e| ProviderError::Internal(format!("commit batch: {e}")))?;
-                on_progress(BatchProgress { rows_done: processed, rows_total: total });
-                tx = conn.transaction().map_err(|e| ProviderError::Internal(format!("begin: {e}")))?;
+                tx.commit()
+                    .map_err(|e| ProviderError::Internal(format!("commit batch: {e}")))?;
+                on_progress(BatchProgress {
+                    rows_done: processed,
+                    rows_total: total,
+                });
+                tx = conn
+                    .transaction()
+                    .map_err(|e| ProviderError::Internal(format!("begin: {e}")))?;
                 in_batch = 0;
             }
         }
 
         // Persist mapping + finalize imports row.
-        mapping::save(&*tx, account_id, mapping)?;
+        mapping::save(&tx, account_id, mapping)?;
         tx.execute(
             "UPDATE imports SET finished_at = ?1, rows_imported = ?2, \
                                 rows_skipped_duplicates = ?3 WHERE id = ?4",
-            params![Utc::now().to_rfc3339(), rows_imported as i64,
-                    rows_skipped as i64, &import_id],
-        ).map_err(|e| ProviderError::Internal(format!("imports finish: {e}")))?;
-        tx.commit().map_err(|e| ProviderError::Internal(format!("commit final: {e}")))?;
+            params![
+                Utc::now().to_rfc3339(),
+                rows_imported as i64,
+                rows_skipped as i64,
+                import_id
+            ],
+        )
+        .map_err(|e| ProviderError::Internal(format!("imports finish: {e}")))?;
+        tx.commit()
+            .map_err(|e| ProviderError::Internal(format!("commit final: {e}")))?;
 
-        on_progress(BatchProgress { rows_done: processed, rows_total: total });
+        on_progress(BatchProgress {
+            rows_done: processed,
+            rows_total: total,
+        });
 
         Ok(ImportSummary {
-            import_id,
+            import_id: import_id.to_string(),
             rows_imported,
             rows_skipped_duplicates: rows_skipped,
             errors,
@@ -233,17 +276,24 @@ impl CsvProvider {
 fn detect_delimiter(text: &str) -> char {
     let first_line = text.lines().next().unwrap_or("");
     let commas = first_line.matches(',').count();
-    let semis  = first_line.matches(';').count();
-    let tabs   = first_line.matches('\t').count();
-    if tabs >= commas && tabs >= semis && tabs > 0 { '\t' }
-    else if semis > commas { ';' }
-    else { ',' }
+    let semis = first_line.matches(';').count();
+    let tabs = first_line.matches('\t').count();
+    if tabs >= commas && tabs >= semis && tabs > 0 {
+        '\t'
+    } else if semis > commas {
+        ';'
+    } else {
+        ','
+    }
 }
 
 fn read_capped(path: &Path) -> ProviderResult<Vec<u8>> {
     let meta = std::fs::metadata(path)?;
     if meta.len() > MAX_BYTES {
-        return Err(ProviderError::FileTooLarge { bytes: meta.len(), cap: MAX_BYTES });
+        return Err(ProviderError::FileTooLarge {
+            bytes: meta.len(),
+            cap: MAX_BYTES,
+        });
     }
     let mut bytes = Vec::with_capacity(meta.len() as usize);
     use std::io::Read;

@@ -12,7 +12,7 @@ pub fn load_or_create_key(service: &str, user: &str) -> CoreResult<Zeroizing<Str
         Ok(existing) => Ok(Zeroizing::new(existing)),
         Err(keyring::Error::NoEntry) => {
             let hex = generate_random_key();
-            entry.set_password(&*hex)?;
+            entry.set_password(&hex)?;
             Ok(hex)
         }
         Err(e) => Err(e.into()),

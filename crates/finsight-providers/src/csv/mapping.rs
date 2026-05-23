@@ -17,7 +17,14 @@ pub enum AmountConvention {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub enum ColumnRole {
-    Date, Amount, Merchant, Notes, Category, Skip, Debit, Credit,
+    Date,
+    Amount,
+    Merchant,
+    Notes,
+    Category,
+    Skip,
+    Debit,
+    Credit,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -32,13 +39,17 @@ pub struct CsvImportMapping {
     pub delimiter: Option<char>,
 }
 
-fn default_decimal() -> char { '.' }
+fn default_decimal() -> char {
+    '.'
+}
 
 pub fn load(conn: &Connection, account_id: &str) -> ProviderResult<Option<CsvImportMapping>> {
     let row: Option<String> = conn
         .query_row(
             "SELECT mapping_json FROM csv_import_mappings WHERE account_id = ?1",
-            params![account_id], |r| r.get(0))
+            params![account_id],
+            |r| r.get(0),
+        )
         .map(Some)
         .or_else(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => Ok(None),
@@ -63,7 +74,8 @@ pub fn save(conn: &Connection, account_id: &str, mapping: &CsvImportMapping) -> 
             mapping_json = excluded.mapping_json, \
             last_used_at = excluded.last_used_at",
         params![account_id, json, Utc::now().to_rfc3339()],
-    ).map_err(|e| ProviderError::Internal(format!("save mapping: {e}")))?;
+    )
+    .map_err(|e| ProviderError::Internal(format!("save mapping: {e}")))?;
     Ok(())
 }
 
@@ -90,7 +102,12 @@ mod tests {
     fn sample_mapping() -> CsvImportMapping {
         CsvImportMapping {
             skip_header_rows: 1,
-            columns: vec![ColumnRole::Skip, ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+            columns: vec![
+                ColumnRole::Skip,
+                ColumnRole::Date,
+                ColumnRole::Merchant,
+                ColumnRole::Amount,
+            ],
             date_format: "%m/%d/%Y".to_string(),
             amount_convention: AmountConvention::NegativeIsOutflow,
             decimal_separator: '.',

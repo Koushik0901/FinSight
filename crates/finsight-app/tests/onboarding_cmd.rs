@@ -15,8 +15,7 @@ fn fresh_db_reports_zero_then_sample_increments() {
             .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
             .unwrap();
         assert_eq!(zero, 0);
-        let marked: Option<bool> =
-            settings::get(&conn, "onboarding_completion_marked").unwrap();
+        let marked: Option<bool> = settings::get(&conn, "onboarding_completion_marked").unwrap();
         assert_eq!(marked, None);
     }
 

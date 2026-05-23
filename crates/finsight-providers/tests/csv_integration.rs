@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/csv").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/csv")
+        .join(name)
 }
 
 fn fresh_db() -> (TempDir, Db, String) {
@@ -29,8 +31,13 @@ fn chase_csv_imports_then_dedupes_on_reimport() {
     let mapping = CsvImportMapping {
         skip_header_rows: 1,
         columns: vec![
-            ColumnRole::Skip, ColumnRole::Date, ColumnRole::Merchant,
-            ColumnRole::Amount, ColumnRole::Skip, ColumnRole::Skip, ColumnRole::Skip,
+            ColumnRole::Skip,
+            ColumnRole::Date,
+            ColumnRole::Merchant,
+            ColumnRole::Amount,
+            ColumnRole::Skip,
+            ColumnRole::Skip,
+            ColumnRole::Skip,
         ],
         date_format: "%m/%d/%Y".to_string(),
         amount_convention: AmountConvention::NegativeIsOutflow,
@@ -39,13 +46,29 @@ fn chase_csv_imports_then_dedupes_on_reimport() {
     };
 
     let id1 = uuid::Uuid::new_v4().to_string();
-    let s = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &id1, &mapping, &db, |_| {}).unwrap();
+    let s = CsvProvider::import(
+        &fixture("chase-checking.csv"),
+        &acct,
+        &id1,
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(s.rows_imported, 3);
     assert_eq!(s.rows_skipped_duplicates, 0);
     assert!(s.errors.is_empty());
 
     let id2 = uuid::Uuid::new_v4().to_string();
-    let s2 = CsvProvider::import(&fixture("chase-checking.csv"), &acct, &id2, &mapping, &db, |_| {}).unwrap();
+    let s2 = CsvProvider::import(
+        &fixture("chase-checking.csv"),
+        &acct,
+        &id2,
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(s2.rows_imported, 0);
     assert_eq!(s2.rows_skipped_duplicates, 3);
 }
@@ -62,7 +85,15 @@ fn semicolon_german_csv_parses_with_comma_decimal() {
         delimiter: Some(';'),
     };
     let id = uuid::Uuid::new_v4().to_string();
-    let s = CsvProvider::import(&fixture("simple-semicolon.csv"), &acct, &id, &mapping, &db, |_| {}).unwrap();
+    let s = CsvProvider::import(
+        &fixture("simple-semicolon.csv"),
+        &acct,
+        &id,
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(s.rows_imported, 2);
 }
 

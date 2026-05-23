@@ -14,7 +14,13 @@ fn fresh_db_after_startup_has_no_accounts() {
     // NOTE: We deliberately do NOT call seed::walking_skeleton here; this mirrors
     // what configure_app() does in production after Task 5.
 
-    let count: i64 = db.get().unwrap()
-        .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
-    assert_eq!(count, 0, "expected 0 accounts after fresh migration (no auto-seed)");
+    let count: i64 = db
+        .get()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        count, 0,
+        "expected 0 accounts after fresh migration (no auto-seed)"
+    );
 }

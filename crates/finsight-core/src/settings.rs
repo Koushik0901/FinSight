@@ -8,7 +8,11 @@ use serde::{de::DeserializeOwned, Serialize};
 /// Read a setting by key, returning None if absent.
 pub fn get<T: DeserializeOwned>(conn: &Connection, key: &str) -> CoreResult<Option<T>> {
     let row: Option<String> = conn
-        .query_row("SELECT value FROM settings WHERE key = ?1", params![key], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |r| r.get(0),
+        )
         .map(Some)
         .or_else(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => Ok(None),
