@@ -81,3 +81,44 @@ pub async fn clear_sample_data(state: tauri::State<'_, AppState>) -> AppResult<(
     .await
     .map_err(AppError::from)
 }
+
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+pub struct StarterCategory {
+    pub id: String,
+    pub label: String,
+    pub group_id: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn commit_starter_categories(
+    state: tauri::State<'_, AppState>,
+    categories: Vec<StarterCategory>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let tx = conn.transaction()?;
+        for (gid, label) in [
+            ("fixed", "Fixed"),
+            ("daily", "Daily"),
+            ("lifestyle", "Lifestyle"),
+            ("wellbeing", "Wellbeing"),
+        ] {
+            tx.execute(
+                "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES(?1, ?2, 0)",
+                rusqlite::params![gid, label],
+            )?;
+        }
+        for c in &categories {
+            tx.execute(
+                "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) \
+                 VALUES(?1, ?2, ?3, '#94A3B8', 0)",
+                rusqlite::params![c.id, c.group_id, c.label],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}

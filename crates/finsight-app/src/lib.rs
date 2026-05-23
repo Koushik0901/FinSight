@@ -32,6 +32,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::onboarding::mark_onboarding_complete,
         commands::onboarding::reset_onboarding_completion,
         commands::onboarding::clear_sample_data,
+        commands::onboarding::commit_starter_categories,
         commands::meta::app_ready,
         commands::import::preview_csv_columns,
         commands::import::import_csv,

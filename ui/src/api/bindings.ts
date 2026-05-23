@@ -78,6 +78,14 @@ async clearSampleData() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async commitStarterCategories(categories: StarterCategory[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("commit_starter_categories", { categories }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async appReady() : Promise<Result<AppReady, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("app_ready") };
@@ -153,6 +161,7 @@ export type NewTransaction = { account_id: string; posted_at: string; amount_cen
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type RowError = { row_number: number; reason: string }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
+export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null }
