@@ -14,6 +14,14 @@ async listAccounts() : Promise<Result<AccountSummary[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async createAccount(input: NewAccount) : Promise<Result<Account, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_account", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -22,9 +30,89 @@ async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], A
     else return { status: "error", error: e  as any };
 }
 },
+async createTransaction(input: NewTransaction) : Promise<Result<Transaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_transaction", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getOnboardingState() : Promise<Result<OnboardingState, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_onboarding_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async seedSampleHousehold() : Promise<Result<SeedSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seed_sample_household") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async markOnboardingComplete() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_onboarding_complete") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetOnboardingCompletion() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_onboarding_completion") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearSampleData() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_sample_data") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async appReady() : Promise<Result<AppReady, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("app_ready") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async previewCsvColumns(path: string, skipHeaderRows: number) : Promise<Result<CsvPreview, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_csv_columns", { path, skipHeaderRows }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Promise<Result<ImportSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_csv", { path, accountId, mapping }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listUnfinishedImports() : Promise<Result<Import[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_unfinished_imports") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async discardUnfinishedImport(importId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("discard_unfinished_import", { importId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -42,8 +130,10 @@ async appReady() : Promise<Result<AppReady, AppError>> {
 
 /** user-defined types **/
 
+export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; created_at: string }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
+export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
  * `message` is human-readable; `details` is structured context for logging
@@ -51,7 +141,18 @@ export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Ca
  */
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
+export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
+export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
+export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
+export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
+export type ImportSource = "csv" | "manual" | "sample"
+export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
+export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
+export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
+export type RowError = { row_number: number; reason: string }
+export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null }

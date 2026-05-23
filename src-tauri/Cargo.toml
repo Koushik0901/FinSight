@@ -25,6 +25,8 @@ finsight-app = { path = "../crates/finsight-app" }
 finsight-core = { path = "../crates/finsight-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
