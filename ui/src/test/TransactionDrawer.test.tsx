@@ -11,7 +11,7 @@ vi.mock("../api/client", () => ({
     listAccounts: vi.fn().mockResolvedValue({
       status: "ok",
       data: [{ id: "a1", bank: "Chase", name: "Joint Checking", type: "Checking",
-               owner: "joint", currency: "USD", color: "#000", balance_cents: 0 }],
+               owner: "joint", currency: "USD", color: "#000", balance_cents: 0, source: "manual" }],
     }),
     createTransaction: vi.fn().mockResolvedValue({ status: "ok", data: { id: "t1" } }),
     listTransactions: vi.fn().mockResolvedValue({ status: "ok", data: [] }),

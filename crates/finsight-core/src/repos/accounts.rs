@@ -55,7 +55,8 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
     let mut stmt = conn.prepare(
         "SELECT a.id, a.owner, a.bank, a.type, a.name, a.currency, a.color, \
                 COALESCE((SELECT balance_cents FROM account_balances b \
-                          WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance \
+                          WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance, \
+                a.source \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
@@ -70,6 +71,7 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             currency: r.get(5)?,
             color: r.get(6)?,
             balance_cents: r.get(7)?,
+            source: r.get(8)?,
         })
     })?;
     let mut out = Vec::new();

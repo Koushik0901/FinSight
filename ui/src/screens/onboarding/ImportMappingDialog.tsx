@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import FocusLock from "react-focus-lock";
+import { toast } from "sonner";
 import { usePreviewCsvColumns } from "../../api/hooks/csv";
 import { useImportCsv } from "../../api/hooks/transactions";
 import { useAccounts } from "../../api/hooks/accounts";
@@ -75,6 +76,9 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
     };
     try {
       const summary = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
+      toast.success(
+        `Imported ${summary.rows_imported} transaction${summary.rows_imported === 1 ? "" : "s"}, skipped ${summary.rows_skipped_duplicates} duplicate${summary.rows_skipped_duplicates === 1 ? "" : "s"}`
+      );
       onImported(summary);
     } catch {
       // importCsv.error is now set; rendered in the footer

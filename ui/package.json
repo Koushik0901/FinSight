@@ -22,6 +22,7 @@
     "react-focus-lock": "^2",
     "react-hook-form": "^7",
     "react-router-dom": "^6.26.0",
+    "sonner": "^2.0.7",
     "zod": "^3",
     "zustand": "^4.5.4"
   },

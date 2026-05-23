@@ -155,7 +155,7 @@ async discardUnfinishedImport(importId: string) : Promise<Result<null, AppError>
 /** user-defined types **/
 
 export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; created_at: string }
-export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string }
+export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**

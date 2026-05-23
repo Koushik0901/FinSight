@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Toaster } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { ThemeProvider } from "./components/ThemeProvider";
 import Today from "./screens/Today";
@@ -44,6 +45,7 @@ export function App() {
           </Routes>
         </main>
       </div>
+      <Toaster richColors position="bottom-right" />
     </ThemeProvider>
   );
 }

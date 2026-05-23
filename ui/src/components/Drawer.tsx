@@ -48,7 +48,7 @@ export default function Drawer({ open, onClose, title, children, width = 480 }: 
           data-testid="drawer-backdrop"
           onClick={onClose}
         />
-        <aside
+        <div
           className="drawer-panel"
           role="dialog"
           aria-modal="true"
@@ -60,7 +60,7 @@ export default function Drawer({ open, onClose, title, children, width = 480 }: 
             <button type="button" aria-label="Close" onClick={onClose}>×</button>
           </header>
           <div className="drawer-body">{children}</div>
-        </aside>
+        </div>
       </div>
     </FocusLock>,
     document.body

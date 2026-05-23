@@ -61,6 +61,7 @@ pub struct AccountSummary {
     pub balance_cents: i64,
     pub currency: String,
     pub color: String,
+    pub source: String,
 }
 
 fn default_source() -> String {
