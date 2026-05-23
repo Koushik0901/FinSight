@@ -39,7 +39,7 @@ export default function Onboarding() {
         })}
       </nav>
 
-      <section className="onboarding-step">
+      <section className="onboarding-step" aria-label="Onboarding steps">
         {step === "welcome"    && <StepWelcome onNext={() => setStep("connect")} onSkipToToday={() => navigate("/")} />}
         {step === "connect"    && <StepConnect onNext={() => setStep("categories")} />}
         {step === "categories" && <StepCategories onNext={() => setStep("agent")} />}

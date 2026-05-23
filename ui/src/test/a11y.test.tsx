@@ -60,9 +60,9 @@ describe("a11y sweep", () => {
   });
 
   it("Onboarding shell (welcome step) has no axe violations", async () => {
-    const { container } = wrap(<Onboarding />);
+    wrap(<Onboarding />);
     await waitFor(() => {});
-    const results = await axe(container);
+    const results = await axe(document.body);
     expect(results.violations).toEqual([]);
   });
 });
