@@ -68,6 +68,16 @@ fn default_source() -> String {
     "manual".to_string()
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Type)]
+pub struct AccountPatch {
+    pub name: Option<String>,
+    pub bank: Option<String>,
+    pub account_type: Option<AccountType>,
+    pub color: Option<String>,
+    pub last4: Option<Option<String>>,
+    pub currency: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Type)]
 pub struct NewAccount {
     pub owner: String,
