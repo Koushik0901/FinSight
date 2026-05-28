@@ -75,42 +75,46 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   }, [transaction?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onSubmit(values: FormValues) {
-    if (isEdit && transaction) {
-      const result = await update.mutateAsync({
-        id: transaction.id,
-        patch: {
-          notes: values.notes || null,
-          category_id: selectedCategory,
-          merchant_raw: values.merchant_raw,
+    try {
+      if (isEdit && transaction) {
+        const result = await update.mutateAsync({
+          id: transaction.id,
+          patch: {
+            notes: values.notes || null,
+            category_id: selectedCategory,
+            merchant_raw: values.merchant_raw,
+            amount_cents: Math.round(values.amount_dollars * 100),
+          },
+        });
+        if (result.proposed_rule) {
+          const { pattern, category_id, category_label } = result.proposed_rule;
+          toast.custom((t) => (
+            <div role="alert">
+              Always categorize <strong>«{pattern}»</strong> as{" "}
+              <strong>{category_label}</strong>?{" "}
+              <button type="button" onClick={() => { createRule.mutate({ pattern, categoryId: category_id }); toast.dismiss(t); }}>
+                Create rule
+              </button>{" "}
+              <button type="button" onClick={() => toast.dismiss(t)}>Skip</button>
+            </div>
+          ));
+        }
+      } else {
+        await create.mutateAsync({
+          account_id: values.account_id ?? accountId ?? "",
+          posted_at: new Date(values.posted_at + "T12:00:00Z").toISOString(),
           amount_cents: Math.round(values.amount_dollars * 100),
-        },
-      });
-      if (result.proposed_rule) {
-        const { pattern, category_id, category_label } = result.proposed_rule;
-        toast.custom(() => (
-          <div role="alert">
-            Always categorize <strong>«{pattern}»</strong> as{" "}
-            <strong>{category_label}</strong>?{" "}
-            <button onClick={() => createRule.mutate({ pattern, categoryId: category_id })}>
-              Create rule
-            </button>{" "}
-            <button>Skip</button>
-          </div>
-        ));
+          merchant_raw: values.merchant_raw,
+          category_id: selectedCategory,
+          notes: values.notes || null,
+          status: "manual",
+        });
+        onCreated?.();
       }
-    } else {
-      await create.mutateAsync({
-        account_id: values.account_id ?? accountId ?? "",
-        posted_at: new Date(values.posted_at + "T12:00:00Z").toISOString(),
-        amount_cents: Math.round(values.amount_dollars * 100),
-        merchant_raw: values.merchant_raw,
-        category_id: selectedCategory,
-        notes: values.notes || null,
-        status: "manual",
-      });
-      onCreated?.();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
     }
-    onClose();
   }
 
   async function handleDelete() {
