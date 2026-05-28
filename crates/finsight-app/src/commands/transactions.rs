@@ -1,8 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::{Category, CategoryGroup, Rule, NewTransaction, Transaction};
-use finsight_core::repos::{run, transactions};
-use serde::Deserialize;
+use finsight_core::models::{NewTransaction, Transaction, TxnPatch};
+use finsight_core::repos::{rules, run, transactions};
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 #[derive(Debug, Deserialize, Type, Default)]
@@ -47,45 +47,109 @@ pub async fn create_transaction(
         .map_err(AppError::from)
 }
 
-// Stubs — implemented in a later task
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ProposedRuleDto {
+    pub pattern: String,
+    pub category_id: String,
+    pub category_label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct UpdateTxnResult {
+    pub transaction: Transaction,
+    pub proposed_rule: Option<ProposedRuleDto>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn update_transaction(
-    _state: tauri::State<'_, AppState>,
-    _id: String,
-    _input: serde_json::Value,
-) -> AppResult<Transaction> {
-    Err(crate::error::AppError::new("not_implemented", "update_transaction not yet implemented"))
+    state: tauri::State<'_, AppState>,
+    id: String,
+    patch: TxnPatch,
+) -> AppResult<UpdateTxnResult> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let (txn, rule) = transactions::update(conn, &id, patch)?;
+        let proposed_rule = rule.map(|r| ProposedRuleDto {
+            pattern: r.pattern,
+            category_id: r.category_id,
+            category_label: r.category_label,
+        });
+        Ok(UpdateTxnResult { transaction: txn, proposed_rule })
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_transaction(
-    _state: tauri::State<'_, AppState>,
-    _id: String,
+    state: tauri::State<'_, AppState>,
+    id: String,
 ) -> AppResult<()> {
-    Err(crate::error::AppError::new("not_implemented", "delete_transaction not yet implemented"))
+    let db = (*state.db).clone();
+    run(&db, move |conn| transactions::delete(conn, &id))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn create_rule(
-    _state: tauri::State<'_, AppState>,
-    _input: serde_json::Value,
-) -> AppResult<Rule> {
-    Err(crate::error::AppError::new("not_implemented", "create_rule not yet implemented"))
+    state: tauri::State<'_, AppState>,
+    pattern: String,
+    category_id: String,
+) -> AppResult<finsight_core::models::Rule> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        rules::insert(conn, finsight_core::models::NewRule {
+            pattern,
+            category_id,
+            source: "user".to_string(),
+        })
+    })
+    .await
+    .map_err(AppError::from)
 }
 
-#[derive(Debug, serde::Serialize, Type)]
-pub struct CategoriesResponse {
-    pub groups: Vec<CategoryGroup>,
-    pub categories: Vec<Category>,
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct CategoryDto {
+    pub id: String,
+    pub label: String,
+    pub color: String,
+    pub group_id: String,
+    pub group_label: String,
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn list_categories(
-    _state: tauri::State<'_, AppState>,
-) -> AppResult<CategoriesResponse> {
-    Err(crate::error::AppError::new("not_implemented", "list_categories not yet implemented"))
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<CategoryDto>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, '') \
+             FROM categories c \
+             LEFT JOIN category_groups g ON g.id = c.group_id \
+             WHERE c.archived_at IS NULL \
+             ORDER BY g.sort_order, c.sort_order",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(CategoryDto {
+                id: r.get(0)?,
+                label: r.get(1)?,
+                color: r.get(2)?,
+                group_id: r.get(3)?,
+                group_label: r.get(4)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
 }
