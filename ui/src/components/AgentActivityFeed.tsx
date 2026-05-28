@@ -14,17 +14,28 @@ export default function AgentActivityFeed() {
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const unlistenProgress = listen<Progress>("categorization.progress", (e) => {
+    let cancelled = false;
+    const pending: Array<() => void> = [];
+
+    listen<Progress>("categorization.progress", (e) => {
       setState({ kind: "progress", done: e.payload.done, total: e.payload.total });
       if (fadeTimer.current) clearTimeout(fadeTimer.current);
+    }).then((fn) => {
+      if (cancelled) fn(); // already unmounted — call unlisten immediately
+      else pending.push(fn);
     });
-    const unlistenComplete = listen<Complete>("categorization.complete", (e) => {
+
+    listen<Complete>("categorization.complete", (e) => {
       setState({ kind: "done", categorized: e.payload.categorized });
       fadeTimer.current = setTimeout(() => setState({ kind: "idle" }), 3000);
+    }).then((fn) => {
+      if (cancelled) fn(); // already unmounted — call unlisten immediately
+      else pending.push(fn);
     });
+
     return () => {
-      unlistenProgress.then((fn) => fn());
-      unlistenComplete.then((fn) => fn());
+      cancelled = true;
+      pending.forEach((fn) => fn());
       if (fadeTimer.current) clearTimeout(fadeTimer.current);
     };
   }, []);
