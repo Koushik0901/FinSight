@@ -45,7 +45,7 @@ export default function CategoryPicker({ value, onChange }: Props) {
         onChange={(e) => setSearch(e.target.value)}
         className="mb-2 rounded border px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
       />
-      <div role="listbox" className="flex flex-col gap-2">
+      <div role="listbox" aria-label="Category" className="flex flex-col gap-2">
         {Array.from(grouped.entries()).map(([groupLabel, cats]) => (
           <div key={groupLabel} role="group" aria-label={groupLabel}>
             <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

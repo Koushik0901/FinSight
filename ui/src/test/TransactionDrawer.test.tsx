@@ -34,7 +34,7 @@ describe("TransactionDrawer", () => {
     renderDrawer();
     await waitFor(() => expect(screen.getByText(/Chase · Joint Checking/)).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/Account/i), { target: { value: "a1" } });
-    fireEvent.change(screen.getByLabelText(/Amount/i), { target: { value: "8.42" } });
+    fireEvent.change(screen.getByLabelText(/Amount/i), { target: { value: "-8.42" } });
     fireEvent.change(screen.getByLabelText(/Merchant/i), { target: { value: "Safeway" } });
     fireEvent.click(screen.getByRole("button", { name: /save transaction/i }));
     const { commands } = await import("../api/client");
