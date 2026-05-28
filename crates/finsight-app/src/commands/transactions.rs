@@ -47,7 +47,7 @@ pub async fn create_transaction(
         .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, Type)]
 pub struct ProposedRuleDto {
     pub pattern: String,
     pub category_id: String,
