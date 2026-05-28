@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::{Account, AccountSummary, NewAccount};
+use finsight_core::models::{Account, AccountPatch, AccountSummary, NewAccount};
 use finsight_core::repos::{accounts, run};
 
 #[tauri::command]
@@ -31,22 +31,27 @@ pub async fn create_account(
         .map_err(AppError::from)
 }
 
-// Stubs — implemented in a later task
 #[tauri::command]
 #[specta::specta]
 pub async fn update_account(
-    _state: tauri::State<'_, AppState>,
-    _id: String,
-    _input: serde_json::Value,
+    state: tauri::State<'_, AppState>,
+    id: String,
+    patch: AccountPatch,
 ) -> AppResult<Account> {
-    Err(crate::error::AppError::new("not_implemented", "update_account not yet implemented"))
+    let db = (*state.db).clone();
+    run(&db, move |conn| accounts::update(conn, &id, patch))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn archive_account(
-    _state: tauri::State<'_, AppState>,
-    _id: String,
+    state: tauri::State<'_, AppState>,
+    id: String,
 ) -> AppResult<()> {
-    Err(crate::error::AppError::new("not_implemented", "archive_account not yet implemented"))
+    let db = (*state.db).clone();
+    run(&db, move |conn| accounts::archive(conn, &id))
+        .await
+        .map_err(AppError::from)
 }

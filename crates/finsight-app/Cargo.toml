@@ -34,3 +34,5 @@ tauri-plugin-opener = "2"
 keyring.workspace = true
 rusqlite.workspace = true
 tempfile.workspace = true
+chrono.workspace = true
+tokio = { version = "1", features = ["full"] }
