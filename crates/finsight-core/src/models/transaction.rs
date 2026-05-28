@@ -61,3 +61,18 @@ pub struct NewTransaction {
     pub notes: Option<String>,
     pub status: TransactionStatus,
 }
+
+#[derive(Debug, Clone, Default, Deserialize, Type)]
+pub struct TxnPatch {
+    pub notes: Option<Option<String>>,
+    pub category_id: Option<Option<String>>,
+    pub amount_cents: Option<i64>,
+    pub merchant_raw: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ProposedRule {
+    pub pattern: String,
+    pub category_id: String,
+    pub category_label: String,
+}
