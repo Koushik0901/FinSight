@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAccounts } from "../api/hooks/accounts";
 import AccountDrawer from "../components/AccountDrawer";
+import type { Account, AccountSummary } from "../api/client";
 
 function formatMoney(cents: number) {
   const sign = cents < 0 ? "-" : "";
@@ -8,7 +9,8 @@ function formatMoney(cents: number) {
 }
 
 export default function Accounts() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editAccount, setEditAccount] = useState<Account | null>(null);
   const { data, isLoading, error } = useAccounts();
 
   if (isLoading) return <div className="stub">Loading…</div>;
@@ -18,7 +20,7 @@ export default function Accounts() {
     <div className="screen-accounts">
       <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Accounts</h1>
-        <button className="primary" onClick={() => setDrawerOpen(true)}>+ Add account</button>
+        <button className="primary" onClick={() => setAddOpen(true)}>+ Add account</button>
       </header>
 
       {(!data || data.length === 0) ? (
@@ -34,8 +36,13 @@ export default function Accounts() {
             </tr>
           </thead>
           <tbody>
-            {data.map((a) => (
-              <tr key={a.id} style={{ borderTop: "1px solid var(--hairline)" }}>
+            {data.map((a: AccountSummary) => (
+              <tr
+                key={a.id}
+                style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+                onClick={() => setEditAccount(a as unknown as Account)}
+                aria-label={`Edit ${a.name}`}
+              >
                 <td style={{ padding: "12px 0" }}>{a.bank}</td>
                 <td style={{ padding: "12px 0" }}>{a.name}</td>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{a.type}</td>
@@ -48,7 +55,12 @@ export default function Accounts() {
         </table>
       )}
 
-      <AccountDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <AccountDrawer open={addOpen} onClose={() => setAddOpen(false)} />
+      <AccountDrawer
+        open={editAccount !== null}
+        onClose={() => setEditAccount(null)}
+        account={editAccount ?? undefined}
+      />
     </div>
   );
 }

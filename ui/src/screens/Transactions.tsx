@@ -3,6 +3,7 @@ import { useTransactions } from "../api/hooks/transactions";
 import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "./onboarding/ImportMappingDialog";
+import type { Transaction } from "../api/client";
 
 function formatMoney(cents: number) {
   const sign = cents < 0 ? "-" : "";
@@ -14,7 +15,8 @@ function formatDate(iso: string) {
 }
 
 export default function Transactions() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTxn, setEditTxn] = useState<Transaction | null>(null);
   const [csvPath, setCsvPath] = useState<string | null>(null);
   const { data, isLoading, error } = useTransactions();
 
@@ -27,7 +29,7 @@ export default function Transactions() {
         <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Transactions</h1>
         <div className="actions" style={{ display: "flex", gap: 8 }}>
           <FilePicker onPicked={setCsvPath} label="Import CSV" />
-          <button className="primary" onClick={() => setDrawerOpen(true)}>+ Add transaction</button>
+          <button className="primary" onClick={() => setAddOpen(true)}>+ Add transaction</button>
         </div>
       </header>
 
@@ -44,8 +46,13 @@ export default function Transactions() {
             </tr>
           </thead>
           <tbody>
-            {data.map((t) => (
-              <tr key={t.id} style={{ borderTop: "1px solid var(--hairline)" }}>
+            {data.map((t: Transaction) => (
+              <tr
+                key={t.id}
+                style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+                onClick={() => setEditTxn(t)}
+                aria-label={`Edit transaction ${t.merchant_raw}`}
+              >
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{formatDate(t.posted_at)}</td>
                 <td style={{ padding: "12px 0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -76,7 +83,12 @@ export default function Transactions() {
         </table>
       )}
 
-      <TransactionDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} />
+      <TransactionDrawer
+        open={editTxn !== null}
+        onClose={() => setEditTxn(null)}
+        transaction={editTxn ?? undefined}
+      />
       {csvPath && (
         <ImportMappingDialog
           path={csvPath}
