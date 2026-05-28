@@ -185,7 +185,7 @@ export default function StepAgent({ onDone }: Props) {
         </p>
         {actionError && <p role="alert" style={{ color: "var(--error, red)" }}>{actionError}</p>}
         <div className="actions">
-          <button onClick={() => openUrl("https://ollama.com")}>Install Ollama →</button>
+          <button onClick={() => openUrl("https://ollama.com").catch(() => {})}>Install Ollama →</button>
           <button onClick={() => refetch()}>I just installed it — refresh</button>
           <button onClick={() => setPath(null)}>← Back</button>
           <button className="tertiary" onClick={skipForLater}>Configure later →</button>

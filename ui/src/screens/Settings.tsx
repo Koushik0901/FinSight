@@ -44,6 +44,7 @@ export default function Settings() {
   const [apiKey, setApiKey] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("claude-3-5-haiku-latest");
   const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const setProvider = useSetCompletionProvider();
   const saveKey = useSaveProviderApiKey();
@@ -82,20 +83,29 @@ export default function Settings() {
     const config = buildConfig();
     if (!config) return;
     setTestResult(null);
-    const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
-    setTestResult(r);
+    try {
+      const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
+      setTestResult(r);
+    } catch (err) {
+      setTestResult({ ok: false, latency_ms: 0, error: err instanceof Error ? err.message : "Connection failed" });
+    }
   }
 
   async function handleSave() {
     if (!selectedKind) return;
     const config = buildConfig();
     if (!config) return;
-    await setProvider.mutateAsync(config);
-    if (apiKey && selectedKind !== "ollama") {
-      const pid = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
-      await saveKey.mutateAsync({ providerId: pid, key: apiKey });
+    setSaveError(null);
+    try {
+      await setProvider.mutateAsync(config);
+      if (apiKey && selectedKind !== "ollama") {
+        const pid = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
+        await saveKey.mutateAsync({ providerId: pid, key: apiKey });
+      }
+      setProviderPanelOpen(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save provider.");
     }
-    setProviderPanelOpen(false);
   }
 
   function buildConfig(): CompletionProviderConfig | null {
@@ -147,7 +157,7 @@ export default function Settings() {
               {(["ollama", "openai_compat", "anthropic"] as ProviderKind[]).map((k) => (
                 <button
                   key={k!}
-                  onClick={() => setSelectedKind(k)}
+                  onClick={() => { setSelectedKind(k); setApiKey(""); }}
                   style={{ fontWeight: selectedKind === k ? 700 : 400 }}
                   aria-pressed={selectedKind === k}
                 >
@@ -209,6 +219,8 @@ export default function Settings() {
                 {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
               </p>
             )}
+
+            {saveError && <p role="alert" style={{ color: "var(--error, red)", marginBottom: 8 }}>{saveError}</p>}
 
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               <button onClick={handleTestConnection} disabled={!selectedKind || testProvider.isPending}>
