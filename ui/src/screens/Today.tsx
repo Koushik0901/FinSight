@@ -1,4 +1,7 @@
+import { useNavigate } from "react-router-dom";
 import { useAccounts } from "../api/hooks/accounts";
+import { useNeedsReviewCount } from "../api/hooks/agent";
+import AgentActivityFeed from "../components/AgentActivityFeed";
 
 function formatMoney(cents: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -9,7 +12,9 @@ function formatMoney(cents: number, currency = "USD") {
 }
 
 export default function Today() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useAccounts();
+  const { data: needsReview = 0 } = useNeedsReviewCount();
 
   if (isLoading) return <div className="stub">Loading…</div>;
   if (error) return <div className="stub">Error: {(error as Error).message}</div>;
@@ -30,6 +35,30 @@ export default function Today() {
           in <strong>{primary.name}</strong> · {primary.bank}
         </p>
       </header>
+
+      <AgentActivityFeed />
+
+      {needsReview > 0 && (
+        <button
+          onClick={() => navigate("/transactions?filter=needs_review")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            borderRadius: 8,
+            border: "1px solid var(--warning, #f59e0b)",
+            background: "var(--warning-bg, #fffbeb)",
+            color: "var(--warning-ink, #92400e)",
+            cursor: "pointer",
+            fontSize: 14,
+            marginTop: 8,
+          }}
+          aria-label={`${needsReview} transactions need review`}
+        >
+          ⚠ {needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →
+        </button>
+      )}
     </section>
   );
 }
