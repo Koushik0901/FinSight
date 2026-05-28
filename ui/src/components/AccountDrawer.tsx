@@ -58,7 +58,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
       reset({ type: "Checking", currency: "USD", owner: defaultOwner, opening_dollars: 0 });
     }
     setArchiveConfirm(false);
-  }, [account, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [account?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onSubmit(values: FormValues) {
     if (isEdit && account) {
@@ -94,8 +94,12 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
   async function handleArchive() {
     if (!archiveConfirm) { setArchiveConfirm(true); return; }
     if (!account) return;
-    await archiveAccount.mutateAsync(account.id);
-    onClose();
+    try {
+      await archiveAccount.mutateAsync(account.id);
+      onClose();
+    } catch {
+      setArchiveConfirm(false);
+    }
   }
 
   return (
