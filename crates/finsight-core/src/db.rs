@@ -103,3 +103,33 @@ pub fn run_migrations(db: &Db) -> CoreResult<()> {
     migrations::runner().run(&mut *conn)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v003_tables_exist() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let key = crate::keychain::generate_random_key();
+        let db = crate::Db::open(&dir.path().join("v003.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        let conn = db.get().unwrap();
+        let cats: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='categorizations'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cats, 1, "categorizations table missing");
+        let rules: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='rules'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rules, 1, "rules table missing");
+    }
+}
