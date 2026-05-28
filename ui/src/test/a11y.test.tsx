@@ -7,10 +7,43 @@ import { MemoryRouter } from "react-router-dom";
 import Drawer from "../components/Drawer";
 import AccountDrawer from "../components/AccountDrawer";
 import TransactionDrawer from "../components/TransactionDrawer";
+import CategoryPicker from "../components/CategoryPicker";
+import AgentActivityFeed from "../components/AgentActivityFeed";
 import Onboarding from "../screens/Onboarding";
 
 vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+// Hook-level mocks so components don't call unmocked Tauri commands
+vi.mock("../api/hooks/accounts", () => ({
+  useAccounts: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
+  useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
+  useArchiveAccount: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+}));
+
+vi.mock("../api/hooks/transactions", () => ({
+  useTransactions: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
+  useUpdateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ transaction: {}, proposed_rule: null }) })),
+  useDeleteTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
+  useCategories: vi.fn(() => ({
+    data: [
+      { id: "cat-1", label: "Groceries", color: "#4ade80", group_id: "g1", group_label: "Food" },
+      { id: "cat-2", label: "Rent", color: "#60a5fa", group_id: "g2", group_label: "Housing" },
+    ],
+    isLoading: false,
+  })),
+}));
+
+vi.mock("../api/hooks/onboarding", () => ({
+  useOnboardingState: vi.fn(() => ({ data: { account_count: 0, category_count: 0, completion_marked: false }, isLoading: false })),
+  useSeedSampleHousehold: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useMarkOnboardingComplete: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useResetOnboarding: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useClearSampleData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
 
 vi.mock("../api/client", () => ({
@@ -28,8 +61,12 @@ vi.mock("../api/client", () => ({
   },
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
+
 function wrap(node: ReactNode) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>{node}</MemoryRouter>
@@ -40,7 +77,6 @@ function wrap(node: ReactNode) {
 describe("a11y sweep", () => {
   it("Drawer has no axe violations", async () => {
     wrap(<Drawer open onClose={() => {}} title="Test drawer"><p>body</p></Drawer>);
-    // Drawer portals to document.body — scan the whole body
     const results = await axe(document.body);
     expect(results.violations).toEqual([]);
   });
@@ -53,7 +89,6 @@ describe("a11y sweep", () => {
 
   it("TransactionDrawer has no axe violations", async () => {
     wrap(<TransactionDrawer open onClose={() => {}} />);
-    // Wait for the accounts query to settle before scanning
     await waitFor(() => {});
     const results = await axe(document.body);
     expect(results.violations).toEqual([]);
@@ -63,6 +98,23 @@ describe("a11y sweep", () => {
     wrap(<Onboarding />);
     await waitFor(() => {});
     const results = await axe(document.body);
+    expect(results.violations).toEqual([]);
+  });
+
+  it("CategoryPicker has no axe violations", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <CategoryPicker value={null} onChange={() => {}} />
+      </QueryClientProvider>
+    );
+    const results = await axe(container);
+    expect(results.violations).toEqual([]);
+  });
+
+  it("AgentActivityFeed has no axe violations", async () => {
+    const { container } = render(<AgentActivityFeed />);
+    const results = await axe(container);
     expect(results.violations).toEqual([]);
   });
 });
