@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary } from "../client";
+import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult } from "../client";
 
 const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null };
 
@@ -42,6 +42,58 @@ export function useImportCsv() {
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["today-summary"] });
       qc.invalidateQueries({ queryKey: ["unfinished-imports"] });
+    },
+  });
+}
+
+export function useUpdateTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: TxnPatch }) => {
+      const result = await commands.updateTransaction(id, patch);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data as UpdateTxnResult;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["today-summary"] });
+      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+    },
+  });
+}
+
+export function useDeleteTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const result = await commands.deleteTransaction(id);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["today-summary"] });
+      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+    },
+  });
+}
+
+export function useCreateRule() {
+  return useMutation({
+    mutationFn: async ({ pattern, categoryId }: { pattern: string; categoryId: string }) => {
+      const result = await commands.createRule(pattern, categoryId);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
+export function useCategories() {
+  return useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const result = await commands.listCategories();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
     },
   });
 }
