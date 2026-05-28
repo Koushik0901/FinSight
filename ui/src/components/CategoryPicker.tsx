@@ -47,7 +47,7 @@ export default function CategoryPicker({ value, onChange }: Props) {
       />
       <div role="listbox" className="flex flex-col gap-2">
         {Array.from(grouped.entries()).map(([groupLabel, cats]) => (
-          <div key={groupLabel}>
+          <div key={groupLabel} role="group" aria-label={groupLabel}>
             <div className="mb-1 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {groupLabel}
             </div>
