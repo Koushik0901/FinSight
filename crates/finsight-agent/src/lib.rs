@@ -1,6 +1,8 @@
 //! FinSight agent — LLM provider traits, agent task, categorizer pipeline.
 
 pub mod providers;
+pub mod agent;
+pub mod categorizer;
 
 use async_trait::async_trait;
 use anyhow::Result;
