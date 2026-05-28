@@ -59,7 +59,7 @@ pub async fn run_job(
             let pat = r.pattern.to_lowercase();
             let merch = merchant_raw.to_lowercase();
             // Simple LIKE: leading/trailing % = contains, otherwise exact
-            if pat.starts_with('%') && pat.ends_with('%') {
+            if pat.starts_with('%') && pat.ends_with('%') && pat.len() > 1 {
                 merch.contains(&pat[1..pat.len()-1])
             } else if pat.starts_with('%') {
                 merch.ends_with(&pat[1..])
