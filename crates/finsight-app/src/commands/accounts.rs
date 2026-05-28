@@ -30,3 +30,23 @@ pub async fn create_account(
         .await
         .map_err(AppError::from)
 }
+
+// Stubs — implemented in a later task
+#[tauri::command]
+#[specta::specta]
+pub async fn update_account(
+    _state: tauri::State<'_, AppState>,
+    _id: String,
+    _input: serde_json::Value,
+) -> AppResult<Account> {
+    Err(crate::error::AppError::new("not_implemented", "update_account not yet implemented"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn archive_account(
+    _state: tauri::State<'_, AppState>,
+    _id: String,
+) -> AppResult<()> {
+    Err(crate::error::AppError::new("not_implemented", "archive_account not yet implemented"))
+}

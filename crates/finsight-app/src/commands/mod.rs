@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod agent;
 pub mod import;
 pub mod meta;
 pub mod onboarding;

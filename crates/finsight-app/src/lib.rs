@@ -3,18 +3,92 @@
 pub mod commands;
 pub mod error;
 
-use finsight_core::db::run_migrations;
-use finsight_core::Db;
-use std::sync::Arc;
-use tauri::Manager;
+use finsight_agent::{
+    agent::{AgentHandle, AgentEvent, EventCallback},
+    providers::{
+        anthropic::AnthropicProvider,
+        ollama::OllamaProvider,
+        openai_compat::OpenAiCompatProvider,
+    },
+    CompletionProvider,
+};
+use finsight_core::{db::run_migrations, settings, Db};
+use std::sync::{Arc, RwLock};
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub db: Arc<Db>,
+    pub agent: AgentHandle,
+    pub agent_provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
 }
 
 impl AppState {
-    pub fn new(db: Db) -> Self {
-        Self { db: Arc::new(db) }
+    pub fn new(db: Db, on_event: EventCallback) -> Self {
+        let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
+            Arc::new(RwLock::new(None));
+        let agent = AgentHandle::spawn(db.clone(), Arc::clone(&provider), on_event);
+        Self {
+            db: Arc::new(db),
+            agent,
+            agent_provider: provider,
+        }
+    }
+}
+
+/// Migrate legacy `llm_provider` key → `completion_provider`.
+/// Called from `configure_app` setup before managing AppState.
+/// Exported for integration tests.
+pub fn migrate_provider_settings(db: &Db) -> Result<(), finsight_core::CoreError> {
+    let conn = db.get()?;
+    // Only migrate if completion_provider is absent
+    let new_cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
+    if new_cfg.is_some() {
+        return Ok(());
+    }
+    let old_cfg: Option<serde_json::Value> = settings::get(&conn, "llm_provider")?;
+    let Some(old) = old_cfg else { return Ok(()) };
+    let migrated = match old.get("kind").and_then(|k| k.as_str()) {
+        Some("ollama") => serde_json::json!({
+            "kind": "ollama",
+            "base_url": old["base_url"],
+            "model": old["completion_model"]
+        }),
+        _ => serde_json::json!({ "kind": "unconfigured" }),
+    };
+    settings::set(&conn, "completion_provider", &migrated)?;
+    Ok(())
+}
+
+/// Load the saved CompletionProviderConfig from settings and instantiate the provider.
+/// Returns None if unconfigured or key absent.
+pub fn load_provider_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider>> {
+    let conn = db.get().ok()?;
+    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").ok()??;
+    build_provider_from_config(&cfg)
+}
+
+pub(crate) fn build_provider_from_config(cfg: &serde_json::Value) -> Option<Arc<dyn CompletionProvider>> {
+    match cfg.get("kind")?.as_str()? {
+        "ollama" => {
+            let base_url = cfg["base_url"].as_str()?.to_string();
+            let model = cfg["model"].as_str()?.to_string();
+            Some(Arc::new(OllamaProvider::new(base_url, model)))
+        }
+        "openai_compat" => {
+            let base_url = cfg["base_url"].as_str()?.to_string();
+            let model = cfg["model"].as_str()?.to_string();
+            let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
+            let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
+                .ok()??.to_string();
+            Some(Arc::new(OpenAiCompatProvider::new(base_url, api_key, model, preset)))
+        }
+        "anthropic" => {
+            let model = cfg["model"].as_str()?.to_string();
+            let api_key = finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
+                .ok()??.to_string();
+            Some(Arc::new(AnthropicProvider::new(api_key, model)))
+        }
+        _ => None,
     }
 }
 
@@ -25,8 +99,14 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         commands::accounts::list_accounts,
         commands::accounts::create_account,
+        commands::accounts::update_account,
+        commands::accounts::archive_account,
         commands::transactions::list_transactions,
         commands::transactions::create_transaction,
+        commands::transactions::update_transaction,
+        commands::transactions::delete_transaction,
+        commands::transactions::create_rule,
+        commands::transactions::list_categories,
         commands::onboarding::get_onboarding_state,
         commands::onboarding::seed_sample_household,
         commands::onboarding::mark_onboarding_complete,
@@ -40,6 +120,12 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::import::import_csv,
         commands::import::list_unfinished_imports,
         commands::import::discard_unfinished_import,
+        commands::agent::set_completion_provider,
+        commands::agent::save_provider_api_key,
+        commands::agent::list_provider_models,
+        commands::agent::test_completion_provider,
+        commands::agent::get_needs_review_count,
+        commands::agent::trigger_categorize,
     ])
 }
 
@@ -79,8 +165,29 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             run_migrations(&db).map_err(|e| -> Box<dyn std::error::Error> {
                 format!("migrations: {e}").into()
             })?;
+            migrate_provider_settings(&db).map_err(|e| -> Box<dyn std::error::Error> {
+                format!("provider migration: {e}").into()
+            })?;
 
-            app.manage(AppState { db: Arc::new(db) });
+            let window = app.get_webview_window("main").expect("main window");
+            let on_event: EventCallback = Arc::new(move |event| {
+                let (event_name, payload) = match &event {
+                    AgentEvent::CategorizationProgress { .. } =>
+                        ("categorization.progress", serde_json::to_value(&event).unwrap()),
+                    AgentEvent::CategorizationComplete { .. } =>
+                        ("categorization.complete", serde_json::to_value(&event).unwrap()),
+                    AgentEvent::Error { .. } =>
+                        ("agent.error", serde_json::to_value(&event).unwrap()),
+                };
+                let _ = window.emit(event_name, payload);
+            });
+
+            let state = AppState::new(db.clone(), on_event);
+            // Load saved provider configuration and wire it into the agent
+            if let Some(provider) = load_provider_from_settings(&db) {
+                state.agent.set_provider(provider);
+            }
+            app.manage(state);
             Ok(())
         })
 }
