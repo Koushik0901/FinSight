@@ -29,6 +29,23 @@ pub fn delete_key(service: &str, user: &str) -> CoreResult<()> {
     }
 }
 
+/// Store a user-supplied string value in the OS keychain.
+pub fn set_key(service: &str, user: &str, value: &str) -> CoreResult<()> {
+    let entry = Entry::new(service, user)?;
+    entry.set_password(value)?;
+    Ok(())
+}
+
+/// Retrieve a previously stored value. Returns None if not found.
+pub fn get_key(service: &str, user: &str) -> CoreResult<Option<String>> {
+    let entry = Entry::new(service, user)?;
+    match entry.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Generate a fresh random 64-char hex key (32 bytes) without touching the OS keychain.
 /// Intended for tests. In production code, use `load_or_create_key` instead.
 #[doc(hidden)]
@@ -44,4 +61,30 @@ pub fn generate_random_key() -> Zeroizing<String> {
         *b = 0;
     }
     Zeroizing::new(hex)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_key_returns_none_when_absent() {
+        // Use a unique user so tests don't collide with real keychain entries
+        let svc = "com.finsight.test.keychain";
+        let usr = &format!("test-absent-{}", uuid::Uuid::new_v4());
+        // Clean up before asserting (in case a prior test left something)
+        let _ = delete_key(svc, usr);
+        let got = get_key(svc, usr).unwrap();
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn set_key_round_trip() {
+        let svc = "com.finsight.test.keychain";
+        let usr = &format!("test-rt-{}", uuid::Uuid::new_v4());
+        set_key(svc, usr, "sk-test-value").unwrap();
+        let got = get_key(svc, usr).unwrap();
+        assert_eq!(got.as_deref(), Some("sk-test-value"));
+        delete_key(svc, usr).unwrap();
+    }
 }
