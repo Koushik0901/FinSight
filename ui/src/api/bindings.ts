@@ -22,6 +22,22 @@ async createAccount(input: NewAccount) : Promise<Result<Account, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async updateAccount(id: string, patch: AccountPatch) : Promise<Result<Account, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_account", { id, patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async archiveAccount(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_account", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -33,6 +49,38 @@ async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], A
 async createTransaction(input: NewTransaction) : Promise<Result<Transaction, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("create_transaction", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateTransaction(id: string, patch: TxnPatch) : Promise<Result<UpdateTxnResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_transaction", { id, patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteTransaction(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_transaction", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createRule(pattern: string, categoryId: string) : Promise<Result<Rule, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_rule", { pattern, categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listCategories() : Promise<Result<CategoryDto[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_categories") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -141,6 +189,54 @@ async discardUnfinishedImport(importId: string) : Promise<Result<null, AppError>
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async setCompletionProvider(config: CompletionProviderConfig) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_completion_provider", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveProviderApiKey(providerId: string, key: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_provider_api_key", { providerId, key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listProviderModels(config: CompletionProviderConfig) : Promise<Result<string[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_provider_models", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async testCompletionProvider(config: CompletionProviderConfig, apiKey: string | null) : Promise<Result<ProviderTestResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_completion_provider", { config, apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNeedsReviewCount() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_needs_review_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async triggerCategorize() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("trigger_categorize") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -155,6 +251,7 @@ async discardUnfinishedImport(importId: string) : Promise<Result<null, AppError>
 /** user-defined types **/
 
 export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; created_at: string }
+export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
@@ -165,7 +262,9 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
  */
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
+export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
+export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
@@ -177,12 +276,17 @@ export type NewAccount = { owner: string; bank: string; type: AccountType; name:
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
+export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
+export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 export type RowError = { row_number: number; reason: string }
+export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null }
+export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null }
+export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
 
 /** tauri-specta globals **/
 
