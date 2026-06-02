@@ -50,6 +50,8 @@ pub struct TxnFilter {
     pub account_id: Option<String>,
     pub limit: i64,
     pub offset: i64,
+    pub search: Option<String>,
+    pub filter_preset: Option<String>,
 }
 
 impl Default for TxnFilter {
@@ -58,6 +60,8 @@ impl Default for TxnFilter {
             account_id: None,
             limit: 100,
             offset: 0,
+            search: None,
+            filter_preset: None,
         }
     }
 }
@@ -74,9 +78,36 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
     );
 
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let mut conditions: Vec<String> = Vec::new();
+
     if let Some(aid) = filter.account_id.as_ref() {
-        sql.push_str("WHERE t.account_id = ? ");
+        conditions.push("t.account_id = ?".to_string());
         params.push(Box::new(aid.clone()));
+    }
+    if let Some(search) = filter.search.as_ref() {
+        conditions.push(
+            "(lower(t.merchant_raw) LIKE lower(?) OR lower(COALESCE(t.notes,'')) LIKE lower(?))".to_string(),
+        );
+        let pattern = format!("%{}%", search);
+        params.push(Box::new(pattern.clone()));
+        params.push(Box::new(pattern));
+    }
+    match filter.filter_preset.as_deref() {
+        Some("needs_review") => {
+            conditions.push("t.ai_confidence IS NOT NULL AND t.ai_confidence < 0.6".to_string());
+        }
+        Some("anomalies") => {
+            conditions.push("t.is_anomaly = 1".to_string());
+        }
+        Some("no_category") => {
+            conditions.push("t.category_id IS NULL".to_string());
+        }
+        _ => {}
+    }
+    if !conditions.is_empty() {
+        sql.push_str("WHERE ");
+        sql.push_str(&conditions.join(" AND "));
+        sql.push(' ');
     }
     sql.push_str("ORDER BY t.posted_at DESC LIMIT ? OFFSET ?");
     params.push(Box::new(filter.limit));
