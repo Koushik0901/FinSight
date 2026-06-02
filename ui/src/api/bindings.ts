@@ -261,6 +261,54 @@ async toggleRule(id: string, enabled: boolean) : Promise<Result<null, AppError>>
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async listBudgetEnvelopes() : Promise<Result<BudgetEnvelope[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_budget_envelopes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setBudget(categoryId: string, amountCents: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_budget", { categoryId, amountCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listGoals() : Promise<Result<GoalDto[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_goals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createGoal(input: NewGoalInput) : Promise<Result<GoalDto, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_goal", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateGoalBalance(id: string, currentCents: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_goal_balance", { id, currentCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async archiveGoal(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_goal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -286,6 +334,18 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
  */
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
+/**
+ * One category's budget + actual for a month.
+ */
+export type BudgetEnvelope = { categoryId: string; categoryLabel: string; categoryColor: string; groupLabel: string; 
+/**
+ * Budget set by user (0 = not budgeted)
+ */
+budgetCents: number; 
+/**
+ * Actual outflow this month (positive = spent)
+ */
+spentCents: number; txnCount: number }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
 /**
  * Category with real spending aggregated from transactions.
@@ -307,12 +367,14 @@ export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" |
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
+export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; sortOrder: number; createdAt: string }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
 export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
+export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }

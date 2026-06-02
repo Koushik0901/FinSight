@@ -129,6 +129,12 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::list_categories_with_spending,
         commands::transactions::list_rules_with_categories,
         commands::transactions::toggle_rule,
+        commands::budget::list_budget_envelopes,
+        commands::budget::set_budget,
+        commands::budget::list_goals,
+        commands::budget::create_goal,
+        commands::budget::update_goal_balance,
+        commands::budget::archive_goal,
     ])
 }
 
