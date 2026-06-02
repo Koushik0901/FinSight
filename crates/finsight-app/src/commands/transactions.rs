@@ -12,6 +12,8 @@ pub struct TxnFilterInput {
     pub account_id: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub search: Option<String>,
+    pub filter_preset: Option<String>,
 }
 
 #[tauri::command]
@@ -28,7 +30,8 @@ pub async fn list_transactions(
                 account_id: filter.account_id,
                 limit: filter.limit.unwrap_or(100),
                 offset: filter.offset.unwrap_or(0),
-                ..Default::default()
+                search: filter.search,
+                filter_preset: filter.filter_preset,
             },
         )
     })
