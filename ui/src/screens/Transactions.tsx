@@ -87,6 +87,7 @@ export default function Transactions() {
           <button
             key={tab.key}
             className={preset === tab.key ? "on" : ""}
+            aria-pressed={preset === tab.key}
             onClick={() => setPreset(tab.key)}
           >
             {tab.label}
