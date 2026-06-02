@@ -1,34 +1,111 @@
 :root {
-  /* Accent (default lime, mirrors prototype) */
-  --accent: #C9F950;
+  /* Accent (default lime — overridden by ThemeProvider) */
+  --accent:     #C9F950;
   --accent-ink: #0A0F02;
-  --accent-2: rgba(201, 249, 80, 0.14);
-  --accent-3: rgba(201, 249, 80, 0.28);
+  --accent-2:   rgba(201, 249, 80, 0.14);
+  --accent-3:   rgba(201, 249, 80, 0.28);
   --accent-glow: 0 0 60px rgba(201, 249, 80, 0.20);
+
+  /* Category colours */
+  --c-housing:   #A78BFA;
+  --c-groceries: #34D399;
+  --c-dining:    #FB923C;
+  --c-transport: #60A5FA;
+  --c-utilities: #FACC15;
+  --c-subs:      #F472B6;
+  --c-health:    #2DD4BF;
+  --c-shopping:  #FCA5A5;
+  --c-travel:    #818CF8;
+  --c-gifts:     #FDE68A;
+  --c-income:    var(--accent);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Font stacks */
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Table row height */
+  --row-h: 48px;
 }
 
+/* ── Dark theme ──────────────────────────────────────── */
 :root[data-theme="dark"] {
-  --bg: #0B0C0A;
-  --surface: #131411;
-  --surface-2: #1A1B17;
-  --hairline: rgba(255,255,255,0.06);
-  --text: rgba(255,255,255,0.92);
-  --text-2: rgba(255,255,255,0.62);
-  --text-3: rgba(255,255,255,0.38);
-  --positive: #34D399;
-  --negative: #FB7185;
-}
-:root[data-theme="light"] {
-  --bg: #F8F7F2;
-  --surface: #FFFFFF;
-  --surface-2: #F0EEE6;
-  --hairline: rgba(0,0,0,0.06);
-  --text: rgba(0,0,0,0.92);
-  --text-2: rgba(0,0,0,0.62);
-  --text-3: rgba(0,0,0,0.38);
-  --positive: #15803D;
-  --negative: #B91C1C;
+  /* Surfaces */
+  --bg:        #08080B;
+  --bg-2:      #0B0B0F;
+  --surface:   #101015;
+  --surface-2: #15151B;
+  --elevated:  #1A1A22;
+  --hover:     #1E1E27;
+
+  /* Borders */
+  --hairline: rgba(255, 255, 255, 0.04);
+  --line:     rgba(255, 255, 255, 0.06);
+  --line-2:   rgba(255, 255, 255, 0.10);
+  --line-3:   rgba(255, 255, 255, 0.16);
+
+  /* Text (--ink-* = design system names; --text-* = legacy aliases kept for compat) */
+  --ink:       #F4F4F7;
+  --ink-2:     #C8C8D0;
+  --ink-mute:  #8A8A95;
+  --ink-faint: #57575F;
+  --text:   var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-mute);
+
+  /* Status */
+  --positive:   #4ADE80;
+  --positive-2: rgba(74, 222, 128, 0.14);
+  --negative:   #FB7185;
+  --negative-2: rgba(251, 113, 133, 0.14);
+  --warning:    #FBBF24;
+  --warning-2:  rgba(251, 191, 36, 0.14);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 0 rgba(0,0,0,0.4);
+  --shadow-md: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.4);
+  --shadow-lg: 0 1px 0 rgba(255,255,255,0.05) inset, 0 24px 64px rgba(0,0,0,0.5);
 }
 
-:root[data-density="cozy"] { --pad-1: 8px; --pad-2: 16px; --pad-3: 24px; }
-:root[data-density="compact"] { --pad-1: 6px; --pad-2: 12px; --pad-3: 18px; }
+/* ── Light theme ─────────────────────────────────────── */
+:root[data-theme="light"] {
+  --bg:        #F8F7F2;
+  --bg-2:      #F0EEE6;
+  --surface:   #FFFFFF;
+  --surface-2: #F0EEE6;
+  --elevated:  #FFFFFF;
+  --hover:     #ECEAE2;
+
+  --hairline: rgba(0,0,0,0.06);
+  --line:     rgba(0,0,0,0.06);
+  --line-2:   rgba(0,0,0,0.10);
+  --line-3:   rgba(0,0,0,0.16);
+
+  --ink:       rgba(0,0,0,0.92);
+  --ink-2:     rgba(0,0,0,0.70);
+  --ink-mute:  rgba(0,0,0,0.45);
+  --ink-faint: rgba(0,0,0,0.28);
+  --text:   var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-mute);
+
+  --positive:   #15803D;
+  --positive-2: rgba(21, 128, 61, 0.12);
+  --negative:   #B91C1C;
+  --negative-2: rgba(185, 28, 28, 0.12);
+  --warning:    #D97706;
+  --warning-2:  rgba(217, 119, 6, 0.12);
+
+  --shadow-sm: 0 1px 0 rgba(0,0,0,0.06);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-lg: 0 24px 64px rgba(0,0,0,0.12);
+}
+
+/* ── Density ─────────────────────────────────────────── */
+:root[data-density="cozy"]   { --pad-1: 8px; --pad-2: 16px; --pad-3: 24px; }
+:root[data-density="compact"]{ --pad-1: 6px; --pad-2: 12px; --pad-3: 18px; }

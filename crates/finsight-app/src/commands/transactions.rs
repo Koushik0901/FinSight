@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::AppState;
 use finsight_core::models::{NewTransaction, Transaction, TxnPatch};
 use finsight_core::repos::{rules, run, transactions};
+use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -152,4 +153,142 @@ pub async fn list_categories(
     })
     .await
     .map_err(AppError::from)
+}
+
+/// Category with real spending aggregated from transactions.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryWithSpending {
+    pub id: String,
+    pub label: String,
+    pub color: String,
+    pub group_id: String,
+    pub group_label: String,
+    /// Total outflow this calendar month (positive = money spent)
+    pub this_month_cents: i64,
+    /// Total outflow last calendar month
+    pub last_month_cents: i64,
+    /// Number of transactions categorised here this month
+    pub txn_count: i64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_categories_with_spending(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<CategoryWithSpending>> {
+    let db = (*state.db).clone();
+    let now = Utc::now();
+    // First day of the current month, then last month — passed as strings
+    let this_month_start = now.format("%Y-%m-01").to_string();
+    let last_month_start = {
+        let m = now.month0(); // 0-based
+        if m == 0 {
+            format!("{}-12-01", now.year() - 1)
+        } else {
+            format!("{}-{:02}-01", now.year(), m)
+        }
+    };
+
+    run(&db, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT \
+               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), \
+               COALESCE(SUM(CASE WHEN t.posted_at >= ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
+               COALESCE(SUM(CASE WHEN t.posted_at >= ?2 AND t.posted_at < ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
+               COUNT(CASE WHEN t.posted_at >= ?1 THEN 1 END) \
+             FROM categories c \
+             LEFT JOIN category_groups g ON g.id = c.group_id \
+             LEFT JOIN transactions t ON t.category_id = c.id \
+             WHERE c.archived_at IS NULL \
+             GROUP BY c.id, c.label, c.color, c.group_id, g.label \
+             ORDER BY 6 DESC, g.sort_order, c.sort_order",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![this_month_start, last_month_start],
+            |r| {
+                Ok(CategoryWithSpending {
+                    id: r.get(0)?,
+                    label: r.get(1)?,
+                    color: r.get(2)?,
+                    group_id: r.get(3)?,
+                    group_label: r.get(4)?,
+                    this_month_cents: r.get(5)?,
+                    last_month_cents: r.get(6)?,
+                    txn_count: r.get(7)?,
+                })
+            },
+        )?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Rule with resolved category label and color.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleWithCategory {
+    pub id: String,
+    pub pattern: String,
+    pub category_id: String,
+    pub category_label: String,
+    pub category_color: String,
+    pub enabled: bool,
+    pub source: String,
+    pub created_at: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_rules_with_categories(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<RuleWithCategory>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT r.id, r.pattern, r.category_id, \
+                    COALESCE(c.label,''), COALESCE(c.color,''), \
+                    r.enabled, r.source, r.created_at \
+             FROM rules r \
+             LEFT JOIN categories c ON c.id = r.category_id \
+             ORDER BY r.created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(RuleWithCategory {
+                id: r.get(0)?,
+                pattern: r.get(1)?,
+                category_id: r.get(2)?,
+                category_label: r.get(3)?,
+                category_color: r.get(4)?,
+                enabled: r.get::<_, i64>(5)? != 0,
+                source: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn toggle_rule(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| rules::set_enabled(conn, &id, enabled))
+        .await
+        .map_err(AppError::from)
 }

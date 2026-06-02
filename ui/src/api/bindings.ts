@@ -237,6 +237,30 @@ async triggerCategorize() : Promise<Result<null, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async listCategoriesWithSpending() : Promise<Result<CategoryWithSpending[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_categories_with_spending") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listRulesWithCategories() : Promise<Result<RuleWithCategory[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_rules_with_categories") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async toggleRule(id: string, enabled: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("toggle_rule", { id, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -263,6 +287,22 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
+/**
+ * Category with real spending aggregated from transactions.
+ */
+export type CategoryWithSpending = { id: string; label: string; color: string; groupId: string; groupLabel: string; 
+/**
+ * Total outflow this calendar month (positive = money spent)
+ */
+thisMonthCents: number; 
+/**
+ * Total outflow last calendar month
+ */
+lastMonthCents: number; 
+/**
+ * Number of transactions categorised here this month
+ */
+txnCount: number }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
@@ -280,6 +320,10 @@ export type ProposedRuleDto = { pattern: string; category_id: string; category_l
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
+/**
+ * Rule with resolved category label and color.
+ */
+export type RuleWithCategory = { id: string; pattern: string; categoryId: string; categoryLabel: string; categoryColor: string; enabled: boolean; source: string; createdAt: string }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }

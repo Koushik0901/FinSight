@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult } from "../client";
+import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryWithSpending, type RuleWithCategory } from "../client";
 
 const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null };
 
@@ -94,6 +94,41 @@ export function useCategories() {
       const result = await commands.listCategories();
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
+    },
+  });
+}
+
+export function useCategoriesWithSpending() {
+  return useQuery<CategoryWithSpending[]>({
+    queryKey: ["categories-with-spending"],
+    queryFn: async () => {
+      const result = await commands.listCategoriesWithSpending();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
+export function useRulesWithCategories() {
+  return useQuery<RuleWithCategory[]>({
+    queryKey: ["rules"],
+    queryFn: async () => {
+      const result = await commands.listRulesWithCategories();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
+export function useToggleRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      const result = await commands.toggleRule(id, enabled);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rules"] });
     },
   });
 }

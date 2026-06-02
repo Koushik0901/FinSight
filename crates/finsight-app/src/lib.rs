@@ -126,6 +126,9 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::test_completion_provider,
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
+        commands::transactions::list_categories_with_spending,
+        commands::transactions::list_rules_with_categories,
+        commands::transactions::toggle_rule,
     ])
 }
 
