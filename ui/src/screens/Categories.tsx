@@ -91,7 +91,7 @@ export default function Categories() {
               {fmt(totalThis)}
             </div>
           </div>
-          {totalLast > 0 && (
+          {scope !== "year" && totalLast > 0 && (
             <div style={{ textAlign: "right" }}>
               <div className="muted" style={{ fontSize: 13 }}>vs. {lastMonthLabel}</div>
               <div
@@ -143,7 +143,7 @@ export default function Categories() {
             <tbody>
               {active.map((c) => {
                 const v = valueFor(c);
-                const cmp = compareFor(c);
+                const cmp = scope === "year" ? 0 : compareFor(c);
                 const color = c.color || "var(--ink-mute)";
                 return (
                   <tr key={c.id}>
