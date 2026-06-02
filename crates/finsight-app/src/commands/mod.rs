@@ -4,4 +4,5 @@ pub mod budget;
 pub mod import;
 pub mod meta;
 pub mod onboarding;
+pub mod recurring;
 pub mod transactions;

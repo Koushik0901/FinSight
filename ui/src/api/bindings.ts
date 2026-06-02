@@ -309,6 +309,14 @@ async archiveGoal(id: string) : Promise<Result<null, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_recurring") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -380,6 +388,38 @@ export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomi
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
+/**
+ * A recurring transaction detected from transaction history.
+ */
+export type RecurringItem = { merchantRaw: string; categoryLabel: string; categoryColor: string; 
+/**
+ * Most recent amount (negative = expense, positive = income)
+ */
+lastAmountCents: number; 
+/**
+ * Average gap between occurrences in days
+ */
+avgGapDays: number; 
+/**
+ * How many times this has appeared
+ */
+occurrences: number; 
+/**
+ * Most recent posted_at date (ISO)
+ */
+lastSeen: string; 
+/**
+ * Estimated next date (ISO), based on last_seen + avg_gap
+ */
+nextExpected: string; 
+/**
+ * "monthly" | "weekly" | "biweekly" | "annual" | "irregular"
+ */
+cadence: string; 
+/**
+ * Whether this looks like a subscription (small, regular negative charge)
+ */
+isSubscription: boolean }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
 /**
