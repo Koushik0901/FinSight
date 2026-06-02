@@ -317,6 +317,14 @@ async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getReportData() : Promise<Result<ReportData, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_report_data") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -356,6 +364,10 @@ budgetCents: number;
 spentCents: number; txnCount: number }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
 /**
+ * One category's 12-month total.
+ */
+export type CategoryTotal = { categoryId: string; label: string; color: string; totalCents: number; txnCount: number }
+/**
  * Category with real spending aggregated from transactions.
  */
 export type CategoryWithSpending = { id: string; label: string; color: string; groupId: string; groupLabel: string; 
@@ -381,6 +393,34 @@ export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
+/**
+ * One merchant's 12-month total.
+ */
+export type MerchantTotal = { merchantRaw: string; categoryLabel: string; categoryColor: string; totalCents: number; txnCount: number }
+/**
+ * One month's summary for the bar chart.
+ */
+export type MonthSummary = { 
+/**
+ * "YYYY-MM"
+ */
+month: string; 
+/**
+ * Human label e.g. "Jan"
+ */
+label: string; 
+/**
+ * Total inflows (positive transactions), as positive cents
+ */
+incomeCents: number; 
+/**
+ * Total outflows (negative transactions), as positive cents
+ */
+expenseCents: number; 
+/**
+ * Net = income - expense
+ */
+netCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
@@ -420,6 +460,19 @@ cadence: string;
  * Whether this looks like a subscription (small, regular negative charge)
  */
 isSubscription: boolean }
+export type ReportData = { 
+/**
+ * Last 12 months, oldest first
+ */
+monthly: MonthSummary[]; 
+/**
+ * Top 10 categories by 12-month spend
+ */
+topCategories: CategoryTotal[]; 
+/**
+ * Top 10 merchants by 12-month spend
+ */
+topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
 /**
