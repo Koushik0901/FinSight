@@ -28,6 +28,7 @@ pub async fn list_transactions(
                 account_id: filter.account_id,
                 limit: filter.limit.unwrap_or(100),
                 offset: filter.offset.unwrap_or(0),
+                ..Default::default()
             },
         )
     })
