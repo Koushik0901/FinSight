@@ -27,7 +27,7 @@ function PaceBar({ value, compare, color }: { value: number; compare: number; co
 }
 
 export default function Categories() {
-  const [scope, setScope] = useState<"month" | "avg">("month");
+  const [scope, setScope] = useState<"month" | "avg" | "year">("month");
   const { data: cats = [], isLoading, error } = useCategoriesWithSpending();
 
   // Filter to non-zero categories and sort by spend desc
@@ -35,8 +35,11 @@ export default function Categories() {
     .filter((c) => c.thisMonthCents > 0 || c.lastMonthCents > 0)
     .sort((a, b) => b.thisMonthCents - a.thisMonthCents);
 
-  const valueFor = (c: CategoryWithSpending) =>
-    scope === "avg" ? Math.round((c.thisMonthCents + c.lastMonthCents) / 2) : c.thisMonthCents;
+  const valueFor = (c: CategoryWithSpending) => {
+    if (scope === "avg") return Math.round((c.thisMonthCents + c.lastMonthCents) / 2);
+    if (scope === "year") return c.yearTotalCents;
+    return c.thisMonthCents;
+  };
   const compareFor = (c: CategoryWithSpending) =>
     scope === "avg" ? c.thisMonthCents : c.lastMonthCents;
 
@@ -70,6 +73,9 @@ export default function Categories() {
           </button>
           <button className={scope === "avg" ? "on" : ""} onClick={() => setScope("avg")}>
             vs. last month
+          </button>
+          <button className={scope === "year" ? "on" : ""} onClick={() => setScope("year")}>
+            Year to date
           </button>
         </div>
       </div>
@@ -131,6 +137,7 @@ export default function Categories() {
                 <th className="right">{scope === "avg" ? "Average" : "This month"}</th>
                 <th className="right">{lastMonthLabel}</th>
                 <th className="right">Transactions</th>
+                <th className="right">Budget</th>
               </tr>
             </thead>
             <tbody>
@@ -162,6 +169,9 @@ export default function Categories() {
                     <td className="right num tabular money">{fmt(v)}</td>
                     <td className="right num tabular muted">{cmp > 0 ? fmt(cmp) : "—"}</td>
                     <td className="right num tabular muted">{c.txnCount}</td>
+                    <td className="right num tabular" style={{ color: c.budgetCents > 0 && c.thisMonthCents > c.budgetCents ? "var(--negative)" : "var(--ink-mute)" }}>
+                      {c.budgetCents > 0 ? fmt(c.budgetCents) : "—"}
+                    </td>
                   </tr>
                 );
               })}
