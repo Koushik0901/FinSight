@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEnvelopes, useSetBudget } from "../api/hooks/budget";
-import type { BudgetEnvelope } from "../api/client";
+import { commands } from "../api/client";
+import type { BudgetEnvelope, MonthTotals } from "../api/client";
 import * as I from "../components/Icons";
 
 function fmt(cents: number) {
@@ -12,7 +14,7 @@ function fmt(cents: number) {
   }).format(cents / 100);
 }
 
-type SortKey = "group" | "stress" | "size";
+type SortKey = "group" | "stress" | "size" | "activity";
 
 function envelopeStatus(e: BudgetEnvelope) {
   if (e.budgetCents === 0) return { label: "No budget set", tone: "neutral", severity: 0 };
@@ -130,6 +132,15 @@ function EnvelopeCard({ env, onEdit }: { env: BudgetEnvelope; onEdit: () => void
 
 export default function Budget() {
   const { data: envelopes = [], isLoading, error } = useBudgetEnvelopes();
+  const { data: totals } = useQuery<MonthTotals>({
+    queryKey: ["today-summary"],
+    queryFn: async () => {
+      const result = await commands.getMonthTotals();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
+  });
   const [sort, setSort] = useState<SortKey>("group");
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -144,10 +155,14 @@ export default function Budget() {
   const projectedEom = todayDay > 0 ? Math.round((totalSpent / todayDay) * totalDays) : 0;
 
   const sorted = [...envelopes].sort((a, b) => {
-    if (sort === "stress") return envelopeStatus(b).severity - envelopeStatus(a).severity || b.spentCents - a.spentCents;
-    if (sort === "size")   return b.budgetCents - a.budgetCents;
+    if (sort === "stress")   return envelopeStatus(b).severity - envelopeStatus(a).severity || b.spentCents - a.spentCents;
+    if (sort === "size")     return b.budgetCents - a.budgetCents;
+    if (sort === "activity") return b.txnCount - a.txnCount;
     return (a.groupLabel || "").localeCompare(b.groupLabel || "") || a.categoryLabel.localeCompare(b.categoryLabel);
   });
+
+  const totalBudgetSet = envelopes.reduce((s, e) => s + e.budgetCents, 0);
+  const toBudget = (totals?.incomeCents ?? 0) - totalBudgetSet;
 
   const attention = sorted.filter((e) => envelopeStatus(e).severity >= 2);
 
@@ -171,8 +186,24 @@ export default function Budget() {
           <button className={sort === "group" ? "on" : ""} onClick={() => setSort("group")}>By group</button>
           <button className={sort === "stress" ? "on" : ""} onClick={() => setSort("stress")}>By stress</button>
           <button className={sort === "size" ? "on" : ""} onClick={() => setSort("size")}>By size</button>
+          <button className={sort === "activity" ? "on" : ""} onClick={() => setSort("activity")}>By activity</button>
         </div>
       </div>
+
+      {/* To Budget tracker */}
+      {totals && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: "var(--surface-2)", borderRadius: 10, marginBottom: 20, fontSize: 13 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--accent)", boxShadow: "0 0 6px var(--accent)", flexShrink: 0 }} />
+          <span style={{ color: "var(--ink-mute)" }}>To Budget · unassigned</span>
+          <span className="num money" style={{ fontSize: 18, fontWeight: 600, color: toBudget >= 0 ? "var(--accent)" : "var(--negative)" }}>
+            {fmt(Math.abs(toBudget))}
+            {toBudget < 0 ? " over" : ""}
+          </span>
+          <span style={{ color: "var(--ink-faint)", marginLeft: "auto", fontSize: 12 }}>
+            of {fmt(totals.incomeCents)} income · {fmt(totalBudgetSet)} assigned
+          </span>
+        </div>
+      )}
 
       {noData ? (
         <div className="card" style={{ textAlign: "center", padding: "64px 32px" }}>
