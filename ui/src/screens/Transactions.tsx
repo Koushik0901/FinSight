@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTransactions } from "../api/hooks/transactions";
 import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "./onboarding/ImportMappingDialog";
-import type { Transaction } from "../api/client";
+import type { Transaction, TxnFilterInput } from "../api/client";
 
 function formatMoney(cents: number) {
   const sign = cents < 0 ? "-" : "";
@@ -14,18 +14,46 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+type Preset = "" | "needs_review" | "anomalies" | "no_category";
+
+const TABS: { key: Preset; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "needs_review", label: "Needs review" },
+  { key: "anomalies", label: "Anomalies" },
+  { key: "no_category", label: "No category" },
+];
+
 export default function Transactions() {
   const [addOpen, setAddOpen] = useState(false);
   const [editTxn, setEditTxn] = useState<Transaction | null>(null);
   const [csvPath, setCsvPath] = useState<string | null>(null);
-  const { data, isLoading, error } = useTransactions();
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [preset, setPreset] = useState<Preset>("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearch(searchInput), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [searchInput]);
+
+  const filter: TxnFilterInput = {
+    accountId: null,
+    limit: null,
+    offset: null,
+    search: search || null,
+    filterPreset: preset || null,
+  };
+
+  const { data, isLoading, error } = useTransactions(filter);
 
   if (isLoading) return <div className="stub">Loading…</div>;
   if (error) return <div className="stub">Error: {(error as Error).message}</div>;
 
   return (
     <div className="screen-transactions">
-      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Transactions</h1>
         <div className="actions" style={{ display: "flex", gap: 8 }}>
           <FilePicker onPicked={setCsvPath} label="Import CSV" />
@@ -33,8 +61,41 @@ export default function Transactions() {
         </div>
       </header>
 
+      {/* Search */}
+      <input
+        type="search"
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        placeholder="Search transactions…"
+        style={{
+          width: "100%",
+          background: "var(--surface-2)",
+          border: "1px solid var(--line)",
+          borderRadius: 8,
+          padding: "8px 14px",
+          fontSize: 14,
+          color: "var(--ink)",
+          outline: "none",
+          marginBottom: 12,
+          boxSizing: "border-box",
+        }}
+      />
+
+      {/* Filter tabs */}
+      <div className="toolbar" style={{ marginBottom: 20, display: "inline-flex" }}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={preset === tab.key ? "on" : ""}
+            onClick={() => setPreset(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {(!data || data.length === 0) ? (
-        <div className="stub">No transactions yet.</div>
+        <div className="stub">No transactions match your filters.</div>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
