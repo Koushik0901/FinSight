@@ -12,6 +12,7 @@ interface CmdItem {
 
 const NAV_ITEMS: CmdItem[] = [
   { kind: "nav", label: "Go to Today",        path: "/",             Icon: I.Today },
+  { kind: "nav", label: "Go to Insights",     path: "/insights",     Icon: I.Sparkle },
   { kind: "nav", label: "Go to Accounts",     path: "/accounts",     Icon: I.Wallet },
   { kind: "nav", label: "Go to Transactions", path: "/transactions", Icon: I.Flow },
   { kind: "nav", label: "Go to Budget",       path: "/budget",       Icon: I.Lego },

@@ -14,6 +14,7 @@ describe("App", () => {
       </QueryClientProvider>
     );
     expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.getByText("Insights")).toBeInTheDocument();
     expect(screen.getByText("Transactions")).toBeInTheDocument();
     expect(screen.getByText("Categories")).toBeInTheDocument();
     expect(screen.getByText("Rules & agents")).toBeInTheDocument();

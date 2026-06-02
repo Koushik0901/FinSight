@@ -4,7 +4,9 @@ import { Toaster } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { useTweaks } from "./state/tweaks";
 import Today from "./screens/Today";
+import Insights from "./screens/Insights";
 import Transactions from "./screens/Transactions";
 import Accounts from "./screens/Accounts";
 import Budget from "./screens/Budget";
@@ -18,12 +20,14 @@ import Onboarding from "./screens/Onboarding";
 import { useOnboardingState } from "./api/hooks/onboarding";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
+import * as I from "./components/Icons";
 
 export function App() {
   const { data: onboarding } = useOnboardingState();
   const navigate = useNavigate();
   const location = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
+  const { privacy, setPrivacy } = useTweaks();
 
   // Auto-redirect to onboarding for fresh installs
   useEffect(() => {
@@ -35,7 +39,7 @@ export function App() {
     }
   }, [onboarding, location.pathname, navigate]);
 
-  // ⌘K / Ctrl+K global shortcut
+  // Global keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
@@ -43,10 +47,14 @@ export function App() {
         e.preventDefault();
         setCmdOpen((o) => !o);
       }
+      if (meta && e.key === ".") {
+        e.preventDefault();
+        setPrivacy(!privacy);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [privacy, setPrivacy]);
 
   return (
     <ThemeProvider>
@@ -58,6 +66,7 @@ export function App() {
             <ImportProgress />
             <Routes>
               <Route path="/"             element={<Today />} />
+              <Route path="/insights"     element={<Insights />} />
               <Route path="/accounts"     element={<Accounts />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/budget"       element={<Budget />} />
@@ -72,6 +81,19 @@ export function App() {
           </div>
         </main>
       </div>
+
+      {/* Privacy mode badge */}
+      {privacy && (
+        <button
+          className="privacy-badge"
+          onClick={() => setPrivacy(false)}
+          aria-label="Privacy mode active — click to disable"
+          title="Privacy mode · ⌘. to toggle"
+        >
+          <I.EyeOff width="14" height="14" />
+          <span>Privacy mode · ⌘.</span>
+        </button>
+      )}
 
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       <Toaster richColors position="bottom-right" />

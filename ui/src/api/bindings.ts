@@ -325,6 +325,14 @@ async getReportData() : Promise<Result<ReportData, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getMonthTotals() : Promise<Result<MonthTotals, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_month_totals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -421,6 +429,14 @@ expenseCents: number;
  * Net = income - expense
  */
 netCents: number }
+/**
+ * Lightweight summary for the Today screen.
+ */
+export type MonthTotals = { incomeCents: number; expenseCents: number; netCents: number; savingsRatePct: number; 
+/**
+ * Number of transactions this month
+ */
+txnCount: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }

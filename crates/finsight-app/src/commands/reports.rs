@@ -177,3 +177,45 @@ pub async fn get_report_data(state: tauri::State<'_, AppState>) -> AppResult<Rep
     .await
     .map_err(AppError::from)
 }
+
+/// Lightweight summary for the Today screen.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthTotals {
+    pub income_cents: i64,
+    pub expense_cents: i64,
+    pub net_cents: i64,
+    pub savings_rate_pct: i64,
+    /// Number of transactions this month
+    pub txn_count: i64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_month_totals(state: tauri::State<'_, AppState>) -> AppResult<MonthTotals> {
+    let db = (*state.db).clone();
+    let this_month_start = Utc::now().format("%Y-%m-01").to_string();
+
+    run(&db, move |conn| {
+        let (income, expense, txn_count): (i64, i64, i64) = conn.query_row(
+            "SELECT \
+               COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents  ELSE 0 END), 0), \
+               COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0), \
+               COUNT(*) \
+             FROM transactions WHERE posted_at >= ?1",
+            rusqlite::params![this_month_start],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        let net = income - expense;
+        let savings_rate = if income > 0 { (net * 100) / income } else { 0 };
+        Ok(MonthTotals {
+            income_cents: income,
+            expense_cents: expense,
+            net_cents: net,
+            savings_rate_pct: savings_rate,
+            txn_count,
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}

@@ -13,6 +13,7 @@ interface NavEntry {
 
 const NAV_MAIN: NavEntry[] = [
   { id: "today",        path: "/",              label: "Today",        Icon: I.Today },
+  { id: "insights",     path: "/insights",      label: "Insights",     Icon: I.Sparkle },
   { id: "accounts",     path: "/accounts",      label: "Accounts",     Icon: I.Wallet },
   { id: "transactions", path: "/transactions",  label: "Transactions", Icon: I.Flow },
   { id: "budget",       path: "/budget",        label: "Budget",       Icon: I.Lego },

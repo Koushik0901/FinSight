@@ -39,7 +39,7 @@ export default function Settings() {
   const [selectedKind, setSelectedKind] = useState<ProviderKind>(null);
   const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
   const [ollamaModel, setOllamaModel] = useState("");
-  const [selectedPreset, setSelectedPreset] = useState(OPENAI_COMPAT_PRESETS[0]);
+  const [selectedPreset, setSelectedPreset] = useState(OPENAI_COMPAT_PRESETS[0]!);
   const [compatModel, setCompatModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [anthropicModel, setAnthropicModel] = useState("claude-3-5-haiku-latest");

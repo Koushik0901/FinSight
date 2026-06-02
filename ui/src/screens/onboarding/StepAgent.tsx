@@ -42,7 +42,7 @@ export default function StepAgent({ onDone }: Props) {
   });
 
   // Cloud path state
-  const [selectedPreset, setSelectedPreset] = useState<CloudPreset>(CLOUD_PRESETS[0]);
+  const [selectedPreset, setSelectedPreset] = useState<CloudPreset>(CLOUD_PRESETS[0]!);
   const [cloudModel, setCloudModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
