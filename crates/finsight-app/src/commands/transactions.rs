@@ -174,6 +174,8 @@ pub struct CategoryWithSpending {
     pub last_month_cents: i64,
     /// Number of transactions categorised here this month
     pub txn_count: i64,
+    pub year_total_cents: i64,
+    pub budget_cents: i64,
 }
 
 #[tauri::command]
@@ -183,16 +185,17 @@ pub async fn list_categories_with_spending(
 ) -> AppResult<Vec<CategoryWithSpending>> {
     let db = (*state.db).clone();
     let now = Utc::now();
-    // First day of the current month, then last month — passed as strings
     let this_month_start = now.format("%Y-%m-01").to_string();
     let last_month_start = {
-        let m = now.month0(); // 0-based
+        let m = now.month0();
         if m == 0 {
             format!("{}-12-01", now.year() - 1)
         } else {
             format!("{}-{:02}-01", now.year(), m)
         }
     };
+    let year_start = format!("{}-01-01", now.year());
+    let current_month = now.format("%Y-%m").to_string();
 
     run(&db, move |conn| {
         let mut stmt = conn.prepare(
@@ -200,16 +203,19 @@ pub async fn list_categories_with_spending(
                c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), \
                COALESCE(SUM(CASE WHEN t.posted_at >= ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
                COALESCE(SUM(CASE WHEN t.posted_at >= ?2 AND t.posted_at < ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
-               COUNT(CASE WHEN t.posted_at >= ?1 THEN 1 END) \
+               COUNT(CASE WHEN t.posted_at >= ?1 THEN 1 END), \
+               COALESCE(SUM(CASE WHEN t.posted_at >= ?3 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
+               COALESCE(MAX(b.amount_cents), 0) \
              FROM categories c \
              LEFT JOIN category_groups g ON g.id = c.group_id \
              LEFT JOIN transactions t ON t.category_id = c.id \
+             LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4 \
              WHERE c.archived_at IS NULL \
              GROUP BY c.id, c.label, c.color, c.group_id, g.label \
              ORDER BY 6 DESC, g.sort_order, c.sort_order",
         )?;
         let rows = stmt.query_map(
-            rusqlite::params![this_month_start, last_month_start],
+            rusqlite::params![this_month_start, last_month_start, year_start, current_month],
             |r| {
                 Ok(CategoryWithSpending {
                     id: r.get(0)?,
@@ -220,6 +226,8 @@ pub async fn list_categories_with_spending(
                     this_month_cents: r.get(5)?,
                     last_month_cents: r.get(6)?,
                     txn_count: r.get(7)?,
+                    year_total_cents: r.get(8)?,
+                    budget_cents: r.get(9)?,
                 })
             },
         )?;
@@ -295,4 +303,17 @@ pub async fn toggle_rule(
     run(&db, move |conn| rules::set_enabled(conn, &id, enabled))
         .await
         .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_transaction_count(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<i64> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        Ok(conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))?)
+    })
+    .await
+    .map_err(AppError::from)
 }
