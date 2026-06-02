@@ -138,6 +138,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::recurring::list_recurring,
         commands::reports::get_report_data,
         commands::reports::get_month_totals,
+        commands::transactions::get_transaction_count,
     ])
 }
 
