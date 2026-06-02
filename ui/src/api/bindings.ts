@@ -333,6 +333,14 @@ async getMonthTotals() : Promise<Result<MonthTotals, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getTransactionCount() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_transaction_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -390,7 +398,7 @@ lastMonthCents: number;
 /**
  * Number of transactions categorised here this month
  */
-txnCount: number }
+txnCount: number; yearTotalCents: number; budgetCents: number }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
@@ -499,7 +507,7 @@ export type SeedSummary = { accounts_created: number; transactions_created: numb
 export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
 export type TransactionStatus = "cleared" | "pending" | "manual"
-export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null }
+export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
 

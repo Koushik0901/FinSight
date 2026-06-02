@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryWithSpending, type RuleWithCategory } from "../client";
 
-const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null };
+const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null, search: null, filterPreset: null };
 
 export function useTransactions(filter: TxnFilterInput = DEFAULT_FILTER) {
   return useQuery<Transaction[]>({
