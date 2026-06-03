@@ -1,6 +1,9 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import * as I from "./Icons";
 import { useNeedsReviewCount } from "../api/hooks/agent";
+import { useResetOnboarding } from "../api/hooks/onboarding";
+import { commands } from "../api/client";
 
 interface NavEntry {
   id: string;
@@ -34,6 +37,27 @@ interface Props {
 
 export function Sidebar({ onOpenCmd }: Props) {
   const { data: needsReview = 0 } = useNeedsReviewCount();
+  const navigate = useNavigate();
+  const resetOnboarding = useResetOnboarding();
+
+  const { data: txnCount = 0 } = useQuery<number>({
+    queryKey: ["transaction-count"],
+    queryFn: async () => {
+      const result = await commands.getTransactionCount();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+  const formattedTxnCount =
+    txnCount >= 1000 ? `${(txnCount / 1000).toFixed(1)}k` : String(txnCount);
+
+  const handleRunSetup = async () => {
+    await resetOnboarding.mutateAsync();
+    navigate("/onboarding");
+  };
 
   return (
     <aside className="sidebar" aria-label="Primary navigation">
@@ -68,6 +92,11 @@ export function Sidebar({ onOpenCmd }: Props) {
             {n.id === "rules" && needsReview > 0 && (
               <span className="pulse" title={`${needsReview} need review`} />
             )}
+            {n.id === "transactions" && txnCount > 0 && (
+              <span className="badge" style={{ marginLeft: "auto", fontSize: 11 }}>
+                {formattedTxnCount}
+              </span>
+            )}
             {n.badge && <span className="badge">{n.badge}</span>}
           </NavLink>
         ))}
@@ -98,6 +127,18 @@ export function Sidebar({ onOpenCmd }: Props) {
           <I.Lock className="ico" />
           <span style={{ fontSize: 12 }}>Local-only · encrypted</span>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop: "auto", padding: "8px 12px", borderTop: "1px solid var(--line)" }}>
+        <button
+          className="nav-item"
+          style={{ width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer" }}
+          onClick={() => void handleRunSetup()}
+        >
+          <I.Sparkle className="ico" />
+          <span>Run setup again</span>
+        </button>
       </div>
     </aside>
   );
