@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
@@ -39,6 +39,8 @@ type View = "calendar" | "list" | "subs";
 function CalendarView({ items }: { items: RecurringItem[] }) {
   const now = new Date();
   const [offset, setOffset] = useState(0); // months offset from current
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  useEffect(() => { setSelectedDay(null); }, [offset]);
 
   const year = now.getFullYear() + Math.floor((now.getMonth() + offset) / 12);
   const month = ((now.getMonth() + offset) % 12 + 12) % 12;
@@ -115,8 +117,10 @@ function CalendarView({ items }: { items: RecurringItem[] }) {
                 isPast  ? "past"  : "",
                 isWeekend && !isToday ? "weekend" : "",
                 netCents > 0 ? "pos" : "",
+                selectedDay === day ? "selected" : "",
               ].filter(Boolean).join(" ")}
-              style={{ "--load": `${loadPct}%` } as React.CSSProperties}
+              style={{ "--load": `${loadPct}%`, cursor: dayItems.length > 0 ? "pointer" : undefined } as React.CSSProperties}
+              onClick={() => setSelectedDay(selectedDay === day ? null : day)}
             >
               {isToday && <div className="rcal-today-glow" />}
               <div className="rcal-cell-head">
@@ -154,6 +158,50 @@ function CalendarView({ items }: { items: RecurringItem[] }) {
           );
         })}
       </div>
+      {selectedDay !== null && (dayMap[selectedDay] ?? []).length > 0 && (() => {
+        const detailItems = dayMap[selectedDay] ?? [];
+        const netCents = detailItems.reduce((s, r) => s + r.lastAmountCents, 0);
+        const dayDate = new Date(year, month, selectedDay);
+        const weekday = dayDate.toLocaleString("default", { weekday: "long" });
+        return (
+          <div className="rcal-detail">
+            <div>
+              <div className="rcal-detail-day">{selectedDay}</div>
+              <div className="rcal-detail-weekday">{weekday}</div>
+              {isCurrentMonth && selectedDay === today && (
+                <div className="rcal-detail-today-badge">TODAY</div>
+              )}
+            </div>
+            <div>
+              <div className={`rcal-detail-net ${netCents > 0 ? "pos" : "neg"}`}>
+                {fmt(netCents)} net
+              </div>
+              <div className="rcal-detail-items">
+                {detailItems.map((item) => {
+                  const color = item.lastAmountCents > 0 ? "var(--accent)" : (item.categoryColor || colorFromStr(item.merchantRaw));
+                  return (
+                    <div key={item.merchantRaw} className="rcal-detail-item">
+                      <div style={{ width: 30, height: 30, borderRadius: 7, background: color, color: "#fff", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {initials(item.merchantRaw)}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 500 }}>{item.merchantRaw}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || "Uncategorized"}</div>
+                      </div>
+                      <span className={`chip ${item.isSubscription ? "positive" : ""}`} style={{ fontSize: 11 }}>
+                        {item.cadence}
+                      </span>
+                      <span className={`num tabular money ${item.lastAmountCents > 0 ? "pos" : ""}`} style={{ fontSize: 14, fontFamily: "var(--mono)" }}>
+                        {fmt(item.lastAmountCents)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
