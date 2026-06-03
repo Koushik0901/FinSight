@@ -747,6 +747,9 @@
 }
 
 /* ── Recurring calendar day-detail panel ───────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+}
 .rcal-detail {
   border-top: 1px solid var(--line);
   background: var(--elevated);
