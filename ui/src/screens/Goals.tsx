@@ -292,8 +292,8 @@ export default function Goals() {
   const [extra, setExtra] = useState(0);
   const scenarioGoal = goals.find((g) => g.id === scenarioId) ?? goals[0];
   const baseMonths = scenarioGoal ? monthsTo(scenarioGoal) : null;
-  const newMonths = scenarioGoal && scenarioGoal.monthlyCents + extra > 0
-    ? Math.ceil((scenarioGoal.targetCents - scenarioGoal.currentCents) / (scenarioGoal.monthlyCents + extra))
+  const newMonths = scenarioGoal && scenarioGoal.monthlyCents + extra * 100 > 0
+    ? Math.ceil((scenarioGoal.targetCents - scenarioGoal.currentCents) / (scenarioGoal.monthlyCents + extra * 100))
     : baseMonths;
   const monthsSaved = baseMonths !== null && newMonths !== null ? Math.max(0, baseMonths - newMonths) : 0;
 

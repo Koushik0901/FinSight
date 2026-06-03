@@ -32,7 +32,11 @@ export default function Categories() {
 
   // Filter to non-zero categories and sort by spend desc
   const active = cats
-    .filter((c) => c.thisMonthCents > 0 || c.lastMonthCents > 0)
+    .filter((c) =>
+      c.thisMonthCents > 0 ||
+      c.lastMonthCents > 0 ||
+      (scope === "year" && c.yearTotalCents > 0)
+    )
     .sort((a, b) => b.thisMonthCents - a.thisMonthCents);
 
   const valueFor = (c: CategoryWithSpending) => {
@@ -134,7 +138,7 @@ export default function Categories() {
               <tr>
                 <th style={{ width: "32%" }}>Category</th>
                 <th>Pace vs. {lastMonthLabel}</th>
-                <th className="right">{scope === "avg" ? "Average" : "This month"}</th>
+                <th className="right">{scope === "avg" ? "Average" : scope === "year" ? "Year to date" : "This month"}</th>
                 <th className="right">{lastMonthLabel}</th>
                 <th className="right">Transactions</th>
                 <th className="right">Budget</th>
