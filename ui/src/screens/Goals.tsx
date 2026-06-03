@@ -27,6 +27,31 @@ function etaLabel(months: number): string {
   return d.toLocaleString("default", { month: "short", year: "numeric" });
 }
 
+type PaceStatus = "ahead" | "on_track" | "needs_attention";
+
+function paceStatus(goal: GoalDto): PaceStatus | null {
+  if (!goal.targetDate || goal.targetCents === 0) return null;
+  const remaining = goal.targetCents - goal.currentCents;
+  if (remaining <= 0) return null; // already reached
+  if (goal.monthlyCents <= 0) return "needs_attention";
+  const monthsRemaining = Math.ceil(remaining / goal.monthlyCents);
+  const target = new Date(goal.targetDate);
+  const now = new Date();
+  const monthsExpected =
+    (target.getFullYear() - now.getFullYear()) * 12 +
+    (target.getMonth() - now.getMonth());
+  if (monthsExpected <= 0) return "needs_attention";
+  if (monthsRemaining < monthsExpected * 0.85) return "ahead";
+  if (monthsRemaining > monthsExpected * 1.15) return "needs_attention";
+  return "on_track";
+}
+
+const PACE_LABELS: Record<PaceStatus, { label: string; cls: string }> = {
+  ahead: { label: "Ahead", cls: "positive" },
+  on_track: { label: "On track", cls: "" },
+  needs_attention: { label: "Needs attention", cls: "warning" },
+};
+
 type GoalType = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -76,7 +101,15 @@ function GoalCard({ goal }: { goal: GoalDto }) {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
         <div>
           <div style={{ fontSize: 15.5, fontWeight: 600, marginBottom: 3 }}>{goal.name}</div>
-          <span className="chip" style={{ fontSize: 11 }}>{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+            <span className="chip" style={{ fontSize: 11 }}>{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
+            {(() => {
+              const pace = paceStatus(goal);
+              if (!pace) return null;
+              const { label, cls } = PACE_LABELS[pace];
+              return <span className={`chip ${cls}`} style={{ fontSize: 11 }}>{label}</span>;
+            })()}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {confirmArchive ? (
