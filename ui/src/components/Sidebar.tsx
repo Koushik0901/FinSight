@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import * as I from "./Icons";
 import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useResetOnboarding } from "../api/hooks/onboarding";
@@ -55,8 +56,12 @@ export function Sidebar({ onOpenCmd }: Props) {
     txnCount >= 1000 ? `${(txnCount / 1000).toFixed(1)}k` : String(txnCount);
 
   const handleRunSetup = async () => {
-    await resetOnboarding.mutateAsync();
-    navigate("/onboarding");
+    try {
+      await resetOnboarding.mutateAsync();
+      navigate("/onboarding");
+    } catch {
+      toast.error("Failed to reset setup");
+    }
   };
 
   return (
