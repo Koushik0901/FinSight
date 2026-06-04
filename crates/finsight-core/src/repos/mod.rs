@@ -7,6 +7,7 @@ pub mod imports;
 pub mod liabilities;
 pub mod manual_assets;
 pub mod net_worth;
+pub mod rule_proposals;
 pub mod rules;
 pub mod scenarios;
 pub mod transactions;
