@@ -301,8 +301,12 @@ export default function Scenarios() {
                   className="btn ghost sm"
                   aria-label={`Delete ${h.description}`}
                   onClick={async () => {
-                    await del.mutateAsync(h.id);
-                    toast("Scenario deleted");
+                    try {
+                      await del.mutateAsync(h.id);
+                      toast("Scenario deleted");
+                    } catch {
+                      toast.error("Could not delete scenario");
+                    }
                   }}
                 >
                   <I.Trash />
