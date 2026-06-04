@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result;
 use finsight_core::{
     models::NewCategorization,
-    repos::{categorizations, rules},
+    repos::{categorizations, rule_proposals, rules},
     Db,
 };
 use rusqlite::params;
@@ -139,6 +139,17 @@ pub async fn run_job(
             done: categorized,
             total,
         });
+    }
+
+    // Post-run: surface rule proposals for merchants the user keeps re-categorizing.
+    {
+        let db = db.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = db.get()?;
+            rule_proposals::emit_from_corrections(&mut conn, 3)?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await??;
     }
 
     let final_skipped = total.saturating_sub(categorized);
@@ -312,5 +323,41 @@ mod tests {
         ).unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
         assert!((confidence.unwrap() - 0.87).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn emits_rule_proposal_for_repeated_user_corrections() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut *conn); // inserts cat1 + account a1 + txn t1
+            // Add two more transactions for the same merchant, all user-categorized.
+            for i in 2..=3 {
+                let tid = format!("t{i}");
+                conn.execute(
+                    "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
+                     VALUES(?1,'a1','2024-01-15T00:00:00Z',1500,'CHIPOTLE','cat1','cleared',0,'2024-01-15T00:00:00Z')",
+                    rusqlite::params![tid],
+                ).unwrap();
+            }
+            // t1 also categorized to cat1, all by the user.
+            conn.execute("UPDATE transactions SET category_id='cat1' WHERE id='t1'", []).unwrap();
+            for (i, tid) in ["t1","t2","t3"].iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                     VALUES(?1,?2,'cat1','user',1.0,'2024-01-16T00:00:00Z')",
+                    rusqlite::params![format!("uc{i}"), tid],
+                ).unwrap();
+            }
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(), model_id: "test".into(), response: json!([]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {})).await.unwrap();
+
+        let mut conn = db.get().unwrap();
+        let pending = finsight_core::repos::rule_proposals::list(&mut conn, Some("pending")).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].pattern, "CHIPOTLE");
     }
 }
