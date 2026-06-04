@@ -179,7 +179,7 @@ Use `tauri_plugin_dialog` to show a save dialog, then write CSV with: date, merc
 
 **Design reference:** `design/plutus/project/components/transactions.jsx`
 
-### 5a. Search bar
+### 5a. Search bar ✅ DONE
 
 Add a search input above the table (full-width, debounced 300ms):
 ```rust
@@ -190,7 +190,7 @@ Add a search input above the table (full-width, debounced 300ms):
 Update `TxnFilterInput` in the backend to include `search: Option<String>`.
 In `Transactions.tsx`, add a controlled `<input>` that updates the filter passed to `useTransactions`.
 
-### 5b. Filter tabs
+### 5b. Filter tabs ✅ DONE
 
 Below the header, add a tab strip: **All · Needs review · Anomalies · No category**
 - "Needs review" — filter where `ai_confidence < 0.6 AND last categorization source = 'llm'`
@@ -217,14 +217,14 @@ Add `is_reimbursable BOOLEAN DEFAULT 0` and `is_split BOOLEAN DEFAULT 0` columns
 
 **Design reference:** `design/plutus/project/components/categories.jsx`
 
-### 6a. Year scope
+### 6a. Year scope ✅ DONE
 
 Add a third toolbar option "Year" to the scope toggle. When selected:
 - Fetch the last 12 months of spending from `list_categories_with_spending` — but this command only returns current and last month. Add a new backend field or command for year-to-date total.
 - Update `list_categories_with_spending` to also return `year_total_cents: i64` (SUM of outflow where `posted_at >= strftime('%Y-01-01', 'now')`).
 - In the frontend, use `yearTotalCents` as the value when scope = "year".
 
-### 6b. Budget column in the table
+### 6b. Budget column in the table ✅ DONE
 
 The Categories table should show each category's budget alongside actual spending. This requires joining `budgets` (current month row) into the `list_categories_with_spending` query. Add `budget_cents: i64` to `CategoryWithSpending` (0 if no budget set). Render a new "Budget" column in the table, coloring it `var(--negative)` if `thisMonthCents > budgetCents`.
 
@@ -243,7 +243,7 @@ This is pure frontend computation from the categories array — no new backend n
 
 **Design reference:** `design/plutus/project/components/budget.jsx`
 
-### 7a. "To Budget" tracker
+### 7a. "To Budget" tracker ✅ DONE
 
 Track unassigned income: `toBudget = income_this_month - sum(all budget_cents for this month)`.
 Show a pill row below the header:
@@ -254,7 +254,7 @@ $1,240  of $6,800 income · $5,560 assigned
 ```
 Requires calling `get_month_totals` (already exists) and `list_budget_envelopes` (already exists) in Budget.tsx — compute the difference client-side.
 
-### 7b. "By activity" sort
+### 7b. "By activity" sort ✅ DONE
 
 Add a 4th sort option in the toolbar: `By activity`. Sort envelopes by `txnCount DESC`.
 Already available in `BudgetEnvelope.txnCount` from the backend.
@@ -274,7 +274,7 @@ Render as a table: category name | Jan | Feb | Mar | Apr | May (with color inten
 
 **Design reference:** `design/plutus/project/components/recurring.jsx`
 
-### 8a. Day-detail panel
+### 8a. Day-detail panel ✅ DONE
 
 When a calendar cell is clicked in `CalendarView`, animate a detail panel below the grid showing that day's expected movements:
 - Day number (large), weekday name, "TODAY" badge if applicable
@@ -293,7 +293,7 @@ In the Subscriptions view, if an item's `lastAmountCents` differs from a previou
 
 **Design reference:** `design/plutus/project/components/goals.jsx`
 
-### 9a. Pace status chip on each goal card
+### 9a. Pace status chip on each goal card ✅ DONE
 
 Compute pace from: `monthsRemaining = ceil((target - current) / monthly)` vs `monthsExpected = (targetDate - today) in months`.
 - Ahead: `monthsRemaining < monthsExpected * 0.85`
@@ -503,11 +503,11 @@ Add Scenarios to `NAV_MAIN` in `Sidebar.tsx` and to `ROUTES` in `routes.ts`:
 ```
 Position: between Goals and Reports.
 
-### 15b. Live transaction count badge
+### 15b. Live transaction count badge ✅ DONE
 
 Show a live count badge next to "Transactions" in the nav. Add a `get_transaction_count()` command that returns the total count. Display as a formatted badge (e.g., "1.2k"). Refetch every 60s.
 
-### 15c. "Run setup again" footer item
+### 15c. "Run setup again" footer item ✅ DONE
 
 The design has a footer nav item that re-launches the onboarding flow. Already partially present in the codebase (`reset_onboarding_completion` command exists). Add a nav item to the sidebar footer:
 ```tsx
@@ -521,23 +521,32 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 
 ## Priority order
 
-| Priority | Item | Effort | Value |
-|----------|------|--------|-------|
-| 1 | Transaction search + filter tabs (§5a, §5b) | Low | High — core daily use |
-| 2 | Scenarios screen (§1) | High | High — design centrepiece |
-| 3 | Categories: year scope + budget column (§6a, §6b) | Low | Medium |
-| 4 | Budget: "To Budget" tracker + activity sort (§7a, §7b) | Low | Medium |
-| 5 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High |
-| 6 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece |
-| 7 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High |
-| 8 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium |
-| 9 | Settings: data export + appearance section (§12a, §12c) | Low | Medium |
-| 10 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium |
-| 11 | Goals: apply what-if + pace chip (§9a, §9b) | Low | Medium |
-| 12 | Recurring: day-detail panel (§8a) | Low | Medium |
-| 13 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium |
-| 14 | Plan Next Month wizard (§2) | High | Medium |
-| 15 | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) |
+> Items marked ✅ are shipped. Remaining items re-ranked by value.
+
+| Priority | Item | Effort | Value | Status |
+|----------|------|--------|-------|--------|
+| — | Transaction search + filter tabs (§5a, §5b) | Low | High | ✅ Done |
+| — | Categories: year scope + budget column (§6a, §6b) | Low | Medium | ✅ Done |
+| — | Budget: "To Budget" tracker + activity sort (§7a, §7b) | Low | Medium | ✅ Done |
+| — | Recurring: day-detail panel (§8a) | Low | Medium | ✅ Done |
+| — | Goals: pace chip (§9a) | Low | Medium | ✅ Done |
+| — | Sidebar: count badge + run setup (§15b, §15c) | Low | Medium | ✅ Done |
+| 1 | Scenarios screen (§1) | High | High — design centrepiece | |
+| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | |
+| 3 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece | |
+| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | |
+| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | |
+| 6 | Settings: data export + appearance section (§12a, §12c) | Low | Medium | |
+| 7 | Goals: apply what-if (§9b) | Low | Medium | |
+| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | |
+| 9 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
+| 10 | Today: Smart Sweep card + Runway stat (§3b, §3d) | Low | Medium | |
+| 11 | Command palette: additional actions (§14b) | Low | Low | |
+| 12 | Plan Next Month wizard (§2) | High | Medium | |
+| 13 | Transactions: CSV export (§5c) | Low | Low | |
+| 14 | Accounts: CSV export (§4c) | Low | Low | |
+| 15 | Rules: agent activity log (§11c) | Medium | Low | |
+| 16 | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | |
 
 ---
 
