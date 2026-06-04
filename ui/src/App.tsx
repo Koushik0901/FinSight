@@ -13,6 +13,7 @@ import Budget from "./screens/Budget";
 import Categories from "./screens/Categories";
 import Recurring from "./screens/Recurring";
 import Goals from "./screens/Goals";
+import Scenarios from "./screens/Scenarios";
 import Reports from "./screens/Reports";
 import Rules from "./screens/Rules";
 import Settings from "./screens/Settings";
@@ -73,6 +74,7 @@ export function App() {
               <Route path="/categories"   element={<Categories />} />
               <Route path="/recurring"    element={<Recurring />} />
               <Route path="/goals"        element={<Goals />} />
+              <Route path="/scenarios"    element={<Scenarios />} />
               <Route path="/reports"      element={<Reports />} />
               <Route path="/rules"        element={<Rules />} />
               <Route path="/settings"     element={<Settings />} />

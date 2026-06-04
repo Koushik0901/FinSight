@@ -24,6 +24,7 @@ const NAV_MAIN: NavEntry[] = [
   { id: "categories",   path: "/categories",    label: "Categories",   Icon: I.Grid },
   { id: "recurring",    path: "/recurring",     label: "Recurring",    Icon: I.Repeat },
   { id: "goals",        path: "/goals",         label: "Goals",        Icon: I.Goal },
+  { id: "scenarios",    path: "/scenarios",     label: "Scenarios",    Icon: I.Bolt },
   { id: "reports",      path: "/reports",       label: "Reports",      Icon: I.Spark },
 ];
 
