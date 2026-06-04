@@ -1,4 +1,5 @@
 mod account;
+mod agent_memory;
 mod categorization;
 mod category;
 mod liability;
@@ -9,6 +10,7 @@ mod rule_proposal;
 mod transaction;
 
 pub use account::{Account, AccountPatch, AccountSummary, AccountType, NewAccount};
+pub use agent_memory::AgentMemory;
 pub use categorization::{Categorization, NewCategorization};
 pub use category::{Category, CategoryGroup};
 pub use liability::{Liability, LiabilityPatch, NewLiability};

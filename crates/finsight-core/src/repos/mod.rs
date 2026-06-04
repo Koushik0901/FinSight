@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod agent_memory;
 pub mod budgets;
 pub mod categories;
 pub mod categorizations;
