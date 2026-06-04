@@ -433,5 +433,8 @@ mod tests {
         assert_eq!(mem[0].kind, "correction");
         assert!(mem[0].description.contains("AMAZON"));
         assert!(mem[0].description.contains("Food"));
+        // Pins the insert-before-count ordering: the just-inserted user
+        // categorization must be included, so the tally reads 1×, not 0×.
+        assert!(mem[0].description.contains("1×"));
     }
 }
