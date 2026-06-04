@@ -19,6 +19,7 @@ const NAV_ITEMS: CmdItem[] = [
   { kind: "nav", label: "Go to Categories",   path: "/categories",   Icon: I.Grid },
   { kind: "nav", label: "Go to Recurring",    path: "/recurring",    Icon: I.Repeat },
   { kind: "nav", label: "Go to Goals",        path: "/goals",        Icon: I.Goal },
+  { kind: "nav", label: "Go to Scenarios",    path: "/scenarios",    Icon: I.ArrowRight },
   { kind: "nav", label: "Go to Reports",      path: "/reports",      Icon: I.Spark },
   { kind: "nav", label: "Go to Rules",        path: "/rules",        Icon: I.Bolt },
   { kind: "nav", label: "Go to Settings",     path: "/settings",     Icon: I.Gear },
