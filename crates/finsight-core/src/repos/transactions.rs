@@ -43,6 +43,8 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         ai_explanation: None,
         is_anomaly: false,
         created_at: now,
+        is_reimbursable: false,
+        is_split: false,
     })
 }
 
@@ -71,7 +73,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
         "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
-                t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at \
+                t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
+                t.is_reimbursable, t.is_split \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id ",
@@ -154,6 +157,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                         )
                     })?
                     .with_timezone(&Utc),
+                is_reimbursable: r.get::<_, i64>(18)? != 0,
+                is_split: r.get::<_, i64>(19)? != 0,
             })
         },
     )?;
@@ -235,13 +240,22 @@ pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
     Ok(())
 }
 
+pub fn set_flags(conn: &mut Connection, id: &str, is_reimbursable: bool, is_split: bool) -> CoreResult<Transaction> {
+    conn.execute(
+        "UPDATE transactions SET is_reimbursable = ?1, is_split = ?2 WHERE id = ?3",
+        params![is_reimbursable as i64, is_split as i64, id],
+    )?;
+    get_by_id(conn, id)
+}
+
 /// Fetch a single transaction by id (used internally).
 fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
     conn.query_row(
         "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
-                t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at \
+                t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
+                t.is_reimbursable, t.is_split \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -273,6 +287,8 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 created_at: DateTime::parse_from_rfc3339(&created_s)
                     .map_err(|e| rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e)))?
                     .with_timezone(&Utc),
+                is_reimbursable: r.get::<_, i64>(18)? != 0,
+                is_split: r.get::<_, i64>(19)? != 0,
             })
         },
     ).map_err(Into::into)
@@ -376,5 +392,18 @@ mod tests {
             rusqlite::params![txn_id], |r| r.get(0),
         ).unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn set_flags_round_trip() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        let t = set_flags(&mut conn, &txn_id, true, true).unwrap();
+        assert!(t.is_reimbursable);
+        assert!(t.is_split);
+        let cleared = set_flags(&mut conn, &txn_id, false, true).unwrap();
+        assert!(!cleared.is_reimbursable);
+        assert!(cleared.is_split);
     }
 }

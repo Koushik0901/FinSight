@@ -49,6 +49,8 @@ pub struct Transaction {
     pub ai_explanation: Option<String>,
     pub is_anomaly: bool,
     pub created_at: DateTime<Utc>,
+    pub is_reimbursable: bool,
+    pub is_split: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
