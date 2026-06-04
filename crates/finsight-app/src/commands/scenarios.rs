@@ -87,6 +87,54 @@ async fn build_snapshot(state: &AppState) -> AppResult<Snapshot> {
     .map_err(AppError::from)
 }
 
+async fn extract_params_via_llm(
+    state: &AppState,
+    description: &str,
+    snapshot: &Snapshot,
+) -> AppResult<ScenarioParams> {
+    let provider = state.agent_provider.read().unwrap().clone();
+    let Some(provider) = provider else {
+        return Err(AppError::new(
+            "scenario.no_provider",
+            "Configure an AI provider in Settings to ask free-text scenarios, or pick a suggested scenario.",
+        ));
+    };
+
+    let system = "You convert a personal-finance what-if question into JSON parameters. \
+Respond ONLY with JSON of this exact shape: \
+{\"income_delta_pct\": <int>, \"monthly_expense_delta_cents\": <int>, \"one_time_cents\": <int>, \"start_month_offset\": <int>, \"label\": <string>}. \
+income_delta_pct is the percent change to monthly income (e.g. -50 to halve it). \
+monthly_expense_delta_cents is the recurring monthly outflow change in cents: positive means MORE outflow (extra spending or saving), negative means LESS. \
+one_time_cents is a single one-off cost in cents. \
+start_month_offset is how many months from now the change begins (0 if immediate). \
+label is a short title for the scenario.";
+
+    let user = format!(
+        "Question: {description}\nContext: average monthly income {} cents, average monthly expense {} cents.",
+        snapshot.avg_monthly_income_cents, snapshot.avg_monthly_expense_cents
+    );
+
+    let v = provider
+        .complete_json(system, &user)
+        .await
+        .map_err(|e| AppError::new("scenario.llm", e.to_string()))?;
+
+    Ok(ScenarioParams {
+        income_delta_pct: v.get("income_delta_pct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
+        monthly_expense_delta_cents: v
+            .get("monthly_expense_delta_cents")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        one_time_cents: v.get("one_time_cents").and_then(|x| x.as_i64()).unwrap_or(0),
+        start_month_offset: v.get("start_month_offset").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+        label: v
+            .get("label")
+            .and_then(|x| x.as_str())
+            .unwrap_or(description)
+            .to_string(),
+    })
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn run_scenario(
@@ -105,12 +153,7 @@ pub async fn run_scenario(
             start_month_offset: p.start_month_offset,
             label: p.label,
         },
-        None => {
-            return Err(AppError::new(
-                "scenario.no_provider",
-                "Configure an AI provider in Settings to ask free-text scenarios, or pick a suggested scenario.",
-            ))
-        }
+        None => extract_params_via_llm(&state, &description, &snapshot).await?,
     };
 
     let proj = forecast::project(&snapshot, &core_params, months);
