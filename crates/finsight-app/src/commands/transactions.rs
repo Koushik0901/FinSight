@@ -317,3 +317,17 @@ pub async fn get_transaction_count(
     .await
     .map_err(AppError::from)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transaction_flags(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    is_reimbursable: bool,
+    is_split: bool,
+) -> AppResult<finsight_core::models::Transaction> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| transactions::set_flags(conn, &id, is_reimbursable, is_split))
+        .await
+        .map_err(AppError::from)
+}

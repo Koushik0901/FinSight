@@ -158,6 +158,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::list_rule_proposals,
         commands::agent::accept_rule_proposal,
         commands::agent::decline_rule_proposal,
+        commands::transactions::set_transaction_flags,
     ])
 }
 
