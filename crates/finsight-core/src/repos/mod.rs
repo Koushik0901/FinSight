@@ -5,6 +5,7 @@ pub mod categorizations;
 pub mod goals;
 pub mod imports;
 pub mod rules;
+pub mod scenarios;
 pub mod transactions;
 
 use crate::error::CoreResult;
