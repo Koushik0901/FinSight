@@ -6,4 +6,5 @@ pub mod meta;
 pub mod onboarding;
 pub mod recurring;
 pub mod reports;
+pub mod scenarios;
 pub mod transactions;

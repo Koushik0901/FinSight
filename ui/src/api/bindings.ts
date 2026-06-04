@@ -334,6 +334,38 @@ async getMonthTotals() : Promise<Result<MonthTotals, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async runScenario(description: string, months: number, params: ScenarioParamsInput | null) : Promise<Result<ScenarioResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_scenario", { description, months, params }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveScenario(description: string, result: ScenarioResult) : Promise<Result<SavedScenario, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_scenario", { description, result }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listScenarioHistory() : Promise<Result<SavedScenario[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_scenario_history") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteScenario(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_scenario", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getTransactionCount() : Promise<Result<number, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_transaction_count") };
@@ -503,6 +535,9 @@ export type Rule = { id: string; pattern: string; category_id: string; enabled: 
  * Rule with resolved category label and color.
  */
 export type RuleWithCategory = { id: string; pattern: string; categoryId: string; categoryLabel: string; categoryColor: string; enabled: boolean; source: string; createdAt: string }
+export type SavedScenario = { id: string; description: string; result: ScenarioResult; createdAt: string }
+export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
+export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
