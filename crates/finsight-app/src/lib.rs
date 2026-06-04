@@ -143,6 +143,16 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::scenarios::list_scenario_history,
         commands::scenarios::delete_scenario,
         commands::transactions::get_transaction_count,
+        commands::assets::list_manual_assets,
+        commands::assets::create_manual_asset,
+        commands::assets::update_manual_asset,
+        commands::assets::delete_manual_asset,
+        commands::assets::list_liabilities,
+        commands::assets::create_liability,
+        commands::assets::update_liability,
+        commands::assets::delete_liability,
+        commands::assets::record_net_worth_snapshot,
+        commands::assets::list_net_worth_history,
     ])
 }
 
