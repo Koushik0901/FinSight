@@ -4,6 +4,7 @@ pub mod categories;
 pub mod categorizations;
 pub mod goals;
 pub mod imports;
+pub mod liabilities;
 pub mod manual_assets;
 pub mod net_worth;
 pub mod rules;
