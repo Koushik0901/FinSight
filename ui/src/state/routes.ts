@@ -6,6 +6,7 @@ export const ROUTES = [
   { id: "categories",   path: "/categories",   label: "Categories" },
   { id: "recurring",    path: "/recurring",    label: "Recurring" },
   { id: "goals",        path: "/goals",        label: "Goals" },
+  { id: "scenarios",    path: "/scenarios",    label: "Scenarios" },
   { id: "reports",      path: "/reports",      label: "Reports" },
   { id: "rules",        path: "/rules",        label: "Rules" },
   { id: "settings",     path: "/settings",     label: "Settings" },

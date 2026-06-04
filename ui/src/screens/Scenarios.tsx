@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { commands, type ScenarioResult, type ScenarioParamsInput } from "../api/client";
+import { type ScenarioResult, type ScenarioParamsInput } from "../api/client";
 import {
   useScenarioHistory,
   useRunScenario,
   useSaveScenario,
   useDeleteScenario,
 } from "../api/hooks/useScenarios";
+import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import * as I from "../components/Icons";
 
 type Range = "6" | "12" | "24";
@@ -18,19 +18,6 @@ function fmt(cents: number) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(cents / 100);
-}
-
-function useDiningMonthly() {
-  return useQuery<number>({
-    queryKey: ["dining-monthly"],
-    queryFn: async () => {
-      const res = await commands.listCategoriesWithSpending();
-      if (res.status === "error") throw new Error(res.error.message);
-      const match = res.data.find((c) => /dining|restaurant|food|eat/i.test(c.label));
-      return match?.thisMonthCents || match?.lastMonthCents || 40000;
-    },
-    staleTime: 60_000,
-  });
 }
 
 // ── Dual-line forecast chart ───────────────────────────────────────────────
@@ -44,7 +31,7 @@ function ForecastChart({
   scenario: number[];
   range: Range;
 }) {
-  const count = range === "6" ? 6 : range === "24" ? 24 : 12;
+  const count = Number(range);
   const base = baseline.slice(0, count);
   const scen = scenario.slice(0, count);
   const all = [...base, ...scen];
@@ -195,7 +182,13 @@ export default function Scenarios() {
   const run = useRunScenario();
   const del = useDeleteScenario();
   const { data: history = [] } = useScenarioHistory();
-  const { data: diningMonthly = 40000 } = useDiningMonthly();
+  const { data: categories } = useCategoriesWithSpending();
+  const diningMonthly = useMemo(() => {
+    const match = categories?.find((c) => /dining|restaurant|food|eat/i.test(c.label));
+    if (!match) return 40000; // no dining category — sensible placeholder
+    // Prefer this month, fall back to last month, but a genuine $0 stays $0.
+    return match.thisMonthCents > 0 ? match.thisMonthCents : match.lastMonthCents;
+  }, [categories]);
 
   const chips: { label: string; params: ScenarioParamsInput }[] = useMemo(
     () => [

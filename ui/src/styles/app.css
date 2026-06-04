@@ -107,7 +107,7 @@
   margin-bottom: 28px;
 }
 
-.screen-header-text .screen-eyebrow {
+.screen-eyebrow {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -351,6 +351,8 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
+.stat .value.neg { color: var(--negative); }
+.stat .value.pos { color: var(--positive); }
 .stat .value .small { font-size: 15px; color: var(--ink-mute); font-weight: 500; margin-left: 5px; }
 .stat .sub {
   font-size: 12.5px;

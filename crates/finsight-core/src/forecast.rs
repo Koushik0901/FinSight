@@ -52,6 +52,10 @@ pub struct Projection {
 /// `avg_daily = outflow / period_days`, `runway = balance / avg_daily`.
 /// TODO §3d's Today runway stat calls this with (balance, expenses_this_month, day_of_month).
 pub fn runway_days(balance_cents: i64, period_outflow_cents: i64, period_days: i64) -> i64 {
+    // An already-empty (or negative) balance is exhausted now, regardless of burn.
+    if balance_cents <= 0 {
+        return 0;
+    }
     if period_outflow_cents <= 0 || period_days <= 0 {
         return RUNWAY_CAP_DAYS;
     }
@@ -62,6 +66,14 @@ pub fn runway_days(balance_cents: i64, period_outflow_cents: i64, period_days: i
 
 fn fmt_money(cents: i64) -> String {
     format!("${:.0}", (cents.abs() as f64) / 100.0)
+}
+
+/// Whole months to fully fund a goal at a given monthly contribution (ceil division).
+fn months_to_goal(remaining_cents: i64, monthly_cents: i64) -> i64 {
+    if monthly_cents <= 0 {
+        return i64::MAX;
+    }
+    (remaining_cents + monthly_cents - 1) / monthly_cents
 }
 
 fn fmt_runway(days: i64) -> String {
@@ -76,7 +88,9 @@ fn fmt_runway(days: i64) -> String {
 
 pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
     let n = months.max(1) as usize;
-    let start = (p.start_month_offset as usize).min(n.saturating_sub(1));
+    let start = p.start_month_offset as usize;
+    // A change scheduled past the horizon never manifests in the window shown.
+    let in_window = start < n;
 
     let base_income = s.avg_monthly_income_cents;
     let base_expense = s.avg_monthly_expense_cents;
@@ -106,30 +120,44 @@ pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
     let base_outflow = (base_expense - base_income).max(0);
     let scen_outflow = (scen_expense - scen_income).max(0);
     let base_runway = runway_days(s.balance_cents, base_outflow, 30);
-    let scen_runway = runway_days(s.balance_cents - p.one_time_cents, scen_outflow, 30);
-    let runway_change_days = scen_runway - base_runway;
+    let (scen_runway, runway_change_days) = if in_window {
+        // A one-time cost only reduces *current* runway if it lands immediately;
+        // a future one-time cost doesn't shorten the runway you have today.
+        let scen_start_balance = if start == 0 {
+            s.balance_cents - p.one_time_cents
+        } else {
+            s.balance_cents
+        };
+        let r = runway_days(scen_start_balance, scen_outflow, 30);
+        (r, r - base_runway)
+    } else {
+        (base_runway, 0)
+    };
 
-    let monthly_impact_cents = scen_net - base_net;
+    let monthly_impact_cents = if in_window { scen_net - base_net } else { 0 };
 
     let verdict = scenario_monthly.iter().all(|&v| v >= 0);
 
-    // Goals affected: distribute the monthly shortfall proportionally across goals.
+    // Goals affected: both a reduced monthly net and a one-time cost compete with
+    // goal funding, so distribute each proportionally across the goals.
     let total_goal_monthly: i64 = s.goals.iter().map(|g| g.monthly_cents.max(0)).sum();
-    let shortfall = (base_net - scen_net).max(0);
+    let monthly_shortfall = if in_window { (base_net - scen_net).max(0) } else { 0 };
+    let one_time_drain = if in_window { p.one_time_cents.max(0) } else { 0 };
     let mut goals_affected = Vec::new();
-    if shortfall > 0 && total_goal_monthly > 0 {
+    if (monthly_shortfall > 0 || one_time_drain > 0) && total_goal_monthly > 0 {
         for g in &s.goals {
             if g.monthly_cents <= 0 || g.remaining_cents <= 0 {
                 continue;
             }
-            let share = (shortfall as f64 * (g.monthly_cents as f64 / total_goal_monthly as f64))
-                .round() as i64;
-            let new_monthly = g.monthly_cents - share;
-            let base_eta = (g.remaining_cents + g.monthly_cents - 1) / g.monthly_cents;
+            let weight = g.monthly_cents as f64 / total_goal_monthly as f64;
+            let monthly_cut = (monthly_shortfall as f64 * weight).round() as i64;
+            let one_time_cut = (one_time_drain as f64 * weight).round() as i64;
+            let new_monthly = g.monthly_cents - monthly_cut;
+            let base_eta = months_to_goal(g.remaining_cents, g.monthly_cents);
             if new_monthly <= 0 {
                 goals_affected.push(format!("{}: paused", g.name));
             } else {
-                let scen_eta = (g.remaining_cents + new_monthly - 1) / new_monthly;
+                let scen_eta = months_to_goal(g.remaining_cents + one_time_cut, new_monthly);
                 let slip = scen_eta - base_eta;
                 if slip > 0 {
                     goals_affected.push(format!("{}: +{} mo", g.name, slip));
@@ -138,7 +166,7 @@ pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
         }
     }
 
-    let considerations = build_considerations(
+    let mut considerations = build_considerations(
         s,
         n,
         base_runway,
@@ -149,6 +177,13 @@ pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
         &goals_affected,
         verdict,
     );
+    if !in_window {
+        considerations.push(format!(
+            "This change begins in month {}, after the {}-month window shown, so it doesn't affect this projection.",
+            p.start_month_offset.saturating_add(1),
+            n
+        ));
+    }
 
     Projection {
         baseline_monthly,
@@ -320,5 +355,45 @@ mod tests {
         let proj = project(&s, &p, 12);
         assert!(!proj.verdict);
         assert!(!proj.considerations.is_empty());
+    }
+
+    #[test]
+    fn one_time_that_drains_balance_shortens_runway() {
+        // A one-time cost larger than the balance must leave the runway empty —
+        // not report the "indefinite" cap (regression: runway_days on a negative
+        // balance used to short-circuit to RUNWAY_CAP_DAYS).
+        let mut s = snap();
+        s.balance_cents = 100_000;
+        let p = ScenarioParams { one_time_cents: 3_500_000, ..Default::default() };
+        let proj = project(&s, &p, 12);
+        assert!(proj.runway_change_days < 0);
+        assert_eq!(runway_days(-1, 0, 30), 0);
+    }
+
+    #[test]
+    fn one_time_purchase_slips_goals() {
+        // A pure one-time purchase still competes with goal funding, so the goal
+        // ETA must slip even though monthly net is unchanged.
+        let p = ScenarioParams { one_time_cents: 500_000, ..Default::default() };
+        let proj = project(&snap(), &p, 12);
+        assert!(proj
+            .goals_affected
+            .iter()
+            .any(|g| g.starts_with("House Fund: +") && g.ends_with(" mo")));
+    }
+
+    #[test]
+    fn change_beyond_horizon_has_no_effect() {
+        let p = ScenarioParams {
+            monthly_expense_delta_cents: 100_000,
+            start_month_offset: 99,
+            ..Default::default()
+        };
+        let proj = project(&snap(), &p, 12);
+        assert_eq!(proj.baseline_monthly, proj.scenario_monthly);
+        assert_eq!(proj.monthly_impact_cents, 0);
+        assert_eq!(proj.runway_change_days, 0);
+        assert!(proj.goals_affected.is_empty());
+        assert!(proj.considerations.iter().any(|c| c.contains("after the")));
     }
 }

@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 use finsight_core::forecast::{self, GoalInfo, ScenarioParams, Snapshot};
+use finsight_core::models::AccountType;
 use finsight_core::repos::{accounts, goals, run, scenarios as scenarios_repo};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -52,20 +53,30 @@ async fn build_snapshot(state: &AppState) -> AppResult<Snapshot> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         let accts = accounts::list_summaries(conn)?;
-        let balance: i64 = accts.iter().map(|a| a.balance_cents).sum();
+        // Runway / "months of expenses" is about spendable cash, so exclude debt
+        // (credit) and illiquid holdings (investments) from the balance.
+        let balance: i64 = accts
+            .iter()
+            .filter(|a| !matches!(a.r#type, AccountType::Credit | AccountType::Investment))
+            .map(|a| a.balance_cents)
+            .sum();
 
-        let (sum_income, sum_expense, active_months): (i64, i64, i64) = conn.query_row(
-            "SELECT COALESCE(SUM(inc),0), COALESCE(SUM(exp),0), COUNT(*) FROM (\
-               SELECT strftime('%Y-%m', posted_at) mo,\
-                      SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END) inc,\
-                      SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END) exp\
-               FROM transactions\
-               WHERE posted_at >= date('now','-12 months')\
-               GROUP BY mo)",
+        // Average over the months actually *elapsed* since the first transaction in
+        // the window (not just months that had activity), so a single high-spend
+        // import doesn't become the "typical" month. Capped to the 12-month window.
+        let (sum_income, sum_expense, span_months): (i64, i64, i64) = conn.query_row(
+            "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),\
+                    COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0),\
+                    COALESCE(\
+                      (CAST(strftime('%Y','now') AS INTEGER) - CAST(strftime('%Y', MIN(posted_at)) AS INTEGER)) * 12\
+                      + (CAST(strftime('%m','now') AS INTEGER) - CAST(strftime('%m', MIN(posted_at)) AS INTEGER)) + 1,\
+                      1)\
+             FROM transactions\
+             WHERE posted_at >= date('now','-12 months')",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
-        let am = active_months.max(1);
+        let am = span_months.clamp(1, 12);
 
         let goal_infos = goals::list(conn)?
             .into_iter()
@@ -118,6 +129,29 @@ label is a short title for the scenario.";
         .complete_json(system, &user)
         .await
         .map_err(|e| AppError::new("scenario.llm", e.to_string()))?;
+
+    // Don't silently coerce a malformed/unrelated completion into an all-zero
+    // "neutral" scenario the user can't distinguish from a real result.
+    let obj = v.as_object().ok_or_else(|| {
+        AppError::new(
+            "scenario.llm_parse",
+            "The AI returned an unexpected response. Try rephrasing your question, e.g. \"What if I cut rent by $300?\"",
+        )
+    })?;
+    let recognized = [
+        "income_delta_pct",
+        "monthly_expense_delta_cents",
+        "one_time_cents",
+        "start_month_offset",
+    ]
+    .iter()
+    .any(|k| obj.contains_key(*k));
+    if !recognized {
+        return Err(AppError::new(
+            "scenario.llm_parse",
+            "Couldn't interpret that as a financial scenario. Try rephrasing, e.g. \"What if I cut rent by $300?\"",
+        ));
+    }
 
     Ok(ScenarioParams {
         income_delta_pct: v.get("income_delta_pct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
