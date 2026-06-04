@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Scenarios screen (entire feature — not in nav)
+## 1. Scenarios screen (entire feature — not in nav) ✅ DONE
 
 **Design reference:** `design/plutus/project/components/scenarios.jsx`
 
@@ -495,7 +495,7 @@ Add 3 more actions to the "Actions" section:
 
 ## 15. Sidebar — missing pieces
 
-### 15a. Scenarios in nav
+### 15a. Scenarios in nav ✅ DONE
 
 Add Scenarios to `NAV_MAIN` in `Sidebar.tsx` and to `ROUTES` in `routes.ts`:
 ```typescript
@@ -531,7 +531,7 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Recurring: day-detail panel (§8a) | Low | Medium | ✅ Done |
 | — | Goals: pace chip (§9a) | Low | Medium | ✅ Done |
 | — | Sidebar: count badge + run setup (§15b, §15c) | Low | Medium | ✅ Done |
-| 1 | Scenarios screen (§1) | High | High — design centrepiece | |
+| — | Scenarios screen (§1) | High | High — design centrepiece | ✅ Done |
 | 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | |
 | 3 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece | |
 | 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | |
