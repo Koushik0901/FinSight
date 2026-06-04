@@ -153,6 +153,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::assets::delete_liability,
         commands::assets::record_net_worth_snapshot,
         commands::assets::list_net_worth_history,
+        commands::insights::list_agent_memory,
+        commands::insights::forget_agent_memory,
     ])
 }
 
