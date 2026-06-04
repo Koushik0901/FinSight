@@ -289,6 +289,19 @@ mod tests {
         let proj = project(&snap(), &p, 12);
         // With no income, net outflow becomes positive => finite, shorter runway.
         assert!(proj.runway_change_days < 0);
+        // Entire $6k income cut → shortfall (600k) > goal monthly (100k) → paused.
+        assert_eq!(proj.goals_affected, vec!["House Fund: paused".to_string()]);
+    }
+
+    #[test]
+    fn mild_shortfall_slips_goal_eta() {
+        // Reduce monthly net by adding recurring outflow smaller than the goal contribution.
+        let p = ScenarioParams { monthly_expense_delta_cents: 50_000, ..Default::default() };
+        let proj = project(&snap(), &p, 12);
+        // shortfall=50_000, total_goal_monthly=100_000 → share=50_000, new_monthly=50_000.
+        // base_eta = ceil(1_200_000/100_000) = 12; scen_eta = ceil(1_200_000/50_000) = 24; slip = 12.
+        // Shortfall ($500) < goal monthly ($1000), so the goal slips but is not paused.
+        assert!(proj.goals_affected.iter().any(|g| g.starts_with("House Fund: +") && g.ends_with(" mo")));
     }
 
     #[test]
