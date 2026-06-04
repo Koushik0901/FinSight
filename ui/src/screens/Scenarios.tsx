@@ -27,7 +27,7 @@ function useDiningMonthly() {
       const res = await commands.listCategoriesWithSpending();
       if (res.status === "error") throw new Error(res.error.message);
       const match = res.data.find((c) => /dining|restaurant|food|eat/i.test(c.label));
-      return match?.thisMonthCents ?? 40000;
+      return match?.thisMonthCents || match?.lastMonthCents || 40000;
     },
     staleTime: 60_000,
   });
@@ -295,7 +295,7 @@ export default function Scenarios() {
                   {new Date(h.createdAt).toLocaleDateString()}
                 </span>
                 <button className="btn ghost sm" onClick={() => setActive({ description: h.description, result: h.result })}>
-                  Re-run
+                  View
                 </button>
                 <button
                   className="btn ghost sm"
