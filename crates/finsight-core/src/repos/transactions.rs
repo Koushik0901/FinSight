@@ -207,6 +207,25 @@ pub fn update(
                 params![id],
                 |r| r.get(0),
             )?;
+            let category_label: String = conn.query_row(
+                "SELECT label FROM categories WHERE id = ?1",
+                params![category_id],
+                |r| r.get(0),
+            ).unwrap_or_default();
+
+            // Record what the agent has learned from this user correction.
+            let merchant_key = merchant_raw.to_lowercase();
+            let user_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM categorizations ca \
+                 JOIN transactions t ON t.id = ca.txn_id \
+                 WHERE ca.source = 'user' AND lower(t.merchant_raw) = ?1",
+                params![merchant_key],
+                |r| r.get(0),
+            )?;
+            let memo = format!("{} → {} · you've set this {}×", merchant_raw, category_label, user_count);
+            crate::repos::agent_memory::upsert_correction(conn, &merchant_key, &memo)?;
+
+            // Propose a rule if none exists yet for this merchant.
             let rule_exists: bool = conn.query_row(
                 "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
                 params![merchant_raw],
@@ -216,11 +235,6 @@ pub fn update(
                 other => Err(other),
             })?;
             if !rule_exists {
-                let category_label: String = conn.query_row(
-                    "SELECT label FROM categories WHERE id = ?1",
-                    params![category_id],
-                    |r| r.get(0),
-                ).unwrap_or_default();
                 proposed_rule = Some(ProposedRule {
                     pattern: merchant_raw,
                     category_id: category_id.clone(),
@@ -405,5 +419,19 @@ mod tests {
         let cleared = set_flags(&mut conn, &txn_id, false, true).unwrap();
         assert!(!cleared.is_reimbursable);
         assert!(cleared.is_split);
+    }
+
+    #[test]
+    fn user_category_change_records_agent_memory() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        let patch = TxnPatch { category_id: Some(Some("cat1".into())), ..Default::default() };
+        update(&mut conn, &txn_id, patch).unwrap();
+        let mem = crate::repos::agent_memory::list(&mut conn).unwrap();
+        assert_eq!(mem.len(), 1);
+        assert_eq!(mem[0].kind, "correction");
+        assert!(mem[0].description.contains("AMAZON"));
+        assert!(mem[0].description.contains("Food"));
     }
 }
