@@ -373,6 +373,134 @@ async getTransactionCount() : Promise<Result<number, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async listManualAssets() : Promise<Result<ManualAsset[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_manual_assets") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createManualAsset(input: NewManualAsset) : Promise<Result<ManualAsset, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_manual_asset", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateManualAsset(id: string, patch: ManualAssetPatch) : Promise<Result<ManualAsset, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_manual_asset", { id, patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteManualAsset(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_manual_asset", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listLiabilities() : Promise<Result<Liability[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_liabilities") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createLiability(input: NewLiability) : Promise<Result<Liability, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_liability", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateLiability(id: string, patch: LiabilityPatch) : Promise<Result<Liability, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_liability", { id, patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteLiability(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_liability", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async recordNetWorthSnapshot() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_net_worth_snapshot") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listNetWorthHistory(days: number) : Promise<Result<NetWorthPoint[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_net_worth_history", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAgentMemory() : Promise<Result<AgentMemory[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_agent_memory") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async forgetAgentMemory(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("forget_agent_memory", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listRuleProposals() : Promise<Result<RuleProposal[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_rule_proposals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async acceptRuleProposal(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_rule_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async declineRuleProposal(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("decline_rule_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setTransactionFlags(id: string, isReimbursable: boolean, isSplit: boolean) : Promise<Result<Transaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_transaction_flags", { id, isReimbursable, isSplit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -390,6 +518,7 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
+export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
@@ -440,7 +569,11 @@ export type Import = { id: string; source: ImportSource; filename: string | null
 export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type Liability = { id: string; name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string; createdAt: string; updatedAt: string }
+export type LiabilityPatch = { name: string | null; liabilityType: string | null; balanceCents: number | null; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string | null }
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
+export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
+export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
 /**
  * One merchant's 12-month total.
  */
@@ -477,8 +610,11 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  * Number of transactions this month
  */
 txnCount: number }
+export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
+export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string }
+export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
@@ -531,6 +667,7 @@ topCategories: CategoryTotal[];
 topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
+export type RuleProposal = { id: string; whenLabel: string; description: string; pattern: string; categoryId: string; status: string; createdAt: string }
 /**
  * Rule with resolved category label and color.
  */
@@ -540,7 +677,7 @@ export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaC
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type StarterCategory = { id: string; label: string; group_id: string }
-export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string }
+export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null }

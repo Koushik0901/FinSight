@@ -30,6 +30,7 @@ const existingTxn = {
   status: "cleared" as const, notes: null,
   ai_confidence: null, ai_explanation: null, is_anomaly: false,
   created_at: "2024-01-15T00:00:00Z",
+  is_reimbursable: false, is_split: false,
 };
 
 describe("TransactionDrawer — edit mode", () => {
