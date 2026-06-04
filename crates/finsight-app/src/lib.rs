@@ -155,6 +155,9 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::assets::list_net_worth_history,
         commands::insights::list_agent_memory,
         commands::insights::forget_agent_memory,
+        commands::agent::list_rule_proposals,
+        commands::agent::accept_rule_proposal,
+        commands::agent::decline_rule_proposal,
     ])
 }
 

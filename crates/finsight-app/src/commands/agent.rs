@@ -8,7 +8,8 @@ use finsight_agent::{
     },
     CompletionProvider,
 };
-use finsight_core::repos::run;
+use finsight_core::models::{NewRule, RuleProposal};
+use finsight_core::repos::{rule_proposals, rules, run};
 use finsight_core::settings;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -184,4 +185,41 @@ pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<
         .try_send(AgentJob::CategorizeAll)
         .map_err(|e| AppError::new("agent", format!("queue full: {e}")))?;
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_rule_proposals(state: tauri::State<'_, AppState>) -> AppResult<Vec<RuleProposal>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| rule_proposals::list(conn, Some("pending")))
+        .await
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        if let Some(p) = rule_proposals::get(conn, &id)? {
+            rules::insert(conn, NewRule {
+                pattern: p.pattern,
+                category_id: p.category_id,
+                source: "agent".to_string(),
+            })?;
+            rule_proposals::set_status(conn, &id, "accepted")?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn decline_rule_proposal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| rule_proposals::set_status(conn, &id, "declined"))
+        .await
+        .map_err(AppError::from)
 }
