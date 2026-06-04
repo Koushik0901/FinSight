@@ -186,6 +186,11 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 format!("provider migration: {e}").into()
             })?;
 
+            // Best-effort: record today's net-worth snapshot on startup.
+            if let Ok(mut conn) = db.get() {
+                let _ = finsight_core::repos::net_worth::record_today(&mut conn);
+            }
+
             let window = app.get_webview_window("main").expect("main window");
             let on_event: EventCallback = Arc::new(move |event| {
                 let (event_name, payload) = match &event {
