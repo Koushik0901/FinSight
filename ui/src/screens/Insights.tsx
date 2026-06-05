@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -7,6 +7,7 @@ import { useGoals } from "../api/hooks/budget";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type MonthTotals, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
+import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 
 function fmt(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
@@ -111,6 +112,43 @@ export default function Insights() {
   });
 
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const { data: memory = [] } = useAgentMemory();
+  const forgetMemory = useForgetAgentMemory();
+  const [pendingForget, setPendingForget] = useState<Set<string>>(new Set());
+  const forgetTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Clear any in-flight timers on unmount (don't fire them).
+  useEffect(() => {
+    const timers = forgetTimers.current;
+    return () => { timers.forEach((t) => clearTimeout(t)); timers.clear(); };
+  }, []);
+
+  const handleForget = (m: { id: string; description: string }) => {
+    setPendingForget((s) => new Set([...s, m.id]));
+    const timer = setTimeout(async () => {
+      forgetTimers.current.delete(m.id);
+      try { await forgetMemory.mutateAsync(m.id); }
+      catch {
+        setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+        toast.error("Could not forget that memory");
+      }
+    }, 5000);
+    forgetTimers.current.set(m.id, timer);
+    toast("Memory forgotten", {
+      description: m.description.slice(0, 60),
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const t = forgetTimers.current.get(m.id);
+          if (t) { clearTimeout(t); forgetTimers.current.delete(m.id); }
+          setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+        },
+      },
+    });
+  };
+
+  const visibleMemory = memory.filter((m) => !pendingForget.has(m.id));
 
   // ── Generate insights from real data ───────────────────────────────────
 
@@ -342,6 +380,22 @@ export default function Insights() {
           {filtered.map((ins) => (
             <InsightCard key={ins.id} ins={ins} onDismiss={handleDismiss} />
           ))}
+        </div>
+      )}
+
+      {visibleMemory.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>What the agent has learned</div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {visibleMemory.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--hairline)" }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{m.description}</div>
+                <button className="btn ghost sm" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>
+                  Forget
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
