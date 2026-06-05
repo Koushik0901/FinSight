@@ -1,7 +1,8 @@
 import { toast } from "sonner";
 import { useRulesWithCategories, useToggleRule } from "../api/hooks/transactions";
-import type { RuleWithCategory } from "../api/client";
+import type { RuleWithCategory, RuleProposal } from "../api/client";
 import * as I from "../components/Icons";
+import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
 
 function RuleCard({ rule }: { rule: RuleWithCategory }) {
   const toggle = useToggleRule();
@@ -54,8 +55,44 @@ function RuleCard({ rule }: { rule: RuleWithCategory }) {
   );
 }
 
+function ProposalRow({ proposal }: { proposal: RuleProposal }) {
+  const accept = useAcceptRuleProposal();
+  const decline = useDeclineRuleProposal();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="eyebrow" style={{ marginBottom: 2 }}>{proposal.whenLabel}</div>
+        <div style={{ fontSize: 14 }}>{proposal.description}</div>
+      </div>
+      <button
+        className="btn primary"
+        disabled={accept.isPending}
+        aria-label={`Accept: ${proposal.description}`}
+        onClick={async () => {
+          try { await accept.mutateAsync(proposal.id); toast.success("Rule created"); }
+          catch { toast.error("Could not accept proposal"); }
+        }}
+      >
+        Accept
+      </button>
+      <button
+        className="btn ghost sm"
+        disabled={decline.isPending}
+        aria-label={`Decline: ${proposal.description}`}
+        onClick={async () => {
+          try { await decline.mutateAsync(proposal.id); toast("Proposal declined"); }
+          catch { toast.error("Could not decline proposal"); }
+        }}
+      >
+        Decline
+      </button>
+    </div>
+  );
+}
+
 export default function Rules() {
   const { data: rules = [], isLoading, error } = useRulesWithCategories();
+  const { data: proposals = [] } = useRuleProposals();
 
   const active = rules.filter((r) => r.enabled);
   const paused = rules.filter((r) => !r.enabled);
@@ -114,6 +151,18 @@ export default function Rules() {
                 </>
               )}
             </>
+          )}
+
+          {proposals.length > 0 && (
+            <div className="card" style={{ marginTop: 28, border: "1px dashed var(--accent)" }}>
+              <div className="eyebrow" style={{ marginBottom: 12, color: "var(--accent)" }}>
+                <I.Sparkle width="12" height="12" style={{ marginRight: 6 }} />
+                <span>Agent proposals</span> · {proposals.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {proposals.map((p) => <ProposalRow key={p.id} proposal={p} />)}
+              </div>
+            </div>
           )}
         </div>
 

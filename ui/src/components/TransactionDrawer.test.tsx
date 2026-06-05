@@ -1,9 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import TransactionDrawer from "./TransactionDrawer";
 import { createWrapper } from "../test-utils";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
+
+const setFlags = vi.fn();
+
 vi.mock("../api/hooks/transactions", () => ({
   useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
   useUpdateTransaction: vi.fn(() => ({
@@ -15,11 +18,12 @@ vi.mock("../api/hooks/transactions", () => ({
   useDeleteTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
+  useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
 }));
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),
 }));
-vi.mock("sonner", () => ({ toast: { custom: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { custom: vi.fn(), error: vi.fn() } }));
 
 const existingTxn = {
   id: "t1", account_id: "a1",
@@ -34,6 +38,10 @@ const existingTxn = {
 };
 
 describe("TransactionDrawer — edit mode", () => {
+  beforeEach(() => {
+    setFlags.mockReset();
+  });
+
   it("pre-fills merchant_raw field", () => {
     render(
       <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
@@ -65,5 +73,16 @@ describe("TransactionDrawer — edit mode", () => {
       { wrapper: createWrapper() },
     );
     expect(screen.getByRole("button", { name: /delete transaction/i })).toBeInTheDocument();
+  });
+
+  it("toggles the reimbursable flag", async () => {
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reimbursable/i }));
+    await waitFor(() =>
+      expect(setFlags).toHaveBeenCalledWith({ id: "t1", isReimbursable: true, isSplit: false })
+    );
   });
 });

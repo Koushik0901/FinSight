@@ -4,11 +4,7 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "./onboarding/ImportMappingDialog";
 import type { Transaction, TxnFilterInput } from "../api/client";
-
-function formatMoney(cents: number) {
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
-}
+import { money } from "../utils/format";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -25,7 +21,7 @@ const TABS: { key: Preset; label: string }[] = [
 
 export default function Transactions() {
   const [addOpen, setAddOpen] = useState(false);
-  const [editTxn, setEditTxn] = useState<Transaction | null>(null);
+  const [editTxnId, setEditTxnId] = useState<string | null>(null);
   const [csvPath, setCsvPath] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -47,6 +43,7 @@ export default function Transactions() {
   };
 
   const { data, isLoading, error } = useTransactions(filter);
+  const editTxn = data?.find((t) => t.id === editTxnId) ?? null;
 
   if (isLoading) return <div className="stub">Loading…</div>;
   if (error) return <div className="stub">Error: {(error as Error).message}</div>;
@@ -112,7 +109,7 @@ export default function Transactions() {
               <tr
                 key={t.id}
                 style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
-                onClick={() => setEditTxn(t)}
+                onClick={() => setEditTxnId(t.id)}
                 aria-label={`Edit transaction ${t.merchant_raw}`}
               >
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{formatDate(t.posted_at)}</td>
@@ -131,13 +128,15 @@ export default function Transactions() {
                       {t.merchant_initials ?? "?"}
                     </span>
                     <span>{t.merchant_label ?? t.merchant_raw}</span>
+                    {t.is_reimbursable && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Reimbursable</span>}
+                    {t.is_split && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Split</span>}
                   </div>
                 </td>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>
                   {t.category_label ?? "Uncategorized"}
                 </td>
                 <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
-                  <span className="money">{formatMoney(t.amount_cents)}</span>
+                  <span className="money">{money(t.amount_cents, { decimals: 2 })}</span>
                 </td>
               </tr>
             ))}
@@ -148,7 +147,7 @@ export default function Transactions() {
       <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} />
       <TransactionDrawer
         open={editTxn !== null}
-        onClose={() => setEditTxn(null)}
+        onClose={() => setEditTxnId(null)}
         transaction={editTxn ?? undefined}
       />
       {csvPath && (

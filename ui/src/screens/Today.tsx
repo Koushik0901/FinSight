@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccounts } from "../api/hooks/accounts";
@@ -5,14 +6,14 @@ import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { commands, type MonthTotals, type AccountSummary } from "../api/client";
 import AgentActivityFeed from "../components/AgentActivityFeed";
+import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
+import NetWorthChart from "../components/NetWorthChart";
+import { money } from "../utils/format";
 
-function fmt(cents: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+const RANGES = [
+  { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
+  { key: "1Y", days: 365 }, { key: "All", days: 36500 },
+] as const;
 
 function useMonthTotals() {
   return useQuery<MonthTotals>({
@@ -51,7 +52,7 @@ function AccountDot({ account }: { account: AccountSummary }) {
         </div>
       </div>
       <div className="num tabular money" style={{ fontSize: 14, fontWeight: 500 }}>
-        {fmt(account.balance_cents, account.currency)}
+        {money(account.balance_cents, { currency: account.currency })}
       </div>
     </div>
   );
@@ -63,12 +64,16 @@ export default function Today() {
   const { data: totals, isLoading: totLoading } = useMonthTotals();
   const { data: cats = [] } = useCategoriesWithSpending();
   const { data: needsReview = 0 } = useNeedsReviewCount();
+  const netWorth = useNetWorth();
+
+  const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
+  const days = RANGES.find((r) => r.key === range)!.days;
+  const { data: nwHistory = [] } = useNetWorthHistory(days);
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
 
-  const netWorth = accounts.reduce((s, a) => s + a.balance_cents, 0);
   const primaryCurrency = accounts[0]?.currency ?? "USD";
 
   const isLoading = accLoading || totLoading;
@@ -96,12 +101,24 @@ export default function Today() {
             letterSpacing: "-0.035em",
             color: netWorth >= 0 ? "var(--ink)" : "var(--negative)",
           }}>
-            {fmt(netWorth, primaryCurrency)}
+            {money(netWorth, { currency: primaryCurrency })}
           </div>
           <div className="muted" style={{ fontSize: 16 }}>
-            net worth across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+            net worth · {accounts.length} account{accounts.length !== 1 ? "s" : ""} + assets − liabilities
           </div>
         </div>
+      </div>
+
+      {/* Net-worth chart */}
+      <div style={{ marginBottom: 20 }}>
+        <div className="toolbar" style={{ marginBottom: 10, display: "inline-flex" }}>
+          {RANGES.map((r) => (
+            <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>
+              {r.key}
+            </button>
+          ))}
+        </div>
+        <NetWorthChart points={nwHistory} />
       </div>
 
       {/* 4-stat row */}
@@ -109,14 +126,14 @@ export default function Today() {
         <div className="stat-row">
           <div className="stat">
             <div className="label">{monthLabel} income</div>
-            <div className="value figure money num pos">{fmt(totals.incomeCents)}</div>
+            <div className="value figure money num pos">{money(totals.incomeCents)}</div>
             <div className="sub muted">{totals.txnCount} transactions</div>
           </div>
           <div className="stat">
             <div className="label">{monthLabel} expenses</div>
-            <div className="value figure money">{fmt(totals.expenseCents)}</div>
+            <div className="value figure money">{money(totals.expenseCents)}</div>
             <div className="sub muted">
-              {fmt(totals.netCents) + (totals.netCents >= 0 ? " saved" : " deficit")}
+              {money(totals.netCents) + (totals.netCents >= 0 ? " saved" : " deficit")}
             </div>
           </div>
           <div className={`stat${totals.savingsRatePct > 0 ? " accent" : ""}`}>
@@ -144,7 +161,7 @@ export default function Today() {
             {activeCats.map((c) => (
               <span
                 key={c.id}
-                title={`${c.label}: ${fmt(c.thisMonthCents)}`}
+                title={`${c.label}: ${money(c.thisMonthCents)}`}
                 style={{
                   width: `${(c.thisMonthCents / totalSpend) * 100}%`,
                   background: c.color || "var(--ink-faint)",
@@ -158,7 +175,7 @@ export default function Today() {
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block" }} />
                 {c.label}
                 <span className="tabular" style={{ color: "var(--ink-faint)", fontFamily: "var(--mono)", fontSize: 11 }}>
-                  {fmt(c.thisMonthCents)}
+                  {money(c.thisMonthCents)}
                 </span>
               </span>
             ))}

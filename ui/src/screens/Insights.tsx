@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -7,10 +7,8 @@ import { useGoals } from "../api/hooks/budget";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type MonthTotals, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
-
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
-}
+import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
+import { money } from "../utils/format";
 
 interface Insight {
   id: string;
@@ -112,6 +110,45 @@ export default function Insights() {
 
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
+  const { data: memory = [] } = useAgentMemory();
+  const forgetMemory = useForgetAgentMemory();
+  const [pendingForget, setPendingForget] = useState<Set<string>>(new Set());
+  const forgetTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Clear any in-flight timers on unmount (don't fire them).
+  useEffect(() => {
+    const timers = forgetTimers.current;
+    return () => { timers.forEach((t) => clearTimeout(t)); timers.clear(); };
+  }, []);
+
+  const handleForget = (m: { id: string; description: string }) => {
+    setPendingForget((s) => new Set([...s, m.id]));
+    const timer = setTimeout(async () => {
+      forgetTimers.current.delete(m.id);
+      try {
+        await forgetMemory.mutateAsync(m.id);
+        setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+      } catch {
+        setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+        toast.error("Could not forget that memory");
+      }
+    }, 5000);
+    forgetTimers.current.set(m.id, timer);
+    toast("Memory forgotten", {
+      description: m.description.slice(0, 60),
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const t = forgetTimers.current.get(m.id);
+          if (t) { clearTimeout(t); forgetTimers.current.delete(m.id); }
+          setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+        },
+      },
+    });
+  };
+
+  const visibleMemory = memory.filter((m) => !pendingForget.has(m.id));
+
   // ── Generate insights from real data ───────────────────────────────────
 
   const rawInsights = useMemo<Insight[]>(() => {
@@ -125,15 +162,15 @@ export default function Insights() {
           id: "savings-good",
           kind: "savings",
           headline: `${rate}% savings rate this month`,
-          body: `You're keeping ${fmt(totals.netCents)} of ${fmt(totals.incomeCents)} income. That's above the 20% benchmark — well done.`,
+          body: `You're keeping ${money(totals.netCents)} of ${money(totals.incomeCents)} income. That's above the 20% benchmark — well done.`,
           severity: "positive",
         });
       } else if (rate < 0) {
         insights.push({
           id: "savings-deficit",
           kind: "savings",
-          headline: `Spending ${fmt(-totals.netCents)} more than earned this month`,
-          body: `Income: ${fmt(totals.incomeCents)} · Expenses: ${fmt(totals.expenseCents)}. This month is running a deficit.`,
+          headline: `Spending ${money(-totals.netCents)} more than earned this month`,
+          body: `Income: ${money(totals.incomeCents)} · Expenses: ${money(totals.expenseCents)}. This month is running a deficit.`,
           action: "Review Budget",
           actionRoute: "/budget",
           severity: "warn",
@@ -143,7 +180,7 @@ export default function Insights() {
           id: "savings-low",
           kind: "savings",
           headline: `${rate}% savings rate — room to improve`,
-          body: `You kept ${fmt(totals.netCents)} of ${fmt(totals.incomeCents)} this month. Moving toward 20% would add ${fmt(Math.round(totals.incomeCents * 0.2) - totals.netCents)} to savings.`,
+          body: `You kept ${money(totals.netCents)} of ${money(totals.incomeCents)} this month. Moving toward 20% would add ${money(Math.round(totals.incomeCents * 0.2) - totals.netCents)} to savings.`,
           action: "Open Budget",
           actionRoute: "/budget",
           severity: "info",
@@ -160,7 +197,7 @@ export default function Insights() {
           id: `budget-over-${worst.categoryId}`,
           kind: "budget",
           headline: `${worst.categoryLabel} is over budget`,
-          body: `Spent ${fmt(worst.spentCents)} vs ${fmt(worst.budgetCents)} budgeted — ${fmt(worst.spentCents - worst.budgetCents)} over.${overBudget.length > 1 ? ` Plus ${overBudget.length - 1} other ${overBudget.length - 1 === 1 ? "category" : "categories"}.` : ""}`,
+          body: `Spent ${money(worst.spentCents)} vs ${money(worst.budgetCents)} budgeted — ${money(worst.spentCents - worst.budgetCents)} over.${overBudget.length > 1 ? ` Plus ${overBudget.length - 1} other ${overBudget.length - 1 === 1 ? "category" : "categories"}.` : ""}`,
           action: "Open Budget",
           actionRoute: "/budget",
           severity: "warn",
@@ -173,13 +210,13 @@ export default function Insights() {
       const top = [...cats].sort((a, b) => b.thisMonthCents - a.thisMonthCents)[0];
       if (top && top.thisMonthCents > 0) {
         const vsLast = top.lastMonthCents > 0
-          ? ` — ${top.thisMonthCents > top.lastMonthCents ? "↑" : "↓"} ${fmt(Math.abs(top.thisMonthCents - top.lastMonthCents))} vs last month`
+          ? ` — ${top.thisMonthCents > top.lastMonthCents ? "↑" : "↓"} ${money(Math.abs(top.thisMonthCents - top.lastMonthCents))} vs last month`
           : "";
         insights.push({
           id: `top-cat-${top.id}`,
           kind: "pattern",
           headline: `${top.label} is your biggest expense this month`,
-          body: `${fmt(top.thisMonthCents)} across ${top.txnCount} transactions${vsLast}.`,
+          body: `${money(top.thisMonthCents)} across ${top.txnCount} transactions${vsLast}.`,
           action: "See Categories",
           actionRoute: "/categories",
           severity: "info",
@@ -198,7 +235,7 @@ export default function Insights() {
         id: `spike-${spike.id}`,
         kind: "anomaly",
         headline: `${spike.label} up ${pct}% vs last month`,
-        body: `${fmt(spike.lastMonthCents)} last month → ${fmt(spike.thisMonthCents)} this month. Worth reviewing.`,
+        body: `${money(spike.lastMonthCents)} last month → ${money(spike.thisMonthCents)} this month. Worth reviewing.`,
         action: "See Transactions",
         actionRoute: "/transactions",
         severity: "warn",
@@ -213,8 +250,8 @@ export default function Insights() {
       insights.push({
         id: "subscriptions-cost",
         kind: "subscription",
-        headline: `${subs.length} subscriptions totalling ${fmt(annualCost)}/year`,
-        body: `That's ${fmt(monthlySubCost)}/month. Review if all are still being used.`,
+        headline: `${subs.length} subscriptions totalling ${money(annualCost)}/year`,
+        body: `That's ${money(monthlySubCost)}/month. Review if all are still being used.`,
         action: "See Subscriptions",
         actionRoute: "/recurring",
         severity: "info",
@@ -257,7 +294,7 @@ export default function Insights() {
       insights.push({
         id: "net-worth",
         kind: "pattern",
-        headline: `Net worth across ${accounts.length} accounts: ${fmt(netWorth)}`,
+        headline: `Net worth across ${accounts.length} accounts: ${money(netWorth)}`,
         body: highest ? `Your highest balance is in ${highest.name}.` : "",
         severity: "info",
       });
@@ -342,6 +379,22 @@ export default function Insights() {
           {filtered.map((ins) => (
             <InsightCard key={ins.id} ins={ins} onDismiss={handleDismiss} />
           ))}
+        </div>
+      )}
+
+      {visibleMemory.length > 0 && (
+        <div style={{ marginTop: 40 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>What the agent has learned</div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {visibleMemory.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--hairline)" }}>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{m.description}</div>
+                <button className="btn ghost sm" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>
+                  Forget
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

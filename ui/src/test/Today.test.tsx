@@ -6,6 +6,11 @@ import { invoke } from "@tauri-apps/api/core";
 import Today from "../screens/Today";
 import type { ReactNode } from "react";
 
+vi.mock("../api/hooks/networth", () => ({
+  useNetWorth: () => 1482042,
+  useNetWorthHistory: () => ({ data: [] }),
+}));
+
 function wrap(node: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
@@ -16,7 +21,7 @@ function wrap(node: ReactNode) {
 }
 
 describe("Today", () => {
-  it("renders the runway number from the first account", async () => {
+  it("renders the net-worth hero from useNetWorth", async () => {
     vi.mocked(invoke).mockResolvedValue([
       {
         id: "a1",
