@@ -132,3 +132,19 @@ export function useToggleRule() {
     },
   });
 }
+
+export function useSetTransactionFlags() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isReimbursable, isSplit }: { id: string; isReimbursable: boolean; isSplit: boolean }) => {
+      const result = await commands.setTransactionFlags(id, isReimbursable, isSplit);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["today-summary"] });
+      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+    },
+  });
+}

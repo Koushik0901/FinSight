@@ -29,6 +29,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useUpdateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ transaction: {}, proposed_rule: null }) })),
   useDeleteTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetTransactionFlags: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useCategories: vi.fn(() => ({
     data: [
       { id: "cat-1", label: "Groceries", color: "#4ade80", group_id: "g1", group_label: "Food" },

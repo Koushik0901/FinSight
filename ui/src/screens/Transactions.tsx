@@ -131,6 +131,8 @@ export default function Transactions() {
                       {t.merchant_initials ?? "?"}
                     </span>
                     <span>{t.merchant_label ?? t.merchant_raw}</span>
+                    {t.is_reimbursable && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Reimbursable</span>}
+                    {t.is_split && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Split</span>}
                   </div>
                 </td>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>

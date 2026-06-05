@@ -7,7 +7,7 @@ import Drawer from "./Drawer";
 import CategoryPicker from "./CategoryPicker";
 import {
   useCreateTransaction, useUpdateTransaction,
-  useDeleteTransaction, useCreateRule,
+  useDeleteTransaction, useCreateRule, useSetTransactionFlags,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { Transaction } from "../api/bindings";
@@ -36,6 +36,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const update = useUpdateTransaction();
   const del = useDeleteTransaction();
   const createRule = useCreateRule();
+  const setFlags = useSetTransactionFlags();
   const { data: accounts = [] } = useAccounts();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -163,6 +164,26 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           </button>
         </div>
       </form>
+      {isEdit && transaction && (
+        <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className={`chip${transaction.is_reimbursable ? " accent" : ""}`}
+            aria-pressed={transaction.is_reimbursable}
+            onClick={() => setFlags.mutateAsync({ id: transaction.id, isReimbursable: !transaction.is_reimbursable, isSplit: transaction.is_split })}
+          >
+            Reimbursable
+          </button>
+          <button
+            type="button"
+            className={`chip${transaction.is_split ? " accent" : ""}`}
+            aria-pressed={transaction.is_split}
+            onClick={() => setFlags.mutateAsync({ id: transaction.id, isReimbursable: transaction.is_reimbursable, isSplit: !transaction.is_split })}
+          >
+            Split
+          </button>
+        </div>
+      )}
       {isEdit && (
         <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--hairline)" }}>
           <button type="button" className="danger" onClick={handleDelete} disabled={del.isPending}>
