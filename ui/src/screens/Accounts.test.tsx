@@ -17,7 +17,9 @@ vi.mock("../api/hooks/assets", () => ({
   useCreateManualAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateManualAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useDeleteManualAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
-  useLiabilities: vi.fn(() => ({ data: [] })),
+  useLiabilities: vi.fn(() => ({ data: [
+    { id: "l1", name: "Mortgage", liabilityType: "mortgage", balanceCents: 30000000, limitCents: 35000000, aprPct: 5.5, payoffDate: "2045-01-01", currency: "USD", createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z" },
+  ] })),
   useCreateLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useDeleteLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -29,5 +31,11 @@ describe("Accounts — manual assets", () => {
     expect(screen.getByText("Manual assets")).toBeInTheDocument();
     expect(screen.getByText("House")).toBeInTheDocument();
     expect(screen.getByText("$500000.00")).toBeInTheDocument();
+  });
+
+  it("renders the liabilities section with a liability row", () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    expect(screen.getByText("Liabilities")).toBeInTheDocument();
+    expect(screen.getByText("Mortgage")).toBeInTheDocument();
   });
 });
