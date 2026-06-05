@@ -7,7 +7,7 @@ import Drawer from "./Drawer";
 import {
   useCreateManualAsset, useUpdateManualAsset, useDeleteManualAsset,
 } from "../api/hooks/assets";
-import type { ManualAsset } from "../api/bindings";
+import type { ManualAsset } from "../api/client";
 
 const ASSET_TYPES = ["cash", "property", "vehicle", "investment", "crypto", "other"] as const;
 

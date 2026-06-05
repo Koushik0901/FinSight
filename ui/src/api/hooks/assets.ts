@@ -25,7 +25,6 @@ export function useCreateManualAsset() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["manual-assets"] });
-      qc.invalidateQueries({ queryKey: ["net-worth"] });
     },
   });
 }
@@ -40,7 +39,6 @@ export function useUpdateManualAsset() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["manual-assets"] });
-      qc.invalidateQueries({ queryKey: ["net-worth"] });
     },
   });
 }
@@ -54,7 +52,6 @@ export function useDeleteManualAsset() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["manual-assets"] });
-      qc.invalidateQueries({ queryKey: ["net-worth"] });
     },
   });
 }

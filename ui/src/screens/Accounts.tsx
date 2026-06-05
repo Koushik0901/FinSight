@@ -76,7 +76,7 @@ export default function Accounts() {
                 role="button"
                 tabIndex={0}
                 onClick={() => setEditAsset(a)}
-                onKeyDown={(e) => { if (e.key === "Enter") setEditAsset(a); }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditAsset(a); } }}
                 aria-label={`Edit ${a.name}`}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
               >

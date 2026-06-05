@@ -28,5 +28,6 @@ describe("Accounts — manual assets", () => {
     render(<Accounts />, { wrapper: createWrapper() });
     expect(screen.getByText("Manual assets")).toBeInTheDocument();
     expect(screen.getByText("House")).toBeInTheDocument();
+    expect(screen.getByText("$500000.00")).toBeInTheDocument();
   });
 });
