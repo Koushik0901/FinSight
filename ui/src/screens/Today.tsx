@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccounts } from "../api/hooks/accounts";
@@ -5,7 +6,8 @@ import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { commands, type MonthTotals, type AccountSummary } from "../api/client";
 import AgentActivityFeed from "../components/AgentActivityFeed";
-import { useNetWorth } from "../api/hooks/networth";
+import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
+import NetWorthChart from "../components/NetWorthChart";
 
 function fmt(cents: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -66,6 +68,14 @@ export default function Today() {
   const { data: needsReview = 0 } = useNeedsReviewCount();
   const netWorth = useNetWorth();
 
+  const RANGES = [
+    { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
+    { key: "1Y", days: 365 }, { key: "All", days: 36500 },
+  ] as const;
+  const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
+  const days = RANGES.find((r) => r.key === range)!.days;
+  const { data: nwHistory = [] } = useNetWorthHistory(days);
+
   const now = new Date();
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
@@ -103,6 +113,18 @@ export default function Today() {
             net worth · {accounts.length} account{accounts.length !== 1 ? "s" : ""} + assets − liabilities
           </div>
         </div>
+      </div>
+
+      {/* Net-worth chart */}
+      <div style={{ marginBottom: 20 }}>
+        <div className="toolbar" style={{ marginBottom: 10, display: "inline-flex" }}>
+          {RANGES.map((r) => (
+            <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>
+              {r.key}
+            </button>
+          ))}
+        </div>
+        <NetWorthChart points={nwHistory} />
       </div>
 
       {/* 4-stat row */}
