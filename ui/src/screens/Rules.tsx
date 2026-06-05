@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { useRulesWithCategories, useToggleRule } from "../api/hooks/transactions";
 import type { RuleWithCategory } from "../api/client";
 import * as I from "../components/Icons";
+import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
 
 function RuleCard({ rule }: { rule: RuleWithCategory }) {
   const toggle = useToggleRule();
@@ -56,6 +57,9 @@ function RuleCard({ rule }: { rule: RuleWithCategory }) {
 
 export default function Rules() {
   const { data: rules = [], isLoading, error } = useRulesWithCategories();
+  const { data: proposals = [] } = useRuleProposals();
+  const acceptProposal = useAcceptRuleProposal();
+  const declineProposal = useDeclineRuleProposal();
 
   const active = rules.filter((r) => r.enabled);
   const paused = rules.filter((r) => !r.enabled);
@@ -114,6 +118,43 @@ export default function Rules() {
                 </>
               )}
             </>
+          )}
+
+          {proposals.length > 0 && (
+            <div className="card" style={{ marginTop: 28, border: "1px dashed var(--accent)" }}>
+              <div className="eyebrow" style={{ marginBottom: 12, color: "var(--accent)" }}>
+                <I.Sparkle width="12" height="12" style={{ marginRight: 6 }} />
+                <span>Agent proposals</span> · {proposals.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {proposals.map((p) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="eyebrow" style={{ marginBottom: 2 }}>{p.whenLabel}</div>
+                      <div style={{ fontSize: 14 }}>{p.description}</div>
+                    </div>
+                    <button
+                      className="btn primary"
+                      onClick={async () => {
+                        try { await acceptProposal.mutateAsync(p.id); toast.success("Rule created"); }
+                        catch { toast.error("Could not accept proposal"); }
+                      }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="btn ghost sm"
+                      onClick={async () => {
+                        try { await declineProposal.mutateAsync(p.id); }
+                        catch { toast.error("Could not decline proposal"); }
+                      }}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
