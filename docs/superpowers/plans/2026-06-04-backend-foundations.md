@@ -1,5 +1,7 @@
 # Backend Foundations Implementation Plan
 
+> **Status: ✅ Complete** — all 15 tasks implemented via subagent-driven development, reviewed (per-group + final holistic), and merged to `main` on 2026-06-04. Green bar: 66 Rust lib tests, 53 frontend tests, `tsc` clean. The checkboxes below are left unticked as a historical record of the task breakdown.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land all migration-heavy TODO schema (net-worth snapshots, manual assets, liabilities, rule proposals, agent memory, transaction flags) plus repos, Tauri CRUD commands, live wiring, and tests in one clean V006–V011 migration sequence, so feature UIs can later build on stable bindings.

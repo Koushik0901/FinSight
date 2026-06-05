@@ -1,7 +1,7 @@
 # Backend Foundations — Design Spec
 
 **Date:** 2026-06-04
-**Status:** Approved (design), pending implementation plan
+**Status:** ✅ Implemented and merged to main (2026-06-04). Plan: `docs/superpowers/plans/2026-06-04-backend-foundations.md`.
 **Scope owner:** first sub-project of the TODO.md decomposition ("backend-foundations first")
 
 ## Overview

@@ -67,7 +67,7 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Database migrations
 
-SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V004. Next migration = `V005__description.sql`.
+SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V011. Next migration = `V012__description.sql`.
 
 ### Frontend data flow
 
@@ -103,4 +103,4 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The `keychain::tests::set_key_round_trip` test is intermittently flaky under parallel execution on Windows (credential store ordering). This is pre-existing; failures there are not caused by code changes.
 
-**Green bar:** 57 Rust tests, 51 frontend tests, 0 TypeScript errors.
+**Green bar:** 66 Rust tests, 53 frontend tests, 0 TypeScript errors.

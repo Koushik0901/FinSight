@@ -8,6 +8,20 @@
 
 ---
 
+## ✅ Backend foundations landed (2026-06-04)
+
+The migration-heavy **backend** for items §3a, §4a, §4b, §5d, §11a, and §13b is **done and merged to main** — schema, repos, Tauri commands, live wiring, tests, and bindings. Only the **frontend UIs remain** for those items (each marked **🔧 backend done — UI pending** below). Design + plan: `docs/superpowers/specs/2026-06-04-backend-foundations-design.md`, `docs/superpowers/plans/2026-06-04-backend-foundations.md`.
+
+**Shipped:**
+- **Migrations V006–V011:** `net_worth_snapshots`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory`, and transaction `is_reimbursable`/`is_split` columns. **Next migration = V012.**
+- **Repos:** `net_worth`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory` + `transactions::set_flags`.
+- **Commands (all in `bindings.ts`):** `commands/assets.rs` (manual-asset & liability CRUD, `record_net_worth_snapshot`, `list_net_worth_history`); `commands/insights.rs` (`list_agent_memory`, `forget_agent_memory`); `agent.rs` (`list_rule_proposals`, `accept_rule_proposal`, `decline_rule_proposal`); `transactions::set_transaction_flags`.
+- **Live wiring:** user category correction → `agent_memory` upsert; categorizer post-run → `rule_proposals` (≥3 corrections, deduped); net-worth snapshot auto-records on app start.
+
+> Building the UIs below: the commands/types already exist — import from `ui/src/api/client.ts` and add tanstack-query hooks under `ui/src/api/hooks/`.
+
+---
+
 ## 1. Scenarios screen (entire feature — not in nav) ✅ DONE
 
 **Design reference:** `design/plutus/project/components/scenarios.jsx`
@@ -78,23 +92,13 @@ Wire the "Plan next month" button in `Budget.tsx` header to open this modal.
 
 **Design reference:** `design/plutus/project/components/today.jsx`
 
-### 3a. Net-worth area chart with range selector
+### 3a. Net-worth area chart with range selector — 🔧 backend done, UI pending
 
 The design shows a SVG area chart tracing net-worth history with selectable ranges (1M / 3M / 6M / 1Y / All).
 
-**Backend:** Add a V005 (or V006) migration for a `net_worth_snapshots` table:
-```sql
-CREATE TABLE net_worth_snapshots (
-  id TEXT PRIMARY KEY,
-  date TEXT NOT NULL UNIQUE,        -- ISO date 'YYYY-MM-DD'
-  total_cents INTEGER NOT NULL,
-  created_at TEXT NOT NULL
-);
-```
-Add a `record_net_worth_snapshot()` command that sums all account balances and inserts/updates today's row. Call it from `configure_app` setup or on-demand.
-Add `list_net_worth_history(days: u32) -> Vec<{date, total_cents}>` command.
+**Backend ✅ done:** `net_worth_snapshots` table (V006). Commands `recordNetWorthSnapshot()` and `listNetWorthHistory(days)` exist; a snapshot auto-records on app start. (Currently sums bank-account balances only; fold in manual assets/liabilities once §4a/§4b UIs exist.)
 
-**Frontend:** In `Today.tsx`, above the stat row, render a SVG area chart (same pattern as `Reports.tsx`'s NetLine):
+**Frontend (pending):** In `Today.tsx`, above the stat row, render a SVG area chart (same pattern as `Reports.tsx`'s NetLine):
 - Range toolbar: 1M / 3M / 6M / 1Y / All (defaults to 6M)
 - Gradient fill under the line (lime at top, transparent at bottom — see `design/plutus/project/components/today.jsx` `NetWorthChart`)
 - Last point glows with a radius-14 accent circle
@@ -130,37 +134,24 @@ Replace the "Accounts" stat card with a "Runway" stat:
 
 **Design reference:** `design/plutus/project/components/accounts.jsx`
 
-### 4a. Manual assets section
+### 4a. Manual assets section — 🔧 backend done, UI pending
 
 The design has a second section below bank accounts for manually tracked assets (home value, car, investment portfolio, crypto).
 
-**Backend:** Add a `manual_assets` table (V005 migration):
-```sql
-CREATE TABLE manual_assets (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  asset_type TEXT NOT NULL,  -- 'property' | 'vehicle' | 'investment' | 'crypto' | 'other'
-  value_cents INTEGER NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'USD',
-  notes TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-```
-Commands: `list_manual_assets`, `create_manual_asset`, `update_manual_asset`, `delete_manual_asset`.
+**Backend ✅ done:** `manual_assets` table (V007). Commands `listManualAssets`, `createManualAsset`, `updateManualAsset`, `deleteManualAsset` exist (types `ManualAsset`, `NewManualAsset`, `ManualAssetPatch`).
 
-**Frontend:** In `Accounts.tsx`, add a "Manual assets" section below the accounts table with:
+**Frontend (pending):** In `Accounts.tsx`, add a "Manual assets" section below the accounts table with:
 - Asset cards showing: icon (house/car/chart/currency), name, value, type chip
 - "Add manual asset" button opens a small form drawer
 - Total assets + total accounts = net worth displayed at top
 
-### 4b. Liabilities section
+### 4b. Liabilities section — 🔧 backend done, UI pending
 
 Similarly, track liabilities (mortgage, student loans, credit card balances).
 
-**Backend:** Add `liabilities` table (same migration): `id, name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date, currency, created_at`. Commands: `list_liabilities`, `create_liability`, `update_liability`, `delete_liability`.
+**Backend ✅ done:** `liabilities` table (V008) with `limit_cents`, `apr_pct`, `payoff_date`. Commands `listLiabilities`, `createLiability`, `updateLiability`, `deleteLiability` exist (types `Liability`, `NewLiability`, `LiabilityPatch`).
 
-**Frontend:** "Liabilities" section in `Accounts.tsx`:
+**Frontend (pending):** "Liabilities" section in `Accounts.tsx`:
 - Each row: name, type chip, balance, APR, progress bar (balance / original limit), payoff date
 - Net worth = accounts + assets − liabilities (update the Today screen hero too)
 
@@ -207,9 +198,11 @@ async fn export_transactions_csv(filter: TxnFilterInput) -> AppResult<String>
 ```
 Uses `tauri_plugin_dialog` to save, writes: date, merchant, category, amount, notes.
 
-### 5d. Reimbursable and split flags (future/stretch)
+### 5d. Reimbursable and split flags — 🔧 backend done, UI pending
 
-Add `is_reimbursable BOOLEAN DEFAULT 0` and `is_split BOOLEAN DEFAULT 0` columns to `transactions` (V005 migration). Add toggle buttons in `TransactionDrawer`. Show chips in the transactions table for rows where these are true.
+**Backend ✅ done:** `is_reimbursable` / `is_split` columns on `transactions` (V011); `Transaction` carries both booleans; command `setTransactionFlags(id, isReimbursable, isSplit)` exists.
+
+**Frontend (pending):** Add toggle buttons in `TransactionDrawer`. Show chips in the transactions table for rows where these are true.
 
 ---
 
@@ -351,25 +344,13 @@ Short of full drag-and-drop, add a simple "Customize" mode (pencil icon in top-r
 
 **Design reference:** `design/plutus/project/components/rules.jsx`
 
-### 11a. Agent proposals section
+### 11a. Agent proposals section — 🔧 backend done, UI pending
 
 The design shows a dashed-border card "Agent proposals" below the active rules list with 3–5 agent-suggested rules. Users can Accept or Decline each.
 
-**Backend:** Add a `rule_proposals` table (migration):
-```sql
-CREATE TABLE rule_proposals (
-  id TEXT PRIMARY KEY,
-  when_label TEXT NOT NULL,   -- context label e.g. "Recurring"
-  description TEXT NOT NULL,  -- human-readable rule description
-  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'accepted' | 'declined'
-  created_at TEXT NOT NULL
-);
-```
-Commands: `list_rule_proposals`, `accept_rule_proposal(id)` (converts to a real rule), `decline_rule_proposal(id)`.
+**Backend ✅ done:** `rule_proposals` table (V009, with `pattern` + `category_id` so accept can materialize a real rule). Commands `listRuleProposals` (pending only), `acceptRuleProposal(id)` (creates a `source:"agent"` rule + marks accepted), `declineRuleProposal(id)` exist (type `RuleProposal`). The categorizer already emits proposals as a post-run step when a merchant has ≥3 manual user categorizations to the same category (deduped against existing rules/pending proposals).
 
-The agent categorizer (`crates/finsight-agent/src/categorizer.rs`) should emit proposals when it detects a clear pattern (e.g., the same merchant has been manually recategorized 3+ times). This can be a post-run step in the `CategorizeAll` job.
-
-**Frontend:** In `Rules.tsx`, add the "Agent proposals" card (dashed border, accent color) below the rules list. Each proposal row: context eyebrow, description text, "Accept" (btn.primary) and "Decline" (btn.ghost.sm) buttons.
+**Frontend (pending):** In `Rules.tsx`, add the "Agent proposals" card (dashed border, accent color) below the rules list. Each proposal row: context eyebrow (`whenLabel`), description text, "Accept" (btn.primary) and "Decline" (btn.ghost.sm) buttons.
 
 ### 11b. New rule manual builder
 
@@ -439,20 +420,13 @@ Add a "status bar" at the top of Insights:
 ```
 The cycling ticker is a `useEffect` interval that rotates through 5–6 "currently watching" messages every 2.4 seconds. The "Re-run scan" button calls `trigger_categorize()` (already exists), shows a brief "Scanning…" state, then a "Scan complete" toast.
 
-### 13b. Agent memory section
+### 13b. Agent memory section — 🔧 backend done, UI pending
 
-Below the insight cards, add a "What the agent has learned" section. This requires a `agent_memory` table:
-```sql
-CREATE TABLE agent_memory (
-  id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,  -- 'preference' | 'pattern' | 'correction'
-  description TEXT NOT NULL,  -- e.g. "AMZN MKTPL should be Shopping (you corrected 3 times)"
-  created_at TEXT NOT NULL
-);
-```
-When the user corrects a categorization in `TransactionDrawer`, insert a memory entry. Commands: `list_agent_memory`, `forget_agent_memory(id)`.
+Below the insight cards, add a "What the agent has learned" section.
 
-Render as a list below insights: each row shows the description + "Forget" button that calls `forget_agent_memory` with undo toast.
+**Backend ✅ done:** `agent_memory` table (V010, deduped by `merchant_key` via unique upsert). Commands `listAgentMemory`, `forgetAgentMemory(id)` exist (type `AgentMemory`). A `kind:"correction"` memory is upserted automatically whenever the user sets a transaction's category (wired into `transactions::update`).
+
+**Frontend (pending):** Render as a list below insights: each row shows `description` + "Forget" button that calls `forgetAgentMemory` with an undo toast.
 
 ---
 
@@ -532,13 +506,13 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Goals: pace chip (§9a) | Low | Medium | ✅ Done |
 | — | Sidebar: count badge + run setup (§15b, §15c) | Low | Medium | ✅ Done |
 | — | Scenarios screen (§1) | High | High — design centrepiece | ✅ Done |
-| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | |
+| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | 🔧 §11a backend done (UI left) |
 | 3 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece | |
-| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | |
-| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | |
+| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | 🔧 §3a backend done (UI left) |
+| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | 🔧 backend done (UI left) |
 | 6 | Settings: data export + appearance section (§12a, §12c) | Low | Medium | |
 | 7 | Goals: apply what-if (§9b) | Low | Medium | |
-| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | |
+| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | 🔧 §13b backend done (UI left) |
 | 9 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
 | 10 | Today: Smart Sweep card + Runway stat (§3b, §3d) | Low | Medium | |
 | 11 | Command palette: additional actions (§14b) | Low | Low | |
@@ -560,4 +534,4 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 - **Drawers:** reuse `ui/src/components/Drawer.tsx` for any slide-in panels.
 - **All Rust commands** must have `#[tauri::command]` and `#[specta::specta]` attributes and `pub async fn` signature to be picked up by specta.
 - **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering.
-- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 51 frontend tests and all Rust tests must stay green.
+- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 53 frontend tests and all Rust tests must stay green.
