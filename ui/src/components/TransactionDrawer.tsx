@@ -170,7 +170,13 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             type="button"
             className={`chip${transaction.is_reimbursable ? " accent" : ""}`}
             aria-pressed={transaction.is_reimbursable}
-            onClick={() => setFlags.mutateAsync({ id: transaction.id, isReimbursable: !transaction.is_reimbursable, isSplit: transaction.is_split })}
+            onClick={async () => {
+            try {
+              await setFlags.mutateAsync({ id: transaction.id, isReimbursable: !transaction.is_reimbursable, isSplit: transaction.is_split });
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not update flag");
+            }
+          }}
           >
             Reimbursable
           </button>
@@ -178,7 +184,13 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             type="button"
             className={`chip${transaction.is_split ? " accent" : ""}`}
             aria-pressed={transaction.is_split}
-            onClick={() => setFlags.mutateAsync({ id: transaction.id, isReimbursable: transaction.is_reimbursable, isSplit: !transaction.is_split })}
+            onClick={async () => {
+            try {
+              await setFlags.mutateAsync({ id: transaction.id, isReimbursable: transaction.is_reimbursable, isSplit: !transaction.is_split });
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not update flag");
+            }
+          }}
           >
             Split
           </button>

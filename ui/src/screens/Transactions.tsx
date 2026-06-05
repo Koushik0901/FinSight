@@ -25,7 +25,7 @@ const TABS: { key: Preset; label: string }[] = [
 
 export default function Transactions() {
   const [addOpen, setAddOpen] = useState(false);
-  const [editTxn, setEditTxn] = useState<Transaction | null>(null);
+  const [editTxnId, setEditTxnId] = useState<string | null>(null);
   const [csvPath, setCsvPath] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -47,6 +47,7 @@ export default function Transactions() {
   };
 
   const { data, isLoading, error } = useTransactions(filter);
+  const editTxn = data?.find((t) => t.id === editTxnId) ?? null;
 
   if (isLoading) return <div className="stub">Loading…</div>;
   if (error) return <div className="stub">Error: {(error as Error).message}</div>;
@@ -112,7 +113,7 @@ export default function Transactions() {
               <tr
                 key={t.id}
                 style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
-                onClick={() => setEditTxn(t)}
+                onClick={() => setEditTxnId(t.id)}
                 aria-label={`Edit transaction ${t.merchant_raw}`}
               >
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{formatDate(t.posted_at)}</td>
@@ -150,7 +151,7 @@ export default function Transactions() {
       <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} />
       <TransactionDrawer
         open={editTxn !== null}
-        onClose={() => setEditTxn(null)}
+        onClose={() => setEditTxnId(null)}
         transaction={editTxn ?? undefined}
       />
       {csvPath && (

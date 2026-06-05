@@ -23,7 +23,7 @@ vi.mock("../api/hooks/transactions", () => ({
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),
 }));
-vi.mock("sonner", () => ({ toast: { custom: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { custom: vi.fn(), error: vi.fn() } }));
 
 const existingTxn = {
   id: "t1", account_id: "a1",
@@ -81,6 +81,8 @@ describe("TransactionDrawer — edit mode", () => {
       { wrapper: createWrapper() },
     );
     fireEvent.click(screen.getByRole("button", { name: /reimbursable/i }));
-    await waitFor(() => expect(setFlags).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(setFlags).toHaveBeenCalledWith({ id: "t1", isReimbursable: true, isSplit: false })
+    );
   });
 });
