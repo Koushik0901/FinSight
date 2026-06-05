@@ -6,6 +6,11 @@ import { invoke } from "@tauri-apps/api/core";
 import Today from "../screens/Today";
 import type { ReactNode } from "react";
 
+vi.mock("../api/hooks/networth", () => ({
+  useNetWorth: () => 1482042,
+  useNetWorthHistory: () => ({ data: [] }),
+}));
+
 function wrap(node: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import Accounts from "./Accounts";
 import { createWrapper } from "../test-utils";
 
 vi.mock("../api/hooks/accounts", () => ({
-  useAccounts: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useAccounts: vi.fn(() => ({ data: [
+    { id: "acc1", name: "Checking", bank: "Bank", type: "Checking", balance_cents: 10000000, currency: "USD", color: "#3B82F6" },
+  ], isLoading: false, error: null })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useArchiveAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -37,5 +39,12 @@ describe("Accounts — manual assets", () => {
     render(<Accounts />, { wrapper: createWrapper() });
     expect(screen.getByText("Liabilities")).toBeInTheDocument();
     expect(screen.getByText("Mortgage")).toBeInTheDocument();
+  });
+
+  it("shows a net-worth header of accounts + assets − liabilities", () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    expect(screen.getByText("Net worth")).toBeInTheDocument();
+    const header = screen.getByText("Net worth").closest("header")!;
+    expect(within(header).getByText("$300000.00")).toBeInTheDocument();
   });
 });

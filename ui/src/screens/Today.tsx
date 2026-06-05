@@ -5,6 +5,7 @@ import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { commands, type MonthTotals, type AccountSummary } from "../api/client";
 import AgentActivityFeed from "../components/AgentActivityFeed";
+import { useNetWorth } from "../api/hooks/networth";
 
 function fmt(cents: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
@@ -63,12 +64,12 @@ export default function Today() {
   const { data: totals, isLoading: totLoading } = useMonthTotals();
   const { data: cats = [] } = useCategoriesWithSpending();
   const { data: needsReview = 0 } = useNeedsReviewCount();
+  const netWorth = useNetWorth();
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
 
-  const netWorth = accounts.reduce((s, a) => s + a.balance_cents, 0);
   const primaryCurrency = accounts[0]?.currency ?? "USD";
 
   const isLoading = accLoading || totLoading;
@@ -99,7 +100,7 @@ export default function Today() {
             {fmt(netWorth, primaryCurrency)}
           </div>
           <div className="muted" style={{ fontSize: 16 }}>
-            net worth across {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+            net worth · {accounts.length} account{accounts.length !== 1 ? "s" : ""} + assets − liabilities
           </div>
         </div>
       </div>

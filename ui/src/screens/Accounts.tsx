@@ -6,6 +6,7 @@ import { useManualAssets, useLiabilities } from "../api/hooks/assets";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
 import type { ManualAsset, Liability } from "../api/client";
+import { useNetWorth } from "../api/hooks/networth";
 
 function formatMoney(cents: number) {
   const sign = cents < 0 ? "-" : "";
@@ -22,14 +23,21 @@ export default function Accounts() {
   const { data: liabilities = [] } = useLiabilities();
   const [liabAddOpen, setLiabAddOpen] = useState(false);
   const [editLiab, setEditLiab] = useState<Liability | null>(null);
+  const netWorth = useNetWorth();
 
   if (isLoading) return <div className="stub">Loading…</div>;
   if (error) return <div className="stub">Error: {(error as Error).message}</div>;
 
   return (
     <div className="screen-accounts">
-      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Accounts</h1>
+      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Net worth</div>
+          <div className="figure money" style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}>
+            {formatMoney(netWorth)}
+          </div>
+          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "12px 0 0" }}>Accounts</h1>
+        </div>
         <button className="primary" onClick={() => setAddOpen(true)}>+ Add account</button>
       </header>
 
