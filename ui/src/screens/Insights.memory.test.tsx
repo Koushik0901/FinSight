@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { toast } from "sonner";
 import Insights from "./Insights";
 import { createWrapper } from "../test-utils";
+
+vi.mock("sonner", () => {
+  const fn: any = vi.fn();
+  fn.error = vi.fn();
+  fn.success = vi.fn();
+  return { toast: fn, Toaster: () => null };
+});
 
 const forget = vi.fn(() => Promise.resolve());
 
@@ -22,7 +30,7 @@ vi.mock("../api/hooks/agentMemory", () => ({
 }));
 
 describe("Insights — agent memory", () => {
-  beforeEach(() => { vi.useFakeTimers(); forget.mockClear(); });
+  beforeEach(() => { vi.useFakeTimers(); forget.mockClear(); vi.mocked(toast).mockClear(); });
   afterEach(() => { vi.useRealTimers(); });
 
   it("forget hides the row and deletes after the delay", () => {
@@ -38,16 +46,19 @@ describe("Insights — agent memory", () => {
   it("undo cancels the deferred delete", () => {
     render(<Insights />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole("button", { name: /forget/i }));
-    // sonner renders the Undo action button:
-    const undo = screen.queryByRole("button", { name: /^undo$/i });
-    if (undo) {
-      fireEvent.click(undo);
-    }
+    // Row hidden optimistically.
+    expect(screen.queryByText("Learned: Trader Joe's is Groceries")).not.toBeInTheDocument();
+
+    // Grab the Undo handler that the component passed to sonner's toast, and invoke it.
+    const toastMock = vi.mocked(toast);
+    const call = toastMock.mock.calls.find((c) => c[0] === "Memory forgotten");
+    expect(call).toBeTruthy();
+    const onUndo = (call![1] as any).action.onClick as () => void;
+    act(() => { onUndo(); });
+
+    // Row restored, and the deferred delete must NOT fire after the delay.
+    expect(screen.getByText("Learned: Trader Joe's is Groceries")).toBeInTheDocument();
     act(() => { vi.advanceTimersByTime(5000); });
-    if (undo) {
-      // Undo was clickable: the deferred delete must have been cancelled.
-      expect(forget).not.toHaveBeenCalled();
-      expect(screen.getByText("Learned: Trader Joe's is Groceries")).toBeInTheDocument();
-    }
+    expect(forget).not.toHaveBeenCalled();
   });
 });

@@ -128,8 +128,10 @@ export default function Insights() {
     setPendingForget((s) => new Set([...s, m.id]));
     const timer = setTimeout(async () => {
       forgetTimers.current.delete(m.id);
-      try { await forgetMemory.mutateAsync(m.id); }
-      catch {
+      try {
+        await forgetMemory.mutateAsync(m.id);
+        setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+      } catch {
         setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
         toast.error("Could not forget that memory");
       }
