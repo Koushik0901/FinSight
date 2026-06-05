@@ -9,6 +9,11 @@ import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import NetWorthChart from "../components/NetWorthChart";
 
+const RANGES = [
+  { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
+  { key: "1Y", days: 365 }, { key: "All", days: 36500 },
+] as const;
+
 function fmt(cents: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -68,10 +73,6 @@ export default function Today() {
   const { data: needsReview = 0 } = useNeedsReviewCount();
   const netWorth = useNetWorth();
 
-  const RANGES = [
-    { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
-    { key: "1Y", days: 365 }, { key: "All", days: 36500 },
-  ] as const;
   const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
   const days = RANGES.find((r) => r.key === range)!.days;
   const { data: nwHistory = [] } = useNetWorthHistory(days);

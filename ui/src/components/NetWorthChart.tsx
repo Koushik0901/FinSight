@@ -26,6 +26,7 @@ export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
   const areaD = `${lineD} L100,40 L0,40 Z`;
   const last = linePts[linePts.length - 1]!;
   const lastVal = values[values.length - 1]!;
+  const lineColor = lastVal >= 0 ? "var(--accent)" : "var(--negative)";
 
   return (
     <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "20px 4px 12px" }}>
@@ -36,14 +37,14 @@ export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
       <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 140, display: "block" }}>
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.34" />
-            <stop offset="60%" stopColor="var(--accent)" stopOpacity="0.06" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.34" />
+            <stop offset="60%" stopColor={lineColor} stopOpacity="0.06" />
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={areaD} fill={`url(#${gradId})`} stroke="none" />
-        <path d={lineD} fill="none" stroke="var(--accent)" strokeWidth="1.2" />
-        <circle cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="1.6" fill="var(--accent)" />
+        <path d={lineD} fill="none" stroke={lineColor} strokeWidth="1.2" />
+        <circle cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="1.6" fill={lineColor} />
       </svg>
       <div style={{ display: "flex", padding: "4px 4px 0", justifyContent: "space-between" }}>
         {points.map((p, i) => (
