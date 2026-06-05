@@ -45,6 +45,6 @@ describe("Accounts — manual assets", () => {
     render(<Accounts />, { wrapper: createWrapper() });
     expect(screen.getByText("Net worth")).toBeInTheDocument();
     const header = screen.getByText("Net worth").closest("header")!;
-    expect(within(header).getByText("$300000.00")).toBeInTheDocument();
+    expect(within(header).getByText("$300,000")).toBeInTheDocument();
   });
 });

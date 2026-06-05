@@ -13,6 +13,12 @@ function formatMoney(cents: number) {
   return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
 
+// Headline net worth: comma-grouped, no decimals — matches the Today hero and
+// the NetWorthChart so the figure reads identically across surfaces.
+function formatNetWorth(cents: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
+}
+
 export default function Accounts() {
   const [addOpen, setAddOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
@@ -34,7 +40,7 @@ export default function Accounts() {
         <div>
           <div className="eyebrow" style={{ marginBottom: 6 }}>Net worth</div>
           <div className="figure money" style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}>
-            {formatMoney(netWorth)}
+            {formatNetWorth(netWorth)}
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "12px 0 0" }}>Accounts</h1>
         </div>
