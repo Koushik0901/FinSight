@@ -92,7 +92,7 @@ Wire the "Plan next month" button in `Budget.tsx` header to open this modal.
 
 **Design reference:** `design/plutus/project/components/today.jsx`
 
-### 3a. Net-worth area chart with range selector — 🔧 backend done, UI pending
+### 3a. Net-worth area chart with range selector — ✅ DONE
 
 The design shows a SVG area chart tracing net-worth history with selectable ranges (1M / 3M / 6M / 1Y / All).
 
@@ -134,7 +134,7 @@ Replace the "Accounts" stat card with a "Runway" stat:
 
 **Design reference:** `design/plutus/project/components/accounts.jsx`
 
-### 4a. Manual assets section — 🔧 backend done, UI pending
+### 4a. Manual assets section — ✅ DONE
 
 The design has a second section below bank accounts for manually tracked assets (home value, car, investment portfolio, crypto).
 
@@ -145,7 +145,7 @@ The design has a second section below bank accounts for manually tracked assets 
 - "Add manual asset" button opens a small form drawer
 - Total assets + total accounts = net worth displayed at top
 
-### 4b. Liabilities section — 🔧 backend done, UI pending
+### 4b. Liabilities section — ✅ DONE
 
 Similarly, track liabilities (mortgage, student loans, credit card balances).
 
@@ -198,7 +198,7 @@ async fn export_transactions_csv(filter: TxnFilterInput) -> AppResult<String>
 ```
 Uses `tauri_plugin_dialog` to save, writes: date, merchant, category, amount, notes.
 
-### 5d. Reimbursable and split flags — 🔧 backend done, UI pending
+### 5d. Reimbursable and split flags — ✅ DONE
 
 **Backend ✅ done:** `is_reimbursable` / `is_split` columns on `transactions` (V011); `Transaction` carries both booleans; command `setTransactionFlags(id, isReimbursable, isSplit)` exists.
 
@@ -344,7 +344,7 @@ Short of full drag-and-drop, add a simple "Customize" mode (pencil icon in top-r
 
 **Design reference:** `design/plutus/project/components/rules.jsx`
 
-### 11a. Agent proposals section — 🔧 backend done, UI pending
+### 11a. Agent proposals section — ✅ DONE
 
 The design shows a dashed-border card "Agent proposals" below the active rules list with 3–5 agent-suggested rules. Users can Accept or Decline each.
 
@@ -420,7 +420,7 @@ Add a "status bar" at the top of Insights:
 ```
 The cycling ticker is a `useEffect` interval that rotates through 5–6 "currently watching" messages every 2.4 seconds. The "Re-run scan" button calls `trigger_categorize()` (already exists), shows a brief "Scanning…" state, then a "Scan complete" toast.
 
-### 13b. Agent memory section — 🔧 backend done, UI pending
+### 13b. Agent memory section — ✅ DONE
 
 Below the insight cards, add a "What the agent has learned" section.
 
@@ -506,13 +506,13 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Goals: pace chip (§9a) | Low | Medium | ✅ Done |
 | — | Sidebar: count badge + run setup (§15b, §15c) | Low | Medium | ✅ Done |
 | — | Scenarios screen (§1) | High | High — design centrepiece | ✅ Done |
-| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | 🔧 §11a backend done (UI left) |
+| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | ✅ §11a done · §11b (manual builder) left |
 | 3 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece | |
-| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | 🔧 §3a backend done (UI left) |
-| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | 🔧 backend done (UI left) |
+| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | ✅ §3a done · §3c (upcoming recurring) left |
+| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | ✅ Done |
 | 6 | Settings: data export + appearance section (§12a, §12c) | Low | Medium | |
 | 7 | Goals: apply what-if (§9b) | Low | Medium | |
-| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | 🔧 §13b backend done (UI left) |
+| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | ✅ §13b done · §13a (operator panel) left |
 | 9 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
 | 10 | Today: Smart Sweep card + Runway stat (§3b, §3d) | Low | Medium | |
 | 11 | Command palette: additional actions (§14b) | Low | Low | |
