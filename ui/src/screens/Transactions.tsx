@@ -4,11 +4,7 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "./onboarding/ImportMappingDialog";
 import type { Transaction, TxnFilterInput } from "../api/client";
-
-function formatMoney(cents: number) {
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
-}
+import { money } from "../utils/format";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -140,7 +136,7 @@ export default function Transactions() {
                   {t.category_label ?? "Uncategorized"}
                 </td>
                 <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
-                  <span className="money">{formatMoney(t.amount_cents)}</span>
+                  <span className="money">{money(t.amount_cents, { decimals: 2 })}</span>
                 </td>
               </tr>
             ))}

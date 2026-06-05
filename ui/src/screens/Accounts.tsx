@@ -7,17 +7,7 @@ import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
 import type { ManualAsset, Liability } from "../api/client";
 import { useNetWorth } from "../api/hooks/networth";
-
-function formatMoney(cents: number) {
-  const sign = cents < 0 ? "-" : "";
-  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
-}
-
-// Headline net worth: comma-grouped, no decimals — matches the Today hero and
-// the NetWorthChart so the figure reads identically across surfaces.
-function formatNetWorth(cents: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
-}
+import { money } from "../utils/format";
 
 export default function Accounts() {
   const [addOpen, setAddOpen] = useState(false);
@@ -40,7 +30,7 @@ export default function Accounts() {
         <div>
           <div className="eyebrow" style={{ marginBottom: 6 }}>Net worth</div>
           <div className="figure money" style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}>
-            {formatNetWorth(netWorth)}
+            {money(netWorth)}
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "12px 0 0" }}>Accounts</h1>
         </div>
@@ -71,7 +61,7 @@ export default function Accounts() {
                 <td style={{ padding: "12px 0" }}>{a.name}</td>
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{a.type}</td>
                 <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
-                  <span className="money">{formatMoney(a.balance_cents)}</span>
+                  <span className="money">{money(a.balance_cents, { decimals: 2 })}</span>
                 </td>
               </tr>
             ))}
@@ -107,7 +97,7 @@ export default function Accounts() {
                     {a.assetType} · updated {new Date(a.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </div>
                 </div>
-                <span className="money" style={{ fontFamily: "var(--mono)", fontSize: 14 }}>{formatMoney(a.valueCents)}</span>
+                <span className="money" style={{ fontFamily: "var(--mono)", fontSize: 14 }}>{money(a.valueCents, { decimals: 2 })}</span>
               </div>
             ))}
           </div>
@@ -146,7 +136,7 @@ export default function Accounts() {
                       </div>
                     </div>
                     <span className="money" style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--negative)" }}>
-                      {formatMoney(l.balanceCents)}
+                      {money(l.balanceCents, { decimals: 2 })}
                     </span>
                   </div>
                   {pct != null && (

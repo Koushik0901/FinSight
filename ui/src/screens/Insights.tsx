@@ -8,10 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { commands, type MonthTotals, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
 import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
-
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
-}
+import { money } from "../utils/format";
 
 interface Insight {
   id: string;
@@ -165,15 +162,15 @@ export default function Insights() {
           id: "savings-good",
           kind: "savings",
           headline: `${rate}% savings rate this month`,
-          body: `You're keeping ${fmt(totals.netCents)} of ${fmt(totals.incomeCents)} income. That's above the 20% benchmark — well done.`,
+          body: `You're keeping ${money(totals.netCents)} of ${money(totals.incomeCents)} income. That's above the 20% benchmark — well done.`,
           severity: "positive",
         });
       } else if (rate < 0) {
         insights.push({
           id: "savings-deficit",
           kind: "savings",
-          headline: `Spending ${fmt(-totals.netCents)} more than earned this month`,
-          body: `Income: ${fmt(totals.incomeCents)} · Expenses: ${fmt(totals.expenseCents)}. This month is running a deficit.`,
+          headline: `Spending ${money(-totals.netCents)} more than earned this month`,
+          body: `Income: ${money(totals.incomeCents)} · Expenses: ${money(totals.expenseCents)}. This month is running a deficit.`,
           action: "Review Budget",
           actionRoute: "/budget",
           severity: "warn",
@@ -183,7 +180,7 @@ export default function Insights() {
           id: "savings-low",
           kind: "savings",
           headline: `${rate}% savings rate — room to improve`,
-          body: `You kept ${fmt(totals.netCents)} of ${fmt(totals.incomeCents)} this month. Moving toward 20% would add ${fmt(Math.round(totals.incomeCents * 0.2) - totals.netCents)} to savings.`,
+          body: `You kept ${money(totals.netCents)} of ${money(totals.incomeCents)} this month. Moving toward 20% would add ${money(Math.round(totals.incomeCents * 0.2) - totals.netCents)} to savings.`,
           action: "Open Budget",
           actionRoute: "/budget",
           severity: "info",
@@ -200,7 +197,7 @@ export default function Insights() {
           id: `budget-over-${worst.categoryId}`,
           kind: "budget",
           headline: `${worst.categoryLabel} is over budget`,
-          body: `Spent ${fmt(worst.spentCents)} vs ${fmt(worst.budgetCents)} budgeted — ${fmt(worst.spentCents - worst.budgetCents)} over.${overBudget.length > 1 ? ` Plus ${overBudget.length - 1} other ${overBudget.length - 1 === 1 ? "category" : "categories"}.` : ""}`,
+          body: `Spent ${money(worst.spentCents)} vs ${money(worst.budgetCents)} budgeted — ${money(worst.spentCents - worst.budgetCents)} over.${overBudget.length > 1 ? ` Plus ${overBudget.length - 1} other ${overBudget.length - 1 === 1 ? "category" : "categories"}.` : ""}`,
           action: "Open Budget",
           actionRoute: "/budget",
           severity: "warn",
@@ -213,13 +210,13 @@ export default function Insights() {
       const top = [...cats].sort((a, b) => b.thisMonthCents - a.thisMonthCents)[0];
       if (top && top.thisMonthCents > 0) {
         const vsLast = top.lastMonthCents > 0
-          ? ` — ${top.thisMonthCents > top.lastMonthCents ? "↑" : "↓"} ${fmt(Math.abs(top.thisMonthCents - top.lastMonthCents))} vs last month`
+          ? ` — ${top.thisMonthCents > top.lastMonthCents ? "↑" : "↓"} ${money(Math.abs(top.thisMonthCents - top.lastMonthCents))} vs last month`
           : "";
         insights.push({
           id: `top-cat-${top.id}`,
           kind: "pattern",
           headline: `${top.label} is your biggest expense this month`,
-          body: `${fmt(top.thisMonthCents)} across ${top.txnCount} transactions${vsLast}.`,
+          body: `${money(top.thisMonthCents)} across ${top.txnCount} transactions${vsLast}.`,
           action: "See Categories",
           actionRoute: "/categories",
           severity: "info",
@@ -238,7 +235,7 @@ export default function Insights() {
         id: `spike-${spike.id}`,
         kind: "anomaly",
         headline: `${spike.label} up ${pct}% vs last month`,
-        body: `${fmt(spike.lastMonthCents)} last month → ${fmt(spike.thisMonthCents)} this month. Worth reviewing.`,
+        body: `${money(spike.lastMonthCents)} last month → ${money(spike.thisMonthCents)} this month. Worth reviewing.`,
         action: "See Transactions",
         actionRoute: "/transactions",
         severity: "warn",
@@ -253,8 +250,8 @@ export default function Insights() {
       insights.push({
         id: "subscriptions-cost",
         kind: "subscription",
-        headline: `${subs.length} subscriptions totalling ${fmt(annualCost)}/year`,
-        body: `That's ${fmt(monthlySubCost)}/month. Review if all are still being used.`,
+        headline: `${subs.length} subscriptions totalling ${money(annualCost)}/year`,
+        body: `That's ${money(monthlySubCost)}/month. Review if all are still being used.`,
         action: "See Subscriptions",
         actionRoute: "/recurring",
         severity: "info",
@@ -297,7 +294,7 @@ export default function Insights() {
       insights.push({
         id: "net-worth",
         kind: "pattern",
-        headline: `Net worth across ${accounts.length} accounts: ${fmt(netWorth)}`,
+        headline: `Net worth across ${accounts.length} accounts: ${money(netWorth)}`,
         body: highest ? `Your highest balance is in ${highest.name}.` : "",
         severity: "info",
       });

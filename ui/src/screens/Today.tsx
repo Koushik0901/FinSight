@@ -8,19 +8,12 @@ import { commands, type MonthTotals, type AccountSummary } from "../api/client";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import NetWorthChart from "../components/NetWorthChart";
+import { money } from "../utils/format";
 
 const RANGES = [
   { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
   { key: "1Y", days: 365 }, { key: "All", days: 36500 },
 ] as const;
-
-function fmt(cents: number, currency = "USD") {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
 
 function useMonthTotals() {
   return useQuery<MonthTotals>({
@@ -59,7 +52,7 @@ function AccountDot({ account }: { account: AccountSummary }) {
         </div>
       </div>
       <div className="num tabular money" style={{ fontSize: 14, fontWeight: 500 }}>
-        {fmt(account.balance_cents, account.currency)}
+        {money(account.balance_cents, { currency: account.currency })}
       </div>
     </div>
   );
@@ -108,7 +101,7 @@ export default function Today() {
             letterSpacing: "-0.035em",
             color: netWorth >= 0 ? "var(--ink)" : "var(--negative)",
           }}>
-            {fmt(netWorth, primaryCurrency)}
+            {money(netWorth, { currency: primaryCurrency })}
           </div>
           <div className="muted" style={{ fontSize: 16 }}>
             net worth · {accounts.length} account{accounts.length !== 1 ? "s" : ""} + assets − liabilities
@@ -133,14 +126,14 @@ export default function Today() {
         <div className="stat-row">
           <div className="stat">
             <div className="label">{monthLabel} income</div>
-            <div className="value figure money num pos">{fmt(totals.incomeCents)}</div>
+            <div className="value figure money num pos">{money(totals.incomeCents)}</div>
             <div className="sub muted">{totals.txnCount} transactions</div>
           </div>
           <div className="stat">
             <div className="label">{monthLabel} expenses</div>
-            <div className="value figure money">{fmt(totals.expenseCents)}</div>
+            <div className="value figure money">{money(totals.expenseCents)}</div>
             <div className="sub muted">
-              {fmt(totals.netCents) + (totals.netCents >= 0 ? " saved" : " deficit")}
+              {money(totals.netCents) + (totals.netCents >= 0 ? " saved" : " deficit")}
             </div>
           </div>
           <div className={`stat${totals.savingsRatePct > 0 ? " accent" : ""}`}>
@@ -168,7 +161,7 @@ export default function Today() {
             {activeCats.map((c) => (
               <span
                 key={c.id}
-                title={`${c.label}: ${fmt(c.thisMonthCents)}`}
+                title={`${c.label}: ${money(c.thisMonthCents)}`}
                 style={{
                   width: `${(c.thisMonthCents / totalSpend) * 100}%`,
                   background: c.color || "var(--ink-faint)",
@@ -182,7 +175,7 @@ export default function Today() {
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block" }} />
                 {c.label}
                 <span className="tabular" style={{ color: "var(--ink-faint)", fontFamily: "var(--mono)", fontSize: 11 }}>
-                  {fmt(c.thisMonthCents)}
+                  {money(c.thisMonthCents)}
                 </span>
               </span>
             ))}

@@ -1,9 +1,6 @@
 import { useId } from "react";
 import type { NetWorthPoint } from "../api/client";
-
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
-}
+import { money } from "../utils/format";
 
 export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
   const gradId = useId();
@@ -32,7 +29,7 @@ export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
     <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "20px 4px 12px" }}>
       <div style={{ padding: "0 18px 12px" }}>
         <div className="eyebrow">Net worth</div>
-        <div className="figure money num" style={{ fontSize: 24, marginTop: 4 }}>{fmt(lastVal)}</div>
+        <div className="figure money num" style={{ fontSize: 24, marginTop: 4 }}>{money(lastVal)}</div>
       </div>
       <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 140, display: "block" }}>
         <defs>

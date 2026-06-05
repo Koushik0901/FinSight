@@ -32,7 +32,7 @@ describe("Accounts — manual assets", () => {
     render(<Accounts />, { wrapper: createWrapper() });
     expect(screen.getByText("Manual assets")).toBeInTheDocument();
     expect(screen.getByText("House")).toBeInTheDocument();
-    expect(screen.getByText("$500000.00")).toBeInTheDocument();
+    expect(screen.getByText("$500,000.00")).toBeInTheDocument();
   });
 
   it("renders the liabilities section with a liability row", () => {

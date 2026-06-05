@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData, type MonthSummary } from "../api/client";
+import { money } from "../utils/format";
 
 function useReportData() {
   return useQuery<ReportData>({
@@ -12,14 +13,6 @@ function useReportData() {
     },
     staleTime: 60_000,
   });
-}
-
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
 }
 
 // ── Inline SVG bar chart ─────────────────────────────────────────────────
@@ -112,7 +105,7 @@ function NetLine({ months }: { months: MonthSummary[] }) {
       <div style={{ padding: "0 20px 16px" }}>
         <div className="h3">Cumulative net (12-month running total)</div>
         <div className={`figure num ${isPositive >= 0 ? "pos" : "neg"}`} style={{ fontSize: 24, marginTop: 4 }}>
-          {fmt(points[points.length - 1] ?? 0)}
+          {money(points[points.length - 1] ?? 0)}
         </div>
       </div>
       <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 100, display: "block" }}>
@@ -195,17 +188,17 @@ export default function Reports() {
       <div className="stat-row">
         <div className="stat">
           <div className="label">12-month income</div>
-          <div className="value figure money">{fmt(totalIncome)}</div>
-          <div className="sub muted">{fmt(Math.round(totalIncome / activeMonths))}/mo avg</div>
+          <div className="value figure money">{money(totalIncome)}</div>
+          <div className="sub muted">{money(Math.round(totalIncome / activeMonths))}/mo avg</div>
         </div>
         <div className="stat">
           <div className="label">12-month expenses</div>
-          <div className="value figure money">{fmt(totalExpense)}</div>
-          <div className="sub muted">{fmt(avgMonthlySpend)}/mo avg</div>
+          <div className="value figure money">{money(totalExpense)}</div>
+          <div className="sub muted">{money(avgMonthlySpend)}/mo avg</div>
         </div>
         <div className={`stat ${netTotal >= 0 ? "accent" : ""}`}>
           <div className="label">Net (12-month)</div>
-          <div className={`value figure money ${netTotal >= 0 ? "" : "neg"}`}>{fmt(netTotal)}</div>
+          <div className={`value figure money ${netTotal >= 0 ? "" : "neg"}`}>{money(netTotal)}</div>
           <div className="sub muted">{netTotal >= 0 ? "saved" : "deficit"}</div>
         </div>
         <div className={`stat ${savingsRate > 0 ? "accent" : ""}`}>
@@ -246,7 +239,7 @@ export default function Reports() {
                       <span style={{ fontSize: 14 }}>{c.label}</span>
                     </div>
                   </td>
-                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{fmt(c.totalCents)}</td>
+                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
                   <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
                 </tr>
               ))}
@@ -277,7 +270,7 @@ export default function Reports() {
                       <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
                     </div>
                   </td>
-                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{fmt(m.totalCents)}</td>
+                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
                   <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
                 </tr>
               ))}
