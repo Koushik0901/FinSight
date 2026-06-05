@@ -21,7 +21,7 @@ function wrap(node: ReactNode) {
 }
 
 describe("Today", () => {
-  it("renders the runway number from the first account", async () => {
+  it("renders the net-worth hero from useNetWorth", async () => {
     vi.mocked(invoke).mockResolvedValue([
       {
         id: "a1",
