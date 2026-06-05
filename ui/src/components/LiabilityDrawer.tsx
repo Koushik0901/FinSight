@@ -11,12 +11,17 @@ import type { Liability } from "../api/client";
 
 const LIABILITY_TYPES = ["mortgage", "loan", "credit-card", "other"] as const;
 
+const optionalNonNegative = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? undefined : v),
+  z.coerce.number().nonnegative().optional()
+);
+
 const schema = z.object({
   name: z.string().min(1, "Required"),
   liabilityType: z.enum(LIABILITY_TYPES),
   balance_dollars: z.coerce.number().nonnegative("Must be ≥ 0"),
-  limit_dollars: z.coerce.number().nonnegative().optional(),
-  apr_pct: z.coerce.number().nonnegative().optional(),
+  limit_dollars: optionalNonNegative,
+  apr_pct: optionalNonNegative,
   payoff_date: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
