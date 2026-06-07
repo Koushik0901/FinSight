@@ -8,9 +8,19 @@
 
 ---
 
+## ✅ Wave B shipped (2026-06-07)
+
+All Wave B features are done and merged to main. Design + plan: `docs/superpowers/specs/2026-06-05-wave-b-all-remaining-design.md`, `docs/superpowers/plans/2026-06-05-wave-b-all-remaining.md`.
+
+**Shipped in Wave B:** §3b Smart Sweep card, §3c upcoming recurring chips, §3d Runway stat, §6c AI insight sentence, §9b what-if Apply button, §9c Sinking funds section, §11b manual new-rule builder, §12a data export, §12b currency selector, §12c appearance section, §13a agent operator panel, §14a Ask the agent mode, §14b Run a what-if action.
+
+**Also shipped:** dev-only `seed_dev_demo` command (`crates/finsight-core/src/sample.rs`) that seeds the "Mira & Adam" prototype dataset (6 accounts, 6 months of recurring transactions, 5 goals, 5 assets, 4 liabilities, budgets, net-worth snapshots). Exposed as a Tauri command and a DEV-only "Load demo data" button in Settings (guarded by `import.meta.env.DEV`). Run `pnpm tauri:dev`, go to Settings, click "Load demo data" to populate all screens for local testing. **Bug fixed:** recurring detection crashed with "Error detecting recurring" when uncategorised income transactions (NULL `cat_label`) were present — now handled with `Option<String>`.
+
+---
+
 ## ✅ Backend foundations landed (2026-06-04)
 
-The migration-heavy **backend** for items §3a, §4a, §4b, §5d, §11a, and §13b is **done and merged to main** — schema, repos, Tauri commands, live wiring, tests, and bindings. Only the **frontend UIs remain** for those items (each marked **🔧 backend done — UI pending** below). Design + plan: `docs/superpowers/specs/2026-06-04-backend-foundations-design.md`, `docs/superpowers/plans/2026-06-04-backend-foundations.md`.
+The migration-heavy **backend** for items §3a, §4a, §4b, §5d, §11a, and §13b is **done and merged to main** — schema, repos, Tauri commands, live wiring, tests, and bindings. Design + plan: `docs/superpowers/specs/2026-06-04-backend-foundations-design.md`, `docs/superpowers/plans/2026-06-04-backend-foundations.md`.
 
 **Shipped:**
 - **Migrations V006–V011:** `net_worth_snapshots`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory`, and transaction `is_reimbursable`/`is_split` columns. **Next migration = V012.**
@@ -104,7 +114,7 @@ The design shows a SVG area chart tracing net-worth history with selectable rang
 - Last point glows with a radius-14 accent circle
 - Month labels on X axis in `var(--mono)` font
 
-### 3b. Smart Sweep suggestion card
+### 3b. Smart Sweep suggestion card ✅ DONE
 
 When there is a positive net this month (income > expenses), show a card:
 ```
@@ -114,14 +124,14 @@ You have $X unallocated this month.
 Calls `update_goal_balance` or `set_budget` depending on action chosen.
 Show only when `totals.netCents > 5000` and the user hasn't dismissed it this session (use `useState` — no persistence needed).
 
-### 3c. Upcoming recurring items
+### 3c. Upcoming recurring items ✅ DONE
 
 Below the category stream bar, add a compact list of recurring items due in the next 7 days:
 - Call `listRecurring()`, filter where `nextExpected` is within 7 days from today
 - Render as a horizontal chip row: merchant initials dot + name + amount + days-until
 - "See all" link to `/recurring`
 
-### 3d. Runway stat in the stat row
+### 3d. Runway stat in the stat row ✅ DONE
 
 Replace the "Accounts" stat card with a "Runway" stat:
 - `runway_days = (total_account_balance) / avg_daily_burn`
@@ -221,7 +231,7 @@ Add a third toolbar option "Year" to the scope toggle. When selected:
 
 The Categories table should show each category's budget alongside actual spending. This requires joining `budgets` (current month row) into the `list_categories_with_spending` query. Add `budget_cents: i64` to `CategoryWithSpending` (0 if no budget set). Render a new "Budget" column in the table, coloring it `var(--negative)` if `thisMonthCents > budgetCents`.
 
-### 6c. AI insight sentence
+### 6c. AI insight sentence ✅ DONE
 
 Below the stream bar in the summary card, render a computed sentence:
 ```
@@ -295,13 +305,13 @@ Compute pace from: `monthsRemaining = ceil((target - current) / monthly)` vs `mo
 
 Show as a `chip` in the goal card header: `chip.positive` (Ahead), default chip (On track), `chip.warning` (Needs attention).
 
-### 9b. Apply scenario from what-if slider
+### 9b. Apply scenario from what-if slider ✅ DONE
 
 The "Apply" button in the what-if panel currently just resets the slider. Wire it to actually persist:
 - Call `update_goal(id, { monthly_cents: goal.monthly_cents + extra })` — needs a new `update_goal` command that patches the monthly_cents field. Add to `commands/budget.rs`.
 - Show a toast: "Applied +$X/mo to [Goal name] · ETA now [new date]"
 
-### 9c. Sinking funds section
+### 9c. Sinking funds section ✅ DONE
 
 The design has a separate "Sinking funds" concept — short-term savings buckets with due dates (car registration, Christmas gifts, annual subscriptions). These are basically goals with `goal_type = 'save-by-date'` and a near-term date. The Goals table already supports this type.
 
@@ -352,7 +362,7 @@ The design shows a dashed-border card "Agent proposals" below the active rules l
 
 **Frontend (pending):** In `Rules.tsx`, add the "Agent proposals" card (dashed border, accent color) below the rules list. Each proposal row: context eyebrow (`whenLabel`), description text, "Accept" (btn.primary) and "Decline" (btn.ghost.sm) buttons.
 
-### 11b. New rule manual builder
+### 11b. New rule manual builder ✅ DONE
 
 Add a "New rule" button in the Rules header. Opens a small inline form or modal:
 - Pattern input: text field with `%` wildcards, live preview matching against recent merchants
@@ -369,7 +379,7 @@ Add a "Agent · last 24h" card in the right sidebar of Rules (the design already
 
 **Design reference:** `design/plutus/project/components/settings.jsx`
 
-### 12a. Data export
+### 12a. Data export ✅ DONE
 
 "Export all data" section with two buttons:
 - **Export CSV** — exports transactions, accounts, categories as a ZIP of CSVs
@@ -381,7 +391,7 @@ async fn export_all_data_csv() -> AppResult<String>   // returns temp file path
 ```
 Use `tauri_plugin_dialog` to trigger a save dialog.
 
-### 12b. Currency setting
+### 12b. Currency setting ✅ DONE
 
 Add a "Default currency" setting (stored in the settings KV table):
 ```rust
@@ -390,7 +400,7 @@ async fn set_currency(currency: String) -> AppResult<()>
 ```
 Show a select dropdown in Settings. Used as the fallback currency in `formatMoney` calls.
 
-### 12c. Appearance section
+### 12c. Appearance section ✅ DONE
 
 Move the theme/density/accent controls from the hidden `tweaks` store into a visible Settings section:
 - Theme toggle (Light / Dark)
@@ -411,7 +421,7 @@ Add a static "Keyboard shortcuts" section listing:
 
 **Design reference:** `design/plutus/project/components/insights.jsx`
 
-### 13a. Agent operator panel
+### 13a. Agent operator panel ✅ DONE
 
 Add a "status bar" at the top of Insights:
 ```
@@ -434,7 +444,7 @@ Below the insight cards, add a "What the agent has learned" section.
 
 **Design reference:** `design/plutus/project/components/command-palette.jsx`
 
-### 14a. "Ask the agent" mode
+### 14a. "Ask the agent" mode ✅ DONE
 
 Add a third section in the command palette: **Ask the agent** (above "Jump to"). Pre-load 5 canned questions with answers:
 ```typescript
@@ -458,7 +468,7 @@ When an Ask item is selected, switch the palette into "answer mode":
 
 The canned questions should be computed from real data at mount time (e.g., actually query `get_month_totals` and `list_categories_with_spending` to fill in the real numbers in the prose/data).
 
-### 14b. Additional action items
+### 14b. Additional action items ✅ DONE
 
 Add 3 more actions to the "Actions" section:
 - "Export this month as CSV" — calls the transaction CSV export (see item 5c)
@@ -505,22 +515,24 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Recurring: day-detail panel (§8a) | Low | Medium | ✅ Done |
 | — | Goals: pace chip (§9a) | Low | Medium | ✅ Done |
 | — | Sidebar: count badge + run setup (§15b, §15c) | Low | Medium | ✅ Done |
-| — | Scenarios screen (§1) | High | High — design centrepiece | ✅ Done |
-| 2 | Rules: agent proposals + manual new-rule builder (§11a, §11b) | Medium | High | ✅ §11a done · §11b (manual builder) left |
-| 3 | Command palette: Ask the agent mode (§14a) | Medium | High — design showpiece | |
-| 4 | Today: net-worth chart + upcoming recurring (§3a, §3c) | Medium | High | ✅ §3a done · §3c (upcoming recurring) left |
-| 5 | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | ✅ Done |
-| 6 | Settings: data export + appearance section (§12a, §12c) | Low | Medium | |
-| 7 | Goals: apply what-if (§9b) | Low | Medium | |
-| 8 | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | ✅ §13b done · §13a (operator panel) left |
-| 9 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
-| 10 | Today: Smart Sweep card + Runway stat (§3b, §3d) | Low | Medium | |
-| 11 | Command palette: additional actions (§14b) | Low | Low | |
-| 12 | Plan Next Month wizard (§2) | High | Medium | |
-| 13 | Transactions: CSV export (§5c) | Low | Low | |
-| 14 | Accounts: CSV export (§4c) | Low | Low | |
-| 15 | Rules: agent activity log (§11c) | Medium | Low | |
-| 16 | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | |
+| — | Scenarios screen (§1) | High | High | ✅ Done |
+| — | Rules: agent proposals + manual builder (§11a, §11b) | Medium | High | ✅ Done |
+| — | Command palette: Ask the agent + what-if action (§14a, §14b) | Medium | High | ✅ Done |
+| — | Today: net-worth chart + recurring + Sweep + Runway (§3a–3d) | Medium | High | ✅ Done |
+| — | Accounts: manual assets + liabilities (§4a, §4b) | Medium | Medium | ✅ Done |
+| — | Settings: export + currency + appearance (§12a–12c) | Low | Medium | ✅ Done |
+| — | Goals: apply what-if + sinking funds (§9b, §9c) | Low | Medium | ✅ Done |
+| — | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | ✅ Done |
+| — | Categories: AI insight sentence (§6c) | Low | Medium | ✅ Done |
+| 1 | Plan Next Month wizard (§2) | High | Medium | |
+| 2 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
+| 3 | Budget: 5-month history strip (§7c) | Medium | Low | |
+| 4 | Transactions: CSV export (§5c) | Low | Low | |
+| 5 | Accounts: CSV export (§4c) | Low | Low | |
+| 6 | Recurring: price-history chip (§8b) | Low | Low | |
+| 7 | Rules: agent activity log (§11c) | Medium | Low | |
+| 8 | Settings: keyboard shortcuts reference (§12d) | Low | Low | |
+| 9 | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | |
 
 ---
 
@@ -533,5 +545,6 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 - **Toasts:** use `import { toast } from "sonner"` — use `toast.success()`, `toast.error()`, `toast("text", { description: "...", action: { label: "Undo", onClick: () => {} } })`.
 - **Drawers:** reuse `ui/src/components/Drawer.tsx` for any slide-in panels.
 - **All Rust commands** must have `#[tauri::command]` and `#[specta::specta]` attributes and `pub async fn` signature to be picked up by specta.
-- **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering.
-- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 53 frontend tests and all Rust tests must stay green.
+- **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering. Next = `V012__description.sql`.
+- **Dev demo data:** `seed_dev_demo()` in `crates/finsight-core/src/sample.rs` loads the full "Mira & Adam" dataset (6 accounts, ~142 transactions, 5 goals, assets, liabilities, budgets, net-worth history). Exposed via the "Load demo data" button in Settings (visible only in `import.meta.env.DEV`). Idempotent — clears `source='sample'` data before re-seeding. Does NOT touch non-sample accounts.
+- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 90 frontend tests and 103 Rust tests must stay green (0 TypeScript errors via `cd ui && npx tsc --noEmit`).
