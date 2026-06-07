@@ -66,4 +66,17 @@ describe("CommandPalette — Ask the agent mode", () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
     expect(screen.getByText("Run a what-if scenario")).toBeInTheDocument();
   });
+
+  it("Escape in answer mode returns to list without closing", async () => {
+    const onClose = vi.fn();
+    render(wrap(<CommandPalette open={true} onClose={onClose} />));
+    await waitFor(() => screen.getByText("Ask the agent"));
+    fireEvent.click(screen.getByText(/What's my top spending category/i));
+    await waitFor(() => screen.getByText(/← Back/));
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.getByText("Ask the agent")).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
 });

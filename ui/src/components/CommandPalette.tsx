@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as I from "./Icons";
-import { commands, type MonthTotals, type CategoryWithSpending } from "../api/client";
+import { commands, type MonthTotals } from "../api/client";
 import { useNetWorth } from "../api/hooks/networth";
+import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { money } from "../utils/format";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -24,11 +25,12 @@ interface CannedQuestion {
 type PaletteMode = "list" | "answer";
 
 interface CmdItem {
-  kind: "nav" | "act";
+  kind: "nav" | "act" | "ask";
   label: string;
   path?: string;
   hint?: string;
   Icon?: React.FC<React.SVGProps<SVGSVGElement>>;
+  question?: CannedQuestion;  // only for kind === "ask"
 }
 
 // ── Static lists ──────────────────────────────────────────────────────────
@@ -137,16 +139,7 @@ export function CommandPalette({ open, onClose }: Props) {
     enabled: open,
     staleTime: 60_000,
   });
-  const { data: cats = [] } = useQuery<CategoryWithSpending[]>({
-    queryKey: ["categories-with-spending"],
-    queryFn: async () => {
-      const r = await commands.listCategoriesWithSpending();
-      if (r.status === "error") throw new Error(r.error.message);
-      return r.data;
-    },
-    enabled: open,
-    staleTime: 60_000,
-  });
+  const { data: cats = [] } = useCategoriesWithSpending();
   const netWorth = useNetWorth();
 
   // Reset on open/close
@@ -224,11 +217,16 @@ export function CommandPalette({ open, onClose }: Props) {
   }, [totals, cats, netWorth]);
 
   // Keyboard navigation (list mode only)
-  const all = useMemo(() => [...NAV_ITEMS, ...ACT_ITEMS], []);
+  const askItems = useMemo<CmdItem[]>(
+    () => questions.map((q) => ({ kind: "ask" as const, label: q.label, Icon: I.Sparkle, question: q })),
+    [questions]
+  );
+  const all = useMemo(() => [...askItems, ...NAV_ITEMS, ...ACT_ITEMS], [askItems]);
   const filtered = useMemo(() => {
     if (!q.trim()) return all;
     const s = q.toLowerCase();
-    return all.filter((x) => x.label.toLowerCase().includes(s));
+    // When searching, only show nav/act items (not ask items)
+    return [...NAV_ITEMS, ...ACT_ITEMS].filter((x) => x.label.toLowerCase().includes(s));
   }, [q, all]);
 
   useEffect(() => { setSel(0); }, [q]);
@@ -255,12 +253,18 @@ export function CommandPalette({ open, onClose }: Props) {
   }, [open, filtered, sel, mode]);
 
   const handleItem = (item: CmdItem) => {
+    if (item.kind === "ask" && item.question) {
+      setActiveQ(item.question);
+      setMode("answer");
+      return;
+    }
     if (item.path) { navigate(item.path); onClose(); }
     else { onClose(); }
   };
 
   if (!open) return null;
 
+  const askF = filtered.filter((x) => x.kind === "ask");
   const navsF = filtered.filter((x) => x.kind === "nav");
   const actsF = filtered.filter((x) => x.kind === "act");
 
@@ -331,19 +335,10 @@ export function CommandPalette({ open, onClose }: Props) {
                 </div>
               )}
               {/* Ask the agent section */}
-              {questions.length > 0 && !q.trim() && (
+              {askF.length > 0 && !q.trim() && (
                 <>
                   <div className="cmdk-section">Ask the agent</div>
-                  {questions.map((question, i) => (
-                    <div
-                      key={`ask-${i}`}
-                      className="cmdk-item"
-                      onClick={() => { setActiveQ(question); setMode("answer"); }}
-                    >
-                      <I.Sparkle className="ico" style={{ color: "var(--accent)" }} />
-                      <span>{question.label}</span>
-                    </div>
-                  ))}
+                  {renderItems(askF)}
                 </>
               )}
               {navsF.length > 0 && (
