@@ -106,3 +106,44 @@ pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
     )?;
     Ok(())
 }
+
+pub fn set_monthly_cents(conn: &mut Connection, id: &str, monthly_cents: i64) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET monthly_cents = ?1 WHERE id = ?2",
+        params![monthly_cents, id],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("g.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    #[test]
+    fn set_monthly_cents_updates_correctly() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let goal = insert(&mut conn, NewGoal {
+            name: "Italy trip".into(),
+            goal_type: "save-by-date".into(),
+            target_cents: 500_000,
+            monthly_cents: 10_000,
+            target_date: None,
+            color: "#C9F950".into(),
+            notes: None,
+        }).unwrap();
+        set_monthly_cents(&mut conn, &goal.id, 25_000).unwrap();
+        let updated = list(&mut conn).unwrap().into_iter().find(|g| g.id == goal.id).unwrap();
+        assert_eq!(updated.monthly_cents, 25_000);
+    }
+}

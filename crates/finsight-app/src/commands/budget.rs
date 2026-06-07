@@ -191,3 +191,16 @@ pub async fn archive_goal(
         .await
         .map_err(AppError::from)
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_goal_monthly(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    monthly_cents: i64,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| goals::set_monthly_cents(conn, &id, monthly_cents))
+        .await
+        .map_err(AppError::from)
+}

@@ -159,6 +159,11 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::accept_rule_proposal,
         commands::agent::decline_rule_proposal,
         commands::transactions::set_transaction_flags,
+        commands::budget::update_goal_monthly,
+        commands::settings::get_currency,
+        commands::settings::set_currency,
+        commands::settings::export_all_data_json,
+        commands::settings::export_all_data_csv,
     ])
 }
 
