@@ -109,6 +109,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::list_categories,
         commands::onboarding::get_onboarding_state,
         commands::onboarding::seed_sample_household,
+        commands::onboarding::seed_dev_demo,
         commands::onboarding::mark_onboarding_complete,
         commands::onboarding::reset_onboarding_completion,
         commands::onboarding::clear_sample_data,

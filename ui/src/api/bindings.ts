@@ -102,6 +102,14 @@ async seedSampleHousehold() : Promise<Result<SeedSummary, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async seedDevDemo() : Promise<Result<SeedSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("seed_dev_demo") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async markOnboardingComplete() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mark_onboarding_complete") };

@@ -5,6 +5,7 @@ import { useAccounts } from "../api/hooks/accounts";
 import {
   useResetOnboarding,
   useClearSampleData,
+  useSeedDevDemo,
   useOnboardingState,
 } from "../api/hooks/onboarding";
 import {
@@ -31,6 +32,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const reset = useResetOnboarding();
   const clearSample = useClearSampleData();
+  const seedDemo = useSeedDevDemo();
   const { data: accounts = [] } = useAccounts();
   const { data: onboarding } = useOnboardingState();
   const hasSample = accounts.some((a) => a.source === "sample");
@@ -348,6 +350,37 @@ export default function Settings() {
           </button>
         </div>
       </section>
+
+      {/* ── Development tools (dev builds only) ───────────────────────── */}
+      {import.meta.env.DEV && (
+        <section>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Development</div>
+          <div className="card" style={{ borderColor: "var(--accent)", opacity: 0.9 }}>
+            <div style={{ marginBottom: 8 }}>
+              <strong>Load demo data</strong>
+              <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+                Seeds the "Mira & Adam" prototype dataset — 6 accounts, 6 months of transactions,
+                goals, assets, liabilities, and budgets. Replaces any existing sample data. Dev only.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                disabled={seedDemo.isPending}
+                onClick={async () => {
+                  try {
+                    const s = await seedDemo.mutateAsync();
+                    toast.success(`Demo data loaded — ${s.transactions_created} transactions`);
+                  } catch (err) {
+                    toast.error("Seed failed — " + (err instanceof Error ? err.message : "unknown error"));
+                  }
+                }}
+              >
+                {seedDemo.isPending ? "Loading…" : "Load demo data"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

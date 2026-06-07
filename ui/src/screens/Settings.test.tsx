@@ -13,6 +13,7 @@ vi.mock("../api/hooks/accounts", () => ({
 vi.mock("../api/hooks/onboarding", () => ({
   useResetOnboarding: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
   useClearSampleData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useSeedDevDemo: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ transactions_created: 142, accounts_created: 6, import_id: "test" }), isPending: false })),
   useOnboardingState: vi.fn(() => ({ data: { completion_marked: true, account_count: 0, category_count: 0 } })),
 }));
 vi.mock("../api/hooks/agent", () => ({
