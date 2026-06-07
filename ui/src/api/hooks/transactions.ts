@@ -78,11 +78,15 @@ export function useDeleteTransaction() {
 }
 
 export function useCreateRule() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ pattern, categoryId }: { pattern: string; categoryId: string }) => {
       const result = await commands.createRule(pattern, categoryId);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rules"] });
     },
   });
 }

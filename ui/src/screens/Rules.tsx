@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { toast } from "sonner";
-import { useRulesWithCategories, useToggleRule } from "../api/hooks/transactions";
+import { useRulesWithCategories, useToggleRule, useCategoriesWithSpending, useCreateRule } from "../api/hooks/transactions";
 import type { RuleWithCategory, RuleProposal } from "../api/client";
 import * as I from "../components/Icons";
 import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
@@ -93,6 +94,12 @@ function ProposalRow({ proposal }: { proposal: RuleProposal }) {
 export default function Rules() {
   const { data: rules = [], isLoading, error } = useRulesWithCategories();
   const { data: proposals = [] } = useRuleProposals();
+  const [showNewRule, setShowNewRule] = useState(false);
+  const [newPattern, setNewPattern] = useState("");
+  const [newCategoryId, setNewCategoryId] = useState("");
+  const createRule = useCreateRule();
+  const { data: cats = [] } = useCategoriesWithSpending();
+  const sortedCats = [...cats].sort((a, b) => a.label.localeCompare(b.label));
 
   const active = rules.filter((r) => r.enabled);
   const paused = rules.filter((r) => !r.enabled);
@@ -108,6 +115,9 @@ export default function Rules() {
           <div className="screen-eyebrow">Rules &amp; agents</div>
           <h1>The mechanics underneath.</h1>
         </div>
+        <button className="btn" onClick={() => setShowNewRule(true)}>
+          + New rule
+        </button>
       </div>
 
       <p className="muted" style={{ maxWidth: 660, marginTop: -12, marginBottom: 28, fontSize: 14, lineHeight: 1.6 }}>
@@ -119,6 +129,66 @@ export default function Rules() {
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 28 }}>
         {/* Rules list */}
         <div>
+          {showNewRule && (
+            <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>New rule</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>PATTERN</label>
+                  <input
+                    value={newPattern}
+                    onChange={(e) => setNewPattern(e.target.value)}
+                    placeholder="%starbucks%"
+                    style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)",
+                      borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>CATEGORY</label>
+                  <select
+                    value={newCategoryId}
+                    onChange={(e) => setNewCategoryId(e.target.value)}
+                    style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)",
+                      borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
+                  >
+                    <option value="">Select category…</option>
+                    {sortedCats.map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {newPattern && newCategoryId && (
+                <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, fontFamily: "var(--mono)" }}>
+                  when merchant contains "{newPattern.replace(/%/g, "")}" → {sortedCats.find((c) => c.id === newCategoryId)?.label}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn primary sm"
+                  disabled={!newPattern.trim() || !newCategoryId || createRule.isPending}
+                  onClick={async () => {
+                    const pattern = newPattern.includes("%") ? newPattern : `%${newPattern}%`;
+                    try {
+                      await createRule.mutateAsync({ pattern, categoryId: newCategoryId });
+                      toast.success("Rule created");
+                      setShowNewRule(false);
+                      setNewPattern("");
+                      setNewCategoryId("");
+                    } catch {
+                      toast.error("Failed to create rule");
+                    }
+                  }}
+                >
+                  Create rule
+                </button>
+                <button className="btn ghost sm" onClick={() => { setShowNewRule(false); setNewPattern(""); setNewCategoryId(""); }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {rules.length === 0 ? (
             <div className="card" style={{ textAlign: "center", padding: "48px 32px" }}>
               <I.Bolt style={{ color: "var(--ink-faint)", width: 24, height: 24, margin: "0 auto 12px" }} />
