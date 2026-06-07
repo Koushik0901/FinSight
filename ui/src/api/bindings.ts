@@ -326,9 +326,9 @@ async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getReportData() : Promise<Result<ReportData, AppError>> {
+async getReportData(scope: string) : Promise<Result<ReportData, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_report_data") };
+    return { status: "ok", data: await TAURI_INVOKE("get_report_data", { scope }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -549,6 +549,54 @@ async exportAllDataCsv() : Promise<Result<null, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getPlanNextMonthData() : Promise<Result<PlanData, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_plan_next_month_data") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async applyNextMonthPlan(assignments: PlanAssignment[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_next_month_plan", { assignments }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listBudgetHistory(months: number) : Promise<Result<CategoryHistory[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_budget_history", { months }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listRecentAgentActivity(limit: number) : Promise<Result<AgentActivity[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_recent_agent_activity", { limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportTransactionsCsv(filter: TxnFilterInput) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_transactions_csv", { filter }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportAccountCsv(accountId: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_account_csv", { accountId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -566,6 +614,7 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
+export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
@@ -588,6 +637,8 @@ budgetCents: number;
  */
 spentCents: number; txnCount: number }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
+export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
+export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
 /**
  * One category's 12-month total.
  */
@@ -658,6 +709,7 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  * Number of transactions this month
  */
 txnCount: number }
+export type MonthlyActual = { month: string; label: string; cents: number }
 export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
@@ -666,6 +718,8 @@ export type NewManualAsset = { name: string; assetType: string; valueCents: numb
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
+export type PlanAssignment = { categoryId: string; amountCents: number }
+export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 /**
@@ -700,19 +754,7 @@ cadence: string;
  * Whether this looks like a subscription (small, regular negative charge)
  */
 isSubscription: boolean }
-export type ReportData = { 
-/**
- * Last 12 months, oldest first
- */
-monthly: MonthSummary[]; 
-/**
- * Top 10 categories by 12-month spend
- */
-topCategories: CategoryTotal[]; 
-/**
- * Top 10 merchants by 12-month spend
- */
-topMerchants: MerchantTotal[] }
+export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
 export type RuleProposal = { id: string; whenLabel: string; description: string; pattern: string; categoryId: string; status: string; createdAt: string }
