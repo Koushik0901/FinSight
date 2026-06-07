@@ -401,7 +401,7 @@ export default function Goals() {
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
                         <span className="muted">{Math.round(pct)}%</span>
-                        <span className="num">{money(g.targetCents - g.currentCents)} left</span>
+                        <span className="num money">{money(g.targetCents - g.currentCents)} left</span>
                       </div>
                     </div>
                   );

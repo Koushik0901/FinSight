@@ -86,7 +86,7 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
       borderRadius: 10, marginBottom: 20 }}>
       <div className="eyebrow" style={{ marginBottom: 8, color: "var(--accent)" }}>✦ Opportunity</div>
       <div style={{ fontSize: 14, marginBottom: 12 }}>
-        {`You have ${money(netCents)} unallocated this month.`}
+        You have <span className="money">{money(netCents)}</span> unallocated this month.
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {firstGoal && (
@@ -133,7 +133,7 @@ function UpcomingRecurring() {
                 background: item.categoryColor || "var(--ink-faint)",
                 display: "inline-block", flexShrink: 0 }} />
               {name}
-              <span className="num" style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>
+              <span className="num money" style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>
                 {money(Math.abs(item.lastAmountCents))}
               </span>
               <span className="muted" style={{ fontSize: 11 }}>{label}</span>

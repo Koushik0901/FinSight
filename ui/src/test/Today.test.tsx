@@ -85,7 +85,11 @@ describe("Today", () => {
     });
     render(wrap(<Today />));
     await waitFor(() => {
-      expect(screen.getByText(/You have .* unallocated this month/)).toBeInTheDocument();
+      const matches = screen.queryAllByText((_, el) =>
+        el?.tagName === "DIV" &&
+        /You have .* unallocated this month/.test(el?.textContent ?? "")
+      );
+      expect(matches.length).toBeGreaterThan(0);
     });
   });
 

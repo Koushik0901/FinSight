@@ -133,7 +133,7 @@ pub async fn export_all_data_csv(
         for t in txns {
             let date = t.posted_at.format("%Y-%m-%d").to_string();
             let merchant = csv_escape(&t.merchant_raw);
-            let category = csv_escape(t.category_id.as_deref().unwrap_or(""));
+            let category = csv_escape(t.category_label.as_deref().unwrap_or(""));
             let amount = format!("{:.2}", t.amount_cents as f64 / 100.0);
             let notes = csv_escape(t.notes.as_deref().unwrap_or(""));
             out.push_str(&format!("{date},{merchant},{category},{amount},{notes}\n"));

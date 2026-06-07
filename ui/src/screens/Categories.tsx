@@ -4,14 +4,6 @@ import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
 
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
-
 function PaceBar({ value, compare, color }: { value: number; compare: number; color: string }) {
   const max = Math.max(value, compare, 1);
   const pct = Math.min(120, (value / max) * 100);
@@ -113,7 +105,7 @@ export default function Categories() {
               {scope === "avg" ? "Average" : "Total spent"}
             </div>
             <div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>
-              {fmt(totalThis)}
+              {money(totalThis)}
             </div>
           </div>
           {scope !== "year" && totalLast > 0 && (
@@ -124,7 +116,7 @@ export default function Categories() {
                 style={{ fontSize: 18 }}
               >
                 {totalThis < totalLast ? "↓" : "↑"}{" "}
-                {fmt(Math.abs(totalLast - totalThis))} · {Math.abs(Math.round(delta))}%
+                {money(Math.abs(totalLast - totalThis))} · {Math.abs(Math.round(delta))}%
               </div>
             </div>
           )}
@@ -135,7 +127,7 @@ export default function Categories() {
           {active.map((c) => (
             <span
               key={c.id}
-              title={`${c.label} · ${fmt(valueFor(c))}`}
+              title={`${c.label} · ${money(valueFor(c))}`}
               style={{
                 width: totalThis > 0 ? `${(valueFor(c) / totalThis) * 100}%` : "0%",
                 background: c.color || "var(--ink-faint)",
@@ -191,11 +183,11 @@ export default function Categories() {
                     <td style={{ paddingTop: 8, paddingBottom: 8 }}>
                       <PaceBar value={v} compare={cmp} color={color} />
                     </td>
-                    <td className="right num tabular money">{fmt(v)}</td>
-                    <td className="right num tabular muted">{cmp > 0 ? fmt(cmp) : "—"}</td>
+                    <td className="right num tabular money">{money(v)}</td>
+                    <td className="right num tabular muted">{cmp > 0 ? money(cmp) : "—"}</td>
                     <td className="right num tabular muted">{c.txnCount}</td>
                     <td className="right num tabular" style={{ color: c.budgetCents > 0 && c.thisMonthCents > c.budgetCents ? "var(--negative)" : "var(--ink-mute)" }}>
-                      {c.budgetCents > 0 ? fmt(c.budgetCents) : "—"}
+                      {c.budgetCents > 0 ? money(c.budgetCents) : "—"}
                     </td>
                   </tr>
                 );
