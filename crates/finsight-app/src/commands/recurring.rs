@@ -89,19 +89,20 @@ pub async fn list_recurring(
 
         let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
             Ok((
-                r.get::<_, String>(0)?,  // merchant_raw
-                r.get::<_, String>(1)?,  // cat_label
-                r.get::<_, String>(2)?,  // cat_color
-                r.get::<_, f64>(3)?,     // avg_gap
-                r.get::<_, i64>(4)?,     // occurrences
-                r.get::<_, String>(5)?,  // last_seen
-                r.get::<_, i64>(6)?,     // last_amount
+                r.get::<_, String>(0)?,          // merchant_raw
+                r.get::<_, Option<String>>(1)?,  // cat_label (NULL when uncategorised)
+                r.get::<_, String>(2)?,          // cat_color (COALESCE'd to '')
+                r.get::<_, f64>(3)?,             // avg_gap
+                r.get::<_, i64>(4)?,             // occurrences
+                r.get::<_, String>(5)?,          // last_seen
+                r.get::<_, i64>(6)?,             // last_amount
             ))
         })?;
 
         let mut out = Vec::new();
         for row in rows {
             let (merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount) = row?;
+            let cat_label = cat_label.unwrap_or_default();
             let cadence = cadence_label(avg_gap).to_string();
 
             // Estimate next date
