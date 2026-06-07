@@ -79,3 +79,16 @@ export function useArchiveGoal() {
     },
   });
 }
+
+export function useUpdateGoalMonthly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, monthlyCents }: { id: string; monthlyCents: number }) => {
+      const result = await commands.updateGoalMonthly(id, monthlyCents);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}

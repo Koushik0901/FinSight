@@ -19,10 +19,12 @@ interface State {
   density: Density;
   accent: AccentId;
   privacy: boolean;
+  currency: string;
   setTheme: (t: Theme) => void;
   setDensity: (d: Density) => void;
   setAccent: (a: AccentId) => void;
   setPrivacy: (p: boolean) => void;
+  setCurrency: (c: string) => void;
 }
 
 export const useTweaks = create<State>()(
@@ -32,10 +34,12 @@ export const useTweaks = create<State>()(
       density: "cozy",
       accent: "lime",
       privacy: false,
+      currency: "USD",
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
       setAccent: (accent) => set({ accent }),
       setPrivacy: (privacy) => set({ privacy }),
+      setCurrency: (currency) => set({ currency }),
     }),
     { name: "finsight.tweaks" }
   )
