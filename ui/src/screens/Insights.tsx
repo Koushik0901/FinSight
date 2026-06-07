@@ -109,7 +109,7 @@ function AgentStatusBar() {
       marginBottom: 24, gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{
-          width: 8, height: 8, borderRadius: 999, background: "var(--accent)",
+          width: 8, height: 8, borderRadius: 999, background: "var(--positive)",
           display: "inline-block", flexShrink: 0,
         }} />
         <span style={{ fontSize: 13.5, fontWeight: 500 }}>Agent · running locally</span>
