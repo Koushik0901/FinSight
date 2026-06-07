@@ -1,16 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal } from "../api/hooks/budget";
+import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import * as I from "../components/Icons";
-
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+import { money } from "../utils/format";
 
 /** Estimate months to reach target at current monthly pace. */
 function monthsTo(goal: GoalDto): number | null {
@@ -62,6 +55,10 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const GOAL_COLORS = ["#C9F950", "#34D399", "#60A5FA", "#A78BFA", "#FB923C", "#F472B6", "#2DD4BF"];
+
+function daysUntil(dateStr: string): number {
+  return (new Date(dateStr).getTime() - Date.now()) / 86400000;
+}
 
 function GoalCard({ goal }: { goal: GoalDto }) {
   const updateBalance = useUpdateGoalBalance();
@@ -153,12 +150,12 @@ function GoalCard({ goal }: { goal: GoalDto }) {
                 className="btn ghost sm"
                 style={{ padding: "2px 6px", fontSize: 12.5 }}
               >
-                <span className="num money">{fmt(goal.currentCents)}</span>
+                <span className="num money">{money(goal.currentCents)}</span>
                 <I.Pencil width="11" height="11" style={{ marginLeft: 4 }} />
               </button>
             )}
           </div>
-          <span className="muted">of {fmt(goal.targetCents)}</span>
+          <span className="muted">of {money(goal.targetCents)}</span>
         </div>
       </div>
 
@@ -166,7 +163,7 @@ function GoalCard({ goal }: { goal: GoalDto }) {
       <div style={{ display: "flex", gap: 18, fontSize: 12.5 }}>
         <div>
           <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Monthly</div>
-          <div className="num">{fmt(goal.monthlyCents)}</div>
+          <div className="num">{money(goal.monthlyCents)}</div>
         </div>
         {months !== null && months > 0 && (
           <div>
@@ -287,6 +284,16 @@ export default function Goals() {
 
   const visible = typeFilter === "all" ? goals : goals.filter((g) => g.goalType === typeFilter);
 
+  const updateMonthly = useUpdateGoalMonthly();
+
+  const sinkingFunds = goals.filter(
+    (g) =>
+      g.goalType === "save-by-date" &&
+      g.targetDate != null &&
+      daysUntil(g.targetDate) > 0 &&
+      daysUntil(g.targetDate) <= 365
+  );
+
   // What-if scenario
   const [scenarioId, setScenarioId] = useState<string | null>(null);
   const [extra, setExtra] = useState(0);
@@ -296,6 +303,20 @@ export default function Goals() {
     ? Math.ceil((scenarioGoal.targetCents - scenarioGoal.currentCents) / (scenarioGoal.monthlyCents + extra * 100))
     : baseMonths;
   const monthsSaved = baseMonths !== null && newMonths !== null ? Math.max(0, baseMonths - newMonths) : 0;
+
+  const handleApply = async () => {
+    if (!scenarioGoal || extra === 0 || newMonths === null) return;
+    const newMonthly = scenarioGoal.monthlyCents + extra * 100;
+    try {
+      await updateMonthly.mutateAsync({ id: scenarioGoal.id, monthlyCents: newMonthly });
+      toast.success(`Applied +${money(extra * 100)}/mo to ${scenarioGoal.name}`, {
+        description: newMonths > 0 ? `ETA now ${etaLabel(newMonths)}` : "Goal reached this month!",
+      });
+      setExtra(0);
+    } catch {
+      toast.error("Failed to apply change");
+    }
+  };
 
   if (isLoading) return <div className="stub">Loading goals…</div>;
   if (error)     return <div className="stub">Error loading goals.</div>;
@@ -355,6 +376,40 @@ export default function Goals() {
             )}
           </div>
 
+          {/* Sinking funds */}
+          {sinkingFunds.length > 0 && (
+            <div className="section" style={{ marginTop: 28 }}>
+              <div className="eyebrow" style={{ marginBottom: 12 }}>
+                <span className="dot" /><span>Sinking funds</span> · due within a year
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {sinkingFunds.map((g) => {
+                  const pct = g.targetCents > 0
+                    ? Math.min(100, (g.currentCents / g.targetCents) * 100)
+                    : 0;
+                  const color = g.color || "var(--accent)";
+                  return (
+                    <div key={g.id} className="card" style={{ padding: 16, borderLeft: `3px solid ${color}` }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{g.name}</div>
+                      {g.targetDate && (
+                        <span className="chip" style={{ fontSize: 11, marginBottom: 8, display: "inline-block" }}>
+                          {new Date(g.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                        </span>
+                      )}
+                      <div className="goal-bar" style={{ height: 6, marginBottom: 8 }}>
+                        <span style={{ width: pct + "%", background: color }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                        <span className="muted">{Math.round(pct)}%</span>
+                        <span className="num">{money(g.targetCents - g.currentCents)} left</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* What-if scenario */}
           {goals.length > 0 && scenarioGoal && (
             <div className="section">
@@ -388,7 +443,7 @@ export default function Goals() {
                           <div>
                             <div style={{ fontSize: 14, fontWeight: 500 }}>{g.name}</div>
                             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                              {fmt(g.monthlyCents)}/mo · {monthsTo(g) !== null ? `ETA ${etaLabel(monthsTo(g)!)}` : "no pace set"}
+                              {money(g.monthlyCents)}/mo · {monthsTo(g) !== null ? `ETA ${etaLabel(monthsTo(g)!)}` : "no pace set"}
                             </div>
                           </div>
                           {scenarioGoal.id === g.id && <I.Check style={{ color: "var(--accent)" }} />}
@@ -399,7 +454,7 @@ export default function Goals() {
                     <div style={{ marginTop: 22 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                         <span className="eyebrow">Extra per month</span>
-                        <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{fmt(extra * 100)}</span>
+                        <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{money(extra * 100)}</span>
                       </div>
                       <input
                         type="range"
@@ -427,15 +482,26 @@ export default function Goals() {
                         <div style={{ marginTop: 16, fontSize: 14, lineHeight: 1.55, color: "var(--ink-2)" }}>
                           {extra === 0
                             ? "Drag the slider to see what happens when you contribute more each month."
-                            : `Adding ${fmt(extra * 100)}/mo brings ${scenarioGoal.name} in by ${monthsSaved} month${monthsSaved !== 1 ? "s" : ""} — ETA ${newMonths > 0 ? etaLabel(newMonths) : "this month"}.`
+                            : `Adding ${money(extra * 100)}/mo brings ${scenarioGoal.name} in by ${monthsSaved} month${monthsSaved !== 1 ? "s" : ""} — ETA ${newMonths > 0 ? etaLabel(newMonths) : "this month"}.`
                           }
                         </div>
                       </>
                     ) : (
                       <div className="muted" style={{ fontSize: 14 }}>Set a monthly contribution on this goal to see the timeline.</div>
                     )}
-                    <div style={{ marginTop: 20 }}>
-                      <button className="btn ghost sm" onClick={() => setExtra(0)} style={{ opacity: extra === 0 ? 0.4 : 1 }}>Reset</button>
+                    <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
+                      <button className="btn ghost sm" onClick={() => setExtra(0)} style={{ opacity: extra === 0 ? 0.4 : 1 }}>
+                        Reset
+                      </button>
+                      {extra > 0 && newMonths !== null && (
+                        <button
+                          className="btn primary sm"
+                          disabled={updateMonthly.isPending}
+                          onClick={() => void handleApply()}
+                        >
+                          Apply +{money(extra * 100)}/mo →
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
