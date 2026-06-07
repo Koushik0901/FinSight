@@ -137,6 +137,23 @@ pub struct PlanAssignment {
     pub amount_cents: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthlyActual {
+    pub month: String,
+    pub label: String,
+    pub cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryHistory {
+    pub category_id: String,
+    pub label: String,
+    pub color: String,
+    pub monthly: Vec<MonthlyActual>,
+}
+
 #[derive(Debug, Clone, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct NewGoalInput {
@@ -382,6 +399,97 @@ pub async fn apply_next_month_plan(
             }
         }
         Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_budget_history(
+    state: tauri::State<'_, AppState>,
+    months: u32,
+) -> AppResult<Vec<CategoryHistory>> {
+    let db = (*state.db).clone();
+    let months = months.max(1).min(24);
+    run(&db, move |conn| {
+        let now = Utc::now();
+        // Build list of month strings oldest first
+        let month_list: Vec<String> = (0..months).map(|i| {
+            let m0 = now.month0() as i32 - i as i32;
+            let (yr, mo) = if m0 < 0 {
+                (now.year() - 1, (m0 + 12) as u32 + 1)
+            } else {
+                (now.year(), m0 as u32 + 1)
+            };
+            format!("{yr}-{mo:02}")
+        }).collect::<Vec<_>>().into_iter().rev().collect();
+
+        let cutoff = format!("{}-01", month_list.first().unwrap());
+
+        // Aggregate per-category per-month outflows
+        let mut stmt = conn.prepare(
+            "SELECT t.category_id, strftime('%Y-%m', t.posted_at) AS mo,
+                    SUM(-t.amount_cents) AS cents
+             FROM transactions t
+             WHERE t.amount_cents < 0
+               AND t.posted_at >= ?1
+               AND t.category_id IS NOT NULL
+             GROUP BY t.category_id, mo",
+        )?;
+        let mut spend_map: std::collections::HashMap<(String, String), i64> =
+            std::collections::HashMap::new();
+        let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        for row in rows.flatten() {
+            spend_map.insert((row.0, row.1), row.2);
+        }
+        drop(stmt);
+
+        // Fetch all non-archived categories
+        let mut cat_stmt = conn.prepare(
+            "SELECT c.id, c.label, COALESCE(c.color,'')
+             FROM categories c
+             WHERE c.archived_at IS NULL
+             ORDER BY c.sort_order",
+        )?;
+        let cats: Vec<(String, String, String)> = cat_stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .flatten()
+            .collect();
+        drop(cat_stmt);
+
+        let month_labels: Vec<String> = month_list.iter().map(|m| {
+            let mo: u32 = m[5..7].parse().unwrap_or(1);
+            let names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+            names[(mo.saturating_sub(1)) as usize].to_string()
+        }).collect();
+
+        let mut result: Vec<CategoryHistory> = cats
+            .into_iter()
+            .filter_map(|(id, label, color)| {
+                let monthly: Vec<MonthlyActual> = month_list.iter().zip(month_labels.iter()).map(|(m, lbl)| {
+                    MonthlyActual {
+                        month: m.clone(),
+                        label: lbl.clone(),
+                        cents: spend_map.get(&(id.clone(), m.clone())).copied().unwrap_or(0),
+                    }
+                }).collect();
+                let total: i64 = monthly.iter().map(|m| m.cents).sum();
+                if total == 0 { return None; }
+                Some(CategoryHistory { category_id: id, label, color, monthly })
+            })
+            .collect();
+
+        // Sort by total spend descending
+        result.sort_by(|a, b| {
+            let ta: i64 = a.monthly.iter().map(|m| m.cents).sum();
+            let tb: i64 = b.monthly.iter().map(|m| m.cents).sum();
+            tb.cmp(&ta)
+        });
+
+        Ok(result)
     })
     .await
     .map_err(AppError::from)
