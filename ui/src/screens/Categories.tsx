@@ -1,6 +1,8 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
+import { money } from "../utils/format";
 
 function fmt(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -57,6 +59,23 @@ export default function Categories() {
   const lastMonthLabel = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     .toLocaleString("default", { month: "long" });
 
+  // §6c: AI insight sentence
+  const hasLastMonthData = active.some((c) => c.lastMonthCents > 0);
+  let insightJSX: ReactNode = null;
+  if (scope === "month" && hasLastMonthData && active.length >= 2) {
+    const withDelta = active.map((c) => ({ ...c, delta: c.thisMonthCents - c.lastMonthCents }));
+    const topGainer = withDelta.reduce((best, c) => c.delta < best.delta ? c : best);
+    const topRiser  = withDelta.reduce((best, c) => c.delta > best.delta ? c : best);
+    if (topGainer.delta < 0 && topRiser.delta > 0) {
+      insightJSX = (
+        <div className="muted" style={{ fontSize: 13, fontStyle: "italic", marginBottom: 12 }}>
+          ✦ <strong>{topGainer.label}</strong> dropped {money(Math.abs(topGainer.delta))} — biggest improvement.{" "}
+          <strong>{topRiser.label}</strong> rose by {money(topRiser.delta)}.
+        </div>
+      );
+    }
+  }
+
   if (isLoading) return <div className="stub">Loading categories…</div>;
   if (error)     return <div className="stub">Error loading categories.</div>;
   if (active.length === 0) return <div className="stub">No spending data yet. Import some transactions to see categories here.</div>;
@@ -83,6 +102,8 @@ export default function Categories() {
           </button>
         </div>
       </div>
+
+      {insightJSX}
 
       {/* Summary card */}
       <div className="card">
