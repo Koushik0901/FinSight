@@ -54,7 +54,7 @@ pub async fn export_all_data_json(
         let accs = accounts::list_summaries(conn)?;
         let txns = transactions::list(conn, transactions::TxnFilter {
             account_id: None,
-            limit: 50_000,
+            limit: i64::MAX,
             offset: 0,
             search: None,
             filter_preset: None,
@@ -93,6 +93,14 @@ pub async fn export_all_data_json(
         .map_err(|e| AppError::new("io", e.to_string()))
 }
 
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn export_all_data_csv(
@@ -115,7 +123,7 @@ pub async fn export_all_data_csv(
         use finsight_core::repos::transactions;
         let txns = transactions::list(conn, transactions::TxnFilter {
             account_id: None,
-            limit: 50_000,
+            limit: i64::MAX,
             offset: 0,
             search: None,
             filter_preset: None,
@@ -124,10 +132,10 @@ pub async fn export_all_data_csv(
         let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
         for t in txns {
             let date = t.posted_at.format("%Y-%m-%d").to_string();
-            let merchant = t.merchant_raw.replace(',', ";");
-            let category = t.category_id.as_deref().unwrap_or("").replace(',', ";");
+            let merchant = csv_escape(&t.merchant_raw);
+            let category = csv_escape(t.category_id.as_deref().unwrap_or(""));
             let amount = format!("{:.2}", t.amount_cents as f64 / 100.0);
-            let notes = t.notes.as_deref().unwrap_or("").replace(',', ";");
+            let notes = csv_escape(t.notes.as_deref().unwrap_or(""));
             out.push_str(&format!("{date},{merchant},{category},{amount},{notes}\n"));
         }
         Ok(out)
