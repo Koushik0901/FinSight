@@ -5,6 +5,7 @@ use finsight_core::repos::{rules, run, transactions};
 use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
@@ -330,4 +331,58 @@ pub async fn set_transaction_flags(
     run(&db, move |conn| transactions::set_flags(conn, &id, is_reimbursable, is_split))
         .await
         .map_err(AppError::from)
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn export_transactions_csv(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+    filter: TxnFilterInput,
+) -> AppResult<String> {
+    let maybe_path = app
+        .dialog()
+        .file()
+        .set_file_name("transactions.csv")
+        .blocking_save_file();
+
+    let Some(file_path) = maybe_path else { return Ok(String::new()); };
+    let path = file_path
+        .into_path()
+        .map_err(|e| AppError::new("dialog", e.to_string()))?;
+
+    let db = (*state.db).clone();
+    let csv = run(&db, move |conn| {
+        let txns = transactions::list(conn, transactions::TxnFilter {
+            account_id: filter.account_id,
+            limit: i64::MAX,
+            offset: 0,
+            search: filter.search,
+            filter_preset: filter.filter_preset,
+        })?;
+        let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
+        for t in txns {
+            let date = t.posted_at.format("%Y-%m-%d").to_string();
+            let merchant = csv_escape(&t.merchant_raw);
+            let category = csv_escape(t.category_label.as_deref().unwrap_or(""));
+            let amount = format!("{:.2}", t.amount_cents as f64 / 100.0);
+            let notes = csv_escape(t.notes.as_deref().unwrap_or(""));
+            out.push_str(&format!("{date},{merchant},{category},{amount},{notes}\n"));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)?;
+
+    let path_str = path.to_string_lossy().to_string();
+    std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
+    Ok(path_str)
 }
