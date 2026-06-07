@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
+import { useGoals, useUpdateGoalBalance } from "../api/hooks/budget";
+import { useRecurring } from "../api/hooks/recurring";
 import { commands, type MonthTotals, type AccountSummary } from "../api/client";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
@@ -58,6 +61,92 @@ function AccountDot({ account }: { account: AccountSummary }) {
   );
 }
 
+function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: () => void }) {
+  const navigate = useNavigate();
+  const { data: goals = [] } = useGoals();
+  const updateBalance = useUpdateGoalBalance();
+  const firstGoal = goals[0] ?? null;
+
+  const handlePark = async () => {
+    if (!firstGoal) return;
+    try {
+      await updateBalance.mutateAsync({
+        id: firstGoal.id,
+        currentCents: firstGoal.currentCents + netCents,
+      });
+      toast.success(`Parked ${money(netCents)} in ${firstGoal.name}`);
+      onDismiss();
+    } catch {
+      toast.error("Could not park funds");
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: "16px 20px", border: "1px solid var(--accent)",
+      borderRadius: 10, marginBottom: 20 }}>
+      <div className="eyebrow" style={{ marginBottom: 8, color: "var(--accent)" }}>✦ Opportunity</div>
+      <div style={{ fontSize: 14, marginBottom: 12 }}>
+        {`You have ${money(netCents)} unallocated this month.`}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {firstGoal && (
+          <button className="btn primary sm" disabled={updateBalance.isPending}
+            onClick={() => void handlePark()}>
+            Park in {firstGoal.name}
+          </button>
+        )}
+        <button className="btn sm" onClick={() => navigate("/goals")}>Assign to a goal…</button>
+        <button className="btn ghost sm" onClick={onDismiss} aria-label="dismiss">Dismiss</button>
+      </div>
+    </div>
+  );
+}
+
+function daysUntilLabel(dateStr: string): string | null {
+  const diff = Math.round((new Date(dateStr).getTime() - Date.now()) / 86400000);
+  if (diff < 0 || diff > 7) return null;
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  return `in ${diff} days`;
+}
+
+function UpcomingRecurring() {
+  const navigate = useNavigate();
+  const { data: items = [] } = useRecurring();
+  const upcoming = items.filter((item) => daysUntilLabel(item.nextExpected) !== null);
+  if (upcoming.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16, marginBottom: 16 }}>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>Due soon</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        {upcoming.map((item, i) => {
+          const label = daysUntilLabel(item.nextExpected)!;
+          const name = item.merchantRaw.length > 18
+            ? item.merchantRaw.slice(0, 18) + "…"
+            : item.merchantRaw;
+          return (
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 10px", borderRadius: 999, background: "var(--surface-2)",
+              fontSize: 12.5, border: "1px solid var(--line)" }}>
+              <span style={{ width: 7, height: 7, borderRadius: 999,
+                background: item.categoryColor || "var(--ink-faint)",
+                display: "inline-block", flexShrink: 0 }} />
+              {name}
+              <span className="num" style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>
+                {money(Math.abs(item.lastAmountCents))}
+              </span>
+              <span className="muted" style={{ fontSize: 11 }}>{label}</span>
+            </span>
+          );
+        })}
+        <button className="btn ghost sm" style={{ fontSize: 12, padding: "4px 10px" }}
+          onClick={() => navigate("/recurring")}>See all →</button>
+      </div>
+    </div>
+  );
+}
+
 export default function Today() {
   const navigate = useNavigate();
   const { data: accounts = [], isLoading: accLoading } = useAccounts();
@@ -65,17 +154,15 @@ export default function Today() {
   const { data: cats = [] } = useCategoriesWithSpending();
   const { data: needsReview = 0 } = useNeedsReviewCount();
   const netWorth = useNetWorth();
-
   const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
+  const [sweepDismissed, setSweepDismissed] = useState(false);
   const days = RANGES.find((r) => r.key === range)!.days;
   const { data: nwHistory = [] } = useNetWorthHistory(days);
 
   const now = new Date();
   const dateLabel = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
-
   const primaryCurrency = accounts[0]?.currency ?? "USD";
-
   const isLoading = accLoading || totLoading;
 
   if (isLoading) return <div className="stub">Loading…</div>;
@@ -83,6 +170,11 @@ export default function Today() {
 
   const activeCats = cats.filter((c) => c.thisMonthCents > 0);
   const totalSpend = activeCats.reduce((s, c) => s + c.thisMonthCents, 0) || 1;
+
+  const dayOfMonth = now.getDate();
+  const avgDailyBurn = totals ? totals.expenseCents / dayOfMonth : 0;
+  const runwayDays = avgDailyBurn > 0 ? Math.max(0, Math.round(netWorth / avgDailyBurn)) : null;
+  const showSweep = !sweepDismissed && !!totals && totals.netCents > 5000;
 
   return (
     <div className="screen">
@@ -121,7 +213,12 @@ export default function Today() {
         <NetWorthChart points={nwHistory} />
       </div>
 
-      {/* 4-stat row */}
+      {/* §3b Smart Sweep card */}
+      {showSweep && totals && (
+        <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} />
+      )}
+
+      {/* §3d 4-stat row (with Runway replacing Accounts) */}
       {totals && (
         <div className="stat-row">
           <div className="stat">
@@ -144,10 +241,14 @@ export default function Today() {
             <div className="sub muted">of income kept</div>
           </div>
           <div className="stat">
-            <div className="label">Accounts</div>
-            <div className="value">{accounts.length}</div>
+            <div className="label">Runway</div>
+            <div className="value figure num" style={{
+              color: runwayDays !== null && runwayDays < 30 ? "var(--negative)" : undefined,
+            }}>
+              {runwayDays !== null ? runwayDays.toLocaleString() : "—"}
+            </div>
             <div className="sub muted">
-              {accounts.length} active
+              {runwayDays !== null ? "days · at current burn" : "no burn data"}
             </div>
           </div>
         </div>
@@ -182,6 +283,9 @@ export default function Today() {
           </div>
         </div>
       )}
+
+      {/* §3c Upcoming recurring chips */}
+      <UpcomingRecurring />
 
       {/* Agent feed + needs-review */}
       <div style={{ marginTop: 24 }}>
