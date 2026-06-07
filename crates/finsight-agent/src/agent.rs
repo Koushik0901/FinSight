@@ -34,7 +34,19 @@ impl AgentHandle {
     ) -> Self {
         let (tx, rx) = mpsc::channel::<AgentJob>(64);
         let provider_clone = Arc::clone(&provider);
-        tokio::spawn(run_loop(db, rx, provider_clone, on_event));
+        // Spawn a dedicated OS thread with its own Tokio runtime so this
+        // works whether or not a runtime is already active on the calling
+        // thread (e.g. Tauri's synchronous `.setup()` callback).
+        std::thread::Builder::new()
+            .name("finsight-agent".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("agent tokio runtime");
+                rt.block_on(run_loop(db, rx, provider_clone, on_event));
+            })
+            .expect("spawn agent thread");
         Self { tx, provider }
     }
 
