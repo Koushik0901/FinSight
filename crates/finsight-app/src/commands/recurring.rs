@@ -14,6 +14,8 @@ pub struct RecurringItem {
     pub category_color: String,
     /// Most recent amount (negative = expense, positive = income)
     pub last_amount_cents: i64,
+    pub min_amount_cents: i64,
+    pub max_amount_cents: i64,
     /// Average gap between occurrences in days
     pub avg_gap_days: f64,
     /// How many times this has appeared
@@ -76,13 +78,15 @@ pub async fn list_recurring(
                       AVG(gap) AS avg_gap,
                       COUNT(*) AS occurrences,
                       MAX(d) AS last_seen,
-                      MAX(amount_cents) AS last_amount
+                      MAX(amount_cents) AS last_amount,
+                      MIN(amount_cents) AS min_amount,
+                      MAX(amount_cents) AS max_amount
                FROM gaps
                WHERE gap BETWEEN 5 AND 400
                GROUP BY merchant_raw
                HAVING occurrences >= 2 AND AVG(gap) < 400
              )
-             SELECT merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount
+             SELECT merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount, min_amount, max_amount
              FROM agg
              ORDER BY ABS(last_amount) DESC",
         )?;
@@ -96,12 +100,14 @@ pub async fn list_recurring(
                 r.get::<_, i64>(4)?,             // occurrences
                 r.get::<_, String>(5)?,          // last_seen
                 r.get::<_, i64>(6)?,             // last_amount
+                r.get::<_, i64>(7)?,             // min_amount
+                r.get::<_, i64>(8)?,             // max_amount
             ))
         })?;
 
         let mut out = Vec::new();
         for row in rows {
-            let (merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount) = row?;
+            let (merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount, min_amount, max_amount) = row?;
             let cat_label = cat_label.unwrap_or_default();
             let cadence = cadence_label(avg_gap).to_string();
 
@@ -123,6 +129,8 @@ pub async fn list_recurring(
                 category_label: cat_label,
                 category_color: cat_color,
                 last_amount_cents: last_amount,
+                min_amount_cents: min_amount,
+                max_amount_cents: max_amount,
                 avg_gap_days: avg_gap,
                 occurrences,
                 last_seen,

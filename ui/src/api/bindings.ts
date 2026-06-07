@@ -675,7 +675,7 @@ export type RecurringItem = { merchantRaw: string; categoryLabel: string; catego
 /**
  * Most recent amount (negative = expense, positive = income)
  */
-lastAmountCents: number; 
+lastAmountCents: number; minAmountCents: number; maxAmountCents: number; 
 /**
  * Average gap between occurrences in days
  */
