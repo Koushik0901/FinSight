@@ -8,7 +8,17 @@ import { useQuery } from "@tanstack/react-query";
 import { commands, type MonthTotals, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
 import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
+import { useTriggerCategorize } from "../api/hooks/agent";
 import { money } from "../utils/format";
+
+const TICKERS = [
+  "Watching: account balances · stable",
+  "Reviewing: transaction categories",
+  "Monitoring: recurring subscriptions",
+  "Analyzing: spending patterns",
+  "Tracking: goal progress",
+  "Checking: rule coverage",
+];
 
 interface Insight {
   id: string;
@@ -80,6 +90,49 @@ function InsightCard({ ins, onDismiss }: { ins: Insight; onDismiss: (id: string)
           <button className="btn sm outline">{ins.action} →</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function AgentStatusBar() {
+  const [tickerIdx, setTickerIdx] = useState(0);
+  const triggerCategorize = useTriggerCategorize();
+
+  useEffect(() => {
+    const t = setInterval(() => setTickerIdx((i) => (i + 1) % TICKERS.length), 2400);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "10px 16px", background: "var(--surface-2)", borderRadius: 10,
+      marginBottom: 24, gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: 999, background: "var(--accent)",
+          display: "inline-block", flexShrink: 0,
+        }} />
+        <span style={{ fontSize: 13.5, fontWeight: 500 }}>Agent · running locally</span>
+      </div>
+      <div style={{ flex: 1, textAlign: "center" }}>
+        <span className="muted" style={{ fontSize: 12.5, fontFamily: "var(--mono)" }}>
+          {TICKERS[tickerIdx]}
+        </span>
+      </div>
+      <button
+        className="btn sm ghost"
+        disabled={triggerCategorize.isPending}
+        onClick={async () => {
+          try {
+            await triggerCategorize.mutateAsync();
+            toast.success("Scan complete");
+          } catch {
+            toast.error("Scan failed");
+          }
+        }}
+      >
+        {triggerCategorize.isPending ? "Scanning…" : "Re-run scan"}
+      </button>
     </div>
   );
 }
@@ -323,6 +376,7 @@ export default function Insights() {
 
   return (
     <div className="screen">
+      <AgentStatusBar />
       {/* Header */}
       <div className="screen-header">
         <div className="screen-header-text">
