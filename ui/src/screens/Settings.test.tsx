@@ -32,11 +32,11 @@ vi.mock("../api/client", () => ({
 }));
 vi.mock("../state/tweaks", () => ({
   useTweaks: vi.fn(() => ({
-    theme: "dark", density: "cozy", accent: "indigo",
+    theme: "dark", density: "cozy", accent: "lime",
     setTheme: vi.fn(), setDensity: vi.fn(), setAccent: vi.fn(),
     privacy: false, setPrivacy: vi.fn(),
   })),
-  ACCENTS: { indigo: { hex: "#6366f1", ink: "#fff" }, emerald: { hex: "#10b981", ink: "#fff" } },
+  ACCENTS: { lime: { hex: "#84cc16", ink: "#fff" }, emerald: { hex: "#10b981", ink: "#fff" } },
 }));
 vi.mock("../api/hooks/settings", () => ({
   useDefaultCurrency: vi.fn(() => ({ data: "USD" })),

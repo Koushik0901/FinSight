@@ -260,16 +260,16 @@ export default function Settings() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Theme</span>
             <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button className={theme === "light" ? "on" : ""} onClick={() => setTheme("light")}>Light</button>
-              <button className={theme === "dark" ? "on" : ""} onClick={() => setTheme("dark")}>Dark</button>
+              <button className={theme === "light" ? "on" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Light</button>
+              <button className={theme === "dark" ? "on" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Dark</button>
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Density</span>
             <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button className={density === "cozy" ? "on" : ""} onClick={() => setDensity("cozy")}>Cozy</button>
-              <button className={density === "compact" ? "on" : ""} onClick={() => setDensity("compact")}>Compact</button>
+              <button className={density === "cozy" ? "on" : ""} aria-pressed={density === "cozy"} onClick={() => setDensity("cozy")}>Cozy</button>
+              <button className={density === "compact" ? "on" : ""} aria-pressed={density === "compact"} onClick={() => setDensity("compact")}>Compact</button>
             </div>
           </div>
 
@@ -295,9 +295,12 @@ export default function Settings() {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Currency</span>
             <select
+              aria-label="Currency"
               value={currentCurrency}
               onChange={(e) => {
-                setCurrencyMutation.mutate(e.target.value);
+                setCurrencyMutation.mutate(e.target.value, {
+                  onError: (err) => toast.error("Currency update failed — " + (err instanceof Error ? err.message : "unknown error")),
+                });
               }}
               style={{ background: "var(--surface-2)", border: "1px solid var(--line-2)",
                 borderRadius: 7, padding: "6px 10px", fontSize: 14, color: "var(--ink)", outline: "none" }}
