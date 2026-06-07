@@ -15,6 +15,14 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActivity {
+    pub text: String,
+    pub sub: String,
+    pub minutes_ago: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind")]
 pub enum CompletionProviderConfig {
@@ -222,4 +230,50 @@ pub async fn decline_rule_proposal(state: tauri::State<'_, AppState>, id: String
     run(&db, move |conn| rule_proposals::set_status(conn, &id, "declined"))
         .await
         .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_recent_agent_activity(
+    state: tauri::State<'_, AppState>,
+    limit: u32,
+) -> AppResult<Vec<AgentActivity>> {
+    let db = (*state.db).clone();
+    let limit = limit as i64;
+    run(&db, move |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT t.merchant_raw,
+                    COALESCE(c.label, 'Uncategorized'),
+                    cat.source,
+                    CAST(ROUND(cat.confidence * 100) AS INTEGER),
+                    CAST((julianday('now') - julianday(cat.at)) * 1440 AS INTEGER)
+             FROM categorizations cat
+             JOIN transactions t ON t.id = cat.txn_id
+             LEFT JOIN categories c ON c.id = cat.category_id
+             WHERE cat.at >= datetime('now', '-24 hours')
+             ORDER BY cat.at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![limit], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (merchant, category, source, pct, mins) = row?;
+            out.push(AgentActivity {
+                text: format!("'{}' → {}", merchant, category),
+                sub: format!("{} · {}% conf", source, pct),
+                minutes_ago: mins,
+            });
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
 }
