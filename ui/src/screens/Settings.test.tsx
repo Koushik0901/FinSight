@@ -30,6 +30,38 @@ vi.mock("../api/client", () => ({
     getNeedsReviewCount: vi.fn().mockResolvedValue({ status: "ok", data: 0 }),
   },
 }));
+vi.mock("../state/tweaks", () => ({
+  useTweaks: vi.fn(() => ({
+    theme: "dark", density: "cozy", accent: "indigo",
+    setTheme: vi.fn(), setDensity: vi.fn(), setAccent: vi.fn(),
+    privacy: false, setPrivacy: vi.fn(),
+  })),
+  ACCENTS: { indigo: { hex: "#6366f1", ink: "#fff" }, emerald: { hex: "#10b981", ink: "#fff" } },
+}));
+vi.mock("../api/hooks/settings", () => ({
+  useDefaultCurrency: vi.fn(() => ({ data: "USD" })),
+  useSetCurrency: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useExportJson: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useExportCsv: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+}));
+
+describe("Settings — Appearance section", () => {
+  it("renders theme, density, accent, currency controls", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByText("Appearance")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cozy/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /compact/i })).toBeInTheDocument();
+  });
+
+  it("renders data export section with both buttons", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByText("Export data")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export as json/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /export as csv/i })).toBeInTheDocument();
+  });
+});
 
 describe("Settings — AI Provider panel", () => {
   it("shows 'AI Provider' section", () => {

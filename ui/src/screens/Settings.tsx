@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import {
   useResetOnboarding,
@@ -13,6 +14,8 @@ import {
   useTriggerCategorize,
   useListProviderModels,
 } from "../api/hooks/agent";
+import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv } from "../api/hooks/settings";
+import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;
@@ -45,6 +48,12 @@ export default function Settings() {
   const [anthropicModel, setAnthropicModel] = useState("claude-3-5-haiku-latest");
   const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const { theme, density, accent, setTheme, setDensity, setAccent } = useTweaks();
+  const setCurrencyMutation = useSetCurrency();
+  const exportJson = useExportJson();
+  const exportCsv = useExportCsv();
+  const { data: currentCurrency = "USD" } = useDefaultCurrency();
 
   const setProvider = useSetCompletionProvider();
   const saveKey = useSaveProviderApiKey();
@@ -241,6 +250,100 @@ export default function Settings() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* §12c: Appearance section */}
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Appearance</h2>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Theme</span>
+            <div className="toolbar" style={{ display: "inline-flex" }}>
+              <button className={theme === "light" ? "on" : ""} onClick={() => setTheme("light")}>Light</button>
+              <button className={theme === "dark" ? "on" : ""} onClick={() => setTheme("dark")}>Dark</button>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Density</span>
+            <div className="toolbar" style={{ display: "inline-flex" }}>
+              <button className={density === "cozy" ? "on" : ""} onClick={() => setDensity("cozy")}>Cozy</button>
+              <button className={density === "compact" ? "on" : ""} onClick={() => setDensity("compact")}>Compact</button>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Accent</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(Object.entries(ACCENTS) as [AccentId, { hex: string; ink: string }][]).map(([id, { hex }]) => (
+                <button
+                  key={id}
+                  aria-label={id}
+                  onClick={() => setAccent(id)}
+                  style={{
+                    width: 24, height: 24, borderRadius: 999, background: hex, cursor: "pointer",
+                    border: accent === id ? "2px solid var(--ink)" : "2px solid transparent",
+                    padding: 0,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* §12b: Currency */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Currency</span>
+            <select
+              value={currentCurrency}
+              onChange={(e) => {
+                setCurrencyMutation.mutate(e.target.value);
+              }}
+              style={{ background: "var(--surface-2)", border: "1px solid var(--line-2)",
+                borderRadius: 7, padding: "6px 10px", fontSize: 14, color: "var(--ink)", outline: "none" }}
+            >
+              {["USD","EUR","GBP","CAD","AUD","JPY","CHF","NZD","SGD","HKD"].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {/* §12a: Data export section */}
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Export data</h2>
+        <p style={{ marginBottom: 14, color: "var(--ink-mute)", fontSize: 14 }}>
+          Download your complete data as JSON or a transaction CSV.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            disabled={exportJson.isPending}
+            onClick={async () => {
+              try {
+                await exportJson.mutateAsync();
+                toast.success("File saved");
+              } catch (err) {
+                toast.error("Export failed — " + (err instanceof Error ? err.message : "unknown error"));
+              }
+            }}
+          >
+            {exportJson.isPending ? "Exporting…" : "Export as JSON"}
+          </button>
+          <button
+            disabled={exportCsv.isPending}
+            onClick={async () => {
+              try {
+                await exportCsv.mutateAsync();
+                toast.success("File saved");
+              } catch (err) {
+                toast.error("Export failed — " + (err instanceof Error ? err.message : "unknown error"));
+              }
+            }}
+          >
+            {exportCsv.isPending ? "Exporting…" : "Export as CSV"}
+          </button>
+        </div>
       </section>
     </div>
   );
