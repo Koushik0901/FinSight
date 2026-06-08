@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData, type MonthSummary } from "../api/client";
 import { money } from "../utils/format";
 
-function useReportData() {
+function useReportData(scope: "month" | "quarter" | "year" | "all") {
   return useQuery<ReportData>({
-    queryKey: ["report-data"],
+    queryKey: ["report-data", scope],
     queryFn: async () => {
-      const result = await commands.getReportData();
+      const result = await commands.getReportData(scope);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
@@ -137,10 +137,130 @@ function NetLine({ months }: { months: MonthSummary[] }) {
   );
 }
 
+// ── Donut chart ───────────────────────────────────────────────────────────
+
+function DonutChart({ categories, totalCents }: {
+  categories: { label: string; color: string; totalCents: number }[];
+  totalCents: number;
+}) {
+  const total = categories.reduce((s, c) => s + c.totalCents, 0) || 1;
+  let cumAngle = -Math.PI / 2;
+  const slices = categories.map(c => {
+    const share = c.totalCents / total;
+    const start = cumAngle;
+    cumAngle += share * 2 * Math.PI * 0.99;
+    const end = cumAngle;
+    cumAngle += share * 2 * Math.PI * 0.01;
+    return { ...c, start, end, share };
+  });
+
+  const arc = (cx: number, cy: number, r: number, start: number, end: number) => {
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const large = end - start > Math.PI ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+  };
+
+  const fmtK = (cents: number) => {
+    if (cents >= 100_000) return `$${(cents / 100_000).toFixed(1)}k`;
+    return `$${(cents / 100).toFixed(0)}`;
+  };
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <div className="eyebrow" style={{ marginBottom: 14 }}>Spending by category</div>
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        <svg viewBox="0 0 100 100" width={120} height={120} style={{ flexShrink: 0 }}>
+          {slices.map((s, i) => (
+            <path key={i} d={arc(50, 50, 48, s.start, s.end)}
+              fill={s.color || "var(--ink-faint)"} />
+          ))}
+          <circle cx={50} cy={50} r={32} fill="var(--bg)" />
+          <text x={50} y={53} textAnchor="middle" fontSize={9}
+            fill="var(--ink)" fontFamily="var(--mono)">
+            {fmtK(totalCents)}
+          </text>
+        </svg>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+          {slices.slice(0, 8).map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2,
+                background: s.color || "var(--ink-faint)", flexShrink: 0 }} />
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+                whiteSpace: "nowrap" }}>{s.label}</span>
+              <span className="muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+                {Math.round(s.share * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Year-over-year line chart ─────────────────────────────────────────────
+
+function YoYChart({ thisYear, lastYear }: {
+  thisYear: { label: string; expenseCents: number }[];
+  lastYear: { expenseCents: number }[];
+}) {
+  if (thisYear.length === 0) return null;
+  const allVals = [...thisYear.map(m => m.expenseCents), ...lastYear.map(m => m.expenseCents)];
+  const maxVal = Math.max(...allVals, 1);
+  const W = 100, H = 50;
+  const n = thisYear.length;
+  const pts = (data: number[]) =>
+    data.map((v, i) =>
+      `${(i / Math.max(n - 1, 1)) * W},${H - (v / maxVal) * (H - 4)}`
+    ).join(" ");
+
+  // Determine which x-axis labels to show
+  const labelIndices = n <= 6
+    ? thisYear.map((_, i) => i)
+    : thisYear.map((_, i) => i).filter(i => i % Math.ceil(n / 6) === 0);
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <div className="eyebrow" style={{ marginBottom: 14 }}>Year-over-year expenses</div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: "100%", height: 100, display: "block" }}>
+        {lastYear.length > 0 && (
+          <polyline points={pts(lastYear.map(m => m.expenseCents))}
+            fill="none" stroke="var(--ink-mute)" strokeWidth={1}
+            strokeDasharray="2 1" />
+        )}
+        <polyline points={pts(thisYear.map(m => m.expenseCents))}
+          fill="none" stroke="var(--accent)" strokeWidth={1.5} />
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+        {labelIndices.map(i => (
+          <span key={i} className="muted" style={{ fontSize: 10, fontFamily: "var(--mono)" }}>
+            {thisYear[i]!.label}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+          <span style={{ width: 16, height: 2, background: "var(--accent)", display: "inline-block" }} />
+          This year
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+          <span style={{ width: 16, height: 2, borderBottom: "2px dashed var(--ink-mute)", display: "inline-block" }} />
+          Last year
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────
 
 export default function Reports() {
-  const { data, isLoading, error } = useReportData();
+  const [scope, setScope] = useState<"month" | "quarter" | "year" | "all">("year");
+  const { data, isLoading, error } = useReportData(scope);
   const [barScope, setBarScope] = useState<"6" | "12">("6");
 
   if (isLoading) return <div className="stub">Computing reports…</div>;
@@ -178,10 +298,19 @@ export default function Reports() {
           <div className="screen-eyebrow">Reports · last 12 months</div>
           <h1>See the shape of your money over time.</h1>
         </div>
-        <div className="toolbar">
-          <button className={barScope === "6" ? "on" : ""} onClick={() => setBarScope("6")}>6M</button>
-          <button className={barScope === "12" ? "on" : ""} onClick={() => setBarScope("12")}>12M</button>
-        </div>
+      </div>
+
+      {/* Scope toolbar */}
+      <div className="toolbar" style={{ marginBottom: 20 }}>
+        {(["month", "quarter", "year", "all"] as const).map(s => (
+          <button
+            key={s}
+            className={`btn ghost sm${scope === s ? " active" : ""}`}
+            onClick={() => setScope(s)}
+          >
+            {s === "month" ? "Month" : s === "quarter" ? "Quarter" : s === "year" ? "Year" : "All time"}
+          </button>
+        ))}
       </div>
 
       {/* KPI row */}
@@ -213,6 +342,17 @@ export default function Reports() {
         <BarChart months={data.monthly} scope={barScope} />
         <NetLine months={data.monthly} />
       </div>
+
+      {/* Donut + YoY charts */}
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+          <DonutChart
+            categories={data.topCategories}
+            totalCents={data.topCategories.reduce((s, c) => s + c.totalCents, 0)}
+          />
+          <YoYChart thisYear={data.monthly} lastYear={data.monthlyLastYear} />
+        </div>
+      )}
 
       {/* Tables */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
