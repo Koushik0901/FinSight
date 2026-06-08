@@ -323,6 +323,18 @@ function SubsView({ subs }: { subs: RecurringItem[] }) {
                 </div>
                 <span className="chip" style={{ fontSize: 11 }}>{s.cadence}</span>
               </div>
+              {(() => {
+                const minAbs = Math.abs(s.minAmountCents);
+                const maxAbs = Math.abs(s.maxAmountCents);
+                const curAbs = Math.abs(s.lastAmountCents);
+                const priceChanged = minAbs !== maxAbs;
+                if (!priceChanged) return null;
+                const priceUp = curAbs >= minAbs;
+                const fmtAmt = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(cents / 100);
+                return priceUp
+                  ? <span className="chip warning" style={{ marginTop: 6, display: "inline-block" }}>↑ {fmtAmt(maxAbs)} → {fmtAmt(curAbs)}</span>
+                  : <span className="chip positive" style={{ marginTop: 6, display: "inline-block" }}>↓ {fmtAmt(minAbs)} → {fmtAmt(curAbs)}</span>;
+              })()}
               <div className="muted" style={{ fontSize: 12, marginTop: 8, fontFamily: "var(--mono)" }}>
                 {daysUntil >= 0 ? `Next in ${daysUntil}d` : `${Math.abs(daysUntil)}d ago`} · {s.occurrences}× detected
               </div>
