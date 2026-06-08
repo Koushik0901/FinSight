@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type GoalDto, type NewGoalInput } from "../client";
+import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput } from "../client";
 
 // ── Budget ────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,18 @@ export function useSetBudget() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
     },
+  });
+}
+
+export function useBudgetHistory(months: number) {
+  return useQuery<CategoryHistory[]>({
+    queryKey: ["budget-history", months],
+    queryFn: async () => {
+      const result = await commands.listBudgetHistory(months);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
   });
 }
 

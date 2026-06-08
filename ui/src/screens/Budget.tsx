@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useBudgetEnvelopes, useSetBudget } from "../api/hooks/budget";
+import { useBudgetEnvelopes, useBudgetHistory, useSetBudget } from "../api/hooks/budget";
 import { commands } from "../api/client";
 import type { BudgetEnvelope, MonthTotals } from "../api/client";
 import * as I from "../components/Icons";
@@ -132,6 +132,7 @@ function EnvelopeCard({ env, onEdit }: { env: BudgetEnvelope; onEdit: () => void
 
 export default function Budget() {
   const { data: envelopes = [], isLoading, error } = useBudgetEnvelopes();
+  const { data: history = [] } = useBudgetHistory(5);
   const { data: totals } = useQuery<MonthTotals>({
     queryKey: ["today-summary"],
     queryFn: async () => {
@@ -302,6 +303,47 @@ export default function Budget() {
             </div>
           </div>
         </>
+      )}
+
+      {history.length > 0 && (
+        <section style={{ marginTop: 32 }}>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Spending history · last 5 months</div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  {history[0]!.monthly.map(m => (
+                    <th key={m.month} style={{ textAlign: "right", fontFamily: "var(--mono)" }}>
+                      {m.month.slice(5)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {history.map(cat => (
+                  <tr key={cat.categoryId}>
+                    <td>
+                      <span style={{
+                        display: "inline-block", width: 8, height: 8,
+                        borderRadius: 2, background: cat.color || "var(--ink-faint)",
+                        marginRight: 8, verticalAlign: "middle"
+                      }} />
+                      {cat.label}
+                    </td>
+                    {cat.monthly.map(m => (
+                      <td key={m.month} className="num money" style={{ textAlign: "right" }}>
+                        {m.cents > 0
+                          ? `$${(m.cents / 100).toFixed(0)}`
+                          : "—"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </div>
   );
