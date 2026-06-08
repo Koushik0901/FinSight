@@ -57,8 +57,10 @@ export default function PlanNextMonthModal({ onClose }: Props) {
     }
   };
 
-  const renderCategoryStep = () => {
-    const cats = data.categories;
+  const renderCategoryStep = (isEssentials: boolean) => {
+    const cats = isEssentials
+      ? data.categories.filter(cat => cat.groupLabel.toLowerCase().includes("fixed"))
+      : data.categories.filter(cat => !cat.groupLabel.toLowerCase().includes("fixed"));
     return (
       <div>
         {cats.map(cat => {
@@ -80,7 +82,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                 className="muted"
                 style={{ fontSize: 12, fontFamily: "var(--mono)" }}
               >
-                avg {fmt(avg)}
+                avg <span className="money">{fmt(avg)}</span>
               </span>
               <input
                 type="number"
@@ -127,7 +129,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                 marginBottom: 8,
               }}
             >
-              {fmt(data.incomeCents)}
+              <span className="money">{fmt(data.incomeCents)}</span>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
               Based on your average income over the last 3 months.
@@ -140,7 +142,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             <div className="eyebrow" style={{ marginBottom: 16 }}>
               Essential expenses
             </div>
-            {renderCategoryStep()}
+            {renderCategoryStep(true)}
           </>
         );
       case 2: // Wants
@@ -149,7 +151,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             <div className="eyebrow" style={{ marginBottom: 16 }}>
               Discretionary spending
             </div>
-            {renderCategoryStep()}
+            {renderCategoryStep(false)}
           </>
         );
       case 3: // Goals
@@ -169,7 +171,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                 >
                   <div style={{ fontWeight: 500 }}>{g.name}</div>
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                    {fmt(g.currentCents)} / {fmt(g.targetCents)}
+                    <span className="money">{fmt(g.currentCents)}</span> / <span className="money">{fmt(g.targetCents)}</span>
                   </div>
                 </div>
               ))
@@ -189,7 +191,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                 marginBottom: 8,
               }}
             >
-              {fmt(data.recurringExpenseCents)}
+              <span className="money">{fmt(data.recurringExpenseCents)}</span>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
               Monthly-cadence subscriptions and bills.
@@ -214,7 +216,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                       <tr key={cat.categoryId}>
                         <td>{cat.label}</td>
                         <td
-                          className="num"
+                          className="num money"
                           style={{
                             textAlign: "right",
                             fontFamily: "var(--mono)",
@@ -268,7 +270,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             <button
               key={s}
               className={`btn ghost sm${i === step ? " active" : ""}`}
-              style={{ opacity: i > step ? 0.4 : 1 }}
+              style={{ opacity: i > step ? 0.4 : 1, fontWeight: i === step ? 600 : undefined }}
               onClick={() => i <= step && setStep(i)}
             >
               {i + 1}. {s}
