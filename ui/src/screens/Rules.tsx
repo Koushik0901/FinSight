@@ -4,6 +4,7 @@ import { useRulesWithCategories, useToggleRule, useCategoriesWithSpending, useCr
 import type { RuleWithCategory, RuleProposal, CategoryWithSpending } from "../api/client";
 import * as I from "../components/Icons";
 import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
+import { useRecentAgentActivity } from "../api/hooks/insights";
 
 function RuleCard({ rule }: { rule: RuleWithCategory }) {
   const toggle = useToggleRule();
@@ -173,6 +174,7 @@ function NewRuleForm({ cats, onCreated, onCancel }: NewRuleFormProps) {
 export default function Rules() {
   const { data: rules = [], isLoading, error } = useRulesWithCategories();
   const { data: proposals = [] } = useRuleProposals();
+  const { data: activity = [] } = useRecentAgentActivity(20);
   const [showNewRule, setShowNewRule] = useState(false);
   const { data: cats = [] } = useCategoriesWithSpending();
   const sortedCats = [...cats].sort((a, b) => a.label.localeCompare(b.label));
@@ -307,6 +309,34 @@ export default function Rules() {
                 <span className="chip accent">On</span>
               </div>
             </div>
+          </div>
+
+          <div className="card tight">
+            <div className="eyebrow" style={{ marginBottom: 10 }}>
+              <span className="dot" style={{ background: "var(--accent)" }} />
+              {" "}Agent · last 24h
+            </div>
+            {activity.length === 0
+              ? <p className="muted" style={{ fontSize: 13 }}>Nothing yet — import transactions to see activity.</p>
+              : activity.map((a, i) => (
+                  <div key={i} style={{
+                    display: "grid", gridTemplateColumns: "1fr auto", gap: 8,
+                    padding: "8px 0",
+                    borderBottom: i < activity.length - 1 ? "1px solid var(--line)" : "none",
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13 }}>{a.text}</div>
+                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{a.sub}</div>
+                    </div>
+                    <span style={{
+                      fontSize: 11.5, color: "var(--ink-faint)", fontFamily: "var(--mono)",
+                      alignSelf: "center", whiteSpace: "nowrap",
+                    }}>
+                      {a.minutesAgo < 60 ? `${a.minutesAgo}m` : `${Math.floor(a.minutesAgo / 60)}h`}
+                    </span>
+                  </div>
+                ))
+            }
           </div>
         </div>
       </div>
