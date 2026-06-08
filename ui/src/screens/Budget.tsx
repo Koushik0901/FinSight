@@ -5,6 +5,7 @@ import { useBudgetEnvelopes, useBudgetHistory, useSetBudget } from "../api/hooks
 import { commands } from "../api/client";
 import type { BudgetEnvelope, MonthTotals } from "../api/client";
 import * as I from "../components/Icons";
+import PlanNextMonthModal from "./PlanNextMonthModal";
 
 function fmt(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -144,6 +145,7 @@ export default function Budget() {
   });
   const [sort, setSort] = useState<SortKey>("group");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showPlan, setShowPlan] = useState(false);
 
   const now = new Date();
   const todayDay = now.getDate();
@@ -188,6 +190,7 @@ export default function Budget() {
           <button className={sort === "stress" ? "on" : ""} onClick={() => setSort("stress")}>By stress</button>
           <button className={sort === "size" ? "on" : ""} onClick={() => setSort("size")}>By size</button>
           <button className={sort === "activity" ? "on" : ""} onClick={() => setSort("activity")}>By activity</button>
+          <button className="btn" onClick={() => setShowPlan(true)}>Plan next month →</button>
         </div>
       </div>
 
@@ -345,6 +348,8 @@ export default function Budget() {
           </div>
         </section>
       )}
+
+      {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
     </div>
   );
 }
