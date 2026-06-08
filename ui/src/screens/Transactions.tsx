@@ -4,7 +4,9 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "./onboarding/ImportMappingDialog";
 import type { Transaction, TxnFilterInput } from "../api/client";
+import { commands } from "../api/client";
 import { money } from "../utils/format";
+import { toast } from "sonner";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -54,6 +56,21 @@ export default function Transactions() {
         <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Transactions</h1>
         <div className="actions" style={{ display: "flex", gap: 8 }}>
           <FilePicker onPicked={setCsvPath} label="Import CSV" />
+          <button
+            className="btn ghost sm"
+            onClick={async () => {
+              try {
+                const result = await commands.exportTransactionsCsv(filter);
+                if (result.status === "ok" && result.data) {
+                  toast.success("Exported", { description: result.data });
+                }
+              } catch {
+                toast.error("Export failed");
+              }
+            }}
+          >
+            ↓ CSV
+          </button>
           <button className="primary" onClick={() => setAddOpen(true)}>+ Add transaction</button>
         </div>
       </header>

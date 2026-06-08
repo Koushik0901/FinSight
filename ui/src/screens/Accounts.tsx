@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useAccounts } from "../api/hooks/accounts";
 import AccountDrawer from "../components/AccountDrawer";
 import type { Account, AccountSummary } from "../api/client";
+import { commands } from "../api/client";
 import { useManualAssets, useLiabilities } from "../api/hooks/assets";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
 import type { ManualAsset, Liability } from "../api/client";
 import { useNetWorth } from "../api/hooks/networth";
 import { money } from "../utils/format";
+import { toast } from "sonner";
 
 export default function Accounts() {
   const [addOpen, setAddOpen] = useState(false);
@@ -47,6 +49,7 @@ export default function Accounts() {
               <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Name</th>
               <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Type</th>
               <th scope="col" style={{ padding: "8px 0", fontWeight: 500, textAlign: "right" }}>Balance</th>
+              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -62,6 +65,24 @@ export default function Accounts() {
                 <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{a.type}</td>
                 <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
                   <span className="money">{money(a.balance_cents, { decimals: 2 })}</span>
+                </td>
+                <td style={{ padding: "12px 0", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="btn ghost sm"
+                    title="Export transactions as CSV"
+                    onClick={async () => {
+                      try {
+                        const result = await commands.exportAccountCsv(a.id);
+                        if (result.status === "ok" && result.data) {
+                          toast.success("Exported", { description: result.data });
+                        }
+                      } catch {
+                        toast.error("Export failed");
+                      }
+                    }}
+                  >
+                    CSV ↓
+                  </button>
                 </td>
               </tr>
             ))}
