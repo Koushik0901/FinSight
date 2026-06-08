@@ -334,7 +334,7 @@ export default function Budget() {
                     {cat.monthly.map(m => (
                       <td key={m.month} className="num money" style={{ textAlign: "right" }}>
                         {m.cents > 0
-                          ? `$${(m.cents / 100).toFixed(0)}`
+                          ? fmt(m.cents)
                           : "—"}
                       </td>
                     ))}
