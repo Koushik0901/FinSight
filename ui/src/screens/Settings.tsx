@@ -381,6 +381,30 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      <div className="section">
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Keyboard shortcuts</div>
+        <div className="card tight">
+          {[
+            { key: "⌘K", label: "Open command palette" },
+            { key: "⌘.", label: "Toggle privacy mode" },
+          ].map(({ key, label }, i, arr) => (
+            <div key={key} style={{
+              display: "flex", alignItems: "center", gap: 16, padding: "10px 0",
+              borderBottom: i < arr.length - 1 ? "1px solid var(--line)" : "none",
+            }}>
+              <kbd style={{
+                fontFamily: "var(--mono)", fontSize: 13, padding: "3px 8px",
+                background: "var(--surface-2)", border: "1px solid var(--line)",
+                borderRadius: 5, color: "var(--ink)", minWidth: 36, textAlign: "center",
+              }}>
+                {key}
+              </kbd>
+              <span style={{ fontSize: 14 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
