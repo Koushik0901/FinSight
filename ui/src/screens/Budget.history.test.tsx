@@ -54,7 +54,7 @@ describe("Budget history section", () => {
   });
 
   it("does not render history section when data is empty", () => {
-    vi.mocked(budgetHooks.useBudgetHistory).mockReturnValueOnce({ data: [] } as ReturnType<typeof budgetHooks.useBudgetHistory>);
+    (budgetHooks.useBudgetHistory as any).mockReturnValueOnce({ data: [] });
     render(<Budget />, { wrapper: createWrapper() });
     expect(screen.queryByText("Spending history · last 5 months")).not.toBeInTheDocument();
   });

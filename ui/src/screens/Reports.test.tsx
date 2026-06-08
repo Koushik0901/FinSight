@@ -26,8 +26,8 @@ const REPORT_DATA = {
     { categoryId: "cat-2", label: "Dining", color: "#e67e22", totalCents: 85000, txnCount: 20 },
   ],
   topMerchants: [
-    { merchantRaw: "Whole Foods Market", categoryLabel: "Food & Drink", totalCents: 75000, txnCount: 8 },
-    { merchantRaw: "Chipotle", categoryLabel: "Food & Drink", totalCents: 42000, txnCount: 12 },
+    { merchantRaw: "Whole Foods Market", categoryLabel: "Food & Drink", categoryColor: "", totalCents: 75000, txnCount: 8 },
+    { merchantRaw: "Chipotle", categoryLabel: "Food & Drink", categoryColor: "", totalCents: 42000, txnCount: 12 },
   ],
 };
 
