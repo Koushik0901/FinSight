@@ -143,6 +143,11 @@ function DonutChart({ categories, totalCents }: {
   categories: { label: string; color: string; totalCents: number }[];
   totalCents: number;
 }) {
+  const fmtK = (cents: number) => {
+    if (cents >= 100_000) return `$${(cents / 100_000).toFixed(1)}k`;
+    return `$${(cents / 100).toFixed(0)}`;
+  };
+
   const total = categories.reduce((s, c) => s + c.totalCents, 0) || 1;
   let cumAngle = -Math.PI / 2;
   const slices = categories.map(c => {
@@ -154,6 +159,33 @@ function DonutChart({ categories, totalCents }: {
     return { ...c, start, end, share };
   });
 
+  // When only one category, arc degenerates — render a filled circle instead
+  if (slices.length === 1) {
+    return (
+      <div className="card" style={{ padding: 20 }}>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Spending by category</div>
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+          <svg viewBox="0 0 100 100" width={120} height={120} style={{ flexShrink: 0 }}>
+            <circle cx={50} cy={50} r={48} fill={slices[0]!.color || "var(--accent)"} />
+            <circle cx={50} cy={50} r={32} fill="var(--bg)" />
+            <text x={50} y={53} textAnchor="middle" fontSize={9}
+              fill="var(--ink)" fontFamily="var(--mono)">
+              {fmtK(totalCents)}
+            </text>
+          </svg>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2,
+                background: slices[0]!.color || "var(--accent)", flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>{slices[0]!.label}</span>
+              <span className="muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const arc = (cx: number, cy: number, r: number, start: number, end: number) => {
     const x1 = cx + r * Math.cos(start);
     const y1 = cy + r * Math.sin(start);
@@ -161,11 +193,6 @@ function DonutChart({ categories, totalCents }: {
     const y2 = cy + r * Math.sin(end);
     const large = end - start > Math.PI ? 1 : 0;
     return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-  };
-
-  const fmtK = (cents: number) => {
-    if (cents >= 100_000) return `$${(cents / 100_000).toFixed(1)}k`;
-    return `$${(cents / 100).toFixed(0)}`;
   };
 
   return (
@@ -261,7 +288,7 @@ function YoYChart({ thisYear, lastYear }: {
 export default function Reports() {
   const [scope, setScope] = useState<"month" | "quarter" | "year" | "all">("year");
   const { data, isLoading, error } = useReportData(scope);
-  const [barScope, setBarScope] = useState<"6" | "12">("6");
+  const barScope: "6" | "12" = scope === "month" || scope === "quarter" ? "6" : "12";
 
   if (isLoading) return <div className="stub">Computing reports…</div>;
   if (error)     return <div className="stub">Error computing reports.</div>;
@@ -282,7 +309,14 @@ export default function Reports() {
     );
   }
 
-  // Aggregate KPIs from last 12 months
+  // Scope-aware label prefix for KPI stats
+  const kpiPrefix =
+    scope === "month" ? "This month's" :
+    scope === "quarter" ? "Quarter" :
+    scope === "year" ? "12-month" :
+    "All-time";
+
+  // Aggregate KPIs from selected scope
   const totalIncome  = data.monthly.reduce((s, m) => s + m.incomeCents, 0);
   const totalExpense = data.monthly.reduce((s, m) => s + m.expenseCents, 0);
   const netTotal     = totalIncome - totalExpense;
@@ -295,7 +329,12 @@ export default function Reports() {
       {/* Header */}
       <div className="screen-header">
         <div className="screen-header-text">
-          <div className="screen-eyebrow">Reports · last 12 months</div>
+          <div className="screen-eyebrow">{
+            scope === "month" ? "Reports · this month" :
+            scope === "quarter" ? "Reports · last quarter" :
+            scope === "year" ? "Reports · this year" :
+            "Reports · all time"
+          }</div>
           <h1>See the shape of your money over time.</h1>
         </div>
       </div>
@@ -316,17 +355,17 @@ export default function Reports() {
       {/* KPI row */}
       <div className="stat-row">
         <div className="stat">
-          <div className="label">12-month income</div>
+          <div className="label">{kpiPrefix} income</div>
           <div className="value figure money">{money(totalIncome)}</div>
           <div className="sub muted">{money(Math.round(totalIncome / activeMonths))}/mo avg</div>
         </div>
         <div className="stat">
-          <div className="label">12-month expenses</div>
+          <div className="label">{kpiPrefix} expenses</div>
           <div className="value figure money">{money(totalExpense)}</div>
           <div className="sub muted">{money(avgMonthlySpend)}/mo avg</div>
         </div>
         <div className={`stat ${netTotal >= 0 ? "accent" : ""}`}>
-          <div className="label">Net (12-month)</div>
+          <div className="label">Net ({kpiPrefix.toLowerCase()})</div>
           <div className={`value figure money ${netTotal >= 0 ? "" : "neg"}`}>{money(netTotal)}</div>
           <div className="sub muted">{netTotal >= 0 ? "saved" : "deficit"}</div>
         </div>
