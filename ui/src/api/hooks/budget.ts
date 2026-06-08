@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput } from "../client";
+import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment } from "../client";
 
 // ── Budget ────────────────────────────────────────────────────────────────
 
@@ -101,6 +101,35 @@ export function useUpdateGoalMonthly() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+// ── Plan Next Month ───────────────────────────────────────────────────────
+
+export function usePlanNextMonthData() {
+  return useQuery({
+    queryKey: ["plan-next-month"],
+    queryFn: async () => {
+      const result = await commands.getPlanNextMonthData();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
+  });
+}
+
+export function useApplyNextMonthPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (assignments: PlanAssignment[]) => {
+      const result = await commands.applyNextMonthPlan(assignments);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      qc.invalidateQueries({ queryKey: ["plan-next-month"] });
     },
   });
 }
