@@ -201,19 +201,32 @@ pub async fn list_categories_with_spending(
 
     run(&db, move |conn| {
         let mut stmt = conn.prepare(
-            "SELECT \
-               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), \
-               COALESCE(SUM(CASE WHEN t.posted_at >= ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
-               COALESCE(SUM(CASE WHEN t.posted_at >= ?2 AND t.posted_at < ?1 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
-               COUNT(CASE WHEN t.posted_at >= ?1 THEN 1 END), \
-               COALESCE(SUM(CASE WHEN t.posted_at >= ?3 AND t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END),0), \
-               COALESCE(MAX(b.amount_cents), 0) \
-             FROM categories c \
-             LEFT JOIN category_groups g ON g.id = c.group_id \
-             LEFT JOIN transactions t ON t.category_id = c.id \
-             LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4 \
-             WHERE c.archived_at IS NULL \
-             GROUP BY c.id, c.label, c.color, c.group_id, g.label \
+            "WITH spending AS (
+               SELECT t.category_id, t.posted_at, ABS(t.amount_cents) AS cents
+               FROM transactions t
+               WHERE t.amount_cents < 0
+                 AND t.category_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
+               UNION ALL
+               SELECT ts.category_id, t.posted_at, ts.amount_cents AS cents
+               FROM transaction_splits ts
+               JOIN transactions t ON t.id = ts.txn_id
+               WHERE t.amount_cents < 0
+                 AND ts.category_id IS NOT NULL
+             )
+             SELECT
+               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''),
+               COALESCE(SUM(CASE WHEN s.posted_at >= ?1 THEN s.cents ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN s.posted_at >= ?2 AND s.posted_at < ?1 THEN s.cents ELSE 0 END), 0),
+               COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
+               COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
+               COALESCE(MAX(b.amount_cents), 0)
+             FROM categories c
+             LEFT JOIN category_groups g ON g.id = c.group_id
+             LEFT JOIN spending s ON s.category_id = c.id
+             LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
+             WHERE c.archived_at IS NULL
+             GROUP BY c.id, c.label, c.color, c.group_id, g.label
              ORDER BY 6 DESC, g.sort_order, c.sort_order",
         )?;
         let rows = stmt.query_map(
