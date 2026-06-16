@@ -59,6 +59,13 @@ pub async fn import_csv(
 
     let summary = summary?;
     app.emit("import.complete", &summary).ok();
+
+    let notify_app = app.clone();
+    let notify_db = (*state.db).clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = crate::notifications::check_and_fire(&notify_app, &notify_db).await;
+    });
+
     Ok(summary)
 }
 

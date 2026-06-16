@@ -99,6 +99,34 @@ pub async fn export_all_data_json(
     std::fs::write(&path, json).map_err(|e| AppError::new("io", e.to_string()))
 }
 
+const NOTIFICATIONS_ENABLED_KEY: &str = "notifications.enabled";
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_notifications_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let val: Option<bool> = settings::get(conn, NOTIFICATIONS_ENABLED_KEY)?;
+        Ok(val.unwrap_or(true))
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_notifications_enabled(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        settings::set(conn, NOTIFICATIONS_ENABLED_KEY, &enabled)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
         format!("\"{}\"", s.replace('"', "\"\""))

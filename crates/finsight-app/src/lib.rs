@@ -172,6 +172,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::settings::set_currency,
         commands::settings::export_all_data_json,
         commands::settings::export_all_data_csv,
+        commands::settings::get_notifications_enabled,
+        commands::settings::set_notifications_enabled,
         commands::budget::get_plan_next_month_data,
         commands::budget::apply_next_month_plan,
         commands::budget::list_budget_history,

@@ -387,6 +387,7 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
 #[tauri::command]
 #[specta::specta]
 pub async fn apply_next_month_plan(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     assignments: Vec<PlanAssignment>,
 ) -> AppResult<()> {
@@ -408,7 +409,13 @@ pub async fn apply_next_month_plan(
         Ok(())
     })
     .await
-    .map_err(AppError::from)
+    .map_err(AppError::from)?;
+
+    let notify_db = (*state.db).clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = crate::notifications::check_and_fire(&app, &notify_db).await;
+    });
+    Ok(())
 }
 
 #[tauri::command]
