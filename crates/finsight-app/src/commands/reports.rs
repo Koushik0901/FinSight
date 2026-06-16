@@ -105,7 +105,7 @@ pub async fn get_report_data(
                     let cur_y = now.year();
                     let cur_m = now.month() as i32;
                     let total_months = (cur_y - oldest_y) * 12 + (cur_m - oldest_m) + 1;
-                    let n = total_months.min(24).max(1) as usize;
+                    let n = total_months.clamp(1, 24) as usize;
                     (0..n)
                         .map(|i| {
                             let months_back = i as i32;
@@ -232,12 +232,7 @@ pub async fn get_report_data(
                     txn_count: r.get(4)?,
                 })
             })?;
-            let mut out = Vec::new();
-            for row in rows {
-                if let Ok(r) = row {
-                    out.push(r);
-                }
-            }
+            let out: Vec<_> = rows.flatten().collect();
             out
         };
 
@@ -261,12 +256,7 @@ pub async fn get_report_data(
                     txn_count: r.get(4)?,
                 })
             })?;
-            let mut out = Vec::new();
-            for row in rows {
-                if let Ok(r) = row {
-                    out.push(r);
-                }
-            }
+            let out: Vec<_> = rows.flatten().collect();
             out
         };
 

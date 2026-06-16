@@ -418,7 +418,7 @@ pub async fn list_budget_history(
     months: u32,
 ) -> AppResult<Vec<CategoryHistory>> {
     let db = (*state.db).clone();
-    let months = months.max(1).min(24);
+    let months = months.clamp(1, 24);
     run(&db, move |conn| {
         let now = Utc::now();
         // Build list of month strings oldest first

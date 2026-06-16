@@ -40,10 +40,10 @@ pub async fn run_job(
         let import_id_clone = import_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = db.get()?;
-            let uncategorized = load_uncategorized(&mut *conn, import_id_clone.as_deref())?;
-            let active_rules = rules::list_active(&mut *conn)?;
-            let categories = load_categories(&mut *conn)?;
-            let recent_examples = load_recent_examples(&mut *conn)?;
+            let uncategorized = load_uncategorized(&mut conn, import_id_clone.as_deref())?;
+            let active_rules = rules::list_active(&mut conn)?;
+            let categories = load_categories(&mut conn)?;
+            let recent_examples = load_recent_examples(&mut conn)?;
             Ok::<_, anyhow::Error>((uncategorized, active_rules, categories, recent_examples))
         })
         .await??
@@ -61,8 +61,8 @@ pub async fn run_job(
             // Simple LIKE: leading/trailing % = contains, otherwise exact
             if pat.starts_with('%') && pat.ends_with('%') && pat.len() > 1 {
                 merch.contains(&pat[1..pat.len() - 1])
-            } else if pat.starts_with('%') {
-                merch.ends_with(&pat[1..])
+            } else if let Some(stripped) = pat.strip_prefix('%') {
+                merch.ends_with(stripped)
             } else if pat.ends_with('%') {
                 merch.starts_with(&pat[..pat.len() - 1])
             } else {
@@ -76,7 +76,7 @@ pub async fn run_job(
             let db = db.clone();
             tokio::task::spawn_blocking(move || {
                 let mut conn = db.get()?;
-                categorizations::insert(&mut *conn, NewCategorization {
+                categorizations::insert(&mut conn, NewCategorization {
                     txn_id: txn_id.clone(),
                     category_id: Some(cat_id.clone()),
                     source: "rule".to_string(),
@@ -119,7 +119,7 @@ pub async fn run_job(
             let db = db.clone();
             tokio::task::spawn_blocking(move || {
                 let mut conn = db.get()?;
-                categorizations::insert(&mut *conn, NewCategorization {
+                categorizations::insert(&mut conn, NewCategorization {
                     txn_id: txn_id.clone(),
                     category_id: Some(cat_id.clone()),
                     source: "llm".to_string(),
@@ -280,9 +280,9 @@ mod tests {
         let (_d, db) = fresh_db();
         {
             let mut conn = db.get().unwrap();
-            seed_db(&mut *conn);
+            seed_db(&mut conn);
             rules::insert(
-                &mut *conn,
+                &mut conn,
                 NewRule {
                     pattern: "CHIPOTLE".to_string(),
                     category_id: "cat1".to_string(),
@@ -325,7 +325,7 @@ mod tests {
         let (_d, db) = fresh_db();
         {
             let mut conn = db.get().unwrap();
-            seed_db(&mut *conn);
+            seed_db(&mut conn);
             // No rules — forces LLM path
         }
         let provider = Arc::new(MockCompletionProvider {
@@ -354,7 +354,7 @@ mod tests {
         let (_d, db) = fresh_db();
         {
             let mut conn = db.get().unwrap();
-            seed_db(&mut *conn); // inserts cat1 + account a1 + txn t1
+            seed_db(&mut conn); // inserts cat1 + account a1 + txn t1
                                  // Add two more transactions for the same merchant, all user-categorized.
             for i in 2..=3 {
                 let tid = format!("t{i}");

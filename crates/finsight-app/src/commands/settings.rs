@@ -90,8 +90,8 @@ pub async fn export_all_data_json(
             "goals": gs,
             "rules": rs,
         });
-        Ok(serde_json::to_string_pretty(&out)
-            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))?)
+        serde_json::to_string_pretty(&out)
+            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
     })
     .await
     .map_err(AppError::from)?;

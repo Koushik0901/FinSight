@@ -100,7 +100,7 @@ pub async fn export_account_csv(
     let maybe_path = app
         .dialog()
         .file()
-        .set_file_name(&format!("{safe_name}-transactions.csv"))
+        .set_file_name(format!("{safe_name}-transactions.csv"))
         .blocking_save_file();
 
     let Some(file_path) = maybe_path else {

@@ -772,6 +772,7 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
 
     // ── 5. Goals ───────────────────────────────────────────────────────────
     // (name, type, target_cents, current_cents, monthly_cents, target_date, color)
+    #[allow(clippy::type_complexity)]
     let goals: &[(&str, &str, i64, i64, i64, Option<&str>, &str)] = &[
         (
             "House down payment",
@@ -865,6 +866,7 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
 
     // ── 7. Liabilities ─────────────────────────────────────────────────────
     // (name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date)
+    #[allow(clippy::type_complexity)]
     let liabilities: &[(&str, &str, i64, Option<i64>, Option<f64>, Option<&str>)] = &[
         (
             "First Federal · 30-yr fixed",
