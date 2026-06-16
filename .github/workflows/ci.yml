@@ -50,7 +50,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           export $(dbus-launch)
-          echo -n "" | gnome-keyring-daemon --unlock --daemonize --components=secrets
+          echo -n "" | gnome-keyring-daemon --login --daemonize --components=secrets
           cargo test --workspace
       - name: cargo test (non-Linux)
         if: matrix.os != 'ubuntu-latest'
