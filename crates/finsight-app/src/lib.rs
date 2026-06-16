@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod error;
+pub mod notifications;
 
 use finsight_agent::{
     agent::{AgentEvent, AgentHandle, EventCallback},
@@ -245,6 +246,13 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 state.agent.set_provider(provider);
             }
             app.manage(state);
+
+            let notify_app = app.handle().clone();
+            let notify_db = db.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::notifications::check_and_fire(&notify_app, &notify_db).await;
+            });
+
             Ok(())
         })
 }
