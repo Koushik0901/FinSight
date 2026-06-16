@@ -316,7 +316,11 @@ export default function Reports() {
       const saved = localStorage.getItem("report_tabs");
       if (saved) {
         const parsed = JSON.parse(saved) as ReportTab[];
-        if (parsed.length > 0) return parsed;
+        const valid = parsed.filter(t =>
+          t && typeof t.id === "string" && typeof t.name === "string" &&
+          t.widgets && typeof t.widgets.barChart === "boolean"
+        );
+        if (valid.length > 0) return valid;
       }
     } catch {}
     return [DEFAULT_TAB];
@@ -339,9 +343,7 @@ export default function Reports() {
 
   const { data, isLoading, error } = useReportData(scope);
 
-  if (isLoading) return <div className="stub">Computing reports…</div>;
-  if (error)     return <div className="stub">Error computing reports.</div>;
-  if (!data || data.monthly.every((m) => m.incomeCents === 0 && m.expenseCents === 0)) {
+  if (!isLoading && !error && (!data || data.monthly.every((m) => m.incomeCents === 0 && m.expenseCents === 0))) {
     return (
       <div className="screen">
         <div className="screen-header">
@@ -365,13 +367,18 @@ export default function Reports() {
     scope === "year" ? "12-month" :
     "All-time";
 
-  // Aggregate KPIs from selected scope
-  const totalIncome  = data.monthly.reduce((s, m) => s + m.incomeCents, 0);
-  const totalExpense = data.monthly.reduce((s, m) => s + m.expenseCents, 0);
+  // Aggregate KPIs from selected scope (safe: only used when data is defined)
+  const totalIncome  = data ? data.monthly.reduce((s, m) => s + m.incomeCents, 0) : 0;
+  const totalExpense = data ? data.monthly.reduce((s, m) => s + m.expenseCents, 0) : 0;
   const netTotal     = totalIncome - totalExpense;
   const savingsRate  = totalIncome > 0 ? Math.round((netTotal / totalIncome) * 100) : 0;
-  const activeMonths = data.monthly.filter((m) => m.incomeCents + m.expenseCents > 0).length || 1;
+  const activeMonths = data ? (data.monthly.filter((m) => m.incomeCents + m.expenseCents > 0).length || 1) : 1;
   const avgMonthlySpend = Math.round(totalExpense / activeMonths);
+
+  const allWidgetsHidden =
+    !activeTab.widgets.barChart && !activeTab.widgets.netLine &&
+    !activeTab.widgets.donut && !activeTab.widgets.yoy &&
+    !activeTab.widgets.categories && !activeTab.widgets.merchants;
 
   return (
     <div className="screen">
@@ -434,8 +441,8 @@ export default function Reports() {
                 {tab.name}
               </button>
             )}
-            {/* Delete button — only show on non-default tabs when active */}
-            {tab.id !== "default" && activeTabId === tab.id && (
+            {/* Delete button — show on all non-default tabs */}
+            {tab.id !== "default" && (
               <button
                 className="btn ghost sm"
                 style={{ padding: "0 4px", color: "var(--ink-mute)", fontSize: 11 }}
@@ -550,99 +557,123 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Chart grid 1 */}
-      {(activeTab.widgets.barChart || activeTab.widgets.netLine) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
-          {activeTab.widgets.barChart && <BarChart months={data.monthly} scope={barScope} />}
-          {activeTab.widgets.netLine && <NetLine months={data.monthly} />}
-        </div>
-      )}
-
-      {/* Chart grid 2 */}
-      {(activeTab.widgets.donut || activeTab.widgets.yoy) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          {activeTab.widgets.donut && (
-            <DonutChart
-              categories={data.topCategories}
-              totalCents={data.topCategories.reduce((s, c) => s + c.totalCents, 0)}
-            />
-          )}
-          {activeTab.widgets.yoy && (
-            <YoYChart thisYear={data.monthly} lastYear={data.monthlyLastYear} />
-          )}
-        </div>
-      )}
-
-      {/* Tables grid */}
-      {(activeTab.widgets.categories || activeTab.widgets.merchants) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          {/* Top categories */}
-          {activeTab.widgets.categories && (
-            <div className="card flush">
-              <div className="card-head">
-                <div className="h3">Top categories</div>
-                <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
-              </div>
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th className="right">Total</th>
-                    <th className="right">Txns</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.topCategories.map((c) => (
-                    <tr key={c.categoryId}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block", flexShrink: 0 }} />
-                          <span style={{ fontSize: 14 }}>{c.label}</span>
-                        </div>
-                      </td>
-                      <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
-                      <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* Content area: loading / error / charts */}
+      {isLoading ? (
+        <div className="stub" style={{ minHeight: 200, marginTop: 16 }}>Loading…</div>
+      ) : error ? (
+        <div className="stub" style={{ minHeight: 200, marginTop: 16 }}>Error computing reports.</div>
+      ) : data ? (
+        <>
+          {/* Chart grid 1 */}
+          {(activeTab.widgets.barChart || activeTab.widgets.netLine) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
+              {activeTab.widgets.barChart && <BarChart months={data.monthly} scope={barScope} />}
+              {activeTab.widgets.netLine && <NetLine months={data.monthly} />}
             </div>
           )}
 
-          {/* Top merchants */}
-          {activeTab.widgets.merchants && (
-            <div className="card flush">
-              <div className="card-head">
-                <div className="h3">Top merchants</div>
-                <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
-              </div>
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Merchant</th>
-                    <th className="right">Total</th>
-                    <th className="right">Txns</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.topMerchants.map((m, i) => (
-                    <tr key={`${m.merchantRaw}-${i}`}>
-                      <td>
-                        <div>
-                          <div style={{ fontSize: 14 }}>{m.merchantRaw}</div>
-                          <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
-                        </div>
-                      </td>
-                      <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
-                      <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Chart grid 2 */}
+          {(activeTab.widgets.donut || activeTab.widgets.yoy) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+              {activeTab.widgets.donut && (
+                <DonutChart
+                  categories={data.topCategories}
+                  totalCents={data.topCategories.reduce((s, c) => s + c.totalCents, 0)}
+                />
+              )}
+              {activeTab.widgets.yoy && (
+                <YoYChart thisYear={data.monthly} lastYear={data.monthlyLastYear} />
+              )}
             </div>
           )}
-        </div>
-      )}
+
+          {/* Tables grid */}
+          {(activeTab.widgets.categories || activeTab.widgets.merchants) && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+              {/* Top categories */}
+              {activeTab.widgets.categories && (
+                <div className="card flush">
+                  <div className="card-head">
+                    <div className="h3">Top categories</div>
+                    <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
+                  </div>
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th className="right">Total</th>
+                        <th className="right">Txns</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.topCategories.map((c) => (
+                        <tr key={c.categoryId}>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block", flexShrink: 0 }} />
+                              <span style={{ fontSize: 14 }}>{c.label}</span>
+                            </div>
+                          </td>
+                          <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
+                          <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Top merchants */}
+              {activeTab.widgets.merchants && (
+                <div className="card flush">
+                  <div className="card-head">
+                    <div className="h3">Top merchants</div>
+                    <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
+                  </div>
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th>Merchant</th>
+                        <th className="right">Total</th>
+                        <th className="right">Txns</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.topMerchants.map((m, i) => (
+                        <tr key={`${m.merchantRaw}-${i}`}>
+                          <td>
+                            <div>
+                              <div style={{ fontSize: 14 }}>{m.merchantRaw}</div>
+                              <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
+                            </div>
+                          </td>
+                          <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
+                          <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* All-widgets-hidden empty state */}
+          {allWidgetsHidden && (
+            <div className="stub" style={{ marginTop: 16, textAlign: "center", padding: "40px 20px" }}>
+              All widgets hidden — use{" "}
+              <button
+                className="btn ghost sm"
+                onClick={() => setCustomize(true)}
+                style={{ display: "inline", padding: "0 4px" }}
+              >
+                ✎ Customize
+              </button>{" "}
+              to re-enable some.
+            </div>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

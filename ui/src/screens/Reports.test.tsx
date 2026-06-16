@@ -61,8 +61,8 @@ describe("Reports screen", () => {
 
   it("renders category and merchant tables when data is present", async () => {
     render(<Reports />, { wrapper: createWrapper() });
-    await screen.findByText("See the shape of your money over time.");
-    expect(screen.getByText("Top categories")).toBeInTheDocument();
+    // Wait for the data-driven tables to appear (data loads asynchronously)
+    await screen.findByText("Top categories");
     expect(screen.getByText("Top merchants")).toBeInTheDocument();
     // merchant names are unique to the merchant table
     expect(screen.getByText("Whole Foods Market")).toBeInTheDocument();
