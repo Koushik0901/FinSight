@@ -19,6 +19,8 @@ vi.mock("../api/hooks/transactions", () => ({
   useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
+  useTransactionSplits: vi.fn(() => ({ data: [] })),
+  useSetTransactionSplits: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),

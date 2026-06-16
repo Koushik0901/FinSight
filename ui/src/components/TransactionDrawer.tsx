@@ -5,9 +5,11 @@ import { z } from "zod";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import CategoryPicker from "./CategoryPicker";
+import SplitModal from "./SplitModal";
 import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
+  useTransactionSplits, useSetTransactionSplits,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { Transaction } from "../api/bindings";
@@ -40,6 +42,9 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const { data: accounts = [] } = useAccounts();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const { data: existingSplits = [] } = useTransactionSplits(transaction?.id);
+  const clearSplits = useSetTransactionSplits();
 
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -155,7 +160,18 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
         )}
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Category</div>
-          <CategoryPicker value={selectedCategory} onChange={setSelectedCategory} />
+          {transaction?.is_split ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 7, border: "1px solid var(--line)" }}>
+              <span style={{ flex: 1, fontSize: 13, color: "var(--ink-mute)" }}>
+                Split · {existingSplits.length} {existingSplits.length === 1 ? "category" : "categories"} · ${(Math.abs(transaction.amount_cents) / 100).toFixed(2)}
+              </span>
+              <button type="button" onClick={() => setSplitModalOpen(true)} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                Edit splits →
+              </button>
+            </div>
+          ) : (
+            <CategoryPicker value={selectedCategory} onChange={setSelectedCategory} />
+          )}
         </div>
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
@@ -185,10 +201,16 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             className={`chip${transaction.is_split ? " accent" : ""}`}
             aria-pressed={transaction.is_split}
             onClick={async () => {
-            try {
-              await setFlags.mutateAsync({ id: transaction.id, isReimbursable: transaction.is_reimbursable, isSplit: !transaction.is_split });
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Could not update flag");
+            if (!transaction.is_split) {
+              // Turning ON: open SplitModal to define splits
+              setSplitModalOpen(true);
+            } else {
+              // Turning OFF: clear splits
+              try {
+                await clearSplits.mutateAsync({ txnId: transaction.id, splits: [] });
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Could not clear splits");
+              }
             }
           }}
           >
@@ -207,6 +229,15 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             </button>
           )}
         </div>
+      )}
+      {transaction && (
+        <SplitModal
+          open={splitModalOpen}
+          onClose={() => setSplitModalOpen(false)}
+          transactionId={transaction.id}
+          totalCents={Math.abs(transaction.amount_cents)}
+          existingSplits={existingSplits}
+        />
       )}
     </Drawer>
   );

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryWithSpending, type RuleWithCategory } from "../client";
+import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
 
 const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null, search: null, filterPreset: null };
 
@@ -149,6 +149,42 @@ export function useSetTransactionFlags() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["today-summary"] });
       qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+    },
+  });
+}
+
+export function useTransactionSplits(txnId: string | undefined) {
+  return useQuery({
+    queryKey: ["splits", txnId],
+    queryFn: async () => {
+      if (!txnId) return [];
+      const result = await commands.getTransactionSplits(txnId);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: !!txnId,
+  });
+}
+
+export function useSetTransactionSplits() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ txnId, splits }: {
+      txnId: string;
+      splits: Array<{ categoryId: string | null; amountCents: number }>;
+    }) => {
+      const result = await commands.setTransactionSplits(
+        txnId,
+        splits.map((s): SplitInputDto => ({ categoryId: s.categoryId, amountCents: s.amountCents }))
+      );
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["splits", vars.txnId] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+      qc.invalidateQueries({ queryKey: ["today-summary"] });
     },
   });
 }
