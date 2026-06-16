@@ -44,10 +44,15 @@ pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorth
          WHERE date >= date('now', ?1) ORDER BY date ASC",
     )?;
     let rows = stmt.query_map(params![cutoff], |r| {
-        Ok(NetWorthPoint { date: r.get(0)?, total_cents: r.get(1)? })
+        Ok(NetWorthPoint {
+            date: r.get(0)?,
+            total_cents: r.get(1)?,
+        })
     })?;
     let mut out = Vec::new();
-    for row in rows { out.push(row?); }
+    for row in rows {
+        out.push(row?);
+    }
     Ok(out)
 }
 
@@ -84,26 +89,45 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
 
-        accounts::insert(&mut conn, NewAccount {
-            owner: "me".into(),
-            bank: "Bank".into(),
-            r#type: AccountType::Checking,
-            name: "Checking".into(),
-            last4: None,
-            currency: "USD".into(),
-            color: "#3B82F6".into(),
-            source: "manual".into(),
-            opening_balance_cents: 10_000_000,
-        }).unwrap();
-        manual_assets::create(&mut conn, NewManualAsset {
-            name: "House".into(), asset_type: "property".into(),
-            value_cents: 50_000_000, currency: "USD".into(), notes: None,
-        }).unwrap();
-        liabilities::create(&mut conn, NewLiability {
-            name: "Mortgage".into(), liability_type: "mortgage".into(),
-            balance_cents: 30_000_000, limit_cents: Some(35_000_000),
-            apr_pct: Some(5.5), payoff_date: None, currency: "USD".into(),
-        }).unwrap();
+        accounts::insert(
+            &mut conn,
+            NewAccount {
+                owner: "me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Checking,
+                name: "Checking".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#3B82F6".into(),
+                source: "manual".into(),
+                opening_balance_cents: 10_000_000,
+            },
+        )
+        .unwrap();
+        manual_assets::create(
+            &mut conn,
+            NewManualAsset {
+                name: "House".into(),
+                asset_type: "property".into(),
+                value_cents: 50_000_000,
+                currency: "USD".into(),
+                notes: None,
+            },
+        )
+        .unwrap();
+        liabilities::create(
+            &mut conn,
+            NewLiability {
+                name: "Mortgage".into(),
+                liability_type: "mortgage".into(),
+                balance_cents: 30_000_000,
+                limit_cents: Some(35_000_000),
+                apr_pct: Some(5.5),
+                payoff_date: None,
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
 
         record_today(&mut conn).unwrap();
 

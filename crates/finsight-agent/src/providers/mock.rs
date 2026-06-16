@@ -12,8 +12,12 @@ pub struct MockCompletionProvider {
 
 #[async_trait]
 impl CompletionProvider for MockCompletionProvider {
-    fn provider_id(&self) -> &str { &self.provider_id }
-    fn model_id(&self) -> &str { &self.model_id }
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
     async fn complete_json(&self, _system: &str, _user: &str) -> Result<Value> {
         Ok(self.response.clone())
     }

@@ -141,8 +141,16 @@ pub fn project(s: &Snapshot, p: &ScenarioParams, months: u32) -> Projection {
     // Goals affected: both a reduced monthly net and a one-time cost compete with
     // goal funding, so distribute each proportionally across the goals.
     let total_goal_monthly: i64 = s.goals.iter().map(|g| g.monthly_cents.max(0)).sum();
-    let monthly_shortfall = if in_window { (base_net - scen_net).max(0) } else { 0 };
-    let one_time_drain = if in_window { p.one_time_cents.max(0) } else { 0 };
+    let monthly_shortfall = if in_window {
+        (base_net - scen_net).max(0)
+    } else {
+        0
+    };
+    let one_time_drain = if in_window {
+        p.one_time_cents.max(0)
+    } else {
+        0
+    };
     let mut goals_affected = Vec::new();
     if (monthly_shortfall > 0 || one_time_drain > 0) && total_goal_monthly > 0 {
         for g in &s.goals {
@@ -285,8 +293,8 @@ mod tests {
 
     fn snap() -> Snapshot {
         Snapshot {
-            balance_cents: 2_000_000, // $20k
-            avg_monthly_income_cents: 600_000, // $6k
+            balance_cents: 2_000_000,           // $20k
+            avg_monthly_income_cents: 600_000,  // $6k
             avg_monthly_expense_cents: 400_000, // $4k
             goals: vec![GoalInfo {
                 name: "House Fund".into(),
@@ -320,7 +328,10 @@ mod tests {
 
     #[test]
     fn income_cut_shortens_runway() {
-        let p = ScenarioParams { income_delta_pct: -100, ..Default::default() };
+        let p = ScenarioParams {
+            income_delta_pct: -100,
+            ..Default::default()
+        };
         let proj = project(&snap(), &p, 12);
         // With no income, net outflow becomes positive => finite, shorter runway.
         assert!(proj.runway_change_days < 0);
@@ -331,17 +342,26 @@ mod tests {
     #[test]
     fn mild_shortfall_slips_goal_eta() {
         // Reduce monthly net by adding recurring outflow smaller than the goal contribution.
-        let p = ScenarioParams { monthly_expense_delta_cents: 50_000, ..Default::default() };
+        let p = ScenarioParams {
+            monthly_expense_delta_cents: 50_000,
+            ..Default::default()
+        };
         let proj = project(&snap(), &p, 12);
         // shortfall=50_000, total_goal_monthly=100_000 → share=50_000, new_monthly=50_000.
         // base_eta = ceil(1_200_000/100_000) = 12; scen_eta = ceil(1_200_000/50_000) = 24; slip = 12.
         // Shortfall ($500) < goal monthly ($1000), so the goal slips but is not paused.
-        assert!(proj.goals_affected.iter().any(|g| g.starts_with("House Fund: +") && g.ends_with(" mo")));
+        assert!(proj
+            .goals_affected
+            .iter()
+            .any(|g| g.starts_with("House Fund: +") && g.ends_with(" mo")));
     }
 
     #[test]
     fn one_time_purchase_reduces_scenario_balance() {
-        let p = ScenarioParams { one_time_cents: 500_000, ..Default::default() };
+        let p = ScenarioParams {
+            one_time_cents: 500_000,
+            ..Default::default()
+        };
         let proj = project(&snap(), &p, 12);
         // First month scenario balance is $5k below baseline.
         assert_eq!(proj.baseline_monthly[0] - proj.scenario_monthly[0], 500_000);
@@ -351,7 +371,10 @@ mod tests {
     fn large_one_time_on_low_balance_is_not_coverable() {
         let mut s = snap();
         s.balance_cents = 100_000; // $1k
-        let p = ScenarioParams { one_time_cents: 3_500_000, ..Default::default() };
+        let p = ScenarioParams {
+            one_time_cents: 3_500_000,
+            ..Default::default()
+        };
         let proj = project(&s, &p, 12);
         assert!(!proj.verdict);
         assert!(!proj.considerations.is_empty());
@@ -364,7 +387,10 @@ mod tests {
         // balance used to short-circuit to RUNWAY_CAP_DAYS).
         let mut s = snap();
         s.balance_cents = 100_000;
-        let p = ScenarioParams { one_time_cents: 3_500_000, ..Default::default() };
+        let p = ScenarioParams {
+            one_time_cents: 3_500_000,
+            ..Default::default()
+        };
         let proj = project(&s, &p, 12);
         assert!(proj.runway_change_days < 0);
         assert_eq!(runway_days(-1, 0, 30), 0);
@@ -374,7 +400,10 @@ mod tests {
     fn one_time_purchase_slips_goals() {
         // A pure one-time purchase still competes with goal funding, so the goal
         // ETA must slip even though monthly net is unchanged.
-        let p = ScenarioParams { one_time_cents: 500_000, ..Default::default() };
+        let p = ScenarioParams {
+            one_time_cents: 500_000,
+            ..Default::default()
+        };
         let proj = project(&snap(), &p, 12);
         assert!(proj
             .goals_affected

@@ -12,9 +12,19 @@ pub enum AgentJob {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "event", rename_all = "camelCase")]
 pub enum AgentEvent {
-    CategorizationProgress { import_id: Option<String>, done: u32, total: u32 },
-    CategorizationComplete { import_id: Option<String>, categorized: u32, skipped: u32 },
-    Error { message: String },
+    CategorizationProgress {
+        import_id: Option<String>,
+        done: u32,
+        total: u32,
+    },
+    CategorizationComplete {
+        import_id: Option<String>,
+        categorized: u32,
+        skipped: u32,
+    },
+    Error {
+        message: String,
+    },
 }
 
 pub type EventCallback = Arc<dyn Fn(AgentEvent) + Send + Sync>;
@@ -73,7 +83,9 @@ async fn run_loop(
             Some(p) => {
                 let result = crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await;
                 if let Err(e) = result {
-                    on_event(AgentEvent::Error { message: e.to_string() });
+                    on_event(AgentEvent::Error {
+                        message: e.to_string(),
+                    });
                 }
             }
         }
@@ -100,9 +112,13 @@ mod tests {
         let events_clone = Arc::clone(&events);
         let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
             Arc::new(RwLock::new(None));
-        let handle = AgentHandle::spawn(db, provider, Arc::new(move |e| {
-            events_clone.lock().unwrap().push(e);
-        }));
+        let handle = AgentHandle::spawn(
+            db,
+            provider,
+            Arc::new(move |e| {
+                events_clone.lock().unwrap().push(e);
+            }),
+        );
 
         handle.tx.send(AgentJob::CategorizeAll).await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;

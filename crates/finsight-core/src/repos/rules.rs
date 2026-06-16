@@ -18,7 +18,13 @@ pub fn list_active(conn: &mut Connection) -> CoreResult<Vec<Rule>> {
             enabled: r.get::<_, i64>(3)? != 0,
             source: r.get(4)?,
             created_at: DateTime::parse_from_rfc3339(&created_s)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e)))?
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        5,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?
                 .with_timezone(&Utc),
         })
     })?;
@@ -35,7 +41,13 @@ pub fn insert(conn: &mut Connection, rule: NewRule) -> CoreResult<Rule> {
     conn.execute(
         "INSERT INTO rules(id, pattern, category_id, enabled, source, created_at) \
          VALUES(?1, ?2, ?3, 1, ?4, ?5)",
-        params![id, rule.pattern, rule.category_id, rule.source, now.to_rfc3339()],
+        params![
+            id,
+            rule.pattern,
+            rule.category_id,
+            rule.source,
+            now.to_rfc3339()
+        ],
     )?;
     Ok(Rule {
         id,
@@ -73,7 +85,11 @@ mod tests {
     fn insert_and_list_active_rules() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
 
         let rule = NewRule {

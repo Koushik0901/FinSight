@@ -1,8 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
+use chrono::{Datelike, Utc};
 use finsight_core::models::{NewTransaction, Transaction, TxnPatch};
 use finsight_core::repos::{rules, run, transactions};
-use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_plugin_dialog::DialogExt;
@@ -81,7 +81,10 @@ pub async fn update_transaction(
             category_id: r.category_id,
             category_label: r.category_label,
         });
-        Ok(UpdateTxnResult { transaction: txn, proposed_rule })
+        Ok(UpdateTxnResult {
+            transaction: txn,
+            proposed_rule,
+        })
     })
     .await
     .map_err(AppError::from)
@@ -89,10 +92,7 @@ pub async fn update_transaction(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_transaction(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> AppResult<()> {
+pub async fn delete_transaction(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| transactions::delete(conn, &id))
         .await
@@ -108,11 +108,14 @@ pub async fn create_rule(
 ) -> AppResult<finsight_core::models::Rule> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        rules::insert(conn, finsight_core::models::NewRule {
-            pattern,
-            category_id,
-            source: "user".to_string(),
-        })
+        rules::insert(
+            conn,
+            finsight_core::models::NewRule {
+                pattern,
+                category_id,
+                source: "user".to_string(),
+            },
+        )
     })
     .await
     .map_err(AppError::from)
@@ -129,9 +132,7 @@ pub struct CategoryDto {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_categories(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<Vec<CategoryDto>> {
+pub async fn list_categories(state: tauri::State<'_, AppState>) -> AppResult<Vec<CategoryDto>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
@@ -308,9 +309,7 @@ pub async fn toggle_rule(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_transaction_count(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<i64> {
+pub async fn get_transaction_count(state: tauri::State<'_, AppState>) -> AppResult<i64> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         Ok(conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))?)
@@ -328,9 +327,11 @@ pub async fn set_transaction_flags(
     is_split: bool,
 ) -> AppResult<finsight_core::models::Transaction> {
     let db = (*state.db).clone();
-    run(&db, move |conn| transactions::set_flags(conn, &id, is_reimbursable, is_split))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        transactions::set_flags(conn, &id, is_reimbursable, is_split)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 fn csv_escape(s: &str) -> String {
@@ -354,20 +355,25 @@ pub async fn export_transactions_csv(
         .set_file_name("transactions.csv")
         .blocking_save_file();
 
-    let Some(file_path) = maybe_path else { return Ok(String::new()); };
+    let Some(file_path) = maybe_path else {
+        return Ok(String::new());
+    };
     let path = file_path
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
     let db = (*state.db).clone();
     let csv = run(&db, move |conn| {
-        let txns = transactions::list(conn, transactions::TxnFilter {
-            account_id: filter.account_id,
-            limit: i64::MAX,
-            offset: 0,
-            search: filter.search,
-            filter_preset: filter.filter_preset,
-        })?;
+        let txns = transactions::list(
+            conn,
+            transactions::TxnFilter {
+                account_id: filter.account_id,
+                limit: i64::MAX,
+                offset: 0,
+                search: filter.search,
+                filter_preset: filter.filter_preset,
+            },
+        )?;
         let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
         for t in txns {
             let date = t.posted_at.format("%Y-%m-%d").to_string();

@@ -154,13 +154,22 @@ label is a short title for the scenario.";
     }
 
     Ok(ScenarioParams {
-        income_delta_pct: v.get("income_delta_pct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
+        income_delta_pct: v
+            .get("income_delta_pct")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0) as i32,
         monthly_expense_delta_cents: v
             .get("monthly_expense_delta_cents")
             .and_then(|x| x.as_i64())
             .unwrap_or(0),
-        one_time_cents: v.get("one_time_cents").and_then(|x| x.as_i64()).unwrap_or(0),
-        start_month_offset: v.get("start_month_offset").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+        one_time_cents: v
+            .get("one_time_cents")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        start_month_offset: v
+            .get("start_month_offset")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as u32,
         label: v
             .get("label")
             .and_then(|x| x.as_str())
@@ -202,8 +211,8 @@ pub async fn save_scenario(
     result: ScenarioResult,
 ) -> AppResult<SavedScenario> {
     let db = (*state.db).clone();
-    let result_json =
-        serde_json::to_string(&result).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let result_json = serde_json::to_string(&result)
+        .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
     let row = run(&db, move |conn| {
         scenarios_repo::insert(conn, &description, &result_json)
     })
@@ -223,7 +232,9 @@ pub async fn list_scenario_history(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SavedScenario>> {
     let db = (*state.db).clone();
-    let rows = run(&db, scenarios_repo::list).await.map_err(AppError::from)?;
+    let rows = run(&db, scenarios_repo::list)
+        .await
+        .map_err(AppError::from)?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let result: ScenarioResult = serde_json::from_str(&row.result_json)

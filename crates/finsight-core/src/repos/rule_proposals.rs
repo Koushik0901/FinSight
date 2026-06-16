@@ -6,8 +6,13 @@ use uuid::Uuid;
 
 fn map_row(r: &rusqlite::Row) -> rusqlite::Result<RuleProposal> {
     Ok(RuleProposal {
-        id: r.get(0)?, when_label: r.get(1)?, description: r.get(2)?, pattern: r.get(3)?,
-        category_id: r.get(4)?, status: r.get(5)?, created_at: r.get(6)?,
+        id: r.get(0)?,
+        when_label: r.get(1)?,
+        description: r.get(2)?,
+        pattern: r.get(3)?,
+        category_id: r.get(4)?,
+        status: r.get(5)?,
+        created_at: r.get(6)?,
     })
 }
 
@@ -20,7 +25,9 @@ pub fn list(conn: &mut Connection, status: Option<&str>) -> CoreResult<Vec<RuleP
                  FROM rule_proposals WHERE status = ?1 ORDER BY created_at DESC",
             )?;
             let rows = stmt.query_map(params![s], map_row)?;
-            for row in rows { out.push(row?); }
+            for row in rows {
+                out.push(row?);
+            }
         }
         None => {
             let mut stmt = conn.prepare(
@@ -28,7 +35,9 @@ pub fn list(conn: &mut Connection, status: Option<&str>) -> CoreResult<Vec<RuleP
                  FROM rule_proposals ORDER BY created_at DESC",
             )?;
             let rows = stmt.query_map([], map_row)?;
-            for row in rows { out.push(row?); }
+            for row in rows {
+                out.push(row?);
+            }
         }
     }
     Ok(out)
@@ -38,7 +47,8 @@ pub fn get(conn: &mut Connection, id: &str) -> CoreResult<Option<RuleProposal>> 
     match conn.query_row(
         "SELECT id, when_label, description, pattern, category_id, status, created_at \
          FROM rule_proposals WHERE id = ?1",
-        params![id], map_row,
+        params![id],
+        map_row,
     ) {
         Ok(p) => Ok(Some(p)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -46,7 +56,13 @@ pub fn get(conn: &mut Connection, id: &str) -> CoreResult<Option<RuleProposal>> 
     }
 }
 
-pub fn insert(conn: &mut Connection, when_label: &str, description: &str, pattern: &str, category_id: &str) -> CoreResult<RuleProposal> {
+pub fn insert(
+    conn: &mut Connection,
+    when_label: &str,
+    description: &str,
+    pattern: &str,
+    category_id: &str,
+) -> CoreResult<RuleProposal> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
@@ -55,27 +71,36 @@ pub fn insert(conn: &mut Connection, when_label: &str, description: &str, patter
         params![id, when_label, description, pattern, category_id, now],
     )?;
     Ok(RuleProposal {
-        id, when_label: when_label.to_string(), description: description.to_string(),
-        pattern: pattern.to_string(), category_id: category_id.to_string(),
-        status: "pending".to_string(), created_at: now,
+        id,
+        when_label: when_label.to_string(),
+        description: description.to_string(),
+        pattern: pattern.to_string(),
+        category_id: category_id.to_string(),
+        status: "pending".to_string(),
+        created_at: now,
     })
 }
 
 pub fn set_status(conn: &mut Connection, id: &str, status: &str) -> CoreResult<()> {
-    conn.execute("UPDATE rule_proposals SET status = ?1 WHERE id = ?2", params![status, id])?;
+    conn.execute(
+        "UPDATE rule_proposals SET status = ?1 WHERE id = ?2",
+        params![status, id],
+    )?;
     Ok(())
 }
 
 pub fn exists_pending(conn: &mut Connection, pattern: &str, category_id: &str) -> CoreResult<bool> {
-    let found: bool = conn.query_row(
-        "SELECT 1 FROM rule_proposals \
+    let found: bool = conn
+        .query_row(
+            "SELECT 1 FROM rule_proposals \
          WHERE lower(pattern) = lower(?1) AND category_id = ?2 AND status = 'pending' LIMIT 1",
-        params![pattern, category_id],
-        |_| Ok(true),
-    ).or_else(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => Ok(false),
-        other => Err(other),
-    })?;
+            params![pattern, category_id],
+            |_| Ok(true),
+        )
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            other => Err(other),
+        })?;
     Ok(found)
 }
 
@@ -101,14 +126,16 @@ pub fn emit_from_corrections(conn: &mut Connection, threshold: i64) -> CoreResul
 
     let mut inserted = 0usize;
     for (merchant_raw, category_id, category_label, n) in candidates {
-        let rule_exists: bool = conn.query_row(
-            "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
-            params![merchant_raw],
-            |_| Ok(true),
-        ).or_else(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => Ok(false),
-            other => Err(other),
-        })?;
+        let rule_exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
+                params![merchant_raw],
+                |_| Ok(true),
+            )
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(false),
+                other => Err(other),
+            })?;
         if rule_exists || exists_pending(conn, &merchant_raw, &category_id)? {
             continue;
         }
@@ -137,7 +164,11 @@ mod tests {
     }
 
     fn seed_three_user_corrections(conn: &mut Connection) {
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Streaming','#0f0',0)", []).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')", []).unwrap();
         for i in 0..3 {
@@ -151,7 +182,8 @@ mod tests {
                 "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                  VALUES(?1,?2,'cat1','user',1.0,'2024-01-02T00:00:00Z')",
                 params![format!("c{i}"), tid],
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 

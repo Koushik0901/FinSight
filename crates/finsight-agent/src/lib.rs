@@ -1,11 +1,11 @@
 //! FinSight agent — LLM provider traits, agent task, categorizer pipeline.
 
-pub mod providers;
 pub mod agent;
 pub mod categorizer;
+pub mod providers;
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::Value;
 
 /// Core provider abstraction. All impls must be Send + Sync so they can be

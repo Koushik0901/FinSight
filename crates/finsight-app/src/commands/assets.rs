@@ -20,7 +20,9 @@ pub async fn create_manual_asset(
     input: NewManualAsset,
 ) -> AppResult<ManualAsset> {
     let db = (*state.db).clone();
-    run(&db, move |conn| manual_assets::create(conn, input)).await.map_err(AppError::from)
+    run(&db, move |conn| manual_assets::create(conn, input))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -31,14 +33,18 @@ pub async fn update_manual_asset(
     patch: ManualAssetPatch,
 ) -> AppResult<ManualAsset> {
     let db = (*state.db).clone();
-    run(&db, move |conn| manual_assets::update(conn, &id, patch)).await.map_err(AppError::from)
+    run(&db, move |conn| manual_assets::update(conn, &id, patch))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_manual_asset(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| manual_assets::delete(conn, &id)).await.map_err(AppError::from)
+    run(&db, move |conn| manual_assets::delete(conn, &id))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -55,7 +61,9 @@ pub async fn create_liability(
     input: NewLiability,
 ) -> AppResult<Liability> {
     let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::create(conn, input)).await.map_err(AppError::from)
+    run(&db, move |conn| liabilities::create(conn, input))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -66,21 +74,27 @@ pub async fn update_liability(
     patch: LiabilityPatch,
 ) -> AppResult<Liability> {
     let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::update(conn, &id, patch)).await.map_err(AppError::from)
+    run(&db, move |conn| liabilities::update(conn, &id, patch))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_liability(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::delete(conn, &id)).await.map_err(AppError::from)
+    run(&db, move |conn| liabilities::delete(conn, &id))
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn record_net_worth_snapshot(state: tauri::State<'_, AppState>) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, net_worth::record_today).await.map_err(AppError::from)
+    run(&db, net_worth::record_today)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -90,5 +104,7 @@ pub async fn list_net_worth_history(
     days: u32,
 ) -> AppResult<Vec<NetWorthPoint>> {
     let db = (*state.db).clone();
-    run(&db, move |conn| net_worth::list_history(conn, days)).await.map_err(AppError::from)
+    run(&db, move |conn| net_worth::list_history(conn, days))
+        .await
+        .map_err(AppError::from)
 }

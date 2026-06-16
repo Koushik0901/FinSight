@@ -35,16 +35,26 @@ impl OpenAiCompatProvider {
 }
 
 #[derive(Deserialize)]
-struct Choice { message: OaiMessage }
+struct Choice {
+    message: OaiMessage,
+}
 #[derive(Deserialize)]
-struct OaiMessage { content: String }
+struct OaiMessage {
+    content: String,
+}
 #[derive(Deserialize)]
-struct OaiResp { choices: Vec<Choice> }
+struct OaiResp {
+    choices: Vec<Choice>,
+}
 
 #[async_trait]
 impl CompletionProvider for OpenAiCompatProvider {
-    fn provider_id(&self) -> &str { &self.preset }
-    fn model_id(&self) -> &str { &self.model }
+    fn provider_id(&self) -> &str {
+        &self.preset
+    }
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
@@ -55,7 +65,8 @@ impl CompletionProvider for OpenAiCompatProvider {
                 {"role": "user",   "content": user},
             ]
         });
-        let resp: OaiResp = self.client
+        let resp: OaiResp = self
+            .client
             .post(format!("{}/chat/completions", self.base_url))
             .bearer_auth(&self.api_key)
             .json(&body)
@@ -64,11 +75,14 @@ impl CompletionProvider for OpenAiCompatProvider {
             .error_for_status()?
             .json()
             .await?;
-        let content = resp.choices.into_iter().next()
+        let content = resp
+            .choices
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow!("no choices in response"))?
-            .message.content;
-        serde_json::from_str(&content)
-            .map_err(|e| anyhow!("OpenAI response not valid JSON: {e}"))
+            .message
+            .content;
+        serde_json::from_str(&content).map_err(|e| anyhow!("OpenAI response not valid JSON: {e}"))
     }
 
     // list_models returns Ok(vec![]) — UI falls back to free-text model input

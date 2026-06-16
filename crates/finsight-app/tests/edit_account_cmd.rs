@@ -20,12 +20,22 @@ async fn update_account_name_and_color() {
     let (_d, db) = fresh_db();
     let account_id = {
         let mut conn = db.get().unwrap();
-        accounts::insert(&mut conn, NewAccount {
-            owner: "Me".into(), bank: "Chase".into(),
-            r#type: AccountType::Checking, name: "Old".into(),
-            last4: None, currency: "USD".into(), color: "#000".into(),
-            opening_balance_cents: 0, source: "manual".into(),
-        }).unwrap().id
+        accounts::insert(
+            &mut conn,
+            NewAccount {
+                owner: "Me".into(),
+                bank: "Chase".into(),
+                r#type: AccountType::Checking,
+                name: "Old".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#000".into(),
+                opening_balance_cents: 0,
+                source: "manual".into(),
+            },
+        )
+        .unwrap()
+        .id
     };
     let patch = finsight_core::models::AccountPatch {
         name: Some("New Name".into()),
@@ -33,7 +43,8 @@ async fn update_account_name_and_color() {
         ..Default::default()
     };
     let updated = run(&db, move |conn| accounts::update(conn, &account_id, patch))
-        .await.unwrap();
+        .await
+        .unwrap();
     assert_eq!(updated.name, "New Name");
     assert_eq!(updated.color, "#ff0000");
 }
@@ -43,12 +54,21 @@ async fn archive_account_cleans_up_mappings() {
     let (_d, db) = fresh_db();
     let account_id = {
         let mut conn = db.get().unwrap();
-        let acc = accounts::insert(&mut conn, NewAccount {
-            owner: "Me".into(), bank: "Chase".into(),
-            r#type: AccountType::Checking, name: "Acc".into(),
-            last4: None, currency: "USD".into(), color: "#fff".into(),
-            opening_balance_cents: 0, source: "manual".into(),
-        }).unwrap();
+        let acc = accounts::insert(
+            &mut conn,
+            NewAccount {
+                owner: "Me".into(),
+                bank: "Chase".into(),
+                r#type: AccountType::Checking,
+                name: "Acc".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#fff".into(),
+                opening_balance_cents: 0,
+                source: "manual".into(),
+            },
+        )
+        .unwrap();
         // Seed a fake csv_import_mappings row (last_used_at is NOT NULL)
         conn.execute(
             "INSERT INTO csv_import_mappings(account_id, mapping_json, last_used_at) VALUES(?1, '{}', '2024-01-01T00:00:00Z')",
@@ -59,18 +79,24 @@ async fn archive_account_cleans_up_mappings() {
     run(&db, {
         let aid = account_id.clone();
         move |conn| accounts::archive(conn, &aid)
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     let conn = db.get().unwrap();
-    let archived_at: Option<String> = conn.query_row(
-        "SELECT archived_at FROM accounts WHERE id = ?1",
-        rusqlite::params![account_id],
-        |r| r.get(0),
-    ).unwrap();
+    let archived_at: Option<String> = conn
+        .query_row(
+            "SELECT archived_at FROM accounts WHERE id = ?1",
+            rusqlite::params![account_id],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert!(archived_at.is_some());
-    let mapping_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM csv_import_mappings WHERE account_id = ?1",
-        rusqlite::params![account_id],
-        |r| r.get(0),
-    ).unwrap();
+    let mapping_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM csv_import_mappings WHERE account_id = ?1",
+            rusqlite::params![account_id],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(mapping_count, 0);
 }

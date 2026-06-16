@@ -34,12 +34,18 @@ struct ContentBlock {
     input: Value,
 }
 #[derive(Deserialize)]
-struct AnthropicResp { content: Vec<ContentBlock> }
+struct AnthropicResp {
+    content: Vec<ContentBlock>,
+}
 
 #[async_trait]
 impl CompletionProvider for AnthropicProvider {
-    fn provider_id(&self) -> &str { "anthropic" }
-    fn model_id(&self) -> &str { &self.model }
+    fn provider_id(&self) -> &str {
+        "anthropic"
+    }
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
@@ -73,7 +79,8 @@ impl CompletionProvider for AnthropicProvider {
             "tool_choice": {"type": "tool", "name": "classify"}
         });
 
-        let resp: AnthropicResp = self.client
+        let resp: AnthropicResp = self
+            .client
             .post(ANTHROPIC_API)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -85,13 +92,18 @@ impl CompletionProvider for AnthropicProvider {
             .await?;
 
         // Response is content[0].input.results
-        let block = resp.content.into_iter().next()
+        let block = resp
+            .content
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow!("empty content from Anthropic"))?;
         if block.kind != "tool_use" {
             return Err(anyhow!("expected tool_use block, got {}", block.kind));
         }
         // Return the results array directly
-        block.input.get("results")
+        block
+            .input
+            .get("results")
             .cloned()
             .ok_or_else(|| anyhow!("missing 'results' in tool input"))
     }
@@ -116,10 +128,22 @@ mod tests {
     #[test]
     fn extracts_results_from_tool_input() {
         let input = json!({"results": [{"txn_id": "t1", "category_id": "cat1", "confidence": 0.95, "rationale": "r"}]});
-        let block = ContentBlock { kind: "tool_use".into(), input: input.clone() };
-        let resp = AnthropicResp { content: vec![block] };
-        let results = resp.content.into_iter().next().unwrap().input
-            .get("results").cloned().unwrap();
+        let block = ContentBlock {
+            kind: "tool_use".into(),
+            input: input.clone(),
+        };
+        let resp = AnthropicResp {
+            content: vec![block],
+        };
+        let results = resp
+            .content
+            .into_iter()
+            .next()
+            .unwrap()
+            .input
+            .get("results")
+            .cloned()
+            .unwrap();
         assert_eq!(results[0]["txn_id"], "t1");
     }
 }

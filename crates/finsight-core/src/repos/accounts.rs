@@ -83,22 +83,40 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
 
 pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResult<Account> {
     if let Some(name) = &patch.name {
-        conn.execute("UPDATE accounts SET name = ?1 WHERE id = ?2", params![name, id])?;
+        conn.execute(
+            "UPDATE accounts SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
     }
     if let Some(bank) = &patch.bank {
-        conn.execute("UPDATE accounts SET bank = ?1 WHERE id = ?2", params![bank, id])?;
+        conn.execute(
+            "UPDATE accounts SET bank = ?1 WHERE id = ?2",
+            params![bank, id],
+        )?;
     }
     if let Some(at) = &patch.account_type {
-        conn.execute("UPDATE accounts SET type = ?1 WHERE id = ?2", params![at.as_db(), id])?;
+        conn.execute(
+            "UPDATE accounts SET type = ?1 WHERE id = ?2",
+            params![at.as_db(), id],
+        )?;
     }
     if let Some(color) = &patch.color {
-        conn.execute("UPDATE accounts SET color = ?1 WHERE id = ?2", params![color, id])?;
+        conn.execute(
+            "UPDATE accounts SET color = ?1 WHERE id = ?2",
+            params![color, id],
+        )?;
     }
     if let Some(last4) = &patch.last4 {
-        conn.execute("UPDATE accounts SET last4 = ?1 WHERE id = ?2", params![last4, id])?;
+        conn.execute(
+            "UPDATE accounts SET last4 = ?1 WHERE id = ?2",
+            params![last4, id],
+        )?;
     }
     if let Some(currency) = &patch.currency {
-        conn.execute("UPDATE accounts SET currency = ?1 WHERE id = ?2", params![currency, id])?;
+        conn.execute(
+            "UPDATE accounts SET currency = ?1 WHERE id = ?2",
+            params![currency, id],
+        )?;
     }
     // Return the updated account
     conn.query_row(
@@ -118,12 +136,17 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
                 currency: r.get(6)?,
                 color: r.get(7)?,
                 archived_at: archived_s.and_then(|s| {
-                    DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc))
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&Utc))
                 }),
-                created_at: DateTime::parse_from_rfc3339(&created_s).unwrap().with_timezone(&Utc),
+                created_at: DateTime::parse_from_rfc3339(&created_s)
+                    .unwrap()
+                    .with_timezone(&Utc),
             })
         },
-    ).map_err(Into::into)
+    )
+    .map_err(Into::into)
 }
 
 pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
@@ -142,7 +165,7 @@ pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, models::NewAccount, models::AccountType, Db};
+    use crate::{db::run_migrations, keychain, models::AccountType, models::NewAccount, Db};
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
@@ -154,12 +177,21 @@ mod tests {
     }
 
     fn sample_account(conn: &mut rusqlite::Connection) -> Account {
-        insert(conn, NewAccount {
-            owner: "Me".into(), bank: "Bank".into(),
-            r#type: AccountType::Checking, name: "Checking".into(),
-            last4: None, currency: "USD".into(), color: "#fff".into(),
-            opening_balance_cents: 0, source: "manual".into(),
-        }).unwrap()
+        insert(
+            conn,
+            NewAccount {
+                owner: "Me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Checking,
+                name: "Checking".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#fff".into(),
+                opening_balance_cents: 0,
+                source: "manual".into(),
+            },
+        )
+        .unwrap()
     }
 
     #[test]
@@ -167,7 +199,10 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let acc = sample_account(&mut conn);
-        let patch = AccountPatch { name: Some("New Name".into()), ..Default::default() };
+        let patch = AccountPatch {
+            name: Some("New Name".into()),
+            ..Default::default()
+        };
         let updated = update(&mut conn, &acc.id, patch).unwrap();
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.bank, "Bank"); // unchanged
@@ -179,11 +214,13 @@ mod tests {
         let mut conn = db.get().unwrap();
         let acc = sample_account(&mut conn);
         archive(&mut conn, &acc.id).unwrap();
-        let archived_at: Option<String> = conn.query_row(
-            "SELECT archived_at FROM accounts WHERE id = ?1",
-            rusqlite::params![acc.id],
-            |r| r.get(0),
-        ).unwrap();
+        let archived_at: Option<String> = conn
+            .query_row(
+                "SELECT archived_at FROM accounts WHERE id = ?1",
+                rusqlite::params![acc.id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(archived_at.is_some());
     }
 }

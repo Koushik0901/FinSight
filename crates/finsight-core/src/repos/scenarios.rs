@@ -11,7 +11,11 @@ pub struct ScenarioRow {
     pub created_at: String,
 }
 
-pub fn insert(conn: &mut Connection, description: &str, result_json: &str) -> CoreResult<ScenarioRow> {
+pub fn insert(
+    conn: &mut Connection,
+    description: &str,
+    result_json: &str,
+) -> CoreResult<ScenarioRow> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(

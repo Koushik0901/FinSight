@@ -55,7 +55,9 @@ pub struct ReportData {
 fn month_short_label(ym: &str) -> String {
     // ym = "YYYY-MM"
     let month_num: u32 = ym[5..7].parse().unwrap_or(1);
-    let names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    let names = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
     names[(month_num.saturating_sub(1)) as usize].to_string()
 }
 
@@ -75,8 +77,8 @@ pub async fn get_report_data(
             "month" => {
                 vec![now.format("%Y-%m").to_string()]
             }
-            "quarter" => {
-                (0..3i32).map(|i| {
+            "quarter" => (0..3i32)
+                .map(|i| {
                     let m0 = now.month0() as i32 - i;
                     let (yr, mo) = if m0 < 0 {
                         (now.year() - 1, (m0 + 12) as u32 + 1)
@@ -84,14 +86,19 @@ pub async fn get_report_data(
                         (now.year(), m0 as u32 + 1)
                     };
                     format!("{yr}-{mo:02}")
-                }).collect::<Vec<_>>().into_iter().rev().collect()
-            }
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect(),
             "all" => {
-                let oldest: Option<String> = conn.query_row(
-                    "SELECT strftime('%Y-%m', MIN(posted_at)) FROM transactions",
-                    [],
-                    |r| r.get(0),
-                ).unwrap_or(None);
+                let oldest: Option<String> = conn
+                    .query_row(
+                        "SELECT strftime('%Y-%m', MIN(posted_at)) FROM transactions",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(None);
                 if let Some(oldest_str) = oldest {
                     let oldest_y: i32 = oldest_str[..4].parse().unwrap_or(now.year());
                     let oldest_m: i32 = oldest_str[5..7].parse().unwrap_or(1);
@@ -99,17 +106,22 @@ pub async fn get_report_data(
                     let cur_m = now.month() as i32;
                     let total_months = (cur_y - oldest_y) * 12 + (cur_m - oldest_m) + 1;
                     let n = total_months.min(24).max(1) as usize;
-                    (0..n).map(|i| {
-                        let months_back = i as i32;
-                        let m0 = cur_m - 1 - months_back;
-                        let (yr, mo) = if m0 < 0 {
-                            let back = (-m0 - 1) / 12 + 1;
-                            (cur_y - back, ((m0 + back * 12) as u32) + 1)
-                        } else {
-                            (cur_y, m0 as u32 + 1)
-                        };
-                        format!("{yr}-{mo:02}")
-                    }).collect::<Vec<_>>().into_iter().rev().collect()
+                    (0..n)
+                        .map(|i| {
+                            let months_back = i as i32;
+                            let m0 = cur_m - 1 - months_back;
+                            let (yr, mo) = if m0 < 0 {
+                                let back = (-m0 - 1) / 12 + 1;
+                                (cur_y - back, ((m0 + back * 12) as u32) + 1)
+                            } else {
+                                (cur_y, m0 as u32 + 1)
+                            };
+                            format!("{yr}-{mo:02}")
+                        })
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect()
                 } else {
                     vec![now.format("%Y-%m").to_string()]
                 }
@@ -117,23 +129,31 @@ pub async fn get_report_data(
             _ => {
                 // "year" default: Jan through current month of this year
                 let cur_m = now.month() as usize;
-                (1..=cur_m).map(|m| format!("{}-{:02}", now.year(), m)).collect()
+                (1..=cur_m)
+                    .map(|m| format!("{}-{:02}", now.year(), m))
+                    .collect()
             }
         };
 
         // Build monthly_last_year: same months offset back by 12
-        let months_ly: Vec<String> = months.iter().map(|m| {
-            let yr: i32 = m[..4].parse().unwrap_or(2000);
-            let mo = &m[5..];
-            format!("{}-{}", yr - 1, mo)
-        }).collect();
+        let months_ly: Vec<String> = months
+            .iter()
+            .map(|m| {
+                let yr: i32 = m[..4].parse().unwrap_or(2000);
+                let mo = &m[5..];
+                format!("{}-{}", yr - 1, mo)
+            })
+            .collect();
 
-        let fetch_monthly = |month_list: &[String]| -> finsight_core::CoreResult<Vec<MonthSummary>> {
-            if month_list.is_empty() { return Ok(vec![]); }
-            let first = &month_list[0];
-            let last  = &month_list[month_list.len() - 1];
-            let mut stmt = conn.prepare(
-                "SELECT strftime('%Y-%m', posted_at) AS mo,
+        let fetch_monthly =
+            |month_list: &[String]| -> finsight_core::CoreResult<Vec<MonthSummary>> {
+                if month_list.is_empty() {
+                    return Ok(vec![]);
+                }
+                let first = &month_list[0];
+                let last = &month_list[month_list.len() - 1];
+                let mut stmt = conn.prepare(
+                    "SELECT strftime('%Y-%m', posted_at) AS mo,
                         SUM(CASE WHEN amount_cents > 0 THEN amount_cents  ELSE 0 END),
                         SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END)
                  FROM transactions
@@ -141,37 +161,54 @@ pub async fn get_report_data(
                    AND strftime('%Y-%m', posted_at) <= ?2
                  GROUP BY mo
                  ORDER BY mo",
-            )?;
-            let db_rows: std::collections::HashMap<String, (i64, i64)> = stmt
-                .query_map(rusqlite::params![first, last], |r| {
-                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
-                })?
-                .filter_map(|r| r.ok())
-                .map(|(mo, inc, exp)| (mo, (inc, exp)))
-                .collect();
-            Ok(month_list.iter().map(|m| {
-                let (inc, exp) = db_rows.get(m).copied().unwrap_or((0, 0));
-                MonthSummary {
-                    label: month_short_label(m),
-                    month: m.clone(),
-                    income_cents: inc,
-                    expense_cents: exp,
-                    net_cents: inc - exp,
-                }
-            }).collect())
-        };
+                )?;
+                let db_rows: std::collections::HashMap<String, (i64, i64)> = stmt
+                    .query_map(rusqlite::params![first, last], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, i64>(2)?,
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .map(|(mo, inc, exp)| (mo, (inc, exp)))
+                    .collect();
+                Ok(month_list
+                    .iter()
+                    .map(|m| {
+                        let (inc, exp) = db_rows.get(m).copied().unwrap_or((0, 0));
+                        MonthSummary {
+                            label: month_short_label(m),
+                            month: m.clone(),
+                            income_cents: inc,
+                            expense_cents: exp,
+                            net_cents: inc - exp,
+                        }
+                    })
+                    .collect())
+            };
 
         let monthly = fetch_monthly(&months)?;
         let monthly_last_year = fetch_monthly(&months_ly)?;
 
         // scope date range for top_categories / top_merchants
-        let scope_start = months.first().map(|m| format!("{}-01", m)).unwrap_or_default();
-        let scope_end   = months.last().map(|m| {
-            let yr: i32 = m[..4].parse().unwrap_or(2000);
-            let mo: u32 = m[5..7].parse().unwrap_or(1);
-            let (ny, nm) = if mo == 12 { (yr + 1, 1u32) } else { (yr, mo + 1) };
-            format!("{ny}-{nm:02}-01")
-        }).unwrap_or_default();
+        let scope_start = months
+            .first()
+            .map(|m| format!("{}-01", m))
+            .unwrap_or_default();
+        let scope_end = months
+            .last()
+            .map(|m| {
+                let yr: i32 = m[..4].parse().unwrap_or(2000);
+                let mo: u32 = m[5..7].parse().unwrap_or(1);
+                let (ny, nm) = if mo == 12 {
+                    (yr + 1, 1u32)
+                } else {
+                    (yr, mo + 1)
+                };
+                format!("{ny}-{nm:02}-01")
+            })
+            .unwrap_or_default();
 
         let top_categories = {
             let mut stmt = conn.prepare(
@@ -187,14 +224,20 @@ pub async fn get_report_data(
             let rows = stmt.query_map(rusqlite::params![scope_start, scope_end], |r| {
                 Ok(CategoryTotal {
                     category_id: r.get(0)?,
-                    label: r.get::<_, Option<String>>(1)?.unwrap_or_else(|| "Uncategorized".to_string()),
+                    label: r
+                        .get::<_, Option<String>>(1)?
+                        .unwrap_or_else(|| "Uncategorized".to_string()),
                     color: r.get(2)?,
                     total_cents: r.get(3)?,
                     txn_count: r.get(4)?,
                 })
             })?;
             let mut out = Vec::new();
-            for row in rows { if let Ok(r) = row { out.push(r); } }
+            for row in rows {
+                if let Ok(r) = row {
+                    out.push(r);
+                }
+            }
             out
         };
 
@@ -219,11 +262,20 @@ pub async fn get_report_data(
                 })
             })?;
             let mut out = Vec::new();
-            for row in rows { if let Ok(r) = row { out.push(r); } }
+            for row in rows {
+                if let Ok(r) = row {
+                    out.push(r);
+                }
+            }
             out
         };
 
-        Ok(ReportData { monthly, monthly_last_year, top_categories, top_merchants })
+        Ok(ReportData {
+            monthly,
+            monthly_last_year,
+            top_categories,
+            top_merchants,
+        })
     })
     .await
     .map_err(AppError::from)

@@ -47,10 +47,7 @@ pub async fn update_account(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn archive_account(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> AppResult<()> {
+pub async fn archive_account(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| accounts::archive(conn, &id))
         .await
@@ -82,14 +79,22 @@ pub async fn export_account_csv(
                 "SELECT COALESCE(name, 'account') FROM accounts WHERE id = ?1",
                 rusqlite::params![aid],
                 |r| r.get::<_, String>(0),
-            ).map_err(finsight_core::CoreError::from)
+            )
+            .map_err(finsight_core::CoreError::from)
         })
         .await
         .unwrap_or_else(|_| "account".to_string())
     };
 
-    let safe_name: String = account_name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+    let safe_name: String = account_name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     let maybe_path = app
@@ -98,7 +103,9 @@ pub async fn export_account_csv(
         .set_file_name(&format!("{safe_name}-transactions.csv"))
         .blocking_save_file();
 
-    let Some(file_path) = maybe_path else { return Ok(String::new()); };
+    let Some(file_path) = maybe_path else {
+        return Ok(String::new());
+    };
     let path = file_path
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;

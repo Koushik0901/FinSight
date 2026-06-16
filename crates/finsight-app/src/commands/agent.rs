@@ -3,8 +3,7 @@ use crate::AppState;
 use finsight_agent::{
     agent::AgentJob,
     providers::{
-        anthropic::AnthropicProvider, ollama::OllamaProvider,
-        openai_compat::OpenAiCompatProvider,
+        anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
     },
     CompletionProvider,
 };
@@ -31,7 +30,11 @@ pub enum CompletionProviderConfig {
     #[serde(rename = "ollama")]
     Ollama { base_url: String, model: String },
     #[serde(rename = "openai_compat")]
-    OpenAiCompat { preset: String, base_url: String, model: String },
+    OpenAiCompat {
+        preset: String,
+        base_url: String,
+        model: String,
+    },
     #[serde(rename = "anthropic")]
     Anthropic { model: String },
 }
@@ -50,11 +53,13 @@ pub async fn set_completion_provider(
     config: CompletionProviderConfig,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    let cfg_json = serde_json::to_value(&config)
-        .map_err(|e| AppError::new("agent", e.to_string()))?;
-    run(&db, move |conn| settings::set(conn, "completion_provider", &cfg_json))
-        .await
-        .map_err(AppError::from)?;
+    let cfg_json =
+        serde_json::to_value(&config).map_err(|e| AppError::new("agent", e.to_string()))?;
+    run(&db, move |conn| {
+        settings::set(conn, "completion_provider", &cfg_json)
+    })
+    .await
+    .map_err(AppError::from)?;
 
     // Also update the live provider in AppState
     let provider = crate::build_provider_from_config(&serde_json::to_value(&config).unwrap());
@@ -73,8 +78,7 @@ pub async fn save_provider_api_key(
     provider_id: String,
     key: String,
 ) -> AppResult<()> {
-    finsight_core::keychain::set_key("com.finsight.llm", &provider_id, &key)
-        .map_err(AppError::from)
+    finsight_core::keychain::set_key("com.finsight.llm", &provider_id, &key).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -197,7 +201,9 @@ pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_rule_proposals(state: tauri::State<'_, AppState>) -> AppResult<Vec<RuleProposal>> {
+pub async fn list_rule_proposals(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<RuleProposal>> {
     let db = (*state.db).clone();
     run(&db, |conn| rule_proposals::list(conn, Some("pending")))
         .await
@@ -210,11 +216,14 @@ pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String)
     let db = (*state.db).clone();
     run(&db, move |conn| {
         if let Some(p) = rule_proposals::get(conn, &id)? {
-            rules::insert(conn, NewRule {
-                pattern: p.pattern,
-                category_id: p.category_id,
-                source: "agent".to_string(),
-            })?;
+            rules::insert(
+                conn,
+                NewRule {
+                    pattern: p.pattern,
+                    category_id: p.category_id,
+                    source: "agent".to_string(),
+                },
+            )?;
             rule_proposals::set_status(conn, &id, "accepted")?;
         }
         Ok(())
@@ -227,9 +236,11 @@ pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String)
 #[specta::specta]
 pub async fn decline_rule_proposal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| rule_proposals::set_status(conn, &id, "declined"))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        rule_proposals::set_status(conn, &id, "declined")
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]

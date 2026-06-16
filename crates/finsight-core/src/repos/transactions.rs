@@ -89,7 +89,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
     }
     if let Some(search) = filter.search.as_ref() {
         conditions.push(
-            "(lower(t.merchant_raw) LIKE lower(?) OR lower(COALESCE(t.notes,'')) LIKE lower(?))".to_string(),
+            "(lower(t.merchant_raw) LIKE lower(?) OR lower(COALESCE(t.notes,'')) LIKE lower(?))"
+                .to_string(),
         );
         let pattern = format!("%{}%", search);
         params.push(Box::new(pattern.clone()));
@@ -175,26 +176,38 @@ pub fn update(
     patch: TxnPatch,
 ) -> CoreResult<(Transaction, Option<ProposedRule>)> {
     if let Some(notes) = &patch.notes {
-        conn.execute("UPDATE transactions SET notes = ?1 WHERE id = ?2", params![notes, id])?;
+        conn.execute(
+            "UPDATE transactions SET notes = ?1 WHERE id = ?2",
+            params![notes, id],
+        )?;
     }
     if let Some(amount) = patch.amount_cents {
-        conn.execute("UPDATE transactions SET amount_cents = ?1 WHERE id = ?2", params![amount, id])?;
+        conn.execute(
+            "UPDATE transactions SET amount_cents = ?1 WHERE id = ?2",
+            params![amount, id],
+        )?;
     }
     if let Some(merchant) = &patch.merchant_raw {
-        conn.execute("UPDATE transactions SET merchant_raw = ?1 WHERE id = ?2", params![merchant, id])?;
+        conn.execute(
+            "UPDATE transactions SET merchant_raw = ?1 WHERE id = ?2",
+            params![merchant, id],
+        )?;
     }
 
     let mut proposed_rule: Option<ProposedRule> = None;
 
     if let Some(cat) = &patch.category_id {
         // Append categorization audit row
-        categorizations::insert(conn, crate::models::NewCategorization {
-            txn_id: id.to_string(),
-            category_id: cat.clone(),
-            source: "user".to_string(),
-            confidence: 1.0,
-            model: None,
-        })?;
+        categorizations::insert(
+            conn,
+            crate::models::NewCategorization {
+                txn_id: id.to_string(),
+                category_id: cat.clone(),
+                source: "user".to_string(),
+                confidence: 1.0,
+                model: None,
+            },
+        )?;
         // Update live columns
         conn.execute(
             "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
@@ -207,11 +220,13 @@ pub fn update(
                 params![id],
                 |r| r.get(0),
             )?;
-            let category_label: String = conn.query_row(
-                "SELECT label FROM categories WHERE id = ?1",
-                params![category_id],
-                |r| r.get(0),
-            ).unwrap_or_default();
+            let category_label: String = conn
+                .query_row(
+                    "SELECT label FROM categories WHERE id = ?1",
+                    params![category_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or_default();
 
             // Record what the agent has learned from this user correction.
             let merchant_key = merchant_raw.to_lowercase();
@@ -222,18 +237,23 @@ pub fn update(
                 params![merchant_key],
                 |r| r.get(0),
             )?;
-            let memo = format!("{} → {} · you've set this {}×", merchant_raw, category_label, user_count);
+            let memo = format!(
+                "{} → {} · you've set this {}×",
+                merchant_raw, category_label, user_count
+            );
             crate::repos::agent_memory::upsert_correction(conn, &merchant_key, &memo)?;
 
             // Propose a rule if none exists yet for this merchant.
-            let rule_exists: bool = conn.query_row(
-                "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
-                params![merchant_raw],
-                |_| Ok(true),
-            ).or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(false),
-                other => Err(other),
-            })?;
+            let rule_exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
+                    params![merchant_raw],
+                    |_| Ok(true),
+                )
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(false),
+                    other => Err(other),
+                })?;
             if !rule_exists {
                 proposed_rule = Some(ProposedRule {
                     pattern: merchant_raw,
@@ -254,7 +274,12 @@ pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
     Ok(())
 }
 
-pub fn set_flags(conn: &mut Connection, id: &str, is_reimbursable: bool, is_split: bool) -> CoreResult<Transaction> {
+pub fn set_flags(
+    conn: &mut Connection,
+    id: &str,
+    is_reimbursable: bool,
+    is_split: bool,
+) -> CoreResult<Transaction> {
     conn.execute(
         "UPDATE transactions SET is_reimbursable = ?1, is_split = ?2 WHERE id = ?3",
         params![is_reimbursable as i64, is_split as i64, id],
@@ -282,7 +307,13 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 id: r.get(0)?,
                 account_id: r.get(1)?,
                 posted_at: DateTime::parse_from_rfc3339(&posted_s)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            2,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?
                     .with_timezone(&Utc),
                 amount_cents: r.get(3)?,
                 merchant_raw: r.get(4)?,
@@ -299,20 +330,28 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 ai_explanation: r.get(15)?,
                 is_anomaly: r.get::<_, i64>(16)? != 0,
                 created_at: DateTime::parse_from_rfc3339(&created_s)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(17, rusqlite::types::Type::Text, Box::new(e)))?
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            17,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
                 is_split: r.get::<_, i64>(19)? != 0,
             })
         },
-    ).map_err(Into::into)
+    )
+    .map_err(Into::into)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations, keychain,
+        db::run_migrations,
+        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::accounts,
         Db,
@@ -329,25 +368,42 @@ mod tests {
 
     fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
         // category
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
         // account
-        let acc = accounts::insert(conn, NewAccount {
-            owner: "Me".into(), bank: "Bank".into(),
-            r#type: AccountType::Checking, name: "Ch".into(),
-            last4: None, currency: "USD".into(), color: "#fff".into(),
-            opening_balance_cents: 0, source: "manual".into(),
-        }).unwrap();
+        let acc = accounts::insert(
+            conn,
+            NewAccount {
+                owner: "Me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Checking,
+                name: "Ch".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#fff".into(),
+                opening_balance_cents: 0,
+                source: "manual".into(),
+            },
+        )
+        .unwrap();
         // transaction
-        let txn = insert(conn, NewTransaction {
-            account_id: acc.id.clone(),
-            posted_at: chrono::Utc::now(),
-            amount_cents: 1000,
-            merchant_raw: "AMAZON".to_string(),
-            category_id: None,
-            notes: None,
-            status: TransactionStatus::Cleared,
-        }).unwrap();
+        let txn = insert(
+            conn,
+            NewTransaction {
+                account_id: acc.id.clone(),
+                posted_at: chrono::Utc::now(),
+                amount_cents: 1000,
+                merchant_raw: "AMAZON".to_string(),
+                category_id: None,
+                notes: None,
+                status: TransactionStatus::Cleared,
+            },
+        )
+        .unwrap();
         (acc.id, txn.id)
     }
 
@@ -356,7 +412,10 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let (_, txn_id) = seed(&mut conn);
-        let patch = TxnPatch { notes: Some(Some("edited".into())), ..Default::default() };
+        let patch = TxnPatch {
+            notes: Some(Some("edited".into())),
+            ..Default::default()
+        };
         let (updated, rule) = update(&mut conn, &txn_id, patch).unwrap();
         assert_eq!(updated.notes.as_deref(), Some("edited"));
         assert!(rule.is_none()); // no category change → no rule proposal
@@ -388,9 +447,14 @@ mod tests {
         // Pre-create a matching rule
         conn.execute(
             "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at) \
-             VALUES('r1','AMAZON','cat1',1,'user','2024-01-01T00:00:00Z')", [],
-        ).unwrap();
-        let patch = TxnPatch { category_id: Some(Some("cat1".into())), ..Default::default() };
+             VALUES('r1','AMAZON','cat1',1,'user','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let patch = TxnPatch {
+            category_id: Some(Some("cat1".into())),
+            ..Default::default()
+        };
         let (_, rule) = update(&mut conn, &txn_id, patch).unwrap();
         assert!(rule.is_none()); // rule already exists → no proposal
     }
@@ -401,10 +465,13 @@ mod tests {
         let mut conn = db.get().unwrap();
         let (_, txn_id) = seed(&mut conn);
         delete(&mut conn, &txn_id).unwrap();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transactions WHERE id = ?1",
-            rusqlite::params![txn_id], |r| r.get(0),
-        ).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE id = ?1",
+                rusqlite::params![txn_id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -426,7 +493,10 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let (_, txn_id) = seed(&mut conn);
-        let patch = TxnPatch { category_id: Some(Some("cat1".into())), ..Default::default() };
+        let patch = TxnPatch {
+            category_id: Some(Some("cat1".into())),
+            ..Default::default()
+        };
         update(&mut conn, &txn_id, patch).unwrap();
         let mem = crate::repos::agent_memory::list(&mut conn).unwrap();
         assert_eq!(mem.len(), 1);

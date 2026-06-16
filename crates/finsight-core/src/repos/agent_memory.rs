@@ -9,16 +9,27 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<AgentMemory>> {
         "SELECT id, kind, description, merchant_key, created_at \
          FROM agent_memory ORDER BY created_at DESC",
     )?;
-    let rows = stmt.query_map([], |r| Ok(AgentMemory {
-        id: r.get(0)?, kind: r.get(1)?, description: r.get(2)?,
-        merchant_key: r.get(3)?, created_at: r.get(4)?,
-    }))?;
+    let rows = stmt.query_map([], |r| {
+        Ok(AgentMemory {
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            description: r.get(2)?,
+            merchant_key: r.get(3)?,
+            created_at: r.get(4)?,
+        })
+    })?;
     let mut out = Vec::new();
-    for row in rows { out.push(row?); }
+    for row in rows {
+        out.push(row?);
+    }
     Ok(out)
 }
 
-pub fn upsert_correction(conn: &mut Connection, merchant_key: &str, description: &str) -> CoreResult<()> {
+pub fn upsert_correction(
+    conn: &mut Connection,
+    merchant_key: &str,
+    description: &str,
+) -> CoreResult<()> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(

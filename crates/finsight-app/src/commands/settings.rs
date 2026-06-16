@@ -19,14 +19,13 @@ pub async fn get_currency(state: tauri::State<'_, AppState>) -> AppResult<String
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_currency(
-    state: tauri::State<'_, AppState>,
-    currency: String,
-) -> AppResult<()> {
+pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| settings::set(conn, CURRENCY_KEY, &currency))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        settings::set(conn, CURRENCY_KEY, &currency)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -41,39 +40,47 @@ pub async fn export_all_data_json(
         .set_file_name("finsight-export.json")
         .blocking_save_file();
 
-    let Some(file_path) = maybe_path else { return Ok(()); };
+    let Some(file_path) = maybe_path else {
+        return Ok(());
+    };
     let path = file_path
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
     let db = (*state.db).clone();
     let json = run(&db, move |conn| {
-        use finsight_core::repos::{accounts, goals, rules, transactions};
         use chrono::Utc;
+        use finsight_core::repos::{accounts, goals, rules, transactions};
 
         let accs = accounts::list_summaries(conn)?;
-        let txns = transactions::list(conn, transactions::TxnFilter {
-            account_id: None,
-            limit: i64::MAX,
-            offset: 0,
-            search: None,
-            filter_preset: None,
-        })?;
-        let gs: Vec<serde_json::Value> = goals::list(conn)?.into_iter().map(|g| {
-            serde_json::json!({
-                "id": g.id,
-                "name": g.name,
-                "goalType": g.goal_type,
-                "targetCents": g.target_cents,
-                "currentCents": g.current_cents,
-                "monthlyCents": g.monthly_cents,
-                "targetDate": g.target_date,
-                "color": g.color,
-                "notes": g.notes,
-                "sortOrder": g.sort_order,
-                "createdAt": g.created_at,
+        let txns = transactions::list(
+            conn,
+            transactions::TxnFilter {
+                account_id: None,
+                limit: i64::MAX,
+                offset: 0,
+                search: None,
+                filter_preset: None,
+            },
+        )?;
+        let gs: Vec<serde_json::Value> = goals::list(conn)?
+            .into_iter()
+            .map(|g| {
+                serde_json::json!({
+                    "id": g.id,
+                    "name": g.name,
+                    "goalType": g.goal_type,
+                    "targetCents": g.target_cents,
+                    "currentCents": g.current_cents,
+                    "monthlyCents": g.monthly_cents,
+                    "targetDate": g.target_date,
+                    "color": g.color,
+                    "notes": g.notes,
+                    "sortOrder": g.sort_order,
+                    "createdAt": g.created_at,
+                })
             })
-        }).collect();
+            .collect();
         let rs = rules::list_active(conn)?;
 
         let out = serde_json::json!({
@@ -89,8 +96,7 @@ pub async fn export_all_data_json(
     .await
     .map_err(AppError::from)?;
 
-    std::fs::write(&path, json)
-        .map_err(|e| AppError::new("io", e.to_string()))
+    std::fs::write(&path, json).map_err(|e| AppError::new("io", e.to_string()))
 }
 
 fn csv_escape(s: &str) -> String {
@@ -113,7 +119,9 @@ pub async fn export_all_data_csv(
         .set_file_name("finsight-transactions.csv")
         .blocking_save_file();
 
-    let Some(file_path) = maybe_path else { return Ok(()); };
+    let Some(file_path) = maybe_path else {
+        return Ok(());
+    };
     let path = file_path
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
@@ -121,13 +129,16 @@ pub async fn export_all_data_csv(
     let db = (*state.db).clone();
     let csv = run(&db, move |conn| {
         use finsight_core::repos::transactions;
-        let txns = transactions::list(conn, transactions::TxnFilter {
-            account_id: None,
-            limit: i64::MAX,
-            offset: 0,
-            search: None,
-            filter_preset: None,
-        })?;
+        let txns = transactions::list(
+            conn,
+            transactions::TxnFilter {
+                account_id: None,
+                limit: i64::MAX,
+                offset: 0,
+                search: None,
+                filter_preset: None,
+            },
+        )?;
 
         let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
         for t in txns {
@@ -143,6 +154,5 @@ pub async fn export_all_data_csv(
     .await
     .map_err(AppError::from)?;
 
-    std::fs::write(&path, csv)
-        .map_err(|e| AppError::new("io", e.to_string()))
+    std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))
 }

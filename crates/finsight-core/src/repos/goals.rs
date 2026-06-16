@@ -62,7 +62,9 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
         })
     })?;
     let mut out = Vec::new();
-    for row in rows { out.push(row?); }
+    for row in rows {
+        out.push(row?);
+    }
     Ok(out)
 }
 
@@ -73,7 +75,17 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
                            target_date, color, notes, sort_order, created_at)
          VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, 0, ?9)",
-        params![id, g.name, g.goal_type, g.target_cents, g.monthly_cents, g.target_date, g.color, g.notes, now],
+        params![
+            id,
+            g.name,
+            g.goal_type,
+            g.target_cents,
+            g.monthly_cents,
+            g.target_date,
+            g.color,
+            g.notes,
+            now
+        ],
     )?;
     Ok(Goal {
         id,
@@ -133,17 +145,25 @@ mod tests {
     fn set_monthly_cents_updates_correctly() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let goal = insert(&mut conn, NewGoal {
-            name: "Italy trip".into(),
-            goal_type: "save-by-date".into(),
-            target_cents: 500_000,
-            monthly_cents: 10_000,
-            target_date: None,
-            color: "#C9F950".into(),
-            notes: None,
-        }).unwrap();
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Italy trip".into(),
+                goal_type: "save-by-date".into(),
+                target_cents: 500_000,
+                monthly_cents: 10_000,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+            },
+        )
+        .unwrap();
         set_monthly_cents(&mut conn, &goal.id, 25_000).unwrap();
-        let updated = list(&mut conn).unwrap().into_iter().find(|g| g.id == goal.id).unwrap();
+        let updated = list(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|g| g.id == goal.id)
+            .unwrap();
         assert_eq!(updated.monthly_cents, 25_000);
     }
 }

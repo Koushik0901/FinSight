@@ -137,12 +137,60 @@ struct DemoAccount {
 }
 
 const DEMO_ACCOUNTS: &[DemoAccount] = &[
-    DemoAccount { key: "joint-checking", name: "Joint Checking",   bank: "Mercury",     owner: "joint", typ: "Checking",   color: "#3B82F6", balance_cents:  1_482_042 },
-    DemoAccount { key: "joint-savings",  name: "House Fund",        bank: "Wealthfront", owner: "joint", typ: "Savings",    color: "#10B981", balance_cents:  2_864_000 },
-    DemoAccount { key: "mira-checking",  name: "Mira · Checking",  bank: "Schwab",      owner: "mira",  typ: "Checking",   color: "#8B5CF6", balance_cents:    624_018 },
-    DemoAccount { key: "adam-checking",  name: "Adam · Checking",  bank: "Chase",       owner: "adam",  typ: "Checking",   color: "#F59E0B", balance_cents:    381_250 },
-    DemoAccount { key: "amex",           name: "Amex Gold",         bank: "Amex",        owner: "joint", typ: "Credit",     color: "#EF4444", balance_cents:   -241_800 },
-    DemoAccount { key: "retirement",     name: "Retirement",        bank: "Fidelity",    owner: "joint", typ: "Investment", color: "#6366F1", balance_cents:  8_642_000 },
+    DemoAccount {
+        key: "joint-checking",
+        name: "Joint Checking",
+        bank: "Mercury",
+        owner: "joint",
+        typ: "Checking",
+        color: "#3B82F6",
+        balance_cents: 1_482_042,
+    },
+    DemoAccount {
+        key: "joint-savings",
+        name: "House Fund",
+        bank: "Wealthfront",
+        owner: "joint",
+        typ: "Savings",
+        color: "#10B981",
+        balance_cents: 2_864_000,
+    },
+    DemoAccount {
+        key: "mira-checking",
+        name: "Mira · Checking",
+        bank: "Schwab",
+        owner: "mira",
+        typ: "Checking",
+        color: "#8B5CF6",
+        balance_cents: 624_018,
+    },
+    DemoAccount {
+        key: "adam-checking",
+        name: "Adam · Checking",
+        bank: "Chase",
+        owner: "adam",
+        typ: "Checking",
+        color: "#F59E0B",
+        balance_cents: 381_250,
+    },
+    DemoAccount {
+        key: "amex",
+        name: "Amex Gold",
+        bank: "Amex",
+        owner: "joint",
+        typ: "Credit",
+        color: "#EF4444",
+        balance_cents: -241_800,
+    },
+    DemoAccount {
+        key: "retirement",
+        name: "Retirement",
+        bank: "Fidelity",
+        owner: "joint",
+        typ: "Investment",
+        color: "#6366F1",
+        balance_cents: 8_642_000,
+    },
 ];
 
 struct RecurringItem {
@@ -155,28 +203,160 @@ struct RecurringItem {
 
 /// Monthly recurring transactions, seeded into each prior month for recurring detection.
 const RECURRING_MONTHLY: &[RecurringItem] = &[
-    RecurringItem { day:  1, merchant: "Sunset Co · Payroll",       cents:  480_000, category_id: None,                    account_key: "mira-checking"  },
-    RecurringItem { day:  3, merchant: "Bay Property Mgmt · Rent",  cents: -185_000, category_id: Some("housing"),         account_key: "joint-checking" },
-    RecurringItem { day:  5, merchant: "Lyft",                      cents:   -1_800, category_id: Some("transport"),       account_key: "amex"           },
-    RecurringItem { day:  6, merchant: "Trader Joe's",              cents:   -7_200, category_id: Some("groceries"),       account_key: "joint-checking" },
-    RecurringItem { day:  7, merchant: "Spotify Family",            cents:   -1_699, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day:  8, merchant: "Internet · Sonic",          cents:   -8_800, category_id: Some("utilities"),       account_key: "joint-checking" },
-    RecurringItem { day:  9, merchant: "Sweetgreen",                cents:   -2_100, category_id: Some("dining"),          account_key: "mira-checking"  },
-    RecurringItem { day: 10, merchant: "PG&E",                      cents:  -22_000, category_id: Some("utilities"),       account_key: "joint-checking" },
-    RecurringItem { day: 11, merchant: "Comcast",                   cents:   -8_800, category_id: Some("utilities"),       account_key: "joint-checking" },
-    RecurringItem { day: 12, merchant: "Whole Foods",               cents:   -8_500, category_id: Some("groceries"),       account_key: "joint-checking" },
-    RecurringItem { day: 14, merchant: "BP Gas",                    cents:   -5_100, category_id: Some("transport"),       account_key: "adam-checking"  },
-    RecurringItem { day: 15, merchant: "Acme Corp · Payroll",       cents:  520_000, category_id: None,                    account_key: "adam-checking"  },
-    RecurringItem { day: 16, merchant: "Sweetgreen",                cents:   -1_850, category_id: Some("dining"),          account_key: "mira-checking"  },
-    RecurringItem { day: 17, merchant: "Adobe Creative Cloud",      cents:   -2_299, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day: 19, merchant: "Notion",                    cents:   -1_000, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day: 20, merchant: "Trader Joe's",              cents:   -6_800, category_id: Some("groceries"),       account_key: "joint-checking" },
-    RecurringItem { day: 22, merchant: "iCloud+",                   cents:     -999, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day: 22, merchant: "Lyft",                      cents:   -2_200, category_id: Some("transport"),       account_key: "amex"           },
-    RecurringItem { day: 24, merchant: "Disney+",                   cents:   -1_099, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day: 25, merchant: "Gym · Range SF",            cents:  -14_900, category_id: Some("health"),          account_key: "joint-checking" },
-    RecurringItem { day: 28, merchant: "NYTimes",                   cents:     -400, category_id: Some("subscriptions"),   account_key: "amex"           },
-    RecurringItem { day: 28, merchant: "Costco",                    cents:  -38_500, category_id: Some("groceries"),       account_key: "joint-checking" },
+    RecurringItem {
+        day: 1,
+        merchant: "Sunset Co · Payroll",
+        cents: 480_000,
+        category_id: None,
+        account_key: "mira-checking",
+    },
+    RecurringItem {
+        day: 3,
+        merchant: "Bay Property Mgmt · Rent",
+        cents: -185_000,
+        category_id: Some("housing"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 5,
+        merchant: "Lyft",
+        cents: -1_800,
+        category_id: Some("transport"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 6,
+        merchant: "Trader Joe's",
+        cents: -7_200,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 7,
+        merchant: "Spotify Family",
+        cents: -1_699,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 8,
+        merchant: "Internet · Sonic",
+        cents: -8_800,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 9,
+        merchant: "Sweetgreen",
+        cents: -2_100,
+        category_id: Some("dining"),
+        account_key: "mira-checking",
+    },
+    RecurringItem {
+        day: 10,
+        merchant: "PG&E",
+        cents: -22_000,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 11,
+        merchant: "Comcast",
+        cents: -8_800,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 12,
+        merchant: "Whole Foods",
+        cents: -8_500,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 14,
+        merchant: "BP Gas",
+        cents: -5_100,
+        category_id: Some("transport"),
+        account_key: "adam-checking",
+    },
+    RecurringItem {
+        day: 15,
+        merchant: "Acme Corp · Payroll",
+        cents: 520_000,
+        category_id: None,
+        account_key: "adam-checking",
+    },
+    RecurringItem {
+        day: 16,
+        merchant: "Sweetgreen",
+        cents: -1_850,
+        category_id: Some("dining"),
+        account_key: "mira-checking",
+    },
+    RecurringItem {
+        day: 17,
+        merchant: "Adobe Creative Cloud",
+        cents: -2_299,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 19,
+        merchant: "Notion",
+        cents: -1_000,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 20,
+        merchant: "Trader Joe's",
+        cents: -6_800,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 22,
+        merchant: "iCloud+",
+        cents: -999,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 22,
+        merchant: "Lyft",
+        cents: -2_200,
+        category_id: Some("transport"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 24,
+        merchant: "Disney+",
+        cents: -1_099,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 25,
+        merchant: "Gym · Range SF",
+        cents: -14_900,
+        category_id: Some("health"),
+        account_key: "joint-checking",
+    },
+    RecurringItem {
+        day: 28,
+        merchant: "NYTimes",
+        cents: -400,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    RecurringItem {
+        day: 28,
+        merchant: "Costco",
+        cents: -38_500,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
 ];
 
 struct SpecificTxn {
@@ -190,24 +370,132 @@ struct SpecificTxn {
 /// 18 hand-crafted recent transactions from the "Mira & Adam" prototype design,
 /// expressed as days before today so the dataset stays current on any run date.
 const SPECIFIC_TXNS: &[SpecificTxn] = &[
-    SpecificTxn { days_ago:  1, merchant: "Mosswood Wine Bar",        cents:  -14_200, category_id: Some("dining"),        account_key: "amex"           },
-    SpecificTxn { days_ago:  1, merchant: "Lyft",                     cents:   -1_840, category_id: Some("transport"),     account_key: "amex"           },
-    SpecificTxn { days_ago:  2, merchant: "Trader Joe's",             cents:   -7_820, category_id: Some("groceries"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago:  3, merchant: "Sweetgreen",               cents:   -2_250, category_id: Some("dining"),        account_key: "mira-checking"  },
-    SpecificTxn { days_ago:  3, merchant: "Blue Bottle",              cents:     -675, category_id: Some("dining"),        account_key: "mira-checking"  },
-    SpecificTxn { days_ago:  4, merchant: "Adobe Creative Cloud",     cents:   -2_299, category_id: Some("subscriptions"), account_key: "amex"           },
-    SpecificTxn { days_ago:  5, merchant: "Spotify Family",           cents:   -1_699, category_id: Some("subscriptions"), account_key: "amex"           },
-    SpecificTxn { days_ago:  6, merchant: "Acme Corp · Payroll",      cents:  520_000, category_id: None,                  account_key: "adam-checking"  },
-    SpecificTxn { days_ago:  7, merchant: "Costco",                   cents:  -41_200, category_id: Some("groceries"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago:  8, merchant: "Whole Foods",              cents:   -6_430, category_id: Some("groceries"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago:  9, merchant: "BP Gas",                   cents:   -5_240, category_id: Some("transport"),     account_key: "adam-checking"  },
-    SpecificTxn { days_ago: 11, merchant: "PG&E",                     cents:  -22_000, category_id: Some("utilities"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago: 11, merchant: "Comcast",                  cents:   -8_800, category_id: Some("utilities"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago: 12, merchant: "Pharmacy",                 cents:   -3_210, category_id: Some("health"),        account_key: "mira-checking"  },
-    SpecificTxn { days_ago: 13, merchant: "Internet · Sonic",         cents:   -8_800, category_id: Some("utilities"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago: 16, merchant: "Trader Joe's",             cents:   -5_240, category_id: Some("groceries"),     account_key: "joint-checking" },
-    SpecificTxn { days_ago: 18, merchant: "Bay Property Mgmt · Rent", cents: -185_000, category_id: Some("housing"),       account_key: "joint-checking" },
-    SpecificTxn { days_ago: 20, merchant: "Sunset Co · Payroll",      cents:  480_000, category_id: None,                  account_key: "mira-checking"  },
+    SpecificTxn {
+        days_ago: 1,
+        merchant: "Mosswood Wine Bar",
+        cents: -14_200,
+        category_id: Some("dining"),
+        account_key: "amex",
+    },
+    SpecificTxn {
+        days_ago: 1,
+        merchant: "Lyft",
+        cents: -1_840,
+        category_id: Some("transport"),
+        account_key: "amex",
+    },
+    SpecificTxn {
+        days_ago: 2,
+        merchant: "Trader Joe's",
+        cents: -7_820,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 3,
+        merchant: "Sweetgreen",
+        cents: -2_250,
+        category_id: Some("dining"),
+        account_key: "mira-checking",
+    },
+    SpecificTxn {
+        days_ago: 3,
+        merchant: "Blue Bottle",
+        cents: -675,
+        category_id: Some("dining"),
+        account_key: "mira-checking",
+    },
+    SpecificTxn {
+        days_ago: 4,
+        merchant: "Adobe Creative Cloud",
+        cents: -2_299,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    SpecificTxn {
+        days_ago: 5,
+        merchant: "Spotify Family",
+        cents: -1_699,
+        category_id: Some("subscriptions"),
+        account_key: "amex",
+    },
+    SpecificTxn {
+        days_ago: 6,
+        merchant: "Acme Corp · Payroll",
+        cents: 520_000,
+        category_id: None,
+        account_key: "adam-checking",
+    },
+    SpecificTxn {
+        days_ago: 7,
+        merchant: "Costco",
+        cents: -41_200,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 8,
+        merchant: "Whole Foods",
+        cents: -6_430,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 9,
+        merchant: "BP Gas",
+        cents: -5_240,
+        category_id: Some("transport"),
+        account_key: "adam-checking",
+    },
+    SpecificTxn {
+        days_ago: 11,
+        merchant: "PG&E",
+        cents: -22_000,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 11,
+        merchant: "Comcast",
+        cents: -8_800,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 12,
+        merchant: "Pharmacy",
+        cents: -3_210,
+        category_id: Some("health"),
+        account_key: "mira-checking",
+    },
+    SpecificTxn {
+        days_ago: 13,
+        merchant: "Internet · Sonic",
+        cents: -8_800,
+        category_id: Some("utilities"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 16,
+        merchant: "Trader Joe's",
+        cents: -5_240,
+        category_id: Some("groceries"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 18,
+        merchant: "Bay Property Mgmt · Rent",
+        cents: -185_000,
+        category_id: Some("housing"),
+        account_key: "joint-checking",
+    },
+    SpecificTxn {
+        days_ago: 20,
+        merchant: "Sunset Co · Payroll",
+        cents: 480_000,
+        category_id: None,
+        account_key: "mira-checking",
+    },
 ];
 
 // ── Normalises a (bound_a, bound_b) pair so that `gen_range(lo..=hi)` never
@@ -348,7 +636,11 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
         2 => {
-            if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 29 } else { 28 }
+            if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                29
+            } else {
+                28
+            }
         }
         _ => 30,
     }
@@ -415,7 +707,15 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         sql_tx.execute(
             "INSERT INTO accounts(id, owner, bank, type, name, last4, currency, color, \
              created_at, source) VALUES(?1, ?2, ?3, ?4, ?5, NULL, 'USD', ?6, ?7, 'sample')",
-            params![&id, da.owner, da.bank, da.typ, da.name, da.color, now.to_rfc3339()],
+            params![
+                &id,
+                da.owner,
+                da.bank,
+                da.typ,
+                da.name,
+                da.color,
+                now.to_rfc3339()
+            ],
         )?;
         sql_tx.execute(
             "INSERT INTO account_balances(account_id, as_of_date, balance_cents) \
@@ -473,20 +773,67 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     // ── 5. Goals ───────────────────────────────────────────────────────────
     // (name, type, target_cents, current_cents, monthly_cents, target_date, color)
     let goals: &[(&str, &str, i64, i64, i64, Option<&str>, &str)] = &[
-        ("House down payment",        "save-by-date",  8_000_000, 2_864_000, 160_000, Some("2027-01-01"), "#10B981"),
-        ("Six-month emergency fund",  "build-balance", 2_400_000, 1_820_000,  90_000, None,               "#3B82F6"),
-        ("Italy trip · September",    "save-by-date",    450_000,   185_000,  60_000, Some("2026-09-01"), "#F59E0B"),
-        ("Pay off Amex Gold",         "debt-payoff",     241_800,         0, 120_900, None,               "#EF4444"),
-        ("Stay under $400/mo dining", "spending-cap",     40_000,    41_200,       0, None,               "#8B5CF6"),
+        (
+            "House down payment",
+            "save-by-date",
+            8_000_000,
+            2_864_000,
+            160_000,
+            Some("2027-01-01"),
+            "#10B981",
+        ),
+        (
+            "Six-month emergency fund",
+            "build-balance",
+            2_400_000,
+            1_820_000,
+            90_000,
+            None,
+            "#3B82F6",
+        ),
+        (
+            "Italy trip · September",
+            "save-by-date",
+            450_000,
+            185_000,
+            60_000,
+            Some("2026-09-01"),
+            "#F59E0B",
+        ),
+        (
+            "Pay off Amex Gold",
+            "debt-payoff",
+            241_800,
+            0,
+            120_900,
+            None,
+            "#EF4444",
+        ),
+        (
+            "Stay under $400/mo dining",
+            "spending-cap",
+            40_000,
+            41_200,
+            0,
+            None,
+            "#8B5CF6",
+        ),
     ];
-    for (i, &(name, typ, target, current, monthly, target_date, color)) in goals.iter().enumerate() {
+    for (i, &(name, typ, target, current, monthly, target_date, color)) in goals.iter().enumerate()
+    {
         sql_tx.execute(
             "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
              target_date, color, sort_order, created_at) \
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 Uuid::new_v4().to_string(),
-                name, typ, target, current, monthly, target_date, color,
+                name,
+                typ,
+                target,
+                current,
+                monthly,
+                target_date,
+                color,
                 i as i64,
                 now.to_rfc3339(),
             ],
@@ -496,27 +843,61 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     // ── 6. Manual assets ───────────────────────────────────────────────────
     // (name, asset_type, value_cents)
     let assets: &[(&str, &str, i64)] = &[
-        ("Home · 142 Mosswood Ln",     "Real estate",  61_200_000),
-        ("Mira · 2022 Subaru Outback", "Vehicle",       1_840_000),
-        ("Adam · 2019 Honda Civic",    "Vehicle",       1_180_000),
-        ("Coinbase",                   "Crypto",          421_800),
-        ("Lithograph · Hockney",       "Collectibles",    320_000),
+        ("Home · 142 Mosswood Ln", "Real estate", 61_200_000),
+        ("Mira · 2022 Subaru Outback", "Vehicle", 1_840_000),
+        ("Adam · 2019 Honda Civic", "Vehicle", 1_180_000),
+        ("Coinbase", "Crypto", 421_800),
+        ("Lithograph · Hockney", "Collectibles", 320_000),
     ];
     for &(name, asset_type, value) in assets {
         sql_tx.execute(
             "INSERT INTO manual_assets(id, name, asset_type, value_cents, currency, \
              created_at, updated_at) VALUES(?1, ?2, ?3, ?4, 'USD', ?5, ?5)",
-            params![Uuid::new_v4().to_string(), name, asset_type, value, now.to_rfc3339()],
+            params![
+                Uuid::new_v4().to_string(),
+                name,
+                asset_type,
+                value,
+                now.to_rfc3339()
+            ],
         )?;
     }
 
     // ── 7. Liabilities ─────────────────────────────────────────────────────
     // (name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date)
     let liabilities: &[(&str, &str, i64, Option<i64>, Option<f64>, Option<&str>)] = &[
-        ("First Federal · 30-yr fixed", "Mortgage",     38_842_000, None,            Some(6.125), Some("2054-01-01")),
-        ("Subaru Finance",              "Auto loan",      1_248_000, None,            Some(4.9),   None),
-        ("Mira · Federal Direct",       "Student loan",   1_824_000, None,            Some(5.5),   None),
-        ("Amex Gold",                   "Credit card",      241_800, Some(2_000_000), Some(24.9),  None),
+        (
+            "First Federal · 30-yr fixed",
+            "Mortgage",
+            38_842_000,
+            None,
+            Some(6.125),
+            Some("2054-01-01"),
+        ),
+        (
+            "Subaru Finance",
+            "Auto loan",
+            1_248_000,
+            None,
+            Some(4.9),
+            None,
+        ),
+        (
+            "Mira · Federal Direct",
+            "Student loan",
+            1_824_000,
+            None,
+            Some(5.5),
+            None,
+        ),
+        (
+            "Amex Gold",
+            "Credit card",
+            241_800,
+            Some(2_000_000),
+            Some(24.9),
+            None,
+        ),
     ];
     for &(name, typ, balance, limit, apr, payoff) in liabilities {
         sql_tx.execute(
@@ -525,7 +906,12 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
              VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 'USD', ?8, ?8)",
             params![
                 Uuid::new_v4().to_string(),
-                name, typ, balance, limit, apr, payoff,
+                name,
+                typ,
+                balance,
+                limit,
+                apr,
+                payoff,
                 now.to_rfc3339(),
             ],
         )?;
@@ -534,11 +920,11 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     // ── 8. Budgets (current month + 2 prior) ──────────────────────────────
     // (category_id, amount_cents)
     let budget_cats: &[(&str, i64)] = &[
-        ("groceries",     80_000),
-        ("dining",        40_000),
+        ("groceries", 80_000),
+        ("dining", 40_000),
         ("subscriptions", 20_000),
-        ("utilities",     35_000),
-        ("transport",     30_000),
+        ("utilities", 35_000),
+        ("transport", 30_000),
     ];
     for mo in 0_u32..3 {
         let (y, m) = months_back(year, month, mo);
@@ -549,7 +935,9 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
                  created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?5)",
                 params![
                     Uuid::new_v4().to_string(),
-                    cat_id, &month_str, amount,
+                    cat_id,
+                    &month_str,
+                    amount,
                     now.to_rfc3339(),
                 ],
             )?;
@@ -574,14 +962,24 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         sql_tx.execute(
             "INSERT OR IGNORE INTO net_worth_snapshots(id, date, total_cents, created_at) \
              VALUES(?1, ?2, ?3, ?4)",
-            params![Uuid::new_v4().to_string(), snap_date.to_string(), total, now.to_rfc3339()],
+            params![
+                Uuid::new_v4().to_string(),
+                snap_date.to_string(),
+                total,
+                now.to_rfc3339()
+            ],
         )?;
     }
     // Seed today's snapshot so the chart renders immediately.
     sql_tx.execute(
         "INSERT OR IGNORE INTO net_worth_snapshots(id, date, total_cents, created_at) \
          VALUES(?1, ?2, ?3, ?4)",
-        params![Uuid::new_v4().to_string(), today.to_string(), 36_819_400_i64, now.to_rfc3339()],
+        params![
+            Uuid::new_v4().to_string(),
+            today.to_string(),
+            36_819_400_i64,
+            now.to_rfc3339()
+        ],
     )?;
 
     // ── Finish import ──────────────────────────────────────────────────────

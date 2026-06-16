@@ -60,11 +60,11 @@ pub async fn run_job(
             let merch = merchant_raw.to_lowercase();
             // Simple LIKE: leading/trailing % = contains, otherwise exact
             if pat.starts_with('%') && pat.ends_with('%') && pat.len() > 1 {
-                merch.contains(&pat[1..pat.len()-1])
+                merch.contains(&pat[1..pat.len() - 1])
             } else if pat.starts_with('%') {
                 merch.ends_with(&pat[1..])
             } else if pat.ends_with('%') {
-                merch.starts_with(&pat[..pat.len()-1])
+                merch.starts_with(&pat[..pat.len() - 1])
             } else {
                 merch == pat
             }
@@ -174,7 +174,9 @@ fn load_uncategorized(
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
-    for r in rows { out.push(r?); }
+    for r in rows {
+        out.push(r?);
+    }
     Ok(out)
 }
 
@@ -187,7 +189,9 @@ fn load_categories(conn: &mut rusqlite::Connection) -> Result<Vec<(String, Strin
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
-    for r in rows { out.push(r?); }
+    for r in rows {
+        out.push(r?);
+    }
     Ok(out)
 }
 
@@ -203,7 +207,9 @@ fn load_recent_examples(conn: &mut rusqlite::Connection) -> Result<Vec<(String, 
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut out = Vec::new();
-    for r in rows { out.push(r?); }
+    for r in rows {
+        out.push(r?);
+    }
     Ok(out)
 }
 
@@ -211,12 +217,14 @@ fn build_system_prompt(
     categories: &[(String, String, String)],
     recent_examples: &[(String, String)],
 ) -> String {
-    let cats_json = json!(categories.iter().map(|(id, label, group)| {
-        json!({"id": id, "label": label, "group_label": group})
-    }).collect::<Vec<_>>());
-    let examples_json = json!(recent_examples.iter().map(|(merchant, cat)| {
-        json!({"merchant_raw": merchant, "category_label": cat})
-    }).collect::<Vec<_>>());
+    let cats_json = json!(categories
+        .iter()
+        .map(|(id, label, group)| { json!({"id": id, "label": label, "group_label": group}) })
+        .collect::<Vec<_>>());
+    let examples_json = json!(recent_examples
+        .iter()
+        .map(|(merchant, cat)| { json!({"merchant_raw": merchant, "category_label": cat}) })
+        .collect::<Vec<_>>());
     format!(
         "You are a personal finance transaction categorizer. Classify each transaction into \
          exactly one of the provided categories. Respond with a valid JSON array only — \
@@ -253,7 +261,11 @@ mod tests {
     }
 
     fn seed_db(conn: &mut rusqlite::Connection) -> (String, String) {
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','Daily',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','Daily',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')", []).unwrap();
         conn.execute(
@@ -269,11 +281,15 @@ mod tests {
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut *conn);
-            rules::insert(&mut *conn, NewRule {
-                pattern: "CHIPOTLE".to_string(),
-                category_id: "cat1".to_string(),
-                source: "user".to_string(),
-            }).unwrap();
+            rules::insert(
+                &mut *conn,
+                NewRule {
+                    pattern: "CHIPOTLE".to_string(),
+                    category_id: "cat1".to_string(),
+                    source: "user".to_string(),
+                },
+            )
+            .unwrap();
         }
         let events: Arc<Mutex<Vec<AgentEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = Arc::clone(&events);
@@ -286,13 +302,21 @@ mod tests {
             &db,
             AgentJob::CategorizeAll,
             provider,
-            Arc::new(move |e| { events_clone.lock().unwrap().push(e); }),
-        ).await.unwrap();
+            Arc::new(move |e| {
+                events_clone.lock().unwrap().push(e);
+            }),
+        )
+        .await
+        .unwrap();
 
         let conn = db.get().unwrap();
-        let cat_id: Option<String> = conn.query_row(
-            "SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0),
-        ).unwrap();
+        let cat_id: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
     }
 
@@ -309,18 +333,18 @@ mod tests {
             model_id: "gpt-test".into(),
             response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.87, "rationale": "Fast food"}]),
         });
-        run_job(
-            &db,
-            AgentJob::CategorizeAll,
-            provider,
-            Arc::new(|_| {}),
-        ).await.unwrap();
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
 
         let conn = db.get().unwrap();
-        let (cat_id, confidence): (Option<String>, Option<f64>) = conn.query_row(
-            "SELECT category_id, ai_confidence FROM transactions WHERE id='t1'",
-            [], |r| Ok((r.get(0)?, r.get(1)?)),
-        ).unwrap();
+        let (cat_id, confidence): (Option<String>, Option<f64>) = conn
+            .query_row(
+                "SELECT category_id, ai_confidence FROM transactions WHERE id='t1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
         assert!((confidence.unwrap() - 0.87).abs() < 0.01);
     }
@@ -331,7 +355,7 @@ mod tests {
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut *conn); // inserts cat1 + account a1 + txn t1
-            // Add two more transactions for the same merchant, all user-categorized.
+                                 // Add two more transactions for the same merchant, all user-categorized.
             for i in 2..=3 {
                 let tid = format!("t{i}");
                 conn.execute(
@@ -341,22 +365,32 @@ mod tests {
                 ).unwrap();
             }
             // t1 also categorized to cat1, all by the user.
-            conn.execute("UPDATE transactions SET category_id='cat1' WHERE id='t1'", []).unwrap();
-            for (i, tid) in ["t1","t2","t3"].iter().enumerate() {
+            conn.execute(
+                "UPDATE transactions SET category_id='cat1' WHERE id='t1'",
+                [],
+            )
+            .unwrap();
+            for (i, tid) in ["t1", "t2", "t3"].iter().enumerate() {
                 conn.execute(
                     "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                      VALUES(?1,?2,'cat1','user',1.0,'2024-01-16T00:00:00Z')",
                     rusqlite::params![format!("uc{i}"), tid],
-                ).unwrap();
+                )
+                .unwrap();
             }
         }
         let provider = Arc::new(MockCompletionProvider {
-            provider_id: "mock".into(), model_id: "test".into(), response: json!([]),
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: json!([]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {})).await.unwrap();
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
 
         let mut conn = db.get().unwrap();
-        let pending = finsight_core::repos::rule_proposals::list(&mut conn, Some("pending")).unwrap();
+        let pending =
+            finsight_core::repos::rule_proposals::list(&mut conn, Some("pending")).unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].pattern, "CHIPOTLE");
     }

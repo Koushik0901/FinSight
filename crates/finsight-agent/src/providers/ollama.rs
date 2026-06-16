@@ -24,14 +24,22 @@ impl OllamaProvider {
 }
 
 #[derive(Deserialize)]
-struct OllamaMessage { content: String }
+struct OllamaMessage {
+    content: String,
+}
 #[derive(Deserialize)]
-struct OllamaChatResp { message: OllamaMessage }
+struct OllamaChatResp {
+    message: OllamaMessage,
+}
 
 #[async_trait]
 impl CompletionProvider for OllamaProvider {
-    fn provider_id(&self) -> &str { "ollama" }
-    fn model_id(&self) -> &str { &self.model }
+    fn provider_id(&self) -> &str {
+        "ollama"
+    }
+    fn model_id(&self) -> &str {
+        &self.model
+    }
 
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
@@ -43,7 +51,8 @@ impl CompletionProvider for OllamaProvider {
                 {"role": "user",   "content": user},
             ]
         });
-        let resp: OllamaChatResp = self.client
+        let resp: OllamaChatResp = self
+            .client
             .post(format!("{}/api/chat", self.base_url))
             .json(&body)
             .send()
@@ -57,10 +66,15 @@ impl CompletionProvider for OllamaProvider {
 
     async fn list_models(&self) -> Result<Vec<String>> {
         #[derive(Deserialize)]
-        struct Tag { name: String }
+        struct Tag {
+            name: String,
+        }
         #[derive(Deserialize)]
-        struct TagsResp { models: Vec<Tag> }
-        let resp: TagsResp = self.client
+        struct TagsResp {
+            models: Vec<Tag>,
+        }
+        let resp: TagsResp = self
+            .client
             .get(format!("{}/api/tags", self.base_url))
             .send()
             .await?

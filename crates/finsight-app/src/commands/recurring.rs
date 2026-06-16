@@ -31,18 +31,22 @@ pub struct RecurringItem {
 }
 
 fn cadence_label(avg_gap: f64) -> &'static str {
-    if avg_gap < 10.0  { "weekly" }
-    else if avg_gap < 20.0 { "biweekly" }
-    else if avg_gap < 45.0 { "monthly" }
-    else if avg_gap < 100.0 { "quarterly" }
-    else { "annual" }
+    if avg_gap < 10.0 {
+        "weekly"
+    } else if avg_gap < 20.0 {
+        "biweekly"
+    } else if avg_gap < 45.0 {
+        "monthly"
+    } else if avg_gap < 100.0 {
+        "quarterly"
+    } else {
+        "annual"
+    }
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_recurring(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<Vec<RecurringItem>> {
+pub async fn list_recurring(state: tauri::State<'_, AppState>) -> AppResult<Vec<RecurringItem>> {
     let db = (*state.db).clone();
 
     run(&db, |conn| {

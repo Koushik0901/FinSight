@@ -14,5 +14,7 @@ pub async fn list_agent_memory(state: tauri::State<'_, AppState>) -> AppResult<V
 #[specta::specta]
 pub async fn forget_agent_memory(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| agent_memory::forget(conn, &id)).await.map_err(AppError::from)
+    run(&db, move |conn| agent_memory::forget(conn, &id))
+        .await
+        .map_err(AppError::from)
 }

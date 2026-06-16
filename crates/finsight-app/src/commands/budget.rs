@@ -85,9 +85,11 @@ pub async fn set_budget(
 ) -> AppResult<()> {
     let db = (*state.db).clone();
     let month = Utc::now().format("%Y-%m").to_string();
-    run(&db, move |conn| budgets::set(conn, &category_id, &month, amount_cents))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        budgets::set(conn, &category_id, &month, amount_cents)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 // ── Goals ──────────────────────────────────────────────────────────────────
@@ -186,9 +188,11 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
 #[specta::specta]
 pub async fn list_goals(state: tauri::State<'_, AppState>) -> AppResult<Vec<GoalDto>> {
     let db = (*state.db).clone();
-    run(&db, |conn| goals::list(conn).map(|gs| gs.into_iter().map(goal_to_dto).collect()))
-        .await
-        .map_err(AppError::from)
+    run(&db, |conn| {
+        goals::list(conn).map(|gs| gs.into_iter().map(goal_to_dto).collect())
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -199,15 +203,19 @@ pub async fn create_goal(
 ) -> AppResult<GoalDto> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        goals::insert(conn, goals::NewGoal {
-            name: input.name,
-            goal_type: input.goal_type,
-            target_cents: input.target_cents,
-            monthly_cents: input.monthly_cents,
-            target_date: input.target_date,
-            color: input.color,
-            notes: input.notes,
-        }).map(goal_to_dto)
+        goals::insert(
+            conn,
+            goals::NewGoal {
+                name: input.name,
+                goal_type: input.goal_type,
+                target_cents: input.target_cents,
+                monthly_cents: input.monthly_cents,
+                target_date: input.target_date,
+                color: input.color,
+                notes: input.notes,
+            },
+        )
+        .map(goal_to_dto)
     })
     .await
     .map_err(AppError::from)
@@ -221,17 +229,16 @@ pub async fn update_goal_balance(
     current_cents: i64,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| goals::set_current_cents(conn, &id, current_cents))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        goals::set_current_cents(conn, &id, current_cents)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn archive_goal(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> AppResult<()> {
+pub async fn archive_goal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| goals::archive(conn, &id))
         .await
@@ -246,16 +253,16 @@ pub async fn update_goal_monthly(
     monthly_cents: i64,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| goals::set_monthly_cents(conn, &id, monthly_cents))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        goals::set_monthly_cents(conn, &id, monthly_cents)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_plan_next_month_data(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<PlanData> {
+pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppResult<PlanData> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         let now = Utc::now();
@@ -415,15 +422,20 @@ pub async fn list_budget_history(
     run(&db, move |conn| {
         let now = Utc::now();
         // Build list of month strings oldest first
-        let month_list: Vec<String> = (0..months).map(|i| {
-            let m0 = now.month0() as i32 - i as i32;
-            let (yr, mo) = if m0 < 0 {
-                (now.year() - 1, (m0 + 12) as u32 + 1)
-            } else {
-                (now.year(), m0 as u32 + 1)
-            };
-            format!("{yr}-{mo:02}")
-        }).collect::<Vec<_>>().into_iter().rev().collect();
+        let month_list: Vec<String> = (0..months)
+            .map(|i| {
+                let m0 = now.month0() as i32 - i as i32;
+                let (yr, mo) = if m0 < 0 {
+                    (now.year() - 1, (m0 + 12) as u32 + 1)
+                } else {
+                    (now.year(), m0 as u32 + 1)
+                };
+                format!("{yr}-{mo:02}")
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
 
         let cutoff = format!("{}-01", month_list.first().unwrap());
 
@@ -440,7 +452,11 @@ pub async fn list_budget_history(
         let mut spend_map: std::collections::HashMap<(String, String), i64> =
             std::collections::HashMap::new();
         let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })?;
         for row in rows.flatten() {
             spend_map.insert((row.0, row.1), row.2);
@@ -460,25 +476,43 @@ pub async fn list_budget_history(
             .collect();
         drop(cat_stmt);
 
-        let month_labels: Vec<String> = month_list.iter().map(|m| {
-            let mo: u32 = m[5..7].parse().unwrap_or(1);
-            let names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-            names[(mo.saturating_sub(1)) as usize].to_string()
-        }).collect();
+        let month_labels: Vec<String> = month_list
+            .iter()
+            .map(|m| {
+                let mo: u32 = m[5..7].parse().unwrap_or(1);
+                let names = [
+                    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+                    "Dec",
+                ];
+                names[(mo.saturating_sub(1)) as usize].to_string()
+            })
+            .collect();
 
         let mut result: Vec<CategoryHistory> = cats
             .into_iter()
             .filter_map(|(id, label, color)| {
-                let monthly: Vec<MonthlyActual> = month_list.iter().zip(month_labels.iter()).map(|(m, lbl)| {
-                    MonthlyActual {
+                let monthly: Vec<MonthlyActual> = month_list
+                    .iter()
+                    .zip(month_labels.iter())
+                    .map(|(m, lbl)| MonthlyActual {
                         month: m.clone(),
                         label: lbl.clone(),
-                        cents: spend_map.get(&(id.clone(), m.clone())).copied().unwrap_or(0),
-                    }
-                }).collect();
+                        cents: spend_map
+                            .get(&(id.clone(), m.clone()))
+                            .copied()
+                            .unwrap_or(0),
+                    })
+                    .collect();
                 let total: i64 = monthly.iter().map(|m| m.cents).sum();
-                if total == 0 { return None; }
-                Some(CategoryHistory { category_id: id, label, color, monthly })
+                if total == 0 {
+                    return None;
+                }
+                Some(CategoryHistory {
+                    category_id: id,
+                    label,
+                    color,
+                    monthly,
+                })
             })
             .collect();
 

@@ -4,11 +4,9 @@ pub mod commands;
 pub mod error;
 
 use finsight_agent::{
-    agent::{AgentHandle, AgentEvent, EventCallback},
+    agent::{AgentEvent, AgentHandle, EventCallback},
     providers::{
-        anthropic::AnthropicProvider,
-        ollama::OllamaProvider,
-        openai_compat::OpenAiCompatProvider,
+        anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
     },
     CompletionProvider,
 };
@@ -67,7 +65,9 @@ pub fn load_provider_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider
     build_provider_from_config(&cfg)
 }
 
-pub(crate) fn build_provider_from_config(cfg: &serde_json::Value) -> Option<Arc<dyn CompletionProvider>> {
+pub(crate) fn build_provider_from_config(
+    cfg: &serde_json::Value,
+) -> Option<Arc<dyn CompletionProvider>> {
     match cfg.get("kind")?.as_str()? {
         "ollama" => {
             let base_url = cfg["base_url"].as_str()?.to_string();
@@ -79,13 +79,17 @@ pub(crate) fn build_provider_from_config(cfg: &serde_json::Value) -> Option<Arc<
             let model = cfg["model"].as_str()?.to_string();
             let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
             let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
-                .ok()??.to_string();
-            Some(Arc::new(OpenAiCompatProvider::new(base_url, api_key, model, preset)))
+                .ok()??
+                .to_string();
+            Some(Arc::new(OpenAiCompatProvider::new(
+                base_url, api_key, model, preset,
+            )))
         }
         "anthropic" => {
             let model = cfg["model"].as_str()?.to_string();
             let api_key = finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
-                .ok()??.to_string();
+                .ok()??
+                .to_string();
             Some(Arc::new(AnthropicProvider::new(api_key, model)))
         }
         _ => None,

@@ -1,5 +1,6 @@
 use finsight_core::{
-    db::run_migrations, keychain,
+    db::run_migrations,
+    keychain,
     models::{AccountType, NewAccount, NewTransaction, TransactionStatus, TxnPatch},
     repos::{accounts, run, transactions},
     Db,
@@ -15,32 +16,57 @@ fn fresh_db() -> (TempDir, Db) {
 }
 
 fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
-    conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+    conn.execute(
+        "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+        [],
+    )
+    .unwrap();
     conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
-    let acc = accounts::insert(conn, NewAccount {
-        owner: "Me".into(), bank: "B".into(),
-        r#type: AccountType::Checking, name: "Ch".into(),
-        last4: None, currency: "USD".into(), color: "#fff".into(),
-        opening_balance_cents: 0, source: "manual".into(),
-    }).unwrap();
-    let txn = transactions::insert(conn, NewTransaction {
-        account_id: acc.id.clone(),
-        posted_at: chrono::Utc::now(),
-        amount_cents: 500,
-        merchant_raw: "STARBUCKS".to_string(),
-        category_id: None,
-        notes: None,
-        status: TransactionStatus::Cleared,
-    }).unwrap();
+    let acc = accounts::insert(
+        conn,
+        NewAccount {
+            owner: "Me".into(),
+            bank: "B".into(),
+            r#type: AccountType::Checking,
+            name: "Ch".into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#fff".into(),
+            opening_balance_cents: 0,
+            source: "manual".into(),
+        },
+    )
+    .unwrap();
+    let txn = transactions::insert(
+        conn,
+        NewTransaction {
+            account_id: acc.id.clone(),
+            posted_at: chrono::Utc::now(),
+            amount_cents: 500,
+            merchant_raw: "STARBUCKS".to_string(),
+            category_id: None,
+            notes: None,
+            status: TransactionStatus::Cleared,
+        },
+    )
+    .unwrap();
     (acc.id, txn.id)
 }
 
 #[tokio::test]
 async fn update_category_proposes_rule() {
     let (_d, db) = fresh_db();
-    let txn_id = { let mut c = db.get().unwrap(); seed(&mut c).1 };
-    let patch = TxnPatch { category_id: Some(Some("cat1".into())), ..Default::default() };
-    let (updated, rule) = run(&db, move |conn| transactions::update(conn, &txn_id, patch)).await.unwrap();
+    let txn_id = {
+        let mut c = db.get().unwrap();
+        seed(&mut c).1
+    };
+    let patch = TxnPatch {
+        category_id: Some(Some("cat1".into())),
+        ..Default::default()
+    };
+    let (updated, rule) = run(&db, move |conn| transactions::update(conn, &txn_id, patch))
+        .await
+        .unwrap();
     assert_eq!(updated.category_id.as_deref(), Some("cat1"));
     assert!(rule.is_some());
     assert_eq!(rule.unwrap().pattern, "STARBUCKS");
@@ -49,12 +75,22 @@ async fn update_category_proposes_rule() {
 #[tokio::test]
 async fn delete_transaction_removes_it() {
     let (_d, db) = fresh_db();
-    let txn_id = { let mut c = db.get().unwrap(); seed(&mut c).1 };
+    let txn_id = {
+        let mut c = db.get().unwrap();
+        seed(&mut c).1
+    };
     let id_clone = txn_id.clone();
-    run(&db, move |conn| transactions::delete(conn, &id_clone)).await.unwrap();
-    let count: i64 = db.get().unwrap().query_row(
-        "SELECT COUNT(*) FROM transactions WHERE id = ?1",
-        rusqlite::params![txn_id], |r| r.get(0),
-    ).unwrap();
+    run(&db, move |conn| transactions::delete(conn, &id_clone))
+        .await
+        .unwrap();
+    let count: i64 = db
+        .get()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE id = ?1",
+            rusqlite::params![txn_id],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(count, 0);
 }

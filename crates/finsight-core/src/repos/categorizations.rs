@@ -36,7 +36,13 @@ pub fn list_for_txn(conn: &mut Connection, txn_id: &str) -> CoreResult<Vec<Categ
             confidence: r.get(4)?,
             model: r.get(5)?,
             at: DateTime::parse_from_rfc3339(&at_s)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        6,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?
                 .with_timezone(&Utc),
         })
     })?;
@@ -66,12 +72,18 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         // Insert a category + account + transaction first
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
         conn.execute(
             "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
-             VALUES('a1','Me','Bank','Checking','Ch','USD','#000','manual','2024-01-01T00:00:00Z')", [],
-        ).unwrap();
+             VALUES('a1','Me','Bank','Checking','Ch','USD','#000','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
              VALUES('t1','a1','2024-01-01T00:00:00Z',1000,'AMAZON','cleared',0,'2024-01-01T00:00:00Z')", [],

@@ -70,9 +70,7 @@ pub async fn reset_onboarding_completion(state: tauri::State<'_, AppState>) -> A
 
 #[tauri::command]
 #[specta::specta]
-pub async fn seed_dev_demo(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<sample::SeedSummary> {
+pub async fn seed_dev_demo(state: tauri::State<'_, AppState>) -> AppResult<sample::SeedSummary> {
     let db = (*state.db).clone();
     sample::seed_dev_demo(&db).map_err(AppError::from)
 }

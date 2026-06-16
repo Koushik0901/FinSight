@@ -22,14 +22,14 @@ fn migrate_llm_provider_to_completion_provider() {
                 "completion_model": "llama3.2",
                 "embedding_model": "nomic-embed-text"
             }),
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     finsight_app::migrate_provider_settings(&db).unwrap();
 
     let conn = db.get().unwrap();
-    let new_cfg: Option<serde_json::Value> =
-        settings::get(&conn, "completion_provider").unwrap();
+    let new_cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider").unwrap();
     assert!(new_cfg.is_some(), "completion_provider should be written");
     let cfg = new_cfg.unwrap();
     assert_eq!(cfg["kind"], "ollama");
