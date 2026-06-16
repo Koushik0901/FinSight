@@ -67,18 +67,22 @@ pub fn generate_random_key() -> Zeroizing<String> {
 mod tests {
     use super::*;
 
+    // On Linux the Secret Service (gnome-keyring) requires a real login
+    // session to initialise its default collection, which headless CI runners
+    // don't provide.  Tests run on macOS and Windows where a native keychain
+    // is always available.
     #[test]
+    #[cfg_attr(target_os = "linux", ignore)]
     fn get_key_returns_none_when_absent() {
-        // Use a unique user so tests don't collide with real keychain entries
         let svc = "com.finsight.test.keychain";
         let usr = &format!("test-absent-{}", uuid::Uuid::new_v4());
-        // Clean up before asserting (in case a prior test left something)
         let _ = delete_key(svc, usr);
         let got = get_key(svc, usr).unwrap();
         assert_eq!(got, None);
     }
 
     #[test]
+    #[cfg_attr(target_os = "linux", ignore)]
     fn set_key_round_trip() {
         let svc = "com.finsight.test.keychain";
         let usr = &format!("test-rt-{}", uuid::Uuid::new_v4());

@@ -101,6 +101,6 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/src/test/setup.ts`. The axe a11y tests produce jsdom canvas warnings in stderr — these are expected and non-fatal.
 
-The `keychain::tests::set_key_round_trip` test is intermittently flaky under parallel execution on Windows (credential store ordering). This is pre-existing; failures there are not caused by code changes.
+The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 103 Rust tests, 105 frontend tests, 0 TypeScript errors.
+**Green bar:** 103 Rust tests (101 + 2 ignored on Linux), 105 frontend tests, 0 TypeScript errors.

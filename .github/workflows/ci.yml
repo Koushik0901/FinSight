@@ -41,20 +41,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: Install gnome-keyring (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y gnome-keyring dbus-x11
       - run: pnpm install --frozen-lockfile
       - run: cargo fmt --all -- --check
-      - name: cargo test (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          export $(dbus-launch)
-          echo -n "" | gnome-keyring-daemon --login --daemonize --components=secrets
-          cargo test --workspace
-      - name: cargo test (non-Linux)
-        if: matrix.os != 'ubuntu-latest'
-        run: cargo test --workspace
+      - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: pnpm --filter ui typecheck
       - run: pnpm --filter ui test
