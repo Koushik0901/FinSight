@@ -199,6 +199,7 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
