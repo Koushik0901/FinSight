@@ -33,11 +33,12 @@ pub fn list(conn: &mut Connection, txn_id: &str) -> CoreResult<Vec<TransactionSp
 
 /// Replace all splits for a transaction atomically.
 pub fn set(conn: &mut Connection, txn_id: &str, splits: &[SplitInput]) -> CoreResult<()> {
+    let tx = conn.transaction()?;
     if !splits.is_empty() {
         if splits.len() < 2 {
             return Err(CoreError::InvalidState("at least 2 splits required".into()));
         }
-        let parent_abs: i64 = conn
+        let parent_abs: i64 = tx
             .query_row(
                 "SELECT ABS(amount_cents) FROM transactions WHERE id = ?1",
                 params![txn_id],
@@ -51,8 +52,6 @@ pub fn set(conn: &mut Connection, txn_id: &str, splits: &[SplitInput]) -> CoreRe
             )));
         }
     }
-
-    let tx = conn.transaction()?;
     tx.execute(
         "DELETE FROM transaction_splits WHERE txn_id = ?1",
         params![txn_id],
@@ -64,11 +63,17 @@ pub fn set(conn: &mut Connection, txn_id: &str, splits: &[SplitInput]) -> CoreRe
             params![id, txn_id, s.category_id, s.amount_cents],
         )?;
     }
-    let is_split: i64 = if splits.is_empty() { 0 } else { 1 };
-    tx.execute(
-        "UPDATE transactions SET is_split = ?1, category_id = NULL WHERE id = ?2",
-        params![is_split, txn_id],
-    )?;
+    if splits.is_empty() {
+        tx.execute(
+            "UPDATE transactions SET is_split = 0 WHERE id = ?1",
+            params![txn_id],
+        )?;
+    } else {
+        tx.execute(
+            "UPDATE transactions SET is_split = 1, category_id = NULL WHERE id = ?1",
+            params![txn_id],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
