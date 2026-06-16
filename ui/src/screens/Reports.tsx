@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData, type MonthSummary } from "../api/client";
 import { money } from "../utils/format";
@@ -14,6 +14,31 @@ function useReportData(scope: "month" | "quarter" | "year" | "all") {
     staleTime: 60_000,
   });
 }
+
+// ── Data model ───────────────────────────────────────────────────────────────
+
+type WidgetVisibility = {
+  barChart: boolean;
+  netLine: boolean;
+  donut: boolean;
+  yoy: boolean;
+  categories: boolean;
+  merchants: boolean;
+};
+
+type ReportTab = {
+  id: string;
+  name: string;
+  scope: "month" | "quarter" | "year" | "all";
+  widgets: WidgetVisibility;
+};
+
+const DEFAULT_TAB: ReportTab = {
+  id: "default",
+  name: "Overview",
+  scope: "year",
+  widgets: { barChart: true, netLine: true, donut: true, yoy: true, categories: true, merchants: true },
+};
 
 // ── Inline SVG bar chart ─────────────────────────────────────────────────
 
@@ -286,9 +311,33 @@ function YoYChart({ thisYear, lastYear }: {
 // ── Main screen ───────────────────────────────────────────────────────────
 
 export default function Reports() {
-  const [scope, setScope] = useState<"month" | "quarter" | "year" | "all">("year");
-  const { data, isLoading, error } = useReportData(scope);
+  const [tabs, setTabs] = useState<ReportTab[]>(() => {
+    try {
+      const saved = localStorage.getItem("report_tabs");
+      if (saved) {
+        const parsed = JSON.parse(saved) as ReportTab[];
+        if (parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [DEFAULT_TAB];
+  });
+  const [activeTabId, setActiveTabId] = useState<string>("default");
+  const [customize, setCustomize] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  const activeTab = tabs.find(t => t.id === activeTabId) ?? tabs[0]!;
+  const scope = activeTab.scope;
   const barScope: "6" | "12" = scope === "month" || scope === "quarter" ? "6" : "12";
+
+  useEffect(() => {
+    localStorage.setItem("report_tabs", JSON.stringify(tabs));
+  }, [tabs]);
+
+  const updateActiveTab = (patch: Partial<ReportTab>) => {
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, ...patch } : t));
+  };
+
+  const { data, isLoading, error } = useReportData(scope);
 
   if (isLoading) return <div className="stub">Computing reports…</div>;
   if (error)     return <div className="stub">Error computing reports.</div>;
@@ -339,13 +388,138 @@ export default function Reports() {
         </div>
       </div>
 
+      {/* Tab strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+        {tabs.map(tab => (
+          <div
+            key={tab.id}
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {renamingId === tab.id ? (
+              <input
+                autoFocus
+                defaultValue={tab.name}
+                style={{
+                  padding: "2px 8px",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 4,
+                  color: "var(--ink)",
+                  fontSize: 13,
+                  width: 120,
+                }}
+                onBlur={e => {
+                  const name = e.target.value.trim() || tab.name;
+                  setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, name } : t));
+                  setRenamingId(null);
+                }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") setRenamingId(null);
+                }}
+              />
+            ) : (
+              <button
+                className={`btn ghost sm${activeTabId === tab.id ? " active" : ""}`}
+                style={{ fontWeight: activeTabId === tab.id ? 600 : undefined }}
+                onClick={() => setActiveTabId(tab.id)}
+                onDoubleClick={() => setRenamingId(tab.id)}
+                title="Double-click to rename"
+              >
+                {tab.name}
+              </button>
+            )}
+            {/* Delete button — only show on non-default tabs when active */}
+            {tab.id !== "default" && activeTabId === tab.id && (
+              <button
+                className="btn ghost sm"
+                style={{ padding: "0 4px", color: "var(--ink-mute)", fontSize: 11 }}
+                onClick={() => {
+                  setTabs(prev => prev.filter(t => t.id !== tab.id));
+                  setActiveTabId("default");
+                }}
+                title="Delete tab"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+
+        {/* Add new tab */}
+        <button
+          className="btn ghost sm"
+          style={{ color: "var(--ink-mute)" }}
+          onClick={() => {
+            const newTab: ReportTab = {
+              id: crypto.randomUUID(),
+              name: "New tab",
+              scope: activeTab.scope,
+              widgets: { ...activeTab.widgets },
+            };
+            setTabs(prev => [...prev, newTab]);
+            setActiveTabId(newTab.id);
+            setRenamingId(newTab.id);
+          }}
+        >
+          + New tab
+        </button>
+
+        {/* Customize button — right side */}
+        <div style={{ marginLeft: "auto" }}>
+          <button
+            className={`btn ghost sm${customize ? " active" : ""}`}
+            style={customize ? { color: "var(--accent)" } : undefined}
+            onClick={() => setCustomize(c => !c)}
+            title="Show/hide widgets"
+          >
+            ✎ Customize
+          </button>
+        </div>
+      </div>
+
+      {/* Customize panel */}
+      {customize && (
+        <div className="card" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="eyebrow" style={{ marginRight: 4 }}>Widgets</span>
+          {(
+            [
+              ["barChart", "Bar chart"],
+              ["netLine", "Net line"],
+              ["donut", "Donut"],
+              ["yoy", "Year-over-year"],
+              ["categories", "Categories"],
+              ["merchants", "Merchants"],
+            ] as [keyof WidgetVisibility, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              className={`btn ghost sm${activeTab.widgets[key] ? " active" : ""}`}
+              style={activeTab.widgets[key] ? { color: "var(--accent)" } : { color: "var(--ink-mute)" }}
+              onClick={() =>
+                updateActiveTab({
+                  widgets: { ...activeTab.widgets, [key]: !activeTab.widgets[key] },
+                })
+              }
+            >
+              {activeTab.widgets[key] ? "✓ " : ""}{label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Scope toolbar */}
       <div className="toolbar" style={{ marginBottom: 20 }}>
         {(["month", "quarter", "year", "all"] as const).map(s => (
           <button
             key={s}
-            className={`btn ghost sm${scope === s ? " active" : ""}`}
-            onClick={() => setScope(s)}
+            className={`btn ghost sm${activeTab.scope === s ? " active" : ""}`}
+            onClick={() => updateActiveTab({ scope: s })}
           >
             {s === "month" ? "Month" : s === "quarter" ? "Quarter" : s === "year" ? "Year" : "All time"}
           </button>
@@ -376,87 +550,99 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Charts */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
-        <BarChart months={data.monthly} scope={barScope} />
-        <NetLine months={data.monthly} />
-      </div>
-
-      {/* Donut + YoY charts */}
-      {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          <DonutChart
-            categories={data.topCategories}
-            totalCents={data.topCategories.reduce((s, c) => s + c.totalCents, 0)}
-          />
-          <YoYChart thisYear={data.monthly} lastYear={data.monthlyLastYear} />
+      {/* Chart grid 1 */}
+      {(activeTab.widgets.barChart || activeTab.widgets.netLine) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
+          {activeTab.widgets.barChart && <BarChart months={data.monthly} scope={barScope} />}
+          {activeTab.widgets.netLine && <NetLine months={data.monthly} />}
         </div>
       )}
 
-      {/* Tables */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-        {/* Top categories */}
-        <div className="card flush">
-          <div className="card-head">
-            <div className="h3">Top categories</div>
-            <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
-          </div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th className="right">Total</th>
-                <th className="right">Txns</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topCategories.map((c) => (
-                <tr key={c.categoryId}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block", flexShrink: 0 }} />
-                      <span style={{ fontSize: 14 }}>{c.label}</span>
-                    </div>
-                  </td>
-                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
-                  <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Chart grid 2 */}
+      {(activeTab.widgets.donut || activeTab.widgets.yoy) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+          {activeTab.widgets.donut && (
+            <DonutChart
+              categories={data.topCategories}
+              totalCents={data.topCategories.reduce((s, c) => s + c.totalCents, 0)}
+            />
+          )}
+          {activeTab.widgets.yoy && (
+            <YoYChart thisYear={data.monthly} lastYear={data.monthlyLastYear} />
+          )}
         </div>
+      )}
 
-        {/* Top merchants */}
-        <div className="card flush">
-          <div className="card-head">
-            <div className="h3">Top merchants</div>
-            <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
-          </div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Merchant</th>
-                <th className="right">Total</th>
-                <th className="right">Txns</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topMerchants.map((m, i) => (
-                <tr key={`${m.merchantRaw}-${i}`}>
-                  <td>
-                    <div>
-                      <div style={{ fontSize: 14 }}>{m.merchantRaw}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
-                    </div>
-                  </td>
-                  <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
-                  <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Tables grid */}
+      {(activeTab.widgets.categories || activeTab.widgets.merchants) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+          {/* Top categories */}
+          {activeTab.widgets.categories && (
+            <div className="card flush">
+              <div className="card-head">
+                <div className="h3">Top categories</div>
+                <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
+              </div>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th className="right">Total</th>
+                    <th className="right">Txns</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topCategories.map((c) => (
+                    <tr key={c.categoryId}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block", flexShrink: 0 }} />
+                          <span style={{ fontSize: 14 }}>{c.label}</span>
+                        </div>
+                      </td>
+                      <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
+                      <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Top merchants */}
+          {activeTab.widgets.merchants && (
+            <div className="card flush">
+              <div className="card-head">
+                <div className="h3">Top merchants</div>
+                <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
+              </div>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Merchant</th>
+                    <th className="right">Total</th>
+                    <th className="right">Txns</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topMerchants.map((m, i) => (
+                    <tr key={`${m.merchantRaw}-${i}`}>
+                      <td>
+                        <div>
+                          <div style={{ fontSize: 14 }}>{m.merchantRaw}</div>
+                          <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
+                        </div>
+                      </td>
+                      <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
+                      <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
