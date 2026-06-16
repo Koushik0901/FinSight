@@ -355,7 +355,7 @@ mod tests {
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut conn); // inserts cat1 + account a1 + txn t1
-                                 // Add two more transactions for the same merchant, all user-categorized.
+                                // Add two more transactions for the same merchant, all user-categorized.
             for i in 2..=3 {
                 let tid = format!("t{i}");
                 conn.execute(
