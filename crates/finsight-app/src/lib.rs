@@ -164,6 +164,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::accept_rule_proposal,
         commands::agent::decline_rule_proposal,
         commands::transactions::set_transaction_flags,
+        commands::transactions::get_transaction_splits,
+        commands::transactions::set_transaction_splits,
         commands::budget::update_goal_monthly,
         commands::settings::get_currency,
         commands::settings::set_currency,

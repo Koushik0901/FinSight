@@ -347,6 +347,69 @@ pub async fn set_transaction_flags(
     .map_err(AppError::from)
 }
 
+// ── Split transaction commands ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionSplitDto {
+    pub id: String,
+    pub txn_id: String,
+    pub category_id: Option<String>,
+    pub amount_cents: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitInputDto {
+    pub category_id: Option<String>,
+    pub amount_cents: i64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_transaction_splits(
+    state: tauri::State<'_, AppState>,
+    transaction_id: String,
+) -> AppResult<Vec<TransactionSplitDto>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        finsight_core::repos::splits::list(conn, &transaction_id).map(|v| {
+            v.into_iter()
+                .map(|s| TransactionSplitDto {
+                    id: s.id,
+                    txn_id: s.txn_id,
+                    category_id: s.category_id,
+                    amount_cents: s.amount_cents,
+                })
+                .collect()
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transaction_splits(
+    state: tauri::State<'_, AppState>,
+    transaction_id: String,
+    splits: Vec<SplitInputDto>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let inputs: Vec<finsight_core::repos::splits::SplitInput> = splits
+            .into_iter()
+            .map(|s| finsight_core::repos::splits::SplitInput {
+                category_id: s.category_id,
+                amount_cents: s.amount_cents,
+            })
+            .collect();
+        finsight_core::repos::splits::set(conn, &transaction_id, &inputs)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
         format!("\"{}\"", s.replace('"', "\"\""))
