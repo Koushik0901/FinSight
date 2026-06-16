@@ -4,7 +4,9 @@
 use finsight_core::keychain;
 use uuid::Uuid;
 
+// Requires a running Secret Service; ignored on Linux where headless CI has none.
 #[test]
+#[cfg_attr(target_os = "linux", ignore)]
 fn load_or_create_returns_same_key_across_calls() {
     let service = format!("finsight-test-{}", Uuid::new_v4());
     let k1 = keychain::load_or_create_key(&service, "default").unwrap();
