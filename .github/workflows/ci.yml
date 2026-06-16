@@ -50,7 +50,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           dbus-run-session -- bash -c '
-            echo -n "" | gnome-keyring-daemon --unlock --daemonize --components=secrets
+            eval $(echo -n "" | gnome-keyring-daemon --unlock --start --components=secrets)
+            export GNOME_KEYRING_CONTROL GNOME_KEYRING_PID SSH_AUTH_SOCK
             cargo test --workspace
           '
       - name: cargo test (non-Linux)
@@ -62,7 +63,7 @@ jobs:
       - run: pnpm --filter ui build
       - name: Tauri debug build (Linux, under dbus session)
         if: matrix.os == 'ubuntu-latest'
-        run: dbus-run-session -- cargo tauri build --debug
+        run: dbus-run-session -- pnpm exec tauri build --debug
       - name: Tauri debug build (non-Linux)
         if: matrix.os != 'ubuntu-latest'
-        run: cargo tauri build --debug
+        run: pnpm exec tauri build --debug
