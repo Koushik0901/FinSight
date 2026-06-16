@@ -11,6 +11,7 @@ pub mod net_worth;
 pub mod rule_proposals;
 pub mod rules;
 pub mod scenarios;
+pub mod splits;
 pub mod transactions;
 
 use crate::error::CoreResult;
