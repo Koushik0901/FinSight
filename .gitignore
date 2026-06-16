@@ -28,3 +28,6 @@ ui/dist/
 
 # Generated bindings — committed in this project
 # ui/src/api/bindings.ts is committed; do not ignore.
+
+# Visual brainstorm companion
+.superpowers/
