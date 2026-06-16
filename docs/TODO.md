@@ -8,6 +8,16 @@
 
 ---
 
+## ✅ Wave C shipped (2026-06-15)
+
+All Wave C features are done and pushed to main.
+
+**Shipped in Wave C:** §2 Plan Next Month wizard (6-step modal launched from Budget), §4c Accounts CSV export, §5c Transactions CSV export, §5d Reimbursable/split flag toggles and table chips, §7c Budget 5-month spending history table, §8b Recurring price-history chip (↑↓ with old→new amount), §10a Reports scope switcher (Month/Quarter/Year/All time), §10b DonutChart (spending breakdown by category), §10c Year-over-year comparison chart, §10d Saved report tabs (localStorage-persisted, create/rename/delete), §10e Widget show/hide toggles (Customize mode per tab), §11c Agent 24h activity log in Rules sidebar, §12d Keyboard shortcuts reference in Settings.
+
+**New hooks:** `usePlanNextMonthData`, `useApplyNextMonthPlan`, `useBudgetHistory`, `useRecentAgentActivity`. **New commands:** `getPlanNextMonthData`, `applyNextMonthPlan`, `listBudgetHistory`, `listRecentAgentActivity`, `exportTransactionsCsv`, `exportAccountCsv`, `getReportData` (now accepts `scope: String`). **New types:** `CategoryPlanRow`, `PlanData`, `PlanAssignment`, `AgentActivity`, `MonthlyActual`, `CategoryHistory`. **RecurringItem** extended with `minAmountCents`/`maxAmountCents`; **ReportData** extended with `monthlyLastYear`.
+
+---
+
 ## ✅ Wave B shipped (2026-06-07)
 
 All Wave B features are done and merged to main. Design + plan: `docs/superpowers/specs/2026-06-05-wave-b-all-remaining-design.md`, `docs/superpowers/plans/2026-06-05-wave-b-all-remaining.md`.
@@ -67,7 +77,7 @@ The Scenarios screen is a what-if / natural-language forecasting tool. It is com
 
 ---
 
-## 2. Plan Next Month wizard (launched from Budget)
+## 2. Plan Next Month wizard (launched from Budget) — ✅ DONE
 
 **Design reference:** `design/plutus/project/components/plan-next-month.jsx`
 
@@ -165,7 +175,7 @@ Similarly, track liabilities (mortgage, student loans, credit card balances).
 - Each row: name, type chip, balance, APR, progress bar (balance / original limit), payoff date
 - Net worth = accounts + assets − liabilities (update the Today screen hero too)
 
-### 4c. CSV export per account
+### 4c. CSV export per account — ✅ DONE
 
 Add an "Export CSV" button to the per-account row or account detail panel that calls:
 ```rust
@@ -200,7 +210,7 @@ Below the header, add a tab strip: **All · Needs review · Anomalies · No cate
 
 Update `TxnFilterInput` backend to accept `filter_preset: Option<String>` and add the WHERE clauses.
 
-### 5c. CSV export
+### 5c. CSV export — ✅ DONE
 
 "Export CSV" button in the Transactions header that exports the currently filtered view:
 ```rust
@@ -212,7 +222,7 @@ Uses `tauri_plugin_dialog` to save, writes: date, merchant, category, amount, no
 
 **Backend ✅ done:** `is_reimbursable` / `is_split` columns on `transactions` (V011); `Transaction` carries both booleans; command `setTransactionFlags(id, isReimbursable, isSplit)` exists.
 
-**Frontend (pending):** Add toggle buttons in `TransactionDrawer`. Show chips in the transactions table for rows where these are true.
+**Frontend ✅ done:** Toggle buttons in `TransactionDrawer` with `aria-pressed`. Chips in the transactions table for rows where these are true.
 
 ---
 
@@ -262,7 +272,7 @@ Requires calling `get_month_totals` (already exists) and `list_budget_envelopes`
 Add a 4th sort option in the toolbar: `By activity`. Sort envelopes by `txnCount DESC`.
 Already available in `BudgetEnvelope.txnCount` from the backend.
 
-### 7c. 5-month history strip
+### 7c. 5-month history strip — ✅ DONE
 
 Below the main envelope grid, add a compact table showing each category's last 5 months of actual spending. Requires a new backend query:
 ```rust
@@ -286,7 +296,7 @@ When a calendar cell is clicked in `CalendarView`, animate a detail panel below 
 
 Implementation: add `selectedDay: number | null` state to `CalendarView`. When non-null, render a `.rcal-detail` div (CSS already exists in `app.css`) below the grid. Items come from `dayMap[selectedDay]`.
 
-### 8b. Price-history chip per subscription
+### 8b. Price-history chip per subscription — ✅ DONE
 
 In the Subscriptions view, if an item's `lastAmountCents` differs from a previous occurrence (requires comparing across `occurrences`), show a chip: `price-up: $19.99 → $22.99`. This requires updating the `list_recurring` SQL to also return `min_amount_cents` alongside `max_amount_cents` (already fetched as `last_amount`). If `max_amount_cents != min_amount_cents`, flag as price-changed.
 
@@ -325,26 +335,26 @@ The design has a separate "Sinking funds" concept — short-term savings buckets
 
 The current Reports screen is a fixed layout. The design is a fully customizable widget dashboard. This is the largest remaining feature gap.
 
-### 10a. Scope switcher
+### 10a. Scope switcher — ✅ DONE
 
 Add a scope toolbar to Reports: **Month / Quarter / Year / All-time**. This drives the time window for all charts and tables. Pass the selected scope into the `get_report_data` backend (update it to accept `scope: String`), which adjusts the SQL date filters accordingly.
 
-### 10b. Donut / breakdown chart
+### 10b. Donut / breakdown chart — ✅ DONE
 
 Add a donut chart widget showing spending breakdown by category. Pure SVG — no library needed:
 - Compute arc paths from category percentages using SVG `path` with `A` arc commands
 - Center shows total spend
 - Legend below with category name + percentage + amount
 
-### 10c. Year-over-year comparison chart
+### 10c. Year-over-year comparison chart — ✅ DONE
 
 Add a YoY line chart — two SVG polylines, this year vs last year, month by month. Requires the backend to also return last year's monthly totals. Update `get_report_data` to return `monthly_last_year: Vec<MonthSummary>`.
 
-### 10d. Multiple saved report tabs (stretch)
+### 10d. Multiple saved report tabs (stretch) — ✅ DONE
 
 Allow users to create named report tabs (like "Monthly overview", "Wealth", "Spending deep dive"), each storing a JSON config of which widgets are visible and their order. Persist to `settings` KV store as `report_tabs: [...] `. Add tab strip above the charts, "+" button to create, inline rename (double-click).
 
-### 10e. Widget show/hide toggles
+### 10e. Widget show/hide toggles — ✅ DONE
 
 Short of full drag-and-drop, add a simple "Customize" mode (pencil icon in top-right) that toggles visibility of each widget (bar chart / line chart / category table / merchant table / donut). Persist visibility state to localStorage.
 
@@ -369,7 +379,7 @@ Add a "New rule" button in the Rules header. Opens a small inline form or modal:
 - Category picker: reuse `<CategoryPicker>` component
 - Submit calls `create_rule(pattern, category_id)` (already exists)
 
-### 11c. Agent 24h activity log
+### 11c. Agent 24h activity log — ✅ DONE
 
 Add a "Agent · last 24h" card in the right sidebar of Rules (the design already has the two-column layout). Query: fetch the last 10 `categorizations` rows joined with transaction/category info, group into activity log entries. New command: `list_recent_agent_activity(limit: u32) -> Vec<AgentActivity>` where `AgentActivity = { text, sub, minutes_ago }`.
 
@@ -408,7 +418,7 @@ Move the theme/density/accent controls from the hidden `tweaks` store into a vis
 - Accent color picker (6 color swatches — already in `useTweaks`)
 - These already work via `useTweaks()`; just render them in Settings UI
 
-### 12d. Keyboard shortcuts reference
+### 12d. Keyboard shortcuts reference — ✅ DONE
 
 Add a static "Keyboard shortcuts" section listing:
 - `⌘K` — Command palette
@@ -524,15 +534,16 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Goals: apply what-if + sinking funds (§9b, §9c) | Low | Medium | ✅ Done |
 | — | Insights: agent operator panel + memory (§13a, §13b) | Medium | Medium | ✅ Done |
 | — | Categories: AI insight sentence (§6c) | Low | Medium | ✅ Done |
-| 1 | Plan Next Month wizard (§2) | High | Medium | |
-| 2 | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | |
-| 3 | Budget: 5-month history strip (§7c) | Medium | Low | |
-| 4 | Transactions: CSV export (§5c) | Low | Low | |
-| 5 | Accounts: CSV export (§4c) | Low | Low | |
-| 6 | Recurring: price-history chip (§8b) | Low | Low | |
-| 7 | Rules: agent activity log (§11c) | Medium | Low | |
-| 8 | Settings: keyboard shortcuts reference (§12d) | Low | Low | |
-| 9 | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | |
+| — | Plan Next Month wizard (§2) | High | Medium | ✅ Done |
+| — | Reports: scope switcher + donut + YoY (§10a, §10b, §10c) | Medium | Medium | ✅ Done |
+| — | Budget: 5-month history strip (§7c) | Medium | Low | ✅ Done |
+| — | Transactions: CSV export (§5c) | Low | Low | ✅ Done |
+| — | Accounts: CSV export (§4c) | Low | Low | ✅ Done |
+| — | Recurring: price-history chip (§8b) | Low | Low | ✅ Done |
+| — | Rules: agent activity log (§11c) | Medium | Low | ✅ Done |
+| — | Settings: keyboard shortcuts reference (§12d) | Low | Low | ✅ Done |
+| — | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | ✅ Done |
+| — | Transactions: reimbursable/split flags UI (§5d) | Low | Low | ✅ Done |
 
 ---
 
@@ -547,4 +558,4 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 - **All Rust commands** must have `#[tauri::command]` and `#[specta::specta]` attributes and `pub async fn` signature to be picked up by specta.
 - **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering. Next = `V012__description.sql`.
 - **Dev demo data:** `seed_dev_demo()` in `crates/finsight-core/src/sample.rs` loads the full "Mira & Adam" dataset (6 accounts, ~142 transactions, 5 goals, assets, liabilities, budgets, net-worth history). Exposed via the "Load demo data" button in Settings (visible only in `import.meta.env.DEV`). Idempotent — clears `source='sample'` data before re-seeding. Does NOT touch non-sample accounts.
-- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 90 frontend tests and 103 Rust tests must stay green (0 TypeScript errors via `cd ui && npx tsc --noEmit`).
+- **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 105 frontend tests and 103 Rust tests must stay green (0 TypeScript errors via `cd ui && npx tsc --noEmit`).

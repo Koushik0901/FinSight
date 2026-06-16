@@ -103,4 +103,4 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The `keychain::tests::set_key_round_trip` test is intermittently flaky under parallel execution on Windows (credential store ordering). This is pre-existing; failures there are not caused by code changes.
 
-**Green bar:** 103 Rust tests, 90 frontend tests, 0 TypeScript errors.
+**Green bar:** 103 Rust tests, 105 frontend tests, 0 TypeScript errors.
