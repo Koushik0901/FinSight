@@ -46,14 +46,12 @@ jobs:
         run: sudo apt-get install -y gnome-keyring dbus-x11
       - run: pnpm install --frozen-lockfile
       - run: cargo fmt --all -- --check
-      - name: cargo test (Linux, under dbus session)
+      - name: cargo test (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          dbus-run-session -- bash -c '
-            eval $(echo -n "" | gnome-keyring-daemon --unlock --start --components=secrets)
-            export GNOME_KEYRING_CONTROL GNOME_KEYRING_PID SSH_AUTH_SOCK
-            cargo test --workspace
-          '
+          export $(dbus-launch)
+          echo -n "" | gnome-keyring-daemon --unlock --daemonize --components=secrets
+          cargo test --workspace
       - name: cargo test (non-Linux)
         if: matrix.os != 'ubuntu-latest'
         run: cargo test --workspace
@@ -61,9 +59,5 @@ jobs:
       - run: pnpm --filter ui typecheck
       - run: pnpm --filter ui test
       - run: pnpm --filter ui build
-      - name: Tauri debug build (Linux, under dbus session)
-        if: matrix.os == 'ubuntu-latest'
-        run: dbus-run-session -- pnpm exec tauri build --debug
-      - name: Tauri debug build (non-Linux)
-        if: matrix.os != 'ubuntu-latest'
+      - name: Tauri debug build
         run: pnpm exec tauri build --debug
