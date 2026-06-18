@@ -86,6 +86,22 @@ async listCategories() : Promise<Result<CategoryDto[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async setCategorySpendingType(id: string, spendingType: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_category_spending_type", { id, spendingType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSpendingBreakdown() : Promise<Result<SpendingBreakdown, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_spending_breakdown") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getOnboardingState() : Promise<Result<OnboardingState, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_onboarding_state") };
@@ -241,6 +257,22 @@ async getNeedsReviewCount() : Promise<Result<number, AppError>> {
 async triggerCategorize() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trigger_categorize") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getAgentStatus() : Promise<Result<AgentStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_agent_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async askAgent(question: string, mode: string | null) : Promise<Result<AgentAnswer, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("ask_agent", { question, mode }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -502,6 +534,150 @@ async declineRuleProposal(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listAgentSessions() : Promise<Result<AgentSession[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_agent_sessions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createAgentSession(title: string, taskType: string) : Promise<Result<AgentSession, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_agent_session", { title, taskType }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async closeAgentSession(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("close_agent_session", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listActionBundles(statusFilter: string | null, limit: number | null) : Promise<Result<AgentActionBundle[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_action_bundles", { statusFilter, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getActionBundle(id: string) : Promise<Result<AgentActionBundle | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_action_bundle", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async approveActionItem(itemId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("approve_action_item", { itemId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async rejectActionItem(itemId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reject_action_item", { itemId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listExecutionLog(bundleId: string) : Promise<Result<AgentExecutionEntry[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_execution_log", { bundleId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async startCopilotPlan(sessionId: string | null, question: string) : Promise<Result<CopilotPlanResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_copilot_plan", { sessionId, question }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async executeActionBundle(bundleId: string) : Promise<Result<ExecutionSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("execute_action_bundle", { bundleId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listRecipes(includePaused: boolean) : Promise<Result<AgentRecipe[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_recipes", { includePaused }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createRecipe(title: string, description: string, recipeKind: string, promptTemplate: string, cadence: string, dayOfWeek: number | null, dayOfMonth: number | null) : Promise<Result<AgentRecipe, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_recipe", { title, description, recipeKind, promptTemplate, cadence, dayOfWeek, dayOfMonth }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateRecipe(id: string, title: string, description: string, promptTemplate: string, cadence: string, dayOfWeek: number | null, dayOfMonth: number | null) : Promise<Result<AgentRecipe, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_recipe", { id, title, description, promptTemplate, cadence, dayOfWeek, dayOfMonth }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async pauseRecipe(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pause_recipe", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resumeRecipe(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resume_recipe", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteRecipe(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_recipe", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async triggerRecipe(id: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("trigger_recipe", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listRecipeRuns(recipeId: string, limit: number | null) : Promise<Result<AgentRecipeRun[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_recipe_runs", { recipeId, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setTransactionFlags(id: string, isReimbursable: boolean, isSplit: boolean) : Promise<Result<Transaction, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_transaction_flags", { id, isReimbursable, isSplit }) };
@@ -534,6 +710,14 @@ async updateGoalMonthly(id: string, monthlyCents: number) : Promise<Result<null,
     else return { status: "error", error: e  as any };
 }
 },
+async updateGoalPurpose(id: string, purpose: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_goal_purpose", { id, purpose }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getCurrency() : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_currency") };
@@ -561,6 +745,22 @@ async exportAllDataJson() : Promise<Result<null, AppError>> {
 async exportAllDataCsv() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_all_data_csv") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getNotificationsEnabled() : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_notifications_enabled") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setNotificationsEnabled(enabled: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_notifications_enabled", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -613,6 +813,22 @@ async exportAccountCsv(accountId: string) : Promise<Result<string, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getJourneyStatus() : Promise<Result<JourneyStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_journey_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getActionItems() : Promise<Result<ActionItem[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_action_items") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -630,8 +846,45 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
+/**
+ * A single prioritized action item in the Financial Inbox.
+ */
+export type ActionItem = { 
+/**
+ * Stable ID for this item — used as React key and for deduplication.
+ */
+id: string; 
+/**
+ * "review" | "bills" | "budget" | "goals" | "savings"
+ */
+category: string; 
+/**
+ * "high" | "medium" | "low"
+ */
+priority: string; title: string; detail: string; actionLabel: string; 
+/**
+ * Frontend route the CTA navigates to (e.g., "/transactions").
+ */
+actionRoute: string; 
+/**
+ * Optional count for badge display (e.g., number of uncategorized txns).
+ */
+badgeCount: number | null; 
+/**
+ * Optional monetary amount in cents (e.g., bill amount).
+ */
+amountCents: number | null }
+export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
+export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
+export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null }
+export type AgentChange = { kind: string; description: string }
+export type AgentExecutionEntry = { id: string; itemId: string; bundleId: string; actionKind: string; status: string; resultJson: string | null; error: string | null; executedAt: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
+export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
+export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
+export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
+export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
@@ -652,7 +905,7 @@ budgetCents: number;
  * Actual outflow this month (positive = spent)
  */
 spentCents: number; txnCount: number }
-export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string }
+export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
 /**
@@ -662,7 +915,7 @@ export type CategoryTotal = { categoryId: string; label: string; color: string; 
 /**
  * Category with real spending aggregated from transactions.
  */
-export type CategoryWithSpending = { id: string; label: string; color: string; groupId: string; groupLabel: string; 
+export type CategoryWithSpending = { id: string; label: string; color: string; groupId: string; groupLabel: string; spendingType: string | null; 
 /**
  * Total outflow this calendar month (positive = money spent)
  */
@@ -677,12 +930,17 @@ lastMonthCents: number;
 txnCount: number; yearTotalCents: number; budgetCents: number }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
+export type CopilotPlanResult = { bundleId: string; answer: string; assumptions: string[]; followUpQuestions: string[]; forecastSummary: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
-export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; sortOrder: number; createdAt: string }
+export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
+export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
+export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
 export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
+export type JourneyMilestone = { stage: number; name: string; description: string; status: string; progressPct: number; detail: string; actionPrompt: string }
+export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type Liability = { id: string; name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string; createdAt: string; updatedAt: string }
 export type LiabilityPatch = { name: string | null; liabilityType: string | null; balanceCents: number | null; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string | null }
@@ -728,7 +986,7 @@ txnCount: number }
 export type MonthlyActual = { month: string; label: string; cents: number }
 export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
-export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null }
+export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null }
 export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
@@ -782,6 +1040,7 @@ export type SavedScenario = { id: string; description: string; result: ScenarioR
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
+export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean }

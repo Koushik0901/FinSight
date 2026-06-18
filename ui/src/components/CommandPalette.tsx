@@ -1,26 +1,10 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import * as I from "./Icons";
-import { commands, type MonthTotals } from "../api/client";
-import { useNetWorth } from "../api/hooks/networth";
-import { useCategoriesWithSpending } from "../api/hooks/transactions";
-import { money } from "../utils/format";
+import { useAskAgent } from "../api/hooks/agent";
+import type { AgentAnswer } from "../api/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────
-
-interface BigNumberData { value: string; label: string; }
-interface CompareBarsData { thisMonth: number; lastMonth: number; }
-interface ProgressData { label: string; pct: number; }
-
-interface CannedQuestion {
-  label: string;
-  prose: string;
-  kind: "bigNumber" | "compareBars" | "progress";
-  vizData: BigNumberData | CompareBarsData | ProgressData;
-  actionLabel?: string;
-  actionPath?: string;
-}
 
 type PaletteMode = "list" | "answer";
 
@@ -30,13 +14,14 @@ interface CmdItem {
   path?: string;
   hint?: string;
   Icon?: React.FC<React.SVGProps<SVGSVGElement>>;
-  question?: CannedQuestion;  // only for kind === "ask"
+  query?: string;  // only for kind === "ask"
 }
 
 // ── Static lists ──────────────────────────────────────────────────────────
 
 const NAV_ITEMS: CmdItem[] = [
   { kind: "nav", label: "Go to Today",        path: "/",             Icon: I.Today },
+  { kind: "nav", label: "Go to Copilot",      path: "/copilot",      Icon: I.Brain },
   { kind: "nav", label: "Go to Insights",     path: "/insights",     Icon: I.Sparkle },
   { kind: "nav", label: "Go to Accounts",     path: "/accounts",     Icon: I.Wallet },
   { kind: "nav", label: "Go to Transactions", path: "/transactions", Icon: I.Flow },
@@ -54,67 +39,8 @@ const ACT_ITEMS: CmdItem[] = [
   { kind: "act", label: "Add a transaction…",        Icon: I.Plus,     hint: "manual" },
   { kind: "act", label: "Toggle privacy mode",        Icon: I.EyeOff,   hint: "⌘." },
   { kind: "act", label: "Run a what-if scenario",     Icon: I.Bolt,     path: "/scenarios" },
+  { kind: "nav", label: "Plan next month with Copilot", path: "/copilot", Icon: I.Brain },
 ];
-
-// ── AskViz component ──────────────────────────────────────────────────────
-
-function AskViz({ question }: { question: CannedQuestion }) {
-  if (question.kind === "bigNumber") {
-    const d = question.vizData as BigNumberData;
-    return (
-      <div style={{ textAlign: "center", padding: "24px 0" }}>
-        <div className="figure" style={{ fontSize: 52, lineHeight: 1, color: "var(--accent)", marginBottom: 8 }}>
-          {d.value}
-        </div>
-        <div className="muted" style={{ fontSize: 14 }}>{d.label}</div>
-      </div>
-    );
-  }
-  if (question.kind === "compareBars") {
-    const d = question.vizData as CompareBarsData;
-    const max = Math.max(d.thisMonth, d.lastMonth, 1);
-    return (
-      <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-        {[
-          { label: "This month", value: d.thisMonth },
-          { label: "Last month", value: d.lastMonth },
-        ].map(({ label, value }) => (
-          <div key={label}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5,
-              color: "var(--ink-mute)", marginBottom: 4 }}>
-              <span>{label}</span>
-              <span className="num">{money(value)}</span>
-            </div>
-            <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 999 }}>
-              <div style={{ width: `${(value / max) * 100}%`, height: "100%",
-                background: "var(--accent)", borderRadius: 999 }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (question.kind === "progress") {
-    const d = question.vizData as ProgressData;
-    const over = d.pct > 100;
-    return (
-      <div style={{ padding: "16px 0" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13,
-          marginBottom: 6 }}>
-          <span>{d.label}</span>
-          <span className="num" style={{ color: over ? "var(--negative)" : undefined }}>
-            {Math.round(d.pct)}%
-          </span>
-        </div>
-        <div style={{ height: 10, background: "var(--surface-2)", borderRadius: 999 }}>
-          <div style={{ width: `${Math.min(100, d.pct)}%`, height: "100%",
-            background: over ? "var(--negative)" : "var(--accent)", borderRadius: 999 }} />
-        </div>
-      </div>
-    );
-  }
-  return null;
-}
 
 // ── Main component ────────────────────────────────────────────────────────
 
@@ -125,22 +51,10 @@ export function CommandPalette({ open, onClose }: Props) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const [mode, setMode] = useState<PaletteMode>("list");
-  const [activeQ, setActiveQ] = useState<CannedQuestion | null>(null);
+  const [answer, setAnswer] = useState<AgentAnswer | null>(null);
+  const [activeQuery, setActiveQuery] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Data for canned questions — fetched when palette opens
-  const { data: totals } = useQuery<MonthTotals>({
-    queryKey: ["month-totals"],
-    queryFn: async () => {
-      const r = await commands.getMonthTotals();
-      if (r.status === "error") throw new Error(r.error.message);
-      return r.data;
-    },
-    enabled: open,
-    staleTime: 60_000,
-  });
-  const { data: cats = [] } = useCategoriesWithSpending();
-  const netWorth = useNetWorth();
+  const askAgent = useAskAgent();
 
   // Reset on open/close
   useEffect(() => {
@@ -149,85 +63,27 @@ export function CommandPalette({ open, onClose }: Props) {
       setQ("");
       setSel(0);
       setMode("list");
-      setActiveQ(null);
+      setAnswer(null);
+      setActiveQuery("");
     }
   }, [open]);
 
-  // Compute canned questions from real data
-  const questions = useMemo<CannedQuestion[]>(() => {
-    if (!totals || cats.length === 0) return [];
-    const topCat = [...cats].sort((a, b) => b.thisMonthCents - a.thisMonthCents)[0];
-    const lastMonthTotal = cats.reduce((s, c) => s + c.lastMonthCents, 0);
-    const overBudget = cats.filter((c) => c.budgetCents > 0)
-      .sort((a, b) => (b.thisMonthCents / b.budgetCents) - (a.thisMonthCents / a.budgetCents))[0];
-    const dayOfMonth = new Date().getDate();
-    const avgDailyBurn = totals.expenseCents / dayOfMonth;
-    const runwayDays = avgDailyBurn > 0 ? Math.max(0, Math.round(netWorth / avgDailyBurn)) : null;
+  // Build item list: ask item (when query non-empty) + nav + act
+  const trimmed = q.trim();
+  const askItem: CmdItem | null = trimmed
+    ? { kind: "ask", label: `Ask: ${trimmed}`, Icon: I.Sparkle, query: trimmed }
+    : null;
 
-    return [
-      {
-        label: "What's my top spending category this month?",
-        prose: topCat
-          ? `Your biggest expense category is ${topCat.label} at ${money(topCat.thisMonthCents)}.`
-          : "No spending data yet.",
-        kind: "bigNumber",
-        vizData: { value: money(topCat?.thisMonthCents ?? 0), label: topCat?.label ?? "—" },
-        actionLabel: "Open Categories →",
-        actionPath: "/categories",
-      },
-      {
-        label: "How does my spending compare to last month?",
-        prose: `This month: ${money(totals.expenseCents)}. Last month: ${money(lastMonthTotal)}.`,
-        kind: "compareBars",
-        vizData: { thisMonth: totals.expenseCents, lastMonth: lastMonthTotal },
-        actionLabel: "Open Reports →",
-        actionPath: "/reports",
-      },
-      {
-        label: "What's my current savings rate?",
-        prose: `You're keeping ${totals.savingsRatePct}% of your income this month.`,
-        kind: "bigNumber",
-        vizData: { value: `${totals.savingsRatePct}%`, label: "of income kept" },
-        actionLabel: "Open Today →",
-        actionPath: "/",
-      },
-      {
-        label: "Which category am I closest to maxing out?",
-        prose: overBudget
-          ? `${overBudget.label} is at ${Math.round((overBudget.thisMonthCents / overBudget.budgetCents) * 100)}% of budget.`
-          : "No budgets set yet.",
-        kind: "progress",
-        vizData: overBudget
-          ? { label: overBudget.label, pct: Math.min(120, (overBudget.thisMonthCents / overBudget.budgetCents) * 100) }
-          : { label: "—", pct: 0 },
-        actionLabel: "Open Budget →",
-        actionPath: "/budget",
-      },
-      {
-        label: "What's my financial runway?",
-        prose: runwayDays !== null
-          ? `At your current burn rate, you have ${runwayDays} days of runway.`
-          : "Not enough spending data to estimate runway.",
-        kind: "bigNumber",
-        vizData: { value: runwayDays !== null ? runwayDays.toLocaleString() : "—", label: "days runway" },
-        actionLabel: "Open Accounts →",
-        actionPath: "/accounts",
-      },
-    ];
-  }, [totals, cats, netWorth]);
-
-  // Keyboard navigation (list mode only)
-  const askItems = useMemo<CmdItem[]>(
-    () => questions.map((q) => ({ kind: "ask" as const, label: q.label, Icon: I.Sparkle, question: q })),
-    [questions]
-  );
-  const all = useMemo(() => [...askItems, ...NAV_ITEMS, ...ACT_ITEMS], [askItems]);
-  const filtered = useMemo(() => {
-    if (!q.trim()) return all;
-    const s = q.toLowerCase();
-    // When searching, only show nav/act items (not ask items)
-    return [...NAV_ITEMS, ...ACT_ITEMS].filter((x) => x.label.toLowerCase().includes(s));
-  }, [q, all]);
+  const filtered: CmdItem[] = [];
+  if (askItem && !trimmed) {
+    // no ask item if empty
+  } else if (trimmed) {
+    if (askItem) filtered.push(askItem);
+    const s = trimmed.toLowerCase();
+    filtered.push(...[...NAV_ITEMS, ...ACT_ITEMS].filter((x) => x.label.toLowerCase().includes(s)));
+  } else {
+    filtered.push(...NAV_ITEMS, ...ACT_ITEMS);
+  }
 
   useEffect(() => { setSel(0); }, [q]);
 
@@ -253,9 +109,26 @@ export function CommandPalette({ open, onClose }: Props) {
   }, [open, filtered, sel, mode]);
 
   const handleItem = (item: CmdItem) => {
-    if (item.kind === "ask" && item.question) {
-      setActiveQ(item.question);
+    if (item.kind === "ask" && item.query) {
+      setActiveQuery(item.query);
       setMode("answer");
+      setAnswer(null);
+      askAgent.mutate({ question: item.query }, {
+        onSuccess: (data) => setAnswer(data),
+        onError: (err) => {
+          const isNoProvider = err.message.includes("no_provider");
+          setAnswer({
+            prose: isNoProvider
+              ? "No AI provider configured. Set one up in Settings → Agent to use this feature."
+              : `Something went wrong: ${err.message}`,
+            reasoning: "",
+            trace: [],
+            changes: [],
+            actionLabel: isNoProvider ? "Open Settings →" : null,
+            actionPath: isNoProvider ? "/settings" : null,
+          });
+        },
+      });
       return;
     }
     if (item.path) { navigate(item.path); onClose(); }
@@ -264,9 +137,9 @@ export function CommandPalette({ open, onClose }: Props) {
 
   if (!open) return null;
 
-  const askF = filtered.filter((x) => x.kind === "ask");
-  const navsF = filtered.filter((x) => x.kind === "nav");
-  const actsF = filtered.filter((x) => x.kind === "act");
+  const navF = trimmed ? [] : filtered.filter((x) => x.kind === "nav");
+  const actF = trimmed ? [] : filtered.filter((x) => x.kind === "act");
+  const matchedF = trimmed ? filtered : [];
 
   let idx = 0;
   const renderItems = (items: CmdItem[]) =>
@@ -292,26 +165,35 @@ export function CommandPalette({ open, onClose }: Props) {
         style={mode === "answer" ? { maxWidth: "min(760px, 94vw)" } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
-        {mode === "answer" && activeQ ? (
+        {mode === "answer" ? (
           // ── Answer mode ──────────────────────────────────────────────────
           <>
             <div className="cmdk-input" style={{ borderBottom: "1px solid var(--hairline)" }}>
               <I.Sparkle style={{ color: "var(--accent)", width: 16, height: 16, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 14, color: "var(--ink-mute)" }}>{activeQ.label}</span>
+              <span style={{ flex: 1, fontSize: 14, color: "var(--ink-mute)" }}>{activeQuery}</span>
               <button className="btn sm ghost" onClick={() => setMode("list")} style={{ fontSize: 12 }}>
                 ← Back
               </button>
             </div>
             <div style={{ padding: "20px 24px" }}>
-              <p style={{ marginBottom: 16, fontSize: 14, lineHeight: 1.6 }}>{activeQ.prose}</p>
-              <AskViz question={activeQ} />
-              {activeQ.actionLabel && activeQ.actionPath && (
-                <div style={{ marginTop: 16 }}>
-                  <button className="btn primary sm" onClick={() => { navigate(activeQ.actionPath!); onClose(); }}>
-                    {activeQ.actionLabel}
-                  </button>
+              {askAgent.isPending && !answer ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--ink-mute)", fontSize: 14 }}>
+                  <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid var(--accent)",
+                    borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                  Thinking…
                 </div>
-              )}
+              ) : answer ? (
+                <>
+                  <p style={{ marginBottom: 16, fontSize: 14, lineHeight: 1.6 }}>{answer.prose}</p>
+                  {answer.actionLabel && answer.actionPath && (
+                    <div style={{ marginTop: 16 }}>
+                      <button className="btn primary sm" onClick={() => { navigate(answer.actionPath!); onClose(); }}>
+                        {answer.actionLabel}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : null}
             </div>
           </>
         ) : (
@@ -323,34 +205,49 @@ export function CommandPalette({ open, onClose }: Props) {
                 ref={inputRef}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search, jump to page, or type a command…"
+                placeholder="Search, jump to page, or ask the agent…"
                 aria-label="Command palette input"
               />
               <span className="kbd" style={{ fontFamily: "var(--mono)" }}>esc</span>
             </div>
             <div className="cmdk-list" role="listbox">
-              {filtered.length === 0 && (
+              {filtered.length === 0 && !trimmed && (
                 <div className="cmdk-item" style={{ color: "var(--ink-mute)" }}>
-                  No results for "{q}"
+                  Start typing to search or ask the agent a question
                 </div>
               )}
-              {/* Ask the agent section */}
-              {askF.length > 0 && !q.trim() && (
+              {/* Ask the agent section — only shown when query is non-empty */}
+              {trimmed && askItem && (
                 <>
                   <div className="cmdk-section">Ask the agent</div>
-                  {renderItems(askF)}
+                  {(() => { const myIdx = idx++; const isSel = myIdx === sel; return (
+                    <div key="ask" className={`cmdk-item${isSel ? " sel" : ""}`}
+                      onMouseEnter={() => setSel(myIdx)}
+                      onClick={() => handleItem(askItem)}>
+                      <I.Sparkle className="ico" style={{ color: "var(--accent)" }} />
+                      <span>{askItem.label}</span>
+                    </div>
+                  ); })()}
                 </>
               )}
-              {navsF.length > 0 && (
+              {/* Filtered nav/act when searching */}
+              {trimmed && matchedF.filter((x) => x.kind !== "ask").length > 0 && (
+                <>
+                  <div className="cmdk-section">Jump to / Actions</div>
+                  {renderItems(matchedF.filter((x) => x.kind !== "ask"))}
+                </>
+              )}
+              {/* Default sections when not searching */}
+              {!trimmed && navF.length > 0 && (
                 <>
                   <div className="cmdk-section">Jump to</div>
-                  {renderItems(navsF)}
+                  {renderItems(navF)}
                 </>
               )}
-              {actsF.length > 0 && (
+              {!trimmed && actF.length > 0 && (
                 <>
                   <div className="cmdk-section">Actions</div>
-                  {renderItems(actsF)}
+                  {renderItems(actF)}
                 </>
               )}
             </div>
@@ -365,3 +262,5 @@ export function CommandPalette({ open, onClose }: Props) {
     </div>
   );
 }
+
+
