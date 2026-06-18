@@ -32,6 +32,7 @@ pub async fn run_job(
     let import_id = match &job {
         AgentJob::CategorizeImport { import_id } => Some(import_id.clone()),
         AgentJob::CategorizeAll => None,
+        _ => return Ok(()),
     };
 
     // Load data needed for categorization on a blocking thread
@@ -158,6 +159,21 @@ pub async fn run_job(
         categorized,
         skipped: final_skipped,
     });
+
+    // Post-run: anomaly detection (best-effort — failures don't abort the scan).
+    let _ = crate::anomaly::detect_anomalies(db, Arc::clone(&provider)).await;
+
+    // Post-run: persist scan metadata for status ticker.
+    {
+        let db = db.clone();
+        let n = categorized;
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = db.get()?;
+            crate::anomaly::store_last_scan(&conn, n)?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+    }
 
     Ok(())
 }
@@ -297,6 +313,7 @@ mod tests {
             provider_id: "mock".into(),
             model_id: "test".into(),
             response: json!([]),
+            tool_turns: Mutex::new(vec![]),
         });
         run_job(
             &db,
@@ -332,6 +349,7 @@ mod tests {
             provider_id: "mock".into(),
             model_id: "gpt-test".into(),
             response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.87, "rationale": "Fast food"}]),
+            tool_turns: Mutex::new(vec![]),
         });
         run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
@@ -383,6 +401,7 @@ mod tests {
             provider_id: "mock".into(),
             model_id: "test".into(),
             response: json!([]),
+            tool_turns: Mutex::new(vec![]),
         });
         run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await

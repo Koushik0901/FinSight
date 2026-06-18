@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 pub enum AgentJob {
     CategorizeImport { import_id: String },
     CategorizeAll,
+    RunRecipe { recipe_id: String },
+    CheckDueRecipes,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -73,19 +75,49 @@ async fn run_loop(
     on_event: EventCallback,
 ) {
     while let Some(job) = rx.recv().await {
-        let p = provider.read().unwrap().clone();
-        match p {
-            None => {
-                on_event(AgentEvent::Error {
-                    message: "No completion provider configured".to_string(),
-                });
+        match job {
+            AgentJob::CheckDueRecipes => {
+                let p = provider.read().unwrap().clone();
+                if let Some(p) = p {
+                    let _ = crate::recipe_runner::run_due_recipes(&db, p).await;
+                }
             }
-            Some(p) => {
-                let result = crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await;
-                if let Err(e) = result {
-                    on_event(AgentEvent::Error {
-                        message: e.to_string(),
-                    });
+            AgentJob::RunRecipe { recipe_id } => {
+                let p = provider.read().unwrap().clone();
+                match p {
+                    None => {
+                        on_event(AgentEvent::Error {
+                            message: "No completion provider configured".to_string(),
+                        });
+                    }
+                    Some(p) => {
+                        if let Err(e) =
+                            crate::recipe_runner::run_recipe(&db, &recipe_id, Arc::clone(&p)).await
+                        {
+                            on_event(AgentEvent::Error {
+                                message: format!("Recipe '{}' failed: {e}", recipe_id),
+                            });
+                        }
+                    }
+                }
+            }
+            job @ (AgentJob::CategorizeImport { .. } | AgentJob::CategorizeAll) => {
+                let p = provider.read().unwrap().clone();
+                match p {
+                    None => {
+                        on_event(AgentEvent::Error {
+                            message: "No completion provider configured".to_string(),
+                        });
+                    }
+                    Some(p) => {
+                        let result =
+                            crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await;
+                        if let Err(e) = result {
+                            on_event(AgentEvent::Error {
+                                message: e.to_string(),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -139,6 +171,7 @@ mod tests {
             provider_id: "mock".into(),
             model_id: "test".into(),
             response: json!([]),
+            tool_turns: Mutex::new(vec![]),
         });
         handle.set_provider(mock);
         let locked = provider.read().unwrap();
