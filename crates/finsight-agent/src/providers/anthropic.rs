@@ -1,3 +1,4 @@
+use crate::reasoning::messages::{AssistantTurn, ChatMessage, ToolCall, ToolDefinition};
 use crate::CompletionProvider;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -36,6 +37,21 @@ struct ContentBlock {
 #[derive(Deserialize)]
 struct AnthropicResp {
     content: Vec<ContentBlock>,
+}
+
+#[derive(Deserialize)]
+struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    kind: String,
+    text: Option<String>,
+    id: Option<String>,
+    name: Option<String>,
+    input: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct AnthropicRespWithTools {
+    content: Vec<AnthropicContentBlock>,
 }
 
 #[async_trait]
@@ -106,6 +122,110 @@ impl CompletionProvider for AnthropicProvider {
             .get("results")
             .cloned()
             .ok_or_else(|| anyhow!("missing 'results' in tool input"))
+    }
+
+    async fn complete_tool_turn(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<AssistantTurn> {
+        let mut system_msg = String::new();
+        let mut api_messages: Vec<Value> = Vec::new();
+
+        for m in messages {
+            match m {
+                ChatMessage::System { content } => system_msg = content.clone(),
+                ChatMessage::User { content } => {
+                    api_messages.push(json!({"role": "user", "content": content}));
+                }
+                ChatMessage::Assistant { content, tool_calls } => {
+                    let mut blocks: Vec<Value> = Vec::new();
+                    if let Some(c) = content {
+                        blocks.push(json!({"type": "text", "text": c}));
+                    }
+                    for tc in tool_calls {
+                        blocks.push(json!({
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.arguments
+                        }));
+                    }
+                    api_messages.push(json!({"role": "assistant", "content": blocks}));
+                }
+                ChatMessage::Tool { tool_call_id, content } => {
+                    api_messages.push(json!({
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": tool_call_id,
+                            "content": content
+                        }]
+                    }));
+                }
+            }
+        }
+
+        let api_tools: Vec<Value> = tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.parameters
+                })
+            })
+            .collect();
+
+        let body = json!({
+            "model": self.model,
+            "max_tokens": 4096,
+            "system": system_msg,
+            "messages": api_messages,
+            "tools": api_tools,
+        });
+
+        let resp: AnthropicRespWithTools = self
+            .client
+            .post(ANTHROPIC_API)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let mut text_parts = Vec::new();
+        let mut tool_calls = Vec::new();
+
+        for block in resp.content {
+            match block.kind.as_str() {
+                "text" => {
+                    if let Some(t) = block.text {
+                        text_parts.push(t);
+                    }
+                }
+                "tool_use" => {
+                    tool_calls.push(ToolCall {
+                        id: block.id.unwrap_or_default(),
+                        name: block.name.unwrap_or_default(),
+                        arguments: block.input.unwrap_or(json!({})),
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        if !tool_calls.is_empty() {
+            Ok(AssistantTurn::ToolCalls(tool_calls))
+        } else {
+            Ok(AssistantTurn::FinalAnswer {
+                content: text_parts.join("\n"),
+                reasoning: String::new(),
+            })
+        }
     }
 
     // list_models returns Ok(vec![]) — UI falls back to free-text model input
