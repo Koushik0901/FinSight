@@ -80,3 +80,6 @@ impl ReasoningEngine {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;
