@@ -13,6 +13,10 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3",
+    "@nivo/bar": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@nivo/line": "^0.99.0",
+    "@nivo/pie": "^0.99.0",
     "@tanstack/react-query": "^5.51.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2",

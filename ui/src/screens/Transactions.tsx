@@ -7,6 +7,11 @@ import type { Transaction, TxnFilterInput } from "../api/client";
 import { commands } from "../api/client";
 import { money } from "../utils/format";
 import { toast } from "sonner";
+import Button from "../components/Button";
+import Input from "../components/Input";
+import Table, { TableHead, TableBody, TableHeader, TableCell } from "../components/Table";
+import Badge from "../components/Badge";
+import EmptyState from "../components/EmptyState";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -47,17 +52,32 @@ export default function Transactions() {
   const { data, isLoading, error } = useTransactions(filter);
   const editTxn = data?.find((t) => t.id === editTxnId) ?? null;
 
-  if (isLoading) return <div className="stub">Loading…</div>;
-  if (error) return <div className="stub">Error: {(error as Error).message}</div>;
+  if (isLoading) {
+    return (
+      <div className="stub" aria-live="polite" aria-busy="true">
+        <span className="spinner" aria-hidden="true" />
+        <span style={{ marginTop: 12 }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="stub" role="alert" aria-live="assertive">
+        Error: {(error as Error).message}
+      </div>
+    );
+  }
 
   return (
     <div className="screen-transactions">
-      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 32, fontWeight: 600, margin: 0 }}>Transactions</h1>
-        <div className="actions" style={{ display: "flex", gap: 8 }}>
+      <header className="screen-header">
+        <h1>Transactions</h1>
+        <div className="actions row row-sm">
           <FilePicker onPicked={setCsvPath} label="Import CSV" />
-          <button
-            className="btn ghost sm"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={async () => {
               try {
                 const result = await commands.exportTransactionsCsv(filter);
@@ -70,29 +90,20 @@ export default function Transactions() {
             }}
           >
             ↓ CSV
-          </button>
-          <button className="primary" onClick={() => setAddOpen(true)}>+ Add transaction</button>
+          </Button>
+          <Button variant="primary" onClick={() => setAddOpen(true)}>+ Add transaction</Button>
         </div>
       </header>
 
       {/* Search */}
-      <input
+      <Input
+        className="screen-search"
         type="search"
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
         placeholder="Search transactions…"
-        style={{
-          width: "100%",
-          background: "var(--surface-2)",
-          border: "1px solid var(--line)",
-          borderRadius: 8,
-          padding: "8px 14px",
-          fontSize: 14,
-          color: "var(--ink)",
-          outline: "none",
-          marginBottom: 12,
-          boxSizing: "border-box",
-        }}
+        style={{ marginBottom: 12 }}
+        aria-label="Search transactions"
       />
 
       {/* Filter tabs */}
@@ -110,28 +121,39 @@ export default function Transactions() {
       </div>
 
       {(!data || data.length === 0) ? (
-        <div className="stub">No transactions match your filters.</div>
+        <EmptyState
+          title="No transactions match your filters."
+          description="Try adjusting your search or filters."
+        />
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-3)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Date</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Merchant</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Category</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500, textAlign: "right" }}>Amount</th>
+        <Table wrap={true}>
+          <TableHead>
+            <tr>
+              <TableHeader>Date</TableHeader>
+              <TableHeader>Merchant</TableHeader>
+              <TableHeader>Category</TableHeader>
+              <TableHeader right>Amount</TableHeader>
             </tr>
-          </thead>
-          <tbody>
+          </TableHead>
+          <TableBody>
             {data.map((t: Transaction) => (
               <tr
                 key={t.id}
-                style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+                style={{ cursor: "pointer" }}
                 onClick={() => setEditTxnId(t.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setEditTxnId(t.id);
+                  }
+                }}
+                tabIndex={0}
+                role="button"
                 aria-label={`Edit transaction ${t.merchant_raw}`}
               >
-                <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{formatDate(t.posted_at)}</td>
-                <td style={{ padding: "12px 0" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <TableCell>{formatDate(t.posted_at)}</TableCell>
+                <TableCell>
+                  <div className="row row-md">
                     <span
                       aria-label={`${t.merchant_label ?? t.merchant_raw} merchant tile`}
                       style={{
@@ -145,20 +167,18 @@ export default function Transactions() {
                       {t.merchant_initials ?? "?"}
                     </span>
                     <span>{t.merchant_label ?? t.merchant_raw}</span>
-                    {t.is_reimbursable && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Reimbursable</span>}
-                    {t.is_split && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Split</span>}
+                    {t.is_reimbursable && <Badge>Reimbursable</Badge>}
+                    {t.is_split && <Badge>Split</Badge>}
                   </div>
-                </td>
-                <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>
-                  {t.category_label ?? "Uncategorized"}
-                </td>
-                <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
+                </TableCell>
+                <TableCell>{t.category_label ?? "Uncategorized"}</TableCell>
+                <TableCell right>
                   <span className="money">{money(t.amount_cents, { decimals: 2 })}</span>
-                </td>
+                </TableCell>
               </tr>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
       <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} />

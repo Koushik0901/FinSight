@@ -1,55 +1,44 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useNeedsReviewCount } from "../api/hooks/agent";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useGoals, useUpdateGoalBalance } from "../api/hooks/budget";
 import { useRecurring } from "../api/hooks/recurring";
-import { commands, type MonthTotals, type AccountSummary } from "../api/client";
+import { type AccountSummary } from "../api/client";
+import { useMonthTotals } from "../api/hooks";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import NetWorthChart from "../components/NetWorthChart";
+import { CopilotNudge } from "../components/CopilotNudge";
 import { money } from "../utils/format";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Badge from "../components/Badge";
 
 const RANGES = [
   { key: "1M", days: 30 }, { key: "3M", days: 90 }, { key: "6M", days: 180 },
   { key: "1Y", days: 365 }, { key: "All", days: 36500 },
 ] as const;
 
-function useMonthTotals() {
-  return useQuery<MonthTotals>({
-    queryKey: ["month-totals"],
-    queryFn: async () => {
-      const result = await commands.getMonthTotals();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
-    },
-    refetchInterval: 60_000,
-  });
-}
-
 function AccountDot({ account }: { account: AccountSummary }) {
   return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      padding: "10px 0",
-      borderBottom: "1px solid var(--hairline)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{
-          width: 8,
-          height: 8,
-          borderRadius: 999,
-          background: account.color || "var(--ink-faint)",
-          boxShadow: `0 0 6px ${account.color || "var(--ink-faint)"}`,
-          display: "inline-block",
-          flexShrink: 0,
-        }} />
-        <div>
+    <div
+      className="row"
+      style={{ justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--hairline)" }}
+    >
+      <div className="row row-sm">
+        <span
+          className="dot"
+          style={{
+            width: 8,
+            height: 8,
+            background: account.color || "var(--ink-faint)",
+            boxShadow: `0 0 6px ${account.color || "var(--ink-faint)"}`,
+          }}
+        />
+        <div className="stack stack-xs">
           <div style={{ fontSize: 14 }}>{account.name}</div>
           <div className="muted" style={{ fontSize: 12 }}>{account.bank}</div>
         </div>
@@ -82,23 +71,21 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
   };
 
   return (
-    <div className="card" style={{ padding: "16px 20px", border: "1px solid var(--accent)",
-      borderRadius: 10, marginBottom: 20 }}>
+    <Card tone="accent" style={{ marginBottom: 20 }}>
       <div className="eyebrow" style={{ marginBottom: 8, color: "var(--accent)" }}>✦ Opportunity</div>
       <div style={{ fontSize: 14, marginBottom: 12 }}>
         You have <span className="money">{money(netCents)}</span> unallocated this month.
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="row row-sm wrap">
         {firstGoal && (
-          <button className="btn primary sm" disabled={updateBalance.isPending}
-            onClick={() => void handlePark()}>
+          <Button variant="primary" size="sm" loading={updateBalance.isPending} onClick={() => void handlePark()}>
             Park in {firstGoal.name}
-          </button>
+          </Button>
         )}
-        <button className="btn sm" onClick={() => navigate("/goals")}>Assign to a goal…</button>
-        <button className="btn ghost sm" onClick={onDismiss} aria-label="dismiss">Dismiss</button>
+        <Button size="sm" onClick={() => navigate("/goals")}>Assign to a goal…</Button>
+        <Button variant="ghost" size="sm" onClick={onDismiss} aria-label="dismiss">Dismiss</Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -117,33 +104,35 @@ function UpcomingRecurring() {
   if (upcoming.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 16, marginBottom: 16 }}>
-      <div className="eyebrow" style={{ marginBottom: 8 }}>Due soon</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+    <section className="section" aria-labelledby="due-soon-title">
+      <div id="due-soon-title" className="eyebrow" style={{ marginBottom: 8 }}>Due soon</div>
+      <div className="row row-sm wrap">
         {upcoming.map((item, i) => {
           const label = daysUntilLabel(item.nextExpected)!;
           const name = item.merchantRaw.length > 18
             ? item.merchantRaw.slice(0, 18) + "…"
             : item.merchantRaw;
           return (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "5px 10px", borderRadius: 999, background: "var(--surface-2)",
-              fontSize: 12.5, border: "1px solid var(--line)" }}>
-              <span style={{ width: 7, height: 7, borderRadius: 999,
-                background: item.categoryColor || "var(--ink-faint)",
-                display: "inline-block", flexShrink: 0 }} />
+            <Badge key={i}>
+              <span
+                className="dot"
+                style={{
+                  width: 7,
+                  height: 7,
+                  background: item.categoryColor || "var(--ink-faint)",
+                }}
+              />
               {name}
               <span className="num money" style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>
                 {money(Math.abs(item.lastAmountCents))}
               </span>
               <span className="muted" style={{ fontSize: 11 }}>{label}</span>
-            </span>
+            </Badge>
           );
         })}
-        <button className="btn ghost sm" style={{ fontSize: 12, padding: "4px 10px" }}
-          onClick={() => navigate("/recurring")}>See all →</button>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/recurring")}>See all →</Button>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -165,8 +154,34 @@ export default function Today() {
   const primaryCurrency = accounts[0]?.currency ?? "USD";
   const isLoading = accLoading || totLoading;
 
-  if (isLoading) return <div className="stub">Loading…</div>;
-  if (accounts.length === 0) return <div className="stub">No accounts yet.</div>;
+  if (isLoading) {
+    return (
+      <div className="stub" aria-live="polite" aria-busy="true">
+        <span className="spinner" aria-hidden="true" />
+        <span style={{ marginTop: 12 }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <div className="empty-state">
+        <section className="empty-panel" aria-labelledby="today-empty-title">
+          <div className="eyebrow">First step</div>
+          <h2 id="today-empty-title">No accounts yet. Add your first account to unlock Today.</h2>
+          <p>
+            Import a CSV statement, add accounts by hand, or load the demo dataset from Settings
+            to explore FinSight before connecting real data.
+          </p>
+          <div className="empty-actions">
+            <Button variant="primary" onClick={() => navigate("/onboarding")}>Start setup</Button>
+            <Button onClick={() => navigate("/accounts")}>Add manually</Button>
+            <Button variant="ghost" onClick={() => navigate("/settings")}>Load demo data</Button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const activeCats = cats.filter((c) => c.thisMonthCents > 0);
   const totalSpend = activeCats.reduce((s, c) => s + c.thisMonthCents, 0) || 1;
@@ -175,52 +190,61 @@ export default function Today() {
   const avgDailyBurn = totals ? totals.expenseCents / dayOfMonth : 0;
   const runwayDays = avgDailyBurn > 0 ? Math.max(0, Math.round(netWorth / avgDailyBurn)) : null;
   const showSweep = !sweepDismissed && !!totals && totals.netCents > 5000;
+  const shouldShowSavingsNudge = !!totals && totals.incomeCents > 0 && totals.savingsRatePct < 10;
+  const savingsColor =
+    !totals ? "var(--ink)" :
+    totals.savingsRatePct < 10 ? "var(--negative)" :
+    totals.savingsRatePct < 15 ? "var(--warning)" :
+    "var(--accent)";
 
   return (
     <div className="screen">
       {/* Date header */}
-      <div style={{ marginBottom: 24 }}>
+      <header style={{ marginBottom: 24 }}>
         <div className="eyebrow" style={{ marginBottom: 8 }}>
           <span className="dot" />
           {dateLabel}
         </div>
 
         {/* Net worth hero */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
-          <div className="figure money" style={{
-            fontSize: 64,
-            lineHeight: 1,
-            letterSpacing: "-0.035em",
-            color: netWorth >= 0 ? "var(--ink)" : "var(--negative)",
-          }}>
+        <div className="row row-lg wrap" style={{ alignItems: "baseline" }}>
+          <div
+            className="figure money"
+            style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}
+          >
             {money(netWorth, { currency: primaryCurrency })}
           </div>
           <div className="muted" style={{ fontSize: 16 }}>
             net worth · {accounts.length} account{accounts.length !== 1 ? "s" : ""} + assets − liabilities
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Net-worth chart */}
-      <div style={{ marginBottom: 20 }}>
+      <section>
         <div className="toolbar" style={{ marginBottom: 10, display: "inline-flex" }}>
           {RANGES.map((r) => (
-            <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>
+            <button
+              key={r.key}
+              className={range === r.key ? "on" : ""}
+              onClick={() => setRange(r.key)}
+              aria-pressed={range === r.key}
+            >
               {r.key}
             </button>
           ))}
         </div>
         <NetWorthChart points={nwHistory} />
-      </div>
+      </section>
 
-      {/* §3b Smart Sweep card */}
+      {/* Smart Sweep card */}
       {showSweep && totals && (
         <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} />
       )}
 
-      {/* §3d 4-stat row (with Runway replacing Accounts) */}
+      {/* 4-stat row */}
       {totals && (
-        <div className="stat-row">
+        <section className="stat-row">
           <div className="stat">
             <div className="label">{monthLabel} income</div>
             <div className="value figure money num pos">{money(totals.incomeCents)}</div>
@@ -233,47 +257,63 @@ export default function Today() {
               {money(totals.netCents) + (totals.netCents >= 0 ? " saved" : " deficit")}
             </div>
           </div>
-          <div className={`stat${totals.savingsRatePct > 0 ? " accent" : ""}`}>
+          <div
+            className="stat"
+            style={{
+              borderColor: shouldShowSavingsNudge ? "var(--negative)" : totals.savingsRatePct < 15 ? "var(--warning)" : "var(--accent-3)",
+              background: shouldShowSavingsNudge ? "var(--surface-2)" : totals.savingsRatePct < 15 ? "var(--warning-2)" : "var(--accent-2)",
+            }}
+          >
             <div className="label">Savings rate</div>
-            <div className={`value figure num${totals.savingsRatePct > 0 ? "" : " neg"}`}>
+            <div className={`value figure num${totals.savingsRatePct < 0 ? " neg" : ""}`} style={{ color: savingsColor }}>
               {totals.savingsRatePct}%
             </div>
-            <div className="sub muted">of income kept</div>
+            <div className="sub muted">
+              {shouldShowSavingsNudge ? "Aim to keep 10% of what you earn." : "of income kept"}
+            </div>
           </div>
           <div className="stat">
             <div className="label">Runway</div>
-            <div className="value figure num" style={{
-              color: runwayDays !== null && runwayDays < 30 ? "var(--negative)" : undefined,
-            }}>
+            <div
+              className="value figure num"
+              style={{ color: runwayDays !== null && runwayDays < 30 ? "var(--negative)" : undefined }}
+            >
               {runwayDays !== null ? runwayDays.toLocaleString() : "—"}
             </div>
             <div className="sub muted">
               {runwayDays !== null ? "days · at current burn" : "no burn data"}
             </div>
           </div>
+        </section>
+      )}
+
+      {shouldShowSavingsNudge && totals && (
+        <div style={{ marginTop: 14 }}>
+          <CopilotNudge
+            prompt={`My savings rate is only ${totals.savingsRatePct}%. Help me apply the 'pay yourself first' principle and set up a plan to save at least 10% of my income every month.`}
+            label="Pay yourself first — get to 10% savings"
+            variant="warning"
+          />
         </div>
       )}
 
       {/* Category stream bar */}
       {activeCats.length > 0 && (
-        <div style={{ marginTop: 20 }}>
+        <section className="section">
           <div className="eyebrow" style={{ marginBottom: 8 }}>Spending this month</div>
-          <div className="stream" style={{ height: 14, borderRadius: 8 }}>
+          <div className="stream">
             {activeCats.map((c) => (
               <span
                 key={c.id}
                 title={`${c.label}: ${money(c.thisMonthCents)}`}
-                style={{
-                  width: `${(c.thisMonthCents / totalSpend) * 100}%`,
-                  background: c.color || "var(--ink-faint)",
-                }}
+                style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }}
               />
             ))}
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", marginTop: 8 }}>
+          <div className="row row-sm wrap" style={{ marginTop: 8 }}>
             {activeCats.slice(0, 6).map((c) => (
-              <span key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-mute)" }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block" }} />
+              <span key={c.id} className="row row-xs" style={{ fontSize: 12, color: "var(--ink-mute)" }}>
+                <span className="swatch" style={{ background: c.color || "var(--ink-faint)" }} />
                 {c.label}
                 <span className="tabular" style={{ color: "var(--ink-faint)", fontFamily: "var(--mono)", fontSize: 11 }}>
                   {money(c.thisMonthCents)}
@@ -281,40 +321,37 @@ export default function Today() {
               </span>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* §3c Upcoming recurring chips */}
+      {/* Upcoming recurring chips */}
       <UpcomingRecurring />
 
       {/* Agent feed + needs-review */}
-      <div style={{ marginTop: 24 }}>
+      <section className="section">
         <AgentActivityFeed />
 
         {needsReview > 0 && (
           <button
-            onClick={() => navigate("/transactions")}
             className="chip warning"
             style={{ marginTop: 12, cursor: "pointer", border: "none", padding: "8px 14px", fontSize: 13 }}
+            onClick={() => navigate("/transactions")}
             aria-label={`${needsReview} transactions need review`}
           >
             ⚠ {needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →
           </button>
         )}
-      </div>
+      </section>
 
       {/* Account list */}
       {accounts.length > 1 && (
-        <div className="section">
-          <div className="card tight">
-            <div className="card-head" style={{ padding: "12px 18px" }}>
-              <div className="eyebrow">All accounts</div>
-            </div>
+        <section className="section">
+          <Card tight header={<div className="eyebrow">All accounts</div>}>
             <div style={{ padding: "0 18px" }}>
               {accounts.map((a) => <AccountDot key={a.id} account={a} />)}
             </div>
-          </div>
-        </div>
+          </Card>
+        </section>
       )}
     </div>
   );

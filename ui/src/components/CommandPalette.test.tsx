@@ -5,24 +5,12 @@ import { MemoryRouter } from "react-router-dom";
 import { CommandPalette } from "./CommandPalette";
 import type { ReactNode } from "react";
 
-vi.mock("../api/hooks/networth", () => ({
-  useNetWorth: () => 5000000,
-}));
-
-vi.mock("../api/client", () => ({
-  commands: {
-    getMonthTotals: vi.fn().mockResolvedValue({
-      status: "ok",
-      data: { incomeCents: 600000, expenseCents: 400000, netCents: 200000, savingsRatePct: 33, txnCount: 20 },
-    }),
-    listCategoriesWithSpending: vi.fn().mockResolvedValue({
-      status: "ok",
-      data: [
-        { id: "c1", label: "Groceries", color: "#4ade80", groupId: "g1", groupLabel: "Food",
-          thisMonthCents: 30000, lastMonthCents: 20000, txnCount: 5, yearTotalCents: 300000, budgetCents: 40000 },
-      ],
-    }),
-  },
+const askMutate = vi.fn();
+vi.mock("../api/hooks/agent", () => ({
+  useAskAgent: vi.fn(() => ({
+    mutate: askMutate,
+    isPending: false,
+  })),
 }));
 
 function wrap(node: ReactNode) {
@@ -35,17 +23,22 @@ function wrap(node: ReactNode) {
 }
 
 describe("CommandPalette — Ask the agent mode", () => {
-  it("shows 'Ask the agent' section once data is loaded", async () => {
+  it("shows 'Ask the agent' section when query is typed", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "am I over budget?" } });
     await waitFor(() => {
       expect(screen.getByText("Ask the agent")).toBeInTheDocument();
+      expect(screen.getByText(/Ask: am I over budget\?/)).toBeInTheDocument();
     });
   });
 
-  it("switches to answer mode when a question is clicked", async () => {
+  it("switches to answer mode when ask item is clicked", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
-    await waitFor(() => screen.getByText("Ask the agent"));
-    fireEvent.click(screen.getByText(/What's my top spending category/i));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "what is my net worth?" } });
+    await waitFor(() => screen.getByText(/Ask: what is my net worth\?/));
+    fireEvent.click(screen.getByText(/Ask: what is my net worth\?/));
     await waitFor(() => {
       expect(screen.getByText(/← Back/)).toBeInTheDocument();
     });
@@ -53,12 +46,14 @@ describe("CommandPalette — Ask the agent mode", () => {
 
   it("returns to list mode when Back is clicked", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
-    await waitFor(() => screen.getByText("Ask the agent"));
-    fireEvent.click(screen.getByText(/What's my top spending category/i));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "top spending?" } });
+    await waitFor(() => screen.getByText(/Ask: top spending\?/));
+    fireEvent.click(screen.getByText(/Ask: top spending\?/));
     await waitFor(() => screen.getByText(/← Back/));
     fireEvent.click(screen.getByText(/← Back/));
     await waitFor(() => {
-      expect(screen.getByText("Ask the agent")).toBeInTheDocument();
+      expect(screen.queryByText(/← Back/)).not.toBeInTheDocument();
     });
   });
 
@@ -70,12 +65,14 @@ describe("CommandPalette — Ask the agent mode", () => {
   it("Escape in answer mode returns to list without closing", async () => {
     const onClose = vi.fn();
     render(wrap(<CommandPalette open={true} onClose={onClose} />));
-    await waitFor(() => screen.getByText("Ask the agent"));
-    fireEvent.click(screen.getByText(/What's my top spending category/i));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "savings rate?" } });
+    await waitFor(() => screen.getByText(/Ask: savings rate\?/));
+    fireEvent.click(screen.getByText(/Ask: savings rate\?/));
     await waitFor(() => screen.getByText(/← Back/));
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => {
-      expect(screen.getByText("Ask the agent")).toBeInTheDocument();
+      expect(screen.queryByText(/← Back/)).not.toBeInTheDocument();
       expect(onClose).not.toHaveBeenCalled();
     });
   });

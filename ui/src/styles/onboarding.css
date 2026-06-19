@@ -1,0 +1,485 @@
+/* ── Onboarding wizard ────────────────────────────────── */
+
+.onboarding-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 0 80px;
+}
+
+/* ── Stepper nav ──────────────────────────────────────── */
+
+.onboarding-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 48px;
+  padding: 0 4px;
+}
+
+.step-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: default;
+  transition: background .12s, color .12s, border-color .12s;
+}
+
+.step-chip.reached {
+  cursor: pointer;
+  color: var(--ink-mute);
+}
+.step-chip.reached:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.step-chip.current {
+  background: var(--accent-2);
+  color: var(--accent);
+  border-color: var(--accent-3);
+  font-weight: 600;
+}
+
+.step-chip .step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--mono);
+  background: var(--surface-2);
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+.step-chip.current .step-index {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.step-chip.reached .step-index {
+  background: var(--accent-2);
+  color: var(--accent);
+}
+
+.step-chip .step-title {
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .onboarding-shell {
+    padding-top: 24px;
+  }
+
+  .onboarding-stepper {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 32px;
+    padding: 0;
+  }
+
+  .step-chip {
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .step-chip .step-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 340px) {
+  .onboarding-stepper {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Step content area ────────────────────────────────── */
+
+.onboarding-step {
+  animation: step-fade .2s ease-out;
+}
+
+@keyframes step-fade {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+.onboarding-step h1 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin: 0 0 12px;
+  line-height: 1.15;
+}
+
+.onboarding-step h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin: 0 0 8px;
+  line-height: 1.2;
+}
+
+.onboarding-step p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin: 0 0 24px;
+  max-width: 52ch;
+}
+
+.onboarding-step footer {
+  margin-top: 32px;
+}
+
+.onboarding-step .error-message {
+  color: var(--negative);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.onboarding-step .warning {
+  background: var(--warning-2);
+  color: var(--warning);
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 16px 0;
+}
+
+.onboarding-step .warning code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+[data-theme="light"] .onboarding-step .warning code {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ── Buttons (onboarding-specific) ────────────────────── */
+
+.onboarding-step button,
+.step-welcome button,
+.step-connect button,
+.step-categories button,
+.step-agent button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+}
+
+.onboarding-step button:hover,
+.step-welcome button:hover,
+.step-connect button:hover,
+.step-categories button:hover,
+.step-agent button:hover {
+  background: var(--hover);
+  border-color: var(--line-2);
+}
+
+.onboarding-step button:disabled,
+.step-welcome button:disabled,
+.step-connect button:disabled,
+.step-categories button:disabled,
+.step-agent button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.onboarding-step button.primary,
+.step-welcome button.primary,
+.step-connect button.primary,
+.step-categories button.primary,
+.step-agent button.primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.onboarding-step button.primary:hover:not(:disabled),
+.step-welcome button.primary:hover:not(:disabled),
+.step-connect button.primary:hover:not(:disabled),
+.step-categories button.primary:hover:not(:disabled),
+.step-agent button.primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.onboarding-step button.tertiary,
+.step-welcome button.tertiary,
+.step-connect button.tertiary,
+.step-categories button.tertiary,
+.step-agent button.tertiary {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-mute);
+}
+
+.onboarding-step button.tertiary:hover,
+.step-welcome button.tertiary:hover,
+.step-connect button.tertiary:hover,
+.step-categories button.tertiary:hover,
+.step-agent button.tertiary:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Step: Welcome ────────────────────────────────────── */
+
+.step-welcome {
+  padding-top: 24px;
+}
+
+.step-welcome h1 {
+  font-size: 36px;
+  max-width: 14ch;
+}
+
+.step-welcome p {
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 48ch;
+}
+
+.step-welcome .actions {
+  margin-top: 8px;
+}
+
+/* ── Step: Connect ────────────────────────────────────── */
+
+.step-connect h2 {
+  margin-bottom: 4px;
+}
+
+.connect-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.connect-cards .card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.connect-cards .card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.connect-cards .card p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-mute);
+  margin: 0;
+  flex: 1;
+}
+
+.connect-cards .card .button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.connect-tally {
+  font-size: 13px;
+  color: var(--ink-mute);
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  margin-top: 8px;
+}
+
+.connect-tally strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── Step: Categories ─────────────────────────────────── */
+
+.step-categories p {
+  margin-bottom: 16px;
+}
+
+.category-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.category-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-list input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  transition: border-color .12s;
+}
+
+.category-list input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.category-list select {
+  appearance: none;
+  padding: 8px 10px;
+  padding-right: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-mute) 50%),
+    linear-gradient(135deg, var(--ink-mute) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 110px;
+}
+
+.category-list select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.category-list button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.category-list button:hover {
+  background: var(--negative-2);
+  color: var(--negative);
+}
+
+.step-categories > button {
+  margin-top: 10px;
+}
+
+/* ── Step: Agent ──────────────────────────────────────── */
+
+.step-agent label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+.step-agent input,
+.step-agent select {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  margin-top: 4px;
+  transition: border-color .12s;
+}
+
+.step-agent select {
+  appearance: none;
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-mute) 50%),
+    linear-gradient(135deg, var(--ink-mute) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 50%,
+    calc(100% - 11px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.step-agent option,
+.category-list option {
+  background: var(--elevated);
+  color: var(--ink);
+}
+
+.step-agent input:focus,
+.step-agent select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.step-agent input::placeholder {
+  color: var(--ink-faint);
+}
+
+.step-agent .actions {
+  margin-top: 20px;
+}

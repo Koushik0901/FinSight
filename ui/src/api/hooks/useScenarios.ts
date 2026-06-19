@@ -5,6 +5,7 @@ import {
   type ScenarioParamsInput,
   type SavedScenario,
 } from "../client";
+import { isTauriRuntime } from "../../utils/runtime";
 
 export function useScenarioHistory() {
   return useQuery<SavedScenario[]>({
@@ -14,6 +15,7 @@ export function useScenarioHistory() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -28,6 +30,9 @@ export function useRunScenario() {
       months: number;
       params: ScenarioParamsInput | null;
     }) => {
+      if (!isTauriRuntime()) {
+        throw new Error("This action needs the desktop app runtime.");
+      }
       const result = await commands.runScenario(description, months, params);
       if (result.status === "error") {
         const err = new Error(result.error.message) as Error & { code?: string };
@@ -49,6 +54,9 @@ export function useSaveScenario() {
       description: string;
       result: ScenarioResult;
     }) => {
+      if (!isTauriRuntime()) {
+        throw new Error("This action needs the desktop app runtime.");
+      }
       const res = await commands.saveScenario(description, result);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -63,6 +71,9 @@ export function useDeleteScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) {
+        throw new Error("This action needs the desktop app runtime.");
+      }
       const res = await commands.deleteScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
     },

@@ -14,6 +14,7 @@ vi.mock("../api/hooks/transactions", () => ({
     isLoading: false,
     error: null,
   })),
+  useSetCategorySpendingType: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
 
 describe("Categories — AI insight sentence", () => {

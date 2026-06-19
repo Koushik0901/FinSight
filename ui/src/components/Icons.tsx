@@ -7,7 +7,7 @@ type IconProps = SVGProps<SVGSVGElement>;
 
 const icon =
   (children: React.ReactNode, viewBox = "0 0 16 16") =>
-  (props: IconProps) => (
+  ({ "aria-hidden": ariaHidden, ...props }: IconProps) => (
     <svg
       viewBox={viewBox}
       width="16"
@@ -17,6 +17,8 @@ const icon =
       strokeWidth="1.4"
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden={ariaHidden ?? "true"}
+      focusable="false"
       {...props}
     >
       {children}
@@ -61,11 +63,28 @@ export const Repeat = icon(
   </>
 );
 
+export const Recipe = icon(
+  <>
+    <rect x="2.5" y="3" width="11" height="10.5" rx="1.8" />
+    <path d="M5 1.8v2.4M11 1.8v2.4M2.5 6.2h11" />
+    <path d="M5.2 9h3.2" />
+    <path d="m9.8 8 1.8 1.8-1.8 1.8" />
+  </>
+);
+
 export const Goal = icon(
   <>
     <circle cx="8" cy="8" r="6" />
     <circle cx="8" cy="8" r="3" />
     <circle cx="8" cy="8" r="0.8" fill="currentColor" stroke="none" />
+  </>
+);
+
+export const Journey = icon(
+  <>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 5.2 9.4 8H6.6L8 5.2z" fill="currentColor" stroke="none" />
+    <path d="M8 8v3" />
   </>
 );
 
@@ -170,3 +189,24 @@ export const Tag = icon(
 
 export const Down = icon(<path d="m4 6 4 4 4-4" />);
 export const Up = icon(<path d="m4 10 4-4 4 4" />);
+
+export const Brain = icon(
+  <>
+    <path d="M6 3.5C6 2.67 6.67 2 7.5 2S9 2.67 9 3.5" />
+    <path d="M3.5 6.5C2.67 6.5 2 7.17 2 8s.67 1.5 1.5 1.5" />
+    <path d="M12.5 6.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5" />
+    <path d="M4 6a3 3 0 0 1 3-3h2a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V6z" />
+    <path d="M6 9h4M7 7h2" />
+  </>
+);
+
+export const Send = icon(
+  <path d="M2.5 8 13.5 3l-3 5 3 5L2.5 8zm5.5 0h5.5" />
+);
+
+export const Cpu = icon(
+  <>
+    <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+    <path d="M7 4.5V3M9 4.5V3M7 13v-1.5M9 13v-1.5M4.5 7H3M4.5 9H3M13 7h-1.5M13 9h-1.5" />
+  </>
+);

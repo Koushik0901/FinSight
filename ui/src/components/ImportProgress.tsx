@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { isTauriRuntime } from "../utils/runtime";
 
 interface ProgressPayload {
   import_id: string;
@@ -11,6 +12,7 @@ export default function ImportProgress() {
   const [active, setActive] = useState<ProgressPayload | null>(null);
 
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     const u1 = listen<ProgressPayload>("import.progress", (e) => setActive(e.payload));
     const u2 = listen<unknown>("import.complete", () => setActive(null));
     return () => {

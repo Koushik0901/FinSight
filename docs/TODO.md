@@ -8,6 +8,22 @@
 
 ---
 
+## ✅ Wave D shipped (2026-06-16)
+
+All Wave D features are done and pushed to main.
+
+**Shipped in Wave D — Group 1 (splits + notifications):** Transaction splits UI (split a transaction across multiple categories via `TransactionDrawer`), in-app notification centre (bell icon in sidebar with `markNotificationRead` / `dismissAllNotifications` commands, V012 migration adds `transaction_splits` and `notifications` tables).
+
+**Shipped in Wave D — Group 2 (real agentic features):** Replaced all simulated/hardcoded agent behaviour with live LLM-backed implementations:
+- **Anomaly detection** (`crates/finsight-agent/src/anomaly.rs`): two-phase detection — IQR statistical pre-filter (Q3 + 1.5×IQR fence, min 3 historical transactions per merchant) → LLM batch confirmation. Runs automatically at end of every `run_job` scan; sets `is_anomaly = 1` on confirmed outliers; stores `agent.last_scan_at` / `agent.last_scan_categorized` to the settings KV.
+- **Real agent status** (`get_agent_status` command): returns live counts — uncategorized transactions, flagged anomalies, over-budget envelopes, upcoming bills, last scan time.
+- **Data-driven Insights ticker** (`AgentStatusBar` in `Insights.tsx`): replaced 6 hardcoded strings with messages built from `useAgentStatus()` data. Cycles between real facts (last scan time, uncategorized count, anomaly count, budget/bills alerts). Falls back to "All clear · no issues found".
+- **Free-text LLM ask in CommandPalette**: removed 5 pre-computed canned questions; "Ask: [query]" item appears on any non-empty input and fires a real `ask_agent` LLM call with injected financial context (net worth, monthly totals, top categories, budgets, anomaly count). Prose answer rendered inline; graceful no-provider error with "Open Settings →" link.
+
+**New commands:** `getAgentStatus`, `askAgent`. **New types:** `AgentStatus`, `AgentAnswer`. **New hooks:** `useAgentStatus` (30s refetch), `useAskAgent`. **New crate dep:** `chrono` added to `finsight-agent`. **Next migration = V013.**
+
+---
+
 ## ✅ Wave C shipped (2026-06-15)
 
 All Wave C features are done and pushed to main.
@@ -33,7 +49,7 @@ All Wave B features are done and merged to main. Design + plan: `docs/superpower
 The migration-heavy **backend** for items §3a, §4a, §4b, §5d, §11a, and §13b is **done and merged to main** — schema, repos, Tauri commands, live wiring, tests, and bindings. Design + plan: `docs/superpowers/specs/2026-06-04-backend-foundations-design.md`, `docs/superpowers/plans/2026-06-04-backend-foundations.md`.
 
 **Shipped:**
-- **Migrations V006–V011:** `net_worth_snapshots`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory`, and transaction `is_reimbursable`/`is_split` columns. **Next migration = V012.**
+- **Migrations V006–V011:** `net_worth_snapshots`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory`, and transaction `is_reimbursable`/`is_split` columns. **V012** added `transaction_splits` and `notifications` tables. **Next migration = V013.**
 - **Repos:** `net_worth`, `manual_assets`, `liabilities`, `rule_proposals`, `agent_memory` + `transactions::set_flags`.
 - **Commands (all in `bindings.ts`):** `commands/assets.rs` (manual-asset & liability CRUD, `record_net_worth_snapshot`, `list_net_worth_history`); `commands/insights.rs` (`list_agent_memory`, `forget_agent_memory`); `agent.rs` (`list_rule_proposals`, `accept_rule_proposal`, `decline_rule_proposal`); `transactions::set_transaction_flags`.
 - **Live wiring:** user category correction → `agent_memory` upsert; categorizer post-run → `rule_proposals` (≥3 corrections, deduped); net-worth snapshot auto-records on app start.
@@ -544,6 +560,10 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 | — | Settings: keyboard shortcuts reference (§12d) | Low | Low | ✅ Done |
 | — | Reports: saved tabs + widget customization (§10d, §10e) | Very High | Low (MVP) | ✅ Done |
 | — | Transactions: reimbursable/split flags UI (§5d) | Low | Low | ✅ Done |
+| — | Transaction splits UI + notification centre (Wave D Group 1) | Medium | High | ✅ Done |
+| — | Real anomaly detection (IQR + LLM, `anomaly.rs`) | Medium | High | ✅ Done |
+| — | Real agent status + data-driven Insights ticker | Low | Medium | ✅ Done |
+| — | Free-text LLM ask in CommandPalette (`ask_agent`) | Low | High | ✅ Done |
 
 ---
 
@@ -556,6 +576,6 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 - **Toasts:** use `import { toast } from "sonner"` — use `toast.success()`, `toast.error()`, `toast("text", { description: "...", action: { label: "Undo", onClick: () => {} } })`.
 - **Drawers:** reuse `ui/src/components/Drawer.tsx` for any slide-in panels.
 - **All Rust commands** must have `#[tauri::command]` and `#[specta::specta]` attributes and `pub async fn` signature to be picked up by specta.
-- **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering. Next = `V012__description.sql`.
+- **Migrations:** add new `.sql` files to `crates/finsight-core/migrations/` as `V00N__description.sql`. Refinery auto-discovers them by filename prefix ordering. Next = `V013__description.sql`.
 - **Dev demo data:** `seed_dev_demo()` in `crates/finsight-core/src/sample.rs` loads the full "Mira & Adam" dataset (6 accounts, ~142 transactions, 5 goals, assets, liabilities, budgets, net-worth history). Exposed via the "Load demo data" button in Settings (visible only in `import.meta.env.DEV`). Idempotent — clears `source='sample'` data before re-seeding. Does NOT touch non-sample accounts.
 - **Tests:** run `cd ui && npx vitest run` and `cargo test --workspace` before committing. 105 frontend tests and 103 Rust tests must stay green (0 TypeScript errors via `cd ui && npx tsc --noEmit`).

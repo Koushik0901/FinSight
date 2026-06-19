@@ -66,6 +66,20 @@ pub fn load_provider_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider
     build_provider_from_config(&cfg)
 }
 
+/// Load the raw CompletionProviderConfig from settings.
+/// Returns Unconfigured when the setting is missing.
+pub fn load_completion_provider_config(
+    db: &Db,
+) -> Result<commands::agent::CompletionProviderConfig, finsight_core::CoreError> {
+    let conn = db.get()?;
+    let cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
+    match cfg {
+        Some(v) => serde_json::from_value(v)
+            .map_err(|e| finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))),
+        None => Ok(commands::agent::CompletionProviderConfig::Unconfigured),
+    }
+}
+
 pub(crate) fn build_provider_from_config(
     cfg: &serde_json::Value,
 ) -> Option<Arc<dyn CompletionProvider>> {
@@ -112,6 +126,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::delete_transaction,
         commands::transactions::create_rule,
         commands::transactions::list_categories,
+        commands::transactions::set_category_spending_type,
+        commands::transactions::get_spending_breakdown,
         commands::onboarding::get_onboarding_state,
         commands::onboarding::seed_sample_household,
         commands::onboarding::seed_dev_demo,
@@ -127,11 +143,14 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::import::list_unfinished_imports,
         commands::import::discard_unfinished_import,
         commands::agent::set_completion_provider,
+        commands::agent::get_completion_provider,
         commands::agent::save_provider_api_key,
         commands::agent::list_provider_models,
         commands::agent::test_completion_provider,
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
+        commands::agent::get_agent_status,
+        commands::agent::ask_agent,
         commands::transactions::list_categories_with_spending,
         commands::transactions::list_rules_with_categories,
         commands::transactions::toggle_rule,
@@ -164,10 +183,29 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::list_rule_proposals,
         commands::agent::accept_rule_proposal,
         commands::agent::decline_rule_proposal,
+        commands::copilot::list_agent_sessions,
+        commands::copilot::create_agent_session,
+        commands::copilot::close_agent_session,
+        commands::copilot::list_action_bundles,
+        commands::copilot::get_action_bundle,
+        commands::copilot::approve_action_item,
+        commands::copilot::reject_action_item,
+        commands::copilot::list_execution_log,
+        commands::copilot::start_copilot_plan,
+        commands::copilot::execute_action_bundle,
+        commands::recipes::list_recipes,
+        commands::recipes::create_recipe,
+        commands::recipes::update_recipe,
+        commands::recipes::pause_recipe,
+        commands::recipes::resume_recipe,
+        commands::recipes::delete_recipe,
+        commands::recipes::trigger_recipe,
+        commands::recipes::list_recipe_runs,
         commands::transactions::set_transaction_flags,
         commands::transactions::get_transaction_splits,
         commands::transactions::set_transaction_splits,
         commands::budget::update_goal_monthly,
+        commands::budget::update_goal_purpose,
         commands::settings::get_currency,
         commands::settings::set_currency,
         commands::settings::export_all_data_json,
@@ -180,6 +218,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::list_recent_agent_activity,
         commands::transactions::export_transactions_csv,
         commands::accounts::export_account_csv,
+        commands::journey::get_journey_status,
+        commands::inbox::get_action_items,
     ])
 }
 
@@ -248,6 +288,13 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 state.agent.set_provider(provider);
             }
             app.manage(state);
+
+            let check_agent = app.state::<AppState>().agent.tx.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = check_agent
+                    .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
+                    .await;
+            });
 
             let notify_app = app.handle().clone();
             let notify_db = db.clone();

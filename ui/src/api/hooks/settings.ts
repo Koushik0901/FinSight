@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../client";
 import { useTweaks } from "../../state/tweaks";
+import { isTauriRuntime } from "../../utils/runtime";
 
 export function useDefaultCurrency() {
   return useQuery<string>({
@@ -11,6 +12,7 @@ export function useDefaultCurrency() {
       return result.data;
     },
     staleTime: Infinity,
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -19,6 +21,7 @@ export function useSetCurrency() {
   const setCurrencyTweak = useTweaks((s) => s.setCurrency);
   return useMutation({
     mutationFn: async (currency: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setCurrency(currency);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -29,9 +32,35 @@ export function useSetCurrency() {
   });
 }
 
+export function useNotificationsEnabled() {
+  return useQuery<boolean>({
+    queryKey: ["notifications-enabled"],
+    queryFn: async () => {
+      const result = await commands.getNotificationsEnabled();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: Infinity,
+    enabled: isTauriRuntime(),
+  });
+}
+
+export function useSetNotificationsEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setNotificationsEnabled(enabled);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications-enabled"] }),
+  });
+}
+
 export function useExportJson() {
   return useMutation({
     mutationFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataJson();
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -41,6 +70,7 @@ export function useExportJson() {
 export function useExportCsv() {
   return useMutation({
     mutationFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataCsv();
       if (result.status === "error") throw new Error(result.error.message);
     },

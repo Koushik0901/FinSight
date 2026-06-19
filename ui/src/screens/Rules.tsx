@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { useRulesWithCategories, useToggleRule, useCategoriesWithSpending, useCreateRule } from "../api/hooks/transactions";
+import {
+  useRulesWithCategories,
+  useToggleRule,
+  useCategoriesWithSpending,
+  useCreateRule,
+} from "../api/hooks/transactions";
 import type { RuleWithCategory, RuleProposal, CategoryWithSpending } from "../api/client";
 import * as I from "../components/Icons";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Input from "../components/Input";
+import Select from "../components/Select";
+import EmptyState from "../components/EmptyState";
 import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
 import { useRecentAgentActivity } from "../api/hooks/insights";
 
@@ -21,28 +31,34 @@ function RuleCard({ rule }: { rule: RuleWithCategory }) {
   };
 
   return (
-    <div className="rule" style={{ opacity: rule.enabled ? 1 : 0.55 }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <article className="rule" style={{ opacity: rule.enabled ? 1 : 0.55 }}>
+      <div className="grow stack stack-xs">
         <div className="cond">
           <span className="tok k">when</span>
           <span className="tok">merchant contains</span>
           <span className="tok k">{rule.pattern.replaceAll("%", "")}</span>
           <span className="tok k">then</span>
           <span className="tok">categorize as</span>
-          <span className="tok" style={{ color: rule.categoryColor || "var(--ink-2)", background: rule.categoryColor ? rule.categoryColor + "22" : "var(--surface-2)" }}>
+          <span
+            className="tok"
+            style={{
+              color: rule.categoryColor || "var(--ink-2)",
+              background: rule.categoryColor ? rule.categoryColor + "22" : "var(--surface-2)",
+            }}
+          >
             {rule.categoryLabel || rule.categoryId}
           </span>
         </div>
-        <div className="muted" style={{ fontSize: 12.5, marginTop: 8, display: "flex", gap: 12, alignItems: "center" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <I.Sparkle width="11" height="11" style={{ color: rule.source === "agent" ? "var(--accent)" : "var(--ink-faint)" }} />
+        <div className="muted" style={{ fontSize: 12.5, display: "flex", gap: 12, alignItems: "center" }}>
+          <span className="row-xs">
+            <I.Sparkle width={11} height={11} style={{ color: rule.source === "agent" ? "var(--accent)" : "var(--ink-faint)" }} />
             Owned by {rule.source === "agent" ? "Agent" : "You"}
           </span>
           <span>·</span>
           <span>{new Date(rule.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      <div className="row-sm" style={{ flexShrink: 0 }}>
         <span
           className={`tog${rule.enabled ? " on" : ""}`}
           onClick={handleToggle}
@@ -53,7 +69,7 @@ function RuleCard({ rule }: { rule: RuleWithCategory }) {
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleToggle(); } }}
         />
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -61,13 +77,15 @@ function ProposalRow({ proposal }: { proposal: RuleProposal }) {
   const accept = useAcceptRuleProposal();
   const decline = useDeclineRuleProposal();
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div className="row-md" style={{ alignItems: "center" }}>
+      <div className="grow stack stack-xs">
         <div className="eyebrow" style={{ marginBottom: 2 }}>{proposal.whenLabel}</div>
         <div style={{ fontSize: 14 }}>{proposal.description}</div>
       </div>
-      <button
-        className="btn primary"
+      <Button
+        variant="primary"
+        size="sm"
+        loading={accept.isPending}
         disabled={accept.isPending}
         aria-label={`Accept: ${proposal.description}`}
         onClick={async () => {
@@ -76,9 +94,11 @@ function ProposalRow({ proposal }: { proposal: RuleProposal }) {
         }}
       >
         Accept
-      </button>
-      <button
-        className="btn ghost sm"
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={decline.isPending}
         disabled={decline.isPending}
         aria-label={`Decline: ${proposal.description}`}
         onClick={async () => {
@@ -87,7 +107,7 @@ function ProposalRow({ proposal }: { proposal: RuleProposal }) {
         }}
       >
         Decline
-      </button>
+      </Button>
     </div>
   );
 }
@@ -109,44 +129,38 @@ function NewRuleForm({ cats, onCreated, onCancel }: NewRuleFormProps) {
   };
 
   return (
-    <div className="card" style={{ padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>New rule</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <div>
-          <label htmlFor="new-rule-pattern" style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>PATTERN</label>
-          <input
-            id="new-rule-pattern"
-            value={newPattern}
-            onChange={(e) => setNewPattern(e.target.value)}
-            placeholder="%starbucks%"
-            style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)",
-              borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
-          />
-        </div>
-        <div>
-          <label htmlFor="new-rule-category" style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>CATEGORY</label>
-          <select
-            id="new-rule-category"
-            value={newCategoryId}
-            onChange={(e) => setNewCategoryId(e.target.value)}
-            style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)",
-              borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
-          >
-            <option value="">Select category…</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>{c.label}</option>
-            ))}
-          </select>
-        </div>
+    <Card className="rule-form stack stack-md" style={{ padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>New rule</div>
+      <div className="form-grid">
+        <Input
+          id="new-rule-pattern"
+          label="Pattern"
+          value={newPattern}
+          onChange={(e) => setNewPattern(e.target.value)}
+          placeholder="%starbucks%"
+        />
+        <Select
+          id="new-rule-category"
+          label="Category"
+          value={newCategoryId}
+          onChange={(e) => setNewCategoryId(e.target.value)}
+        >
+          <option value="">Select category…</option>
+          {cats.map((c) => (
+            <option key={c.id} value={c.id}>{c.label}</option>
+          ))}
+        </Select>
       </div>
       {newPattern && newCategoryId && (
-        <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, fontFamily: "var(--mono)" }}>
+        <div className="muted" style={{ fontSize: 12.5, fontFamily: "var(--mono)" }}>
           when merchant contains "{newPattern.replace(/%/g, "")}" → {cats.find((c) => c.id === newCategoryId)?.label}
         </div>
       )}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          className="btn primary sm"
+      <div className="row-sm">
+        <Button
+          variant="primary"
+          size="sm"
+          loading={createRule.isPending}
           disabled={!newPattern.trim() || !newCategoryId || createRule.isPending}
           onClick={async () => {
             const raw = newPattern.trim();
@@ -162,12 +176,12 @@ function NewRuleForm({ cats, onCreated, onCancel }: NewRuleFormProps) {
           }}
         >
           Create rule
-        </button>
-        <button className="btn ghost sm" onClick={() => { resetForm(); onCancel(); }}>
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => { resetForm(); onCancel(); }}>
           Cancel
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -186,17 +200,16 @@ export default function Rules() {
   if (error)     return <div className="stub">Error loading rules.</div>;
 
   return (
-    <div className="screen">
-      {/* Header */}
-      <div className="screen-header">
+    <div className="screen screen-rules">
+      <header className="screen-header">
         <div className="screen-header-text">
           <div className="screen-eyebrow">Rules &amp; agents</div>
           <h1>The mechanics underneath.</h1>
         </div>
-        <button className="btn" onClick={() => setShowNewRule(true)}>
+        <Button variant="default" onClick={() => setShowNewRule(true)}>
           + New rule
-        </button>
-      </div>
+        </Button>
+      </header>
 
       <p className="muted" style={{ maxWidth: 660, marginTop: -12, marginBottom: 28, fontSize: 14, lineHeight: 1.6 }}>
         Rules are how FinSight quietly stays organized. The agent writes them
@@ -204,9 +217,8 @@ export default function Rules() {
         never come here — but the door is always open.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 28 }}>
-        {/* Rules list */}
-        <div>
+      <div className="responsive-grid" style={{ gridTemplateColumns: "1.6fr 1fr" }}>
+        <div className="stack stack-xl">
           {showNewRule && (
             <NewRuleForm
               cats={sortedCats}
@@ -216,129 +228,128 @@ export default function Rules() {
           )}
 
           {rules.length === 0 ? (
-            <div className="card" style={{ textAlign: "center", padding: "48px 32px" }}>
-              <I.Bolt style={{ color: "var(--ink-faint)", width: 24, height: 24, margin: "0 auto 12px" }} />
-              <div style={{ fontSize: 14, color: "var(--ink-mute)" }}>
-                No rules yet. Import transactions and let the agent categorize them — rules are created automatically when you correct a categorization.
-              </div>
-            </div>
+            <EmptyState
+              icon={<I.Bolt style={{ color: "var(--ink-faint)", width: 24, height: 24 }} />}
+              title="No rules yet"
+              description="Import transactions and let the agent categorize them — rules are created automatically when you correct a categorization."
+              compact
+            />
           ) : (
             <>
               {active.length > 0 && (
-                <>
-                  <div className="eyebrow" style={{ marginBottom: 12 }}>
+                <section className="stack stack-md" aria-labelledby="rules-active">
+                  <div id="rules-active" className="eyebrow">
                     <span className="dot" />
                     Active · {active.length} {active.length === 1 ? "rule" : "rules"}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+                  <div className="stack stack-md">
                     {active.map((r) => <RuleCard key={r.id} rule={r} />)}
                   </div>
-                </>
+                </section>
               )}
 
               {paused.length > 0 && (
-                <>
-                  <div className="eyebrow" style={{ marginBottom: 12 }}>
+                <section className="stack stack-md" aria-labelledby="rules-paused">
+                  <div id="rules-paused" className="eyebrow">
                     Paused · {paused.length}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div className="stack stack-md">
                     {paused.map((r) => <RuleCard key={r.id} rule={r} />)}
                   </div>
-                </>
+                </section>
               )}
             </>
           )}
 
           {proposals.length > 0 && (
-            <div className="card" style={{ marginTop: 28, border: "1px dashed var(--accent)" }}>
-              <div className="eyebrow" style={{ marginBottom: 12, color: "var(--accent)" }}>
-                <I.Sparkle width="12" height="12" style={{ marginRight: 6 }} />
+            <Card tone="accent" className="stack stack-md" style={{ borderStyle: "dashed" }}>
+              <div className="eyebrow" style={{ color: "var(--accent)" }}>
+                <I.Sparkle width={12} height={12} />
                 <span>Agent proposals</span> · {proposals.length}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="stack stack-md">
                 {proposals.map((p) => <ProposalRow key={p.id} proposal={p} />)}
               </div>
-            </div>
+            </Card>
           )}
         </div>
 
-        {/* Agent sidebar */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="card">
-            <div className="eyebrow" style={{ marginBottom: 12 }}>
+        <aside className="stack stack-lg">
+          <Card className="stack stack-md">
+            <div className="eyebrow">
               <span className="dot" />
               How rules work
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "20px 1fr", gap: 10, alignItems: "start" }}>
-                <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--accent)", marginTop: 6, display: "inline-block" }} />
-                <div>
-                  <div style={{ fontSize: 14 }}>Pattern matching</div>
-                  <div className="muted" style={{ fontSize: 12.5, marginTop: 1 }}>Rules match merchant names with SQL LIKE patterns</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "20px 1fr", gap: 10, alignItems: "start" }}>
-                <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--accent)", marginTop: 6, display: "inline-block" }} />
-                <div>
-                  <div style={{ fontSize: 14 }}>Agent writes rules</div>
-                  <div className="muted" style={{ fontSize: 12.5, marginTop: 1 }}>When you correct a category, the agent proposes a rule to prevent the same mistake</div>
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "20px 1fr", gap: 10, alignItems: "start" }}>
-                <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--accent)", marginTop: 6, display: "inline-block" }} />
-                <div>
-                  <div style={{ fontSize: 14 }}>You stay in control</div>
-                  <div className="muted" style={{ fontSize: 12.5, marginTop: 1 }}>Toggle any rule off or on at any time</div>
-                </div>
-              </div>
-            </div>
-          </div>
+            <ul className="stack stack-md" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+              {[
+                { title: "Pattern matching", desc: "Rules match merchant names with SQL LIKE patterns" },
+                { title: "Agent writes rules", desc: "When you correct a category, the agent proposes a rule to prevent the same mistake" },
+                { title: "You stay in control", desc: "Toggle any rule off or on at any time" },
+              ].map((item) => (
+                <li key={item.title} className="row-sm" style={{ alignItems: "flex-start" }}>
+                  <span
+                    className="dot"
+                    style={{ marginTop: 6, flexShrink: 0 }}
+                    aria-hidden="true"
+                  />
+                  <div className="stack stack-xs">
+                    <div style={{ fontSize: 14 }}>{item.title}</div>
+                    <div className="muted" style={{ fontSize: 12.5 }}>{item.desc}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
 
-          <div className="card tight">
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Trust dial</div>
-            <p className="muted" style={{ fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
+          <Card className="stack stack-md" tight>
+            <div className="eyebrow">Trust dial</div>
+            <p className="muted" style={{ fontSize: 13, lineHeight: 1.55, margin: 0 }}>
               Adjust how much the agent acts without asking. You can change this per category in Settings.
             </p>
-            <div style={{ padding: 12, background: "var(--surface-2)", borderRadius: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <Card tone="muted" tight className="stack stack-sm">
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13.5 }}>Auto-categorize</span>
                 <span className="chip accent">High autonomy</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13.5 }}>Apply rules automatically</span>
                 <span className="chip accent">On</span>
               </div>
-            </div>
-          </div>
+            </Card>
+          </Card>
 
-          <div className="card tight">
-            <div className="eyebrow" style={{ marginBottom: 10 }}>
+          <Card className="stack stack-md" tight>
+            <div className="eyebrow">
               <span className="dot" style={{ background: "var(--accent)" }} />
-              {" "}Agent · last 24h
+              Agent · last 24h
             </div>
-            {activity.length === 0
-              ? <p className="muted" style={{ fontSize: 13 }}>Nothing yet — import transactions to see activity.</p>
-              : activity.map((a, i) => (
-                  <div key={i} style={{
-                    display: "grid", gridTemplateColumns: "1fr auto", gap: 8,
-                    padding: "8px 0",
-                    borderBottom: i < activity.length - 1 ? "1px solid var(--line)" : "none",
-                  }}>
-                    <div>
+            {activity.length === 0 ? (
+              <p className="muted" style={{ fontSize: 13 }}>Nothing yet — import transactions to see activity.</p>
+            ) : (
+              <ul className="stack stack-sm" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                {activity.map((a, i) => (
+                  <li
+                    key={i}
+                    className="row-md"
+                    style={{
+                      justifyContent: "space-between",
+                      padding: "8px 0",
+                      borderBottom: i < activity.length - 1 ? "1px solid var(--hairline)" : "none",
+                    }}
+                  >
+                    <div className="stack stack-xs">
                       <div style={{ fontSize: 13 }}>{a.text}</div>
-                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{a.sub}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{a.sub}</div>
                     </div>
-                    <span style={{
-                      fontSize: 11.5, color: "var(--ink-faint)", fontFamily: "var(--mono)",
-                      alignSelf: "center", whiteSpace: "nowrap",
-                    }}>
+                    <span className="num muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
                       {a.minutesAgo < 60 ? `${a.minutesAgo}m` : `${Math.floor(a.minutesAgo / 60)}h`}
                     </span>
-                  </div>
-                ))
-            }
-          </div>
-        </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </aside>
       </div>
     </div>
   );

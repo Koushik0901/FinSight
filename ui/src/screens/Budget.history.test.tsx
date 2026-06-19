@@ -30,6 +30,17 @@ vi.mock("../api/hooks/budget", () => ({
 vi.mock("../api/client", () => ({
   commands: {
     getMonthTotals: vi.fn().mockResolvedValue({ status: "error", error: { message: "no data" } }),
+    getSpendingBreakdown: vi.fn().mockResolvedValue({
+      status: "ok",
+      data: {
+        fixedCents: 0,
+        investmentsCents: 0,
+        savingsCents: 0,
+        guiltFreeCents: 0,
+        untaggedCents: 0,
+        totalIncomeCents: 0,
+      },
+    }),
     listBudgetEnvelopes: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
     listBudgetHistory: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },

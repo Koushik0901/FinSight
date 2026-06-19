@@ -5,6 +5,10 @@ import { usePreviewCsvColumns } from "../../api/hooks/csv";
 import { useImportCsv } from "../../api/hooks/transactions";
 import { useAccounts } from "../../api/hooks/accounts";
 import type { CsvImportMapping, ImportSummary, ColumnRole } from "../../api/client";
+import Button from "../../components/Button";
+import Select from "../../components/Select";
+import Input from "../../components/Input";
+import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../../components/Table";
 
 const COLUMN_ROLES: ColumnRole[] = ["Date", "Amount", "Merchant", "Notes", "Category", "Skip", "Debit", "Credit"];
 
@@ -43,8 +47,6 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const [amountConvention, setAmountConvention] =
     useState<"negative_is_outflow" | "positive_is_outflow" | "split_debit_credit">("negative_is_outflow");
 
-  // Reset columns whenever the column count changes (e.g. after skipHeaderRows changes),
-  // but preserve existing role assignments when the same file is re-fetched.
   useEffect(() => {
     if (!preview) return;
     const colCount = preview.headers?.length ?? preview.rows[0]?.length ?? 0;
@@ -85,6 +87,8 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
     }
   }
 
+  const headers = preview?.headers ?? preview?.rows[0] ?? [];
+
   return (
     <FocusLock returnFocus>
       <div className="dialog-backdrop" onClick={onClose} aria-hidden="true" />
@@ -100,43 +104,45 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
         </header>
 
         <div className="dialog-grid">
-          <label>
-            Account
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">— Pick —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.bank} · {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Skip header rows
-            <input
-              type="number"
-              min={0}
-              value={skipHeaderRows}
-              onChange={(e) => setSkipHeaderRows(parseInt(e.target.value, 10) || 0)}
-            />
-          </label>
-          <label>
-            Date format
-            <select value={dateFormat} onChange={(e) => setDateFormat(e.target.value)}>
+          <Select
+            label="Account"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            <option value="">— Pick —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.bank} · {a.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            label="Skip header rows"
+            type="number"
+            min={0}
+            value={skipHeaderRows}
+            onChange={(e) => setSkipHeaderRows(parseInt(e.target.value, 10) || 0)}
+          />
+          <div className="stack stack-xs">
+            <Select
+              label="Date format"
+              value={dateFormat}
+              onChange={(e) => setDateFormat(e.target.value)}
+            >
               {DATE_FORMATS.map((f) => (
                 <option key={f.value} value={f.value}>
                   {f.label}
                 </option>
               ))}
-            </select>
+            </Select>
             {dateFormat === "__CUSTOM__" && (
-              <input
+              <Input
                 placeholder="e.g. %Y/%m/%d"
                 value={customDateFormat}
                 onChange={(e) => setCustomDateFormat(e.target.value)}
               />
             )}
-          </label>
+          </div>
           <fieldset>
             <legend>Amount convention</legend>
             {AMOUNT_CONVENTIONS.map((c) => (
@@ -155,39 +161,40 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
         </div>
 
         {preview && (
-          <table className="preview-table">
-            <thead>
-              <tr>
-                {(preview.headers ?? preview.rows[0] ?? []).map((_, i) => (
-                  <th key={i}>
-                    <select
+          <Table>
+            <TableHead>
+              <TableRow>
+                {headers.map((_, i) => (
+                  <TableHeader key={i}>
+                    <Select
                       value={columns[i] ?? "Skip"}
                       onChange={(e) => {
                         const next = [...columns];
                         next[i] = e.target.value as ColumnRole;
                         setColumns(next);
                       }}
+                      aria-label={`Column ${i + 1} role`}
                     >
                       {COLUMN_ROLES.map((r) => (
                         <option key={r} value={r}>
                           {r}
                         </option>
                       ))}
-                    </select>
-                  </th>
+                    </Select>
+                  </TableHeader>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {preview.rows.slice(0, 5).map((row, ri) => (
-                <tr key={ri}>
+                <TableRow key={ri}>
                   {row.map((cell, ci) => (
-                    <td key={ci}>{cell}</td>
+                    <TableCell key={ci}>{cell}</TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
 
         <footer>
@@ -196,14 +203,15 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
               {importCsv.error.message}
             </p>
           )}
-          <button onClick={onClose}>Cancel</button>
-          <button
-            className="primary"
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
             onClick={submit}
             disabled={!canSubmit || importCsv.isPending}
+            loading={importCsv.isPending}
           >
             {importCsv.isPending ? "Importing…" : "Import"}
-          </button>
+          </Button>
         </footer>
       </div>
     </FocusLock>

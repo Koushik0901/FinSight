@@ -17,6 +17,7 @@ pub struct Category {
     pub label: String,
     pub color: String,
     pub icon: Option<String>,
+    pub spending_type: Option<String>,
     pub sort_order: i32,
     pub archived_at: Option<DateTime<Utc>>,
 }

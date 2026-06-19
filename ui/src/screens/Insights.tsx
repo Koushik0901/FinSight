@@ -7,18 +7,84 @@ import { useGoals } from "../api/hooks/budget";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type MonthTotals, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Badge from "../components/Badge";
+import EmptyState from "../components/EmptyState";
 import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
-import { useTriggerCategorize } from "../api/hooks/agent";
+import { useTriggerCategorize, useAgentStatus } from "../api/hooks/agent";
 import { money } from "../utils/format";
+import { CopilotNudge } from "../components/CopilotNudge";
 
-const TICKERS = [
-  "Watching: account balances · stable",
-  "Reviewing: transaction categories",
-  "Monitoring: recurring subscriptions",
-  "Analyzing: spending patterns",
-  "Tracking: goal progress",
-  "Checking: rule coverage",
-];
+function AgentStatusBar() {
+  const [tickerIdx, setTickerIdx] = useState(0);
+  const triggerCategorize = useTriggerCategorize();
+  const { data: status } = useAgentStatus();
+
+  const tickers = useMemo(() => {
+    const msgs: string[] = [];
+    if (status) {
+      if (status.lastScanAt) {
+        const mins = Math.round(
+          (Date.now() - new Date(status.lastScanAt).getTime()) / 60_000
+        );
+        const when = mins < 2 ? "just now" : mins < 60 ? `${mins} mins ago` : `${Math.round(mins / 60)}h ago`;
+        const categorized = status.lastScanCategorized ?? 0;
+        msgs.push(`Last scan: ${when} · ${categorized} categorized`);
+      }
+      if (status.uncategorizedCount > 0)
+        msgs.push(`${status.uncategorizedCount} transaction${status.uncategorizedCount !== 1 ? "s" : ""} uncategorized`);
+      if (status.anomalyCount > 0)
+        msgs.push(`${status.anomalyCount} anomal${status.anomalyCount !== 1 ? "ies" : "y"} flagged`);
+      if (status.overBudgetCount > 0)
+        msgs.push(`${status.overBudgetCount} budget envelope${status.overBudgetCount !== 1 ? "s" : ""} over limit`);
+      if (status.upcomingBillsCount > 0)
+        msgs.push(`${status.upcomingBillsCount} bill${status.upcomingBillsCount !== 1 ? "s" : ""} due soon`);
+    }
+    if (msgs.length === 0) msgs.push("All clear · no issues found");
+    return msgs;
+  }, [status]);
+
+  useEffect(() => {
+    setTickerIdx(0);
+  }, [tickers]);
+
+  useEffect(() => {
+    if (tickers.length <= 1) return;
+    const t = setInterval(() => setTickerIdx((i) => (i + 1) % tickers.length), 2400);
+    return () => clearInterval(t);
+  }, [tickers]);
+
+  return (
+    <Card className="row-md" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 24 }} tight>
+      <div className="row-sm">
+        <span className="dot" aria-hidden="true" />
+        <span style={{ fontSize: 13.5, fontWeight: 500 }}>Agent · running locally</span>
+      </div>
+      <div className="grow" style={{ textAlign: "center" }}>
+        <span className="num muted" style={{ fontSize: 12.5 }}>
+          {status === undefined ? "Initializing…" : tickers[tickerIdx % tickers.length]}
+        </span>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={triggerCategorize.isPending}
+        disabled={triggerCategorize.isPending}
+        onClick={async () => {
+          try {
+            await triggerCategorize.mutateAsync();
+            toast.success("Scan complete");
+          } catch {
+            toast.error("Scan failed");
+          }
+        }}
+      >
+        {triggerCategorize.isPending ? "Scanning…" : "Re-run scan"}
+      </Button>
+    </Card>
+  );
+}
 
 interface Insight {
   id: string;
@@ -30,13 +96,13 @@ interface Insight {
   severity: "info" | "warn" | "positive";
 }
 
-const KIND_COLORS: Record<string, string> = {
-  pattern:      "var(--c-transport)",
-  anomaly:      "var(--negative)",
-  subscription: "var(--c-subs)",
-  goal:         "var(--accent)",
-  budget:       "var(--warning)",
-  savings:      "var(--positive)",
+const KIND_TONES: Record<string, "default" | "accent" | "positive" | "negative" | "warning"> = {
+  pattern:      "accent",
+  anomaly:      "negative",
+  subscription: "warning",
+  goal:         "accent",
+  budget:       "warning",
+  savings:      "positive",
 };
 
 const KIND_LABELS: Record<string, string> = {
@@ -49,91 +115,42 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 function InsightCard({ ins, onDismiss }: { ins: Insight; onDismiss: (id: string) => void }) {
-  const color = KIND_COLORS[ins.kind] ?? "var(--ink-mute)";
-
   return (
-    <div className="card" style={{ padding: 22, borderLeft: `3px solid ${color}` }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="chip" style={{
-            fontSize: 11,
-            background: color + "22",
-            color,
-            border: `1px solid ${color}44`,
-          }}>
-            {KIND_LABELS[ins.kind]}
-          </span>
-          <span
-            className={`chip ${ins.severity === "warn" ? "warning" : ins.severity === "positive" ? "positive" : ""}`}
-            style={{ fontSize: 11 }}
-          >
+    <Card
+      className="stack stack-md"
+      style={{ borderLeftWidth: 3, borderLeftColor: "var(--accent)" }}
+    >
+      <div className="row-md" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div className="row-sm wrap">
+          <Badge tone={KIND_TONES[ins.kind] ?? "default"}>{KIND_LABELS[ins.kind]}</Badge>
+          <Badge tone={ins.severity === "warn" ? "warning" : ins.severity === "positive" ? "positive" : "default"}>
             {ins.severity === "warn" ? "needs attention" : ins.severity === "positive" ? "good news" : "FYI"}
-          </span>
+          </Badge>
         </div>
-        <button
-          className="btn ghost sm"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onDismiss(ins.id)}
-          style={{ padding: "3px 8px" }}
           aria-label="Dismiss insight"
+          style={{ padding: "3px 8px" }}
         >
-          <I.X width="12" height="12" />
-        </button>
+          <I.X width={12} height={12} />
+        </Button>
       </div>
 
-      <div style={{ fontSize: 15.5, fontWeight: 600, marginBottom: 8, letterSpacing: "-0.01em" }}>
-        {ins.headline}
+      <div className="stack stack-xs">
+        <div style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: "-0.01em" }}>
+          {ins.headline}
+        </div>
+        <p className="muted" style={{ fontSize: 14, lineHeight: 1.6, margin: 0 }}>{ins.body}</p>
       </div>
-      <div className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>{ins.body}</div>
 
       {ins.action && (
-        <div style={{ marginTop: 14 }}>
-          <button className="btn sm outline">{ins.action} →</button>
+        <div>
+          <Button variant="outline" size="sm">{ins.action} →</Button>
         </div>
       )}
-    </div>
-  );
-}
-
-function AgentStatusBar() {
-  const [tickerIdx, setTickerIdx] = useState(0);
-  const triggerCategorize = useTriggerCategorize();
-
-  useEffect(() => {
-    const t = setInterval(() => setTickerIdx((i) => (i + 1) % TICKERS.length), 2400);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "10px 16px", background: "var(--surface-2)", borderRadius: 10,
-      marginBottom: 24, gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: 999, background: "var(--positive)",
-          display: "inline-block", flexShrink: 0,
-        }} />
-        <span style={{ fontSize: 13.5, fontWeight: 500 }}>Agent · running locally</span>
-      </div>
-      <div style={{ flex: 1, textAlign: "center" }}>
-        <span className="muted" style={{ fontSize: 12.5, fontFamily: "var(--mono)" }}>
-          {TICKERS[tickerIdx]}
-        </span>
-      </div>
-      <button
-        className="btn sm ghost"
-        disabled={triggerCategorize.isPending}
-        onClick={async () => {
-          try {
-            await triggerCategorize.mutateAsync();
-            toast.success("Scan complete");
-          } catch {
-            toast.error("Scan failed");
-          }
-        }}
-      >
-        {triggerCategorize.isPending ? "Scanning…" : "Re-run scan"}
-      </button>
-    </div>
+    </Card>
   );
 }
 
@@ -168,7 +185,6 @@ export default function Insights() {
   const [pendingForget, setPendingForget] = useState<Set<string>>(new Set());
   const forgetTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Clear any in-flight timers on unmount (don't fire them).
   useEffect(() => {
     const timers = forgetTimers.current;
     return () => { timers.forEach((t) => clearTimeout(t)); timers.clear(); };
@@ -202,12 +218,9 @@ export default function Insights() {
 
   const visibleMemory = memory.filter((m) => !pendingForget.has(m.id));
 
-  // ── Generate insights from real data ───────────────────────────────────
-
   const rawInsights = useMemo<Insight[]>(() => {
     const insights: Insight[] = [];
 
-    // 1. Savings rate
     if (totals && totals.incomeCents > 0) {
       const rate = totals.savingsRatePct;
       if (rate >= 20) {
@@ -241,7 +254,6 @@ export default function Insights() {
       }
     }
 
-    // 2. Budget overruns
     const overBudget = envelopes.filter((e) => e.budgetCents > 0 && e.spentCents > e.budgetCents);
     if (overBudget.length > 0) {
       const worst = overBudget.sort((a, b) => (b.spentCents - b.budgetCents) - (a.spentCents - a.budgetCents))[0];
@@ -258,7 +270,6 @@ export default function Insights() {
       }
     }
 
-    // 3. Top spending category
     if (cats.length > 0) {
       const top = [...cats].sort((a, b) => b.thisMonthCents - a.thisMonthCents)[0];
       if (top && top.thisMonthCents > 0) {
@@ -277,7 +288,6 @@ export default function Insights() {
       }
     }
 
-    // 4. Category spike (this month significantly up vs last)
     const spikes = cats.filter(
       (c) => c.lastMonthCents > 0 && c.thisMonthCents > c.lastMonthCents * 1.5 && c.thisMonthCents > 5000
     );
@@ -295,7 +305,6 @@ export default function Insights() {
       });
     }
 
-    // 5. Subscriptions cost
     const subs = recurring.filter((r) => r.isSubscription && r.lastAmountCents < 0);
     if (subs.length > 0) {
       const monthlySubCost = subs.reduce((s, r) => s + Math.abs(r.lastAmountCents), 0);
@@ -311,7 +320,6 @@ export default function Insights() {
       });
     }
 
-    // 6. Goals on track
     const activeGoals = goals.filter((g) => g.targetCents > 0 && g.currentCents < g.targetCents);
     if (activeGoals.length > 0) {
       const onTrack = activeGoals.filter((g) => g.monthlyCents > 0);
@@ -340,7 +348,6 @@ export default function Insights() {
       }
     }
 
-    // 7. Net worth across accounts
     const netWorth = accounts.reduce((s, a) => s + a.balance_cents, 0);
     if (netWorth > 0 && accounts.length > 1) {
       const highest = [...accounts].sort((a, b) => b.balance_cents - a.balance_cents)[0];
@@ -377,8 +384,8 @@ export default function Insights() {
   return (
     <div className="screen">
       <AgentStatusBar />
-      {/* Header */}
-      <div className="screen-header">
+
+      <header className="screen-header">
         <div className="screen-header-text">
           <div className="screen-eyebrow">
             <span className="dot" style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }} />
@@ -386,20 +393,26 @@ export default function Insights() {
           </div>
           <h1>What FinSight noticed.</h1>
         </div>
-        {dismissed.size > 0 && (
-          <button className="btn ghost sm" onClick={() => setDismissed(new Set())}>
-            Restore {dismissed.size} dismissed
-          </button>
-        )}
-      </div>
+        <div className="row-md wrap">
+          {dismissed.size > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setDismissed(new Set())}>
+              Restore {dismissed.size} dismissed
+            </Button>
+          )}
+          <CopilotNudge
+            prompt="Based on these insights, what should I focus on and what actions should I take?"
+            label="Ask Copilot to make a plan"
+            variant="accent"
+          />
+        </div>
+      </header>
 
       <p className="muted" style={{ maxWidth: 660, fontSize: 14, lineHeight: 1.6, marginTop: -12, marginBottom: 24 }}>
         These insights are generated locally from your data — no network calls, no tracking. Each one is a pattern your data surfaced.
       </p>
 
-      {/* Kind filter */}
       {kinds.length > 1 && (
-        <div className="toolbar" style={{ marginBottom: 20, display: "inline-flex" }}>
+        <nav className="toolbar" style={{ marginBottom: 20, display: "inline-flex" }} aria-label="Insight filters">
           <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>
             All <span style={{ color: "var(--ink-faint)", marginLeft: 4, fontSize: 11 }}>{visible.length}</span>
           </button>
@@ -412,44 +425,50 @@ export default function Insights() {
               </button>
             );
           })}
-        </div>
+        </nav>
       )}
 
-      {/* Insight cards */}
       {filtered.length === 0 ? (
-        <div className="card" style={{ textAlign: "center", padding: "64px 32px" }}>
-          <I.Sparkle style={{ color: "var(--accent)", width: 32, height: 32, margin: "0 auto 16px" }} />
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-            {visible.length === 0 ? "No insights yet" : "No insights in this category"}
-          </div>
-          <div className="muted" style={{ fontSize: 14 }}>
-            {visible.length === 0
+        <EmptyState
+          icon={<I.Sparkle style={{ color: "var(--accent)", width: 32, height: 32 }} />}
+          title={visible.length === 0 ? "No insights yet" : "No insights in this category"}
+          description={
+            visible.length === 0
               ? "Import more transactions or set budgets and goals to generate insights."
-              : "Switch to All to see all active insights."}
-          </div>
-        </div>
+              : "Switch to All to see all active insights."
+          }
+          compact
+        />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="stack stack-md" role="list" aria-label="Insights">
           {filtered.map((ins) => (
-            <InsightCard key={ins.id} ins={ins} onDismiss={handleDismiss} />
+            <div key={ins.id} role="listitem">
+              <InsightCard ins={ins} onDismiss={handleDismiss} />
+            </div>
           ))}
         </div>
       )}
 
       {visibleMemory.length > 0 && (
-        <div style={{ marginTop: 40 }}>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>What the agent has learned</div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {visibleMemory.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--hairline)" }}>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{m.description}</div>
-                <button className="btn ghost sm" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>
-                  Forget
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <section className="stack stack-md" style={{ marginTop: 40 }}>
+          <div className="eyebrow">What the agent has learned</div>
+          <Card flush>
+            <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+              {visibleMemory.map((m) => (
+                <li
+                  key={m.id}
+                  className="row-md"
+                  style={{ padding: "10px 16px", borderBottom: "1px solid var(--hairline)", alignItems: "center" }}
+                >
+                  <div className="grow" style={{ fontSize: 14, minWidth: 0 }}>{m.description}</div>
+                  <Button variant="ghost" size="sm" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>
+                    Forget
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </section>
       )}
     </div>
   );

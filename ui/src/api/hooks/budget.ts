@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment } from "../client";
+import { isTauriRuntime } from "../../utils/runtime";
 
 // ── Budget ────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ export function useBudgetEnvelopes() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -18,6 +20,7 @@ export function useSetBudget() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ categoryId, amountCents }: { categoryId: string; amountCents: number }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setBudget(categoryId, amountCents);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -36,6 +39,7 @@ export function useBudgetHistory(months: number) {
       return result.data;
     },
     staleTime: 60_000,
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -49,6 +53,7 @@ export function useGoals() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -56,12 +61,14 @@ export function useCreateGoal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewGoalInput) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.createGoal(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -70,11 +77,13 @@ export function useUpdateGoalBalance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, currentCents }: { id: string; currentCents: number }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateGoalBalance(id, currentCents);
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -83,11 +92,13 @@ export function useArchiveGoal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.archiveGoal(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -96,7 +107,22 @@ export function useUpdateGoalMonthly() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, monthlyCents }: { id: string; monthlyCents: number }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateGoalMonthly(id, monthlyCents);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["goals"] });
+    },
+  });
+}
+
+export function useUpdateGoalPurpose() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, purpose }: { id: string; purpose: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.updateGoalPurpose(id, purpose);
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
@@ -116,6 +142,7 @@ export function usePlanNextMonthData() {
       return result.data;
     },
     staleTime: 60_000,
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -123,6 +150,7 @@ export function useApplyNextMonthPlan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (assignments: PlanAssignment[]) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.applyNextMonthPlan(assignments);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;

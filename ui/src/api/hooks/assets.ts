@@ -4,6 +4,7 @@ import {
   type ManualAsset, type NewManualAsset, type ManualAssetPatch,
   type Liability, type NewLiability, type LiabilityPatch,
 } from "../client";
+import { isTauriRuntime } from "../../utils/runtime";
 
 export function useManualAssets() {
   return useQuery<ManualAsset[]>({
@@ -13,6 +14,7 @@ export function useManualAssets() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -20,6 +22,7 @@ export function useCreateManualAsset() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewManualAsset) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.createManualAsset(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -34,6 +37,7 @@ export function useUpdateManualAsset() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: ManualAssetPatch }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateManualAsset(id, patch);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -48,6 +52,7 @@ export function useDeleteManualAsset() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.deleteManualAsset(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -65,6 +70,7 @@ export function useLiabilities() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -72,6 +78,7 @@ export function useCreateLiability() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewLiability) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.createLiability(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -84,6 +91,7 @@ export function useUpdateLiability() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: LiabilityPatch }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateLiability(id, patch);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -96,6 +104,7 @@ export function useDeleteLiability() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.deleteLiability(id);
       if (result.status === "error") throw new Error(result.error.message);
     },

@@ -77,6 +77,16 @@ pub async fn set_completion_provider(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn get_completion_provider(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<CompletionProviderConfig> {
+    let db = (*state.db).clone();
+    crate::load_completion_provider_config(&db)
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn save_provider_api_key(
     _state: tauri::State<'_, AppState>,
     provider_id: String,

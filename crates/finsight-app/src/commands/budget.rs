@@ -106,6 +106,7 @@ pub struct GoalDto {
     pub target_date: Option<String>,
     pub color: String,
     pub notes: Option<String>,
+    pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
 }
@@ -166,6 +167,7 @@ pub struct NewGoalInput {
     pub target_date: Option<String>,
     pub color: String,
     pub notes: Option<String>,
+    pub purpose: Option<String>,
 }
 
 fn goal_to_dto(g: goals::Goal) -> GoalDto {
@@ -179,6 +181,7 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
         target_date: g.target_date,
         color: g.color,
         notes: g.notes,
+        purpose: g.purpose,
         sort_order: g.sort_order,
         created_at: g.created_at,
     }
@@ -213,6 +216,7 @@ pub async fn create_goal(
                 target_date: input.target_date,
                 color: input.color,
                 notes: input.notes,
+                purpose: input.purpose,
             },
         )
         .map(goal_to_dto)
@@ -255,6 +259,21 @@ pub async fn update_goal_monthly(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         goals::set_monthly_cents(conn, &id, monthly_cents)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_goal_purpose(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    purpose: Option<String>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        goals::set_purpose(conn, &id, purpose.as_deref())
     })
     .await
     .map_err(AppError::from)

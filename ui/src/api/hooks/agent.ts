@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type CompletionProviderConfig, type AgentStatus } from "../client";
+import { isTauriRuntime } from "../../utils/runtime";
 
 export function useNeedsReviewCount() {
   return useQuery<number>({
@@ -10,6 +11,7 @@ export function useNeedsReviewCount() {
       return result.data;
     },
     refetchInterval: 30_000,
+    enabled: isTauriRuntime(),
   });
 }
 
@@ -23,12 +25,14 @@ export function useAgentStatus() {
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
+    enabled: isTauriRuntime(),
   });
 }
 
 export function useAskAgent() {
   return useMutation({
     mutationFn: async ({ question, mode }: { question: string; mode?: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.askAgent(question, mode ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -36,11 +40,30 @@ export function useAskAgent() {
   });
 }
 
+export function useCompletionProvider() {
+  return useQuery<CompletionProviderConfig>({
+    queryKey: ["completion-provider"],
+    queryFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.getCompletionProvider();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 30_000,
+    enabled: isTauriRuntime(),
+  });
+}
+
 export function useSetCompletionProvider() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (config: CompletionProviderConfig) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setCompletionProvider(config);
       if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["completion-provider"] });
     },
   });
 }
@@ -48,6 +71,7 @@ export function useSetCompletionProvider() {
 export function useSaveProviderApiKey() {
   return useMutation({
     mutationFn: async ({ providerId, key }: { providerId: string; key: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.saveProviderApiKey(providerId, key);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -63,7 +87,7 @@ export function useListProviderModels(config: CompletionProviderConfig | null) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: config !== null && (config as { kind: string }).kind === "ollama",
+    enabled: config !== null && (config as { kind: string }).kind === "ollama" && isTauriRuntime(),
   });
 }
 
@@ -76,6 +100,7 @@ export function useTestCompletionProvider() {
       config: CompletionProviderConfig;
       apiKey?: string;
     }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.testCompletionProvider(config, apiKey ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -87,6 +112,7 @@ export function useTriggerCategorize() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.triggerCategorize();
       if (result.status === "error") throw new Error(result.error.message);
     },

@@ -1,5 +1,9 @@
 import { useState } from "react";
 import { commands } from "../../api/client";
+import { userErrorMessage } from "../../utils/runtime";
+import Button from "../../components/Button";
+import Input from "../../components/Input";
+import Select from "../../components/Select";
 
 interface Props { onNext: () => void; }
 
@@ -44,7 +48,7 @@ export default function StepCategories({ onNext }: Props) {
       if (result.status === "error") throw new Error(result.error.message);
       onNext();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Something went wrong.");
+      setSaveError(userErrorMessage(err, "Could not save categories. Try again from the desktop app."));
     } finally {
       setSaving(false);
     }
@@ -56,39 +60,46 @@ export default function StepCategories({ onNext }: Props) {
       <p>Edit or delete anything that doesn't fit. We'll only store what you keep.</p>
       <ul className="category-list">
         {rows.map((row, i) => (
-          <li key={row.id}>
-            <input
+          <li key={row.id} className="row-md" style={{ alignItems: "center" }}>
+            <Input
               value={row.label}
               onChange={(e) => update(i, { label: e.target.value })}
               aria-label={`Category ${i + 1} label`}
+              style={{ marginBottom: 0 }}
             />
-            <select
+            <Select
               value={row.group_id}
               onChange={(e) => update(i, { group_id: e.target.value })}
               aria-label={`Category ${i + 1} group`}
+              style={{ marginBottom: 0 }}
             >
               {GROUPS.map((g) => (
                 <option key={g} value={g}>
                   {g}
                 </option>
               ))}
-            </select>
-            <button onClick={() => remove(i)} aria-label={`Remove ${row.label || "row"}`}>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => remove(i)}
+              aria-label={`Remove ${row.label || "row"}`}
+            >
               ×
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
-      <button onClick={add}>+ Add category</button>
+      <Button variant="default" onClick={add}>+ Add category</Button>
       {saveError && (
-        <p role="alert" style={{ color: "var(--error, red)" }}>
+        <p role="alert" className="err">
           {saveError}
         </p>
       )}
       <footer>
-        <button className="primary" onClick={commit} disabled={saving}>
+        <Button variant="primary" onClick={commit} disabled={saving} loading={saving}>
           {saving ? "Saving…" : "Use these →"}
-        </button>
+        </Button>
       </footer>
     </div>
   );

@@ -1,10 +1,13 @@
+import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
+import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
 
 vi.mock("react-router-dom", () => ({
   useNavigate: vi.fn(() => vi.fn()),
+  MemoryRouter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
 vi.mock("../api/hooks/accounts", () => ({
@@ -17,6 +20,7 @@ vi.mock("../api/hooks/onboarding", () => ({
   useOnboardingState: vi.fn(() => ({ data: { completion_marked: true, account_count: 0, category_count: 0 } })),
 }));
 vi.mock("../api/hooks/agent", () => ({
+  useCompletionProvider: vi.fn(() => ({ data: { kind: "unconfigured" } })),
   useSetCompletionProvider: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSaveProviderApiKey: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useTestCompletionProvider: vi.fn(() => ({
@@ -44,6 +48,8 @@ vi.mock("../api/hooks/settings", () => ({
   useSetCurrency: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useExportJson: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useExportCsv: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useNotificationsEnabled: vi.fn(() => ({ data: true })),
+  useSetNotificationsEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 describe("Settings — Appearance section", () => {
@@ -65,6 +71,12 @@ describe("Settings — Appearance section", () => {
 });
 
 describe("Settings — AI Provider panel", () => {
+  beforeEach(() => {
+    vi.mocked(useCompletionProvider).mockReturnValue({
+      data: { kind: "unconfigured" },
+    } as ReturnType<typeof useCompletionProvider>);
+  });
+
   it("shows 'AI Provider' section", () => {
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.getByText("AI Provider")).toBeInTheDocument();
@@ -84,5 +96,56 @@ describe("Settings — AI Provider panel", () => {
     await waitFor(() => screen.getByRole("button", { name: /ollama/i }));
     fireEvent.click(screen.getByRole("button", { name: /ollama/i }));
     expect(screen.getByRole("button", { name: /test connection/i })).toBeInTheDocument();
+  });
+
+  it("shows configured provider summary when panel is closed", () => {
+    vi.mocked(useCompletionProvider).mockReturnValue({
+      data: { kind: "openai_compat", preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "gpt-4o-mini" },
+    } as ReturnType<typeof useCompletionProvider>);
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByText(/configured — openrouter/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it("pre-populates cloud provider form when configured", async () => {
+    vi.mocked(useCompletionProvider).mockReturnValue({
+      data: { kind: "openai_compat", preset: "openrouter", base_url: "https://openrouter.ai/api/v1", model: "gpt-4o-mini" },
+    } as ReturnType<typeof useCompletionProvider>);
+    render(<Settings />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("gpt-4o-mini")).toBeInTheDocument();
+    });
+  });
+
+  it("saves the API key before setting the provider", async () => {
+    const saveKey = vi.fn().mockResolvedValue(undefined);
+    const setProvider = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useSaveProviderApiKey).mockReturnValue({
+      mutateAsync: saveKey,
+      isPending: false,
+    } as unknown as ReturnType<typeof useSaveProviderApiKey>);
+    vi.mocked(useSetCompletionProvider).mockReturnValue({
+      mutateAsync: setProvider,
+      isPending: false,
+    } as unknown as ReturnType<typeof useSetCompletionProvider>);
+
+    render(<Settings />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /configure/i }));
+    await waitFor(() => screen.getByRole("button", { name: /cloud/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cloud/i }));
+    fireEvent.click(screen.getByText(/openrouter/i));
+
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. gpt-4o-mini/i), { target: { value: "gpt-4o-mini" } });
+    fireEvent.change(screen.getByPlaceholderText(/sk-…/i), { target: { value: "sk-or-test" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(saveKey).toHaveBeenCalledWith({ providerId: "openrouter", key: "sk-or-test" });
+      expect(setProvider).toHaveBeenCalled();
+      const saveOrder = saveKey.mock.invocationCallOrder[0] ?? Infinity;
+      const setOrder = setProvider.mock.invocationCallOrder[0] ?? Infinity;
+      expect(saveOrder).toBeLessThan(setOrder);
+    });
   });
 });

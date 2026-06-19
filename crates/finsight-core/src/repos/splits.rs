@@ -28,7 +28,8 @@ pub fn list(conn: &mut Connection, txn_id: &str) -> CoreResult<Vec<TransactionSp
             amount_cents: r.get(3)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(CoreError::Database)
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(CoreError::Database)
 }
 
 /// Replace all splits for a transaction atomically.

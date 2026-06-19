@@ -1,7 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ResponsiveBar } from "@nivo/bar";
+import { ResponsiveLine } from "@nivo/line";
+import { ResponsivePie } from "@nivo/pie";
 import { commands, type ReportData, type MonthSummary } from "../api/client";
 import { money } from "../utils/format";
+import { CopilotNudge } from "../components/CopilotNudge";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../components/Table";
 
 function useReportData(scope: "month" | "quarter" | "year" | "all") {
   return useQuery<ReportData>({
@@ -40,271 +47,318 @@ const DEFAULT_TAB: ReportTab = {
   widgets: { barChart: true, netLine: true, donut: true, yoy: true, categories: true, merchants: true },
 };
 
-// ── Inline SVG bar chart ─────────────────────────────────────────────────
+const NIVO_THEME = {
+  axis: {
+    ticks: { text: { fill: "var(--ink-faint)", fontSize: 11, fontFamily: "var(--mono)" } },
+    domain: { line: { stroke: "var(--hairline)" } },
+  },
+  grid: { line: { stroke: "var(--hairline)", strokeDasharray: "4 4" } },
+  legends: { text: { fill: "var(--ink-mute)", fontSize: 12, fontFamily: "var(--sans)" } },
+  labels: { text: { fill: "var(--ink)", fontSize: 11, fontFamily: "var(--sans)" } },
+  tooltip: {
+    container: {
+      background: "var(--elevated)",
+      color: "var(--ink)",
+      border: "1px solid var(--line-2)",
+      borderRadius: "var(--radius-sm)",
+      fontSize: 12,
+      fontFamily: "var(--sans)",
+    },
+  },
+};
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtK(cents: number) {
+  if (cents >= 100_000) return `$${(cents / 100_000).toFixed(1)}k`;
+  return `$${(cents / 100).toFixed(0)}`;
+}
+
+const srOnlyStyle: React.CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+};
+
+// ── Nivo bar chart ─────────────────────────────────────────────────────────
 
 function BarChart({ months, scope }: { months: MonthSummary[]; scope: "6" | "12" }) {
-  const data = scope === "6" ? months.slice(-6) : months;
-  const maxVal = Math.max(...data.flatMap((m) => [m.incomeCents, m.expenseCents]), 1);
-  const W = 100 / data.length;
-  const barW = W * 0.35;
+  const data = useMemo(() => {
+    const slice = scope === "6" ? months.slice(-6) : months;
+    return slice.map((m) => ({
+      month: m.label,
+      Income: Math.round(m.incomeCents / 100),
+      Expenses: Math.round(m.expenseCents / 100),
+    }));
+  }, [months, scope]);
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "22px 4px 12px" }}>
-      <div style={{ padding: "0 20px 16px", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+    <Card className="stack stack-sm" style={{ padding: "22px 4px 12px" }}>
+      <div className="row-md" style={{ justifyContent: "space-between", alignItems: "baseline", padding: "0 20px 4px" }}>
         <div className="h3">Income vs expenses</div>
-        <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--ink-mute)" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: "var(--positive)", display: "inline-block" }} />Income
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: "var(--negative)", display: "inline-block" }} />Expenses
-          </span>
-        </div>
       </div>
-      <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 180, display: "block" }}>
-        {data.map((m, i) => {
-          const incH = (m.incomeCents / maxVal) * 36;
-          const expH = (m.expenseCents / maxVal) * 36;
-          const x = i * W + W / 2;
-          return (
-            <g key={m.month}>
-              {/* Income bar */}
-              <rect
-                x={x - barW - 0.4}
-                y={38 - incH}
-                width={barW}
-                height={incH}
-                fill="var(--positive)"
-                opacity={0.8}
-                rx={0.5}
-              />
-              {/* Expense bar */}
-              <rect
-                x={x + 0.4}
-                y={38 - expH}
-                width={barW}
-                height={expH}
-                fill="var(--negative)"
-                opacity={0.8}
-                rx={0.5}
-              />
-            </g>
-          );
-        })}
-      </svg>
-      {/* Month labels */}
-      <div style={{ display: "flex", padding: "4px 4px 0", justifyContent: "space-around" }}>
-        {data.map((m) => (
-          <span key={m.month} style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--mono)", textAlign: "center", width: `${100 / data.length}%` }}>
-            {m.label}
-          </span>
-        ))}
+      <div style={{ height: 180 }}>
+        <ResponsiveBar
+          data={data}
+          keys={["Income", "Expenses"]}
+          indexBy="month"
+          colors={["var(--positive)", "var(--negative)"]}
+          theme={NIVO_THEME}
+          margin={{ top: 10, right: 20, bottom: 30, left: 50 }}
+          padding={0.25}
+          groupMode="grouped"
+          axisBottom={{ tickSize: 0, tickPadding: 8 }}
+          axisLeft={{ tickSize: 0, tickPadding: 8, format: (v) => `$${Number(v).toLocaleString()}` }}
+          gridYValues={5}
+          enableGridY
+          enableLabel={false}
+          legends={[
+            {
+              dataFrom: "keys",
+              anchor: "top-right",
+              direction: "row",
+              translateY: -10,
+              itemWidth: 70,
+              itemHeight: 16,
+              symbolSize: 10,
+            },
+          ]}
+          role="img"
+          ariaLabel="Income versus expenses by month"
+        />
       </div>
-    </div>
+      <table style={srOnlyStyle}>
+        <caption>Income versus expenses by month</caption>
+        <thead>
+          <tr><th>Month</th><th>Income</th><th>Expenses</th></tr>
+        </thead>
+        <tbody>
+          {data.map((d) => (
+            <tr key={d.month}>
+              <td>{d.month}</td>
+              <td>{money(d.Income * 100)}</td>
+              <td>{money(d.Expenses * 100)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
-// ── Net worth line (cumulative net) ───────────────────────────────────────
+// ── Nivo net worth line ───────────────────────────────────────────────────
 
 function NetLine({ months }: { months: MonthSummary[] }) {
-  let running = 0;
-  const points = months.map((m) => {
-    running += m.netCents;
-    return running;
-  });
-  const maxAbs = Math.max(Math.abs(Math.min(...points)), Math.abs(Math.max(...points)), 1);
-  const W = 100 / (points.length - 1 || 1);
+  const { data, final } = useMemo(() => {
+    let running = 0;
+    const points = months.map((m) => {
+      running += m.netCents;
+      return { x: m.label, y: Math.round(running / 100) };
+    });
+    return { data: [{ id: "Cumulative net", data: points }], final: running };
+  }, [months]);
 
-  const pathD = points
-    .map((v, i) => {
-      const x = i * W;
-      const y = 35 - ((v / maxAbs) * 30);
-      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-
-  const isPositive = points[points.length - 1] ?? 0;
+  const isPositive = final >= 0;
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "22px 4px 12px" }}>
-      <div style={{ padding: "0 20px 16px" }}>
+    <Card className="stack stack-sm" style={{ padding: "22px 4px 12px" }}>
+      <div style={{ padding: "0 20px 4px" }}>
         <div className="h3">Cumulative net (12-month running total)</div>
-        <div className={`figure num ${isPositive >= 0 ? "pos" : "neg"}`} style={{ fontSize: 24, marginTop: 4 }}>
-          {money(points[points.length - 1] ?? 0)}
+        <div className={`figure num ${isPositive ? "pos" : "neg"}`} style={{ fontSize: 24, marginTop: 4 }}>
+          {money(final)}
         </div>
       </div>
-      <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 100, display: "block" }}>
-        <line x1="0" y1="35" x2="100" y2="35" stroke="var(--hairline)" strokeWidth="0.5" />
-        <path
-          d={pathD}
-          fill="none"
-          stroke={isPositive >= 0 ? "var(--positive)" : "var(--negative)"}
-          strokeWidth="1.2"
+      <div style={{ height: 100 }}>
+        <ResponsiveLine
+          data={data}
+          colors={[isPositive ? "var(--positive)" : "var(--negative)"]}
+          theme={NIVO_THEME}
+          margin={{ top: 10, right: 20, bottom: 24, left: 50 }}
+          axisBottom={{ tickSize: 0, tickPadding: 8 }}
+          axisLeft={{ tickSize: 0, tickPadding: 8, format: (v) => `$${Number(v).toLocaleString()}` }}
+          enableGridY={false}
+          enableGridX={false}
+          enablePoints
+          pointSize={4}
+          pointBorderWidth={2}
+          pointBorderColor={{ from: "serieColor" }}
+          enableArea
+          areaOpacity={0.15}
+          curve="monotoneX"
+          role="img"
+          ariaLabel="Cumulative net worth over the last 12 months"
         />
-        {points.map((v, i) => (
-          <circle
-            key={i}
-            cx={(i * W).toFixed(1)}
-            cy={(35 - (v / maxAbs) * 30).toFixed(1)}
-            r="1"
-            fill={v >= 0 ? "var(--positive)" : "var(--negative)"}
-          />
-        ))}
-      </svg>
-      <div style={{ display: "flex", padding: "4px 4px 0", justifyContent: "space-around" }}>
-        {months.map((m) => (
-          <span key={m.month} style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--mono)", textAlign: "center", width: `${100 / months.length}%` }}>
-            {m.label}
-          </span>
-        ))}
       </div>
-    </div>
+      <table style={srOnlyStyle}>
+        <caption>Cumulative net worth by month</caption>
+        <thead>
+          <tr><th>Month</th><th>Cumulative net</th></tr>
+        </thead>
+        <tbody>
+          {data[0]!.data.map((d) => (
+            <tr key={d.x}>
+              <td>{d.x}</td>
+              <td>{money(Number(d.y) * 100)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
-// ── Donut chart ───────────────────────────────────────────────────────────
+// ── Nivo donut chart ───────────────────────────────────────────────────────
 
 function DonutChart({ categories, totalCents }: {
   categories: { label: string; color: string; totalCents: number }[];
   totalCents: number;
 }) {
-  const fmtK = (cents: number) => {
-    if (cents >= 100_000) return `$${(cents / 100_000).toFixed(1)}k`;
-    return `$${(cents / 100).toFixed(0)}`;
-  };
-
-  const total = categories.reduce((s, c) => s + c.totalCents, 0) || 1;
-  let cumAngle = -Math.PI / 2;
-  const slices = categories.map(c => {
-    const share = c.totalCents / total;
-    const start = cumAngle;
-    cumAngle += share * 2 * Math.PI * 0.99;
-    const end = cumAngle;
-    cumAngle += share * 2 * Math.PI * 0.01;
-    return { ...c, start, end, share };
-  });
-
-  // When only one category, arc degenerates — render a filled circle instead
-  if (slices.length === 1) {
-    return (
-      <div className="card" style={{ padding: 20 }}>
-        <div className="eyebrow" style={{ marginBottom: 14 }}>Spending by category</div>
-        <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-          <svg viewBox="0 0 100 100" width={120} height={120} style={{ flexShrink: 0 }}>
-            <circle cx={50} cy={50} r={48} fill={slices[0]!.color || "var(--accent)"} />
-            <circle cx={50} cy={50} r={32} fill="var(--bg)" />
-            <text x={50} y={53} textAnchor="middle" fontSize={9}
-              fill="var(--ink)" fontFamily="var(--mono)">
-              {fmtK(totalCents)}
-            </text>
-          </svg>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2,
-                background: slices[0]!.color || "var(--accent)", flexShrink: 0 }} />
-              <span style={{ flex: 1 }}>{slices[0]!.label}</span>
-              <span className="muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>100%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const arc = (cx: number, cy: number, r: number, start: number, end: number) => {
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const large = end - start > Math.PI ? 1 : 0;
-    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-  };
+  const data = useMemo(() =>
+    categories
+      .filter((c) => c.totalCents > 0)
+      .map((c) => ({
+        id: c.label,
+        label: c.label,
+        value: Math.round(c.totalCents / 100),
+        color: c.color || "var(--accent)",
+      })),
+    [categories]
+  );
 
   return (
-    <div className="card" style={{ padding: 20 }}>
-      <div className="eyebrow" style={{ marginBottom: 14 }}>Spending by category</div>
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        <svg viewBox="0 0 100 100" width={120} height={120} style={{ flexShrink: 0 }}>
-          {slices.map((s, i) => (
-            <path key={i} d={arc(50, 50, 48, s.start, s.end)}
-              fill={s.color || "var(--ink-faint)"} />
-          ))}
-          <circle cx={50} cy={50} r={32} fill="var(--bg)" />
-          <text x={50} y={53} textAnchor="middle" fontSize={9}
-            fill="var(--ink)" fontFamily="var(--mono)">
-            {fmtK(totalCents)}
-          </text>
-        </svg>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-          {slices.slice(0, 8).map((s, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2,
-                background: s.color || "var(--ink-faint)", flexShrink: 0 }} />
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
-                whiteSpace: "nowrap" }}>{s.label}</span>
-              <span className="muted" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
-                {Math.round(s.share * 100)}%
+    <Card className="stack stack-sm" style={{ padding: 20 }}>
+      <div className="eyebrow">Spending by category</div>
+      <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 24, alignItems: "flex-start" }}>
+        <div style={{ height: 120 }}>
+          <ResponsivePie
+            data={data}
+            colors={{ datum: "data.color" }}
+            theme={NIVO_THEME}
+            innerRadius={0.65}
+            padAngle={0.7}
+            cornerRadius={3}
+            enableArcLabels={false}
+            enableArcLinkLabels={false}
+            tooltip={({ datum }) => (
+              <div>
+                <strong>{datum.label}</strong>: {money(Number(datum.value) * 100)} ({Math.round((datum.value / (totalCents / 100)) * 100)}%)
+              </div>
+            )}
+            role="img"
+          />
+        </div>
+        <div className="stack stack-xs" style={{ flex: 1, minWidth: 0 }}>
+          {data.slice(0, 8).map((s) => (
+            <div key={s.id} className="row-sm" style={{ alignItems: "center", fontSize: 12 }}>
+              <span
+                className="swatch"
+                style={{ background: s.color, flexShrink: 0 }}
+                aria-hidden="true"
+              />
+              <span className="grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span>
+              <span className="num muted" style={{ fontSize: 11 }}>
+                {Math.round((s.value / (totalCents / 100)) * 100)}%
               </span>
             </div>
           ))}
         </div>
       </div>
-    </div>
+      <table style={srOnlyStyle}>
+        <caption>Spending by category</caption>
+        <thead>
+          <tr><th>Category</th><th>Amount</th><th>Share</th></tr>
+        </thead>
+        <tbody>
+          {data.map((d) => (
+            <tr key={d.id}>
+              <td>{d.label}</td>
+              <td>{money(d.value * 100)}</td>
+              <td>{Math.round((d.value / (totalCents / 100)) * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
-// ── Year-over-year line chart ─────────────────────────────────────────────
+// ── Nivo year-over-year line chart ─────────────────────────────────────────
 
 function YoYChart({ thisYear, lastYear }: {
   thisYear: { label: string; expenseCents: number }[];
   lastYear: { expenseCents: number }[];
 }) {
   if (thisYear.length === 0) return null;
-  const allVals = [...thisYear.map(m => m.expenseCents), ...lastYear.map(m => m.expenseCents)];
-  const maxVal = Math.max(...allVals, 1);
-  const W = 100, H = 50;
-  const n = thisYear.length;
-  const pts = (data: number[]) =>
-    data.map((v, i) =>
-      `${(i / Math.max(n - 1, 1)) * W},${H - (v / maxVal) * (H - 4)}`
-    ).join(" ");
 
-  // Determine which x-axis labels to show
-  const labelIndices = n <= 6
+  const data = useMemo(() => [
+    {
+      id: "This year",
+      data: thisYear.map((m) => ({ x: m.label, y: Math.round(m.expenseCents / 100) })),
+    },
+    ...(lastYear.length > 0 ? [{
+      id: "Last year",
+      data: lastYear.map((m, i) => ({ x: thisYear[i]?.label ?? i, y: Math.round(m.expenseCents / 100) })),
+    }] : []),
+  ], [thisYear, lastYear]);
+
+  const labelIndices = thisYear.length <= 6
     ? thisYear.map((_, i) => i)
-    : thisYear.map((_, i) => i).filter(i => i % Math.ceil(n / 6) === 0);
+    : thisYear.map((_, i) => i).filter((i) => i % Math.ceil(thisYear.length / 6) === 0);
 
   return (
-    <div className="card" style={{ padding: 20 }}>
-      <div className="eyebrow" style={{ marginBottom: 14 }}>Year-over-year expenses</div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
-        style={{ width: "100%", height: 100, display: "block" }}>
-        {lastYear.length > 0 && (
-          <polyline points={pts(lastYear.map(m => m.expenseCents))}
-            fill="none" stroke="var(--ink-mute)" strokeWidth={1}
-            strokeDasharray="2 1" />
-        )}
-        <polyline points={pts(thisYear.map(m => m.expenseCents))}
-          fill="none" stroke="var(--accent)" strokeWidth={1.5} />
-      </svg>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-        {labelIndices.map(i => (
-          <span key={i} className="muted" style={{ fontSize: 10, fontFamily: "var(--mono)" }}>
-            {thisYear[i]!.label}
-          </span>
-        ))}
+    <Card className="stack stack-sm" style={{ padding: 20 }}>
+      <div className="eyebrow">Year-over-year expenses</div>
+      <div style={{ height: 100 }}>
+        <ResponsiveLine
+          data={data}
+          colors={["var(--accent)", "var(--ink-mute)"]}
+          theme={NIVO_THEME}
+          margin={{ top: 10, right: 20, bottom: 24, left: 50 }}
+          axisBottom={{
+            tickSize: 0,
+            tickPadding: 8,
+            tickValues: labelIndices.map((i) => thisYear[i]!.label),
+          }}
+          axisLeft={{ tickSize: 0, tickPadding: 8, format: (v) => `$${Number(v).toLocaleString()}` }}
+          enableGridY={false}
+          enableGridX={false}
+          enablePoints={false}
+          curve="monotoneX"
+          lineWidth={2}
+          role="img"
+          ariaLabel="Year-over-year expenses comparison"
+        />
       </div>
-      <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-          <span style={{ width: 16, height: 2, background: "var(--accent)", display: "inline-block" }} />
-          This year
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-          <span style={{ width: 16, height: 2, borderBottom: "2px dashed var(--ink-mute)", display: "inline-block" }} />
-          Last year
-        </div>
+      <div className="row-sm" style={{ fontSize: 12, color: "var(--ink-mute)", padding: "8px 12px 0" }}>
+        <span className="row-xs">
+          <span style={{ width: 16, height: 2, background: "var(--accent)", display: "inline-block" }} />This year
+        </span>
+        <span className="row-xs">
+          <span style={{ width: 16, height: 2, background: "var(--ink-mute)", display: "inline-block" }} />Last year
+        </span>
       </div>
-    </div>
+      <table style={srOnlyStyle}>
+        <caption>Year-over-year expenses</caption>
+        <thead>
+          <tr><th>Month</th><th>This year</th><th>Last year</th></tr>
+        </thead>
+        <tbody>
+          {thisYear.map((m, i) => (
+            <tr key={m.label}>
+              <td>{m.label}</td>
+              <td>{money(m.expenseCents)}</td>
+              <td>{money(lastYear[i]?.expenseCents ?? 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
   );
 }
 
@@ -345,29 +399,27 @@ export default function Reports() {
 
   if (!isLoading && !error && (!data || data.monthly.every((m) => m.incomeCents === 0 && m.expenseCents === 0))) {
     return (
-      <div className="screen">
+      <div className="screen screen-reports">
         <div className="screen-header">
           <div className="screen-header-text">
             <div className="screen-eyebrow">Reports</div>
             <h1>See the shape of your money over time.</h1>
           </div>
         </div>
-        <div className="card" style={{ textAlign: "center", padding: "64px 32px" }}>
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No data yet</div>
-          <div className="muted" style={{ fontSize: 14 }}>Import transactions to see reports here.</div>
-        </div>
+        <Card className="stack stack-md" style={{ textAlign: "center", padding: "64px 32px" }}>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>No data yet</div>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>Import transactions to see reports here.</p>
+        </Card>
       </div>
     );
   }
 
-  // Scope-aware label prefix for KPI stats
   const kpiPrefix =
     scope === "month" ? "This month's" :
     scope === "quarter" ? "Quarter" :
     scope === "year" ? "12-month" :
     "All-time";
 
-  // Aggregate KPIs from selected scope (safe: only used when data is defined)
   const totalIncome  = data ? data.monthly.reduce((s, m) => s + m.incomeCents, 0) : 0;
   const totalExpense = data ? data.monthly.reduce((s, m) => s + m.expenseCents, 0) : 0;
   const netTotal     = totalIncome - totalExpense;
@@ -381,7 +433,7 @@ export default function Reports() {
     !activeTab.widgets.categories && !activeTab.widgets.merchants;
 
   return (
-    <div className="screen">
+    <div className="screen screen-reports">
       {/* Header */}
       <div className="screen-header">
         <div className="screen-header-text">
@@ -396,30 +448,15 @@ export default function Reports() {
       </div>
 
       {/* Tab strip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+      <div className="row-sm" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 8, marginBottom: 12 }}>
         {tabs.map(tab => (
-          <div
-            key={tab.id}
-            style={{
-              position: "relative",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
+          <div key={tab.id} className="row-xs" style={{ position: "relative" }}>
             {renamingId === tab.id ? (
               <input
                 autoFocus
                 defaultValue={tab.name}
-                style={{
-                  padding: "2px 8px",
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--accent)",
-                  borderRadius: 4,
-                  color: "var(--ink)",
-                  fontSize: 13,
-                  width: 120,
-                }}
+                className="screen-reports"
+                style={{ padding: "2px 8px", width: 120, fontSize: 13 }}
                 onBlur={e => {
                   const name = e.target.value.trim() || tab.name;
                   setTabs(prev => prev.map(t => t.id === tab.id ? { ...t, name } : t));
@@ -431,37 +468,38 @@ export default function Reports() {
                 }}
               />
             ) : (
-              <button
-                className={`btn ghost sm${activeTabId === tab.id ? " active" : ""}`}
-                style={{ fontWeight: activeTabId === tab.id ? 600 : undefined }}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={activeTabId === tab.id ? "active" : ""}
                 onClick={() => setActiveTabId(tab.id)}
                 onDoubleClick={() => setRenamingId(tab.id)}
                 title="Double-click to rename"
               >
                 {tab.name}
-              </button>
+              </Button>
             )}
-            {/* Delete button — show on all non-default tabs */}
             {tab.id !== "default" && (
-              <button
-                className="btn ghost sm"
-                style={{ padding: "0 4px", color: "var(--ink-mute)", fontSize: 11 }}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setTabs(prev => prev.filter(t => t.id !== tab.id));
                   setActiveTabId("default");
                 }}
                 title="Delete tab"
+                aria-label={`Delete tab ${tab.name}`}
+                style={{ padding: "0 4px", fontSize: 11 }}
               >
                 ✕
-              </button>
+              </Button>
             )}
           </div>
         ))}
 
-        {/* Add new tab */}
-        <button
-          className="btn ghost sm"
-          style={{ color: "var(--ink-mute)" }}
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => {
             const newTab: ReportTab = {
               id: crypto.randomUUID(),
@@ -475,25 +513,25 @@ export default function Reports() {
           }}
         >
           + New tab
-        </button>
+        </Button>
 
-        {/* Customize button — right side */}
         <div style={{ marginLeft: "auto" }}>
-          <button
-            className={`btn ghost sm${customize ? " active" : ""}`}
-            style={customize ? { color: "var(--accent)" } : undefined}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={customize ? "active" : ""}
             onClick={() => setCustomize(c => !c)}
             title="Show/hide widgets"
           >
             ✎ Customize
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Customize panel */}
       {customize && (
-        <div className="card" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="eyebrow" style={{ marginRight: 4 }}>Widgets</span>
+        <Card className="row-sm wrap" style={{ padding: "12px 16px", marginBottom: 16, alignItems: "center" }}>
+          <span className="eyebrow">Widgets</span>
           {(
             [
               ["barChart", "Bar chart"],
@@ -504,10 +542,10 @@ export default function Reports() {
               ["merchants", "Merchants"],
             ] as [keyof WidgetVisibility, string][]
           ).map(([key, label]) => (
-            <button
+            <Button
               key={key}
-              className={`btn ghost sm${activeTab.widgets[key] ? " active" : ""}`}
-              style={activeTab.widgets[key] ? { color: "var(--accent)" } : { color: "var(--ink-mute)" }}
+              variant={activeTab.widgets[key] ? "primary" : "ghost"}
+              size="sm"
               onClick={() =>
                 updateActiveTab({
                   widgets: { ...activeTab.widgets, [key]: !activeTab.widgets[key] },
@@ -515,9 +553,9 @@ export default function Reports() {
               }
             >
               {activeTab.widgets[key] ? "✓ " : ""}{label}
-            </button>
+            </Button>
           ))}
-        </div>
+        </Card>
       )}
 
       {/* Scope toolbar */}
@@ -525,7 +563,7 @@ export default function Reports() {
         {(["month", "quarter", "year", "all"] as const).map(s => (
           <button
             key={s}
-            className={`btn ghost sm${activeTab.scope === s ? " active" : ""}`}
+            className={activeTab.scope === s ? "on" : ""}
             onClick={() => updateActiveTab({ scope: s })}
           >
             {s === "month" ? "Month" : s === "quarter" ? "Quarter" : s === "year" ? "Year" : "All time"}
@@ -566,7 +604,7 @@ export default function Reports() {
         <>
           {/* Chart grid 1 */}
           {(activeTab.widgets.barChart || activeTab.widgets.netLine) && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 24 }}>
+            <div className="responsive-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 24 }}>
               {activeTab.widgets.barChart && <BarChart months={data.monthly} scope={barScope} />}
               {activeTab.widgets.netLine && <NetLine months={data.monthly} />}
             </div>
@@ -574,7 +612,7 @@ export default function Reports() {
 
           {/* Chart grid 2 */}
           {(activeTab.widgets.donut || activeTab.widgets.yoy) && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+            <div className="responsive-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 16 }}>
               {activeTab.widgets.donut && (
                 <DonutChart
                   categories={data.topCategories}
@@ -589,71 +627,69 @@ export default function Reports() {
 
           {/* Tables grid */}
           {(activeTab.widgets.categories || activeTab.widgets.merchants) && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-              {/* Top categories */}
+            <div className="responsive-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 16 }}>
               {activeTab.widgets.categories && (
-                <div className="card flush">
+                <Card flush>
                   <div className="card-head">
                     <div className="h3">Top categories</div>
                     <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
                   </div>
-                  <table className="tbl">
-                    <thead>
-                      <tr>
-                        <th>Category</th>
-                        <th className="right">Total</th>
-                        <th className="right">Txns</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableHeader>Category</TableHeader>
+                        <TableHeader right>Total</TableHeader>
+                        <TableHeader right>Txns</TableHeader>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
                       {data.topCategories.map((c) => (
-                        <tr key={c.categoryId}>
-                          <td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ width: 8, height: 8, borderRadius: 2, background: c.color || "var(--ink-faint)", display: "inline-block", flexShrink: 0 }} />
-                              <span style={{ fontSize: 14 }}>{c.label}</span>
+                        <TableRow key={c.categoryId}>
+                          <TableCell>
+                            <div className="row-sm">
+                              <span className="swatch" style={{ background: c.color || "var(--ink-faint)" }} aria-hidden="true" />
+                              <span>{c.label}</span>
                             </div>
-                          </td>
-                          <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(c.totalCents)}</td>
-                          <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{c.txnCount}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell right><span className="num tabular money">{money(c.totalCents)}</span></TableCell>
+                          <TableCell right><span className="num muted">{c.txnCount}</span></TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </TableBody>
+                  </Table>
+                </Card>
               )}
 
-              {/* Top merchants */}
               {activeTab.widgets.merchants && (
-                <div className="card flush">
+                <Card flush>
                   <div className="card-head">
                     <div className="h3">Top merchants</div>
                     <div className="muted" style={{ fontSize: 12 }}>12-month spend</div>
                   </div>
-                  <table className="tbl">
-                    <thead>
-                      <tr>
-                        <th>Merchant</th>
-                        <th className="right">Total</th>
-                        <th className="right">Txns</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableHeader>Merchant</TableHeader>
+                        <TableHeader right>Total</TableHeader>
+                        <TableHeader right>Txns</TableHeader>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
                       {data.topMerchants.map((m, i) => (
-                        <tr key={`${m.merchantRaw}-${i}`}>
-                          <td>
-                            <div>
-                              <div style={{ fontSize: 14 }}>{m.merchantRaw}</div>
+                        <TableRow key={`${m.merchantRaw}-${i}`}>
+                          <TableCell>
+                            <div className="stack stack-xs">
+                              <div>{m.merchantRaw}</div>
                               <div className="muted" style={{ fontSize: 12 }}>{m.categoryLabel || "Uncategorized"}</div>
                             </div>
-                          </td>
-                          <td className="right num tabular money" style={{ fontSize: 13.5 }}>{money(m.totalCents)}</td>
-                          <td className="right muted" style={{ fontSize: 13, fontFamily: "var(--mono)" }}>{m.txnCount}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell right><span className="num tabular money">{money(m.totalCents)}</span></TableCell>
+                          <TableCell right><span className="num muted">{m.txnCount}</span></TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </TableBody>
+                  </Table>
+                </Card>
               )}
             </div>
           )}
@@ -662,16 +698,22 @@ export default function Reports() {
           {allWidgetsHidden && (
             <div className="stub" style={{ marginTop: 16, textAlign: "center", padding: "40px 20px" }}>
               All widgets hidden — use{" "}
-              <button
-                className="btn ghost sm"
-                onClick={() => setCustomize(true)}
-                style={{ display: "inline", padding: "0 4px" }}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setCustomize(true)} style={{ display: "inline" }}>
                 ✎ Customize
-              </button>{" "}
+              </Button>{" "}
               to re-enable some.
             </div>
           )}
+
+          {/* Copilot nudge */}
+          <div style={{ marginTop: 24 }}>
+            <CopilotNudge
+              prompt={`Analyze my ${scope === "month" ? "this month's" : scope === "quarter" ? "last quarter's" : scope === "year" ? "this year's" : "all-time"} spending trends, identify where I'm overspending, and suggest a concrete plan to improve my savings rate.`}
+              label="Turn these trends into a plan"
+              description="Let Copilot summarize your trends and suggest next steps"
+              variant="info"
+            />
+          </div>
         </>
       ) : null}
     </div>

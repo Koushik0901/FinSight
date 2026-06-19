@@ -128,6 +128,7 @@ pub struct CategoryDto {
     pub color: String,
     pub group_id: String,
     pub group_label: String,
+    pub spending_type: Option<String>,
 }
 
 #[tauri::command]
@@ -136,7 +137,7 @@ pub async fn list_categories(state: tauri::State<'_, AppState>) -> AppResult<Vec
     let db = (*state.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, '') \
+            "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, ''), c.spending_type \
              FROM categories c \
              LEFT JOIN category_groups g ON g.id = c.group_id \
              WHERE c.archived_at IS NULL \
@@ -149,6 +150,7 @@ pub async fn list_categories(state: tauri::State<'_, AppState>) -> AppResult<Vec
                 color: r.get(2)?,
                 group_id: r.get(3)?,
                 group_label: r.get(4)?,
+                spending_type: r.get(5)?,
             })
         })?;
         let mut out = Vec::new();
@@ -170,6 +172,7 @@ pub struct CategoryWithSpending {
     pub color: String,
     pub group_id: String,
     pub group_label: String,
+    pub spending_type: Option<String>,
     /// Total outflow this calendar month (positive = money spent)
     pub this_month_cents: i64,
     /// Total outflow last calendar month
@@ -215,7 +218,7 @@ pub async fn list_categories_with_spending(
                  AND ts.category_id IS NOT NULL
              )
              SELECT
-               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''),
+               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), c.spending_type,
                COALESCE(SUM(CASE WHEN s.posted_at >= ?1 THEN s.cents ELSE 0 END), 0),
                COALESCE(SUM(CASE WHEN s.posted_at >= ?2 AND s.posted_at < ?1 THEN s.cents ELSE 0 END), 0),
                COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
@@ -226,8 +229,8 @@ pub async fn list_categories_with_spending(
              LEFT JOIN spending s ON s.category_id = c.id
              LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
              WHERE c.archived_at IS NULL
-             GROUP BY c.id, c.label, c.color, c.group_id, g.label
-             ORDER BY 6 DESC, g.sort_order, c.sort_order",
+             GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type
+             ORDER BY 7 DESC, g.sort_order, c.sort_order",
         )?;
         let rows = stmt.query_map(
             rusqlite::params![this_month_start, last_month_start, year_start, current_month],
@@ -238,11 +241,12 @@ pub async fn list_categories_with_spending(
                     color: r.get(2)?,
                     group_id: r.get(3)?,
                     group_label: r.get(4)?,
-                    this_month_cents: r.get(5)?,
-                    last_month_cents: r.get(6)?,
-                    txn_count: r.get(7)?,
-                    year_total_cents: r.get(8)?,
-                    budget_cents: r.get(9)?,
+                    spending_type: r.get(5)?,
+                    this_month_cents: r.get(6)?,
+                    last_month_cents: r.get(7)?,
+                    txn_count: r.get(8)?,
+                    year_total_cents: r.get(9)?,
+                    budget_cents: r.get(10)?,
                 })
             },
         )?;
@@ -251,6 +255,112 @@ pub async fn list_categories_with_spending(
             out.push(row?);
         }
         Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SpendingBreakdown {
+    pub fixed_cents: i64,
+    pub investments_cents: i64,
+    pub savings_cents: i64,
+    pub guilt_free_cents: i64,
+    pub untagged_cents: i64,
+    pub total_income_cents: i64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_category_spending_type(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    spending_type: Option<String>,
+) -> AppResult<()> {
+    if !matches!(
+        spending_type.as_deref(),
+        None | Some("fixed" | "investments" | "savings" | "guilt_free")
+    ) {
+        return Err(AppError::new(
+            "validation",
+            "Invalid spending type. Use fixed, investments, savings, guilt_free, or null.",
+        ));
+    }
+
+    let db = (*state.db).clone();
+    let updated_at = Utc::now().to_rfc3339();
+    run(&db, move |conn| {
+        conn.execute(
+            "UPDATE categories SET spending_type = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![spending_type, updated_at, id],
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_spending_breakdown(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<SpendingBreakdown> {
+    let db = (*state.db).clone();
+    let this_month_start = Utc::now().format("%Y-%m-01").to_string();
+
+    run(&db, move |conn| {
+        let (fixed_cents, investments_cents, savings_cents, guilt_free_cents, untagged_cents): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = conn.query_row(
+            "WITH spending AS (
+                SELECT c.spending_type, ABS(t.amount_cents) AS cents
+                FROM transactions t
+                JOIN categories c ON c.id = t.category_id
+                WHERE t.amount_cents < 0
+                  AND t.category_id IS NOT NULL
+                  AND t.posted_at >= ?1
+                  AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
+                UNION ALL
+                SELECT c.spending_type, ts.amount_cents AS cents
+                FROM transaction_splits ts
+                JOIN transactions t ON t.id = ts.txn_id
+                JOIN categories c ON c.id = ts.category_id
+                WHERE t.amount_cents < 0
+                  AND ts.category_id IS NOT NULL
+                  AND t.posted_at >= ?1
+             )
+             SELECT
+                COALESCE(SUM(CASE WHEN spending_type = 'fixed' THEN cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN spending_type = 'investments' THEN cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN spending_type = 'savings' THEN cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN spending_type = 'guilt_free' THEN cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN spending_type IS NULL THEN cents ELSE 0 END), 0)
+             FROM spending",
+            rusqlite::params![this_month_start],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )?;
+
+        let total_income_cents: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0)
+             FROM transactions
+             WHERE amount_cents > 0 AND posted_at >= ?1",
+            rusqlite::params![this_month_start],
+            |r| r.get(0),
+        )?;
+
+        Ok(SpendingBreakdown {
+            fixed_cents,
+            investments_cents,
+            savings_cents,
+            guilt_free_cents,
+            untagged_cents,
+            total_income_cents,
+        })
     })
     .await
     .map_err(AppError::from)

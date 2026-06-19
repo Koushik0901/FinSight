@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
@@ -9,15 +9,22 @@ import {
   useOnboardingState,
 } from "../api/hooks/onboarding";
 import {
+  useCompletionProvider,
   useSetCompletionProvider,
   useSaveProviderApiKey,
   useTestCompletionProvider,
   useTriggerCategorize,
   useListProviderModels,
 } from "../api/hooks/agent";
-import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv } from "../api/hooks/settings";
+import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled } from "../api/hooks/settings";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
+import { userErrorMessage } from "../utils/runtime";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Input from "../components/Input";
+import Select from "../components/Select";
+import Swatch from "../components/Swatch";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;
 
@@ -27,6 +34,21 @@ const OPENAI_COMPAT_PRESETS: { label: string; preset: string; base_url: string }
   { label: "Google", preset: "google", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/" },
   { label: "Custom", preset: "custom", base_url: "" },
 ];
+
+const CURRENCIES = ["USD","EUR","GBP","CAD","AUD","JPY","CHF","NZD","SGD","HKD"];
+
+function providerDisplayName(cfg: CompletionProviderConfig): string {
+  switch (cfg.kind) {
+    case "ollama":
+      return `Ollama (${cfg.model})`;
+    case "openai_compat":
+      return `${cfg.preset} (${cfg.model})`;
+    case "anthropic":
+      return `Anthropic (${cfg.model})`;
+    case "unconfigured":
+      return "Not configured";
+  }
+}
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -56,7 +78,10 @@ export default function Settings() {
   const exportJson = useExportJson();
   const exportCsv = useExportCsv();
   const { data: currentCurrency = "USD" } = useDefaultCurrency();
+  const { data: notificationsEnabled = true } = useNotificationsEnabled();
+  const setNotificationsMutation = useSetNotificationsEnabled();
 
+  const { data: currentProvider } = useCompletionProvider();
   const setProvider = useSetCompletionProvider();
   const saveKey = useSaveProviderApiKey();
   const testProvider = useTestCompletionProvider();
@@ -67,6 +92,40 @@ export default function Settings() {
       : null
   );
 
+  // Pre-populate the provider panel from the saved configuration when it opens.
+  useEffect(() => {
+    if (!providerPanelOpen || !currentProvider) return;
+    switch (currentProvider.kind) {
+      case "ollama":
+        setSelectedKind("ollama");
+        setOllamaUrl(currentProvider.base_url);
+        setOllamaModel(currentProvider.model);
+        break;
+      case "openai_compat": {
+        setSelectedKind("openai_compat");
+        const preset = OPENAI_COMPAT_PRESETS.find((p) => p.preset === currentProvider.preset);
+        if (preset) {
+          setSelectedPreset(preset);
+        } else {
+          setSelectedPreset({
+            label: currentProvider.preset,
+            preset: currentProvider.preset,
+            base_url: currentProvider.base_url,
+          });
+        }
+        setCompatModel(currentProvider.model);
+        break;
+      }
+      case "anthropic":
+        setSelectedKind("anthropic");
+        setAnthropicModel(currentProvider.model);
+        break;
+      case "unconfigured":
+        setSelectedKind(null);
+        break;
+    }
+  }, [providerPanelOpen, currentProvider]);
+
   async function reRunOnboarding() {
     if (!confirm("This will re-open the welcome wizard. Your existing accounts, transactions, and categories are kept.")) return;
     setResetError(null);
@@ -74,7 +133,7 @@ export default function Settings() {
       await reset.mutateAsync();
       navigate("/onboarding");
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : "Something went wrong.");
+      setResetError(userErrorMessage(err, "Could not reopen setup. Try again from the desktop app."));
     }
   }
 
@@ -85,7 +144,7 @@ export default function Settings() {
       await clearSample.mutateAsync();
       navigate("/onboarding");
     } catch (err) {
-      setClearError(err instanceof Error ? err.message : "Something went wrong.");
+      setClearError(userErrorMessage(err, "Could not clear sample data. Try again from the desktop app."));
     }
   }
 
@@ -98,7 +157,7 @@ export default function Settings() {
       const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
       setTestResult(r);
     } catch (err) {
-      setTestResult({ ok: false, latency_ms: 0, error: err instanceof Error ? err.message : "Connection failed" });
+      setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(err, "Connection failed. Check the provider settings and try again.") });
     }
   }
 
@@ -108,14 +167,14 @@ export default function Settings() {
     if (!config) return;
     setSaveError(null);
     try {
-      await setProvider.mutateAsync(config);
       if (apiKey && selectedKind !== "ollama") {
         const pid = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
         await saveKey.mutateAsync({ providerId: pid, key: apiKey });
       }
+      await setProvider.mutateAsync(config);
       setProviderPanelOpen(false);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save provider.");
+      setSaveError(userErrorMessage(err, "Could not save provider settings. Check the fields and try again."));
     }
   }
 
@@ -132,171 +191,202 @@ export default function Settings() {
     <div className="screen-settings">
       <h1 style={{ fontSize: 32, fontWeight: 600, marginTop: 0, marginBottom: 24 }}>Settings</h1>
 
-      <section style={{ marginBottom: 32 }}>
+      <section className="section-stack" style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Onboarding</h2>
         <p style={{ marginBottom: 12 }}>
           Completed: <strong>{onboarding?.completion_marked ? "yes" : "no"}</strong>
         </p>
-        {resetError && <p role="alert" style={{ color: "var(--error, red)", marginBottom: 8 }}>{resetError}</p>}
-        <button onClick={reRunOnboarding}>Re-run onboarding</button>
+        {resetError && <p role="alert" className="err">{resetError}</p>}
+        <Button variant="default" onClick={reRunOnboarding}>Re-run onboarding</Button>
       </section>
 
       {hasSample && (
-        <section style={{ marginBottom: 32 }}>
+        <section className="section-stack" style={{ marginBottom: 32 }}>
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Sample data</h2>
           <p style={{ marginBottom: 12 }}>
             You're currently looking at the Mira &amp; Adam sample household. Replace it with your own when you're ready.
           </p>
-          {clearError && <p role="alert" style={{ color: "var(--error, red)", marginBottom: 8 }}>{clearError}</p>}
-          <button onClick={replaceSampleData} className="danger">Replace sample data with my own</button>
+          {clearError && <p role="alert" className="err">{clearError}</p>}
+          <Button variant="danger" onClick={replaceSampleData}>Replace sample data with my own</Button>
         </section>
       )}
 
-      <section style={{ marginBottom: 32 }}>
+      <section className="section-stack" style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>AI Provider</h2>
         {!providerPanelOpen ? (
-          <div>
-            <p style={{ marginBottom: 12, color: "var(--text-2)" }}>
-              Not configured — categories won't be assigned automatically.
+          <Card className="stack stack-md" tight>
+            <p className="muted" style={{ margin: 0 }}>
+              {currentProvider && currentProvider.kind !== "unconfigured"
+                ? `Configured — ${providerDisplayName(currentProvider)}.`
+                : "Not configured — categories won't be assigned automatically."}
             </p>
-            <button onClick={() => setProviderPanelOpen(true)}>Configure</button>
-          </div>
+            <Button variant="default" onClick={() => setProviderPanelOpen(true)}>
+              {currentProvider && currentProvider.kind !== "unconfigured" ? "Edit" : "Configure"}
+            </Button>
+          </Card>
         ) : (
-          <div style={{ border: "1px solid var(--hairline)", borderRadius: 8, padding: 16 }}>
-            {/* Provider type row */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+          <Card className="stack stack-md" tight>
+            <div className="row-sm wrap">
               {(["ollama", "openai_compat", "anthropic"] as ProviderKind[]).map((k) => (
-                <button
+                <Button
                   key={k!}
+                  variant={selectedKind === k ? "primary" : "outline"}
+                  size="sm"
                   onClick={() => { setSelectedKind(k); setApiKey(""); }}
-                  style={{ fontWeight: selectedKind === k ? 700 : 400 }}
                   aria-pressed={selectedKind === k}
                 >
                   {k === "ollama" ? "Ollama" : k === "anthropic" ? "Anthropic" : "Cloud"}
-                </button>
+                </Button>
               ))}
             </div>
 
             {selectedKind === "ollama" && (
-              <div>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Base URL
-                  <input value={ollamaUrl} onChange={(e) => setOllamaUrl(e.target.value)} style={{ display: "block", width: "100%" }} />
-                </label>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Model
-                  <select value={ollamaModel} onChange={(e) => setOllamaModel(e.target.value)} style={{ display: "block", width: "100%" }}>
-                    {ollamaModels.map((m: string) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </label>
+              <div className="stack stack-md">
+                <Input
+                  label="Base URL"
+                  value={ollamaUrl}
+                  onChange={(e) => setOllamaUrl(e.target.value)}
+                />
+                <Select
+                  label="Model"
+                  value={ollamaModel}
+                  onChange={(e) => setOllamaModel(e.target.value)}
+                >
+                  {ollamaModels.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                </Select>
               </div>
             )}
 
             {selectedKind === "openai_compat" && (
-              <div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <div className="stack stack-md">
+                <div className="row-sm wrap">
                   {OPENAI_COMPAT_PRESETS.map((p) => (
-                    <button key={p.preset} onClick={() => setSelectedPreset(p)} aria-pressed={selectedPreset.preset === p.preset}>
+                    <Button
+                      key={p.preset}
+                      variant={selectedPreset.preset === p.preset ? "primary" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedPreset(p)}
+                      aria-pressed={selectedPreset.preset === p.preset}
+                    >
                       {p.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Model
-                  <input value={compatModel} onChange={(e) => setCompatModel(e.target.value)} placeholder="e.g. gpt-4o-mini" style={{ display: "block", width: "100%" }} />
-                </label>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  API Key
-                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" style={{ display: "block", width: "100%" }} />
-                </label>
+                <Input
+                  label="Model"
+                  value={compatModel}
+                  onChange={(e) => setCompatModel(e.target.value)}
+                  placeholder="e.g. gpt-4o-mini"
+                />
+                <Input
+                  label="API Key"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-…"
+                />
               </div>
             )}
 
             {selectedKind === "anthropic" && (
-              <div>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Model
-                  <input value={anthropicModel} onChange={(e) => setAnthropicModel(e.target.value)} style={{ display: "block", width: "100%" }} />
-                </label>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  API Key
-                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-…" style={{ display: "block", width: "100%" }} />
-                </label>
+              <div className="stack stack-md">
+                <Input
+                  label="Model"
+                  value={anthropicModel}
+                  onChange={(e) => setAnthropicModel(e.target.value)}
+                />
+                <Input
+                  label="API Key"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-ant-…"
+                />
               </div>
             )}
 
             {testResult && (
-              <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)", marginBottom: 8 }}>
+              <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)", margin: 0 }}>
                 {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
               </p>
             )}
 
-            {saveError && <p role="alert" style={{ color: "var(--error, red)", marginBottom: 8 }}>{saveError}</p>}
+            {saveError && <p role="alert" className="err">{saveError}</p>}
 
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              <button onClick={handleTestConnection} disabled={!selectedKind || testProvider.isPending}>
+            <div className="row-sm wrap">
+              <Button
+                variant="default"
+                onClick={handleTestConnection}
+                disabled={!selectedKind || testProvider.isPending}
+                loading={testProvider.isPending}
+              >
                 Test connection
-              </button>
-              <button className="primary" onClick={handleSave} disabled={!selectedKind || setProvider.isPending}>
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={!selectedKind || setProvider.isPending}
+                loading={setProvider.isPending}
+              >
                 Save
-              </button>
-              <button onClick={() => { setProviderPanelOpen(false); setTestResult(null); }}>
+              </Button>
+              <Button variant="ghost" onClick={() => { setProviderPanelOpen(false); setTestResult(null); }}>
                 Cancel
-              </button>
+              </Button>
             </div>
 
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
-              <button onClick={() => triggerCategorize.mutate()} disabled={triggerCategorize.isPending}>
+            <div style={{ paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
+              <Button
+                variant="outline"
+                onClick={() => triggerCategorize.mutate()}
+                disabled={triggerCategorize.isPending}
+                loading={triggerCategorize.isPending}
+              >
                 Re-categorize all
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         )}
       </section>
 
-      {/* §12c: Appearance section */}
-      <section style={{ marginBottom: 32 }}>
+      <section className="section-stack" style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Appearance</h2>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Theme</span>
+        <div className="stack stack-lg">
+          <div className="row-md wrap" style={{ alignItems: "center" }}>
+            <span style={{ width: 80, fontSize: 13 }} className="muted">Theme</span>
             <div className="toolbar" style={{ display: "inline-flex" }}>
               <button className={theme === "light" ? "on" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Light</button>
               <button className={theme === "dark" ? "on" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Dark</button>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Density</span>
+          <div className="row-md wrap" style={{ alignItems: "center" }}>
+            <span style={{ width: 80, fontSize: 13 }} className="muted">Density</span>
             <div className="toolbar" style={{ display: "inline-flex" }}>
               <button className={density === "cozy" ? "on" : ""} aria-pressed={density === "cozy"} onClick={() => setDensity("cozy")}>Cozy</button>
               <button className={density === "compact" ? "on" : ""} aria-pressed={density === "compact"} onClick={() => setDensity("compact")}>Compact</button>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Accent</span>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div className="row-md wrap" style={{ alignItems: "center" }}>
+            <span style={{ width: 80, fontSize: 13 }} className="muted">Accent</span>
+            <div className="row-sm">
               {(Object.entries(ACCENTS) as [AccentId, { hex: string; ink: string }][]).map(([id, { hex }]) => (
-                <button
+                <Swatch
                   key={id}
-                  aria-label={id}
+                  color={hex}
+                  selected={accent === id}
                   onClick={() => setAccent(id)}
-                  style={{
-                    width: 24, height: 24, borderRadius: 999, background: hex, cursor: "pointer",
-                    border: accent === id ? "2px solid var(--ink)" : "2px solid transparent",
-                    padding: 0,
-                  }}
+                  label={id}
                 />
               ))}
             </div>
           </div>
 
-          {/* §12b: Currency */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 80, fontSize: 13, color: "var(--ink-mute)" }}>Currency</span>
-            <select
+          <div className="row-md wrap" style={{ alignItems: "center" }}>
+            <span style={{ width: 80, fontSize: 13 }} className="muted">Currency</span>
+            <Select
               aria-label="Currency"
               value={currentCurrency}
               onChange={(e) => {
@@ -304,96 +394,129 @@ export default function Settings() {
                   onError: (err) => toast.error("Currency update failed — " + (err instanceof Error ? err.message : "unknown error")),
                 });
               }}
-              style={{ background: "var(--surface-2)", border: "1px solid var(--line-2)",
-                borderRadius: 7, padding: "6px 10px", fontSize: 14, color: "var(--ink)", outline: "none" }}
+              style={{ width: "auto", minWidth: 100 }}
             >
-              {["USD","EUR","GBP","CAD","AUD","JPY","CHF","NZD","SGD","HKD"].map((c) => (
+              {CURRENCIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
-            </select>
+            </Select>
+          </div>
+
+          <div className="row-md wrap" style={{ alignItems: "center" }}>
+            <span style={{ width: 80, fontSize: 13 }} className="muted">Notifications</span>
+            <div className="toolbar" style={{ display: "inline-flex" }}>
+              <button
+                className={notificationsEnabled ? "on" : ""}
+                aria-pressed={notificationsEnabled}
+                onClick={() => setNotificationsMutation.mutate(true)}
+              >
+                On
+              </button>
+              <button
+                className={!notificationsEnabled ? "on" : ""}
+                aria-pressed={!notificationsEnabled}
+                onClick={() => setNotificationsMutation.mutate(false)}
+              >
+                Off
+              </button>
+            </div>
+            <span className="muted" style={{ fontSize: 12 }}>Budget alerts and bill reminders</span>
           </div>
         </div>
       </section>
 
-      {/* §12a: Data export section */}
-      <section style={{ marginBottom: 32 }}>
+      <section className="section-stack" style={{ marginBottom: 32 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Export data</h2>
-        <p style={{ marginBottom: 14, color: "var(--ink-mute)", fontSize: 14 }}>
+        <p className="muted" style={{ marginBottom: 14, fontSize: 14 }}>
           Download your complete data as JSON or a transaction CSV.
         </p>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
+        <div className="row-sm">
+          <Button
+            variant="default"
+            loading={exportJson.isPending}
             disabled={exportJson.isPending}
             onClick={async () => {
               try {
                 await exportJson.mutateAsync();
                 toast.success("File saved");
               } catch (err) {
-                toast.error("Export failed — " + (err instanceof Error ? err.message : "unknown error"));
+                toast.error("Export failed", {
+                  description: userErrorMessage(err, "Try exporting again from the desktop app."),
+                });
               }
             }}
           >
             {exportJson.isPending ? "Exporting…" : "Export as JSON"}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="default"
+            loading={exportCsv.isPending}
             disabled={exportCsv.isPending}
             onClick={async () => {
               try {
                 await exportCsv.mutateAsync();
                 toast.success("File saved");
               } catch (err) {
-                toast.error("Export failed — " + (err instanceof Error ? err.message : "unknown error"));
+                toast.error("Export failed", {
+                  description: userErrorMessage(err, "Try exporting again from the desktop app."),
+                });
               }
             }}
           >
             {exportCsv.isPending ? "Exporting…" : "Export as CSV"}
-          </button>
+          </Button>
         </div>
       </section>
 
-      {/* ── Development tools (dev builds only) ───────────────────────── */}
       {import.meta.env.DEV && (
-        <section>
+        <section style={{ marginBottom: 32 }}>
           <div className="eyebrow" style={{ marginBottom: 12 }}>Development</div>
-          <div className="card" style={{ borderColor: "var(--accent)", opacity: 0.9 }}>
-            <div style={{ marginBottom: 8 }}>
+          <Card tone="accent" style={{ opacity: 0.9 }} className="stack stack-md">
+            <div className="stack stack-xs">
               <strong>Load demo data</strong>
-              <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              <p className="muted" style={{ fontSize: 13, margin: 0 }}>
                 Seeds the "Mira & Adam" prototype dataset — 6 accounts, 6 months of transactions,
                 goals, assets, liabilities, and budgets. Replaces any existing sample data. Dev only.
               </p>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                disabled={seedDemo.isPending}
-                onClick={async () => {
-                  try {
-                    const s = await seedDemo.mutateAsync();
-                    toast.success(`Demo data loaded — ${s.transactions_created} transactions`);
-                  } catch (err) {
-                    toast.error("Seed failed — " + (err instanceof Error ? err.message : "unknown error"));
-                  }
-                }}
-              >
-                {seedDemo.isPending ? "Loading…" : "Load demo data"}
-              </button>
-            </div>
-          </div>
+            <Button
+              variant="default"
+              loading={seedDemo.isPending}
+              disabled={seedDemo.isPending}
+              onClick={async () => {
+                try {
+                  const s = await seedDemo.mutateAsync();
+                  toast.success(`Demo data loaded — ${s.transactions_created} transactions`);
+                } catch (err) {
+                  toast.error("Could not load demo data", {
+                    description: userErrorMessage(err, "Open FinSight with the desktop runtime and try again."),
+                  });
+                }
+              }}
+            >
+              {seedDemo.isPending ? "Loading…" : "Load demo data"}
+            </Button>
+          </Card>
         </section>
       )}
 
-      <div className="section">
+      <section className="section-stack">
         <div className="eyebrow" style={{ marginBottom: 14 }}>Keyboard shortcuts</div>
-        <div className="card tight">
+        <Card tight className="stack">
           {[
             { key: "⌘K", label: "Open command palette" },
             { key: "⌘.", label: "Toggle privacy mode" },
           ].map(({ key, label }, i, arr) => (
-            <div key={key} style={{
-              display: "flex", alignItems: "center", gap: 16, padding: "10px 0",
-              borderBottom: i < arr.length - 1 ? "1px solid var(--line)" : "none",
-            }}>
-              <kbd style={{
+            <div
+              key={key}
+              className="row-md"
+              style={{
+                alignItems: "center",
+                padding: "10px 0",
+                borderBottom: i < arr.length - 1 ? "1px solid var(--line)" : "none",
+              }}
+            >
+              <kbd className="num" style={{
                 fontFamily: "var(--mono)", fontSize: 13, padding: "3px 8px",
                 background: "var(--surface-2)", border: "1px solid var(--line)",
                 borderRadius: 5, color: "var(--ink)", minWidth: 36, textAlign: "center",
@@ -403,8 +526,8 @@ export default function Settings() {
               <span style={{ fontSize: 14 }}>{label}</span>
             </div>
           ))}
-        </div>
-      </div>
+        </Card>
+      </section>
     </div>
   );
 }

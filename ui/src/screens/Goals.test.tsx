@@ -10,11 +10,11 @@ vi.mock("../api/hooks/budget", () => ({
     data: [
       { id: "g1", name: "Italy Fund", goalType: "save-by-date",
         targetCents: 500000, currentCents: 100000, monthlyCents: 20000,
-        targetDate: "2027-06-01", color: "#C9F950", notes: null, sortOrder: 0, createdAt: "2026-01-01" },
+        targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null, sortOrder: 0, createdAt: "2026-01-01" },
       { id: "g2", name: "Car repair", goalType: "save-by-date",
         targetCents: 200000, currentCents: 50000, monthlyCents: 10000,
         targetDate: new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10),
-        color: "#34D399", notes: null, sortOrder: 1, createdAt: "2026-01-01" },
+        color: "#34D399", notes: null, purpose: null, sortOrder: 1, createdAt: "2026-01-01" },
     ],
     isLoading: false,
     error: null,
@@ -23,6 +23,7 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalBalance: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useArchiveGoal: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateGoalMonthly: vi.fn(() => ({ mutateAsync: mockUpdateMonthly, isPending: false })),
+  useUpdateGoalPurpose: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 
 describe("Goals — sinking funds", () => {

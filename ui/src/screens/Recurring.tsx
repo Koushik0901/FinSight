@@ -2,6 +2,12 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type RecurringItem } from "../api/client";
 import * as I from "../components/Icons";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import EmptyState from "../components/EmptyState";
+import Table from "../components/Table";
+import { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../components/Table";
+import Badge from "../components/Badge";
 
 function useRecurring() {
   return useQuery<RecurringItem[]>({
@@ -33,6 +39,14 @@ function colorFromStr(s: string) {
 }
 
 type View = "calendar" | "list" | "subs";
+
+function MerchantAvatar({ name, color }: { name: string; color: string }) {
+  return (
+    <span className="ic" style={{ background: color, color: "#fff" }}>
+      {initials(name)}
+    </span>
+  );
+}
 
 // ── Calendar ─────────────────────────────────────────────────────────────
 
@@ -113,14 +127,16 @@ function CalendarView({ items }: { items: RecurringItem[] }) {
               key={day}
               className={[
                 "rcal-cell",
+                dayItems.length > 0 ? "interactive" : "",
                 isToday ? "today" : "",
                 isPast  ? "past"  : "",
                 isWeekend && !isToday ? "weekend" : "",
                 netCents > 0 ? "pos" : "",
                 selectedDay === day ? "selected" : "",
               ].filter(Boolean).join(" ")}
-              style={{ "--load": `${loadPct}%`, cursor: dayItems.length > 0 ? "pointer" : undefined } as React.CSSProperties}
+              style={{ "--load": `${loadPct}%` } as React.CSSProperties}
               onClick={() => setSelectedDay(selectedDay === day ? null : day)}
+              aria-label={`${monthLabel} ${day}${dayItems.length > 0 ? `, ${dayItems.length} recurring items` : ""}`}
             >
               {isToday && <div className="rcal-today-glow" />}
               <div className="rcal-cell-head">
@@ -181,17 +197,13 @@ function CalendarView({ items }: { items: RecurringItem[] }) {
                   const color = item.lastAmountCents > 0 ? "var(--accent)" : (item.categoryColor || colorFromStr(item.merchantRaw));
                   return (
                     <div key={item.merchantRaw} className="rcal-detail-item">
-                      <div style={{ width: 30, height: 30, borderRadius: 7, background: color, color: "#fff", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                        {initials(item.merchantRaw)}
-                      </div>
+                      <MerchantAvatar name={item.merchantRaw} color={color} />
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 500 }}>{item.merchantRaw}</div>
                         <div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || "Uncategorized"}</div>
                       </div>
-                      <span className={`chip ${item.isSubscription ? "positive" : ""}`} style={{ fontSize: 11 }}>
-                        {item.cadence}
-                      </span>
-                      <span className={`num tabular money ${item.lastAmountCents > 0 ? "pos" : ""}`} style={{ fontSize: 14, fontFamily: "var(--mono)" }}>
+                      <Badge tone={item.isSubscription ? "positive" : "default"}>{item.cadence}</Badge>
+                      <span className={`num tabular money ${item.lastAmountCents > 0 ? "pos" : ""}`}>
                         {fmt(item.lastAmountCents)}
                       </span>
                     </div>
@@ -210,58 +222,56 @@ function CalendarView({ items }: { items: RecurringItem[] }) {
 
 function ListView({ items }: { items: RecurringItem[] }) {
   return (
-    <div className="card flush">
+    <Card flush>
       <div className="card-head">
         <div className="h3">All recurring · {items.length}</div>
       </div>
-      <table className="tbl">
-        <thead>
+      <Table>
+        <TableHead>
           <tr>
-            <th>Merchant</th>
-            <th>Cadence</th>
-            <th>Next expected</th>
-            <th>Occurrences</th>
-            <th className="right">Amount</th>
+            <TableHeader>Merchant</TableHeader>
+            <TableHeader>Cadence</TableHeader>
+            <TableHeader>Next expected</TableHeader>
+            <TableHeader>Occurrences</TableHeader>
+            <TableHeader right>Amount</TableHeader>
           </tr>
-        </thead>
-        <tbody>
+        </TableHead>
+        <TableBody>
           {items.map((r) => {
             const color = r.categoryColor || colorFromStr(r.merchantRaw);
             return (
-              <tr key={r.merchantRaw}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 7, background: color, color: "#fff", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                      {initials(r.merchantRaw)}
-                    </div>
+              <TableRow key={r.merchantRaw}>
+                <TableCell>
+                  <div className="row row-md">
+                    <MerchantAvatar name={r.merchantRaw} color={color} />
                     <div>
-                      <div style={{ fontSize: 14 }}>{r.merchantRaw}</div>
+                      <div>{r.merchantRaw}</div>
                       <div className="muted" style={{ fontSize: 12 }}>{r.categoryLabel || "Uncategorized"}</div>
                     </div>
                   </div>
-                </td>
-                <td>
-                  <span className="chip" style={{ fontSize: 11 }}>{r.cadence}</span>
-                </td>
-                <td>
-                  <span style={{ fontSize: 13.5, fontFamily: "var(--mono)" }}>
+                </TableCell>
+                <TableCell>
+                  <Badge>{r.cadence}</Badge>
+                </TableCell>
+                <TableCell>
+                  <span className="num tabular">
                     {new Date(r.nextExpected + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </span>
-                </td>
-                <td>
-                  <span className="muted" style={{ fontSize: 13 }}>{r.occurrences}×</span>
-                </td>
-                <td className="right">
-                  <span className={`num tabular money ${r.lastAmountCents > 0 ? "pos" : ""}`} style={{ fontSize: 14 }}>
+                </TableCell>
+                <TableCell>
+                  <span className="muted">{r.occurrences}×</span>
+                </TableCell>
+                <TableCell right>
+                  <span className={`num tabular money ${r.lastAmountCents > 0 ? "pos" : ""}`}>
                     {fmt(r.lastAmountCents)}
                   </span>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </Card>
   );
 }
 
@@ -273,16 +283,17 @@ function SubsView({ subs }: { subs: RecurringItem[] }) {
 
   if (subs.length === 0) {
     return (
-      <div className="card" style={{ textAlign: "center", padding: "48px 32px" }}>
-        <div className="muted" style={{ fontSize: 14 }}>No subscriptions detected yet. Import a few months of transactions to see patterns here.</div>
-      </div>
+      <EmptyState
+        title="No subscriptions detected yet"
+        description="Import a few months of transactions to see patterns here."
+      />
     );
   }
 
   return (
     <div>
       {/* Summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 24 }}>
+      <div className="stat-row" style={{ marginBottom: 24 }}>
         <div className="stat">
           <div className="label">Subscriptions</div>
           <div className="value">{subs.length}</div>
@@ -307,21 +318,19 @@ function SubsView({ subs }: { subs: RecurringItem[] }) {
           const nextDate = new Date(s.nextExpected + "T00:00:00");
           const daysUntil = Math.round((nextDate.getTime() - Date.now()) / 86400000);
           return (
-            <div key={s.merchantRaw} className="card tight" style={{ padding: 16, borderLeft: `3px solid ${color}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: color, color: "#fff", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                  {initials(s.merchantRaw)}
-                </div>
+            <Card key={s.merchantRaw} className="tight" style={{ borderLeft: `3px solid ${color}` }}>
+              <div className="row row-md" style={{ marginBottom: 10 }}>
+                <MerchantAvatar name={s.merchantRaw} color={color} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 500 }}>{s.merchantRaw}</div>
                   <div className="muted" style={{ fontSize: 12 }}>{s.categoryLabel || "Uncategorized"}</div>
                 </div>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
                 <div className="num tabular money" style={{ fontSize: 18, fontWeight: 600 }}>
                   {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(Math.abs(s.lastAmountCents) / 100)}
                 </div>
-                <span className="chip" style={{ fontSize: 11 }}>{s.cadence}</span>
+                <Badge>{s.cadence}</Badge>
               </div>
               {(() => {
                 const minAbs = Math.abs(s.minAmountCents);
@@ -332,13 +341,13 @@ function SubsView({ subs }: { subs: RecurringItem[] }) {
                 const priceUp = curAbs >= minAbs;
                 const fmtAmt = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(cents / 100);
                 return priceUp
-                  ? <span className="chip warning" style={{ marginTop: 6, display: "inline-block" }}>↑ {fmtAmt(maxAbs)} → {fmtAmt(curAbs)}</span>
-                  : <span className="chip positive" style={{ marginTop: 6, display: "inline-block" }}>↓ {fmtAmt(minAbs)} → {fmtAmt(curAbs)}</span>;
+                  ? <div style={{ marginTop: 6 }}><Badge tone="warning" className="chip">↑ {fmtAmt(maxAbs)} → {fmtAmt(curAbs)}</Badge></div>
+                  : <div style={{ marginTop: 6 }}><Badge tone="positive" className="chip">↓ {fmtAmt(minAbs)} → {fmtAmt(curAbs)}</Badge></div>;
               })()}
               <div className="muted" style={{ fontSize: 12, marginTop: 8, fontFamily: "var(--mono)" }}>
                 {daysUntil >= 0 ? `Next in ${daysUntil}d` : `${Math.abs(daysUntil)}d ago`} · {s.occurrences}× detected
               </div>
-            </div>
+            </Card>
           );
         })}
       </div>
@@ -356,8 +365,20 @@ export default function Recurring() {
   const monthlyOut = items.filter((i) => i.lastAmountCents < 0).reduce((s, i) => s + i.lastAmountCents, 0);
   const monthlyIn  = items.filter((i) => i.lastAmountCents > 0).reduce((s, i) => s + i.lastAmountCents, 0);
 
-  if (isLoading) return <div className="stub">Detecting recurring patterns…</div>;
-  if (error)     return <div className="stub">Error detecting recurring.</div>;
+  if (isLoading) {
+    return (
+      <div className="stub" aria-live="polite" aria-busy="true">
+        Detecting recurring patterns…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="stub" role="alert" aria-live="assertive">
+        Error detecting recurring.
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -368,13 +389,11 @@ export default function Recurring() {
             <h1>Predictable money, predictable peace of mind.</h1>
           </div>
         </div>
-        <div className="card" style={{ textAlign: "center", padding: "64px 32px" }}>
-          <I.Repeat style={{ color: "var(--ink-faint)", width: 32, height: 32, margin: "0 auto 16px" }} />
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No recurring patterns yet</div>
-          <div className="muted" style={{ fontSize: 14 }}>
-            Import a few months of transactions — FinSight automatically detects recurring charges from your history.
-          </div>
-        </div>
+        <EmptyState
+          icon={<I.Repeat style={{ width: 32, height: 32 }} />}
+          title="No recurring patterns yet"
+          description="Import a few months of transactions — FinSight automatically detects recurring charges from your history."
+        />
       </div>
     );
   }
@@ -390,14 +409,14 @@ export default function Recurring() {
           </div>
           <h1>Predictable money, predictable peace of mind.</h1>
         </div>
-        <div className="toolbar">
-          <button className={view === "calendar" ? "on" : ""} onClick={() => setView("calendar")}>
+        <div className="toolbar" role="tablist" aria-label="Recurring view">
+          <button className={view === "calendar" ? "on" : ""} onClick={() => setView("calendar")} role="tab" aria-selected={view === "calendar"}>
             Calendar
           </button>
-          <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>
+          <button className={view === "list" ? "on" : ""} onClick={() => setView("list")} role="tab" aria-selected={view === "list"}>
             List
           </button>
-          <button className={view === "subs" ? "on" : ""} onClick={() => setView("subs")}>
+          <button className={view === "subs" ? "on" : ""} onClick={() => setView("subs")} role="tab" aria-selected={view === "subs"}>
             Subscriptions
           </button>
         </div>

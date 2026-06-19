@@ -222,6 +222,14 @@ async setCompletionProvider(config: CompletionProviderConfig) : Promise<Result<n
     else return { status: "error", error: e  as any };
 }
 },
+async getCompletionProvider() : Promise<Result<CompletionProviderConfig, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_completion_provider") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async saveProviderApiKey(providerId: string, key: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_provider_api_key", { providerId, key }) };

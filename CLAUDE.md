@@ -35,11 +35,13 @@ cd ui && npm run build
 
 ## Architecture
 
-### Rust workspace (4 crates)
+### Rust workspace (5 crates)
 
 **`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
 
-**`crates/finsight-agent`** — AI layer: `CompletionProvider` trait (Ollama / OpenAI-compat / Anthropic impls), categorizer pipeline, anomaly detection. Runs on a background Tokio task via `AgentHandle`.
+**`crates/finsight-providers`** — CSV import parsers, LLM provider HTTP clients (`CompletionProvider` trait with Ollama / OpenAI-compat / Anthropic impls).
+
+**`crates/finsight-agent`** — AI layer: Copilot context engine, planner, executor, recipe runner, categorizer pipeline, anomaly detection. Runs on a background Tokio task via `AgentHandle`.
 
 **`crates/finsight-app`** — Tauri command surface. Commands in `src/commands/` call into `finsight-core` repos via the `run()` helper. `AppState` holds a `Db` clone and an `AgentHandle`. All commands registered in `build_specta_builder()` in `src/lib.rs`.
 
@@ -67,7 +69,7 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Database migrations
 
-SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V011. Next migration = `V012__description.sql`.
+SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V016. Next migration = `V017__description.sql`.
 
 ### Frontend data flow
 
@@ -104,3 +106,19 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
 **Green bar:** 103 Rust tests (101 + 2 ignored on Linux), 105 frontend tests, 0 TypeScript errors.
+
+## Financial Freedom Framework
+
+The Copilot AI is guided by principles from six personal finance books. When writing prompts, building features, or extending the Copilot, align with these:
+
+| Principle | Source | Implementation |
+|---|---|---|
+| Pay Yourself First (≥10%) | *Babylon* / *Ramsey* | Savings rate card on Today; Babylon nudge when <10%; Copilot priority #1 |
+| Emergency Fund (3–6 months) | *Ramsey* / *Sethi* | Goals quick-fill button; `WellnessContext.emergency_fund_months` |
+| Debt Snowball (smallest first) | *Ramsey* | `WellnessContext.debt_snowball` ordered by remaining balance ASC |
+| Conscious Spending | *Sethi* | `spending_type` on categories (Need/Want/Saving/Investment); allocation donut on Budget |
+| Compound Growth | *Hill* / *Kiyosaki* | Compound Growth Projector on Goals (10/20/30-year at 7% annual) |
+| Behaviour > math | *Housel* | Copilot surfaces patterns and nudges, not just raw numbers |
+| Financial Journey | *All* | `/journey` screen: 7 milestones from stability → freedom |
+
+The Copilot system prompt (`crates/finsight-agent/src/planner.rs → build_system_prompt()`) embeds this framework. Financial context is populated by `crates/finsight-agent/src/context.rs → wellness_context()`.

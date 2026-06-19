@@ -14,6 +14,7 @@ pub struct Goal {
     pub target_date: Option<String>,
     pub color: String,
     pub notes: Option<String>,
+    pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
 }
@@ -27,6 +28,7 @@ pub struct NewGoal {
     pub target_date: Option<String>,
     pub color: String,
     pub notes: Option<String>,
+    pub purpose: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -38,12 +40,13 @@ pub struct GoalPatch {
     pub target_date: Option<Option<String>>,
     pub color: Option<String>,
     pub notes: Option<String>,
+    pub purpose: Option<Option<String>>,
 }
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
-                target_date, color, notes, sort_order, created_at \
+                target_date, color, notes, purpose, sort_order, created_at \
          FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -57,8 +60,9 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
             target_date: r.get(6)?,
             color: r.get(7)?,
             notes: r.get(8)?,
-            sort_order: r.get(9)?,
-            created_at: r.get(10)?,
+            purpose: r.get(9)?,
+            sort_order: r.get(10)?,
+            created_at: r.get(11)?,
         })
     })?;
     let mut out = Vec::new();
@@ -73,8 +77,8 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
-                           target_date, color, notes, sort_order, created_at)
-         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, 0, ?9)",
+                           target_date, color, notes, purpose, sort_order, created_at)
+         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10)",
         params![
             id,
             g.name,
@@ -84,6 +88,7 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
             g.target_date,
             g.color,
             g.notes,
+            g.purpose,
             now
         ],
     )?;
@@ -97,6 +102,7 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         target_date: g.target_date,
         color: g.color,
         notes: g.notes,
+        purpose: g.purpose,
         sort_order: 0,
         created_at: now,
     })
@@ -123,6 +129,14 @@ pub fn set_monthly_cents(conn: &mut Connection, id: &str, monthly_cents: i64) ->
     conn.execute(
         "UPDATE goals SET monthly_cents = ?1 WHERE id = ?2",
         params![monthly_cents, id],
+    )?;
+    Ok(())
+}
+
+pub fn set_purpose(conn: &mut Connection, id: &str, purpose: Option<&str>) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET purpose = ?1 WHERE id = ?2",
+        params![purpose, id],
     )?;
     Ok(())
 }
@@ -155,6 +169,7 @@ mod tests {
                 target_date: None,
                 color: "#C9F950".into(),
                 notes: None,
+                purpose: None,
             },
         )
         .unwrap();

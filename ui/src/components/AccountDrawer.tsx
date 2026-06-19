@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useCreateAccount, useUpdateAccount, useArchiveAccount } from "../api/hooks/accounts";
 import type { Account } from "../api/bindings";
+import { userErrorMessage } from "../utils/runtime";
 
 const schema = z.object({
   bank: z.string().min(1, "Required"),
@@ -61,34 +63,38 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
   }, [account?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onSubmit(values: FormValues) {
-    if (isEdit && account) {
-      await updateAccount.mutateAsync({
-        id: account.id,
-        patch: {
-          name: values.name,
+    try {
+      if (isEdit && account) {
+        await updateAccount.mutateAsync({
+          id: account.id,
+          patch: {
+            name: values.name,
+            bank: values.bank,
+            account_type: null,
+            color: account.color,
+            currency: values.currency,
+            last4: values.last4 ? values.last4 : null,
+          },
+        });
+      } else {
+        await createAccount.mutateAsync({
           bank: values.bank,
-          account_type: null,
-          color: account.color,
+          name: values.name,
+          type: values.type,
+          last4: values.last4 || null,
           currency: values.currency,
-          last4: values.last4 ? values.last4 : null,
-        },
-      });
-    } else {
-      await createAccount.mutateAsync({
-        bank: values.bank,
-        name: values.name,
-        type: values.type,
-        last4: values.last4 || null,
-        currency: values.currency,
-        color: "#3B82F6",
-        opening_balance_cents: Math.round(values.opening_dollars * 100),
-        owner: values.owner,
-        source: "manual",
-      });
+          color: "#3B82F6",
+          opening_balance_cents: Math.round(values.opening_dollars * 100),
+          owner: values.owner,
+          source: "manual",
+        });
+      }
+      reset();
+      onCreated?.();
+      onClose();
+    } catch (err) {
+      toast.error(userErrorMessage(err, "Could not save this account. Try again."));
     }
-    reset();
-    onCreated?.();
-    onClose();
   }
 
   async function handleArchive() {
@@ -97,7 +103,8 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
     try {
       await archiveAccount.mutateAsync(account.id);
       onClose();
-    } catch {
+    } catch (err) {
+      toast.error(userErrorMessage(err, "Could not archive this account. Try again."));
       setArchiveConfirm(false);
     }
   }

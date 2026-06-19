@@ -1,9 +1,20 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
+import { useMonthTotals } from "../api/hooks";
+import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal, useUpdateGoalMonthly, useUpdateGoalPurpose } from "../api/hooks/budget";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import * as I from "../components/Icons";
 import { money } from "../utils/format";
+import { CopilotNudge } from "../components/CopilotNudge";
+import Card from "../components/Card";
+import ProgressBar from "../components/ProgressBar";
+import Badge from "../components/Badge";
+import Button from "../components/Button";
+import Input from "../components/Input";
+import Select from "../components/Select";
+import TextArea from "../components/TextArea";
+import Swatch from "../components/Swatch";
+import EmptyState from "../components/EmptyState";
 
 /** Estimate months to reach target at current monthly pace. */
 function monthsTo(goal: GoalDto): number | null {
@@ -18,6 +29,13 @@ function etaLabel(months: number): string {
   const d = new Date();
   d.setMonth(d.getMonth() + months);
   return d.toLocaleString("default", { month: "short", year: "numeric" });
+}
+
+function projectCompoundValue(monthlyCents: number, years: number): number {
+  if (monthlyCents <= 0) return 0;
+  const r = 0.07 / 12;
+  const n = years * 12;
+  return Math.round(monthlyCents * ((Math.pow(1 + r, n) - 1) / r));
 }
 
 type PaceStatus = "ahead" | "on_track" | "needs_attention";
@@ -39,10 +57,10 @@ function paceStatus(goal: GoalDto): PaceStatus | null {
   return "on_track";
 }
 
-const PACE_LABELS: Record<PaceStatus, { label: string; cls: string }> = {
-  ahead: { label: "Ahead", cls: "positive" },
-  on_track: { label: "On track", cls: "" },
-  needs_attention: { label: "Needs attention", cls: "warning" },
+const PACE_LABELS: Record<PaceStatus, { label: string; tone: "positive" | "default" | "warning" }> = {
+  ahead: { label: "Ahead", tone: "positive" },
+  on_track: { label: "On track", tone: "default" },
+  needs_attention: { label: "Needs attention", tone: "warning" },
 };
 
 type GoalType = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap";
@@ -63,9 +81,13 @@ function daysUntil(dateStr: string): number {
 function GoalCard({ goal }: { goal: GoalDto }) {
   const updateBalance = useUpdateGoalBalance();
   const archiveGoal = useArchiveGoal();
+  const updatePurpose = useUpdateGoalPurpose();
   const [editingBalance, setEditingBalance] = useState(false);
   const [balanceVal, setBalanceVal] = useState(String(Math.round(goal.currentCents / 100)));
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [showProjection, setShowProjection] = useState(false);
+  const [editingPurpose, setEditingPurpose] = useState(false);
+  const [purposeVal, setPurposeVal] = useState(goal.purpose ?? "");
 
   const pct = goal.targetCents > 0 ? Math.min(100, (goal.currentCents / goal.targetCents) * 100) : 0;
   const months = monthsTo(goal);
@@ -82,6 +104,17 @@ function GoalCard({ goal }: { goal: GoalDto }) {
     }
   };
 
+  const savePurpose = async () => {
+    const trimmed = purposeVal.trim();
+    try {
+      await updatePurpose.mutateAsync({ id: goal.id, purpose: trimmed || null });
+      toast.success(trimmed ? "Why updated" : "Why cleared");
+      setEditingPurpose(false);
+    } catch {
+      toast.error("Failed to save why");
+    }
+  };
+
   const handleArchive = async () => {
     if (!confirmArchive) { setConfirmArchive(true); return; }
     try {
@@ -94,43 +127,43 @@ function GoalCard({ goal }: { goal: GoalDto }) {
   };
 
   return (
-    <div className="card" style={{ padding: 22, borderLeft: `3px solid ${color}` }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+    <Card style={{ borderLeft: `3px solid ${color}` }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 15.5, fontWeight: 600, marginBottom: 3 }}>{goal.name}</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-            <span className="chip" style={{ fontSize: 11 }}>{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
+          <div className="strong" style={{ fontSize: 15.5, marginBottom: 3 }}>{goal.name}</div>
+          <div className="row row-sm wrap" style={{ marginTop: 4 }}>
+            <Badge>{TYPE_LABELS[goal.goalType] || goal.goalType}</Badge>
             {(() => {
               const pace = paceStatus(goal);
               if (!pace) return null;
-              const { label, cls } = PACE_LABELS[pace];
-              return <span className={`chip ${cls}`} style={{ fontSize: 11 }}>{label}</span>;
+              const { label, tone } = PACE_LABELS[pace];
+              return <Badge tone={tone}>{label}</Badge>;
             })()}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div className="row row-sm" style={{ alignItems: "center" }}>
           {confirmArchive ? (
             <>
-              <button className="btn sm" style={{ background: "var(--negative)", borderColor: "var(--negative)", color: "#fff" }} onClick={() => void handleArchive()}>Confirm</button>
-              <button className="btn sm ghost" onClick={() => setConfirmArchive(false)}>Cancel</button>
+              <Button variant="danger" size="sm" onClick={() => void handleArchive()}>Confirm</Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmArchive(false)}>Cancel</Button>
             </>
           ) : (
-            <button className="btn sm ghost" onClick={() => void handleArchive()} title="Archive goal">
+            <Button variant="ghost" size="sm" onClick={() => void handleArchive()} title="Archive goal">
               <I.Trash />
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Progress bar */}
       <div style={{ marginBottom: 14 }}>
-        <div className="goal-bar" style={{ height: 8 }}>
-          <span style={{ width: pct + "%", background: color, boxShadow: `0 0 10px ${color}55` }} />
+        <div style={{ "--accent": color } as React.CSSProperties}>
+          <ProgressBar value={goal.currentCents} max={goal.targetCents || 1} aria-label={`${goal.name} progress`} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12.5 }}>
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 8, fontSize: 12.5 }}>
           <div>
             {editingBalance ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span className="row row-sm" style={{ alignItems: "center" }}>
                 <span className="muted" style={{ fontSize: 13 }}>$</span>
                 <input
                   type="number"
@@ -139,62 +172,146 @@ function GoalCard({ goal }: { goal: GoalDto }) {
                   onChange={(e) => setBalanceVal(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") void saveBalance(); if (e.key === "Escape") setEditingBalance(false); }}
                   autoFocus
-                  style={{ width: 80, background: "var(--surface-2)", border: "1px solid var(--accent)", borderRadius: 5, padding: "2px 6px", fontSize: 13, color: "var(--ink)", outline: "none" }}
+                  className="control"
+                  style={{ width: 80 }}
                 />
-                <button className="btn sm primary" onClick={() => void saveBalance()} style={{ padding: "3px 9px" }}>Save</button>
-                <button className="btn sm ghost" onClick={() => setEditingBalance(false)} style={{ padding: "3px 7px" }}>✕</button>
+                <Button variant="primary" size="sm" onClick={() => void saveBalance()}>Save</Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditingBalance(false)}>✕</Button>
               </span>
             ) : (
-              <button
+              <Button
                 onClick={() => setEditingBalance(true)}
-                className="btn ghost sm"
+                variant="ghost"
+                size="sm"
                 style={{ padding: "2px 6px", fontSize: 12.5 }}
               >
                 <span className="num money">{money(goal.currentCents)}</span>
                 <I.Pencil width="11" height="11" style={{ marginLeft: 4 }} />
-              </button>
+              </Button>
             )}
           </div>
-          <span className="muted">of {money(goal.targetCents)}</span>
+          <span className="muted money">of {money(goal.targetCents)}</span>
         </div>
       </div>
 
       {/* Stats */}
-      <div style={{ display: "flex", gap: 18, fontSize: 12.5 }}>
+      <div className="row row-lg" style={{ fontSize: 12.5 }}>
         <div>
-          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Monthly</div>
-          <div className="num">{money(goal.monthlyCents)}</div>
+          <div className="eyebrow" style={{ marginBottom: 2 }}>Monthly</div>
+          <div className="num money">{money(goal.monthlyCents)}</div>
         </div>
         {months !== null && months > 0 && (
           <div>
-            <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>ETA</div>
+            <div className="eyebrow" style={{ marginBottom: 2 }}>ETA</div>
             <div className="num">{etaLabel(months)}</div>
           </div>
         )}
         {pct >= 100 && (
           <div>
-            <span className="chip positive" style={{ fontSize: 11 }}>🎉 Reached!</span>
+            <Badge tone="positive">🎉 Reached!</Badge>
           </div>
         )}
         {goal.targetDate && (
           <div>
-            <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Target date</div>
+            <div className="eyebrow" style={{ marginBottom: 2 }}>Target date</div>
             <div style={{ fontSize: 12.5 }}>{new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
           </div>
         )}
       </div>
-    </div>
+
+      {/* Purpose / Why */}
+      <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+        {editingPurpose ? (
+          <div>
+            <TextArea
+              label="Why this goal?"
+              value={purposeVal}
+              onChange={(e) => setPurposeVal(e.target.value)}
+              placeholder="What will this mean for you? Describe your motivation…"
+              rows={3}
+            />
+            <div className="row row-sm" style={{ marginTop: 6 }}>
+              <Button variant="primary" size="sm" onClick={() => void savePurpose()}>Save</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setPurposeVal(goal.purpose ?? ""); setEditingPurpose(false); }}>Cancel</Button>
+            </div>
+          </div>
+        ) : goal.purpose ? (
+          <div className="row row-md" style={{ alignItems: "flex-start" }}>
+            <span style={{ fontSize: 13 }}>💡</span>
+            <div className="grow">
+              <span style={{ fontSize: 12.5, color: "var(--ink-mute)", fontStyle: "italic" }}>{goal.purpose}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditingPurpose(true)}
+              style={{ padding: "2px 6px", flexShrink: 0 }}
+              title="Edit why"
+            >
+              <I.Pencil width="11" height="11" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setEditingPurpose(true)}
+            style={{ padding: 0, border: "none", background: "transparent", color: "var(--ink-faint)", fontSize: 12.5 }}
+          >
+            + Add your why
+          </Button>
+        )}
+      </div>
+
+      {goal.monthlyCents > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowProjection((open) => !open)}
+            style={{ padding: 0, border: "none", background: "transparent", color: "var(--accent)" }}
+          >
+            {showProjection ? "Hide projection" : "See projection →"}
+          </Button>
+          {showProjection && (
+            <Card tone="accent" style={{ marginTop: 12 }}>
+              <div className="eyebrow" style={{ marginBottom: 8 }}>Compound Growth</div>
+              <div style={{ fontSize: 13.5, marginBottom: 10 }}>
+                If you invest <span className="money">{money(goal.monthlyCents)}</span>/month for the long run at 7%:
+              </div>
+              <div className="stack stack-sm">
+                {[10, 20, 30].map((years) => (
+                  <div key={years} className="row" style={{ justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
+                    <span className="muted">{years} years</span>
+                    <span className="money" style={{ fontWeight: 600 }}>{money(projectCompoundValue(goal.monthlyCents, years))}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
 function NewGoalForm({ onClose }: { onClose: () => void }) {
   const createGoal = useCreateGoal();
+  const { data: totals } = useMonthTotals();
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("save-by-date");
   const [target, setTarget] = useState("");
   const [monthly, setMonthly] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [colorIdx, setColorIdx] = useState(0);
+  const [purpose, setPurpose] = useState("");
+  const emergencyBaseCents = totals?.expenseCents ?? 0;
+  const showEmergencyQuickFill = type === "build-balance" || name.toLowerCase().includes("emergency");
+
+  const quickFillTarget = (months: number) => {
+    if (emergencyBaseCents <= 0) return;
+    setTarget(String(Math.round((emergencyBaseCents * months) / 100)));
+  };
 
   const submit = async () => {
     if (!name.trim() || !target) { toast.error("Name and target amount are required"); return; }
@@ -206,6 +323,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
       targetDate: targetDate || null,
       color: GOAL_COLORS[colorIdx] ?? "#C9F950",
       notes: null,
+      purpose: purpose.trim() || null,
     };
     try {
       await createGoal.mutateAsync(input);
@@ -216,59 +334,85 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
     }
   };
 
+  const emergencyHint = showEmergencyQuickFill && emergencyBaseCents > 0 ? (
+    <>
+      <div className="row row-sm" style={{ marginTop: 8 }}>
+        <Button variant="ghost" size="sm" type="button" onClick={() => quickFillTarget(3)}>Quick fill: 3 months</Button>
+        <Button variant="ghost" size="sm" type="button" onClick={() => quickFillTarget(6)}>Quick fill: 6 months</Button>
+      </div>
+      {!target && (
+        <div className="muted money" style={{ fontSize: 12, marginTop: 8 }}>
+          Based on your avg. monthly expenses, a 3-month emergency fund would be {money(emergencyBaseCents * 3)}.
+        </div>
+      )}
+    </>
+  ) : null;
+
   return (
-    <div className="card" style={{ padding: 28, marginBottom: 24 }}>
+    <Card className="goal-form" style={{ marginBottom: 24 }}>
       <div className="h3" style={{ marginBottom: 20 }}>New goal</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div>
-          <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>NAME</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Italy trip, Emergency fund…"
-            style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
-          />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>TYPE</label>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }}
-          >
-            {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>TARGET ($)</label>
-          <input type="number" min="0" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="5000" style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>MONTHLY CONTRIBUTION ($)</label>
-          <input type="number" min="0" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="500" style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>TARGET DATE (optional)</label>
-          <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "8px 12px", fontSize: 14, color: "var(--ink)", outline: "none" }} />
-        </div>
+      <div className="form-grid">
+        <Input
+          label="Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Italy trip, Emergency fund…"
+        />
+        <Select label="Type" value={type} onChange={(e) => setType(e.target.value)}>
+          {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </Select>
+        <Input
+          label="Target ($)"
+          type="number"
+          min="0"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          placeholder="5000"
+          hint={emergencyHint}
+        />
+        <Input
+          label="Monthly contribution ($)"
+          type="number"
+          min="0"
+          value={monthly}
+          onChange={(e) => setMonthly(e.target.value)}
+          placeholder="500"
+        />
+        <Input
+          label="Target date (optional)"
+          type="date"
+          value={targetDate}
+          onChange={(e) => setTargetDate(e.target.value)}
+        />
         <div>
           <label style={{ fontSize: 12, color: "var(--ink-faint)", display: "block", marginBottom: 6 }}>COLOR</label>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="row row-sm">
             {GOAL_COLORS.map((c, i) => (
-              <button
+              <Swatch
                 key={c}
+                color={c}
+                selected={colorIdx === i}
                 onClick={() => setColorIdx(i)}
-                style={{ width: 24, height: 24, borderRadius: 999, background: c, border: colorIdx === i ? "2px solid var(--ink)" : "2px solid transparent", cursor: "pointer" }}
+                label={`Choose ${c}`}
               />
             ))}
           </div>
         </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <TextArea
+            label="Why this goal? (optional)"
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            placeholder="What will this mean for you? Describe your motivation — a strong 'why' makes it real."
+            rows={2}
+          />
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-        <button className="btn primary" onClick={() => void submit()}>Create goal</button>
-        <button className="btn ghost" onClick={onClose}>Cancel</button>
+      <div className="row row-sm" style={{ marginTop: 20 }}>
+        <Button variant="primary" onClick={() => void submit()}>Create goal</Button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -318,11 +462,23 @@ export default function Goals() {
     }
   };
 
-  if (isLoading) return <div className="stub">Loading goals…</div>;
-  if (error)     return <div className="stub">Error loading goals.</div>;
+  if (isLoading) {
+    return (
+      <div className="stub" aria-live="polite" aria-busy="true">
+        Loading goals…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="stub" role="alert" aria-live="assertive">
+        Error loading goals.
+      </div>
+    );
+  }
 
   return (
-    <div className="screen">
+    <div className="screen screen-goals">
       {/* Header */}
       <div className="screen-header">
         <div className="screen-header-text">
@@ -332,9 +488,18 @@ export default function Goals() {
           </div>
           <h1>Things you're moving toward.</h1>
         </div>
-        <button className="btn" onClick={() => setShowNew(true)}>
-          <I.Plus /> New goal
-        </button>
+        <div className="row row-sm" style={{ alignItems: "center" }}>
+          {goals.length > 0 && (
+            <CopilotNudge
+              prompt="How should I prioritize and optimize my savings goals? Show me the tradeoffs between contributing more to each goal."
+              label="Optimize my goals"
+              variant="accent"
+            />
+          )}
+          <Button onClick={() => setShowNew(true)}>
+            <I.Plus /> New goal
+          </Button>
+        </div>
       </div>
 
       <p className="muted" style={{ maxWidth: 660, fontSize: 14, lineHeight: 1.6, marginTop: -12, marginBottom: 24 }}>
@@ -344,35 +509,39 @@ export default function Goals() {
       {showNew && <NewGoalForm onClose={() => setShowNew(false)} />}
 
       {goals.length === 0 && !showNew ? (
-        <div className="card" style={{ textAlign: "center", padding: "64px 32px" }}>
-          <I.Goal style={{ color: "var(--ink-faint)", width: 32, height: 32, margin: "0 auto 16px" }} />
-          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>No goals yet</div>
-          <div className="muted" style={{ fontSize: 14, marginBottom: 24 }}>Create your first goal to track savings, debt payoff, or spending caps.</div>
-          <button className="btn primary" onClick={() => setShowNew(true)}><I.Plus /> Create a goal</button>
-        </div>
+        <EmptyState
+          icon={<I.Goal style={{ width: 32, height: 32 }} />}
+          title="No goals yet"
+          description="Create your first goal to track savings, debt payoff, or spending caps."
+          actions={
+            <Button variant="primary" onClick={() => setShowNew(true)}>
+              <I.Plus /> Create a goal
+            </Button>
+          }
+        />
       ) : (
         <>
           {/* Type tabs */}
           {goals.length > 0 && (
-            <div className="toolbar" style={{ marginBottom: 20, display: "inline-flex" }}>
-              <button className={typeFilter === "all" ? "on" : ""} onClick={() => setTypeFilter("all")}>
-                All <span style={{ color: "var(--ink-faint)", marginLeft: 4, fontSize: 11 }}>{goals.length}</span>
+            <div className="toolbar" style={{ marginBottom: 20, display: "inline-flex" }} role="tablist" aria-label="Goal type filter">
+              <button className={typeFilter === "all" ? "on" : ""} onClick={() => setTypeFilter("all")} role="tab" aria-selected={typeFilter === "all"}>
+                All <span className="muted" style={{ marginLeft: 4, fontSize: 11 }}>{goals.length}</span>
               </button>
               {Object.entries(TYPE_LABELS).map(([k, v]) => typeCounts[k] ? (
-                <button key={k} className={typeFilter === k ? "on" : ""} onClick={() => setTypeFilter(k as GoalType)}>
-                  {v} <span style={{ color: "var(--ink-faint)", marginLeft: 4, fontSize: 11 }}>{typeCounts[k]}</span>
+                <button key={k} className={typeFilter === k ? "on" : ""} onClick={() => setTypeFilter(k as GoalType)} role="tab" aria-selected={typeFilter === k}>
+                  {v} <span className="muted" style={{ marginLeft: 4, fontSize: 11 }}>{typeCounts[k]}</span>
                 </button>
               ) : null)}
             </div>
           )}
 
           {/* Goal cards */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="stack stack-md">
             {visible.map((g) => <GoalCard key={g.id} goal={g} />)}
             {visible.length === 0 && (
-              <div className="card tight" style={{ textAlign: "center", padding: "32px 24px", color: "var(--ink-mute)", fontSize: 14 }}>
+              <Card tight style={{ textAlign: "center", color: "var(--ink-mute)" }}>
                 No goals in this category.
-              </div>
+              </Card>
             )}
           </div>
 
@@ -389,21 +558,23 @@ export default function Goals() {
                     : 0;
                   const color = g.color || "var(--accent)";
                   return (
-                    <div key={g.id} className="card" style={{ padding: 16, borderLeft: `3px solid ${color}` }}>
+                    <Card key={g.id} style={{ borderLeft: `3px solid ${color}` }}>
                       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{g.name}</div>
                       {g.targetDate && (
-                        <span className="chip" style={{ fontSize: 11, marginBottom: 8, display: "inline-block" }}>
-                          {new Date(g.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-                        </span>
+                        <div style={{ marginBottom: 8 }}>
+                          <Badge>
+                            {new Date(g.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                          </Badge>
+                        </div>
                       )}
-                      <div className="goal-bar" style={{ height: 6, marginBottom: 8 }}>
-                        <span style={{ width: pct + "%", background: color }} />
+                      <div style={{ "--accent": color } as React.CSSProperties}>
+                        <ProgressBar value={g.currentCents} max={g.targetCents || 1} size="sm" aria-label={`${g.name} progress`} />
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                      <div className="row" style={{ justifyContent: "space-between", fontSize: 12.5, marginTop: 8 }}>
                         <span className="muted">{Math.round(pct)}%</span>
                         <span className="num money">{money(g.targetCents - g.currentCents)} left</span>
                       </div>
-                    </div>
+                    </Card>
                   );
                 })}
               </div>
@@ -419,15 +590,16 @@ export default function Goals() {
                   <h1 style={{ fontSize: 22 }}>Move a slider, see the future shift.</h1>
                 </div>
               </div>
-              <div className="card" style={{ padding: 26 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+              <Card>
+                <div className="form-grid" style={{ gap: 32 }}>
                   <div>
                     <div className="eyebrow" style={{ marginBottom: 10 }}>Goal</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div className="stack stack-sm">
                       {goals.map((g) => (
                         <button
                           key={g.id}
                           onClick={() => { setScenarioId(g.id); setExtra(0); }}
+                          className="btn text"
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
@@ -436,7 +608,6 @@ export default function Goals() {
                             borderRadius: 8,
                             background: scenarioGoal.id === g.id ? "var(--surface-2)" : "transparent",
                             border: `1px solid ${scenarioGoal.id === g.id ? "var(--line-2)" : "transparent"}`,
-                            cursor: "pointer",
                             textAlign: "left",
                           }}
                         >
@@ -452,30 +623,31 @@ export default function Goals() {
                     </div>
 
                     <div style={{ marginTop: 22 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                         <span className="eyebrow">Extra per month</span>
                         <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{money(extra * 100)}</span>
                       </div>
                       <input
+                        className="goal-range"
                         type="range"
                         min="0"
                         max="1500"
                         step="50"
                         value={extra}
                         onChange={(e) => setExtra(parseInt(e.target.value))}
-                        style={{ width: "100%", accentColor: "var(--accent)" }}
+                        aria-label="Extra monthly contribution"
                       />
-                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11.5, color: "var(--ink-faint)", fontFamily: "var(--mono)" }}>
-                        <span>$0</span><span>$750</span><span>$1,500</span>
+                      <div className="row" style={{ justifyContent: "space-between", marginTop: 6, fontSize: 11.5, color: "var(--ink-faint)" }}>
+                        <span className="num">$0</span><span className="num">$750</span><span className="num">$1,500</span>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ padding: 22, background: "linear-gradient(180deg, var(--accent-2) 0%, var(--surface-2) 60%)", borderRadius: 12, border: "1px solid var(--accent-3)" }}>
+                  <Card tone="accent">
                     <div className="eyebrow" style={{ marginBottom: 14 }}>Updated horizon</div>
                     {newMonths !== null ? (
                       <>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                        <div className="row" style={{ alignItems: "baseline", gap: 10 }}>
                           <span className="figure" style={{ fontSize: 56, lineHeight: 1, color: "var(--accent)" }}>{Math.max(0, newMonths)}</span>
                           <span className="muted" style={{ fontSize: 16 }}>months to go</span>
                         </div>
@@ -489,23 +661,24 @@ export default function Goals() {
                     ) : (
                       <div className="muted" style={{ fontSize: 14 }}>Set a monthly contribution on this goal to see the timeline.</div>
                     )}
-                    <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
-                      <button className="btn ghost sm" onClick={() => setExtra(0)} style={{ opacity: extra === 0 ? 0.4 : 1 }}>
+                    <div className="row row-sm" style={{ marginTop: 20 }}>
+                      <Button variant="ghost" size="sm" onClick={() => setExtra(0)} style={{ opacity: extra === 0 ? 0.4 : 1 }}>
                         Reset
-                      </button>
+                      </Button>
                       {extra > 0 && newMonths !== null && (
-                        <button
-                          className="btn primary sm"
+                        <Button
+                          variant="primary"
+                          size="sm"
                           disabled={updateMonthly.isPending}
                           onClick={() => void handleApply()}
                         >
                           Apply +{money(extra * 100)}/mo →
-                        </button>
+                        </Button>
                       )}
                     </div>
-                  </div>
+                  </Card>
                 </div>
-              </div>
+              </Card>
             </div>
           )}
         </>

@@ -21,6 +21,10 @@ vi.mock("../api/hooks/agentMemory", () => ({
 const triggerMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("../api/hooks/agent", () => ({
   useTriggerCategorize: vi.fn(() => ({ mutateAsync: triggerMock, isPending: false })),
+  useAgentStatus: vi.fn(() => ({ data: {
+    uncategorizedCount: 0, anomalyCount: 0, overBudgetCount: 0,
+    upcomingBillsCount: 0, lastScanAt: null, lastScanCategorized: null,
+  }})),
 }));
 
 vi.mock("../api/client", () => ({

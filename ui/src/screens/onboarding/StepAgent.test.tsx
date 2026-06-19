@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import StepAgent from "./StepAgent";
 import { createWrapper } from "../../test-utils";
+import { useSaveProviderApiKey, useSetCompletionProvider, useTestCompletionProvider } from "../../api/hooks/agent";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
@@ -43,5 +44,35 @@ describe("StepAgent", () => {
   it("shows Configure later button at all times", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
     await waitFor(() => expect(screen.getByRole("button", { name: /configure later/i })).toBeInTheDocument());
+  });
+
+  it("saves the API key before setting the provider", async () => {
+    const saveKey = vi.fn().mockResolvedValue(undefined);
+    const setProvider = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useSaveProviderApiKey).mockReturnValue({
+      mutateAsync: saveKey,
+      isPending: false,
+    } as unknown as ReturnType<typeof useSaveProviderApiKey>);
+    vi.mocked(useSetCompletionProvider).mockReturnValue({
+      mutateAsync: setProvider,
+      isPending: false,
+    } as unknown as ReturnType<typeof useSetCompletionProvider>);
+
+    render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /cloud/i }));
+    await waitFor(() => screen.getByText(/openrouter/i));
+    fireEvent.click(screen.getByText(/openrouter/i));
+
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. gpt-4o-mini/i), { target: { value: "gpt-4o-mini" } });
+    fireEvent.change(screen.getByPlaceholderText(/sk-…/i), { target: { value: "sk-or-test" } });
+    fireEvent.click(screen.getByRole("button", { name: /test & save/i }));
+
+    await waitFor(() => {
+      expect(saveKey).toHaveBeenCalledWith({ providerId: "openrouter", key: "sk-or-test" });
+      expect(setProvider).toHaveBeenCalled();
+      const saveOrder = saveKey.mock.invocationCallOrder[0] ?? Infinity;
+      const setOrder = setProvider.mock.invocationCallOrder[0] ?? Infinity;
+      expect(saveOrder).toBeLessThan(setOrder);
+    });
   });
 });

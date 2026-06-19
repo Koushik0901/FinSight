@@ -10,6 +10,11 @@ import {
   useTestCompletionProvider,
   useListProviderModels,
 } from "../../api/hooks/agent";
+import { isTauriRuntime, userErrorMessage } from "../../utils/runtime";
+import Button from "../../components/Button";
+import Card from "../../components/Card";
+import Input from "../../components/Input";
+import Select from "../../components/Select";
 
 interface Props { onDone: () => void; }
 
@@ -38,7 +43,7 @@ export default function StepAgent({ onDone }: Props) {
       return result.data;
     },
     staleTime: 0,
-    enabled: path === "local",
+    enabled: path === "local" && isTauriRuntime(),
   });
 
   // Cloud path state
@@ -71,7 +76,7 @@ export default function StepAgent({ onDone }: Props) {
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Something went wrong.");
+      setActionError(userErrorMessage(err, "Could not save the local provider. Try again from the desktop app."));
     }
   }
 
@@ -86,14 +91,14 @@ export default function StepAgent({ onDone }: Props) {
       const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
       setTestResult(r);
       if (!r.ok) return;
-      await setProvider.mutateAsync(config);
       if (apiKey) {
         await saveKey.mutateAsync({ providerId: isAnthropic ? "anthropic" : selectedPreset.preset, key: apiKey });
       }
+      await setProvider.mutateAsync(config);
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Something went wrong.");
+      setActionError(userErrorMessage(err, "Could not test or save this provider. Check the settings and try again."));
     }
   }
 
@@ -104,7 +109,7 @@ export default function StepAgent({ onDone }: Props) {
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Something went wrong.");
+      setActionError(userErrorMessage(err, "Could not finish setup. Try again from the desktop app."));
     }
   }
 
@@ -113,18 +118,30 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent">
         <h2>How do you want to power AI categorization?</h2>
-        <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-          <button onClick={() => setPath("local")} style={{ flex: 1, minWidth: 160, padding: "20px 16px" }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>🏠 Local (Ollama)</div>
-            <div style={{ fontSize: 13, color: "var(--text-2)" }}>Install-free if already running.</div>
-          </button>
-          <button onClick={() => setPath("cloud")} style={{ flex: 1, minWidth: 160, padding: "20px 16px" }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>☁ Cloud provider</div>
-            <div style={{ fontSize: 13, color: "var(--text-2)" }}>OpenAI, Anthropic, OpenRouter, etc.</div>
-          </button>
+        <div className="row-md wrap" style={{ marginBottom: 24 }}>
+          <Button
+            variant="outline"
+            onClick={() => setPath("local")}
+            style={{ flex: 1, minWidth: 160, padding: "20px 16px", justifyContent: "flex-start" }}
+          >
+            <div className="stack stack-xs" style={{ textAlign: "left" }}>
+              <div style={{ fontWeight: 700 }}>🏠 Local (Ollama)</div>
+              <div className="muted" style={{ fontSize: 13 }}>Install-free if already running.</div>
+            </div>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setPath("cloud")}
+            style={{ flex: 1, minWidth: 160, padding: "20px 16px", justifyContent: "flex-start" }}
+          >
+            <div className="stack stack-xs" style={{ textAlign: "left" }}>
+              <div style={{ fontWeight: 700 }}>☁ Cloud provider</div>
+              <div className="muted" style={{ fontSize: 13 }}>OpenAI, Anthropic, OpenRouter, etc.</div>
+            </div>
+          </Button>
         </div>
-        {actionError && <p role="alert" style={{ color: "var(--error, red)" }}>{actionError}</p>}
-        <button className="tertiary" onClick={skipForLater}>Configure later →</button>
+        {actionError && <p role="alert" className="err">{actionError}</p>}
+        <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
       </div>
     );
   }
@@ -134,37 +151,51 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent">
         <h2>Cloud provider</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <div className="row-sm wrap" style={{ marginBottom: 16 }}>
           {CLOUD_PRESETS.map((p) => (
-            <button
+            <Button
               key={p.preset}
+              variant={selectedPreset.preset === p.preset ? "primary" : "outline"}
+              size="sm"
               onClick={() => { setSelectedPreset(p); setCloudModel(""); setApiKey(""); setTestResult(null); }}
               aria-pressed={selectedPreset.preset === p.preset}
             >
               {p.label}
-            </button>
+            </Button>
           ))}
         </div>
-        <label style={{ display: "block", marginBottom: 8 }}>
-          Model
-          <input value={cloudModel} onChange={(e) => setCloudModel(e.target.value)} placeholder="e.g. gpt-4o-mini" style={{ display: "block", width: "100%" }} />
-        </label>
-        <label style={{ display: "block", marginBottom: 8 }}>
-          API Key
-          <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" style={{ display: "block", width: "100%" }} />
-        </label>
+        <div className="stack stack-md">
+          <Input
+            label="Model"
+            value={cloudModel}
+            onChange={(e) => setCloudModel(e.target.value)}
+            placeholder="e.g. gpt-4o-mini"
+          />
+          <Input
+            label="API Key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-…"
+          />
+        </div>
         {testResult && (
           <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)" }}>
             {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
           </p>
         )}
-        {actionError && <p role="alert" style={{ color: "var(--error, red)" }}>{actionError}</p>}
-        <div className="actions" style={{ display: "flex", gap: 8 }}>
-          <button className="primary" onClick={handleCloudTestAndSave} disabled={!cloudModel || testProvider.isPending}>
+        {actionError && <p role="alert" className="err">{actionError}</p>}
+        <div className="actions row-sm wrap">
+          <Button
+            variant="primary"
+            onClick={handleCloudTestAndSave}
+            disabled={!cloudModel || testProvider.isPending}
+            loading={testProvider.isPending}
+          >
             Test &amp; Save →
-          </button>
-          <button onClick={() => setPath(null)}>← Back</button>
-          <button className="tertiary" onClick={skipForLater}>Configure later →</button>
+          </Button>
+          <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
+          <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
         </div>
       </div>
     );
@@ -183,12 +214,12 @@ export default function StepAgent({ onDone }: Props) {
           We couldn't find Ollama. Download it from{" "}
           <a href="#" onClick={(e) => { e.preventDefault(); openUrl("https://ollama.com"); }}>ollama.com</a>.
         </p>
-        {actionError && <p role="alert" style={{ color: "var(--error, red)" }}>{actionError}</p>}
-        <div className="actions">
-          <button onClick={() => openUrl("https://ollama.com").catch(() => {})}>Install Ollama →</button>
-          <button onClick={() => refetch()}>I just installed it — refresh</button>
-          <button onClick={() => setPath(null)}>← Back</button>
-          <button className="tertiary" onClick={skipForLater}>Configure later →</button>
+        {actionError && <p role="alert" className="err">{actionError}</p>}
+        <div className="actions row-sm wrap">
+          <Button variant="default" onClick={() => openUrl("https://ollama.com").catch(() => {})}>Install Ollama →</Button>
+          <Button variant="default" onClick={() => refetch()}>I just installed it — refresh</Button>
+          <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
+          <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
         </div>
       </div>
     );
@@ -198,25 +229,27 @@ export default function StepAgent({ onDone }: Props) {
     <div className="step-agent">
       <h2>Set up Ollama</h2>
       <p>Ollama is running. Pick a completion model.</p>
-      <label>
-        Completion model
-        <select value={completionModel} onChange={(e) => setCompletionModel(e.target.value)}>
-          {(ollamaModels as string[]).map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-      </label>
+      <Select
+        label="Completion model"
+        value={completionModel}
+        onChange={(e) => setCompletionModel(e.target.value)}
+      >
+        {(ollamaModels as string[]).map((m) => <option key={m} value={m}>{m}</option>)}
+      </Select>
       {!probe.has_nomic_embed && (
         <p className="warning">
           <code>nomic-embed-text</code> isn't installed. Run{" "}
-          <code>ollama pull nomic-embed-text</code>, then <button onClick={() => refetch()}>Refresh</button>.
+          <code>ollama pull nomic-embed-text</code>, then{" "}
+          <Button variant="text" onClick={() => refetch()}>Refresh</Button>.
         </p>
       )}
-      {actionError && <p role="alert" style={{ color: "var(--error, red)" }}>{actionError}</p>}
-      <div className="actions">
-        <button className="primary" onClick={finishWithOllama} disabled={!completionModel}>
+      {actionError && <p role="alert" className="err">{actionError}</p>}
+      <div className="actions row-sm wrap">
+        <Button variant="primary" onClick={finishWithOllama} disabled={!completionModel}>
           Use Ollama →
-        </button>
-        <button onClick={() => setPath(null)}>← Back</button>
-        <button className="tertiary" onClick={skipForLater}>Configure later →</button>
+        </Button>
+        <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
+        <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
       </div>
     </div>
   );

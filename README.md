@@ -1,22 +1,37 @@
 # FinSight
 
-Local-first personal finance — a quiet way to understand your money.
+Your AI-powered financial copilot — a quiet way to understand, plan, and master your money.
 
-Dark-first, encrypted at rest, AI-assisted categorization with no data leaving your machine unless you opt in.
+Dark-first, encrypted at rest, AI-assisted planning and categorization with no data leaving your machine unless you opt in. Built on the timeless principles of *The Richest Man in Babylon*, *The Total Money Makeover*, *I Will Teach You to Be Rich*, *The Psychology of Money*, *Rich Dad Poor Dad*, and *Think and Grow Rich*.
+
+## Philosophy
+
+FinSight is designed around one goal: helping you become the master of your own finances. The agentic Copilot applies proven principles automatically:
+
+- **Pay Yourself First** — save ≥10% before anything else (Babylon / Ramsey)
+- **Conscious Spending** — tag every category as a Need, Want, Saving, or Investment and see your allocation at a glance (Sethi)
+- **Debt Snowball** — smallest-balance-first payoff order keeps momentum (Ramsey)
+- **Emergency Fund First** — 3–6 months of expenses as the foundation of any plan (Ramsey / Sethi)
+- **Compound Growth** — project 10/20/30-year wealth from current savings rate (Hill / Kiyosaki)
+- **Behaviour over math** — the Copilot surfaces patterns and nudges, not just numbers (Housel)
 
 ## What's built
 
 | Screen | Status | Notes |
 |--------|--------|-------|
-| Today | ✅ | Net/income/expenses stats, category stream bar, privacy mode |
-| Insights | ✅ | AI anomaly cards, spending patterns, needs-review feed |
-| Accounts | ✅ | Manual accounts, balance history, CSV import |
+| Today | ✅ | Net/income/expenses stats, savings rate card (colour-coded), category stream bar, privacy mode |
+| Copilot | ✅ | AI financial planner — goal-aware plans, action bundles, conversational Q&A, nudges |
+| Insights | ✅ | AI anomaly cards, spending patterns, agent memory, needs-review feed |
+| Accounts | ✅ | Manual accounts + assets/liabilities, balance history, net worth, CSV import |
 | Transactions | ✅ | Search, filter tabs (needs review / anomalies / no category), drawer edit |
-| Budget | ✅ | Envelope grid, To Budget tracker, by-group/stress/size/activity sort |
-| Categories | ✅ | Month / vs-last / Year-to-date scope, budget column |
+| Budget | ✅ | Envelope grid, To Budget tracker, Conscious Spending allocation donut |
+| Categories | ✅ | Month / vs-last / YTD scope, spending-type picker (Need/Want/Saving/Investment) |
 | Recurring | ✅ | Calendar view with day-detail panel, list view, subscriptions |
-| Goals | ✅ | 4 goal types, pace chip (Ahead/On track/Needs attention), what-if slider |
+| Goals | ✅ | 4 goal types, pace chip, what-if slider, emergency fund quick-fill, compound growth projector |
 | Reports | ✅ | 12-month bar + net line charts, category/merchant tables |
+| Scenarios | ✅ | Natural-language what-if forecasting with LLM-powered projections |
+| Recipes | ✅ | Trusted automation recipes (monthly budget draft, weekly cleanup, goal check, etc.) |
+| Journey | ✅ | 7-milestone financial journey from stability to freedom, with Copilot entry points |
 | Rules | ✅ | Pattern rules, agent auto-categorization, toggle enable/disable |
 | Settings | ✅ | LLM provider config (Ollama / OpenAI-compat / Anthropic), test connection |
 | Onboarding | ✅ | Sample data seeding, category starter pack, provider setup |
@@ -47,13 +62,14 @@ cargo run -p finsight-tauri --bin export_bindings
 FinSight/
 ├── crates/
 │   ├── finsight-core/      # DB schema, migrations (SQLCipher), repos, models
-│   ├── finsight-agent/     # LLM provider trait, categorizer, anomaly detection
+│   ├── finsight-providers/ # CSV import parsers, LLM provider HTTP clients
+│   ├── finsight-agent/     # Copilot planner, context engine, categorizer, anomaly detection, recipe runner
 │   ├── finsight-app/       # Tauri commands (API surface), app state
 │   └── finsight-tauri/     # Tauri entry point + specta bindings export binary
 └── ui/
     ├── src/
     │   ├── api/            # Generated bindings + tanstack-query hooks
-    │   ├── components/     # Sidebar, CommandPalette, Drawer, TransactionDrawer, …
+    │   ├── components/     # Sidebar, CommandPalette, Drawer, TransactionDrawer, CopilotNudge, …
     │   ├── screens/        # One file per screen
     │   └── styles/         # tokens.css (design tokens) + app.css (component classes)
     └── …
@@ -79,10 +95,9 @@ FinSight/
 
 ## What's next
 
-See `docs/TODO.md` for the full gap analysis against the Plutus design reference. Top remaining items:
+The core app is feature-complete. Potential next areas:
 
-1. **Scenarios screen** — natural-language what-if forecasting (§1)
-2. **Rules: agent proposals + manual builder** (§11a, §11b)
-3. **Command palette: Ask the agent** (§14a)
-4. **Today: net-worth chart + upcoming recurring** (§3a, §3c)
-5. **Accounts: manual assets + liabilities** (§4a, §4b)
+1. **More Copilot recipes** — custom user-defined automation templates
+2. **Debt avalanche mode** — highest-interest-first as an alternative to snowball
+3. **Journey milestone notifications** — celebrate when a milestone is reached
+4. **Export / reports** — PDF summaries of monthly spending and progress

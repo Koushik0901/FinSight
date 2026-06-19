@@ -9,6 +9,11 @@ import {
 } from "../api/hooks/useScenarios";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import * as I from "../components/Icons";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import Badge from "../components/Badge";
+import EmptyState from "../components/EmptyState";
+import { userErrorMessage } from "../utils/runtime";
 
 type Range = "6" | "12" | "24";
 
@@ -52,21 +57,21 @@ function ForecastChart({
       .join(" ");
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "22px 8px 8px" }}>
+    <Card style={{ padding: "22px 8px 8px" }}>
       <svg viewBox="0 0 100 42" preserveAspectRatio="none" style={{ width: "100%", height: 200, display: "block" }}>
         <line x1="0" y1={(38 - ((0 - min) / span) * 34).toFixed(1)} x2="100" y2={(38 - ((0 - min) / span) * 34).toFixed(1)} stroke="var(--hairline)" strokeWidth="0.4" />
         <path d={path(base)} fill="none" stroke="var(--ink)" strokeWidth="1" />
         <path d={path(scen)} fill="none" stroke={color} strokeWidth="1.2" strokeDasharray="2.5 2" />
       </svg>
-      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--ink-mute)", padding: "8px 12px 0" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className="row-md" style={{ fontSize: 12, color: "var(--ink-mute)", padding: "8px 12px 0" }}>
+        <span className="row-xs">
           <span style={{ width: 14, height: 2, background: "var(--ink)", display: "inline-block" }} />current path
         </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span className="row-xs">
           <span style={{ width: 14, height: 2, background: color, display: "inline-block" }} />with scenario
         </span>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -88,20 +93,15 @@ function Results({
   const coverable = result.verdict;
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <div
-        className="card"
-        style={{
-          borderColor: coverable ? "var(--accent)" : "var(--negative)",
-        }}
-      >
-        <div className="screen-eyebrow" style={{ marginBottom: 10 }}>Verdict</div>
-        <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 6 }}>
+    <div className="stack stack-lg" style={{ marginTop: 24 }}>
+      <Card tone={coverable ? "accent" : "warn"} className="stack stack-md">
+        <div className="screen-eyebrow">Verdict</div>
+        <div style={{ fontSize: 22, fontWeight: 600 }}>
           {coverable ? "You can do this — here's what changes." : "Not without trade-offs — here's what would give."}
         </div>
         <div className="muted" style={{ fontSize: 14 }}>&ldquo;{description}&rdquo;</div>
 
-        <div className="stat-row" style={{ marginTop: 20 }}>
+        <div className="stat-row" style={{ marginTop: 12 }}>
           <div className="stat">
             <div className="label">Runway change</div>
             <div className={`value figure ${result.runwayChangeDays >= 0 ? "" : "neg"}`}>
@@ -120,35 +120,34 @@ function Results({
             <div className="value figure">{result.goalsAffected.length}</div>
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+      <div className="row" style={{ justifyContent: "flex-end" }}>
         <div className="toolbar">
           {(["6", "12", "24"] as Range[]).map((r) => (
             <button key={r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{r}M</button>
           ))}
         </div>
       </div>
-      <div style={{ marginTop: 8 }}>
-        <ForecastChart baseline={result.baselineMonthly} scenario={result.scenarioMonthly} range={range} />
-      </div>
+      <ForecastChart baseline={result.baselineMonthly} scenario={result.scenarioMonthly} range={range} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16, marginTop: 16 }}>
-        <div className="card">
-          <div className="screen-eyebrow" style={{ marginBottom: 12 }}>Worth knowing</div>
-          <ol style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="responsive-grid" style={{ gridTemplateColumns: "1.4fr 1fr" }}>
+        <Card className="stack stack-md">
+          <div className="screen-eyebrow">Worth knowing</div>
+          <ol className="stack stack-sm" style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
             {result.considerations.map((c, i) => (
-              <li key={i} style={{ display: "grid", gridTemplateColumns: "22px 1fr", gap: 10, fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-mute)" }}>{i + 1}</span>
+              <li key={i} className="row-sm" style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.5, alignItems: "flex-start" }}>
+                <span className="num" style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-mute)", width: 22, flexShrink: 0 }}>{i + 1}</span>
                 <span>{c}</span>
               </li>
             ))}
           </ol>
-        </div>
-        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="screen-eyebrow" style={{ marginBottom: 4 }}>What to do</div>
-          <button
-            className="btn primary"
+        </Card>
+        <Card className="stack stack-md">
+          <div className="screen-eyebrow">What to do</div>
+          <Button
+            variant="primary"
+            loading={save.isPending}
             disabled={save.isPending}
             onClick={async () => {
               try {
@@ -161,14 +160,14 @@ function Results({
             }}
           >
             <I.Sparkle /> Save this scenario
-          </button>
-          <button className="btn ghost" onClick={onDiscard}>
+          </Button>
+          <Button variant="ghost" onClick={onDiscard}>
             <I.X /> Discard
-          </button>
-          <div className="muted" style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+          </Button>
+          <p className="muted" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>
             All scenarios are local — nothing happens to your real money until you explicitly apply changes.
-          </div>
-        </div>
+          </p>
+        </Card>
       </div>
     </div>
   );
@@ -185,8 +184,7 @@ export default function Scenarios() {
   const { data: categories } = useCategoriesWithSpending();
   const diningMonthly = useMemo(() => {
     const match = categories?.find((c) => /dining|restaurant|food|eat/i.test(c.label));
-    if (!match) return 40000; // no dining category — sensible placeholder
-    // Prefer this month, fall back to last month, but a genuine $0 stays $0.
+    if (!match) return 40000;
     return match.thisMonthCents > 0 ? match.thisMonthCents : match.lastMonthCents;
   }, [categories]);
 
@@ -211,19 +209,21 @@ export default function Scenarios() {
           description: "Configure one in Settings, or pick a suggested scenario below.",
         });
       } else {
-        toast.error("Could not run scenario", { description: (e as Error).message });
+        toast.error("Could not run scenario", {
+          description: userErrorMessage(e, "Try again from the desktop app after your data loads."),
+        });
       }
     }
   };
 
   return (
-    <div className="screen">
-      <div className="screen-header">
+    <div className="screen screen-scenarios">
+      <header className="screen-header">
         <div className="screen-header-text">
           <div className="screen-eyebrow">Scenarios · run any what-if</div>
           <h1>Imagine a future, see the math.</h1>
         </div>
-      </div>
+      </header>
 
       <form
         onSubmit={(e) => {
@@ -232,25 +232,25 @@ export default function Scenarios() {
         }}
         style={{ marginTop: 16 }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)" }}>
+        <div className="scenario-composer">
           <I.Sparkle style={{ color: "var(--accent)" }} />
           <input
+            className="scenario-input"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="What if I take a 6-month sabbatical?"
             aria-label="Scenario question"
-            style={{ flex: 1, background: "transparent", border: 0, outline: 0, fontSize: 16, color: "var(--ink)" }}
           />
-          <button type="submit" className="btn primary" disabled={run.isPending}>
+          <Button type="submit" variant="primary" disabled={run.isPending}>
             {run.isPending ? "Running…" : "Run"}
-          </button>
+          </Button>
         </div>
       </form>
 
-      <div style={{ marginTop: 18 }}>
-        <div className="screen-eyebrow" style={{ marginBottom: 10 }}>Or pick a starting point</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="stack stack-sm" style={{ marginTop: 18 }}>
+        <div className="screen-eyebrow">Or pick a starting point</div>
+        <div className="row-sm wrap">
           {chips.map((c) => (
             <button key={c.label} className="chip" onClick={() => void runWith(c.label, c.params)}>
               {c.label}
@@ -268,47 +268,61 @@ export default function Scenarios() {
         />
       )}
 
-      <div style={{ marginTop: 32 }}>
-        <div className="screen-eyebrow" style={{ marginBottom: 10 }}>Recent scenarios you've run</div>
-        <div className="card flush">
+      <section className="stack stack-md" style={{ marginTop: 32 }}>
+        <div className="screen-eyebrow">Recent scenarios you've run</div>
+        <Card flush>
           {history.length === 0 ? (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--ink-faint)", fontSize: 13 }}>
-              No scenarios saved. Run one above to keep it here.
-            </div>
+            <EmptyState
+              compact
+              icon={<I.Sparkle style={{ color: "var(--ink-faint)", width: 24, height: 24 }} />}
+              title="No scenarios saved"
+              description="Run one above to keep it here."
+            />
           ) : (
-            history.map((h) => (
-              <div key={h.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 16, padding: "14px 20px", borderBottom: "1px solid var(--hairline)", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 14 }}>{h.description}</div>
-                  <span className={`chip ${h.result.verdict ? "positive" : "warning"}`} style={{ marginTop: 4 }}>
-                    {h.result.verdict ? "Coverable" : "Not coverable"}
-                  </span>
-                </div>
-                <span className="muted" style={{ fontSize: 11.5, fontFamily: "var(--mono)" }}>
-                  {new Date(h.createdAt).toLocaleDateString()}
-                </span>
-                <button className="btn ghost sm" onClick={() => setActive({ description: h.description, result: h.result })}>
-                  View
-                </button>
-                <button
-                  className="btn ghost sm"
-                  aria-label={`Delete ${h.description}`}
-                  onClick={async () => {
-                    try {
-                      await del.mutateAsync(h.id);
-                      toast("Scenario deleted");
-                    } catch {
-                      toast.error("Could not delete scenario");
-                    }
+            <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+              {history.map((h, i) => (
+                <li
+                  key={h.id}
+                  className="row-md"
+                  style={{
+                    padding: "14px 20px",
+                    borderBottom: i < history.length - 1 ? "1px solid var(--hairline)" : "none",
+                    alignItems: "center",
                   }}
                 >
-                  <I.Trash />
-                </button>
-              </div>
-            ))
+                  <div className="grow stack stack-xs">
+                    <div style={{ fontSize: 14 }}>{h.description}</div>
+                    <Badge tone={h.result.verdict ? "positive" : "warning"}>
+                      {h.result.verdict ? "Coverable" : "Not coverable"}
+                    </Badge>
+                  </div>
+                  <span className="num muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
+                    {new Date(h.createdAt).toLocaleDateString()}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => setActive({ description: h.description, result: h.result })}>
+                    View
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Delete ${h.description}`}
+                    onClick={async () => {
+                      try {
+                        await del.mutateAsync(h.id);
+                        toast("Scenario deleted");
+                      } catch {
+                        toast.error("Could not delete scenario");
+                      }
+                    }}
+                  >
+                    <I.Trash />
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-      </div>
+        </Card>
+      </section>
     </div>
   );
 }

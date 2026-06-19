@@ -5,6 +5,9 @@ import AccountDrawer from "../../components/AccountDrawer";
 import TransactionDrawer from "../../components/TransactionDrawer";
 import FilePicker from "../../components/FilePicker";
 import ImportMappingDialog from "./ImportMappingDialog";
+import { isTauriRuntime } from "../../utils/runtime";
+import Button from "../../components/Button";
+import Card from "../../components/Card";
 
 interface Props { onNext: () => void; }
 
@@ -25,37 +28,42 @@ export default function StepConnect({ onNext }: Props) {
     <div className="step-connect">
       <h2>Connect your money</h2>
 
-      {isLoading && <p>Loading…</p>}
+      {!hasError && isLoading && <p>Checking for accounts and recent transactions…</p>}
       {hasError && (
-        <p role="alert" style={{ color: "var(--error, red)" }}>
-          Failed to load data. Please try again.
+        <p role="alert" className="muted">
+          We could not read your local data. You can still review the setup options, then open the desktop app to import or save changes.
+        </p>
+      )}
+      {!isTauriRuntime() && (
+        <p className="muted">
+          Browser preview mode: imports and manual saves require the desktop app runtime.
         </p>
       )}
 
       <div className="connect-cards">
-        <article className="card">
+        <Card className="stack stack-md">
           <h3>Import a statement</h3>
           <p>Pick a CSV exported from your bank and map its columns.</p>
           <FilePicker onPicked={setCsvPath} label="Pick a file…" />
-        </article>
+        </Card>
 
-        <article className="card">
+        <Card className="stack stack-md">
           <h3>Add manually</h3>
           <p>Walk through accounts and a few recent transactions by hand.</p>
           <div className="button-row">
-            <button onClick={() => setAcctOpen(true)}>+ Account</button>
-            <button onClick={() => setTxnOpen(true)} disabled={accounts.length === 0}>+ Transaction</button>
+            <Button variant="default" onClick={() => setAcctOpen(true)}>+ Account</Button>
+            <Button variant="default" onClick={() => setTxnOpen(true)} disabled={accounts.length === 0}>+ Transaction</Button>
           </div>
-        </article>
+        </Card>
 
-        <article className="card">
+        <Card className="stack stack-md">
           <h3>Skip for now</h3>
           <p>You can always add or import later from the Accounts screen.</p>
-          <button onClick={onNext}>Skip →</button>
-        </article>
+          <Button variant="ghost" onClick={onNext}>Skip →</Button>
+        </Card>
       </div>
 
-      {!isLoading && (
+      {(!isLoading || hasError) && (
         <>
           <aside className="connect-tally" aria-live="polite">
             <strong>{accounts.length}</strong> account{accounts.length === 1 ? "" : "s"} added,{" "}
@@ -63,9 +71,9 @@ export default function StepConnect({ onNext }: Props) {
           </aside>
 
           <footer>
-            <button className="primary" disabled={!canContinue} onClick={onNext}>
+            <Button variant="primary" disabled={!canContinue} onClick={onNext}>
               Continue →
-            </button>
+            </Button>
           </footer>
         </>
       )}

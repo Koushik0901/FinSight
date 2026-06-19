@@ -10,6 +10,14 @@ import type { ManualAsset, Liability } from "../api/client";
 import { useNetWorth } from "../api/hooks/networth";
 import { money } from "../utils/format";
 import { toast } from "sonner";
+import { userErrorMessage } from "../utils/runtime";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import EmptyState from "../components/EmptyState";
+import ProgressBar from "../components/ProgressBar";
+import Badge from "../components/Badge";
+import Table from "../components/Table";
+import { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../components/Table";
 
 export default function Accounts() {
   const [addOpen, setAddOpen] = useState(false);
@@ -23,82 +31,123 @@ export default function Accounts() {
   const [editLiab, setEditLiab] = useState<Liability | null>(null);
   const netWorth = useNetWorth();
 
-  if (isLoading) return <div className="stub">Loading…</div>;
-  if (error) return <div className="stub">Error: {(error as Error).message}</div>;
+  if (isLoading) {
+    return (
+      <div className="stub" aria-live="polite" aria-busy="true">
+        Loading…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="empty-state" role="alert" aria-live="assertive">
+        <section className="empty-panel">
+          <div className="eyebrow">Accounts unavailable</div>
+          <h2>We could not load your accounts.</h2>
+          <p>{userErrorMessage(error, "Open the desktop app runtime and try again.")}</p>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="screen-accounts">
-      <header className="screen-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>Net worth</div>
-          <div className="figure money" style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}>
+      <header className="screen-header">
+        <div className="screen-header-text">
+          <div className="eyebrow">Net worth</div>
+          <div
+            className="figure money"
+            style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}
+          >
             {money(netWorth)}
           </div>
           <h1 style={{ fontSize: 20, fontWeight: 600, margin: "12px 0 0" }}>Accounts</h1>
         </div>
-        <button className="primary" onClick={() => setAddOpen(true)}>+ Add account</button>
+        <Button variant="primary" onClick={() => setAddOpen(true)}>
+          + Add account
+        </Button>
       </header>
 
       {(!data || data.length === 0) ? (
-        <div className="stub">No accounts yet.</div>
+        <EmptyState
+          title="Add an account to start tracking net worth."
+          description="Start with a checking, savings, credit, investment, or cash account. You can import transactions after the account exists."
+          actions={
+            <>
+              <Button variant="primary" onClick={() => setAddOpen(true)}>
+                Add account
+              </Button>
+              <Button onClick={() => setAssetAddOpen(true)}>Add asset</Button>
+              <Button variant="ghost" onClick={() => setLiabAddOpen(true)}>
+                Add liability
+              </Button>
+            </>
+          }
+        />
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-3)", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Bank</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Name</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}>Type</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500, textAlign: "right" }}>Balance</th>
-              <th scope="col" style={{ padding: "8px 0", fontWeight: 500 }}></th>
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeader>Bank</TableHeader>
+              <TableHeader>Name</TableHeader>
+              <TableHeader>Type</TableHeader>
+              <TableHeader right>Balance</TableHeader>
+              <TableHeader>{""}</TableHeader>
             </tr>
-          </thead>
-          <tbody>
+          </TableHead>
+          <TableBody>
             {data.map((a: AccountSummary) => (
-              <tr
+              <TableRow
                 key={a.id}
-                style={{ borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
                 onClick={() => setEditAccount(a as unknown as Account)}
                 aria-label={`Edit ${a.name}`}
               >
-                <td style={{ padding: "12px 0" }}>{a.bank}</td>
-                <td style={{ padding: "12px 0" }}>{a.name}</td>
-                <td style={{ padding: "12px 0", color: "var(--text-2)", fontSize: 13 }}>{a.type}</td>
-                <td style={{ padding: "12px 0", textAlign: "right", fontFamily: "Geist Mono, monospace" }}>
-                  <span className="money">{money(a.balance_cents, { decimals: 2 })}</span>
-                </td>
-                <td style={{ padding: "12px 0", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
-                  <button
-                    className="btn ghost sm"
+                <TableCell>{a.bank}</TableCell>
+                <TableCell>{a.name}</TableCell>
+                <TableCell>
+                  <span className="muted">{a.type}</span>
+                </TableCell>
+                <TableCell right>
+                  <span className="num tabular money">{money(a.balance_cents, { decimals: 2 })}</span>
+                </TableCell>
+                <TableCell right>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     title="Export transactions as CSV"
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.stopPropagation();
                       try {
                         const result = await commands.exportAccountCsv(a.id);
                         if (result.status === "ok" && result.data) {
                           toast.success("Exported", { description: result.data });
                         }
-                      } catch {
-                        toast.error("Export failed");
+                      } catch (err) {
+                        toast.error("Export failed", {
+                          description: userErrorMessage(err, "Try exporting again from the desktop app."),
+                        });
                       }
                     }}
                   >
                     CSV ↓
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
 
-      <section style={{ marginTop: 40 }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <section className="section">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Manual assets</h2>
-          <button onClick={() => setAssetAddOpen(true)}>+ Add manual asset</button>
-        </header>
+          <Button onClick={() => setAssetAddOpen(true)}>+ Add manual asset</Button>
+        </div>
         {assets.length === 0 ? (
-          <div className="stub">No manual assets yet.</div>
+          <div className="card muted tight">No manual assets yet.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <Card flush>
             {assets.map((a) => (
               <div
                 key={a.id}
@@ -107,36 +156,36 @@ export default function Accounts() {
                 onClick={() => setEditAsset(a)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditAsset(a); } }}
                 aria-label={`Edit ${a.name}`}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+                className="row row-md"
+                style={{ padding: "12px 20px", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
               >
-                <span style={{ width: 28, height: 28, borderRadius: 7, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, textTransform: "uppercase", flexShrink: 0 }}>
+                <span className="ic" style={{ fontSize: 13, textTransform: "uppercase" }}>
                   {a.assetType.charAt(0)}
                 </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14 }}>{a.name}</div>
+                <div className="grow">
+                  <div>{a.name}</div>
                   <div className="muted" style={{ fontSize: 12 }}>
                     {a.assetType} · updated {new Date(a.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </div>
                 </div>
-                <span className="money" style={{ fontFamily: "var(--mono)", fontSize: 14 }}>{money(a.valueCents, { decimals: 2 })}</span>
+                <span className="num money">{money(a.valueCents, { decimals: 2 })}</span>
               </div>
             ))}
-          </div>
+          </Card>
         )}
       </section>
 
-      <section style={{ marginTop: 40 }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <section className="section">
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Liabilities</h2>
-          <button onClick={() => setLiabAddOpen(true)}>+ Add liability</button>
-        </header>
+          <Button onClick={() => setLiabAddOpen(true)}>+ Add liability</Button>
+        </div>
         {liabilities.length === 0 ? (
-          <div className="stub">No liabilities yet.</div>
+          <div className="card muted tight">No liabilities yet.</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <Card flush>
             {liabilities.map((l) => {
-              const pct = l.limitCents && l.limitCents > 0
-                ? Math.min(100, (l.balanceCents / l.limitCents) * 100) : null;
+              const hasLimit = l.limitCents && l.limitCents > 0;
               return (
                 <div
                   key={l.id}
@@ -145,30 +194,33 @@ export default function Accounts() {
                   onClick={() => setEditLiab(l)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditLiab(l); } }}
                   aria-label={`Edit ${l.name}`}
-                  style={{ padding: "12px 0", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+                  className="stack stack-sm"
+                  style={{ padding: "12px 20px", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14 }}>{l.name}</div>
+                  <div className="row row-md">
+                    <div className="grow">
+                      <div>{l.name}</div>
                       <div className="muted" style={{ fontSize: 12 }}>
-                        <span className="chip" style={{ marginRight: 8 }}>{l.liabilityType}</span>
+                        <Badge className="chip">{l.liabilityType}</Badge>
                         {l.aprPct != null && <>{l.aprPct}% APR</>}
                         {l.payoffDate && <> · payoff {new Date(l.payoffDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</>}
                       </div>
                     </div>
-                    <span className="money" style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--negative)" }}>
-                      {money(l.balanceCents, { decimals: 2 })}
-                    </span>
+                    <span className="num money neg">{money(l.balanceCents, { decimals: 2 })}</span>
                   </div>
-                  {pct != null && (
-                    <div style={{ height: 4, background: "var(--surface-2)", borderRadius: 999, marginTop: 8 }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: "var(--negative)", borderRadius: 999 }} />
-                    </div>
+                  {hasLimit && (
+                    <ProgressBar
+                      value={l.balanceCents}
+                      max={l.limitCents ?? undefined}
+                      size="sm"
+                      tone="negative"
+                      aria-label={`${l.name} utilization`}
+                    />
                   )}
                 </div>
               );
             })}
-          </div>
+          </Card>
         )}
       </section>
 

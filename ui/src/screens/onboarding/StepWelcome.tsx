@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useSeedSampleHousehold, useMarkOnboardingComplete } from "../../api/hooks/onboarding";
+import { userErrorMessage } from "../../utils/runtime";
+import Button from "../../components/Button";
 
 interface Props {
   onNext: () => void;
@@ -18,7 +20,7 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
       await markComplete.mutateAsync();
       onSkipToToday();
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setSeedError(userErrorMessage(err, "Could not load sample data. Try again from the desktop app."));
     }
   }
 
@@ -31,15 +33,16 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         explore with realistic sample data — whichever feels right today.
       </p>
       <div className="actions">
-        <button className="primary" onClick={onNext}>Get started →</button>
-        <button
-          className="tertiary"
+        <Button variant="primary" onClick={onNext}>Get started →</Button>
+        <Button
+          variant="ghost"
           onClick={trySample}
           disabled={seedSample.isPending}
+          loading={seedSample.isPending}
           data-testid="try-sample-data"
         >
           {seedSample.isPending ? "Seeding…" : "Try with sample data"}
-        </button>
+        </Button>
       </div>
       {seedError && <p role="alert" className="error-message">{seedError}</p>}
     </div>

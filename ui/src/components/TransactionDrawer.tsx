@@ -13,6 +13,7 @@ import {
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { Transaction } from "../api/bindings";
+import { userErrorMessage } from "../utils/runtime";
 
 const schema = z.object({
   merchant_raw: z.string().min(1, "Required"),
@@ -119,7 +120,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
       }
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      toast.error(userErrorMessage(err, "Could not save this transaction. Try again."));
     }
   }
 
@@ -129,7 +130,8 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
     try {
       await del.mutateAsync(transaction.id);
       onClose();
-    } catch {
+    } catch (err) {
+      toast.error(userErrorMessage(err, "Could not delete this transaction. Try again."));
       setDeleteConfirm(false);
     }
   }
@@ -190,7 +192,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             try {
               await setFlags.mutateAsync({ id: transaction.id, isReimbursable: !transaction.is_reimbursable, isSplit: transaction.is_split });
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Could not update flag");
+              toast.error(userErrorMessage(err, "Could not update this flag. Try again."));
             }
           }}
           >
@@ -209,7 +211,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
               try {
                 await clearSplits.mutateAsync({ txnId: transaction.id, splits: [] });
               } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Could not clear splits");
+                toast.error(userErrorMessage(err, "Could not clear splits. Try again."));
               }
             }
           }}

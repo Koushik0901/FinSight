@@ -6,6 +6,7 @@ import { App } from "./App";
 import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/onboarding.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 5_000 } },

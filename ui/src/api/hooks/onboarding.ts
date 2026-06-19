@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type OnboardingState, type SeedSummary } from "../client";
+import { isTauriRuntime, userErrorMessage } from "../../utils/runtime";
 
 const KEY = ["onboarding-state"] as const;
 
@@ -11,6 +12,7 @@ export function useOnboardingState() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
     staleTime: 5_000,
   });
 }
@@ -19,6 +21,9 @@ export function useSeedSampleHousehold() {
   const qc = useQueryClient();
   return useMutation<SeedSummary>({
     mutationFn: async () => {
+      if (!isTauriRuntime()) {
+        throw new Error(userErrorMessage(new Error("missing tauri invoke")));
+      }
       const result = await commands.seedSampleHousehold();
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -27,7 +32,10 @@ export function useSeedSampleHousehold() {
       qc.invalidateQueries({ queryKey: KEY });
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["today-summary"] });
+      qc.invalidateQueries({ queryKey: ["month-totals"] });
+      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -67,14 +75,16 @@ export function useSeedDevDemo() {
       qc.invalidateQueries({ queryKey: KEY });
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["today-summary"] });
-      qc.invalidateQueries({ queryKey: ["categories-spending"] });
+      qc.invalidateQueries({ queryKey: ["month-totals"] });
+      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
       qc.invalidateQueries({ queryKey: ["goals"] });
       qc.invalidateQueries({ queryKey: ["recurring"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       qc.invalidateQueries({ queryKey: ["liabilities"] });
       qc.invalidateQueries({ queryKey: ["net-worth-history"] });
       qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -90,6 +100,11 @@ export function useClearSampleData() {
       qc.invalidateQueries({ queryKey: KEY });
       qc.invalidateQueries({ queryKey: ["accounts"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["month-totals"] });
+      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
