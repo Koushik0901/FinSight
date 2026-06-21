@@ -154,9 +154,13 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
             params![apy_pct, id],
         )?;
     }
-    // Return the updated account
+    get_by_id(conn, id)
+}
+
+pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
     conn.query_row(
-        "SELECT id, owner, bank, type, name, last4, currency, color, archived_at, liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at \
+        "SELECT id, owner, bank, type, name, last4, currency, color, archived_at, \
+                liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at \
          FROM accounts WHERE id = ?1",
         params![id],
         |r| {
