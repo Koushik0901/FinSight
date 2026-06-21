@@ -14,6 +14,7 @@ const existingAccount = {
   id: "a1", owner: "Me", bank: "Chase", type: "Checking" as const,
   name: "Old Name", last4: null, currency: "USD", color: "#fff",
   archived_at: null, created_at: "2024-01-01T00:00:00Z",
+  simplefin_account_id: null, last_synced_at: null, nickname: null,
 };
 
 describe("AccountDrawer — create mode", () => {

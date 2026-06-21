@@ -37,6 +37,7 @@ const existingTxn = {
   ai_confidence: null, ai_explanation: null, is_anomaly: false,
   created_at: "2024-01-15T00:00:00Z",
   is_reimbursable: false, is_split: false,
+  imported_id: null, source: null,
 };
 
 describe("TransactionDrawer — edit mode", () => {

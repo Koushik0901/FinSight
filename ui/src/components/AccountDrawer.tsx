@@ -74,6 +74,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             color: account.color,
             currency: values.currency,
             last4: values.last4 ? values.last4 : null,
+            nickname: null,
           },
         });
       } else {
@@ -87,6 +88,8 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           opening_balance_cents: Math.round(values.opening_dollars * 100),
           owner: values.owner,
           source: "manual",
+          simplefin_account_id: null,
+          nickname: null,
         });
       }
       reset();

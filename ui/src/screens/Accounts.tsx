@@ -3,6 +3,7 @@ import { useAccounts } from "../api/hooks/accounts";
 import AccountDrawer from "../components/AccountDrawer";
 import type { Account, AccountSummary } from "../api/client";
 import { commands } from "../api/client";
+import { useSyncSimpleFinAccount } from "../api/hooks/simplefin";
 import { useManualAssets, useLiabilities } from "../api/hooks/assets";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
@@ -30,6 +31,7 @@ export default function Accounts() {
   const [liabAddOpen, setLiabAddOpen] = useState(false);
   const [editLiab, setEditLiab] = useState<Liability | null>(null);
   const netWorth = useNetWorth();
+  const syncAccount = useSyncSimpleFinAccount();
 
   if (isLoading) {
     return (
@@ -112,26 +114,51 @@ export default function Accounts() {
                   <span className="num tabular money">{money(a.balance_cents, { decimals: 2 })}</span>
                 </TableCell>
                 <TableCell right>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="Export transactions as CSV"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      try {
-                        const result = await commands.exportAccountCsv(a.id);
-                        if (result.status === "ok" && result.data) {
-                          toast.success("Exported", { description: result.data });
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    {(a as any).simplefin_account_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Sync from SimpleFin"
+                        loading={syncAccount.isPending}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const result = await syncAccount.mutateAsync(a.id);
+                            toast.success(
+                              `Synced: ${result.added} added, ${result.skipped} skipped`,
+                            );
+                          } catch (err) {
+                            toast.error("Sync failed", {
+                              description: userErrorMessage(err, "Check your SimpleFin connection and try again."),
+                            });
+                          }
+                        }}
+                      >
+                        ↻ Sync
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Export transactions as CSV"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          const result = await commands.exportAccountCsv(a.id);
+                          if (result.status === "ok" && result.data) {
+                            toast.success("Exported", { description: result.data });
+                          }
+                        } catch (err) {
+                          toast.error("Export failed", {
+                            description: userErrorMessage(err, "Try exporting again from the desktop app."),
+                          });
                         }
-                      } catch (err) {
-                        toast.error("Export failed", {
-                          description: userErrorMessage(err, "Try exporting again from the desktop app."),
-                        });
-                      }
-                    }}
-                  >
-                    CSV ↓
-                  </Button>
+                      }}
+                    >
+                      CSV ↓
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

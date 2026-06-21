@@ -17,6 +17,8 @@ import {
   useListProviderModels,
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled } from "../api/hooks/settings";
+import { useSimpleFinStatus, useDisconnectSimpleFin } from "../api/hooks/simplefin";
+import SimpleFinDialog from "./onboarding/SimpleFinDialog";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
@@ -60,6 +62,9 @@ export default function Settings() {
   const hasSample = accounts.some((a) => a.source === "sample");
   const [resetError, setResetError] = useState<string | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
+  const [sfDialogOpen, setSfDialogOpen] = useState(false);
+  const { data: sfStatus } = useSimpleFinStatus();
+  const disconnectSf = useDisconnectSimpleFin();
 
   // AI Provider panel state
   const [providerPanelOpen, setProviderPanelOpen] = useState(false);
@@ -499,6 +504,33 @@ export default function Settings() {
           </Card>
         </section>
       )}
+
+      <section className="section-stack">
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Bank connections</div>
+        <Card className="stack stack-md">
+          <div className="row-md" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <span>SimpleFin: {sfStatus?.configured ? "Connected" : "Not connected"}</span>
+            {sfStatus?.configured ? (
+              <Button
+                variant="default"
+                onClick={() => {
+                  disconnectSf.mutate(undefined, {
+                    onSuccess: () => toast.success("SimpleFin credentials removed"),
+                    onError: () => toast.error("Failed to remove credentials"),
+                  });
+                }}
+              >
+                Reset credentials
+              </Button>
+            ) : (
+              <Button variant="default" onClick={() => setSfDialogOpen(true)}>
+                Set up SimpleFin
+              </Button>
+            )}
+          </div>
+        </Card>
+        <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
+      </section>
 
       <section className="section-stack">
         <div className="eyebrow" style={{ marginBottom: 14 }}>Keyboard shortcuts</div>

@@ -115,6 +115,8 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           category_id: selectedCategory,
           notes: values.notes || null,
           status: "manual",
+          imported_id: null,
+          source: "manual",
         });
         onCreated?.();
       }
