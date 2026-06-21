@@ -865,15 +865,24 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     }
 
     // ── 7. Liabilities ─────────────────────────────────────────────────────
-    // (name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date)
+    // (name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date)
     #[allow(clippy::type_complexity)]
-    let liabilities: &[(&str, &str, i64, Option<i64>, Option<f64>, Option<&str>)] = &[
+    let liabilities: &[(
+        &str,
+        &str,
+        i64,
+        Option<i64>,
+        Option<f64>,
+        Option<i64>,
+        Option<&str>,
+    )] = &[
         (
             "First Federal · 30-yr fixed",
             "Mortgage",
             38_842_000,
             None,
             Some(6.125),
+            Some(236_000),
             Some("2054-01-01"),
         ),
         (
@@ -882,6 +891,7 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
             1_248_000,
             None,
             Some(4.9),
+            Some(42_000),
             None,
         ),
         (
@@ -890,6 +900,7 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
             1_824_000,
             None,
             Some(5.5),
+            Some(23_000),
             None,
         ),
         (
@@ -898,14 +909,15 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
             241_800,
             Some(2_000_000),
             Some(24.9),
+            Some(5_000),
             None,
         ),
     ];
-    for &(name, typ, balance, limit, apr, payoff) in liabilities {
+    for &(name, typ, balance, limit, apr, min_payment, payoff) in liabilities {
         sql_tx.execute(
             "INSERT INTO liabilities(id, name, liability_type, balance_cents, limit_cents, \
-             apr_pct, payoff_date, currency, created_at, updated_at) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 'USD', ?8, ?8)",
+             apr_pct, min_payment_cents, payoff_date, currency, created_at, updated_at) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'USD', ?9, ?9)",
             params![
                 Uuid::new_v4().to_string(),
                 name,
@@ -913,6 +925,7 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
                 balance,
                 limit,
                 apr,
+                min_payment,
                 payoff,
                 now.to_rfc3339(),
             ],

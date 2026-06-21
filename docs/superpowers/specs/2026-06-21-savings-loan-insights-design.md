@@ -61,14 +61,11 @@ Approach B stores the synced value in `goals.current_cents`. This keeps existing
 
 ### Behavior
 
-- Replace `projectCompoundValue(monthlyCents, years)` with `projectCompoundValue(monthlyCents, years, annualRate)`.
-- The annual rate comes from the linked account's `apy_pct / 100`.
+- Add a Tauri command `project_goal_growth(goal_id, years)` in `crates/finsight-app/src/commands/budget.rs`.
+- The command looks up the goal's linked account, reads its `apy_pct`, and computes the projected future value from the goal's `monthly_cents`.
 - If no account is linked or APY is missing, fall back to 0.07 (7%).
-- The GoalCard displays the actual rate being used, e.g. "at 4.5% APY" or "at 7% (default)".
-
-### Optional backend command
-
-Add `project_goal_growth(goal_id, years)` as a Tauri command so the agent can reuse the projection later. For the initial implementation the frontend can compute it directly; the command is a thin wrapper.
+- The GoalCard fetches the projection via a hook and displays the actual rate being used, e.g. "at 4.5% APY" or "at 7% (default)".
+- This makes the projection reusable by the agent later and keeps the formula in one place.
 
 ## Inline drawer hints
 
@@ -106,7 +103,7 @@ Hints use the existing `hint` style and do not block form submission.
 
 ### Goals screen
 
-- `NewGoalForm`: add optional "Linked liability" dropdown (filtered to liabilities with `balance_cents > 0`) and optional "Linked account" dropdown (filtered to Savings/Investment accounts).
+- `NewGoalForm`: add optional "Linked liability" dropdown (filtered to liabilities with `balance_cents > 0`) and optional "Linked account" dropdown (filtered to Savings accounts).
 - `GoalCard`:
   - For linked liabilities: show liability name, APR, and current balance; disable manual current-balance edits.
   - For linked accounts: show account name and APY in the compound-growth panel.

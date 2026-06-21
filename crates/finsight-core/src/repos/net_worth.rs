@@ -100,6 +100,10 @@ mod tests {
                 currency: "USD".into(),
                 color: "#3B82F6".into(),
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
                 opening_balance_cents: 10_000_000,
             },
         )
@@ -123,7 +127,10 @@ mod tests {
                 balance_cents: 30_000_000,
                 limit_cents: Some(35_000_000),
                 apr_pct: Some(5.5),
+                min_payment_cents: Some(180_000),
                 payoff_date: None,
+                original_balance_cents: None,
+                started_at: None,
                 currency: "USD".into(),
             },
         )

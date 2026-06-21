@@ -86,6 +86,10 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
             color: "#C9F950".into(),
             opening_balance_cents: 1_482_042,
             source: "manual".into(),
+            liquidity_type: "liquid".into(),
+            emergency_fund_eligible: true,
+            goal_earmark: None,
+            apy_pct: None,
         },
     )?;
 
