@@ -58,6 +58,15 @@ describe("AccountDrawer — edit mode", () => {
     expect(screen.getByLabelText(/apy/i)).toHaveValue(4.5);
   });
 
+  it("shows APY hint for savings accounts without APY", () => {
+    const savingsAccount = { ...existingAccount, type: "Savings" as const, apy_pct: null };
+    render(
+      <AccountDrawer open={true} onClose={() => {}} account={savingsAccount} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByText(/Add an APY so savings projections/i)).toBeInTheDocument();
+  });
+
   it("two-click confirm on archive: first click shows confirm text", async () => {
     render(
       <AccountDrawer open={true} onClose={() => {}} account={existingAccount} />,

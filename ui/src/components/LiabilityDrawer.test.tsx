@@ -51,9 +51,9 @@ describe("LiabilityDrawer", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Balance ($)"), { target: { value: "12000" } });
-    fireEvent.change(screen.getByLabelText("Original balance ($)"), { target: { value: "20000" } });
+    fireEvent.change(screen.getByLabelText(/Original balance/i), { target: { value: "20000" } });
     fireEvent.change(screen.getByLabelText("APR (%)"), { target: { value: "5.5" } });
-    fireEvent.change(screen.getByLabelText("Started (month / year)"), { target: { value: "2021-06" } });
+    fireEvent.change(screen.getByLabelText(/Started/i), { target: { value: "2021-06" } });
 
     fireEvent.click(screen.getByRole("button", { name: /add liability/i }));
 
@@ -64,5 +64,15 @@ describe("LiabilityDrawer", () => {
     expect(arg.originalBalanceCents).toBe(2000000);
     expect(arg.aprPct).toBe(5.5);
     expect(arg.startedAt).toBe("2021-06");
+  });
+
+  it("shows original balance hint when empty", () => {
+    render(<LiabilityDrawer open onClose={() => {}} />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Add an original balance to track payoff progress/i)).toBeInTheDocument();
+  });
+
+  it("shows start date hint when empty", () => {
+    render(<LiabilityDrawer open onClose={() => {}} />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Add a start date to see how long/i)).toBeInTheDocument();
   });
 });

@@ -42,7 +42,7 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
   const del = useDeleteLiability();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", liabilityType: "loan", balance_dollars: 0 },
   });
