@@ -239,4 +239,91 @@ mod tests {
             .unwrap();
         assert_eq!(updated.monthly_cents, 25_000);
     }
+
+    #[test]
+    fn insert_goal_with_links_round_trip() {
+        use crate::models::NewLiability;
+        use crate::repos::liabilities;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let l = liabilities::create(
+            &mut conn,
+            NewLiability {
+                name: "Loan".into(),
+                liability_type: "loan".into(),
+                balance_cents: 5_000_00,
+                limit_cents: None,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                original_balance_cents: None,
+                started_at: None,
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Payoff".into(),
+                goal_type: "debt-payoff".into(),
+                target_cents: 5_000_00,
+                monthly_cents: 100_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                liability_id: Some(l.id.clone()),
+                account_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(goal.liability_id, Some(l.id.clone()));
+        let fetched = get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(fetched.liability_id, Some(l.id));
+    }
+
+    #[test]
+    fn deleting_liability_clears_goal_link() {
+        use crate::models::NewLiability;
+        use crate::repos::liabilities;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let l = liabilities::create(
+            &mut conn,
+            NewLiability {
+                name: "Loan".into(),
+                liability_type: "loan".into(),
+                balance_cents: 5_000_00,
+                limit_cents: None,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                original_balance_cents: None,
+                started_at: None,
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
+        let lid = l.id.clone();
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Payoff".into(),
+                goal_type: "debt-payoff".into(),
+                target_cents: 5_000_00,
+                monthly_cents: 100_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                liability_id: Some(lid),
+                account_id: None,
+            },
+        )
+        .unwrap();
+        liabilities::delete(&mut conn, &l.id).unwrap();
+        let fetched = get_by_id(&mut conn, &goal.id).unwrap();
+        assert!(fetched.liability_id.is_none());
+    }
 }
