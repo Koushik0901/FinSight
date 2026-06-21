@@ -32,6 +32,10 @@ async fn update_account_name_and_color() {
                 color: "#000".into(),
                 opening_balance_cents: 0,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap()
@@ -66,6 +70,10 @@ async fn archive_account_cleans_up_mappings() {
                 color: "#fff".into(),
                 opening_balance_cents: 0,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap();

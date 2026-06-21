@@ -376,6 +376,10 @@ mod tests {
                 color: "#112233".into(),
                 opening_balance_cents: 200_000,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap();
@@ -390,6 +394,8 @@ mod tests {
                 color: "#abcdef".into(),
                 notes: None,
                 purpose: None,
+                liability_id: None,
+                account_id: None,
             },
         )
         .unwrap();
