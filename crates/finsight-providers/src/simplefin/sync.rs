@@ -5,46 +5,61 @@ use finsight_core::repos::{accounts, transactions};
 
 use crate::error::{ProviderError, ProviderResult};
 use super::client::SimpleFinClient;
+use super::models::{SimpleFinAccount, SimpleFinTransaction};
+
+#[derive(Debug, Clone)]
+pub struct PendingImport {
+    pub simplefin_id: String,
+    pub local_account_id: String,
+    pub sfin_account: SimpleFinAccount,
+    pub transactions: Vec<SimpleFinTransaction>,
+}
 
 pub struct SimpleFinImportSummary {
     pub added: usize,
     pub skipped: usize,
 }
 
-pub async fn import_simplefin_account(
+pub async fn fetch_simplefin_data(
     access_url: &str,
     simplefin_id: &str,
     local_account_id: &str,
-    conn: &mut Connection,
-) -> ProviderResult<SimpleFinImportSummary> {
+) -> ProviderResult<PendingImport> {
     let client = SimpleFinClient::new(access_url)?;
-
     let accounts_list = client.list_accounts().await?;
     let sfin_account = accounts_list
         .into_iter()
         .find(|a| a.id == simplefin_id)
         .ok_or(ProviderError::AccountNotFound)?;
+    let transactions = client.fetch_transactions(simplefin_id, 0).await?;
+    Ok(PendingImport {
+        simplefin_id: simplefin_id.to_string(),
+        local_account_id: local_account_id.to_string(),
+        sfin_account,
+        transactions,
+    })
+}
 
+pub fn commit_simplefin_import(
+    pending: PendingImport,
+    conn: &mut Connection,
+) -> ProviderResult<SimpleFinImportSummary> {
     let existing_count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM transactions WHERE account_id = ?1",
-            [local_account_id],
+            [&pending.local_account_id],
             |r| r.get(0),
         )
         .map_err(|e| ProviderError::Core(e.into()))?;
     let is_initial = existing_count == 0;
 
-    let sfin_transactions = client
-        .fetch_transactions(simplefin_id, 0)
-        .await?;
-
-    let mut new_transactions = Vec::with_capacity(sfin_transactions.len());
-    for tx in &sfin_transactions {
+    let mut new_transactions = Vec::with_capacity(pending.transactions.len());
+    for tx in &pending.transactions {
         let posted_at = chrono::DateTime::from_timestamp(tx.posted, 0)
             .unwrap_or_else(chrono::Utc::now);
         let amount_cents = parse_amount_cents(&tx.amount)?;
         new_transactions.push(NewTransaction {
-            account_id: local_account_id.to_string(),
+            account_id: pending.local_account_id.clone(),
             amount_cents,
             merchant_raw: tx.payee.clone(),
             notes: Some(tx.description.clone()),
@@ -60,7 +75,7 @@ pub async fn import_simplefin_account(
     let mut skipped = 0usize;
 
     if is_initial {
-        let reported_balance_cents = parse_amount_cents(&sfin_account.balance)?;
+        let reported_balance_cents = parse_amount_cents(&pending.sfin_account.balance)?;
         let imported_total: i64 = new_transactions.iter().map(|t| t.amount_cents).sum();
         let starting_balance_cents = reported_balance_cents - imported_total;
 
@@ -73,7 +88,7 @@ pub async fn import_simplefin_account(
         transactions::insert(
             conn,
             NewTransaction {
-                account_id: local_account_id.to_string(),
+                account_id: pending.local_account_id.clone(),
                 amount_cents: starting_balance_cents,
                 merchant_raw: "Starting balance".to_string(),
                 notes: Some("Imported from SimpleFin".to_string()),
@@ -93,7 +108,7 @@ pub async fn import_simplefin_account(
             let exists: bool = conn
                 .query_row(
                     "SELECT 1 FROM transactions WHERE account_id = ?1 AND imported_id = ?2 LIMIT 1",
-                    [local_account_id, imported_id],
+                    [&pending.local_account_id, imported_id],
                     |_| Ok(true),
                 )
                 .unwrap_or(false);
@@ -109,8 +124,8 @@ pub async fn import_simplefin_account(
     let now = chrono::Utc::now();
     accounts::update_sync_metadata(
         conn,
-        local_account_id,
-        Some(simplefin_id),
+        &pending.local_account_id,
+        Some(&pending.simplefin_id),
         Some(now),
     )
     .map_err(|e| ProviderError::Core(e.into()))?;

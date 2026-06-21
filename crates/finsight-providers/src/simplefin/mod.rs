@@ -4,4 +4,4 @@ pub mod sync;
 
 pub use client::SimpleFinClient;
 pub use models::{SimpleFinAccount, SimpleFinTransaction};
-pub use sync::import_simplefin_account;
+pub use sync::{commit_simplefin_import, fetch_simplefin_data, SimpleFinImportSummary};

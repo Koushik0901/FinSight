@@ -220,6 +220,12 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::accounts::export_account_csv,
         commands::journey::get_journey_status,
         commands::inbox::get_action_items,
+        commands::simplefin::save_simplefin_setup_token,
+        commands::simplefin::get_simplefin_status,
+        commands::simplefin::list_simplefin_accounts,
+        commands::simplefin::import_simplefin_accounts,
+        commands::simplefin::sync_simplefin_account,
+        commands::simplefin::disconnect_simplefin,
     ])
 }
 

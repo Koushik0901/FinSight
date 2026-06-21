@@ -3,6 +3,9 @@ use keyring::Entry;
 use rand::RngCore;
 use zeroize::Zeroizing;
 
+pub const SIMPLEFIN_SERVICE: &str = "com.finsight.simplefin";
+pub const SIMPLEFIN_USER: &str = "default";
+
 /// Returns a 64-char hex string (32 random bytes) wrapped in `Zeroizing` so
 /// the in-memory copy is securely wiped when dropped.
 /// If a key already exists for (service, user), returns it; otherwise creates one.
