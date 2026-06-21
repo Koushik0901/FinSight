@@ -113,6 +113,10 @@ mod tests {
                 color: "#fff".into(),
                 opening_balance_cents: 0,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap();

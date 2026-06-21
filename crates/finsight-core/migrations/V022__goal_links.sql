@@ -1,0 +1,2 @@
+ALTER TABLE goals ADD COLUMN liability_id TEXT REFERENCES liabilities(id) ON DELETE SET NULL;
+ALTER TABLE goals ADD COLUMN account_id  TEXT REFERENCES accounts(id)  ON DELETE SET NULL;
