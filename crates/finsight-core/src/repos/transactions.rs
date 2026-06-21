@@ -10,8 +10,8 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
     let now = Utc::now();
     conn.execute(
         "INSERT INTO transactions \
-         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at, imported_id, source) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11)",
         params![
             &id,
             &input.account_id,
@@ -22,6 +22,8 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
             input.status.as_db(),
             &input.notes,
             now.to_rfc3339(),
+            &input.imported_id,
+            &input.source,
         ],
     )?;
     Ok(Transaction {
@@ -45,6 +47,8 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         created_at: now,
         is_reimbursable: false,
         is_split: false,
+        imported_id: input.imported_id,
+        source: input.source,
     })
 }
 
@@ -74,7 +78,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split \
+                t.is_reimbursable, t.is_split, t.imported_id, t.source \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id ",
@@ -160,6 +164,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
                 is_split: r.get::<_, i64>(19)? != 0,
+                imported_id: r.get(20)?,
+                source: r.get(21)?,
             })
         },
     )?;
@@ -294,7 +300,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split \
+                t.is_reimbursable, t.is_split, t.imported_id, t.source \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -340,6 +346,8 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
                 is_split: r.get::<_, i64>(19)? != 0,
+                imported_id: r.get(20)?,
+                source: r.get(21)?,
             })
         },
     )
@@ -387,6 +395,8 @@ mod tests {
                 color: "#fff".into(),
                 opening_balance_cents: 0,
                 source: "manual".into(),
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap();
@@ -401,6 +411,8 @@ mod tests {
                 category_id: None,
                 notes: None,
                 status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: None,
             },
         )
         .unwrap();

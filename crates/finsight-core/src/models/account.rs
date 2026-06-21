@@ -49,6 +49,9 @@ pub struct Account {
     pub color: String,
     pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub simplefin_account_id: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub nickname: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -62,6 +65,9 @@ pub struct AccountSummary {
     pub currency: String,
     pub color: String,
     pub source: String,
+    pub simplefin_account_id: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub nickname: Option<String>,
 }
 
 fn default_source() -> String {
@@ -76,6 +82,7 @@ pub struct AccountPatch {
     pub color: Option<String>,
     pub last4: Option<Option<String>>,
     pub currency: Option<String>,
+    pub nickname: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -90,4 +97,6 @@ pub struct NewAccount {
     pub opening_balance_cents: i64,
     #[serde(default = "default_source")]
     pub source: String,
+    pub simplefin_account_id: Option<String>,
+    pub nickname: Option<String>,
 }

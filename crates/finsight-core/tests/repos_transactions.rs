@@ -29,6 +29,8 @@ fn insert_and_list_returns_descending_by_posted_at() {
             color: "#fff".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -43,6 +45,8 @@ fn insert_and_list_returns_descending_by_posted_at() {
             category_id: None,
             notes: None,
             status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
         },
     )
     .unwrap();
@@ -56,6 +60,8 @@ fn insert_and_list_returns_descending_by_posted_at() {
             category_id: None,
             notes: None,
             status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
         },
     )
     .unwrap();
@@ -82,6 +88,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             color: "#fff".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -97,6 +105,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             color: "#000".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -111,6 +121,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             category_id: None,
             notes: None,
             status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
         },
     )
     .unwrap();
@@ -124,6 +136,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             category_id: None,
             notes: None,
             status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
         },
     )
     .unwrap();
@@ -156,6 +170,8 @@ fn list_respects_limit() {
             color: "#fff".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -170,6 +186,8 @@ fn list_respects_limit() {
                 category_id: None,
                 notes: None,
                 status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: None,
             },
         )
         .unwrap();

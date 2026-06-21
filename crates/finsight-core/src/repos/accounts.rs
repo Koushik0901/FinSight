@@ -11,8 +11,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     conn.execute(
-        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, created_at, simplefin_account_id, nickname) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             &id,
             &input.owner,
@@ -24,6 +24,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
             &input.color,
             &input.source,
             now.to_rfc3339(),
+            &input.simplefin_account_id,
+            &input.nickname,
         ],
     )?;
 
@@ -48,6 +50,9 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
         color: input.color,
         archived_at: None,
         created_at: now,
+        simplefin_account_id: input.simplefin_account_id,
+        last_synced_at: None,
+        nickname: input.nickname,
     })
 }
 
@@ -56,12 +61,13 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
         "SELECT a.id, a.owner, a.bank, a.type, a.name, a.currency, a.color, \
                 COALESCE((SELECT balance_cents FROM account_balances b \
                           WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance, \
-                a.source \
+                a.source, a.simplefin_account_id, a.last_synced_at, a.nickname \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
     )?;
     let rows = stmt.query_map([], |r| {
+        let last_synced_s: Option<String> = r.get(10)?;
         Ok(AccountSummary {
             id: r.get(0)?,
             owner: r.get(1)?,
@@ -72,6 +78,13 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             color: r.get(6)?,
             balance_cents: r.get(7)?,
             source: r.get(8)?,
+            simplefin_account_id: r.get(9)?,
+            last_synced_at: last_synced_s.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            nickname: r.get(11)?,
         })
     })?;
     let mut out = Vec::new();
@@ -118,14 +131,22 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
             params![currency, id],
         )?;
     }
+    if let Some(nickname) = &patch.nickname {
+        conn.execute(
+            "UPDATE accounts SET nickname = ?1 WHERE id = ?2",
+            params![nickname, id],
+        )?;
+    }
     // Return the updated account
     conn.query_row(
-        "SELECT id, owner, bank, type, name, last4, currency, color, archived_at, created_at \
+        "SELECT id, owner, bank, type, name, last4, currency, color, archived_at, created_at, \
+                simplefin_account_id, last_synced_at, nickname \
          FROM accounts WHERE id = ?1",
         params![id],
         |r| {
             let archived_s: Option<String> = r.get(8)?;
             let created_s: String = r.get(9)?;
+            let last_synced_s: Option<String> = r.get(11)?;
             Ok(Account {
                 id: r.get(0)?,
                 owner: r.get(1)?,
@@ -143,6 +164,13 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
                 created_at: DateTime::parse_from_rfc3339(&created_s)
                     .unwrap()
                     .with_timezone(&Utc),
+                simplefin_account_id: r.get(10)?,
+                last_synced_at: last_synced_s.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&Utc))
+                }),
+                nickname: r.get(12)?,
             })
         },
     )
@@ -160,6 +188,62 @@ pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
         params![id],
     )?;
     Ok(())
+}
+
+pub fn update_sync_metadata(
+    conn: &mut Connection,
+    id: &str,
+    simplefin_account_id: Option<&str>,
+    last_synced_at: Option<DateTime<Utc>>,
+) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE accounts SET simplefin_account_id = ?1, last_synced_at = ?2 WHERE id = ?3",
+        params![
+            simplefin_account_id,
+            last_synced_at.map(|d| d.to_rfc3339()),
+            id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_by_simplefin_id(conn: &mut Connection, simplefin_id: &str) -> CoreResult<Option<Account>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, owner, bank, type, name, last4, currency, color, archived_at, created_at, \
+                simplefin_account_id, last_synced_at, nickname \
+         FROM accounts WHERE simplefin_account_id = ?1 AND archived_at IS NULL",
+    )?;
+    let mut rows = stmt.query_map(params![simplefin_id], |r| {
+        let archived_s: Option<String> = r.get(8)?;
+        let created_s: String = r.get(9)?;
+        let last_synced_s: Option<String> = r.get(11)?;
+        Ok(Account {
+            id: r.get(0)?,
+            owner: r.get(1)?,
+            bank: r.get(2)?,
+            r#type: AccountType::from_db(&r.get::<_, String>(3)?),
+            name: r.get(4)?,
+            last4: r.get(5)?,
+            currency: r.get(6)?,
+            color: r.get(7)?,
+            archived_at: archived_s.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            created_at: DateTime::parse_from_rfc3339(&created_s)
+                .unwrap()
+                .with_timezone(&Utc),
+            simplefin_account_id: r.get(10)?,
+            last_synced_at: last_synced_s.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|d| d.with_timezone(&Utc))
+            }),
+            nickname: r.get(12)?,
+        })
+    })?;
+    Ok(rows.next().transpose()?)
 }
 
 #[cfg(test)]
@@ -189,6 +273,8 @@ mod tests {
                 color: "#fff".into(),
                 opening_balance_cents: 0,
                 source: "manual".into(),
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap()

@@ -101,6 +101,8 @@ mod tests {
                 color: "#3B82F6".into(),
                 source: "manual".into(),
                 opening_balance_cents: 10_000_000,
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap();

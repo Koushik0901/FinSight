@@ -86,6 +86,8 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
             color: "#C9F950".into(),
             opening_balance_cents: 1_482_042,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )?;
 
@@ -106,6 +108,8 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
                 category_id: Some(category.into()),
                 notes: None,
                 status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: Some("sample".to_string()),
             },
         )?;
         // Link merchant

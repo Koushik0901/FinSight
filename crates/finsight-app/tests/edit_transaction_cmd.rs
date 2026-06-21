@@ -34,6 +34,8 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
             color: "#fff".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -47,6 +49,8 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
             category_id: None,
             notes: None,
             status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
         },
     )
     .unwrap();

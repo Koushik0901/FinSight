@@ -51,6 +51,8 @@ pub struct Transaction {
     pub created_at: DateTime<Utc>,
     pub is_reimbursable: bool,
     pub is_split: bool,
+    pub imported_id: Option<String>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -62,6 +64,8 @@ pub struct NewTransaction {
     pub category_id: Option<String>,
     pub notes: Option<String>,
     pub status: TransactionStatus,
+    pub imported_id: Option<String>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Type)]

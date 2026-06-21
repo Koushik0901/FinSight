@@ -830,6 +830,8 @@ mod tests {
                 color: "#123456".into(),
                 opening_balance_cents,
                 source: "manual".into(),
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap()
@@ -885,6 +887,8 @@ mod tests {
                     category_id: None,
                     notes: None,
                     status: TransactionStatus::Cleared,
+                    imported_id: None,
+                    source: None,
                 },
             )
             .unwrap();

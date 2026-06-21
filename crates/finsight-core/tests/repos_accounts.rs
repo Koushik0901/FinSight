@@ -29,6 +29,8 @@ fn insert_then_list_summaries_returns_one() {
             color: "#C9F950".into(),
             opening_balance_cents: 1_482_042,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -63,6 +65,8 @@ fn list_summaries_excludes_archived_accounts() {
             color: "#fff".into(),
             opening_balance_cents: 100,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -78,6 +82,8 @@ fn list_summaries_excludes_archived_accounts() {
             color: "#000".into(),
             opening_balance_cents: 0,
             source: "manual".into(),
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
