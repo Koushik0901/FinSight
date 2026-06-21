@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment } from "../client";
+import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
 // ── Budget ────────────────────────────────────────────────────────────────
@@ -114,6 +114,19 @@ export function useUpdateGoalMonthly() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["goals"] });
     },
+  });
+}
+
+export function useProjectGoalGrowth(goalId: string | undefined, years: number) {
+  return useQuery<ProjectedValue>({
+    queryKey: ["goal-projection", goalId, years],
+    queryFn: async () => {
+      if (!goalId) throw new Error("goalId required");
+      const result = await commands.projectGoalGrowth(goalId, years);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime() && !!goalId,
   });
 }
 
