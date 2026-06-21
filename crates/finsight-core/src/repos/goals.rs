@@ -17,6 +17,8 @@ pub struct Goal {
     pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
+    pub liability_id: Option<String>,
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,8 @@ pub struct NewGoal {
     pub color: String,
     pub notes: Option<String>,
     pub purpose: Option<String>,
+    pub liability_id: Option<String>,
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,12 +45,15 @@ pub struct GoalPatch {
     pub color: Option<String>,
     pub notes: Option<String>,
     pub purpose: Option<Option<String>>,
+    pub liability_id: Option<Option<String>>,
+    pub account_id: Option<Option<String>>,
 }
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
-                target_date, color, notes, purpose, sort_order, created_at \
+                target_date, color, notes, purpose, sort_order, created_at, \
+                liability_id, account_id \
          FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -63,6 +70,8 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
             purpose: r.get(9)?,
             sort_order: r.get(10)?,
             created_at: r.get(11)?,
+            liability_id: r.get(12)?,
+            account_id: r.get(13)?,
         })
     })?;
     let mut out = Vec::new();
@@ -72,13 +81,44 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     Ok(out)
 }
 
+pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
+                target_date, color, notes, purpose, sort_order, created_at, \
+                liability_id, account_id \
+         FROM goals WHERE id = ?1 AND archived_at IS NULL",
+    )?;
+    let mut rows = stmt.query_map(params![id], |r| {
+        Ok(Goal {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            goal_type: r.get(2)?,
+            target_cents: r.get(3)?,
+            current_cents: r.get(4)?,
+            monthly_cents: r.get(5)?,
+            target_date: r.get(6)?,
+            color: r.get(7)?,
+            notes: r.get(8)?,
+            purpose: r.get(9)?,
+            sort_order: r.get(10)?,
+            created_at: r.get(11)?,
+            liability_id: r.get(12)?,
+            account_id: r.get(13)?,
+        })
+    })?;
+    rows.next()
+        .transpose()?
+        .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+}
+
 pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
-                           target_date, color, notes, purpose, sort_order, created_at)
-         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10)",
+                           target_date, color, notes, purpose, sort_order, created_at, \
+                           liability_id, account_id)
+         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12)",
         params![
             id,
             g.name,
@@ -89,7 +129,9 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
             g.color,
             g.notes,
             g.purpose,
-            now
+            now,
+            g.liability_id,
+            g.account_id
         ],
     )?;
     Ok(Goal {
@@ -105,7 +147,21 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         purpose: g.purpose,
         sort_order: 0,
         created_at: now,
+        liability_id: g.liability_id,
+        account_id: g.account_id,
     })
+}
+
+/// Sync `current_cents` of every goal linked to the given liability with the
+/// liability's current `balance_cents`.
+pub fn sync_linked_liabilities(conn: &mut Connection, liability_id: &str) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals
+         SET current_cents = COALESCE((SELECT balance_cents FROM liabilities WHERE id = ?1), 0)
+         WHERE liability_id = ?1",
+        params![liability_id],
+    )?;
+    Ok(())
 }
 
 pub fn set_current_cents(conn: &mut Connection, id: &str, current_cents: i64) -> CoreResult<()> {
@@ -170,6 +226,8 @@ mod tests {
                 color: "#C9F950".into(),
                 notes: None,
                 purpose: None,
+                liability_id: None,
+                account_id: None,
             },
         )
         .unwrap();
