@@ -358,6 +358,14 @@ async archiveGoal(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async projectGoalGrowth(goalId: string, years: number) : Promise<Result<ProjectedValue, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("project_goal_growth", { goalId, years }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_recurring") };
@@ -885,7 +893,7 @@ amountCents: number | null }
 export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
-export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; followUpQuestions: string[] }
+export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null }
 export type AgentChange = { kind: string; description: string }
 export type AgentExecutionEntry = { id: string; itemId: string; bundleId: string; actionKind: string; status: string; resultJson: string | null; error: string | null; executedAt: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
@@ -943,7 +951,7 @@ export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
-export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string }
+export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; liabilityId: string | null; accountId: string | null }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
 export type ImportSource = "csv" | "manual" | "sample"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
@@ -994,7 +1002,7 @@ txnCount: number }
 export type MonthlyActual = { month: string; label: string; cents: number }
 export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null }
-export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null }
+export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; liabilityId: string | null; accountId: string | null }
 export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
@@ -1002,6 +1010,7 @@ export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomi
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type PlanAssignment = { categoryId: string; amountCents: number }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
+export type ProjectedValue = { years: number; valueCents: number; annualRate: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 /**
