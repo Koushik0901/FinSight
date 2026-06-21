@@ -31,3 +31,6 @@ ui/dist/
 
 # Visual brainstorm companion
 .superpowers/
+
+# Git worktrees
+.worktrees/
