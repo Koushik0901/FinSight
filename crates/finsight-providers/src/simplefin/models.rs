@@ -6,6 +6,22 @@ pub struct SimpleFinAccountSet {
     pub accounts: Vec<SimpleFinAccount>,
     #[serde(default)]
     pub errors: Vec<String>,
+    #[serde(default)]
+    pub errlist: Vec<SimpleFinError>,
+    #[serde(default)]
+    pub connections: Vec<SimpleFinConnection>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SimpleFinError {
+    pub code: String,
+    pub msg: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SimpleFinConnection {
+    pub conn_id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -14,6 +30,8 @@ pub struct SimpleFinAccount {
     pub name: String,
     #[serde(alias = "org", alias = "conn_name")]
     pub connection_name: Option<String>,
+    #[serde(rename = "conn_id")]
+    pub connection_id: Option<String>,
     pub currency: String,
     pub balance: String,
     #[serde(rename = "balance-date")]

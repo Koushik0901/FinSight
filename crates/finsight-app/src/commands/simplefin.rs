@@ -83,8 +83,27 @@ pub async fn list_simplefin_accounts(
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::new("simplefin.not_configured", "SimpleFin not configured"))?;
     let client = SimpleFinClient::new(&access_url).map_err(AppError::from)?;
-    let accounts = client.list_accounts().await.map_err(AppError::from)?;
-    Ok(accounts.into_iter().map(SimpleFinAccountInfo::from).collect())
+    let (accounts, connections) = client.list_accounts_with_connections().await.map_err(AppError::from)?;
+    Ok(accounts
+        .into_iter()
+        .map(|a| {
+            let connection_name = a.connection_name.clone().or_else(|| {
+                a.connection_id.as_ref().and_then(|conn_id| {
+                    connections
+                        .iter()
+                        .find(|c| &c.conn_id == conn_id)
+                        .map(|c| c.name.clone())
+                })
+            });
+            SimpleFinAccountInfo {
+                id: a.id,
+                name: a.name,
+                connection_name: connection_name.unwrap_or_else(|| "Unknown".to_string()),
+                currency: a.currency,
+                balance: a.balance,
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]

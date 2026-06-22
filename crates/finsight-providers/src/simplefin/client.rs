@@ -5,7 +5,7 @@ use reqwest;
 use url::Url;
 
 use crate::error::{ProviderError, ProviderResult};
-use super::models::{SimpleFinAccount, SimpleFinAccountSet, SimpleFinTransaction};
+use super::models::{SimpleFinAccount, SimpleFinAccountSet, SimpleFinConnection, SimpleFinTransaction};
 
 const MAX_REDIRECTS: u8 = 5;
 
@@ -105,11 +105,21 @@ impl SimpleFinClient {
     }
 
     pub async fn list_accounts(&self) -> ProviderResult<Vec<SimpleFinAccount>> {
+        Ok(self.list_accounts_with_connections().await?.0)
+    }
+
+    pub async fn list_accounts_with_connections(
+        &self,
+    ) -> ProviderResult<(Vec<SimpleFinAccount>, Vec<SimpleFinConnection>)> {
         let res = self
-            .get("accounts", &[("balances-only", "1")])
+            .get("accounts", &[("version", "2"), ("balances-only", "1")])
             .await?;
         let set: SimpleFinAccountSet = res.json().await.map_err(ProviderError::Http)?;
-        Ok(set.accounts)
+        if !set.errlist.is_empty() {
+            let msgs: Vec<String> = set.errlist.iter().map(|e| e.msg.clone()).collect();
+            return Err(ProviderError::ServerError(msgs.join("; ")));
+        }
+        Ok((set.accounts, set.connections))
     }
 
     pub async fn fetch_transactions(
@@ -121,6 +131,7 @@ impl SimpleFinClient {
             .get(
                 "accounts",
                 &[
+                    ("version", "2"),
                     ("account", account_id),
                     ("start-date", &start_epoch.to_string()),
                     ("pending", "0"),
@@ -128,6 +139,10 @@ impl SimpleFinClient {
             )
             .await?;
         let set: SimpleFinAccountSet = res.json().await.map_err(ProviderError::Http)?;
+        if !set.errlist.is_empty() {
+            let msgs: Vec<String> = set.errlist.iter().map(|e| e.msg.clone()).collect();
+            return Err(ProviderError::ServerError(msgs.join("; ")));
+        }
         let account = set
             .accounts
             .into_iter()
