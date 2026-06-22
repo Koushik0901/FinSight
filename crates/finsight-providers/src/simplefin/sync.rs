@@ -21,7 +21,7 @@ pub struct SimpleFinImportSummary {
     pub skipped: usize,
 }
 
-const SIMPLEFIN_LOOKBACK_DAYS: i64 = 90;
+const SIMPLEFIN_LOOKBACK_DAYS: i64 = 89;
 
 pub async fn fetch_simplefin_data(
     access_url: &str,
@@ -40,6 +40,12 @@ pub async fn fetch_simplefin_data(
     let start_epoch = last_synced_at
         .map(|t| t.max(cutoff).timestamp())
         .unwrap_or_else(|| cutoff.timestamp());
+    tracing::info!(
+        simplefin_id,
+        start_epoch,
+        last_synced_at = ?last_synced_at,
+        "Fetching SimpleFin transactions"
+    );
     let transactions = client.fetch_transactions(simplefin_id, start_epoch).await?;
     Ok(PendingImport {
         simplefin_id: simplefin_id.to_string(),
