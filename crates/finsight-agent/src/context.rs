@@ -971,6 +971,8 @@ mod tests {
                 emergency_fund_eligible: true,
                 goal_earmark: None,
                 apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap()
@@ -1022,6 +1024,8 @@ mod tests {
                 emergency_fund_eligible: true,
                 goal_earmark: None,
                 apy_pct: Some(4.5),
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap();
@@ -1084,6 +1088,8 @@ mod tests {
                     category_id: None,
                     notes: None,
                     status: TransactionStatus::Cleared,
+                    imported_id: None,
+                    source: None,
                 },
             )
             .unwrap();

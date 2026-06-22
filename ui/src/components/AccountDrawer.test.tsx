@@ -13,7 +13,9 @@ vi.mock("../api/hooks/accounts", () => ({
 const existingAccount = {
   id: "a1", owner: "Me", bank: "Chase", type: "Checking" as const,
   name: "Old Name", last4: null, currency: "USD", color: "#fff",
-  archived_at: null, liquidity_type: "liquid", emergency_fund_eligible: true, goal_earmark: null, apy_pct: null, created_at: "2024-01-01T00:00:00Z",
+  archived_at: null, created_at: "2024-01-01T00:00:00Z",
+  liquidity_type: "liquid", emergency_fund_eligible: true, goal_earmark: null, apy_pct: null,
+  simplefin_account_id: null, last_synced_at: null, nickname: null,
 };
 
 describe("AccountDrawer — create mode", () => {

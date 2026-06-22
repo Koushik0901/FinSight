@@ -11,6 +11,7 @@ import { userErrorMessage } from "../utils/runtime";
 const schema = z.object({
   bank: z.string().min(1, "Required"),
   name: z.string().min(1, "Required"),
+  nickname: z.string().optional(),
   type: z.enum(["Checking", "Savings", "Credit", "Investment", "Cash", "Other"]),
   last4: z.string().max(4).optional(),
   currency: z.enum(["USD", "EUR", "GBP", "CAD", "AUD"]),
@@ -47,6 +48,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
       owner: defaultOwner,
       opening_dollars: 0,
       apy_pct: undefined,
+      nickname: undefined,
     },
   });
 
@@ -61,9 +63,10 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         owner: account.owner,
         opening_dollars: 0,
         apy_pct: account.apy_pct ?? undefined,
+        nickname: account.nickname ?? undefined,
       });
     } else {
-      reset({ type: "Checking", currency: "USD", owner: defaultOwner, opening_dollars: 0 });
+      reset({ type: "Checking", currency: "USD", owner: defaultOwner, opening_dollars: 0, nickname: undefined });
     }
     setArchiveConfirm(false);
   }, [account?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -84,6 +87,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             emergency_fund_eligible: null,
             goal_earmark: null,
             apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
+            nickname: values.nickname ? values.nickname : null,
           },
         });
       } else {
@@ -101,6 +105,8 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           emergency_fund_eligible: true,
           goal_earmark: null,
           apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
+          simplefin_account_id: null,
+          nickname: values.nickname ? values.nickname : null,
         });
       }
       reset();
@@ -133,6 +139,9 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         <label> Name
           <input {...register("name")} placeholder="e.g. Joint Checking" aria-invalid={!!errors.name} />
           {errors.name && <span className="err">{errors.name.message}</span>}
+        </label>
+        <label> Nickname <span className="muted">(optional)</span>
+          <input {...register("nickname")} placeholder="e.g. Main Checking" />
         </label>
         {!isEdit && (
           <fieldset>

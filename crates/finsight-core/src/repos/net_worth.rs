@@ -105,6 +105,8 @@ mod tests {
                 goal_earmark: None,
                 apy_pct: None,
                 opening_balance_cents: 10_000_000,
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap();

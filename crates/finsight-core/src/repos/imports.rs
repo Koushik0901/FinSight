@@ -13,6 +13,7 @@ pub enum ImportSource {
     Csv,
     Manual,
     Sample,
+    SimpleFin,
 }
 
 impl ImportSource {
@@ -21,6 +22,7 @@ impl ImportSource {
             Self::Csv => "csv",
             Self::Manual => "manual",
             Self::Sample => "sample",
+            Self::SimpleFin => "simplefin",
         }
     }
 
@@ -28,6 +30,7 @@ impl ImportSource {
         match s {
             "manual" => Self::Manual,
             "sample" => Self::Sample,
+            "simplefin" => Self::SimpleFin,
             _ => Self::Csv,
         }
     }

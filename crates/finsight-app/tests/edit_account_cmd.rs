@@ -36,6 +36,8 @@ async fn update_account_name_and_color() {
                 emergency_fund_eligible: true,
                 goal_earmark: None,
                 apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap()
@@ -74,6 +76,8 @@ async fn archive_account_cleans_up_mappings() {
                 emergency_fund_eligible: true,
                 goal_earmark: None,
                 apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
             },
         )
         .unwrap();

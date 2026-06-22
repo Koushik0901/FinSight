@@ -37,7 +37,7 @@ describe("AccountDrawer", () => {
   it("submits with cents conversion", async () => {
     renderDrawer();
     fireEvent.change(screen.getByLabelText(/Bank/i), { target: { value: "Chase" } });
-    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: "Joint Checking" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Joint Checking" } });
     fireEvent.change(screen.getByLabelText(/Opening balance/i), { target: { value: "100.50" } });
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
     const { commands } = await import("../api/client");

@@ -8,6 +8,7 @@ import ImportMappingDialog from "./ImportMappingDialog";
 import { isTauriRuntime } from "../../utils/runtime";
 import Button from "../../components/Button";
 import Card from "../../components/Card";
+import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props { onNext: () => void; }
 
@@ -15,6 +16,7 @@ export default function StepConnect({ onNext }: Props) {
   const [acctOpen, setAcctOpen] = useState(false);
   const [txnOpen, setTxnOpen]   = useState(false);
   const [csvPath, setCsvPath]   = useState<string | null>(null);
+  const [sfOpen, setSfOpen]     = useState(false);
 
   const { data: accounts = [], isLoading: acctLoading, error: acctError } = useAccounts();
   const { data: txns = [], isLoading: txnLoading, error: txnError }       = useTransactions();
@@ -61,6 +63,14 @@ export default function StepConnect({ onNext }: Props) {
           <p>You can always add or import later from the Accounts screen.</p>
           <Button variant="ghost" onClick={onNext}>Skip →</Button>
         </Card>
+
+        <Card className="stack stack-md">
+          <h3>Connect with SimpleFin</h3>
+          <p>Link bank accounts securely using your SimpleFin bridge token.</p>
+          <Button variant="default" onClick={() => setSfOpen(true)}>
+            Set up SimpleFin
+          </Button>
+        </Card>
       </div>
 
       {(!isLoading || hasError) && (
@@ -80,6 +90,7 @@ export default function StepConnect({ onNext }: Props) {
 
       <AccountDrawer open={acctOpen} onClose={() => setAcctOpen(false)} />
       <TransactionDrawer open={txnOpen} onClose={() => setTxnOpen(false)} />
+      <SimpleFinDialog open={sfOpen} onClose={() => setSfOpen(false)} />
       {csvPath && (
         <ImportMappingDialog
           path={csvPath}

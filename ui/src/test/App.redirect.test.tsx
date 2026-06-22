@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { App } from "../App";
 
 vi.mock("../api/client", () => ({
   commands: {
@@ -18,8 +17,9 @@ vi.mock("../api/client", () => ({
   },
 }));
 
-function renderApp(initialPath: string) {
+async function renderApp(initialPath: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { App } = await import("../App");
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
@@ -30,7 +30,7 @@ function renderApp(initialPath: string) {
 }
 
 describe("App onboarding redirect", () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => { vi.resetModules(); });
 
   it("redirects empty DB to /onboarding", async () => {
     const { commands } = await import("../api/client");
@@ -38,7 +38,7 @@ describe("App onboarding redirect", () => {
       status: "ok",
       data: { account_count: 0, category_count: 0, completion_marked: false },
     });
-    renderApp("/");
+    await renderApp("/");
     await waitFor(() => {
       expect(screen.getByTestId("onboarding-shell")).toBeInTheDocument();
     });
@@ -50,7 +50,7 @@ describe("App onboarding redirect", () => {
       status: "ok",
       data: { account_count: 3, category_count: 5, completion_marked: false },
     });
-    renderApp("/");
+    await renderApp("/");
     await waitFor(() => {
       expect(screen.getByText(/no accounts yet\./i)).toBeInTheDocument();
     });
@@ -63,7 +63,7 @@ describe("App onboarding redirect", () => {
       status: "ok",
       data: { account_count: 0, category_count: 0, completion_marked: true },
     });
-    renderApp("/");
+    await renderApp("/");
     await waitFor(() => {
       expect(screen.getByText(/no accounts yet\./i)).toBeInTheDocument();
     });

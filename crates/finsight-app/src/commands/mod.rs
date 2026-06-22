@@ -14,4 +14,5 @@ pub mod recurring;
 pub mod reports;
 pub mod scenarios;
 pub mod settings;
+pub mod simplefin;
 pub mod transactions;

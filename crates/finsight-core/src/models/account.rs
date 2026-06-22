@@ -53,6 +53,9 @@ pub struct Account {
     pub goal_earmark: Option<String>,
     pub apy_pct: Option<f64>,
     pub created_at: DateTime<Utc>,
+    pub simplefin_account_id: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub nickname: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -72,6 +75,9 @@ pub struct AccountSummary {
     pub emergency_fund_eligible: bool,
     pub goal_earmark: Option<String>,
     pub apy_pct: Option<f64>,
+    pub simplefin_account_id: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub nickname: Option<String>,
 }
 
 fn default_source() -> String {
@@ -98,6 +104,7 @@ pub struct AccountPatch {
     pub emergency_fund_eligible: Option<bool>,
     pub goal_earmark: Option<Option<String>>,
     pub apy_pct: Option<Option<f64>>,
+    pub nickname: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -118,4 +125,6 @@ pub struct NewAccount {
     pub emergency_fund_eligible: bool,
     pub goal_earmark: Option<String>,
     pub apy_pct: Option<f64>,
+    pub simplefin_account_id: Option<String>,
+    pub nickname: Option<String>,
 }

@@ -33,6 +33,8 @@ fn insert_then_list_summaries_returns_one() {
             emergency_fund_eligible: true,
             goal_earmark: None,
             apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -71,6 +73,8 @@ fn list_summaries_excludes_archived_accounts() {
             emergency_fund_eligible: true,
             goal_earmark: None,
             apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();
@@ -90,6 +94,8 @@ fn list_summaries_excludes_archived_accounts() {
             emergency_fund_eligible: true,
             goal_earmark: None,
             apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
         },
     )
     .unwrap();

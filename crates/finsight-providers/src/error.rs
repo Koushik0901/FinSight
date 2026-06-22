@@ -18,6 +18,18 @@ pub enum ProviderError {
     Core(#[from] finsight_core::CoreError),
     #[error("internal: {0}")]
     Internal(String),
+    #[error("invalid SimpleFin access URL")]
+    InvalidAccessUrl,
+    #[error("SimpleFin setup token was already used or compromised")]
+    TokenClaimFailed,
+    #[error("SimpleFin access revoked")]
+    Forbidden,
+    #[error("SimpleFin server error: {0}")]
+    ServerError(String),
+    #[error("SimpleFin account not found")]
+    AccountNotFound,
+    #[error("network error: {0}")]
+    Http(#[from] reqwest::Error),
 }
 
 pub type ProviderResult<T> = std::result::Result<T, ProviderError>;

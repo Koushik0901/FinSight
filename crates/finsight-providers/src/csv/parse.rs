@@ -142,6 +142,8 @@ pub fn into_new_transaction(parsed: ParsedRow, account_id: String) -> NewTransac
         category_id: None,
         notes: parsed.notes,
         status: TransactionStatus::Cleared, // CSV imports are always cleared
+        imported_id: None,
+        source: Some("csv".to_string()),
     }
 }
 

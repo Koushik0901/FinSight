@@ -90,6 +90,8 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
             emergency_fund_eligible: true,
             goal_earmark: None,
             apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
         },
     )?;
 
@@ -110,6 +112,8 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
                 category_id: Some(category.into()),
                 notes: None,
                 status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: Some("sample".to_string()),
             },
         )?;
         // Link merchant
