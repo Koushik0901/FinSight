@@ -21,7 +21,7 @@ pub struct SimpleFinImportSummary {
     pub skipped: usize,
 }
 
-const SIMPLEFIN_LOOKBACK_DAYS: i64 = 89;
+const SIMPLEFIN_LOOKBACK_DAYS: i64 = 45;
 
 pub async fn fetch_simplefin_data(
     access_url: &str,
