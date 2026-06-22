@@ -103,10 +103,10 @@ export default function Accounts() {
               <TableRow
                 key={a.id}
                 onClick={() => setEditAccount(a as unknown as Account)}
-                aria-label={`Edit ${a.name}`}
+                aria-label={`Edit ${a.nickname || a.name}`}
               >
                 <TableCell>{a.bank}</TableCell>
-                <TableCell>{a.name}</TableCell>
+                <TableCell>{a.nickname || a.name}</TableCell>
                 <TableCell>
                   <span className="muted">{a.type}</span>
                   {a.type === "Savings" && a.apy_pct != null && (

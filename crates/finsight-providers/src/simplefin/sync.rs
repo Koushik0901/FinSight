@@ -1,3 +1,4 @@
+use chrono::{DateTime, Duration, Utc};
 use rusqlite::Connection;
 
 use finsight_core::models::{NewTransaction, TransactionStatus};
@@ -20,10 +21,13 @@ pub struct SimpleFinImportSummary {
     pub skipped: usize,
 }
 
+const SIMPLEFIN_LOOKBACK_DAYS: i64 = 90;
+
 pub async fn fetch_simplefin_data(
     access_url: &str,
     simplefin_id: &str,
     local_account_id: &str,
+    last_synced_at: Option<DateTime<Utc>>,
 ) -> ProviderResult<PendingImport> {
     let client = SimpleFinClient::new(access_url)?;
     let accounts_list = client.list_accounts().await?;
@@ -31,7 +35,12 @@ pub async fn fetch_simplefin_data(
         .into_iter()
         .find(|a| a.id == simplefin_id)
         .ok_or(ProviderError::AccountNotFound)?;
-    let transactions = client.fetch_transactions(simplefin_id, 0).await?;
+
+    let cutoff = Utc::now() - Duration::days(SIMPLEFIN_LOOKBACK_DAYS);
+    let start_epoch = last_synced_at
+        .map(|t| t.max(cutoff).timestamp())
+        .unwrap_or_else(|| cutoff.timestamp());
+    let transactions = client.fetch_transactions(simplefin_id, start_epoch).await?;
     Ok(PendingImport {
         simplefin_id: simplefin_id.to_string(),
         local_account_id: local_account_id.to_string(),

@@ -115,6 +115,8 @@ pub async fn import_simplefin_accounts(
     let access_url = keychain::get_key(SIMPLEFIN_SERVICE, SIMPLEFIN_USER)
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::new("simplefin.not_configured", "SimpleFin not configured"))?;
+    let client = SimpleFinClient::new(&access_url).map_err(AppError::from)?;
+    let (sfin_accounts, connections) = client.list_accounts_with_connections().await.map_err(AppError::from)?;
     let db = state.db.clone();
 
     let mut created_ids: Vec<String> = Vec::new();
@@ -122,15 +124,36 @@ pub async fn import_simplefin_accounts(
         let local_id = run(&db, {
             let nickname = req.nickname.clone();
             let simplefin_id = req.simplefin_id.clone();
+            let sfin_account = sfin_accounts
+                .iter()
+                .find(|a| a.id == simplefin_id)
+                .cloned();
+            let connection_name = sfin_account.as_ref().and_then(|a| {
+                a.connection_name.clone().or_else(|| {
+                    a.connection_id.as_ref().and_then(|conn_id| {
+                        connections
+                            .iter()
+                            .find(|c| &c.conn_id == conn_id)
+                            .map(|c| c.name.clone())
+                    })
+                })
+            });
             move |conn| {
-                let name = nickname.clone().unwrap_or_else(|| simplefin_id.clone());
+                let name = nickname.clone()
+                    .or_else(|| sfin_account.as_ref().map(|a| a.name.clone()))
+                    .unwrap_or_else(|| simplefin_id.clone());
+                let bank = connection_name.clone().unwrap_or_else(|| "SimpleFin".to_string());
+                let currency = sfin_account
+                    .as_ref()
+                    .map(|a| a.currency.clone())
+                    .unwrap_or_else(|| "USD".to_string());
                 let account = NewAccount {
                     owner: "Me".to_string(),
-                    bank: "SimpleFin".to_string(),
+                    bank,
                     r#type: AccountType::Checking,
                     name,
                     last4: None,
-                    currency: "USD".to_string(),
+                    currency,
                     color: "#C9F950".to_string(),
                     opening_balance_cents: 0,
                     source: "simplefin".to_string(),
@@ -151,7 +174,7 @@ pub async fn import_simplefin_accounts(
 
     for (req, local_id) in accounts.iter().zip(created_ids.iter()) {
         let local_id = local_id.clone();
-        match fetch_simplefin_data(&access_url, &req.simplefin_id, &local_id).await {
+        match fetch_simplefin_data(&access_url, &req.simplefin_id, &local_id, None).await {
             Ok(pending) => {
                 let lid = local_id.clone();
                 let summary = run(&db, {
@@ -189,25 +212,25 @@ pub async fn sync_simplefin_account(
         .ok_or_else(|| AppError::new("simplefin.not_configured", "SimpleFin not configured"))?;
     let db = state.db.clone();
 
-    let simplefin_id = run(&db, {
+    let account = run(&db, {
         let account_id = account_id.clone();
-        move |conn| {
-            let id: String = conn
-                .query_row(
-                    "SELECT simplefin_account_id FROM accounts WHERE id = ?1 AND archived_at IS NULL",
-                    [&account_id],
-                    |r| r.get(0),
-                )
-                .map_err(|e| finsight_core::CoreError::Database(e))?;
-            Ok::<_, finsight_core::CoreError>(id)
-        }
+        move |conn| accounts::get_by_id(conn, &account_id)
     })
     .await
     .map_err(AppError::from)?;
 
-    let pending = fetch_simplefin_data(&access_url, &simplefin_id, &account_id)
-        .await
-        .map_err(AppError::from)?;
+    let simplefin_id = account
+        .simplefin_account_id
+        .ok_or_else(|| AppError::new("simplefin.not_linked", "Account is not linked to SimpleFin"))?;
+
+    let pending = fetch_simplefin_data(
+        &access_url,
+        &simplefin_id,
+        &account.id,
+        account.last_synced_at,
+    )
+    .await
+    .map_err(AppError::from)?;
 
     let summary = run(&db, move |conn| {
         commit_simplefin_import(pending, conn)
