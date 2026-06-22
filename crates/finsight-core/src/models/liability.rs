@@ -10,7 +10,10 @@ pub struct Liability {
     pub balance_cents: i64,
     pub limit_cents: Option<i64>,
     pub apr_pct: Option<f64>,
+    pub min_payment_cents: Option<i64>,
     pub payoff_date: Option<String>,
+    pub original_balance_cents: Option<i64>,
+    pub started_at: Option<String>,
     pub currency: String,
     pub created_at: String,
     pub updated_at: String,
@@ -24,7 +27,10 @@ pub struct NewLiability {
     pub balance_cents: i64,
     pub limit_cents: Option<i64>,
     pub apr_pct: Option<f64>,
+    pub min_payment_cents: Option<i64>,
     pub payoff_date: Option<String>,
+    pub original_balance_cents: Option<i64>,
+    pub started_at: Option<String>,
     pub currency: String,
 }
 
@@ -36,6 +42,9 @@ pub struct LiabilityPatch {
     pub balance_cents: Option<i64>,
     pub limit_cents: Option<Option<i64>>,
     pub apr_pct: Option<Option<f64>>,
+    pub min_payment_cents: Option<Option<i64>>,
     pub payoff_date: Option<Option<String>>,
+    pub original_balance_cents: Option<Option<i64>>,
+    pub started_at: Option<Option<String>>,
     pub currency: Option<String>,
 }

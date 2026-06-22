@@ -21,8 +21,11 @@ const schema = z.object({
   liabilityType: z.enum(LIABILITY_TYPES),
   balance_dollars: z.coerce.number().nonnegative("Must be ≥ 0"),
   limit_dollars: optionalNonNegative,
+  original_balance_dollars: optionalNonNegative,
   apr_pct: optionalNonNegative,
+  min_payment_dollars: optionalNonNegative,
   payoff_date: z.string().optional(),
+  started_at: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -51,8 +54,11 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
         liabilityType: liability.liabilityType as typeof LIABILITY_TYPES[number],
         balance_dollars: liability.balanceCents / 100,
         limit_dollars: liability.limitCents != null ? liability.limitCents / 100 : undefined,
+        original_balance_dollars: liability.originalBalanceCents != null ? liability.originalBalanceCents / 100 : undefined,
         apr_pct: liability.aprPct ?? undefined,
+        min_payment_dollars: liability.minPaymentCents != null ? liability.minPaymentCents / 100 : undefined,
         payoff_date: liability.payoffDate ?? undefined,
+        started_at: liability.startedAt ?? undefined,
       });
     } else {
       reset({ name: "", liabilityType: "loan", balance_dollars: 0 });
@@ -65,20 +71,25 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
       const balanceCents = Math.round(values.balance_dollars * 100);
       const limitCents = values.limit_dollars != null && !Number.isNaN(values.limit_dollars)
         ? Math.round(values.limit_dollars * 100) : null;
+      const originalBalanceCents = values.original_balance_dollars != null && !Number.isNaN(values.original_balance_dollars)
+        ? Math.round(values.original_balance_dollars * 100) : null;
       const aprPct = values.apr_pct != null && !Number.isNaN(values.apr_pct) ? values.apr_pct : null;
+      const minPaymentCents = values.min_payment_dollars != null && !Number.isNaN(values.min_payment_dollars)
+        ? Math.round(values.min_payment_dollars * 100) : null;
       const payoffDate = values.payoff_date || null;
+      const startedAt = values.started_at || null;
       if (isEdit && liability) {
         await update.mutateAsync({
           id: liability.id,
           patch: {
             name: values.name, liabilityType: values.liabilityType, balanceCents,
-            limitCents, aprPct, payoffDate, currency: null,
+            limitCents, originalBalanceCents, aprPct, minPaymentCents, payoffDate, startedAt, currency: null,
           },
         });
       } else {
         await create.mutateAsync({
           name: values.name, liabilityType: values.liabilityType, balanceCents,
-          limitCents, aprPct, payoffDate, currency: "USD",
+          limitCents, originalBalanceCents, aprPct, minPaymentCents, payoffDate, startedAt, currency: "USD",
         });
       }
       onClose();
@@ -111,8 +122,11 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
           {errors.balance_dollars && <span className="err">{errors.balance_dollars.message}</span>}
         </label>
         <label> Credit limit / original ($) <input type="number" step="0.01" {...register("limit_dollars")} /></label>
+        <label> Original balance ($) <input type="number" step="0.01" {...register("original_balance_dollars")} /></label>
         <label> APR (%) <input type="number" step="0.01" {...register("apr_pct")} /></label>
+        <label> Minimum payment ($) <input type="number" step="0.01" {...register("min_payment_dollars")} /></label>
         <label> Payoff date <input type="date" {...register("payoff_date")} /></label>
+        <label> Started (month / year) <input type="month" {...register("started_at")} /></label>
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={isSubmitting} className="primary">

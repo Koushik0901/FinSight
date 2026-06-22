@@ -16,6 +16,10 @@ const schema = z.object({
   currency: z.enum(["USD", "EUR", "GBP", "CAD", "AUD"]),
   opening_dollars: z.coerce.number(),
   owner: z.string().min(1, "Required"),
+  apy_pct: z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? undefined : v),
+    z.coerce.number().nonnegative().optional()
+  ),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -35,13 +39,14 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
   const archiveAccount = useArchiveAccount();
   const [archiveConfirm, setArchiveConfirm] = useState(false);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       type: "Checking",
       currency: "USD",
       owner: defaultOwner,
       opening_dollars: 0,
+      apy_pct: undefined,
     },
   });
 
@@ -55,6 +60,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         currency: account.currency as "USD" | "EUR" | "GBP" | "CAD" | "AUD",
         owner: account.owner,
         opening_dollars: 0,
+        apy_pct: account.apy_pct ?? undefined,
       });
     } else {
       reset({ type: "Checking", currency: "USD", owner: defaultOwner, opening_dollars: 0 });
@@ -74,6 +80,10 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             color: account.color,
             currency: values.currency,
             last4: values.last4 ? values.last4 : null,
+            liquidity_type: null,
+            emergency_fund_eligible: null,
+            goal_earmark: null,
+            apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
           },
         });
       } else {
@@ -87,6 +97,10 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           opening_balance_cents: Math.round(values.opening_dollars * 100),
           owner: values.owner,
           source: "manual",
+          liquidity_type: "liquid",
+          emergency_fund_eligible: true,
+          goal_earmark: null,
+          apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
         });
       }
       reset();
@@ -134,6 +148,11 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             {(["USD","EUR","GBP","CAD","AUD"] as const).map(c => <option key={c}>{c}</option>)}
           </select>
         </label>
+        {(watch("type") === "Savings" || (isEdit && account?.type === "Savings")) && (
+          <label> APY (%)
+            <input type="number" step="0.01" {...register("apy_pct")} />
+          </label>
+        )}
         {!isEdit && (
           <label> Opening balance ($)
             <input type="number" step="0.01" {...register("opening_dollars")} />

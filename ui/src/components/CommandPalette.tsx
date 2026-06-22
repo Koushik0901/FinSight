@@ -140,6 +140,12 @@ export function CommandPalette({ open, onClose }: Props) {
               changes: [],
               actionLabel: isNoProvider ? "Open Settings →" : null,
               actionPath: isNoProvider ? "/settings" : null,
+              bundleId: null,
+              assumptions: [],
+              dataSources: [],
+              missingData: [],
+              alternatives: [],
+              followUpQuestions: [],
             });
           },
         }

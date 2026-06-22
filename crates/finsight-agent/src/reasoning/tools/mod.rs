@@ -1,10 +1,10 @@
-pub mod read;
 pub mod act;
+pub mod read;
 
-use crate::reasoning::messages::ToolDefinition;
+use crate::reasoning::messages::{AgentDraftAction, ToolDefinition};
 use anyhow::Result;
 use rusqlite::Connection;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -18,29 +18,204 @@ pub trait Tool: Send + Sync {
 pub struct ToolContext<'a> {
     pub conn: &'a mut Connection,
     pub changes: &'a mut Vec<crate::reasoning::messages::AgentChange>,
+    pub draft_actions: &'a mut Vec<AgentDraftAction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolExecutionError {
+    pub tool_name: String,
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl ToolExecutionError {
+    pub fn to_tool_result(&self) -> Value {
+        json!({
+            "ok": false,
+            "error": {
+                "tool_name": self.tool_name,
+                "code": self.code,
+                "message": self.message,
+                "retryable": self.retryable,
+            }
+        })
+    }
+}
+
+pub struct ToolExecutionResult {
+    pub value: Value,
+    pub had_error: bool,
 }
 
 pub struct ToolSet {
     tools: HashMap<String, Arc<dyn Tool>>,
 }
 
+impl Default for ToolSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolSet {
     pub fn new() -> Self {
-        Self { tools: HashMap::new() }
+        Self {
+            tools: HashMap::new(),
+        }
     }
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.tools.values().map(|t| ToolDefinition {
-            name: t.name().to_string(),
-            description: t.description().to_string(),
-            parameters: t.parameters(),
-        }).collect()
+        self.tools
+            .values()
+            .map(|t| ToolDefinition {
+                name: t.name().to_string(),
+                description: t.description().to_string(),
+                parameters: t.parameters(),
+            })
+            .collect()
     }
     pub fn execute(&self, name: &str, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-        let tool = self.tools.get(name)
+        let tool = self
+            .tools
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown tool: {}", name))?;
         tool.execute(ctx, args)
     }
+
+    pub fn execute_recoverable(
+        &self,
+        name: &str,
+        ctx: &mut ToolContext,
+        args: Value,
+    ) -> ToolExecutionResult {
+        match self.try_execute(name, ctx, args) {
+            Ok(value) => ToolExecutionResult {
+                value: json!({"ok": true, "data": value}),
+                had_error: false,
+            },
+            Err(error) => ToolExecutionResult {
+                value: error.to_tool_result(),
+                had_error: true,
+            },
+        }
+    }
+
+    fn try_execute(
+        &self,
+        name: &str,
+        ctx: &mut ToolContext,
+        args: Value,
+    ) -> std::result::Result<Value, ToolExecutionError> {
+        let Some(tool) = self.tools.get(name) else {
+            return Err(ToolExecutionError {
+                tool_name: name.to_string(),
+                code: "unknown_tool".to_string(),
+                message: format!(
+                    "Unknown tool '{name}'. Choose one of the tools listed in the system prompt."
+                ),
+                retryable: true,
+            });
+        };
+        validate_tool_arguments(name, &tool.parameters(), &args)?;
+        tool.execute(ctx, args).map_err(|err| ToolExecutionError {
+            tool_name: name.to_string(),
+            code: "tool_execution_failed".to_string(),
+            message: friendly_tool_error(name, &err.to_string()),
+            retryable: true,
+        })
+    }
+}
+
+fn validate_tool_arguments(
+    tool_name: &str,
+    schema: &Value,
+    args: &Value,
+) -> std::result::Result<(), ToolExecutionError> {
+    let Some(obj) = args.as_object() else {
+        return Err(ToolExecutionError {
+            tool_name: tool_name.to_string(),
+            code: "invalid_arguments".to_string(),
+            message: "Tool arguments must be a JSON object.".to_string(),
+            retryable: true,
+        });
+    };
+
+    if let Some(required) = schema.get("required").and_then(Value::as_array) {
+        for key in required.iter().filter_map(Value::as_str) {
+            if !obj.contains_key(key) || obj.get(key).is_some_and(Value::is_null) {
+                return Err(ToolExecutionError {
+                    tool_name: tool_name.to_string(),
+                    code: "missing_required_argument".to_string(),
+                    message: format!("Missing required argument '{key}'."),
+                    retryable: true,
+                });
+            }
+        }
+    }
+
+    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
+        return Ok(());
+    };
+
+    for (key, value) in obj {
+        let Some(prop_schema) = properties.get(key) else {
+            return Err(ToolExecutionError {
+                tool_name: tool_name.to_string(),
+                code: "unknown_argument".to_string(),
+                message: format!("Unknown argument '{key}' for tool '{tool_name}'."),
+                retryable: true,
+            });
+        };
+        if let Some(expected_type) = prop_schema.get("type").and_then(Value::as_str) {
+            let ok = match expected_type {
+                "integer" => value.as_i64().is_some(),
+                "number" => value.as_f64().is_some(),
+                "string" => value.as_str().is_some(),
+                "boolean" => value.as_bool().is_some(),
+                "object" => value.as_object().is_some(),
+                "array" => value.as_array().is_some(),
+                _ => true,
+            };
+            if !ok {
+                return Err(ToolExecutionError {
+                    tool_name: tool_name.to_string(),
+                    code: "invalid_argument_type".to_string(),
+                    message: format!("Argument '{key}' must be {expected_type}."),
+                    retryable: true,
+                });
+            }
+        }
+        if let Some(allowed) = prop_schema.get("enum").and_then(Value::as_array) {
+            if !allowed.iter().any(|item| item == value) {
+                let options = allowed
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(ToolExecutionError {
+                    tool_name: tool_name.to_string(),
+                    code: "invalid_argument_value".to_string(),
+                    message: format!("Argument '{key}' must be one of: {options}."),
+                    retryable: true,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn friendly_tool_error(tool_name: &str, raw: &str) -> String {
+    if raw.contains("QueryReturnedNoRows") || raw.contains("query returned no rows") {
+        return format!(
+            "{tool_name} could not find the requested record. Re-check the ID with a read tool, then retry."
+        );
+    }
+    if raw.contains("required") {
+        return format!("{tool_name} is missing a required input: {raw}");
+    }
+    raw.to_string()
 }

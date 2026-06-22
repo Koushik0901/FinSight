@@ -88,9 +88,8 @@ impl CompletionProvider for OpenAiCompatProvider {
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
             "model": self.model,
-            "response_format": { "type": "json_object" },
             "messages": [
-                {"role": "system", "content": system},
+                {"role": "system", "content": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text.")},
                 {"role": "user",   "content": user},
             ]
         });
@@ -111,7 +110,7 @@ impl CompletionProvider for OpenAiCompatProvider {
             .ok_or_else(|| anyhow!("no choices in response"))?
             .message
             .content;
-        serde_json::from_str(&content).map_err(|e| anyhow!("OpenAI response not valid JSON: {e}"))
+        parse_json_response(&content)
     }
 
     // list_models returns Ok(vec![]) — UI falls back to free-text model input
@@ -205,21 +204,60 @@ impl CompletionProvider for OpenAiCompatProvider {
     }
 }
 
+fn parse_json_response(content: &str) -> Result<Value> {
+    let trimmed = content.trim();
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Ok(value);
+    }
+    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+        return Err(anyhow!("OpenAI response did not contain JSON"));
+    };
+    let end_obj = trimmed.rfind('}');
+    let end_arr = trimmed.rfind(']');
+    let end = match (end_obj, end_arr) {
+        (Some(a), Some(b)) => a.max(b),
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => return Err(anyhow!("OpenAI response did not contain complete JSON")),
+    };
+    if end < start {
+        return Err(anyhow!("OpenAI response JSON bounds were invalid"));
+    }
+    serde_json::from_str(&trimmed[start..=end])
+        .map_err(|e| anyhow!("OpenAI response not valid JSON: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn request_body_has_json_response_format() {
-        let body = json!({
-            "model": "gpt-4o-mini",
-            "response_format": { "type": "json_object" },
-            "messages": [
-                {"role": "system", "content": "sys"},
-                {"role": "user",   "content": "usr"},
-            ]
-        });
-        assert_eq!(body["response_format"]["type"], "json_object");
-        assert_eq!(body["messages"][1]["role"], "user");
+    fn parses_json_array_response() {
+        let value = parse_json_response(r#"[{"txn_id":"t1"}]"#).unwrap();
+        assert_eq!(value[0]["txn_id"], "t1");
+    }
+
+    #[test]
+    fn parses_json_object_inside_text() {
+        let value = parse_json_response("Result:\n{\"mode\":\"deep\"}").unwrap();
+        assert_eq!(value["mode"], "deep");
+    }
+
+    #[test]
+    fn rejects_malformed_model_output() {
+        let no_json = parse_json_response("I cannot produce JSON for this request").unwrap_err();
+        assert!(no_json
+            .to_string()
+            .contains("OpenAI response did not contain JSON"));
+
+        let incomplete =
+            parse_json_response(r#"Here is partial JSON: {"mode": "deep""#).unwrap_err();
+        assert!(incomplete
+            .to_string()
+            .contains("OpenAI response did not contain complete JSON"));
+
+        let invalid = parse_json_response(r#"Here is malformed JSON: {"mode": }"#).unwrap_err();
+        assert!(invalid
+            .to_string()
+            .contains("OpenAI response not valid JSON"));
     }
 }

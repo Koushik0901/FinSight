@@ -13,7 +13,7 @@ vi.mock("../api/hooks/accounts", () => ({
 const existingAccount = {
   id: "a1", owner: "Me", bank: "Chase", type: "Checking" as const,
   name: "Old Name", last4: null, currency: "USD", color: "#fff",
-  archived_at: null, created_at: "2024-01-01T00:00:00Z",
+  archived_at: null, liquidity_type: "liquid", emergency_fund_eligible: true, goal_earmark: null, apy_pct: null, created_at: "2024-01-01T00:00:00Z",
 };
 
 describe("AccountDrawer — create mode", () => {
@@ -21,6 +21,13 @@ describe("AccountDrawer — create mode", () => {
     render(<AccountDrawer open={true} onClose={() => {}} />, { wrapper: createWrapper() });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Create account")).toBeInTheDocument();
+  });
+
+  it("shows APY field when Savings is selected", () => {
+    render(<AccountDrawer open={true} onClose={() => {}} />, { wrapper: createWrapper() });
+    expect(screen.queryByLabelText(/apy/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /savings/i }));
+    expect(screen.getByLabelText(/apy/i)).toBeInTheDocument();
   });
 });
 
@@ -40,6 +47,15 @@ describe("AccountDrawer — edit mode", () => {
       { wrapper: createWrapper() },
     );
     expect(screen.getByRole("button", { name: /archive/i })).toBeInTheDocument();
+  });
+
+  it("shows APY field for savings account in edit mode", () => {
+    const savingsAccount = { ...existingAccount, type: "Savings" as const, apy_pct: 4.5 };
+    render(
+      <AccountDrawer open={true} onClose={() => {}} account={savingsAccount} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByLabelText(/apy/i)).toHaveValue(4.5);
   });
 
   it("two-click confirm on archive: first click shows confirm text", async () => {

@@ -14,32 +14,13 @@ import {
   useRejectActionItem,
   useExecutionLog,
 } from "../api/hooks/copilot";
-import type { AgentActionBundle, AgentActionItem, AppError } from "../api/client";
-
-// ── Local types until bindings are regenerated with Phase 3-4 backend ──────
-
-interface CopilotPlanResult {
-  bundleId: string;
-  answer: string;
-  assumptions: string[];
-  followUpQuestions: string[];
-  forecastSummary: string | null;
-}
-
-interface ExecutionItemResult {
-  itemId: string;
-  actionKind: string;
-  status: string;
-  summary: string | null;
-  error: string | null;
-}
-
-interface ExecutionSummary {
-  bundleId: string;
-  succeeded: number;
-  failed: number;
-  results: ExecutionItemResult[];
-}
+import type {
+  AgentActionBundle,
+  AgentActionItem,
+  AgentAnswer,
+  AgentScenarioAlternative,
+  ExecutionSummary,
+} from "../api/client";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -104,13 +85,9 @@ const SUGGESTED_PROMPTS = [
 
 function ActionItemRow({
   item,
-  selected,
-  onToggle,
   disabled,
 }: {
   item: AgentActionItem;
-  selected: boolean;
-  onToggle: (id: string) => void;
   disabled: boolean;
 }) {
   const approve = useApproveActionItem();
@@ -122,31 +99,20 @@ function ActionItemRow({
 
   return (
     <div
-      className={`card copilot-action-item${selected ? " selected" : ""}${
+      className={`card copilot-action-item${
         item.status === "rejected" ? " rejected" : ""
       }`}
       style={{
         padding: "12px 16px",
         marginBottom: 6,
-        background: selected ? "var(--accent-2)" : "var(--surface-2)",
-        borderColor: selected ? "var(--accent-3)" : "var(--line)",
+        background: "var(--surface-2)",
+        borderColor: "var(--line)",
         opacity: item.status === "rejected" ? 0.5 : 1,
       }}
       role="listitem"
-      aria-selected={selected}
     >
       <div className="row-md" style={{ alignItems: "flex-start" }}>
-        {isPendingReview ? (
-          <label className="row-xs" style={{ marginTop: 2, cursor: "pointer", flexShrink: 0 }}>
-            <input
-              type="checkbox"
-              checked={selected}
-              disabled={disabled}
-              onChange={() => onToggle(item.id)}
-              aria-label={`Select action: ${actionKindLabel(item.actionKind)}`}
-            />
-          </label>
-        ) : (
+        {!isPendingReview && (
           <div className="row" style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, justifyContent: "center" }}>
             {item.status === "approved" || item.status === "executed" ? (
               <I.Check width={14} height={14} style={{ color: "var(--positive)" }} />
@@ -233,34 +199,14 @@ function PlanCard({
   bundle,
   onFollowUp,
 }: {
-  planResult: CopilotPlanResult;
+  planResult: AgentAnswer;
   bundle: AgentActionBundle | null | undefined;
   onFollowUp: (q: string) => void;
 }) {
   const qc = useQueryClient();
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(() => new Set());
   const [executionResult, setExecutionResult] = useState<ExecutionSummary | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const { data: execLog } = useExecutionLog(bundle?.id ?? null);
-
-  // Pre-select all pending items
-  useEffect(() => {
-    if (bundle?.items) {
-      const pendingIds = bundle.items
-        .filter((i) => i.status === "pending")
-        .map((i) => i.id);
-      setSelectedItems(new Set(pendingIds));
-    }
-  }, [bundle?.id]);
-
-  const toggleItem = (id: string) => {
-    setSelectedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleExecute = async () => {
     if (!bundle) return;
@@ -304,15 +250,77 @@ function PlanCard({
           {bundle && <ConfidenceBadge c={bundle.confidence} />}
         </div>
         <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "var(--ink)" }}>
-          {planResult.answer}
+          {planResult.prose}
         </p>
       </Card>
 
       {/* Forecast summary */}
-      {planResult.forecastSummary && (
+      {planResult.reasoning && (
         <Card tone="muted" tight>
-          {planResult.forecastSummary}
+          {planResult.reasoning}
         </Card>
+      )}
+
+      {/* Tool trace */}
+      {planResult.trace.length > 0 && (
+        <div className="stack stack-sm">
+          <p className="eyebrow">Tool use</p>
+          <div className="row-sm wrap">
+            {planResult.trace.map((t, i) => (
+              <Badge key={i} tone="accent">{t.replace("Called tool: ", "")}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Scenario alternatives */}
+      {planResult.alternatives.length > 0 && (
+        <div className="stack stack-sm">
+          <p className="eyebrow">Alternatives compared</p>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" aria-label="Scenario alternatives compared">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>Numbers used</th>
+                  <th>Tradeoff</th>
+                </tr>
+              </thead>
+              <tbody>
+                {planResult.alternatives.map((alt, i) => (
+                  <tr key={`${alt.name}-${i}`}>
+                    <td style={{ fontWeight: 600 }}>{alt.name}</td>
+                    <td>{alt.summary}</td>
+                    <td className="muted">{alt.tradeoff}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {/* Data sources */}
+      {planResult.dataSources.length > 0 && (
+        <div className="stack stack-sm">
+          <p className="eyebrow">Data used</p>
+          <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
+            {planResult.dataSources.map((source, i) => (
+              <li key={i} className="muted" style={{ fontSize: 12.5 }}>{source}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Missing data */}
+      {planResult.missingData.length > 0 && (
+        <div className="stack stack-sm">
+          <p className="eyebrow">Data to improve accuracy</p>
+          <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
+            {planResult.missingData.map((a, i) => (
+              <li key={i} className="muted" style={{ fontSize: 12.5 }}>{a}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Assumptions */}
@@ -359,24 +367,12 @@ function PlanCard({
                 </span>
               )}
             </p>
-            {pendingItems.length > 0 && (
-              <div className="row-xs">
-                <Button variant="ghost" size="sm" onClick={() => setSelectedItems(new Set(pendingItems.map((i) => i.id)))}>
-                  Select all
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedItems(new Set())}>
-                  Deselect all
-                </Button>
-              </div>
-            )}
           </div>
 
           {bundle?.items.map((item) => (
             <ActionItemRow
               key={item.id}
               item={item}
-              selected={selectedItems.has(item.id)}
-              onToggle={toggleItem}
               disabled={isExecuting}
             />
           ))}
@@ -550,7 +546,7 @@ function PastBundlesSection() {
 export default function Copilot() {
   const [question, setQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [planResult, setPlanResult] = useState<CopilotPlanResult | null>(null);
+  const [planResult, setPlanResult] = useState<AgentAnswer | null>(null);
   const [activeBundleId, setActiveBundleId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { data: activeBundle } = useActionBundle(activeBundleId);
@@ -585,9 +581,9 @@ export default function Copilot() {
     setQuestion("");
 
     try {
-      const raw = await invoke<CopilotPlanResult>("start_copilot_plan", {
-        sessionId: null,
+      const raw = await invoke<AgentAnswer>("ask_agent", {
         question: trimmed,
+        mode: "deep",
       });
       setPlanResult(raw);
       setActiveBundleId(raw.bundleId);

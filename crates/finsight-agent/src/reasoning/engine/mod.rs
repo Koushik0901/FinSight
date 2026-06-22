@@ -2,6 +2,7 @@ use crate::reasoning::messages::{AgentChange, AssistantTurn, ChatMessage, Reason
 use crate::reasoning::tools::{ToolContext, ToolSet};
 use crate::CompletionProvider;
 use anyhow::Result;
+use serde::Deserialize;
 use std::sync::Arc;
 
 pub struct ReasoningEngine;
@@ -15,25 +16,40 @@ impl ReasoningEngine {
         max_iterations: usize,
     ) -> Result<ReasoningResult> {
         let mut messages: Vec<ChatMessage> = vec![
-            ChatMessage::System { content: Self::build_system_prompt(tools) },
-            ChatMessage::User { content: question.to_string() },
+            ChatMessage::System {
+                content: Self::build_system_prompt(tools),
+            },
+            ChatMessage::User {
+                content: question.to_string(),
+            },
         ];
         let mut trace: Vec<String> = Vec::new();
         let mut changes: Vec<AgentChange> = Vec::new();
+        let mut draft_actions = Vec::new();
 
         for _ in 0..max_iterations {
-            let turn = provider.complete_tool_turn(&messages, &tools.definitions()).await?;
+            let turn = provider
+                .complete_tool_turn(&messages, &tools.definitions())
+                .await?;
 
             match turn {
                 AssistantTurn::ToolCalls(calls) => {
                     let mut tool_result_msgs = Vec::new();
                     for call in &calls {
                         trace.push(format!("Called tool: {}", call.name));
-                        let mut ctx = ToolContext { conn, changes: &mut changes };
-                        let result = tools.execute(&call.name, &mut ctx, call.arguments.clone())?;
+                        let mut ctx = ToolContext {
+                            conn,
+                            changes: &mut changes,
+                            draft_actions: &mut draft_actions,
+                        };
+                        let result =
+                            tools.execute_recoverable(&call.name, &mut ctx, call.arguments.clone());
+                        if result.had_error {
+                            trace.push(format!("Tool error: {}", call.name));
+                        }
                         tool_result_msgs.push(ChatMessage::Tool {
                             tool_call_id: call.id.clone(),
-                            content: result.to_string(),
+                            content: result.value.to_string(),
                         });
                     }
                     messages.push(ChatMessage::Assistant {
@@ -45,12 +61,13 @@ impl ReasoningEngine {
                     }
                 }
                 AssistantTurn::FinalAnswer { content, reasoning } => {
-                    return Ok(ReasoningResult {
+                    return Ok(Self::parse_final_answer(
                         content,
                         reasoning,
                         trace,
                         changes,
-                    });
+                        draft_actions,
+                    ));
                 }
             }
         }
@@ -60,25 +77,121 @@ impl ReasoningEngine {
             reasoning: "The question was too complex for the iteration limit.".to_string(),
             trace,
             changes,
+            draft_actions,
+            assumptions: Vec::new(),
+            data_sources: Vec::new(),
+            missing_data: Vec::new(),
+            follow_up_questions: Vec::new(),
         })
+    }
+
+    fn parse_final_answer(
+        content: String,
+        reasoning: String,
+        trace: Vec<String>,
+        changes: Vec<AgentChange>,
+        draft_actions: Vec<crate::reasoning::messages::AgentDraftAction>,
+    ) -> ReasoningResult {
+        let Some(parsed) = parse_structured_final_answer(&content) else {
+            return ReasoningResult {
+                content,
+                reasoning,
+                trace,
+                changes,
+                draft_actions,
+                assumptions: Vec::new(),
+                data_sources: Vec::new(),
+                missing_data: Vec::new(),
+                follow_up_questions: Vec::new(),
+            };
+        };
+
+        let mut reasoning_parts = Vec::new();
+        if !parsed.reasoning.trim().is_empty() {
+            reasoning_parts.push(parsed.reasoning);
+        }
+        if !reasoning.trim().is_empty() {
+            reasoning_parts.push(reasoning);
+        }
+
+        ReasoningResult {
+            content: parsed.answer,
+            reasoning: reasoning_parts.join(" "),
+            trace,
+            changes,
+            draft_actions,
+            assumptions: parsed.assumptions,
+            data_sources: parsed.data_sources,
+            missing_data: parsed.missing_data,
+            follow_up_questions: parsed.follow_up_questions,
+        }
     }
 
     fn build_system_prompt(tools: &ToolSet) -> String {
         let tool_defs = tools.definitions();
-        let tool_list: String = tool_defs.iter().map(|t| {
-            format!("- {}: {} Parameters: {}", t.name, t.description, t.parameters)
-        }).collect::<Vec<_>>().join("\n");
+        let tool_list: String = tool_defs
+            .iter()
+            .map(|t| {
+                format!(
+                    "- {}: {} Parameters: {}",
+                    t.name, t.description, t.parameters
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
         format!(
             "You are a personal financial analyst for a local-first personal finance app.\n\
              You have access to the following tools:\n{}\n\n\
-             When you need data, call the appropriate tool(s).\n\
-             When you have enough information to answer, provide your final answer with reasoning.\n\
-             Be specific with numbers. Explain your reasoning clearly.\n\
-             Autonomous actions (update_goal_monthly, create_planned_transaction) are allowed.\n\
-             Respond with either tool calls or a final answer.", tool_list
+             Always use tools before answering financial planning questions. Start with get_financial_snapshot unless a narrower deterministic tool is clearly sufficient.\n\
+             For paycheck or windfall allocation questions, call analyze_cash_inflow.\n\
+             For goal timing questions, call calculate_goal_eta.\n\
+             For debt ranking questions, call rank_debt_payoff; for payoff timelines or extra-payment comparisons, call run_debt_payoff_scenarios.\n\
+             For multi-goal allocation questions, call run_goal_allocation_scenarios.\n\
+             For emergency fund targets, liquidity runway, or income-loss questions, call run_emergency_fund_scenarios.\n\
+             For savings-vs-debt tradeoff questions, call compare_debt_vs_goal.\n\
+             For affordability, runway, monthly-surplus, or month-by-month balance questions, call run_cashflow_projection or run_cashflow_timeline.\n\
+             For data sufficiency concerns, call get_data_quality_report.\n\
+             When asked about investing, keep the answer principles-only; do not recommend tickers, ETFs, or market timing.\n\
+             If emergency coverage is below one month or APR/minimum payment data is missing, say the answer is provisional and ask for the missing information.\n\
+             When making a recommendation, compare at least two reasonable alternatives unless the answer is a simple fact lookup.\n\
+             The final answer MUST be a JSON object with this schema: {{\"answer\":\"string\", \"reasoning\":\"string\", \"assumptions\":[\"string\"], \"data_sources\":[\"string\"], \"missing_data\":[\"string\"], \"follow_up_questions\":[\"string\"]}}.\n\
+             The answer string must include recommendation, numbers used, alternatives compared, assumptions, missing data, and next action.\n\
+             Be specific with numbers. Explain your reasoning clearly and cite which local data/tool result you used.\n\
+             Autonomous actions (update_goal_monthly, create_planned_transaction) are allowed only as draft actions that still require user approval.\n\
+             If a tool result returns {{\"ok\":false}}, inspect the error message, fix the tool name or arguments, and retry when retryable.\n\
+             Respond with either tool calls or the final JSON object. Do not wrap final JSON in markdown fences.", tool_list
         )
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct StructuredFinalAnswer {
+    answer: String,
+    #[serde(default)]
+    reasoning: String,
+    #[serde(default)]
+    assumptions: Vec<String>,
+    #[serde(default)]
+    data_sources: Vec<String>,
+    #[serde(default)]
+    missing_data: Vec<String>,
+    #[serde(default)]
+    follow_up_questions: Vec<String>,
+}
+
+fn parse_structured_final_answer(content: &str) -> Option<StructuredFinalAnswer> {
+    let trimmed = content.trim();
+    if let Ok(answer) = serde_json::from_str::<StructuredFinalAnswer>(trimmed) {
+        return Some(answer);
+    }
+
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    if end < start {
+        return None;
+    }
+    serde_json::from_str::<StructuredFinalAnswer>(&trimmed[start..=end]).ok()
 }
 
 #[cfg(test)]

@@ -83,8 +83,7 @@ impl CompletionProvider for OllamaProvider {
             .error_for_status()?
             .json()
             .await?;
-        serde_json::from_str(&resp.message.content)
-            .map_err(|e| anyhow!("Ollama response not valid JSON: {e}"))
+        parse_json_response(&resp.message.content)
     }
 
     async fn list_models(&self) -> Result<Vec<String>> {
@@ -130,14 +129,12 @@ impl CompletionProvider for OllamaProvider {
                         msg["content"] = json!(c);
                     }
                     if !tool_calls.is_empty() {
-                        msg["tool_calls"] = json!(
-                            tool_calls
-                                .iter()
-                                .map(|tc| {
-                                    json!({"function": {"name": tc.name, "arguments": tc.arguments}})
-                                })
-                                .collect::<Vec<_>>()
-                        );
+                        msg["tool_calls"] = json!(tool_calls
+                            .iter()
+                            .map(|tc| {
+                                json!({"function": {"name": tc.name, "arguments": tc.arguments}})
+                            })
+                            .collect::<Vec<_>>());
                     }
                     msg
                 }
@@ -198,6 +195,28 @@ impl CompletionProvider for OllamaProvider {
     }
 }
 
+fn parse_json_response(content: &str) -> Result<Value> {
+    let trimmed = content.trim();
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Ok(value);
+    }
+    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+        return Err(anyhow!("Ollama response did not contain JSON"));
+    };
+    let end_obj = trimmed.rfind('}');
+    let end_arr = trimmed.rfind(']');
+    let end = match (end_obj, end_arr) {
+        (Some(a), Some(b)) => a.max(b),
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => return Err(anyhow!("Ollama response did not contain complete JSON")),
+    };
+    if end < start {
+        return Err(anyhow!("Ollama response JSON bounds were invalid"));
+    }
+    serde_json::from_str(&trimmed[start..=end])
+        .map_err(|e| anyhow!("Ollama response not valid JSON: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +236,30 @@ mod tests {
         assert_eq!(body["format"], "json");
         assert_eq!(body["stream"], false);
         assert_eq!(body["messages"][0]["role"], "system");
+    }
+
+    #[test]
+    fn parses_json_array_inside_text() {
+        let value = parse_json_response("```json\n[{\"txn_id\":\"t1\"}]\n```").unwrap();
+        assert_eq!(value[0]["txn_id"], "t1");
+    }
+
+    #[test]
+    fn rejects_malformed_model_output() {
+        let no_json = parse_json_response("I cannot produce JSON for this request").unwrap_err();
+        assert!(no_json
+            .to_string()
+            .contains("Ollama response did not contain JSON"));
+
+        let incomplete =
+            parse_json_response(r#"Here is partial JSON: {"mode": "deep""#).unwrap_err();
+        assert!(incomplete
+            .to_string()
+            .contains("Ollama response did not contain complete JSON"));
+
+        let invalid = parse_json_response(r#"Here is malformed JSON: {"mode": }"#).unwrap_err();
+        assert!(invalid
+            .to_string()
+            .contains("Ollama response not valid JSON"));
     }
 }

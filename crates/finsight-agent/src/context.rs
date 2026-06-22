@@ -26,6 +26,10 @@ pub struct WellnessContext {
     pub savings_rate_trend: String,
     /// Whether savings rate meets Babylon's 10% minimum
     pub meets_pay_yourself_first: bool,
+    /// Savings accounts and their APY for cash-efficiency advice
+    pub savings_accounts: Vec<SavingsAccountItem>,
+    /// Detailed loan records for payoff progress and history-aware advice
+    pub loans: Vec<LoanDetailItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -107,6 +111,23 @@ pub struct DebtSnowballItem {
     pub name: String,
     pub remaining_cents: i64,
     pub monthly_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SavingsAccountItem {
+    pub name: String,
+    pub balance_cents: i64,
+    pub apy_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LoanDetailItem {
+    pub name: String,
+    pub balance_cents: i64,
+    pub original_balance_cents: Option<i64>,
+    pub apr_pct: Option<f64>,
+    pub started_at: Option<String>,
+    pub paid_down_pct: Option<i64>,
 }
 
 impl FinancialContext {
@@ -282,6 +303,44 @@ impl FinancialContext {
                     debt.name,
                     fmt_money(debt.remaining_cents),
                     fmt_money(debt.monthly_cents)
+                ));
+            }
+        }
+        if !self.wellness.savings_accounts.is_empty() {
+            lines.push("   - Savings accounts:".to_string());
+            for a in &self.wellness.savings_accounts {
+                let apy = a
+                    .apy_pct
+                    .map(|r| format!("{r}% APY"))
+                    .unwrap_or_else(|| "no APY recorded".to_string());
+                lines.push(format!(
+                    "     • {} — {}, {}",
+                    a.name,
+                    fmt_money(a.balance_cents),
+                    apy
+                ));
+            }
+        }
+        if !self.wellness.loans.is_empty() {
+            lines.push("   - Loan history:".to_string());
+            for l in &self.wellness.loans {
+                let started = l.started_at.as_deref().unwrap_or("start date not recorded");
+                let progress = l
+                    .paid_down_pct
+                    .map(|p| format!("{p}% paid down"))
+                    .unwrap_or_else(|| "progress not tracked".to_string());
+                let apr = l
+                    .apr_pct
+                    .map(|r| format!("{r}% APR"))
+                    .unwrap_or_else(|| "APR not recorded".to_string());
+                lines.push(format!(
+                    "     • {} — {}, original {}, current {}, {}, started {}",
+                    l.name,
+                    apr,
+                    fmt_money(l.original_balance_cents.unwrap_or(l.balance_cents)),
+                    fmt_money(l.balance_cents),
+                    progress,
+                    started
                 ));
             }
         }
@@ -788,13 +847,91 @@ fn wellness_context(
         "declining".to_string()
     };
 
+    let savings_accounts = savings_account_context(conn);
+    let loans = loan_context(conn);
+
     WellnessContext {
         emergency_fund_months,
         total_debt_cents,
         debt_snowball,
         savings_rate_trend,
         meets_pay_yourself_first: savings_rate_pct >= 10,
+        savings_accounts,
+        loans,
     }
+}
+
+fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
+    let mut out = Vec::new();
+    let mut stmt = match conn.prepare(
+        "SELECT a.name,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance,
+                a.apy_pct
+         FROM accounts a
+         WHERE a.archived_at IS NULL AND a.type = 'Savings'",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return out,
+    };
+    let rows = match stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, Option<f64>>(2)?,
+        ))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return out,
+    };
+    for row in rows.flatten() {
+        let (name, balance_cents, apy_pct) = row;
+        out.push(SavingsAccountItem {
+            name,
+            balance_cents,
+            apy_pct,
+        });
+    }
+    out
+}
+
+fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
+    let mut out = Vec::new();
+    let mut stmt = match conn.prepare(
+        "SELECT name, balance_cents, original_balance_cents, apr_pct, started_at
+         FROM liabilities
+         WHERE liability_type IN ('loan', 'mortgage')
+         ORDER BY balance_cents DESC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return out,
+    };
+    let rows = match stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, Option<i64>>(2)?,
+            r.get::<_, Option<f64>>(3)?,
+            r.get::<_, Option<String>>(4)?,
+        ))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return out,
+    };
+    for row in rows.flatten() {
+        let (name, balance_cents, original_balance_cents, apr_pct, started_at) = row;
+        let paid_down_pct = original_balance_cents
+            .filter(|o| *o > 0)
+            .map(|o| ((o - balance_cents).max(0) * 100 / o).clamp(0, 100));
+        out.push(LoanDetailItem {
+            name,
+            balance_cents,
+            original_balance_cents,
+            apr_pct,
+            started_at,
+            paid_down_pct,
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -830,6 +967,10 @@ mod tests {
                 color: "#123456".into(),
                 opening_balance_cents,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap()
@@ -858,6 +999,64 @@ mod tests {
         assert!(ctx.goals.is_empty());
         assert!(ctx.transactions.top_merchants_this_month.is_empty());
         assert!(ctx.memory.is_empty());
+    }
+
+    #[test]
+    fn test_wellness_includes_savings_apys_and_loan_history() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        accounts::insert(
+            &mut conn,
+            NewAccount {
+                owner: "Me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Savings,
+                name: "HISA".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#123456".into(),
+                opening_balance_cents: 50_000_00,
+                source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: Some(4.5),
+            },
+        )
+        .unwrap();
+
+        use finsight_core::models::NewLiability;
+        use finsight_core::repos::liabilities;
+        liabilities::create(
+            &mut conn,
+            NewLiability {
+                name: "Car Loan".into(),
+                liability_type: "loan".into(),
+                balance_cents: 12_000_00,
+                limit_cents: None,
+                apr_pct: Some(5.9),
+                min_payment_cents: None,
+                payoff_date: None,
+                original_balance_cents: Some(20_000_00),
+                started_at: Some("2021-06".into()),
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
+
+        let ctx = build_context(&mut conn);
+
+        assert_eq!(ctx.wellness.savings_accounts.len(), 1);
+        assert_eq!(ctx.wellness.savings_accounts[0].apy_pct, Some(4.5));
+        assert_eq!(ctx.wellness.loans.len(), 1);
+        assert_eq!(
+            ctx.wellness.loans[0].original_balance_cents,
+            Some(20_000_00)
+        );
+        assert_eq!(ctx.wellness.loans[0].paid_down_pct, Some(40));
+        assert!(ctx.to_prompt_string().contains("4.5% APY"));
+        assert!(ctx.to_prompt_string().contains("40% paid down"));
     }
 
     #[test]

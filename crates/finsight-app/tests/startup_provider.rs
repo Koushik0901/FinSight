@@ -58,7 +58,11 @@ fn load_completion_provider_config_round_trip() {
 
     let loaded = finsight_app::load_completion_provider_config(&db).unwrap();
     match loaded {
-        CompletionProviderConfig::OpenAiCompat { preset, base_url, model } => {
+        CompletionProviderConfig::OpenAiCompat {
+            preset,
+            base_url,
+            model,
+        } => {
             assert_eq!(preset, "openrouter");
             assert_eq!(base_url, "https://openrouter.ai/api/v1");
             assert_eq!(model, "gpt-4o-mini");

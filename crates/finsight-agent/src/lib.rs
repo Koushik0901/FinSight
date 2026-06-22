@@ -5,14 +5,19 @@ pub mod anomaly;
 pub mod categorizer;
 pub mod context;
 pub mod executor;
+pub mod finance;
 pub mod planner;
+pub mod planning;
 pub mod providers;
 pub mod reasoning;
 pub mod recipe_runner;
 
-pub use reasoning::messages::{AgentChange, AssistantTurn, ChatMessage, ReasoningResult, ToolCall, ToolDefinition};
-pub use reasoning::tools::{Tool, ToolContext, ToolSet};
 pub use reasoning::engine::ReasoningEngine;
+pub use reasoning::messages::{
+    AgentChange, AgentDraftAction, AssistantTurn, ChatMessage, ReasoningResult, ToolCall,
+    ToolDefinition,
+};
+pub use reasoning::tools::{Tool, ToolContext, ToolSet};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -38,7 +43,9 @@ pub trait CompletionProvider: Send + Sync {
         _messages: &[ChatMessage],
         _tools: &[ToolDefinition],
     ) -> Result<AssistantTurn> {
-        Err(anyhow::anyhow!("Tool calling not implemented for this provider"))
+        Err(anyhow::anyhow!(
+            "Tool calling not implemented for this provider"
+        ))
     }
 }
 

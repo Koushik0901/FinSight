@@ -7,16 +7,6 @@ use specta::Type;
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct CopilotPlanResult {
-    pub bundle_id: String,
-    pub answer: String,
-    pub assumptions: Vec<String>,
-    pub follow_up_questions: Vec<String>,
-    pub forecast_summary: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
 pub struct ExecutionSummary {
     pub bundle_id: String,
     pub succeeded: u32,
@@ -139,58 +129,6 @@ pub async fn list_execution_log(
     })
     .await
     .map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn start_copilot_plan(
-    state: tauri::State<'_, AppState>,
-    session_id: Option<String>,
-    question: String,
-) -> AppResult<CopilotPlanResult> {
-    use finsight_agent::{context, planner};
-
-    let provider = state.agent_provider.read().unwrap().clone();
-    let Some(provider) = provider else {
-        return Err(AppError::new(
-            "no_provider",
-            "Configure an AI provider in Settings → Agent.",
-        ));
-    };
-    let provider_id = provider.provider_id().to_string();
-    let model_id = provider.model_id().to_string();
-    let db = (*state.db).clone();
-
-    let ctx = run(&db, |conn| Ok(context::build_context(conn)))
-        .await
-        .map_err(AppError::from)?;
-    let llm_response = provider
-        .complete_json(&planner::build_system_prompt(&ctx), &question)
-        .await
-        .map_err(|e| AppError::new("planner.llm", e.to_string()))?;
-
-    let session_id_clone = session_id.clone();
-    let question_clone = question.clone();
-    let result = run(&db, move |conn| {
-        planner::persist_plan(
-            conn,
-            session_id_clone.as_deref(),
-            &question_clone,
-            &llm_response,
-            &provider_id,
-            &model_id,
-        )
-    })
-    .await
-    .map_err(AppError::from)?;
-
-    Ok(CopilotPlanResult {
-        bundle_id: result.bundle.id,
-        answer: result.answer,
-        assumptions: result.assumptions,
-        follow_up_questions: result.follow_up_questions,
-        forecast_summary: result.forecast_summary,
-    })
 }
 
 #[tauri::command]

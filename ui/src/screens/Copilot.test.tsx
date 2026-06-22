@@ -25,10 +25,17 @@ vi.mock("sonner", () => ({
 
 const mockPlanResult = {
   bundleId: "bundle-1",
-  answer: "Here is your financial plan.",
+  prose: "Here is your financial plan.",
+  reasoning: "Projected savings: $12,000 by end of year.",
+  trace: ["Called tool: analyze_cash_inflow"],
+  changes: [],
+  actionLabel: null,
+  actionPath: null,
   assumptions: ["Assumes current income stays constant"],
+  dataSources: ["Accounts and liabilities"],
+  missingData: ["Add APR for Loan"],
+  alternatives: [],
   followUpQuestions: ["How much debt do you have?"],
-  forecastSummary: "Projected savings: $12,000 by end of year.",
 };
 
 function getTextarea() {
@@ -72,7 +79,7 @@ describe("Copilot screen — rendering", () => {
 });
 
 describe("Copilot screen — asking a question", () => {
-  it("calls start_copilot_plan and shows the answer", async () => {
+  it("calls ask_agent in deep mode and shows the answer", async () => {
     vi.mocked(invoke).mockResolvedValue(mockPlanResult);
 
     render(<Copilot />, { wrapper: createWrapper() });
@@ -81,9 +88,9 @@ describe("Copilot screen — asking a question", () => {
     fireEvent.click(getSubmitBtn());
 
     await waitFor(() => {
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith("start_copilot_plan", {
-        sessionId: null,
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith("ask_agent", {
         question: "What should I do with $500?",
+        mode: "deep",
       });
     });
 
@@ -104,7 +111,7 @@ describe("Copilot screen — asking a question", () => {
     });
   });
 
-  it("shows forecast summary when returned", async () => {
+  it("shows reasoning as forecast summary when returned", async () => {
     vi.mocked(invoke).mockResolvedValue(mockPlanResult);
 
     render(<Copilot />, { wrapper: createWrapper() });
@@ -116,6 +123,47 @@ describe("Copilot screen — asking a question", () => {
     });
   });
 
+  it("shows tool trace and missing data", async () => {
+    vi.mocked(invoke).mockResolvedValue(mockPlanResult);
+
+    render(<Copilot />, { wrapper: createWrapper() });
+    fireEvent.change(getTextarea(), { target: { value: "Plan my debts" } });
+    fireEvent.click(getSubmitBtn());
+
+    await waitFor(() => {
+      expect(screen.getByText(/analyze_cash_inflow/i)).toBeInTheDocument();
+      expect(screen.getByText(/Add APR for Loan/i)).toBeInTheDocument();
+    });
+  });
+
+  it("shows scenario alternatives in a comparison table", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ...mockPlanResult,
+      alternatives: [
+        {
+          name: "Keep savings intact",
+          summary: "Use $0 from car savings; estimated interest $1,200.",
+          tradeoff: "Preserves liquidity but keeps the loan longer.",
+        },
+        {
+          name: "Safe partial payoff",
+          summary: "Use $3,000 from car savings; estimated interest $700.",
+          tradeoff: "Saves interest while protecting emergency cash.",
+        },
+      ],
+    });
+
+    render(<Copilot />, { wrapper: createWrapper() });
+    fireEvent.change(getTextarea(), { target: { value: "Compare car savings and loan" } });
+    fireEvent.click(getSubmitBtn());
+
+    await waitFor(() => {
+      expect(screen.getByRole("table", { name: /Scenario alternatives compared/i })).toBeInTheDocument();
+      expect(screen.getByText(/Keep savings intact/i)).toBeInTheDocument();
+      expect(screen.getByText(/Safe partial payoff/i)).toBeInTheDocument();
+      expect(screen.getByText(/Saves interest/i)).toBeInTheDocument();
+    });
+  });
   it("shows follow-up question chips", async () => {
     vi.mocked(invoke).mockResolvedValue(mockPlanResult);
 
@@ -164,9 +212,9 @@ describe("Copilot screen — sessionStorage prefill", () => {
     render(<Copilot />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith("start_copilot_plan", {
-        sessionId: null,
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith("ask_agent", {
         question: "Auto-filled question",
+        mode: "deep",
       });
     });
 

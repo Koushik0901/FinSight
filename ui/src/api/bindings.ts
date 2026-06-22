@@ -606,14 +606,6 @@ async listExecutionLog(bundleId: string) : Promise<Result<AgentExecutionEntry[],
     else return { status: "error", error: e  as any };
 }
 },
-async startCopilotPlan(sessionId: string | null, question: string) : Promise<Result<CopilotPlanResult, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("start_copilot_plan", { sessionId, question }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async executeActionBundle(bundleId: string) : Promise<Result<ExecutionSummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("execute_action_bundle", { bundleId }) };
@@ -850,9 +842,9 @@ async getActionItems() : Promise<Result<ActionItem[], AppError>> {
 
 /** user-defined types **/
 
-export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; created_at: string }
-export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null }
-export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string }
+export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; liquidity_type: string; emergency_fund_eligible: boolean; goal_earmark: string | null; apy_pct: number | null; created_at: string }
+export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null }
+export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
 /**
  * A single prioritized action item in the Financial Inbox.
@@ -885,12 +877,13 @@ amountCents: number | null }
 export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
-export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null }
+export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[] }
 export type AgentChange = { kind: string; description: string }
 export type AgentExecutionEntry = { id: string; itemId: string; bundleId: string; actionKind: string; status: string; resultJson: string | null; error: string | null; executedAt: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
+export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
@@ -938,7 +931,6 @@ lastMonthCents: number;
 txnCount: number; yearTotalCents: number; budgetCents: number }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
-export type CopilotPlanResult = { bundleId: string; answer: string; assumptions: string[]; followUpQuestions: string[]; forecastSummary: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
@@ -950,8 +942,8 @@ export type ImportSummary = { import_id: string; rows_imported: number; rows_ski
 export type JourneyMilestone = { stage: number; name: string; description: string; status: string; progressPct: number; detail: string; actionPrompt: string }
 export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
-export type Liability = { id: string; name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string; createdAt: string; updatedAt: string }
-export type LiabilityPatch = { name: string | null; liabilityType: string | null; balanceCents: number | null; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string | null }
+export type Liability = { id: string; name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string; createdAt: string; updatedAt: string }
+export type LiabilityPatch = { name: string | null; liabilityType: string | null; balanceCents: number | null; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string | null }
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
@@ -993,9 +985,9 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
 txnCount: number }
 export type MonthlyActual = { month: string; label: string; cents: number }
 export type NetWorthPoint = { date: string; totalCents: number }
-export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string }
+export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null }
-export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; payoffDate: string | null; currency: string }
+export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }

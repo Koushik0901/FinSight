@@ -20,7 +20,7 @@ vi.mock("../api/hooks/assets", () => ({
   useUpdateManualAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useDeleteManualAsset: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useLiabilities: vi.fn(() => ({ data: [
-    { id: "l1", name: "Mortgage", liabilityType: "mortgage", balanceCents: 30000000, limitCents: 35000000, aprPct: 5.5, payoffDate: "2045-01-01", currency: "USD", createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z" },
+    { id: "l1", name: "Mortgage", liabilityType: "mortgage", balanceCents: 30000000, limitCents: 35000000, aprPct: 5.5, minPaymentCents: 180000, payoffDate: "2045-01-01", currency: "USD", createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z" },
   ] })),
   useCreateLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),

@@ -28,15 +28,8 @@ impl AnthropicProvider {
 }
 
 #[derive(Deserialize)]
-struct ContentBlock {
-    #[serde(rename = "type")]
-    kind: String,
-    #[serde(default)]
-    input: Value,
-}
-#[derive(Deserialize)]
 struct AnthropicResp {
-    content: Vec<ContentBlock>,
+    content: Vec<AnthropicContentBlock>,
 }
 
 #[derive(Deserialize)]
@@ -67,32 +60,8 @@ impl CompletionProvider for AnthropicProvider {
         let body = json!({
             "model": self.model,
             "max_tokens": 4096,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-            "tools": [{
-                "name": "classify",
-                "description": "Return the classification results",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "txn_id":      {"type": "string"},
-                                    "category_id": {"type": "string"},
-                                    "confidence":  {"type": "number"},
-                                    "rationale":   {"type": "string"}
-                                },
-                                "required": ["txn_id", "category_id", "confidence", "rationale"]
-                            }
-                        }
-                    },
-                    "required": ["results"]
-                }
-            }],
-            "tool_choice": {"type": "tool", "name": "classify"}
+            "system": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text."),
+            "messages": [{"role": "user", "content": user}]
         });
 
         let resp: AnthropicResp = self
@@ -107,21 +76,22 @@ impl CompletionProvider for AnthropicProvider {
             .json()
             .await?;
 
-        // Response is content[0].input.results
-        let block = resp
+        let text = resp
             .content
             .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("empty content from Anthropic"))?;
-        if block.kind != "tool_use" {
-            return Err(anyhow!("expected tool_use block, got {}", block.kind));
+            .filter_map(|block| {
+                if block.kind == "text" {
+                    block.text
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if text.trim().is_empty() {
+            return Err(anyhow!("empty text content from Anthropic"));
         }
-        // Return the results array directly
-        block
-            .input
-            .get("results")
-            .cloned()
-            .ok_or_else(|| anyhow!("missing 'results' in tool input"))
+        parse_json_response(&text)
     }
 
     async fn complete_tool_turn(
@@ -138,7 +108,10 @@ impl CompletionProvider for AnthropicProvider {
                 ChatMessage::User { content } => {
                     api_messages.push(json!({"role": "user", "content": content}));
                 }
-                ChatMessage::Assistant { content, tool_calls } => {
+                ChatMessage::Assistant {
+                    content,
+                    tool_calls,
+                } => {
                     let mut blocks: Vec<Value> = Vec::new();
                     if let Some(c) = content {
                         blocks.push(json!({"type": "text", "text": c}));
@@ -153,7 +126,10 @@ impl CompletionProvider for AnthropicProvider {
                     }
                     api_messages.push(json!({"role": "assistant", "content": blocks}));
                 }
-                ChatMessage::Tool { tool_call_id, content } => {
+                ChatMessage::Tool {
+                    tool_call_id,
+                    content,
+                } => {
                     api_messages.push(json!({
                         "role": "user",
                         "content": [{
@@ -231,39 +207,64 @@ impl CompletionProvider for AnthropicProvider {
     // list_models returns Ok(vec![]) — UI falls back to free-text model input
 }
 
+fn parse_json_response(content: &str) -> Result<Value> {
+    let trimmed = content.trim();
+    if let Ok(value) = serde_json::from_str(trimmed) {
+        return Ok(value);
+    }
+
+    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+        return Err(anyhow!("Anthropic response did not contain JSON"));
+    };
+    let end_obj = trimmed.rfind('}');
+    let end_arr = trimmed.rfind(']');
+    let end = match (end_obj, end_arr) {
+        (Some(a), Some(b)) => a.max(b),
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => return Err(anyhow!("Anthropic response did not contain complete JSON")),
+    };
+    if end < start {
+        return Err(anyhow!("Anthropic response JSON bounds were invalid"));
+    }
+    serde_json::from_str(&trimmed[start..=end])
+        .map_err(|e| anyhow!("Anthropic response not valid JSON: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn request_uses_tool_use() {
-        let body = json!({
-            "tools": [{"name": "classify"}],
-            "tool_choice": {"type": "tool", "name": "classify"}
-        });
-        assert_eq!(body["tool_choice"]["type"], "tool");
-        assert_eq!(body["tools"][0]["name"], "classify");
+    fn parses_plain_json_array() {
+        let value = parse_json_response(
+            r#"[{"txn_id":"t1","category_id":"cat1","confidence":0.95,"rationale":"r"}]"#,
+        )
+        .unwrap();
+        assert_eq!(value[0]["txn_id"], "t1");
     }
 
     #[test]
-    fn extracts_results_from_tool_input() {
-        let input = json!({"results": [{"txn_id": "t1", "category_id": "cat1", "confidence": 0.95, "rationale": "r"}]});
-        let block = ContentBlock {
-            kind: "tool_use".into(),
-            input: input.clone(),
-        };
-        let resp = AnthropicResp {
-            content: vec![block],
-        };
-        let results = resp
-            .content
-            .into_iter()
-            .next()
-            .unwrap()
-            .input
-            .get("results")
-            .cloned()
-            .unwrap();
-        assert_eq!(results[0]["txn_id"], "t1");
+    fn parses_json_inside_text() {
+        let value = parse_json_response("Here is the result:\n{\"mode\":\"deep\"}").unwrap();
+        assert_eq!(value["mode"], "deep");
+    }
+
+    #[test]
+    fn rejects_malformed_model_output() {
+        let no_json = parse_json_response("I cannot produce JSON for this request").unwrap_err();
+        assert!(no_json
+            .to_string()
+            .contains("Anthropic response did not contain JSON"));
+
+        let incomplete =
+            parse_json_response(r#"Here is partial JSON: {"mode": "deep""#).unwrap_err();
+        assert!(incomplete
+            .to_string()
+            .contains("Anthropic response did not contain complete JSON"));
+
+        let invalid = parse_json_response(r#"Here is malformed JSON: {"mode": }"#).unwrap_err();
+        assert!(invalid
+            .to_string()
+            .contains("Anthropic response not valid JSON"));
     }
 }

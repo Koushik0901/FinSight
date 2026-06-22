@@ -1,7 +1,7 @@
 use finsight_core::{
     error::{CoreError, CoreResult},
-    models::{AgentActionItem, NewRule},
-    repos::{agent_memory, budgets, copilot_actions, rules, scenarios},
+    models::{AgentActionItem, NewPlannedTransaction, NewRule},
+    repos::{agent_memory, budgets, copilot_actions, planned_transactions, rules, scenarios},
 };
 use rusqlite::{params, Connection};
 use serde::Deserialize;
@@ -76,6 +76,24 @@ struct SaveScenarioPayload {
 struct GenerateReportPayload {
     report_type: String,
     scope: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePlannedTransactionPayload {
+    description: String,
+    amount_cents: i64,
+    due_date: String,
+    account_id: Option<String>,
+    category_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DebtPayoffPlanPayload {
+    method: String,
+    extra_monthly_cents: i64,
+    liability_ids: Option<Vec<String>>,
 }
 
 pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<BundleExecutionResult> {
@@ -304,6 +322,39 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 payload.report_type, payload.scope
             ))
         }
+
+        "create_planned_transaction" => {
+            let payload: CreatePlannedTransactionPayload = parse_payload(&item.payload_json)?;
+            let row = planned_transactions::insert(
+                conn,
+                NewPlannedTransaction {
+                    description: payload.description.clone(),
+                    amount_cents: payload.amount_cents,
+                    account_id: payload.account_id,
+                    category_id: payload.category_id,
+                    due_date: payload.due_date.clone(),
+                    source: "agent".to_string(),
+                },
+            )?;
+            Ok(format!(
+                "Planned transaction '{}' saved for {} as {}",
+                payload.description, payload.due_date, row.id
+            ))
+        }
+        "debt_payoff_plan" => {
+            let payload: DebtPayoffPlanPayload = parse_payload(&item.payload_json)?;
+            let tracked = payload
+                .liability_ids
+                .as_ref()
+                .map(|ids| ids.len())
+                .unwrap_or(0);
+            Ok(format!(
+                "Debt payoff plan acknowledged: {} method, ${:.0}/mo extra, {} targeted debt(s)",
+                payload.method,
+                payload.extra_monthly_cents as f64 / 100.0,
+                tracked
+            ))
+        }
         other => Err(CoreError::InvalidState(format!(
             "Unknown action kind: {other}"
         ))),
@@ -376,6 +427,10 @@ mod tests {
                 color: "#112233".into(),
                 opening_balance_cents: 200_000,
                 source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
             },
         )
         .unwrap();

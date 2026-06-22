@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Liability>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date, currency, created_at, updated_at \
+        "SELECT id, name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at, currency, created_at, updated_at \
          FROM liabilities ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map([], map_row)?;
@@ -21,9 +21,9 @@ pub fn create(conn: &mut Connection, l: NewLiability) -> CoreResult<Liability> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO liabilities(id, name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date, currency, created_at, updated_at) \
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-        params![id, l.name, l.liability_type, l.balance_cents, l.limit_cents, l.apr_pct, l.payoff_date, l.currency, now],
+        "INSERT INTO liabilities(id, name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at, currency, created_at, updated_at) \
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+        params![id, l.name, l.liability_type, l.balance_cents, l.limit_cents, l.apr_pct, l.min_payment_cents, l.payoff_date, l.original_balance_cents, l.started_at, l.currency, now],
     )?;
     get_by_id(conn, &id)
 }
@@ -59,9 +59,27 @@ pub fn update(conn: &mut Connection, id: &str, patch: LiabilityPatch) -> CoreRes
             params![v, id],
         )?;
     }
+    if let Some(v) = &patch.min_payment_cents {
+        conn.execute(
+            "UPDATE liabilities SET min_payment_cents = ?1 WHERE id = ?2",
+            params![v, id],
+        )?;
+    }
     if let Some(v) = &patch.payoff_date {
         conn.execute(
             "UPDATE liabilities SET payoff_date = ?1 WHERE id = ?2",
+            params![v, id],
+        )?;
+    }
+    if let Some(v) = &patch.original_balance_cents {
+        conn.execute(
+            "UPDATE liabilities SET original_balance_cents = ?1 WHERE id = ?2",
+            params![v, id],
+        )?;
+    }
+    if let Some(v) = &patch.started_at {
+        conn.execute(
+            "UPDATE liabilities SET started_at = ?1 WHERE id = ?2",
             params![v, id],
         )?;
     }
@@ -85,7 +103,7 @@ pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
 
 fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Liability> {
     conn.query_row(
-        "SELECT id, name, liability_type, balance_cents, limit_cents, apr_pct, payoff_date, currency, created_at, updated_at \
+        "SELECT id, name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at, currency, created_at, updated_at \
          FROM liabilities WHERE id = ?1",
         params![id], map_row,
     ).map_err(Into::into)
@@ -99,10 +117,13 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<Liability> {
         balance_cents: r.get(3)?,
         limit_cents: r.get(4)?,
         apr_pct: r.get(5)?,
-        payoff_date: r.get(6)?,
-        currency: r.get(7)?,
-        created_at: r.get(8)?,
-        updated_at: r.get(9)?,
+        min_payment_cents: r.get(6)?,
+        payoff_date: r.get(7)?,
+        original_balance_cents: r.get(8)?,
+        started_at: r.get(9)?,
+        currency: r.get(10)?,
+        created_at: r.get(11)?,
+        updated_at: r.get(12)?,
     })
 }
 
@@ -132,7 +153,10 @@ mod tests {
                 balance_cents: 30_000_000,
                 limit_cents: Some(35_000_000),
                 apr_pct: Some(5.5),
+                min_payment_cents: Some(180_000),
                 payoff_date: Some("2045-01-01".into()),
+                original_balance_cents: Some(40_000_000),
+                started_at: Some("2021-06".into()),
                 currency: "USD".into(),
             },
         )
@@ -143,12 +167,16 @@ mod tests {
             &l.id,
             LiabilityPatch {
                 balance_cents: Some(29_500_000),
+                min_payment_cents: Some(Some(175_000)),
                 ..Default::default()
             },
         )
         .unwrap();
         assert_eq!(updated.balance_cents, 29_500_000);
         assert_eq!(updated.apr_pct, Some(5.5));
+        assert_eq!(updated.min_payment_cents, Some(175_000));
+        assert_eq!(updated.original_balance_cents, Some(40_000_000));
+        assert_eq!(updated.started_at, Some("2021-06".into()));
         delete(&mut conn, &l.id).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 0);
     }

@@ -5,31 +5,8 @@ import {
   type AgentActionBundle,
   type AgentExecutionEntry,
   type AgentSession,
+  type ExecutionSummary,
 } from "../client";
-
-// Local types for commands added in Phase 3-4 (not in bindings until export_bindings is re-run)
-export interface CopilotPlanResult {
-  bundleId: string;
-  answer: string;
-  assumptions: string[];
-  followUpQuestions: string[];
-  forecastSummary: string | null;
-}
-
-export interface ExecutionItemResult {
-  itemId: string;
-  actionKind: string;
-  status: string;
-  summary: string | null;
-  error: string | null;
-}
-
-export interface ExecutionSummary {
-  bundleId: string;
-  succeeded: number;
-  failed: number;
-  results: ExecutionItemResult[];
-}
 
 export function useAgentSessions() {
   return useQuery<AgentSession[]>({
@@ -131,28 +108,6 @@ export function useExecutionLog(bundleId: string | null) {
       return result.data;
     },
     enabled: bundleId !== null,
-  });
-}
-
-export function useStartCopilotPlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      question,
-    }: {
-      sessionId?: string | null;
-      question: string;
-    }) => {
-      return await invoke<CopilotPlanResult>("start_copilot_plan", {
-        sessionId: sessionId ?? null,
-        question,
-      });
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      void qc.invalidateQueries({ queryKey: ["action-bundle"] });
-    },
   });
 }
 

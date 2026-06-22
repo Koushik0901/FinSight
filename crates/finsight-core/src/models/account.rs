@@ -48,6 +48,10 @@ pub struct Account {
     pub currency: String,
     pub color: String,
     pub archived_at: Option<DateTime<Utc>>,
+    pub liquidity_type: String,
+    pub emergency_fund_eligible: bool,
+    pub goal_earmark: Option<String>,
+    pub apy_pct: Option<f64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -62,10 +66,24 @@ pub struct AccountSummary {
     pub currency: String,
     pub color: String,
     pub source: String,
+    #[serde(default = "default_liquidity_type")]
+    pub liquidity_type: String,
+    #[serde(default = "default_emergency_fund_eligible")]
+    pub emergency_fund_eligible: bool,
+    pub goal_earmark: Option<String>,
+    pub apy_pct: Option<f64>,
 }
 
 fn default_source() -> String {
     "manual".to_string()
+}
+
+fn default_liquidity_type() -> String {
+    "liquid".to_string()
+}
+
+fn default_emergency_fund_eligible() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Type)]
@@ -76,6 +94,10 @@ pub struct AccountPatch {
     pub color: Option<String>,
     pub last4: Option<Option<String>>,
     pub currency: Option<String>,
+    pub liquidity_type: Option<String>,
+    pub emergency_fund_eligible: Option<bool>,
+    pub goal_earmark: Option<Option<String>>,
+    pub apy_pct: Option<Option<f64>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -90,4 +112,10 @@ pub struct NewAccount {
     pub opening_balance_cents: i64,
     #[serde(default = "default_source")]
     pub source: String,
+    #[serde(default = "default_liquidity_type")]
+    pub liquidity_type: String,
+    #[serde(default = "default_emergency_fund_eligible")]
+    pub emergency_fund_eligible: bool,
+    pub goal_earmark: Option<String>,
+    pub apy_pct: Option<f64>,
 }

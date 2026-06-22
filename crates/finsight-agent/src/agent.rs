@@ -153,9 +153,23 @@ mod tests {
         );
 
         handle.tx.send(AgentJob::CategorizeAll).await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let evs = events.lock().unwrap();
-        assert!(evs.iter().any(|e| matches!(e, AgentEvent::Error { .. })));
+        let mut seen_error = false;
+        for _ in 0..20 {
+            if events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, AgentEvent::Error { .. }))
+            {
+                seen_error = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        assert!(
+            seen_error,
+            "expected an error event when no provider is configured"
+        );
     }
 
     #[tokio::test]

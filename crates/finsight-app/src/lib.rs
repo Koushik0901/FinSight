@@ -74,8 +74,9 @@ pub fn load_completion_provider_config(
     let conn = db.get()?;
     let cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
     match cfg {
-        Some(v) => serde_json::from_value(v)
-            .map_err(|e| finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))),
+        Some(v) => serde_json::from_value(v).map_err(|e| {
+            finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))
+        }),
         None => Ok(commands::agent::CompletionProviderConfig::Unconfigured),
     }
 }
@@ -191,7 +192,6 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::copilot::approve_action_item,
         commands::copilot::reject_action_item,
         commands::copilot::list_execution_log,
-        commands::copilot::start_copilot_plan,
         commands::copilot::execute_action_bundle,
         commands::recipes::list_recipes,
         commands::recipes::create_recipe,

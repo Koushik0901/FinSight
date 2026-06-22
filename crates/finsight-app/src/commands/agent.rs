@@ -1,7 +1,10 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
+#[cfg(test)]
+use finsight_agent::finance::{self, FinanceQuestionKind};
 use finsight_agent::{
     agent::AgentJob,
+    planning,
     providers::{
         anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
     },
@@ -9,7 +12,7 @@ use finsight_agent::{
         engine::ReasoningEngine,
         tools::{act, read, ToolSet},
     },
-    CompletionProvider,
+    CompletionProvider, ReasoningResult,
 };
 use finsight_core::models::{NewRule, RuleProposal};
 use finsight_core::repos::{rule_proposals, rules, run};
@@ -81,8 +84,7 @@ pub async fn get_completion_provider(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<CompletionProviderConfig> {
     let db = (*state.db).clone();
-    crate::load_completion_provider_config(&db)
-        .map_err(AppError::from)
+    crate::load_completion_provider_config(&db).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -433,6 +435,14 @@ pub struct AgentChange {
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentScenarioAlternative {
+    pub name: String,
+    pub summary: String,
+    pub tradeoff: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentAnswer {
     pub prose: String,
     pub reasoning: String,
@@ -440,10 +450,21 @@ pub struct AgentAnswer {
     pub changes: Vec<AgentChange>,
     pub action_label: Option<String>,
     pub action_path: Option<String>,
+    pub bundle_id: Option<String>,
+    pub assumptions: Vec<String>,
+    pub data_sources: Vec<String>,
+    pub missing_data: Vec<String>,
+    pub alternatives: Vec<AgentScenarioAlternative>,
+    pub follow_up_questions: Vec<String>,
 }
 
 fn build_toolset() -> ToolSet {
     let mut tools = ToolSet::new();
+    tools.register(read::get_financial_snapshot());
+    tools.register(read::analyze_cash_inflow());
+    tools.register(read::calculate_goal_eta());
+    tools.register(read::rank_debt_payoff());
+    tools.register(read::compare_debt_vs_goal());
     tools.register(read::get_account_balances());
     tools.register(read::get_month_totals());
     tools.register(read::get_top_spending_categories());
@@ -453,9 +474,656 @@ fn build_toolset() -> ToolSet {
     tools.register(read::get_liabilities());
     tools.register(read::search_transactions());
     tools.register(read::run_cashflow_projection());
+    tools.register(read::run_debt_payoff_scenarios());
+    tools.register(read::run_goal_allocation_scenarios());
+    tools.register(read::run_goal_conflict_scenario());
+    tools.register(read::run_emergency_fund_scenarios());
+    tools.register(read::run_cashflow_timeline());
+    tools.register(read::run_purchase_affordability());
+    tools.register(read::get_data_quality_report());
+    tools.register(act::set_budget());
     tools.register(act::update_goal_monthly());
     tools.register(act::create_planned_transaction());
+    tools.register(act::save_scenario());
+    tools.register(act::create_debt_payoff_plan());
     tools
+}
+
+#[cfg(test)]
+fn normalize_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+fn find_best_goal_match<'a>(
+    question: &str,
+    goals: &'a [finance::SnapshotGoal],
+) -> Option<&'a finance::SnapshotGoal> {
+    let q = normalize_name(question);
+    goals
+        .iter()
+        .find(|goal| {
+            let name = normalize_name(&goal.name);
+            !name.is_empty() && q.contains(&name)
+        })
+        .or_else(|| {
+            goals.iter().find(|goal| {
+                let name = normalize_name(&goal.name);
+                if name.is_empty() {
+                    return false;
+                }
+                name.split_whitespace().any(|token| q.contains(token))
+            })
+        })
+}
+
+#[cfg(test)]
+fn find_best_liability_match<'a>(
+    question: &str,
+    liabilities: &'a [finance::SnapshotLiability],
+) -> Option<&'a finance::SnapshotLiability> {
+    let q = normalize_name(question);
+    liabilities
+        .iter()
+        .find(|liability| {
+            let name = normalize_name(&liability.name);
+            !name.is_empty() && q.contains(&name)
+        })
+        .or_else(|| {
+            liabilities.iter().find(|liability| {
+                let name = normalize_name(&liability.name);
+                if name.is_empty() {
+                    return false;
+                }
+                name.split_whitespace().any(|token| q.contains(token))
+            })
+        })
+}
+
+#[cfg(test)]
+fn format_cents(cents: i64) -> String {
+    let value = cents as f64 / 100.0;
+    if value.fract().abs() < 0.005 {
+        format!("${:.0}", value)
+    } else {
+        format!("${:.2}", value)
+    }
+}
+
+#[cfg(test)]
+fn default_finance_data_sources() -> Vec<String> {
+    vec![
+        "Accounts and latest account balances".to_string(),
+        "Transactions over the last 90 and 365 days".to_string(),
+        "Active goals".to_string(),
+        "Tracked liabilities, APRs, and minimum payments".to_string(),
+        "Detected recurring bills and planned transactions".to_string(),
+    ]
+}
+
+fn mentions_investing(question: &str) -> bool {
+    let q = question.to_lowercase();
+    ["invest", "stocks", "stock", "etf", "ticker", "portfolio"]
+        .iter()
+        .any(|term| q.contains(term))
+}
+
+fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
+    answer.missing_data.sort();
+    answer.missing_data.dedup();
+    answer.assumptions.sort();
+    answer.assumptions.dedup();
+    answer.data_sources.sort();
+    answer.data_sources.dedup();
+
+    if mentions_investing(question) {
+        let guardrail = "I can discuss investing readiness and principles from your local cashflow/debt data, but this app does not use external market data and should not recommend specific tickers, ETFs, or market timing.";
+        if !answer.assumptions.iter().any(|item| item == guardrail) {
+            answer.assumptions.push(guardrail.to_string());
+        }
+        if !answer.prose.to_lowercase().contains("specific tickers") {
+            answer.prose.push(' ');
+            answer.prose.push_str(
+                "I would keep investing advice principles-only here rather than naming specific tickers or ETFs.",
+            );
+        }
+    }
+}
+
+fn planner_alternatives_to_agent(
+    alternatives: &[planning::FinanceAlternative],
+) -> Vec<AgentScenarioAlternative> {
+    alternatives
+        .iter()
+        .map(|alt| AgentScenarioAlternative {
+            name: alt.name.clone(),
+            summary: alt.summary.clone(),
+            tradeoff: alt.tradeoff.clone(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn debt_goal_alternatives_to_agent(
+    alternatives: &[finance::ScenarioAlternative],
+) -> Vec<AgentScenarioAlternative> {
+    alternatives
+        .iter()
+        .map(|alt| {
+            let payoff = alt
+                .payoff_months
+                .map(|m| format!("{m} mo payoff"))
+                .unwrap_or_else(|| "payoff unknown".to_string());
+            let interest = alt
+                .interest_cents
+                .map(format_cents)
+                .unwrap_or_else(|| "interest unknown".to_string());
+            AgentScenarioAlternative {
+                name: alt.name.clone(),
+                summary: format!(
+                    "Use {}; debt payment {}; {}; estimated interest {}.",
+                    format_cents(alt.cash_used_cents),
+                    alt.monthly_debt_payment_cents
+                        .map(format_cents)
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    payoff,
+                    interest
+                ),
+                tradeoff: alt.tradeoff.clone(),
+            }
+        })
+        .collect()
+}
+fn planner_answer_to_agent_answer(answer: planning::StructuredFinanceAnswer) -> AgentAnswer {
+    let mut prose_parts = Vec::new();
+    if !answer.recommendation.trim().is_empty() {
+        prose_parts.push(answer.recommendation.clone());
+    }
+    if !answer.summary.trim().is_empty() {
+        prose_parts.push(answer.summary.clone());
+    }
+    if !answer.alternatives.is_empty() {
+        let alternatives = answer
+            .alternatives
+            .iter()
+            .map(|alt| format!("{}: {} {}", alt.name, alt.summary, alt.tradeoff))
+            .collect::<Vec<_>>()
+            .join(" ");
+        prose_parts.push(format!("Alternatives compared: {alternatives}"));
+    }
+    if !answer.what_would_change_recommendation.is_empty() {
+        prose_parts.push(format!(
+            "What would change this recommendation: {}",
+            answer.what_would_change_recommendation.join(" ")
+        ));
+    }
+
+    let mut missing_data = answer.missing_data.clone();
+    if answer.verification.severity != planning::VerificationSeverity::Ok {
+        missing_data.extend(answer.verification.findings.clone());
+    }
+    missing_data.sort();
+    missing_data.dedup();
+
+    let mut assumptions = answer.assumptions.clone();
+    assumptions.extend(answer.risks.iter().map(|risk| format!("Risk flag: {risk}")));
+    assumptions.extend(
+        answer
+            .what_would_change_recommendation
+            .iter()
+            .map(|item| format!("What would change this: {item}")),
+    );
+    assumptions.sort();
+    assumptions.dedup();
+
+    let verifier_note = if answer.verification.findings.is_empty() {
+        format!(
+            "Verifier: {:?}; confidence {:.0}%.",
+            answer.verification.severity,
+            answer.confidence * 100.0
+        )
+    } else {
+        format!(
+            "Verifier: {:?}; confidence {:.0}%. Findings: {}",
+            answer.verification.severity,
+            answer.confidence * 100.0,
+            answer.verification.findings.join("; ")
+        )
+    };
+
+    AgentAnswer {
+        prose: prose_parts.join(" "),
+        reasoning: [answer.reasoning, verifier_note]
+            .into_iter()
+            .filter(|part| !part.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(" "),
+        trace: answer.trace,
+        changes: Vec::new(),
+        action_label: None,
+        action_path: None,
+        bundle_id: None,
+        assumptions,
+        data_sources: answer.data_sources,
+        missing_data,
+        alternatives: planner_alternatives_to_agent(&answer.alternatives),
+        follow_up_questions: answer.follow_up_questions,
+    }
+}
+fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
+    let used_tool = result
+        .trace
+        .iter()
+        .any(|entry| entry.starts_with("Called tool:"));
+    used_tool && !result.content.trim().is_empty() && !result.data_sources.is_empty()
+}
+
+fn reasoning_result_to_agent_answer(
+    result: ReasoningResult,
+    bundle_id: Option<String>,
+) -> AgentAnswer {
+    let mut data_sources = result.data_sources;
+    if data_sources.is_empty() {
+        data_sources.extend([
+            "Agent tool calls shown in the trace".to_string(),
+            "Local FinSight database snapshots returned by tools".to_string(),
+        ]);
+    }
+
+    AgentAnswer {
+        prose: result.content,
+        reasoning: result.reasoning,
+        trace: result.trace,
+        changes: result
+            .changes
+            .into_iter()
+            .map(|c| AgentChange {
+                kind: c.kind,
+                description: c.description,
+            })
+            .collect(),
+        action_label: None,
+        action_path: None,
+        bundle_id,
+        assumptions: result.assumptions,
+        data_sources,
+        missing_data: result.missing_data,
+        alternatives: Vec::new(),
+        follow_up_questions: result.follow_up_questions,
+    }
+}
+#[cfg(test)]
+fn direct_finance_answer(
+    conn: &mut rusqlite::Connection,
+    question: &str,
+) -> AppResult<Option<AgentAnswer>> {
+    let profile = finance::infer_question_profile(question);
+    let snapshot =
+        finance::build_snapshot(conn).map_err(|e| AppError::new("agent.finance", e.to_string()))?;
+
+    let mut assumptions = Vec::new();
+    let mut missing_data = snapshot.data_warnings.clone();
+    let mut follow_up_questions = Vec::new();
+    let mut trace = Vec::new();
+
+    let answer = match profile.kind {
+        FinanceQuestionKind::CashInflow => {
+            let amount_cents = match profile.amount_cents {
+                Some(amount) if amount > 0 => amount,
+                _ => {
+                    follow_up_questions
+                        .push("How much is the paycheck or windfall, in dollars?".to_string());
+                    return Ok(Some(AgentAnswer {
+                        prose: "I need the amount before I can split it across debt, savings, and goals.".to_string(),
+                        reasoning: "The question is missing the cash inflow amount.".to_string(),
+                        trace,
+                        changes: Vec::new(),
+                        action_label: None,
+                        action_path: None,
+                        bundle_id: None,
+                        assumptions,
+                        data_sources: default_finance_data_sources(),
+                        missing_data,
+                        alternatives: Vec::new(),
+                        follow_up_questions,
+                    }));
+                }
+            };
+            let advice = finance::analyze_cash_inflow(conn, amount_cents)
+                .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
+            trace.push("Called tool: analyze_cash_inflow".to_string());
+            if !advice.missing_data.is_empty() {
+                missing_data.extend(advice.missing_data.clone());
+            }
+            if advice.investing_allowed {
+                assumptions.push("Investing is allowed only after the emergency fund and high-interest debt checks pass.".to_string());
+            } else {
+                assumptions.push("Investing is deferred until emergency coverage and debt priorities are addressed.".to_string());
+            }
+            let reasoning = advice.rationale.join(" ");
+            let mut prose_lines = vec![format!(
+                "For ${:.2}, I would prioritize liquidity first, then high-interest debt, then goals.",
+                amount_cents as f64 / 100.0
+            )];
+            for allocation in advice.allocations {
+                prose_lines.push(format!(
+                    "{}: {} ({})",
+                    allocation.bucket.replace('_', " "),
+                    format_cents(allocation.amount_cents),
+                    allocation.reason
+                ));
+            }
+            if !advice.investing_allowed {
+                prose_lines.push(
+                    "I would not direct this into stocks or ETFs yet; keep the answer principles-only and focus on debt and cash reserves.".to_string(),
+                );
+            }
+            Some(AgentAnswer {
+                prose: prose_lines.join(" "),
+                reasoning,
+                trace,
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions,
+                data_sources: default_finance_data_sources(),
+                missing_data,
+                alternatives: Vec::new(),
+                follow_up_questions,
+            })
+        }
+        FinanceQuestionKind::GoalEta => {
+            let amount_cents = match profile.amount_cents {
+                Some(amount) if amount > 0 => amount,
+                _ => {
+                    follow_up_questions
+                        .push("How much do you want to save each pay period?".to_string());
+                    return Ok(Some(AgentAnswer {
+                        prose: "I need your contribution amount to estimate the goal timeline."
+                            .to_string(),
+                        reasoning: "The question is missing the contribution amount.".to_string(),
+                        trace,
+                        changes: Vec::new(),
+                        action_label: None,
+                        action_path: None,
+                        bundle_id: None,
+                        assumptions,
+                        data_sources: default_finance_data_sources(),
+                        missing_data,
+                        alternatives: Vec::new(),
+                        follow_up_questions,
+                    }));
+                }
+            };
+            let cadence = profile
+                .cadence
+                .clone()
+                .unwrap_or_else(|| "monthly".to_string());
+            let goal = find_best_goal_match(question, &snapshot.goals);
+            let Some(goal) = goal else {
+                follow_up_questions.push("Which goal should I use for the ETA?".to_string());
+                let goal_names = snapshot
+                    .goals
+                    .iter()
+                    .map(|g| g.name.clone())
+                    .collect::<Vec<_>>();
+                if !goal_names.is_empty() {
+                    assumptions.push(format!("Available goals: {}.", goal_names.join(", ")));
+                }
+                return Ok(Some(AgentAnswer {
+                    prose: "I need the specific goal before I can estimate when you will reach it."
+                        .to_string(),
+                    reasoning: "No goal match was confident enough to calculate ETA.".to_string(),
+                    trace,
+                    changes: Vec::new(),
+                    action_label: None,
+                    action_path: None,
+                    bundle_id: None,
+                    assumptions,
+                    data_sources: default_finance_data_sources(),
+                    missing_data,
+                    alternatives: Vec::new(),
+                    follow_up_questions,
+                }));
+            };
+            let eta = finance::calculate_goal_eta(conn, &goal.id, amount_cents, &cadence)
+                .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
+            trace.push("Called tool: calculate_goal_eta".to_string());
+            if eta.eta_months.is_none() {
+                missing_data.push("Goal ETA is provisional because the contribution is zero or the goal is fully funded.".to_string());
+            }
+            let reasoning = format!(
+                "{} needs {} remaining. At {} per {}, that is about {} month(s).",
+                eta.goal_name,
+                format_cents(eta.remaining_cents),
+                format_cents(amount_cents),
+                cadence,
+                eta.eta_months
+                    .map(|m| m.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+            let eta_text = eta
+                .eta_months
+                .map(|m| format!("{m} month(s)"))
+                .unwrap_or_else(|| "an unknown timeline".to_string());
+            Some(AgentAnswer {
+                prose: format!(
+                    "If you save {} {}, you should reach {} in about {}. That is {} per month equivalent.",
+                    format_cents(amount_cents),
+                    cadence,
+                    eta.goal_name,
+                    eta_text,
+                    format_cents(eta.monthly_equivalent_cents)
+                ),
+                reasoning,
+                trace,
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions,
+                data_sources: default_finance_data_sources(),
+                missing_data,
+                alternatives: Vec::new(),
+                follow_up_questions,
+            })
+        }
+        FinanceQuestionKind::DebtVsGoal => {
+            let Some(goal) = find_best_goal_match(question, &snapshot.goals) else {
+                follow_up_questions
+                    .push("Which savings goal should I compare against the loan?".to_string());
+                return Ok(Some(AgentAnswer {
+                    prose: "I need the goal name before I can compare it against your debt."
+                        .to_string(),
+                    reasoning: "The goal could not be identified confidently.".to_string(),
+                    trace,
+                    changes: Vec::new(),
+                    action_label: None,
+                    action_path: None,
+                    bundle_id: None,
+                    assumptions,
+                    data_sources: default_finance_data_sources(),
+                    missing_data,
+                    alternatives: Vec::new(),
+                    follow_up_questions,
+                }));
+            };
+            let liability = find_best_liability_match(question, &snapshot.liabilities);
+            let comparison =
+                finance::compare_debt_vs_goal(conn, &goal.id, liability.map(|d| d.id.as_str()))
+                    .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
+            trace.push("Called tool: compare_debt_vs_goal".to_string());
+            if !comparison.missing_data.is_empty() {
+                missing_data.extend(comparison.missing_data.clone());
+            }
+            assumptions.push(format!(
+                "{} current savings is {}.",
+                comparison.goal_name,
+                format_cents(comparison.goal_current_cents)
+            ));
+            if let Some(apr) = comparison.highest_apr_pct {
+                assumptions.push(format!("Highest relevant debt APR is {apr:.1}%."));
+            }
+            if let Some(months) = comparison.payoff_months_with_redirect {
+                assumptions.push(format!(
+                    "Fastest modeled payoff scenario clears the compared debt in about {months} month(s)."
+                ));
+            }
+            let mut prose = vec![format!("Short answer: {}", comparison.recommendation)];
+            if comparison.suggested_goal_drawdown_cents > 0 {
+                prose.push(format!(
+                    "The safe amount to move from {} is {}, which leaves about {:.1} month(s) of emergency coverage.",
+                    comparison.goal_name,
+                    format_cents(comparison.suggested_goal_drawdown_cents),
+                    comparison.emergency_fund_months_after_drawdown
+                ));
+            }
+            if let Some(saved) = comparison.estimated_interest_saved_cents {
+                prose.push(format!(
+                    "Compared with keeping the debt on its current minimum-payment track, the modeled safe-drawdown-plus-redirect plan avoids about {} of interest.",
+                    format_cents(saved)
+                ));
+            }
+            if !comparison.alternatives.is_empty() {
+                let alternatives = comparison
+                    .alternatives
+                    .iter()
+                    .map(|alt| {
+                        let payoff = alt
+                            .payoff_months
+                            .map(|m| format!("{m} mo payoff"))
+                            .unwrap_or_else(|| "payoff unknown".to_string());
+                        let interest = alt
+                            .interest_cents
+                            .map(format_cents)
+                            .unwrap_or_else(|| "interest unknown".to_string());
+                        format!(
+                            "{}: use {}, debt payment {}, {}, estimated interest {}. {}",
+                            alt.name,
+                            format_cents(alt.cash_used_cents),
+                            alt.monthly_debt_payment_cents
+                                .map(format_cents)
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            payoff,
+                            interest,
+                            alt.tradeoff
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                prose.push(format!("Alternatives compared: {alternatives}"));
+            }
+            Some(AgentAnswer {
+                prose: prose.join(" "),
+                reasoning: comparison.rationale.join(" "),
+                trace,
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions,
+                data_sources: default_finance_data_sources(),
+                missing_data,
+                alternatives: debt_goal_alternatives_to_agent(&comparison.alternatives),
+                follow_up_questions,
+            })
+        }
+        FinanceQuestionKind::DebtRanking => {
+            let method = profile.method.as_deref().unwrap_or_else(|| {
+                if question.to_lowercase().contains("snowball") {
+                    "snowball"
+                } else {
+                    "avalanche"
+                }
+            });
+            let ranking = finance::rank_debt_payoff(conn, method)
+                .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
+            trace.push("Called tool: rank_debt_payoff".to_string());
+            if !ranking.missing_data.is_empty() {
+                missing_data.extend(ranking.missing_data.clone());
+            }
+            let ordered = ranking
+                .items
+                .iter()
+                .map(|item| {
+                    format!(
+                        "{}. {} ({}, {})",
+                        item.rank,
+                        item.name,
+                        format_cents(item.balance_cents),
+                        item.reason
+                    )
+                })
+                .collect::<Vec<_>>();
+            Some(AgentAnswer {
+                prose: if ordered.is_empty() {
+                    "I do not see any active debts to rank.".to_string()
+                } else {
+                    format!("Use {} ordering. {}", ranking.method, ordered.join(" "))
+                },
+                reasoning: if ordered.is_empty() {
+                    "No positive-balance liabilities were found.".to_string()
+                } else {
+                    format!("{} debts ranked with {}.", ordered.len(), ranking.method)
+                },
+                trace,
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions,
+                data_sources: default_finance_data_sources(),
+                missing_data,
+                alternatives: Vec::new(),
+                follow_up_questions,
+            })
+        }
+        FinanceQuestionKind::Snapshot => {
+            trace.push("Called tool: get_financial_snapshot".to_string());
+            let mut prose = vec![format!(
+                "You have {} in liquid accounts and {} total across all accounts.",
+                format_cents(snapshot.liquid_balance_cents),
+                format_cents(snapshot.total_account_balance_cents)
+            )];
+            prose.push(format!(
+                "Your emergency fund covers about {:.1} month(s) of expenses.",
+                snapshot.emergency_fund_months
+            ));
+            if !snapshot.data_warnings.is_empty() {
+                missing_data.extend(snapshot.data_warnings.clone());
+            }
+            Some(AgentAnswer {
+                prose: prose.join(" "),
+                reasoning: "Snapshot built from local accounts, goals, debts, recurring bills, and planned transactions.".to_string(),
+                trace,
+                changes: Vec::new(),
+                action_label: None,
+                action_path: None,
+                bundle_id: None,
+                assumptions,
+                data_sources: default_finance_data_sources(),
+                missing_data,
+                alternatives: Vec::new(),
+                follow_up_questions,
+            })
+        }
+        FinanceQuestionKind::GeneralPlanning | FinanceQuestionKind::Unknown => None,
+    };
+
+    Ok(answer)
 }
 
 async fn router_classify(provider: &Arc<dyn CompletionProvider>, question: &str) -> String {
@@ -497,18 +1165,15 @@ pub async fn ask_agent(
     let db = (*state.db).clone();
 
     if effective_mode == "deep" {
-        // Deep reasoning path: use the reasoning engine with tools
         let tools = build_toolset();
         let provider_clone = Arc::clone(&provider);
         let question_clone = question.clone();
-        let result = run(&db, move |conn| {
+        let tool_result = run(&db, move |conn| {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|e| {
-                    finsight_core::CoreError::InvalidState(format!(
-                        "Failed to create runtime: {e}"
-                    ))
+                    finsight_core::CoreError::InvalidState(format!("Failed to create runtime: {e}"))
                 })?;
             rt.block_on(ReasoningEngine::run(
                 conn,
@@ -518,76 +1183,103 @@ pub async fn ask_agent(
                 10,
             ))
             .map_err(|e| {
-                finsight_core::CoreError::InvalidState(format!(
-                    "Reasoning engine error: {e}"
-                ))
+                finsight_core::CoreError::InvalidState(format!("Reasoning engine error: {e}"))
             })
         })
-        .await
-        .map_err(AppError::from)?;
+        .await;
 
-        // Persist executed bundle if there were changes
-        if !result.changes.is_empty() {
-            let changes_for_bundle: Vec<AgentChange> = result
-                .changes
-                .iter()
-                .map(|c| AgentChange {
-                    kind: c.kind.clone(),
-                    description: c.description.clone(),
-                })
-                .collect();
-            let question_for_db = question.clone();
-            let content_for_db = result.content.clone();
-            let reasoning_for_db = result.reasoning.clone();
-            let provider_id = provider.provider_id().to_string();
-            let model_id = provider.model_id().to_string();
-            let _ = run(&db, move |conn| {
-                let bundle = finsight_core::repos::copilot_actions::insert_bundle(
-                    conn,
-                    None,
-                    &question_for_db,
-                    &content_for_db,
-                    &reasoning_for_db,
-                    1.0,
-                    Some(&provider_id),
-                    Some(&model_id),
-                )?;
-                for (i, change) in changes_for_bundle.iter().enumerate() {
-                    finsight_core::repos::copilot_actions::insert_item(
+        match tool_result {
+            Ok(result) if is_usable_tool_answer(&result) => {
+                let draft_actions = result.draft_actions.clone();
+                let question_for_db = question.clone();
+                let content_for_db = result.content.clone();
+                let reasoning_for_db = if result.reasoning.is_empty() {
+                    "Tool-driven financial analysis".to_string()
+                } else {
+                    result.reasoning.clone()
+                };
+                let provider_id = provider.provider_id().to_string();
+                let model_id = provider.model_id().to_string();
+                let bundle_id = run(&db, move |conn| {
+                    let mut bundle = finsight_core::repos::copilot_actions::insert_bundle(
                         conn,
-                        &bundle.id,
-                        &change.kind,
-                        "{}",
-                        &change.description,
-                        1.0,
-                        i as i64,
+                        None,
+                        &question_for_db,
+                        &content_for_db,
+                        &reasoning_for_db,
+                        0.9,
+                        Some(&provider_id),
+                        Some(&model_id),
                     )?;
-                }
-                finsight_core::repos::copilot_actions::set_bundle_status(
-                    conn,
-                    &bundle.id,
-                    "executed",
-                )?;
-                Ok::<_, finsight_core::CoreError>(())
-            })
-            .await;
-        }
-
-        Ok(AgentAnswer {
-            prose: result.content,
-            reasoning: result.reasoning,
-            trace: result.trace,
-            changes: result
-                .changes
-                .into_iter()
-                .map(|c| AgentChange {
-                    kind: c.kind,
-                    description: c.description,
+                    for (i, draft) in draft_actions.iter().enumerate() {
+                        let item = finsight_core::repos::copilot_actions::insert_item(
+                            conn,
+                            &bundle.id,
+                            &draft.action_kind,
+                            &draft.payload_json,
+                            &draft.rationale,
+                            draft.confidence,
+                            i as i64,
+                        )?;
+                        bundle.items.push(item);
+                    }
+                    Ok::<_, finsight_core::CoreError>(bundle.id)
                 })
-                .collect(),
-            action_label: None,
-            action_path: None,
-        })
+                .await
+                .map_err(AppError::from)?;
+
+                let mut answer = reasoning_result_to_agent_answer(result, Some(bundle_id));
+                validate_finance_answer(&question, &mut answer);
+                return Ok(answer);
+            }
+            Ok(result) => {
+                let planned = run(&db, {
+                    let question = question.clone();
+                    move |conn| {
+                        planning::answer_finance_question(conn, &question)
+                            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+                    }
+                })
+                .await
+                .map_err(AppError::from)?;
+                if let Some(answer) = planned {
+                    let mut mapped = planner_answer_to_agent_answer(answer);
+                    mapped
+                        .trace
+                        .insert(0, "Tool loop produced an incomplete structured answer; used verified deterministic planner fallback.".to_string());
+                    validate_finance_answer(&question, &mut mapped);
+                    return Ok(mapped);
+                }
+
+                let mut answer = reasoning_result_to_agent_answer(result, None);
+                answer.missing_data.push(
+                    "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.".to_string(),
+                );
+                validate_finance_answer(&question, &mut answer);
+                return Ok(answer);
+            }
+            Err(tool_err) => {
+                let planned = run(&db, {
+                    let question = question.clone();
+                    move |conn| {
+                        planning::answer_finance_question(conn, &question)
+                            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+                    }
+                })
+                .await
+                .map_err(AppError::from)?;
+                if let Some(answer) = planned {
+                    let mut mapped = planner_answer_to_agent_answer(answer);
+                    mapped.trace.insert(
+                        0,
+                        format!("Tool loop failed; used verified deterministic planner fallback: {tool_err}"),
+                    );
+                    validate_finance_answer(&question, &mut mapped);
+                    return Ok(mapped);
+                }
+                return Err(AppError::new("agent.reasoning", tool_err.to_string()));
+            }
+        }
     } else {
         // Simple path: existing single-shot logic with new AgentAnswer shape
         let context = run(&db, |conn| {
@@ -730,13 +1422,108 @@ pub async fn ask_agent(
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
-        Ok(AgentAnswer {
+        let mut answer = AgentAnswer {
             prose,
             reasoning: String::new(),
             trace: Vec::new(),
             changes: Vec::new(),
             action_label,
             action_path,
-        })
+            bundle_id: None,
+            assumptions: Vec::new(),
+            data_sources: vec!["Monthly account, transaction, budget, and goal summary".to_string()],
+            missing_data: Vec::new(),
+            alternatives: Vec::new(),
+            follow_up_questions: Vec::new(),
+        };
+        validate_finance_answer(&question, &mut answer);
+        Ok(answer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("agent.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn seed(conn: &mut rusqlite::Connection) {
+        conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1','2026-06-01',500000)", []).unwrap();
+        conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('car','Car','save-by-date',2000000,500000,50000,'#fff',0,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('cc','Credit Card','credit-card',250000,500000,24.9,5000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('loan','Loan','loan',1800000,NULL,5.0,30000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+    }
+
+    #[test]
+    fn direct_cash_inflow_answer_uses_deterministic_allocation() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        let answer =
+            direct_finance_answer(&mut conn, "I got a pay of around $3,000. What should I do?")
+                .unwrap()
+                .expect("direct answer");
+        assert!(answer
+            .trace
+            .iter()
+            .any(|t| t.contains("analyze_cash_inflow")));
+        assert!(answer.prose.contains("high-interest debt"));
+        assert!(
+            answer.missing_data.is_empty() || answer.missing_data.iter().any(|m| m.contains("APR"))
+        );
+    }
+
+    #[test]
+    fn direct_goal_eta_answer_uses_goal_calculator() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        let answer = direct_finance_answer(
+            &mut conn,
+            "If I save up $500 bi-weekly, how soon will I reach my car goal?",
+        )
+        .unwrap()
+        .expect("direct answer");
+        assert!(answer
+            .trace
+            .iter()
+            .any(|t| t.contains("calculate_goal_eta")));
+        assert!(answer.prose.contains("Car"));
+    }
+
+    #[test]
+    fn direct_debt_vs_goal_answer_compares_scenarios() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        let answer = direct_finance_answer(
+            &mut conn,
+            "Should I use my car savings to pay off a similar-sized loan?",
+        )
+        .unwrap()
+        .expect("direct answer");
+
+        assert!(answer
+            .trace
+            .iter()
+            .any(|t| t.contains("compare_debt_vs_goal")));
+        assert!(answer.prose.contains("Alternatives compared"));
+        assert!(answer.prose.contains("estimated interest"));
+        assert!(answer.alternatives.len() >= 2);
+        assert!(answer
+            .alternatives
+            .iter()
+            .any(|alt| alt.summary.contains("estimated interest")));
+        assert!(answer.reasoning.contains("Highest compared APR"));
+        assert!(!answer.data_sources.is_empty());
     }
 }

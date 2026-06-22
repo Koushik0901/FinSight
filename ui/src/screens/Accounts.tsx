@@ -107,6 +107,11 @@ export default function Accounts() {
                 <TableCell>{a.name}</TableCell>
                 <TableCell>
                   <span className="muted">{a.type}</span>
+                  {a.type === "Savings" && a.apy_pct != null && (
+                    <span style={{ marginLeft: 8 }}>
+                      <Badge className="chip">{a.apy_pct}% APY</Badge>
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell right>
                   <span className="num tabular money">{money(a.balance_cents, { decimals: 2 })}</span>
@@ -186,6 +191,13 @@ export default function Accounts() {
           <Card flush>
             {liabilities.map((l) => {
               const hasLimit = l.limitCents && l.limitCents > 0;
+              const hasOriginal = l.originalBalanceCents && l.originalBalanceCents > 0;
+              const paidDownCents = hasOriginal && l.originalBalanceCents != null
+                ? Math.max(0, l.originalBalanceCents - l.balanceCents)
+                : 0;
+              const paidDownPct = hasOriginal && l.originalBalanceCents != null && l.originalBalanceCents > 0
+                ? Math.round((paidDownCents / l.originalBalanceCents) * 100)
+                : 0;
               return (
                 <div
                   key={l.id}
@@ -203,18 +215,21 @@ export default function Accounts() {
                       <div className="muted" style={{ fontSize: 12 }}>
                         <Badge className="chip">{l.liabilityType}</Badge>
                         {l.aprPct != null && <>{l.aprPct}% APR</>}
+                        {l.minPaymentCents != null && <> · min {money(l.minPaymentCents, { decimals: 0 })}/mo</>}
                         {l.payoffDate && <> · payoff {new Date(l.payoffDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</>}
+                        {l.startedAt && <> · started {new Date(`${l.startedAt}-01`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</>}
+                        {hasOriginal && <> · {paidDownPct}% paid down</>}
                       </div>
                     </div>
                     <span className="num money neg">{money(l.balanceCents, { decimals: 2 })}</span>
                   </div>
-                  {hasLimit && (
+                  {(hasLimit || hasOriginal) && (
                     <ProgressBar
-                      value={l.balanceCents}
-                      max={l.limitCents ?? undefined}
+                      value={hasOriginal ? paidDownCents : l.balanceCents}
+                      max={hasOriginal ? l.originalBalanceCents ?? undefined : l.limitCents ?? undefined}
                       size="sm"
-                      tone="negative"
-                      aria-label={`${l.name} utilization`}
+                      tone={hasOriginal ? "default" : "negative"}
+                      aria-label={hasOriginal ? `${l.name} payoff progress` : `${l.name} utilization`}
                     />
                   )}
                 </div>

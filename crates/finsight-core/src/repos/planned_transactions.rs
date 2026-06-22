@@ -1,10 +1,15 @@
 use crate::error::CoreResult;
-use crate::models::planned_transaction::{NewPlannedTransaction, PlannedTransaction, PlannedTxnFilter};
+use crate::models::planned_transaction::{
+    NewPlannedTransaction, PlannedTransaction, PlannedTxnFilter,
+};
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-pub fn list(conn: &mut Connection, filter: PlannedTxnFilter) -> CoreResult<Vec<PlannedTransaction>> {
+pub fn list(
+    conn: &mut Connection,
+    filter: PlannedTxnFilter,
+) -> CoreResult<Vec<PlannedTransaction>> {
     let mut sql = String::from(
         "SELECT id, description, amount_cents, account_id, category_id, due_date, status, source, created_at \
          FROM planned_transactions"
@@ -98,7 +103,10 @@ pub fn update_status(conn: &mut Connection, id: &str, status: &str) -> CoreResul
 }
 
 pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
-    conn.execute("DELETE FROM planned_transactions WHERE id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM planned_transactions WHERE id = ?1",
+        params![id],
+    )?;
     Ok(())
 }
 
