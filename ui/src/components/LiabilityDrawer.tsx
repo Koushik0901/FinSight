@@ -42,7 +42,7 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
   const del = useDeleteLiability();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", liabilityType: "loan", balance_dollars: 0 },
   });
@@ -122,11 +122,27 @@ export default function LiabilityDrawer({ open, onClose, liability }: Props) {
           {errors.balance_dollars && <span className="err">{errors.balance_dollars.message}</span>}
         </label>
         <label> Credit limit / original ($) <input type="number" step="0.01" {...register("limit_dollars")} /></label>
-        <label> Original balance ($) <input type="number" step="0.01" {...register("original_balance_dollars")} /></label>
+        <label>
+          Original balance ($)
+          <input type="number" step="0.01" {...register("original_balance_dollars")} />
+          {!watch("original_balance_dollars") && (
+            <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+              Add an original balance to track payoff progress.
+            </div>
+          )}
+        </label>
         <label> APR (%) <input type="number" step="0.01" {...register("apr_pct")} /></label>
         <label> Minimum payment ($) <input type="number" step="0.01" {...register("min_payment_dollars")} /></label>
         <label> Payoff date <input type="date" {...register("payoff_date")} /></label>
-        <label> Started (month / year) <input type="month" {...register("started_at")} /></label>
+        <label>
+          Started (month / year)
+          <input type="month" {...register("started_at")} />
+          {!watch("started_at") && (
+            <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+              Add a start date to see how long you've been paying this down.
+            </div>
+          )}
+        </label>
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={isSubmitting} className="primary">

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks";
-import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal, useUpdateGoalMonthly, useUpdateGoalPurpose } from "../api/hooks/budget";
+import { useAccounts } from "../api/hooks/accounts";
+import { useLiabilities } from "../api/hooks/assets";
+import { useGoals, useCreateGoal, useUpdateGoalBalance, useArchiveGoal, useUpdateGoalMonthly, useUpdateGoalPurpose, useProjectGoalGrowth } from "../api/hooks/budget";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import * as I from "../components/Icons";
 import { money } from "../utils/format";
@@ -29,13 +31,6 @@ function etaLabel(months: number): string {
   const d = new Date();
   d.setMonth(d.getMonth() + months);
   return d.toLocaleString("default", { month: "short", year: "numeric" });
-}
-
-function projectCompoundValue(monthlyCents: number, years: number): number {
-  if (monthlyCents <= 0) return 0;
-  const r = 0.07 / 12;
-  const n = years * 12;
-  return Math.round(monthlyCents * ((Math.pow(1 + r, n) - 1) / r));
 }
 
 type PaceStatus = "ahead" | "on_track" | "needs_attention";
@@ -88,10 +83,18 @@ function GoalCard({ goal }: { goal: GoalDto }) {
   const [showProjection, setShowProjection] = useState(false);
   const [editingPurpose, setEditingPurpose] = useState(false);
   const [purposeVal, setPurposeVal] = useState(goal.purpose ?? "");
+  const { data: proj10 } = useProjectGoalGrowth(goal.id, 10);
+  const { data: proj20 } = useProjectGoalGrowth(goal.id, 20);
+  const { data: proj30 } = useProjectGoalGrowth(goal.id, 30);
+  const { data: liabilities = [] } = useLiabilities();
+  const { data: accounts = [] } = useAccounts();
+  const linkedLiability = liabilities.find((l) => l.id === goal.liabilityId);
+  const linkedAccount = accounts.find((a) => a.id === goal.accountId);
 
   const pct = goal.targetCents > 0 ? Math.min(100, (goal.currentCents / goal.targetCents) * 100) : 0;
   const months = monthsTo(goal);
   const color = goal.color || "var(--accent)";
+  const isLinkedToLiability = !!goal.liabilityId;
 
   const saveBalance = async () => {
     const cents = Math.round(parseFloat(balanceVal || "0") * 100);
@@ -162,7 +165,9 @@ function GoalCard({ goal }: { goal: GoalDto }) {
         </div>
         <div className="row" style={{ justifyContent: "space-between", marginTop: 8, fontSize: 12.5 }}>
           <div>
-            {editingBalance ? (
+            {isLinkedToLiability ? (
+              <span className="num money">{money(goal.currentCents)}</span>
+            ) : editingBalance ? (
               <span className="row row-sm" style={{ alignItems: "center" }}>
                 <span className="muted" style={{ fontSize: 13 }}>$</span>
                 <input
@@ -192,6 +197,16 @@ function GoalCard({ goal }: { goal: GoalDto }) {
           </div>
           <span className="muted money">of {money(goal.targetCents)}</span>
         </div>
+        {linkedLiability && (
+          <div className="row row-sm" style={{ fontSize: 12, color: "var(--ink-mute)", marginTop: 8 }}>
+            Linked to {linkedLiability.name} · {linkedLiability.aprPct ?? "—"}% APR · updates automatically
+          </div>
+        )}
+        {linkedAccount && (
+          <div className="row row-sm" style={{ fontSize: 12, color: "var(--ink-mute)", marginTop: 8 }}>
+            Linked to {linkedAccount.name} · {(proj10?.annualRate ?? 0.07) * 100}% APY
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -277,15 +292,17 @@ function GoalCard({ goal }: { goal: GoalDto }) {
             <Card tone="accent" style={{ marginTop: 12 }}>
               <div className="eyebrow" style={{ marginBottom: 8 }}>Compound Growth</div>
               <div style={{ fontSize: 13.5, marginBottom: 10 }}>
-                If you invest <span className="money">{money(goal.monthlyCents)}</span>/month for the long run at 7%:
+                If you invest <span className="money">{money(goal.monthlyCents)}</span>/month for the long run at {(proj10?.annualRate ?? 0.07) * 100}% APY:
               </div>
               <div className="stack stack-sm">
-                {[10, 20, 30].map((years) => (
-                  <div key={years} className="row" style={{ justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
-                    <span className="muted">{years} years</span>
-                    <span className="money" style={{ fontWeight: 600 }}>{money(projectCompoundValue(goal.monthlyCents, years))}</span>
-                  </div>
-                ))}
+                {[proj10, proj20, proj30].map((p) =>
+                  p ? (
+                    <div key={p.years} className="row" style={{ justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
+                      <span className="muted">{p.years} years</span>
+                      <span className="money" style={{ fontWeight: 600 }}>{money(p.valueCents)}</span>
+                    </div>
+                  ) : null
+                )}
               </div>
             </Card>
           )}
@@ -298,6 +315,8 @@ function GoalCard({ goal }: { goal: GoalDto }) {
 function NewGoalForm({ onClose }: { onClose: () => void }) {
   const createGoal = useCreateGoal();
   const { data: totals } = useMonthTotals();
+  const { data: liabilities = [] } = useLiabilities();
+  const { data: accounts = [] } = useAccounts();
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("save-by-date");
   const [target, setTarget] = useState("");
@@ -305,8 +324,28 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
   const [targetDate, setTargetDate] = useState("");
   const [colorIdx, setColorIdx] = useState(0);
   const [purpose, setPurpose] = useState("");
+  const [liabilityId, setLiabilityId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const emergencyBaseCents = totals?.expenseCents ?? 0;
   const showEmergencyQuickFill = type === "build-balance" || name.toLowerCase().includes("emergency");
+  const linkableLiabilities = liabilities.filter((l) => l.balanceCents > 0);
+  const savingsAccounts = accounts.filter((a) => a.type === "Savings");
+  const selectedLiability = liabilities.find((l) => l.id === liabilityId);
+
+  useEffect(() => {
+    if (selectedLiability?.originalBalanceCents && !target) {
+      setTarget(String(selectedLiability.originalBalanceCents / 100));
+    }
+  }, [liabilityId, selectedLiability, target]);
+
+  const handleLiabilityChange = (id: string) => {
+    setLiabilityId(id);
+    if (id) setAccountId("");
+  };
+  const handleAccountChange = (id: string) => {
+    setAccountId(id);
+    if (id) setLiabilityId("");
+  };
 
   const quickFillTarget = (months: number) => {
     if (emergencyBaseCents <= 0) return;
@@ -324,6 +363,8 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
       color: GOAL_COLORS[colorIdx] ?? "#C9F950",
       notes: null,
       purpose: purpose.trim() || null,
+      liabilityId: liabilityId || null,
+      accountId: accountId || null,
     };
     try {
       await createGoal.mutateAsync(input);
@@ -398,6 +439,18 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </div>
+        <Select label="Linked liability (optional)" value={liabilityId} onChange={(e) => handleLiabilityChange(e.target.value)}>
+          <option value="">None</option>
+          {linkableLiabilities.map((l) => (
+            <option key={l.id} value={l.id}>{l.name} · {money(l.balanceCents)}</option>
+          ))}
+        </Select>
+        <Select label="Linked savings account (optional)" value={accountId} onChange={(e) => handleAccountChange(e.target.value)}>
+          <option value="">None</option>
+          {savingsAccounts.map((a) => (
+            <option key={a.id} value={a.id}>{a.bank} {a.name} · {a.apy_pct ?? "—"}% APY</option>
+          ))}
+        </Select>
         <div style={{ gridColumn: "1 / -1" }}>
           <TextArea
             label="Why this goal? (optional)"

@@ -161,6 +161,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::budget::create_goal,
         commands::budget::update_goal_balance,
         commands::budget::archive_goal,
+        commands::budget::project_goal_growth,
         commands::recurring::list_recurring,
         commands::reports::get_report_data,
         commands::reports::get_month_totals,

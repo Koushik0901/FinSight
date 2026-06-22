@@ -160,6 +160,11 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         {(watch("type") === "Savings" || (isEdit && account?.type === "Savings")) && (
           <label> APY (%)
             <input type="number" step="0.01" {...register("apy_pct")} />
+            {!watch("apy_pct") && (
+              <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+                Add an APY so savings projections use your real rate.
+              </div>
+            )}
           </label>
         )}
         {!isEdit && (

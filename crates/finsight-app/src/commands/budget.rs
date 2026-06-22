@@ -109,6 +109,8 @@ pub struct GoalDto {
     pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
+    pub liability_id: Option<String>,
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -168,6 +170,8 @@ pub struct NewGoalInput {
     pub color: String,
     pub notes: Option<String>,
     pub purpose: Option<String>,
+    pub liability_id: Option<String>,
+    pub account_id: Option<String>,
 }
 
 fn goal_to_dto(g: goals::Goal) -> GoalDto {
@@ -184,6 +188,8 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
         purpose: g.purpose,
         sort_order: g.sort_order,
         created_at: g.created_at,
+        liability_id: g.liability_id,
+        account_id: g.account_id,
     }
 }
 
@@ -217,9 +223,57 @@ pub async fn create_goal(
                 color: input.color,
                 notes: input.notes,
                 purpose: input.purpose,
+                liability_id: input.liability_id,
+                account_id: input.account_id,
             },
         )
         .map(goal_to_dto)
+    })
+    .await
+.map_err(AppError::from)
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectedValue {
+    pub years: i32,
+    pub value_cents: i64,
+    pub annual_rate: f64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn project_goal_growth(
+    state: tauri::State<'_, AppState>,
+    goal_id: String,
+    years: i32,
+) -> AppResult<ProjectedValue> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        use finsight_core::repos::accounts;
+        let goal = goals::get_by_id(conn, &goal_id)?;
+        let annual_rate = if let Some(account_id) = &goal.account_id {
+            accounts::get_by_id(conn, account_id)
+                .ok()
+                .and_then(|a| a.apy_pct)
+                .unwrap_or(0.07)
+                / 100.0
+        } else {
+            0.07
+        };
+        let value_cents = if goal.monthly_cents <= 0 || years <= 0 {
+            0
+        } else {
+            let r = annual_rate / 12.0;
+            let n = (years * 12) as i64;
+            let fv = goal.monthly_cents as f64 * ((f64::powi(1.0 + r, n as i32) - 1.0) / r);
+            fv.round() as i64
+        };
+        Ok(ProjectedValue {
+            years,
+            value_cents,
+            annual_rate,
+        })
     })
     .await
     .map_err(AppError::from)

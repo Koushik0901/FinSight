@@ -447,6 +447,8 @@ mod tests {
                 color: "#abcdef".into(),
                 notes: None,
                 purpose: None,
+                liability_id: None,
+                account_id: None,
             },
         )
         .unwrap();

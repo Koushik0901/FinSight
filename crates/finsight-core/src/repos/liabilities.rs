@@ -1,5 +1,6 @@
 use crate::error::CoreResult;
 use crate::models::{Liability, LiabilityPatch, NewLiability};
+use crate::repos::goals;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
@@ -46,6 +47,7 @@ pub fn update(conn: &mut Connection, id: &str, patch: LiabilityPatch) -> CoreRes
             "UPDATE liabilities SET balance_cents = ?1 WHERE id = ?2",
             params![v, id],
         )?;
+        goals::sync_linked_liabilities(conn, id)?;
     }
     if let Some(v) = &patch.limit_cents {
         conn.execute(
@@ -179,5 +181,57 @@ mod tests {
         assert_eq!(updated.started_at, Some("2021-06".into()));
         delete(&mut conn, &l.id).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn updating_liability_balance_syncs_linked_goal() {
+        use crate::repos::goals;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let l = create(
+            &mut conn,
+            NewLiability {
+                name: "Car loan".into(),
+                liability_type: "loan".into(),
+                balance_cents: 15_000_000,
+                limit_cents: None,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                original_balance_cents: Some(20_000_000),
+                started_at: None,
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
+        let goal = goals::insert(
+            &mut conn,
+            goals::NewGoal {
+                name: "Pay off car".into(),
+                goal_type: "debt-payoff".into(),
+                target_cents: 20_000_000,
+                monthly_cents: 500_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                liability_id: Some(l.id.clone()),
+                account_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(goal.current_cents, 0);
+
+        update(
+            &mut conn,
+            &l.id,
+            LiabilityPatch {
+                balance_cents: Some(12_000_000),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let synced = goals::get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(synced.current_cents, 12_000_000);
     }
 }
