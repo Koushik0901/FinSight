@@ -9,7 +9,7 @@ import { useTransactions } from "../api/hooks/transactions";
 import { useSyncSimpleFinAccount, useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets, useLiabilities } from "../api/hooks/assets";
 import { useNetWorth } from "../api/hooks/networth";
-import type { Account, AccountSummary, Liability, ManualAsset } from "../api/client";
+import type { Account, AccountSummary, Liability, ManualAsset, TxnFilterInput } from "../api/client";
 import { commands } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
@@ -19,6 +19,7 @@ import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
 import AccountSparkline from "../components/AccountSparkline";
 import AccountBalanceChart from "../components/AccountBalanceChart";
+import TransactionFilter from "../components/TransactionFilter";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -33,6 +34,11 @@ export default function Accounts() {
   const [editAsset, setEditAsset] = useState<ManualAsset | null>(null);
   const [liabAddOpen, setLiabAddOpen] = useState(false);
   const [editLiab, setEditLiab] = useState<Liability | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
+  const [preset, setPreset] = useState<"all" | "needs_review" | "anomalies">("all");
 
   const { data: accounts = [], isLoading, error } = useAccounts();
   const { data: assets = [] } = useManualAssets();
@@ -51,19 +57,48 @@ export default function Accounts() {
   }, [accounts, selectedId]);
 
   const selectedAccount = accounts.find((account) => account.id === selectedId) ?? accounts[0] ?? null;
+
+  useEffect(() => {
+    setFilterOpen(false);
+    setSearch("");
+    setStartDate(null);
+    setEndDate(null);
+    setPreset("all");
+  }, [selectedAccount?.id]);
   const { data: balanceHistory = [] } = useAccountBalanceHistory(
     selectedAccount?.id,
     90
   );
-  const txFilter = useMemo(() => ({
-    accountId: selectedAccount?.id ?? null,
-    limit: null,
-    offset: null,
-    search: null,
-    filterPreset: null,
-    startDate: null,
-    endDate: null,
-  }), [selectedAccount?.id]);
+  const txFilter = useMemo(
+    () => ({
+      accountId: selectedAccount?.id ?? null,
+      limit: null,
+      offset: null,
+      search: search || null,
+      filterPreset: preset === "all" ? null : preset,
+      startDate,
+      endDate,
+    }),
+    [selectedAccount?.id, search, preset, startDate, endDate]
+  );
+  const filterValue = useMemo(
+    () => ({
+      accountId: selectedAccount?.id ?? null,
+      limit: null,
+      offset: null,
+      search: search || null,
+      filterPreset: preset === "all" ? null : preset,
+      startDate,
+      endDate,
+    }),
+    [selectedAccount?.id, search, preset, startDate, endDate]
+  );
+  const handleFilterChange = (next: TxnFilterInput) => {
+    setSearch(next.search ?? "");
+    setStartDate(next.startDate ?? null);
+    setEndDate(next.endDate ?? null);
+    setPreset((next.filterPreset as "all" | "needs_review" | "anomalies") ?? "all");
+  };
   const { data: recentTransactions = [] } = useTransactions(txFilter);
 
   const connectedAssets = accounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
@@ -216,7 +251,14 @@ export default function Accounts() {
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center", padding: "14px 22px" }}>
                 <div className="eyebrow"><span className="dot" />RECENT ACTIVITY</div>
                 <div className="row row-sm">
-                  <button className="btn ghost sm" type="button">Filter</button>
+                  <button
+                    className={`btn ghost sm ${filterOpen ? "on" : ""}`}
+                    type="button"
+                    onClick={() => setFilterOpen((open) => !open)}
+                    aria-expanded={filterOpen}
+                  >
+                    Filter
+                  </button>
                   <button className="btn ghost sm" type="button" onClick={async () => {
                     try {
                       const result = await commands.exportAccountCsv(selectedAccount.id);
@@ -228,6 +270,12 @@ export default function Accounts() {
                 </div>
               </div>
 
+              {filterOpen && (
+                <div style={{ padding: "0 22px 14px" }}>
+                  <TransactionFilter value={filterValue} onChange={handleFilterChange} />
+                </div>
+              )}
+
               <table className="tbl">
                 <thead>
                   <tr>
@@ -238,14 +286,22 @@ export default function Accounts() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentTransactions.slice(0, 8).map((transaction) => (
-                    <tr key={transaction.id}>
-                      <td><span className="mono faint">{new Date(transaction.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
-                      <td>{transaction.merchant_label || transaction.merchant_raw}</td>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: transaction.category_color || "var(--ink-faint)" }} /><span>{transaction.category_label || "Uncategorized"}</span></div></td>
-                      <td className="right"><span className={`money ${transaction.amount_cents > 0 ? "pos" : ""}`}>{money(transaction.amount_cents, { currency: selectedAccount.currency || "USD", decimals: 2 })}</span></td>
+                  {recentTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="muted" style={{ padding: 24, textAlign: "center" }}>
+                        No transactions match your filters.
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    recentTransactions.slice(0, 8).map((transaction) => (
+                      <tr key={transaction.id}>
+                        <td><span className="mono faint">{new Date(transaction.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
+                        <td>{transaction.merchant_label || transaction.merchant_raw}</td>
+                        <td><div className="row row-sm"><span className="cswatch" style={{ background: transaction.category_color || "var(--ink-faint)" }} /><span>{transaction.category_label || "Uncategorized"}</span></div></td>
+                        <td className="right"><span className={`money ${transaction.amount_cents > 0 ? "pos" : ""}`}>{money(transaction.amount_cents, { currency: selectedAccount.currency || "USD", decimals: 2 })}</span></td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

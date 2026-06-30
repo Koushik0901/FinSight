@@ -1,7 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Accounts from "./Accounts";
 import { createWrapper } from "../test-utils";
+
+const mocks = vi.hoisted(() => ({
+  useTransactions: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+}));
+
+vi.mock("../api/hooks/transactions", () => ({
+  useTransactions: mocks.useTransactions,
+}));
 
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [
@@ -33,6 +41,34 @@ vi.mock("../api/hooks/assets", () => ({
   useUpdateLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useDeleteLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
+
+describe("Accounts — transaction filters", () => {
+  beforeEach(() => {
+    mocks.useTransactions.mockClear();
+  });
+
+  it("toggles the filter bar when Filter is clicked", () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    const filterBtn = screen.getByRole("button", { name: "Filter" });
+    expect(screen.queryByLabelText("Search transactions")).not.toBeInTheDocument();
+    fireEvent.click(filterBtn);
+    expect(screen.getByLabelText("Search transactions")).toBeInTheDocument();
+    fireEvent.click(filterBtn);
+    expect(screen.queryByLabelText("Search transactions")).not.toBeInTheDocument();
+  });
+
+  it("calls useTransactions with search when typing in the filter search input", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    const input = screen.getByLabelText("Search transactions");
+    fireEvent.change(input, { target: { value: "coffee" } });
+    await waitFor(() => {
+      expect(mocks.useTransactions).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "coffee" })
+      );
+    });
+  });
+});
 
 describe("Accounts — manual assets", () => {
   it("renders the manual assets section with an asset row", () => {
