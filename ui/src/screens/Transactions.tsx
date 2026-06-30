@@ -6,6 +6,7 @@ import { useNeedsReviewCount, useAgentStatus } from "../api/hooks/agent";
 import type { Transaction } from "../api/client";
 import { commands } from "../api/client";
 import TransactionDrawer from "../components/TransactionDrawer";
+import TransactionFilter from "../components/TransactionFilter";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 
@@ -32,6 +33,8 @@ export default function Transactions() {
   const { data: agentStatus } = useAgentStatus();
   const [query, setQuery] = useState("");
   const [preset, setPreset] = useState<"all" | "review" | "anomalies">("all");
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editTxnId, setEditTxnId] = useState<string | null>(null);
 
@@ -39,11 +42,27 @@ export default function Transactions() {
   const accountColorById = useMemo(() => Object.fromEntries(accounts.map((account) => [account.id, account.color])), [accounts]);
   const categoryById = useMemo(() => Object.fromEntries(categories.map((category) => [category.id, category])), [categories]);
 
+  const filterValue = useMemo(
+    () => ({
+      accountId: null,
+      limit: null,
+      offset: null,
+      search: query || null,
+      filterPreset: preset === "all" ? null : preset === "review" ? "needs_review" : "anomalies",
+      startDate,
+      endDate,
+    }),
+    [query, preset, startDate, endDate]
+  );
+
   const filtered = useMemo(() => {
     const lower = query.trim().toLowerCase();
     return rows.filter((transaction) => {
       if (preset === "review" && !(transaction.ai_confidence !== null && transaction.ai_confidence < 0.6)) return false;
       if (preset === "anomalies" && !transaction.is_anomaly) return false;
+      const posted = transaction.posted_at.slice(0, 10);
+      if (startDate && posted < startDate) return false;
+      if (endDate && posted > endDate) return false;
       if (!lower) return true;
       const haystack = [
         transaction.merchant_raw,
@@ -55,7 +74,7 @@ export default function Transactions() {
       ].join(" ").toLowerCase();
       return haystack.includes(lower);
     });
-  }, [accountNameById, preset, query, rows]);
+  }, [accountNameById, endDate, preset, query, rows, startDate]);
 
   const editTxn = filtered.find((transaction) => transaction.id === editTxnId) ?? rows.find((transaction) => transaction.id === editTxnId) ?? null;
   const indexedLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase();
@@ -82,8 +101,8 @@ export default function Transactions() {
                   offset: null,
                   search: query || null,
                   filterPreset: preset === "all" ? null : preset === "review" ? "needs_review" : "anomalies",
-                  startDate: null,
-                  endDate: null,
+                  startDate,
+                  endDate,
                 });
                 if (result.status === "ok" && result.data) toast.success("Exported", { description: result.data });
               } catch {
@@ -97,17 +116,19 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center" }}>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 10 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by merchant, note, amount, or category…" aria-label="Search transactions" style={{ flex: 1, background: "transparent", border: 0, outline: 0, fontSize: 13.5, color: "var(--ink)" }} />
-        </div>
-        <div className="toolbar">
-          <button className={preset === "all" ? "on" : ""} type="button" onClick={() => setPreset("all")}>All</button>
-          <button className={preset === "review" ? "on" : ""} type="button" onClick={() => setPreset("review")}>Needs review {needsReviewCount > 0 ? needsReviewCount : ""}</button>
-          <button className={preset === "anomalies" ? "on" : ""} type="button" onClick={() => setPreset("anomalies")}>Anomalies {agentStatus?.anomalyCount ? agentStatus.anomalyCount : ""}</button>
-        </div>
-      </div>
+      <TransactionFilter
+        value={filterValue}
+        onChange={(next) => {
+          setQuery(next.search ?? "");
+          setPreset(
+            next.filterPreset === "needs_review" ? "review" :
+            next.filterPreset === "anomalies" ? "anomalies" : "all"
+          );
+          setStartDate(next.startDate ?? null);
+          setEndDate(next.endDate ?? null);
+        }}
+        counts={{ review: needsReviewCount, anomalies: agentStatus?.anomalyCount ?? 0 }}
+      />
 
       <div className="section">
         <div className="card flush">
