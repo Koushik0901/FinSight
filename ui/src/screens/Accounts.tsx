@@ -1,283 +1,247 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
-import AccountDrawer from "../components/AccountDrawer";
-import type { Account, AccountSummary } from "../api/client";
-import { commands } from "../api/client";
-import { useSyncSimpleFinAccount } from "../api/hooks/simplefin";
+import { useTransactions } from "../api/hooks/transactions";
+import { useSyncSimpleFinAccount, useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets, useLiabilities } from "../api/hooks/assets";
+import { useNetWorth } from "../api/hooks/networth";
+import type { Account, AccountSummary, Liability, ManualAsset } from "../api/client";
+import { commands } from "../api/client";
+import { money } from "../utils/format";
+import { userErrorMessage } from "../utils/runtime";
+import { getAccountDisplayName } from "../utils/accounts";
+import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
-import type { ManualAsset, Liability } from "../api/client";
-import { useNetWorth } from "../api/hooks/networth";
-import { money } from "../utils/format";
-import { toast } from "sonner";
-import { userErrorMessage } from "../utils/runtime";
-import Button from "../components/Button";
-import Card from "../components/Card";
-import EmptyState from "../components/EmptyState";
-import ProgressBar from "../components/ProgressBar";
-import Badge from "../components/Badge";
-import Table from "../components/Table";
-import { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../components/Table";
+
+function formatStamp(value: string | null | undefined) {
+  if (!value) return "Never synced";
+  return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
 export default function Accounts() {
   const [addOpen, setAddOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
-  const { data, isLoading, error } = useAccounts();
-  const { data: assets = [] } = useManualAssets();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [assetAddOpen, setAssetAddOpen] = useState(false);
   const [editAsset, setEditAsset] = useState<ManualAsset | null>(null);
-  const { data: liabilities = [] } = useLiabilities();
   const [liabAddOpen, setLiabAddOpen] = useState(false);
   const [editLiab, setEditLiab] = useState<Liability | null>(null);
-  const netWorth = useNetWorth();
+
+  const { data: accounts = [], isLoading, error } = useAccounts();
+  const { data: assets = [] } = useManualAssets();
+  const { data: liabilities = [] } = useLiabilities();
   const syncAccount = useSyncSimpleFinAccount();
+  const syncAll = useSyncAllSimpleFinAccounts();
+  const netWorth = useNetWorth();
 
-  if (isLoading) {
-    return (
-      <div className="stub" aria-live="polite" aria-busy="true">
-        Loading…
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!selectedId && accounts.length > 0) setSelectedId(accounts[0]!.id);
+  }, [accounts, selectedId]);
 
-  if (error) {
-    return (
-      <div className="empty-state" role="alert" aria-live="assertive">
-        <section className="empty-panel">
-          <div className="eyebrow">Accounts unavailable</div>
-          <h2>We could not load your accounts.</h2>
-          <p>{userErrorMessage(error, "Open the desktop app runtime and try again.")}</p>
-        </section>
-      </div>
-    );
-  }
+  const selectedAccount = accounts.find((account) => account.id === selectedId) ?? accounts[0] ?? null;
+  const txFilter = useMemo(() => ({
+    accountId: selectedAccount?.id ?? null,
+    limit: null,
+    offset: null,
+    search: null,
+    filterPreset: null,
+    startDate: null,
+    endDate: null,
+  }), [selectedAccount?.id]);
+  const { data: recentTransactions = [] } = useTransactions(txFilter);
+
+  const connectedAssets = accounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
+  const connectedLiabilities = accounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
+  const manualAssetsTotal = assets.reduce((sum, asset) => sum + asset.valueCents, 0);
+  const liabilitiesTotal = liabilities.reduce((sum, liability) => sum + liability.balanceCents, 0);
+  const lastSyncLabel = accounts.map((account) => account.last_synced_at).filter(Boolean).sort().slice(-1)[0] ?? null;
+  const hasSimpleFin = accounts.some((account) => account.simplefin_account_id);
+
+  if (isLoading) return <div className="stub">Loading accounts…</div>;
+  if (error) return <div className="stub" role="alert">{userErrorMessage(error, "Could not load accounts.")}</div>;
 
   return (
-    <div className="screen-accounts">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="eyebrow">Net worth</div>
-          <div
-            className="figure money"
-            style={{ fontSize: 40, lineHeight: 1, color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}
-          >
-            {money(netWorth)}
-          </div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, margin: "12px 0 0" }}>Accounts</h1>
+    <div className="screen screen-accounts">
+      <header className="day-hdr">
+        <div>
+          <div className="eyebrow"><span className="dot" />ACCOUNTS · {accounts.length} CONNECTED</div>
+          <h1 className="h1" style={{ marginTop: 6 }}>Everything in one place.</h1>
         </div>
-        <Button variant="primary" onClick={() => setAddOpen(true)}>
-          + Add account
-        </Button>
+        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
+          <button
+            className="btn outline sm"
+            type="button"
+            onClick={async () => {
+              if (hasSimpleFin) {
+                try {
+                  await syncAll.mutateAsync();
+                  toast.success("Synced all SimpleFin accounts");
+                } catch (syncError) {
+                  toast.error("Sync failed", { description: userErrorMessage(syncError, "Check your bank connection and try again.") });
+                }
+              } else {
+                setAddOpen(true);
+              }
+            }}
+          >
+            Connect bank
+          </button>
+          <button className="btn primary sm" type="button" onClick={() => setAssetAddOpen(true)}>Add manual asset</button>
+        </div>
       </header>
 
-      {(!data || data.length === 0) ? (
-        <EmptyState
-          title="Add an account to start tracking net worth."
-          description="Start with a checking, savings, credit, investment, or cash account. You can import transactions after the account exists."
-          actions={
-            <>
-              <Button variant="primary" onClick={() => setAddOpen(true)}>
-                Add account
-              </Button>
-              <Button onClick={() => setAssetAddOpen(true)}>Add asset</Button>
-              <Button variant="ghost" onClick={() => setLiabAddOpen(true)}>
-                Add liability
-              </Button>
-            </>
-          }
-        />
-      ) : (
-        <Table>
-          <TableHead>
-            <tr>
-              <TableHeader>Bank</TableHeader>
-              <TableHeader>Name</TableHeader>
-              <TableHeader>Type</TableHeader>
-              <TableHeader right>Balance</TableHeader>
-              <TableHeader>{""}</TableHeader>
-            </tr>
-          </TableHead>
-          <TableBody>
-            {data.map((a: AccountSummary) => (
-              <TableRow
-                key={a.id}
-                onClick={() => setEditAccount(a as unknown as Account)}
-                aria-label={`Edit ${a.nickname || a.name}`}
-              >
-                <TableCell>{a.bank}</TableCell>
-                <TableCell>{a.nickname || a.name}</TableCell>
-                <TableCell>
-                  <span className="muted">{a.type}</span>
-                  {a.type === "Savings" && a.apy_pct != null && (
-                    <span style={{ marginLeft: 8 }}>
-                      <Badge className="chip">{a.apy_pct}% APY</Badge>
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell right>
-                  <span className="num tabular money">{money(a.balance_cents, { decimals: 2 })}</span>
-                </TableCell>
-                <TableCell right>
-                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    {a.simplefin_account_id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Sync from SimpleFin"
-                        loading={syncAccount.isPending}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const result = await syncAccount.mutateAsync(a.id);
-                            toast.success(
-                              `Synced: ${result.added} added, ${result.skipped} skipped`,
-                            );
-                          } catch (err) {
-                            toast.error("Sync failed", {
-                              description: userErrorMessage(err, "Check your SimpleFin connection and try again."),
-                            });
-                          }
-                        }}
-                      >
-                        ↻ Sync
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      title="Export transactions as CSV"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          const result = await commands.exportAccountCsv(a.id);
-                          if (result.status === "ok" && result.data) {
-                            toast.success("Exported", { description: result.data });
-                          }
-                        } catch (err) {
-                          toast.error("Export failed", {
-                            description: userErrorMessage(err, "Try exporting again from the desktop app."),
-                          });
-                        }
-                      }}
-                    >
-                      CSV ↓
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <div className="stat-row">
+        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: "USD" })}</div><div className="sub">{accounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
+        <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: "USD" })}</div><div className="sub">{assets.length} tracked manually</div></div>
+        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(liabilitiesTotal || connectedLiabilities, { currency: "USD" })}</div><div className="sub">Debt and payoff accounts</div></div>
+        <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: "USD" })}</div><div className="sub">Across every balance</div></div>
+      </div>
 
-      <section className="section">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Manual assets</h2>
-          <Button onClick={() => setAssetAddOpen(true)}>+ Add manual asset</Button>
-        </div>
-        {assets.length === 0 ? (
-          <div className="card muted tight">No manual assets yet.</div>
-        ) : (
-          <Card flush>
-            {assets.map((a) => (
-              <div
-                key={a.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setEditAsset(a)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditAsset(a); } }}
-                aria-label={`Edit ${a.name}`}
-                className="row row-md"
-                style={{ padding: "12px 20px", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
-              >
-                <span className="ic" style={{ fontSize: 13, textTransform: "uppercase" }}>
-                  {a.assetType.charAt(0)}
-                </span>
-                <div className="grow">
-                  <div>{a.name}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {a.assetType} · updated {new Date(a.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </div>
-                </div>
-                <span className="num money">{money(a.valueCents, { decimals: 2 })}</span>
-              </div>
-            ))}
-          </Card>
-        )}
-      </section>
-
-      <section className="section">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Liabilities</h2>
-          <Button onClick={() => setLiabAddOpen(true)}>+ Add liability</Button>
-        </div>
-        {liabilities.length === 0 ? (
-          <div className="card muted tight">No liabilities yet.</div>
-        ) : (
-          <Card flush>
-            {liabilities.map((l) => {
-              const hasLimit = l.limitCents && l.limitCents > 0;
-              const hasOriginal = l.originalBalanceCents && l.originalBalanceCents > 0;
-              const paidDownCents = hasOriginal && l.originalBalanceCents != null
-                ? Math.max(0, l.originalBalanceCents - l.balanceCents)
-                : 0;
-              const paidDownPct = hasOriginal && l.originalBalanceCents != null && l.originalBalanceCents > 0
-                ? Math.round((paidDownCents / l.originalBalanceCents) * 100)
-                : 0;
-              return (
-                <div
-                  key={l.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setEditLiab(l)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditLiab(l); } }}
-                  aria-label={`Edit ${l.name}`}
-                  className="stack stack-sm"
-                  style={{ padding: "12px 20px", borderTop: "1px solid var(--hairline)", cursor: "pointer" }}
+      <div className="section" style={{ display: "grid", gridTemplateColumns: "1.1fr 1.4fr", gap: 18 }}>
+        <div className="stack stack-lg">
+          <div>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <div className="eyebrow"><span className="dot" />CONNECTED</div>
+              <span className="muted" style={{ fontSize: 12, fontFamily: "var(--mono)" }}>Synced {formatStamp(lastSyncLabel)}</span>
+            </div>
+            <div className="card flush">
+              {accounts.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => setSelectedId(account.id)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    display: "grid",
+                    gridTemplateColumns: "12px 1fr 72px 120px",
+                    gap: 14,
+                    alignItems: "center",
+                    padding: "14px 16px",
+                    borderBottom: "1px solid var(--hairline)",
+                    background: selectedAccount?.id === account.id ? "var(--surface-2)" : "transparent",
+                  }}
                 >
-                  <div className="row row-md">
-                    <div className="grow">
-                      <div>{l.name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        <Badge className="chip">{l.liabilityType}</Badge>
-                        {l.aprPct != null && <>{l.aprPct}% APR</>}
-                        {l.minPaymentCents != null && <> · min {money(l.minPaymentCents, { decimals: 0 })}/mo</>}
-                        {l.payoffDate && <> · payoff {new Date(l.payoffDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</>}
-                        {l.startedAt && <> · started {new Date(`${l.startedAt}-01`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</>}
-                        {hasOriginal && <> · {paidDownPct}% paid down</>}
-                      </div>
-                    </div>
-                    <span className="num money neg">{money(l.balanceCents, { decimals: 2 })}</span>
+                  <span className="cswatch" style={{ background: account.balance_cents >= 0 ? "var(--positive)" : "var(--negative)" }} />
+                  <div>
+                    <div>{getAccountDisplayName(account)}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{account.bank} · {account.type}</div>
                   </div>
-                  {(hasLimit || hasOriginal) && (
-                    <ProgressBar
-                      value={hasOriginal ? paidDownCents : l.balanceCents}
-                      max={hasOriginal ? l.originalBalanceCents ?? undefined : l.limitCents ?? undefined}
-                      size="sm"
-                      tone={hasOriginal ? "default" : "negative"}
-                      aria-label={hasOriginal ? `${l.name} payoff progress` : `${l.name} utilization`}
-                    />
+                  <svg viewBox="0 0 72 24" width="72" height="24" aria-hidden="true">
+                    <path d="M2 15 C16 10, 28 11, 38 8 S56 9, 70 5" fill="none" stroke={account.color || "var(--accent)"} strokeWidth="2" />
+                  </svg>
+                  <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h2 className="h3">Manual assets</h2>
+              <button className="btn ghost sm" type="button" onClick={() => setAssetAddOpen(true)}>+ Add</button>
+            </div>
+            <div className="card flush">
+              {assets.length === 0 ? <div className="muted" style={{ padding: 18 }}>No manual assets yet.</div> : assets.map((asset) => (
+                <button key={asset.id} type="button" onClick={() => setEditAsset(asset)} style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--hairline)" }}>
+                  <div><div>{asset.name}</div><div className="muted" style={{ fontSize: 12 }}>{asset.assetType}</div></div>
+                  <span className="money">{money(asset.valueCents, { currency: asset.currency || "USD", decimals: 2 })}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h2 className="h3">Liabilities</h2>
+              <button className="btn ghost sm" type="button" onClick={() => setLiabAddOpen(true)}>+ Add</button>
+            </div>
+            <div className="card flush">
+              {liabilities.length === 0 ? <div className="muted" style={{ padding: 18 }}>No liabilities yet.</div> : liabilities.map((liability) => (
+                <button key={liability.id} type="button" onClick={() => setEditLiab(liability)} style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--hairline)" }}>
+                  <div><div>{liability.name}</div><div className="muted" style={{ fontSize: 12 }}>{liability.liabilityType}{liability.aprPct != null ? ` · ${liability.aprPct}% APR` : ""}</div></div>
+                  <span className="money">{money(liability.balanceCents, { currency: liability.currency || "USD" })}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          {selectedAccount && (
+            <div className="card" style={{ padding: 0, overflow: "hidden", position: "sticky", top: 16 }}>
+              <div style={{ padding: "22px 26px 18px", borderBottom: "1px solid var(--hairline)" }}>
+                <div className="mono muted" style={{ fontSize: 12 }}>{selectedAccount.bank.toUpperCase()} · {selectedAccount.type.toUpperCase()} · {(selectedAccount.mask || "••••")}</div>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginTop: 10 }}>
+                  <h2 className="h1" style={{ fontSize: 26 }}>{getAccountDisplayName(selectedAccount)}</h2>
+                  <div className="figure money" style={{ fontSize: 34, color: selectedAccount.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(selectedAccount.balance_cents, { currency: selectedAccount.currency || "USD", decimals: 2 })}</div>
+                </div>
+                <div className="row row-sm wrap" style={{ marginTop: 12 }}>
+                  <span className="chip accent">Auto-synced</span>
+                  <span className="chip">Updated {formatStamp(selectedAccount.last_synced_at)}</span>
+                  {selectedAccount.simplefin_account_id && (
+                    <button className="btn ghost sm" type="button" onClick={async () => {
+                      try {
+                        const result = await syncAccount.mutateAsync(selectedAccount.id);
+                        toast.success(`Synced ${result.added} new transaction${result.added === 1 ? "" : "s"}`);
+                      } catch (syncError) {
+                        toast.error("Sync failed", { description: userErrorMessage(syncError, "Check your bank connection and try again.") });
+                      }
+                    }}>Sync now</button>
                   )}
                 </div>
-              );
-            })}
-          </Card>
-        )}
-      </section>
+                <svg viewBox="0 0 520 84" width="100%" height="84" style={{ marginTop: 18 }} aria-hidden="true">
+                  <path d="M0 60 C80 42, 120 54, 180 36 S300 22, 360 28 S440 16, 520 12" fill="none" stroke={selectedAccount.color || "var(--accent)"} strokeWidth="3" />
+                </svg>
+              </div>
 
-      <LiabilityDrawer open={liabAddOpen} onClose={() => setLiabAddOpen(false)} />
-      <LiabilityDrawer open={editLiab !== null} onClose={() => setEditLiab(null)} liability={editLiab ?? undefined} />
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center", padding: "14px 22px" }}>
+                <div className="eyebrow"><span className="dot" />RECENT ACTIVITY</div>
+                <div className="row row-sm">
+                  <button className="btn ghost sm" type="button">Filter</button>
+                  <button className="btn ghost sm" type="button" onClick={async () => {
+                    try {
+                      const result = await commands.exportAccountCsv(selectedAccount.id);
+                      if (result.status === "ok" && result.data) toast.success("Exported", { description: result.data });
+                    } catch (exportError) {
+                      toast.error("Export failed", { description: userErrorMessage(exportError, "Try again from the desktop app.") });
+                    }
+                  }}>Export</button>
+                </div>
+              </div>
 
-      <AssetDrawer open={assetAddOpen} onClose={() => setAssetAddOpen(false)} />
-      <AssetDrawer open={editAsset !== null} onClose={() => setEditAsset(null)} asset={editAsset ?? undefined} />
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Merchant</th>
+                    <th>Category</th>
+                    <th className="right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTransactions.slice(0, 8).map((transaction) => (
+                    <tr key={transaction.id}>
+                      <td><span className="mono faint">{new Date(transaction.posted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
+                      <td>{transaction.merchant_label || transaction.merchant_raw}</td>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: transaction.category_color || "var(--ink-faint)" }} /><span>{transaction.category_label || "Uncategorized"}</span></div></td>
+                      <td className="right"><span className={`money ${transaction.amount_cents > 0 ? "pos" : ""}`}>{money(transaction.amount_cents, { currency: selectedAccount.currency || "USD", decimals: 2 })}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
 
       <AccountDrawer open={addOpen} onClose={() => setAddOpen(false)} />
-      <AccountDrawer
-        open={editAccount !== null}
-        onClose={() => setEditAccount(null)}
-        account={editAccount ?? undefined}
-      />
+      <AccountDrawer open={editAccount !== null} onClose={() => setEditAccount(null)} account={editAccount ?? undefined} />
+      <AssetDrawer open={assetAddOpen} onClose={() => setAssetAddOpen(false)} />
+      <AssetDrawer open={editAsset !== null} onClose={() => setEditAsset(null)} asset={editAsset ?? undefined} />
+      <LiabilityDrawer open={liabAddOpen} onClose={() => setLiabAddOpen(false)} />
+      <LiabilityDrawer open={editLiab !== null} onClose={() => setEditLiab(null)} liability={editLiab ?? undefined} />
     </div>
   );
 }
