@@ -12,7 +12,7 @@ const schema = z.object({
   bank: z.string().min(1, "Required"),
   name: z.string().min(1, "Required"),
   nickname: z.string().optional(),
-  type: z.enum(["Checking", "Savings", "Credit", "Investment", "Cash", "Other"]),
+  type: z.enum(["Checking", "Savings", "Credit", "Investment", "Cash", "Loan", "Other"]),
   last4: z.string().max(4).optional(),
   currency: z.enum(["USD", "EUR", "GBP", "CAD", "AUD"]),
   opening_dollars: z.coerce.number(),
@@ -88,6 +88,10 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             goal_earmark: null,
             apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
             nickname: values.nickname ? values.nickname : null,
+            official_name: null,
+            subtype: null,
+            account_group: null,
+            import_pending: null,
           },
         });
       } else {
@@ -107,6 +111,18 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
           simplefin_account_id: null,
           nickname: values.nickname ? values.nickname : null,
+          connection_id: null,
+          institution_id: null,
+          external_account_id: null,
+          official_name: null,
+          mask: null,
+          subtype: null,
+          account_group: "cash",
+          available_balance_cents: null,
+          balance_date: null,
+          extra_json: null,
+          raw_json: null,
+          import_pending: false,
         });
       }
       reset();
@@ -146,7 +162,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         {!isEdit && (
           <fieldset>
             <legend>Type</legend>
-            {(["Checking","Savings","Credit","Investment","Cash","Other"] as const).map(t => (
+            {(["Checking","Savings","Credit","Investment","Cash","Loan","Other"] as const).map(t => (
               <label key={t}><input type="radio" value={t} {...register("type")} /> {t}</label>
             ))}
           </fieldset>

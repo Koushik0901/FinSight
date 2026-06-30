@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAccountDisplayName } from "./accounts";
+import { getAccountDisplayName, getAccountTypeColor } from "./accounts";
 import type { AccountSummary } from "../api/client";
 
 function makeAccount(overrides: Partial<AccountSummary> = {}): AccountSummary {
@@ -62,5 +62,17 @@ describe("getAccountDisplayName", () => {
       name: "ACT-123",
     });
     expect(getAccountDisplayName(account)).toBe("ACT-123");
+  });
+});
+
+describe("getAccountTypeColor", () => {
+  it("returns a CSS variable tied to the account type", () => {
+    expect(getAccountTypeColor("Checking")).toBe("var(--c-checking)");
+    expect(getAccountTypeColor("Savings")).toBe("var(--c-savings)");
+    expect(getAccountTypeColor("Credit")).toBe("var(--c-credit)");
+    expect(getAccountTypeColor("Investment")).toBe("var(--c-investment)");
+    expect(getAccountTypeColor("Cash")).toBe("var(--c-cash)");
+    expect(getAccountTypeColor("Loan")).toBe("var(--c-loan)");
+    expect(getAccountTypeColor("Other")).toBe("var(--c-other)");
   });
 });

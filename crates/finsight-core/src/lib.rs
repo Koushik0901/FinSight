@@ -5,6 +5,7 @@ pub mod error;
 pub mod forecast;
 pub mod keychain;
 pub mod models;
+pub mod palette;
 pub mod repos;
 pub mod sample;
 pub mod seed;

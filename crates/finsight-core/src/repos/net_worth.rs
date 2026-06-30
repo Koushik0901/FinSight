@@ -107,6 +107,18 @@ mod tests {
                 opening_balance_cents: 10_000_000,
                 simplefin_account_id: None,
                 nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "cash".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
             },
         )
         .unwrap();

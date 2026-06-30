@@ -17,10 +17,39 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { step, setStep, reachedSteps } = useOnboardingStore();
   const { data: _state } = useOnboardingState();
+  const stepIndex = STEP_ORDER.indexOf(step);
 
   return (
-    <div className="onboarding-shell" data-testid="onboarding-shell">
-      <nav className="onboarding-stepper" aria-label="Onboarding progress">
+    <div className="onboarding-shell onb-shell" data-testid="onboarding-shell">
+      <header className="onb-top">
+        <div className="brand" style={{ padding: 0 }}>
+          <div className="mark" aria-hidden="true" />
+          <div className="wm">FinSight</div>
+        </div>
+        <nav className="onb-steps" aria-label="Onboarding progress">
+          {STEP_ORDER.map((s, idx) => {
+            const reached = reachedSteps.has(s);
+            const isCurrent = s === step;
+            return (
+              <button
+                key={s}
+                className={`onb-step-pip ${isCurrent ? "cur" : ""} ${reached ? "done" : ""}`}
+                disabled={!reached}
+                onClick={() => reached && setStep(s)}
+                aria-current={isCurrent ? "step" : undefined}
+                aria-label={`Go to ${STEP_TITLES[s]} step`}
+                title={STEP_TITLES[s]}
+                type="button"
+              />
+            );
+          })}
+        </nav>
+        <div className="onb-step-label">
+          Step <span className="num">{stepIndex + 1}</span> of {STEP_ORDER.length} · {STEP_TITLES[step]}
+        </div>
+      </header>
+
+      <nav className="onboarding-stepper" aria-label="Onboarding progress" style={{ display: "none" }}>
         {STEP_ORDER.map((s, idx) => {
           const reached = reachedSteps.has(s);
           const isCurrent = s === step;
@@ -39,7 +68,7 @@ export default function Onboarding() {
         })}
       </nav>
 
-      <section className="onboarding-step" aria-label="Onboarding steps">
+      <section className="onboarding-step onb-stage" aria-label="Onboarding steps">
         {step === "welcome"    && <StepWelcome onNext={() => setStep("connect")} onSkipToToday={() => navigate("/")} />}
         {step === "connect"    && <StepConnect onNext={() => setStep("categories")} />}
         {step === "categories" && <StepCategories onNext={() => setStep("agent")} />}

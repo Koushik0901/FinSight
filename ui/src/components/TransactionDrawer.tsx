@@ -91,6 +91,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             category_id: selectedCategory,
             merchant_raw: values.merchant_raw,
             amount_cents: Math.round(values.amount_dollars * 100),
+            ai_confidence: null,
           },
         });
         if (result.proposed_rule) {
@@ -117,6 +118,10 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           status: "manual",
           imported_id: null,
           source: "manual",
+          raw_synced_data: null,
+          pending: false,
+          external_tx_id: null,
+          external_account_id: null,
         });
         onCreated?.();
       }

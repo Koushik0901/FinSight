@@ -1,8 +1,8 @@
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 import type { NetWorthPoint } from "../api/client";
 import { money } from "../utils/format";
 
-export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
+export default function NetWorthChart({ points, controls }: { points: NetWorthPoint[]; controls?: ReactNode }) {
   const gradId = useId();
 
   if (points.length < 2) {
@@ -26,10 +26,13 @@ export default function NetWorthChart({ points }: { points: NetWorthPoint[] }) {
   const lineColor = lastVal >= 0 ? "var(--accent)" : "var(--negative)";
 
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-lg)", padding: "20px 4px 12px" }}>
-      <div style={{ padding: "0 18px 12px" }}>
-        <div className="eyebrow">Net worth</div>
-        <div className="figure money num" style={{ fontSize: 24, marginTop: 4 }}>{money(lastVal)}</div>
+    <div className="bigchart">
+      <div className="bigchart-head">
+        <div>
+          <div className="eyebrow">Net worth · last 6 months</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Local trendline</div>
+        </div>
+        {controls}
       </div>
       <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 140, display: "block" }}>
         <defs>

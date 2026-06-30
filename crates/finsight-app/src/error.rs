@@ -52,7 +52,26 @@ impl From<tauri::Error> for AppError {
 
 impl From<finsight_providers::ProviderError> for AppError {
     fn from(err: finsight_providers::ProviderError) -> Self {
-        AppError::new("provider", err.to_string())
+        match err {
+            finsight_providers::ProviderError::InvalidAccessUrl => {
+                AppError::new("simplefin.invalid_url", err.to_string())
+            }
+            finsight_providers::ProviderError::TokenClaimFailed => {
+                AppError::new("simplefin.token_used", err.to_string())
+            }
+            finsight_providers::ProviderError::Forbidden => {
+                AppError::new("simplefin.access_revoked", err.to_string())
+            }
+            finsight_providers::ProviderError::AccountNotFound => {
+                AppError::new("simplefin.account_not_found", err.to_string())
+            }
+            finsight_providers::ProviderError::ServerError(ref msg)
+                if msg == "payment required" =>
+            {
+                AppError::new("simplefin.payment_required", err.to_string())
+            }
+            _ => AppError::new("simplefin.server_error", err.to_string()),
+        }
     }
 }
 

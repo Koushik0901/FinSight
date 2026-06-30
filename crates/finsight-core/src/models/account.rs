@@ -10,6 +10,7 @@ pub enum AccountType {
     Credit,
     Investment,
     Cash,
+    Loan,
     Other,
 }
 
@@ -21,6 +22,7 @@ impl AccountType {
             Self::Credit => "Credit",
             Self::Investment => "Investment",
             Self::Cash => "Cash",
+            Self::Loan => "Loan",
             Self::Other => "Other",
         }
     }
@@ -32,6 +34,7 @@ impl AccountType {
             "Credit" => Self::Credit,
             "Investment" => Self::Investment,
             "Cash" => Self::Cash,
+            "Loan" => Self::Loan,
             _ => Self::Other,
         }
     }
@@ -56,6 +59,18 @@ pub struct Account {
     pub simplefin_account_id: Option<String>,
     pub last_synced_at: Option<DateTime<Utc>>,
     pub nickname: Option<String>,
+    pub connection_id: Option<String>,
+    pub institution_id: Option<String>,
+    pub external_account_id: Option<String>,
+    pub official_name: Option<String>,
+    pub mask: Option<String>,
+    pub subtype: Option<String>,
+    pub account_group: String,
+    pub available_balance_cents: Option<i64>,
+    pub balance_date: Option<DateTime<Utc>>,
+    pub extra_json: Option<String>,
+    pub raw_json: Option<String>,
+    pub import_pending: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -78,6 +93,18 @@ pub struct AccountSummary {
     pub simplefin_account_id: Option<String>,
     pub last_synced_at: Option<DateTime<Utc>>,
     pub nickname: Option<String>,
+    pub connection_id: Option<String>,
+    pub institution_id: Option<String>,
+    pub external_account_id: Option<String>,
+    pub official_name: Option<String>,
+    pub mask: Option<String>,
+    pub subtype: Option<String>,
+    pub account_group: String,
+    pub available_balance_cents: Option<i64>,
+    pub balance_date: Option<DateTime<Utc>>,
+    pub extra_json: Option<String>,
+    pub raw_json: Option<String>,
+    pub import_pending: bool,
 }
 
 fn default_source() -> String {
@@ -90,6 +117,28 @@ fn default_liquidity_type() -> String {
 
 fn default_emergency_fund_eligible() -> bool {
     true
+}
+
+fn default_account_group() -> String {
+    "other".to_string()
+}
+
+fn default_import_pending() -> bool {
+    false
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountBalancePoint {
+    pub date: String,
+    pub balance_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSparkline {
+    pub account_id: String,
+    pub points: Vec<AccountBalancePoint>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Type)]
@@ -105,6 +154,10 @@ pub struct AccountPatch {
     pub goal_earmark: Option<Option<String>>,
     pub apy_pct: Option<Option<f64>>,
     pub nickname: Option<Option<String>>,
+    pub official_name: Option<Option<String>>,
+    pub subtype: Option<Option<String>>,
+    pub account_group: Option<String>,
+    pub import_pending: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -127,4 +180,18 @@ pub struct NewAccount {
     pub apy_pct: Option<f64>,
     pub simplefin_account_id: Option<String>,
     pub nickname: Option<String>,
+    pub connection_id: Option<String>,
+    pub institution_id: Option<String>,
+    pub external_account_id: Option<String>,
+    pub official_name: Option<String>,
+    pub mask: Option<String>,
+    pub subtype: Option<String>,
+    #[serde(default = "default_account_group")]
+    pub account_group: String,
+    pub available_balance_cents: Option<i64>,
+    pub balance_date: Option<DateTime<Utc>>,
+    pub extra_json: Option<String>,
+    pub raw_json: Option<String>,
+    #[serde(default = "default_import_pending")]
+    pub import_pending: bool,
 }

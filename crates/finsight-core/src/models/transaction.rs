@@ -53,9 +53,13 @@ pub struct Transaction {
     pub is_split: bool,
     pub imported_id: Option<String>,
     pub source: Option<String>,
+    pub raw_synced_data: Option<String>,
+    pub pending: bool,
+    pub external_tx_id: Option<String>,
+    pub external_account_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct NewTransaction {
     pub account_id: String,
     pub posted_at: DateTime<Utc>,
@@ -66,6 +70,10 @@ pub struct NewTransaction {
     pub status: TransactionStatus,
     pub imported_id: Option<String>,
     pub source: Option<String>,
+    pub raw_synced_data: Option<String>,
+    pub pending: bool,
+    pub external_tx_id: Option<String>,
+    pub external_account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Type)]
@@ -74,6 +82,7 @@ pub struct TxnPatch {
     pub category_id: Option<Option<String>>,
     pub amount_cents: Option<i64>,
     pub merchant_raw: Option<String>,
+    pub ai_confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

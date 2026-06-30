@@ -35,6 +35,18 @@ fn insert_and_list_returns_descending_by_posted_at() {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )
     .unwrap();
@@ -51,6 +63,10 @@ fn insert_and_list_returns_descending_by_posted_at() {
             status: TransactionStatus::Cleared,
             imported_id: None,
             source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
         },
     )
     .unwrap();
@@ -66,6 +82,10 @@ fn insert_and_list_returns_descending_by_posted_at() {
             status: TransactionStatus::Cleared,
             imported_id: None,
             source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
         },
     )
     .unwrap();
@@ -98,6 +118,18 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )
     .unwrap();
@@ -119,6 +151,18 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )
     .unwrap();
@@ -135,6 +179,10 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             status: TransactionStatus::Cleared,
             imported_id: None,
             source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
         },
     )
     .unwrap();
@@ -150,6 +198,10 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             status: TransactionStatus::Cleared,
             imported_id: None,
             source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
         },
     )
     .unwrap();
@@ -188,6 +240,18 @@ fn list_respects_limit() {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )
     .unwrap();
@@ -204,6 +268,10 @@ fn list_respects_limit() {
                 status: TransactionStatus::Cleared,
                 imported_id: None,
                 source: None,
+                raw_synced_data: None,
+                pending: false,
+                external_tx_id: None,
+                external_account_id: None,
             },
         )
         .unwrap();

@@ -69,7 +69,7 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Database migrations
 
-SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V016. Next migration = `V017__description.sql`.
+SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V026. Next migration = `V027__description.sql`.
 
 ### Frontend data flow
 
@@ -105,7 +105,7 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 103 Rust tests (101 + 2 ignored on Linux), 105 frontend tests, 0 TypeScript errors.
+**Green bar:** 214 Rust tests (212 + 2 ignored on Linux), 161 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 

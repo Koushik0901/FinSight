@@ -1,28 +1,70 @@
-import { useState, useRef, useEffect } from "react";
+/**
+ * Copilot screen — full ChatGPT-style threaded AI chat.
+ *
+ * Architecture:
+ *   • Left sidebar: persistent conversation list grouped by Today / This Week / Earlier
+ *   • Right area: @assistant-ui/react Thread driven by TauriRuntime (ExternalStoreRuntime)
+ *   • Streaming via copilot-token / copilot-done Tauri events (simulated word-by-word)
+ *   • Action-item approval preserved inline below assistant bubbles
+ */
+import { useState, useEffect, useRef, useCallback, Component } from "react";
+import type { ReactNode, ErrorInfo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import * as I from "../components/Icons";
-import Button from "../components/Button";
-import Card from "../components/Card";
-import Badge from "../components/Badge";
-import EmptyState from "../components/EmptyState";
 import {
-  useActionBundles,
-  useActionBundle,
+  AssistantRuntimeProvider,
+  ThreadPrimitive,
+  MessagePrimitive,
+  ComposerPrimitive,
+  ActionBarPrimitive,
+  BranchPickerPrimitive,
+  Tools,
+  groupPartByType,
+  useMessage,
+  useMessageTiming,
+  useAui,
+  useThreadRuntime,
+  useThread,
+} from "@assistant-ui/react";
+import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import "@assistant-ui/react-markdown/styles/dot.css";
+import * as I from "../components/Icons";
+import Badge from "../components/Badge";
+import Button from "../components/Button";
+import {
+  useConversations,
+  useCreateConversation,
+  useDeleteConversation,
+} from "../api/hooks/copilotChat";
+import {
   useApproveActionItem,
   useRejectActionItem,
-  useExecutionLog,
+  useActionBundle,
 } from "../api/hooks/copilot";
-import type {
-  AgentActionBundle,
-  AgentActionItem,
-  AgentAnswer,
-  AgentScenarioAlternative,
-  ExecutionSummary,
-} from "../api/client";
+import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
+import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
+import {
+  copilotToolkit,
+  generativeUIComponents,
+} from "../components/copilot/renderers";
+import type { AgentMemory, ConversationSummary } from "../api/client";
+import { invoke } from "@tauri-apps/api/core";
+import type { ExecutionSummary } from "../api/client";
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const SUGGESTED_PROMPTS = [
+  { icon: "📊", label: "Plan next month's budget" },
+  { icon: "💰", label: "How much should I save toward each goal?" },
+  { icon: "✂️", label: "What can I cut to improve my savings rate?" },
+  { icon: "📈", label: "Explain my spending this month" },
+  { icon: "🧹", label: "Clean up uncategorized transactions" },
+  { icon: "⚠️", label: "What financial risks am I facing?" },
+  { icon: "🏦", label: "Can I afford a $2,000 expense right now?" },
+  { icon: "❄️", label: "Create a plan to pay off debt faster" },
+];
+
+// ── Action item helpers ───────────────────────────────────────────────────────
 
 function actionKindLabel(kind: string): string {
   const labels: Record<string, string> = {
@@ -38,193 +80,34 @@ function actionKindLabel(kind: string): string {
   return labels[kind] ?? kind;
 }
 
-function actionKindIcon(kind: string): React.ReactNode {
-  switch (kind) {
-    case "set_budget": return <I.Lego width={13} height={13} />;
-    case "update_goal_monthly":
-    case "update_goal_target": return <I.Goal width={13} height={13} />;
-    case "set_transaction_category":
-    case "set_transaction_flag": return <I.Tag width={13} height={13} />;
-    case "create_rule": return <I.Bolt width={13} height={13} />;
-    case "save_scenario": return <I.Spark width={13} height={13} />;
-    case "generate_report": return <I.Flow width={13} height={13} />;
-    default: return <I.Cpu width={13} height={13} />;
-  }
-}
+// ── ActionBundlePanel ─────────────────────────────────────────────────────────
 
-function ConfidenceBadge({ c }: { c: number }) {
-  const pct = Math.round(c * 100);
-  const tone = c >= 0.8 ? "positive" : c >= 0.6 ? "warning" : "negative";
-  return <Badge tone={tone}>{pct}% confident</Badge>;
-}
-
-function ItemStatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "approved":  return <Badge tone="positive" dot>Approved</Badge>;
-    case "rejected":  return <Badge tone="negative" dot>Rejected</Badge>;
-    case "executed":  return <Badge tone="positive">Executed</Badge>;
-    case "failed":    return <Badge tone="negative">Failed</Badge>;
-    default:          return <Badge>Pending review</Badge>;
-  }
-}
-
-// ── Suggested prompts ───────────────────────────────────────────────────────
-
-const SUGGESTED_PROMPTS = [
-  "Plan next month's budget",
-  "How much should I save toward each goal?",
-  "What can I cut to improve my savings rate?",
-  "Explain my spending this month",
-  "Clean up uncategorized transactions",
-  "What financial risks am I facing?",
-  "Can I afford a $2,000 expense right now?",
-  "Create a plan to pay off debt faster",
-];
-
-// ── Action item row ─────────────────────────────────────────────────────────
-
-function ActionItemRow({
-  item,
-  disabled,
-}: {
-  item: AgentActionItem;
-  disabled: boolean;
-}) {
+function ActionBundlePanel({ bundleId }: { bundleId: string }) {
+  const { data: bundle } = useActionBundle(bundleId);
   const approve = useApproveActionItem();
   const reject = useRejectActionItem();
-  const isPendingReview = item.status === "pending";
-
-  let payload: Record<string, unknown> = {};
-  try { payload = JSON.parse(item.payloadJson) as Record<string, unknown>; } catch { /* ok */ }
-
-  return (
-    <div
-      className={`card copilot-action-item${
-        item.status === "rejected" ? " rejected" : ""
-      }`}
-      style={{
-        padding: "12px 16px",
-        marginBottom: 6,
-        background: "var(--surface-2)",
-        borderColor: "var(--line)",
-        opacity: item.status === "rejected" ? 0.5 : 1,
-      }}
-      role="listitem"
-    >
-      <div className="row-md" style={{ alignItems: "flex-start" }}>
-        {!isPendingReview && (
-          <div className="row" style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, justifyContent: "center" }}>
-            {item.status === "approved" || item.status === "executed" ? (
-              <I.Check width={14} height={14} style={{ color: "var(--positive)" }} />
-            ) : item.status === "rejected" ? (
-              <I.X width={14} height={14} style={{ color: "var(--negative)" }} />
-            ) : null}
-          </div>
-        )}
-
-        <div className="grow stack stack-xs" style={{ minWidth: 0 }}>
-          <div className="row-sm wrap" style={{ alignItems: "center" }}>
-            <span className="muted" aria-hidden="true">
-              {actionKindIcon(item.actionKind)}
-            </span>
-            <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-              {actionKindLabel(item.actionKind)}
-            </span>
-            <ConfidenceBadge c={item.confidence} />
-            {!isPendingReview && <ItemStatusBadge status={item.status} />}
-          </div>
-
-          <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-            {item.rationale}
-          </p>
-
-          {Object.keys(payload).length > 0 && (
-            <div className="num" style={{
-              marginTop: 6,
-              padding: "4px 8px",
-              background: "var(--elevated)",
-              borderRadius: 5,
-              fontSize: 11.5,
-              fontFamily: "var(--mono)",
-              color: "var(--ink-faint)",
-              wordBreak: "break-all",
-            }}>
-              {Object.entries(payload)
-                .filter(([k]) => !["params"].includes(k))
-                .map(([k, v]) => `${k}: ${String(v)}`)
-                .join(" · ")}
-            </div>
-          )}
-        </div>
-
-        {isPendingReview && (
-          <div className="row-xs" style={{ flexShrink: 0 }}>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Approve this action"
-              title="Approve this action"
-              disabled={approve.isPending || reject.isPending}
-              loading={approve.isPending}
-              onClick={async () => {
-                try { await approve.mutateAsync(item.id); } catch { toast.error("Failed to approve"); }
-              }}
-            >
-              <I.Check width={12} height={12} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Reject this action"
-              title="Reject this action"
-              disabled={approve.isPending || reject.isPending}
-              loading={reject.isPending}
-              onClick={async () => {
-                try { await reject.mutateAsync(item.id); } catch { toast.error("Failed to reject"); }
-              }}
-            >
-              <I.X width={12} height={12} />
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Plan result card ────────────────────────────────────────────────────────
-
-function PlanCard({
-  planResult,
-  bundle,
-  onFollowUp,
-}: {
-  planResult: AgentAnswer;
-  bundle: AgentActionBundle | null | undefined;
-  onFollowUp: (q: string) => void;
-}) {
   const qc = useQueryClient();
-  const [executionResult, setExecutionResult] = useState<ExecutionSummary | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
-  const { data: execLog } = useExecutionLog(bundle?.id ?? null);
+  const [executed, setExecuted] = useState(false);
+
+  if (!bundle || bundle.items.length === 0) return null;
+
+  const pendingItems = bundle.items.filter((i) => i.status === "pending");
+  const approvedItems = bundle.items.filter((i) => i.status === "approved");
+  const canExecute = approvedItems.length > 0 && !executed;
 
   const handleExecute = async () => {
-    if (!bundle) return;
     setIsExecuting(true);
     try {
       const raw = await invoke<ExecutionSummary>("execute_action_bundle", {
         bundleId: bundle.id,
       });
-      setExecutionResult(raw);
+      setExecuted(true);
       await qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      await qc.invalidateQueries({ queryKey: ["action-bundle", bundle.id] });
-      const { succeeded, failed } = raw;
-      if (failed === 0) {
-        toast.success(`${succeeded} action${succeeded !== 1 ? "s" : ""} applied successfully`);
+      if (raw.failed === 0) {
+        toast.success(`${raw.succeeded} action${raw.succeeded !== 1 ? "s" : ""} applied`);
       } else {
-        toast.error(`${failed} action${failed !== 1 ? "s" : ""} failed`, {
-          description: `${succeeded} succeeded`,
-        });
+        toast.error(`${raw.failed} failed`, { description: `${raw.succeeded} succeeded` });
       }
     } catch (e) {
       toast.error("Execution failed", { description: String(e) });
@@ -233,553 +116,806 @@ function PlanCard({
     }
   };
 
-  const approvedItems = bundle?.items.filter((i) => i.status === "approved") ?? [];
-  const pendingItems = bundle?.items.filter((i) => i.status === "pending") ?? [];
-  const totalItems = bundle?.items.length ?? 0;
-  const hasExecutable = approvedItems.length > 0 && executionResult === null;
-
   return (
-    <Card className="stack stack-lg" style={{ marginTop: 20 }}>
-      {/* Answer */}
-      <Card tone="accent" className="stack stack-md">
-        <div className="row-sm" style={{ alignItems: "center" }}>
-          <I.Brain width={15} height={15} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "var(--mono)" }}>
-            Copilot
+    <div className="stack stack-sm" style={{ marginTop: 14 }}>
+      <p className="eyebrow" style={{ margin: 0 }}>
+        {bundle.items.length} proposed action{bundle.items.length !== 1 ? "s" : ""}
+        {pendingItems.length > 0 && (
+          <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
+            · {pendingItems.length} awaiting review
           </span>
-          {bundle && <ConfidenceBadge c={bundle.confidence} />}
-        </div>
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "var(--ink)" }}>
-          {planResult.prose}
-        </p>
-      </Card>
+        )}
+      </p>
 
-      {/* Forecast summary */}
-      {planResult.reasoning && (
-        <Card tone="muted" tight>
-          {planResult.reasoning}
-        </Card>
-      )}
+      {bundle.items.map((item) => {
+        let payload: Record<string, unknown> = {};
+        try { payload = JSON.parse(item.payloadJson) as Record<string, unknown>; } catch { /* ok */ }
+        const isPending = item.status === "pending";
 
-      {/* Tool trace */}
-      {planResult.trace.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Tool use</p>
-          <div className="row-sm wrap">
-            {planResult.trace.map((t, i) => (
-              <Badge key={i} tone="accent">{t.replace("Called tool: ", "")}</Badge>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Scenario alternatives */}
-      {planResult.alternatives.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Alternatives compared</p>
-          <div style={{ overflowX: "auto" }}>
-            <table className="tbl" aria-label="Scenario alternatives compared">
-              <thead>
-                <tr>
-                  <th>Scenario</th>
-                  <th>Numbers used</th>
-                  <th>Tradeoff</th>
-                </tr>
-              </thead>
-              <tbody>
-                {planResult.alternatives.map((alt, i) => (
-                  <tr key={`${alt.name}-${i}`}>
-                    <td style={{ fontWeight: 600 }}>{alt.name}</td>
-                    <td>{alt.summary}</td>
-                    <td className="muted">{alt.tradeoff}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-      {/* Data sources */}
-      {planResult.dataSources.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Data used</p>
-          <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
-            {planResult.dataSources.map((source, i) => (
-              <li key={i} className="muted" style={{ fontSize: 12.5 }}>{source}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Missing data */}
-      {planResult.missingData.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Data to improve accuracy</p>
-          <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
-            {planResult.missingData.map((a, i) => (
-              <li key={i} className="muted" style={{ fontSize: 12.5 }}>{a}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Assumptions */}
-      {planResult.assumptions.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Assumptions</p>
-          <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 20, listStyle: "disc" }}>
-            {planResult.assumptions.map((a, i) => (
-              <li key={i} className="muted" style={{ fontSize: 12.5 }}>{a}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Follow-up questions */}
-      {planResult.followUpQuestions.length > 0 && (
-        <div className="stack stack-sm">
-          <p className="eyebrow">Clarifying questions</p>
-          <div className="row-sm wrap">
-            {planResult.followUpQuestions.map((q, i) => (
-              <button
-                key={i}
-                className="chip"
-                onClick={() => onFollowUp(q)}
-                title="Click to ask this follow-up"
-              >
-                <I.ArrowRight width={11} height={11} />
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Action items */}
-      {totalItems > 0 && (
-        <div className="stack stack-md" role="list" aria-label="Proposed actions">
-          <div className="row-md" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <p className="eyebrow" style={{ margin: 0 }}>
-              {totalItems} proposed action{totalItems !== 1 ? "s" : ""}
-              {pendingItems.length > 0 && (
-                <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
-                  · {pendingItems.length} awaiting review
-                </span>
-              )}
-            </p>
-          </div>
-
-          {bundle?.items.map((item) => (
-            <ActionItemRow
-              key={item.id}
-              item={item}
-              disabled={isExecuting}
-            />
-          ))}
-
-          {hasExecutable && (
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <Button
-                variant="primary"
-                disabled={isExecuting || approvedItems.length === 0}
-                loading={isExecuting}
-                onClick={() => void handleExecute()}
-              >
-                {isExecuting ? (
-                  <>
-                    <span className="spinner" />
-                    Executing…
-                  </>
-                ) : (
-                  <>
-                    <I.Check width={14} height={14} />
-                    Execute {approvedItems.length} approved action{approvedItems.length !== 1 ? "s" : ""}
-                  </>
+        return (
+          <div
+            key={item.id}
+            style={{
+              padding: "10px 14px",
+              background: "var(--elevated)",
+              borderRadius: 8,
+              border: "1px solid var(--line)",
+              opacity: item.status === "rejected" ? 0.5 : 1,
+            }}
+          >
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    {actionKindLabel(item.actionKind)}
+                  </span>
+                  <Badge tone={item.confidence >= 0.8 ? "positive" : "warning"}>
+                    {Math.round(item.confidence * 100)}%
+                  </Badge>
+                  {!isPending && (
+                    <Badge
+                      tone={
+                        item.status === "approved" || item.status === "executed"
+                          ? "positive"
+                          : "negative"
+                      }
+                      dot
+                    >
+                      {item.status}
+                    </Badge>
+                  )}
+                </div>
+                <p className="muted" style={{ margin: "4px 0 0", fontSize: 12.5, lineHeight: 1.4 }}>
+                  {item.rationale}
+                </p>
+                {Object.keys(payload).length > 0 && (
+                  <div style={{
+                    marginTop: 6,
+                    padding: "3px 7px",
+                    background: "var(--bg)",
+                    borderRadius: 4,
+                    fontSize: 11.5,
+                    fontFamily: "var(--mono)",
+                    color: "var(--ink-faint)",
+                    wordBreak: "break-all",
+                  }}>
+                    {Object.entries(payload)
+                      .filter(([k]) => k !== "params")
+                      .map(([k, v]) => `${k}: ${String(v)}`)
+                      .join(" · ")}
+                  </div>
                 )}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+              </div>
 
-      {/* Execution results */}
-      {executionResult && (
-        <div className="stack stack-md" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 16 }}>
-          <p className="eyebrow">Execution results</p>
-          {executionResult.results.map((r) => (
-            <div
-              key={r.itemId}
-              className="row-sm"
-              style={{
-                alignItems: "center",
-                padding: "8px 12px",
-                borderRadius: 6,
-                background: r.status === "success" ? "var(--positive-2)" : "var(--negative-2)",
-                fontSize: 13,
-              }}
-            >
-              {r.status === "success" ? (
-                <I.Check width={13} height={13} style={{ color: "var(--positive)", flexShrink: 0 }} />
-              ) : (
-                <I.X width={13} height={13} style={{ color: "var(--negative)", flexShrink: 0 }} />
-              )}
-              <span style={{ color: r.status === "success" ? "var(--positive)" : "var(--negative)" }}>
-                {actionKindLabel(r.actionKind)}
-              </span>
-              {r.summary && (
-                <span className="muted" style={{ fontSize: 12 }}>— {r.summary}</span>
-              )}
-              {r.error && (
-                <span style={{ color: "var(--negative)", fontSize: 12 }}>— {r.error}</span>
+              {isPending && (
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Approve"
+                    disabled={approve.isPending || reject.isPending}
+                    onClick={async () => {
+                      try { await approve.mutateAsync(item.id); } catch { toast.error("Failed"); }
+                    }}
+                  >
+                    <I.Check width={12} height={12} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Reject"
+                    disabled={approve.isPending || reject.isPending}
+                    onClick={async () => {
+                      try { await reject.mutateAsync(item.id); } catch { toast.error("Failed"); }
+                    }}
+                  >
+                    <I.X width={12} height={12} />
+                  </Button>
+                </div>
               )}
             </div>
-          ))}
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            {executionResult.succeeded} succeeded · {executionResult.failed} failed
           </div>
-        </div>
-      )}
+        );
+      })}
 
-      {/* Execution log from DB */}
-      {execLog && execLog.length > 0 && !executionResult && (
-        <div className="stack stack-sm" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 14 }}>
-          <p className="eyebrow">Execution history</p>
-          {execLog.slice(0, 5).map((entry) => (
-            <div key={entry.id} className="row-sm" style={{ alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--hairline)", fontSize: 12.5 }}>
-              <span style={{ color: entry.status === "success" ? "var(--positive)" : "var(--negative)" }}>
-                {entry.status === "success" ? "✓" : "✗"}
-              </span>
-              <span>{actionKindLabel(entry.actionKind)}</span>
-              <span className="num muted" style={{ marginLeft: "auto", fontSize: 11.5 }}>
-                {new Date(entry.executedAt).toLocaleTimeString()}
-              </span>
-            </div>
-          ))}
+      {canExecute && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={isExecuting}
+            loading={isExecuting}
+            onClick={() => void handleExecute()}
+          >
+            <I.Check width={13} height={13} />
+            Execute {approvedItems.length} approved action{approvedItems.length !== 1 ? "s" : ""}
+          </Button>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
-// ── Past bundles section ────────────────────────────────────────────────────
+// ── Custom message components ─────────────────────────────────────────────────
 
-function PastBundlesSection() {
-  const { data: bundles, isLoading } = useActionBundles(null, 10);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { data: expandedBundle } = useActionBundle(expandedId);
+function UserMessage() {
+  return (
+    <MessagePrimitive.Root className="copilot-msg-user">
+      <div className="copilot-bubble-user">
+        <MessagePrimitive.Parts>
+          {({ part }) =>
+            part.type === "text" ? (
+              <span style={{ whiteSpace: "pre-wrap" }}>{part.text}</span>
+            ) : null
+          }
+        </MessagePrimitive.Parts>
+      </div>
+      <MessageActions align="end" />
+    </MessagePrimitive.Root>
+  );
+}
 
-  if (isLoading) return null;
-  if (!bundles || bundles.length === 0) return null;
+function MessageActions({ align = "start" }: { align?: "start" | "end" }) {
+  return (
+    <div className="copilot-msg-actions" data-align={align}>
+      <ActionBarPrimitive.Root>
+        <ActionBarPrimitive.Copy className="copilot-action-btn">Copy</ActionBarPrimitive.Copy>
+        <ActionBarPrimitive.Edit className="copilot-action-btn">Edit</ActionBarPrimitive.Edit>
+        <ActionBarPrimitive.Reload className="copilot-action-btn">Regenerate</ActionBarPrimitive.Reload>
+      </ActionBarPrimitive.Root>
+      <BranchPickerPrimitive.Root className="copilot-branch-picker">
+        <BranchPickerPrimitive.Previous className="copilot-action-btn">Prev</BranchPickerPrimitive.Previous>
+        <span><BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count /></span>
+        <BranchPickerPrimitive.Next className="copilot-action-btn">Next</BranchPickerPrimitive.Next>
+      </BranchPickerPrimitive.Root>
+    </div>
+  );
+}
+
+function ReasoningGroup({ children }: { children: ReactNode }) {
+  return (
+    <details className="copilot-reasoning">
+      <summary>Analysis path</summary>
+      <div>{children}</div>
+    </details>
+  );
+}
+
+function ToolFallbackCard({ part }: { part: { toolName: string; args?: unknown; result?: unknown; isError?: boolean; status?: { type: string } } }) {
+  return (
+    <div className="copilot-tool-card" data-error={part.isError ? "true" : "false"}>
+      <div className="copilot-tool-head">
+        <span>{part.toolName.replaceAll("_", " ")}</span>
+        <span className="copilot-tool-status">{part.status?.type ?? "complete"}</span>
+      </div>
+      <pre>{JSON.stringify(part.result ?? part.args ?? {}, null, 2)}</pre>
+    </div>
+  );
+}
+
+function SourcePill({ part }: { part: { title?: string; id: string } }) {
+  return <span className="copilot-source-pill">{part.title ?? part.id}</span>;
+}
+
+function AssistantMessage({
+  meta,
+  onFollowUp,
+}: {
+  meta?: MessageMeta;
+  onFollowUp: (q: string) => void;
+}) {
+  const message = useMessage();
+  const timing = useMessageTiming();
+  const isRunning = message.status?.type === "running";
+  const isError = message.status?.type === "incomplete" && message.status.reason === "error";
+  const plainText = message.content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("\n");
 
   return (
-    <section className="stack stack-md" style={{ marginTop: 36 }}>
-      <p className="eyebrow">
-        <I.Flow width={13} height={13} />
-        Recent plans &amp; bundles
+    <MessagePrimitive.Root className="copilot-msg-asst">
+      <div className="copilot-avatar">
+        <I.Brain width={14} height={14} style={{ color: "var(--accent)" }} />
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="copilot-bubble-asst">
+          {isError ? (
+            <span style={{ whiteSpace: "pre-wrap" }}>{plainText}</span>
+          ) : (
+            <MessagePrimitive.GroupedParts
+              groupBy={groupPartByType({
+                reasoning: ["group-thought"],
+                "tool-call": ["group-thought"],
+                source: ["group-sources"],
+              })}
+              indicator="no-text"
+            >
+              {({ part, children }) => {
+                switch (part.type) {
+                  case "group-thought":
+                    return <ReasoningGroup>{children}</ReasoningGroup>;
+                  case "group-sources":
+                    return <div className="copilot-sources">{children}</div>;
+                  case "reasoning":
+                    return <p className="copilot-reasoning-text">{part.text}</p>;
+                  case "tool-call":
+                    return part.toolUI ?? <ToolFallbackCard part={part} />;
+                  case "source":
+                    return <SourcePill part={part} />;
+                  case "generative-ui":
+                    return (
+                      <MessagePrimitive.GenerativeUI
+                        components={generativeUIComponents}
+                        Fallback={({ component }) => (
+                          <div className="copilot-gen-callout" data-tone="warning">
+                            <strong>Could not render finance card</strong>
+                            <p>Unknown component: {component}</p>
+                          </div>
+                        )}
+                      />
+                    );
+                  case "text":
+                    return isRunning ? (
+                      <span style={{ whiteSpace: "pre-wrap" }}>{part.text}</span>
+                    ) : (
+                      <MarkdownTextPrimitive className="aui-md" />
+                    );
+                  case "indicator":
+                    return <span className="copilot-cursor" aria-hidden="true" />;
+                  default:
+                    return null;
+                }
+              }}
+            </MessagePrimitive.GroupedParts>
+          )}
+          {isRunning && <span className="copilot-cursor" aria-hidden="true" />}
+        </div>
+
+        {!isRunning && !isError && (
+          <div className="copilot-msg-meta">
+            {meta?.modelId && <span>{meta.providerId} · {meta.modelId}</span>}
+            {(meta?.elapsedMs ?? timing?.totalStreamTime) && (
+              <span>{Math.round((meta?.elapsedMs ?? timing?.totalStreamTime ?? 0) / 100) / 10}s</span>
+            )}
+            {typeof meta?.toolCount === "number" && <span>{meta.toolCount} tools</span>}
+          </div>
+        )}
+
+        {/* Action bundle panel */}
+        {!isRunning && !isError && meta?.bundleId && (
+          <ActionBundlePanel bundleId={meta.bundleId} />
+        )}
+
+        {/* Follow-up suggestions */}
+        {!isRunning && !isError && meta?.followUpQuestions && meta.followUpQuestions.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <p className="eyebrow" style={{ marginBottom: 8, fontSize: 10.5 }}>
+              Follow-up suggestions
+            </p>
+            <div className="row-sm wrap">
+              {meta.followUpQuestions.map((q, i) => (
+                <button
+                  key={i}
+                  className="chip"
+                  onClick={() => onFollowUp(q)}
+                  style={{ cursor: "pointer", fontSize: 11.5 }}
+                >
+                  <I.ArrowRight width={10} height={10} />
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <MessageActions />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+// ── EmptyThreadState ──────────────────────────────────────────────────────────
+
+function EmptyThreadState({ onPrompt }: { onPrompt: (text: string) => void }) {
+  return (
+    <div className="copilot-empty">
+      <div className="copilot-empty-icon">
+        <I.Brain width={36} height={36} style={{ color: "var(--accent)" }} />
+      </div>
+      <h2 className="copilot-empty-title">What would you like to know?</h2>
+      <p className="copilot-empty-sub">
+        Ask anything about your finances — spending, goals, budget, or savings.
       </p>
-      <Card flush>
-        {bundles.map((bundle, idx) => (
-          <div key={bundle.id}>
+      <div className="copilot-prompts-grid">
+        {SUGGESTED_PROMPTS.map((p) => (
+          <button
+            key={p.label}
+            className="copilot-prompt-card"
+            onClick={() => onPrompt(p.label)}
+          >
+            <span className="copilot-prompt-icon">{p.icon}</span>
+            <span>{p.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Wrapper that reads message id from context to look up metadata
+function AssistantMessageWithMeta({
+  metaByMessageId,
+  latestMeta,
+  onFollowUp,
+}: {
+  metaByMessageId: ReturnType<typeof useTauriCopilotRuntime>["metaByMessageId"];
+  latestMeta: MessageMeta | null;
+  onFollowUp: (q: string) => void;
+}) {
+  const message = useMessage();
+  const custom = message.metadata?.custom as { messageId?: unknown; bundleId?: unknown } | undefined;
+  const backendMessageId = typeof custom?.messageId === "string" ? custom.messageId : message.id;
+  const msgMeta =
+    metaByMessageId[backendMessageId] ??
+    (typeof custom?.bundleId === "string" ? { bundleId: custom.bundleId } : undefined) ??
+    latestMeta ??
+    undefined;
+  return <AssistantMessage meta={msgMeta} onFollowUp={onFollowUp} />;
+}
+
+// ── Error boundary ────────────────────────────────────────────────────────────
+
+class ThreadErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: string | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(err: unknown): { error: string } {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  componentDidCatch(err: Error, info: ErrorInfo) {
+    console.error("[Copilot] Thread render error:", err, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="copilot-error-state">
+          <p style={{ fontWeight: 600, marginBottom: 8 }}>Something went wrong in the chat thread.</p>
+          <pre style={{ fontSize: 11, color: "var(--ink-faint)", whiteSpace: "pre-wrap" }}>
+            {this.state.error}
+          </pre>
+          <button
+            className="btn"
+            style={{ marginTop: 12 }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Thread with composer ──────────────────────────────────────────────────────
+
+function CopilotThread({
+  messages,
+  metaByMessageId,
+  latestMeta,
+  onFollowUp,
+}: {
+  messages: ReturnType<typeof useTauriCopilotRuntime>["messages"];
+  metaByMessageId: ReturnType<typeof useTauriCopilotRuntime>["metaByMessageId"];
+  latestMeta: MessageMeta | null;
+  onFollowUp: (q: string) => void;
+}) {
+  const threadRuntime = useThreadRuntime();
+  const thread = useThread();
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  const handlePrompt = useCallback(
+    (text: string) => {
+      threadRuntime.composer.setText(text);
+      setTimeout(() => composerRef.current?.focus(), 50);
+    },
+    [threadRuntime]
+  );
+
+  useEffect(() => {
+    threadRuntime.reset(messages);
+  }, [messages, threadRuntime]);
+
+  return (
+    <div className="copilot-thread-wrap">
+      <ThreadPrimitive.Root className="copilot-thread">
+        <ThreadPrimitive.Viewport className="copilot-viewport">
+          <ThreadPrimitive.Empty>
+            <EmptyThreadState onPrompt={handlePrompt} />
+          </ThreadPrimitive.Empty>
+
+          <ThreadPrimitive.Messages
+          >
+            {({ message }) =>
+              message.role === "user" ? (
+                <UserMessage />
+              ) : (
+                <AssistantMessageWithMeta
+                  metaByMessageId={metaByMessageId}
+                  latestMeta={latestMeta}
+                  onFollowUp={onFollowUp}
+                />
+              )
+            }
+          </ThreadPrimitive.Messages>
+        </ThreadPrimitive.Viewport>
+
+        <div className="copilot-composer-wrap">
+          <ComposerPrimitive.Root className="copilot-composer">
+            <ComposerPrimitive.Input
+              ref={composerRef}
+              placeholder='Ask your financial analyst anything…'
+              className="copilot-composer-input"
+              autoFocus
+            />
+            {thread.isRunning ? (
+              <ComposerPrimitive.Cancel className="copilot-send-btn" aria-label="Stop response">
+                <I.X width={15} height={15} />
+              </ComposerPrimitive.Cancel>
+            ) : (
+              <ComposerPrimitive.Send className="copilot-send-btn" aria-label="Send message">
+                <I.Send width={15} height={15} />
+              </ComposerPrimitive.Send>
+            )}
+          </ComposerPrimitive.Root>
+          <p className="copilot-composer-hint muted">
+            Press <kbd>↵</kbd> to send · <kbd>Shift+↵</kbd> for new line
+          </p>
+        </div>
+      </ThreadPrimitive.Root>
+    </div>
+  );
+}
+
+function CopilotRuntimeProvider({
+  runtime,
+  children,
+}: {
+  runtime: ReturnType<typeof useTauriCopilotRuntime>["runtime"];
+  children: ReactNode;
+}) {
+  const aui = useAui({ tools: Tools({ toolkit: copilotToolkit }) });
+  return (
+    <AssistantRuntimeProvider runtime={runtime} aui={aui}>
+      {children}
+    </AssistantRuntimeProvider>
+  );
+}
+
+// ── Conversation sidebar ──────────────────────────────────────────────────────
+
+function groupByDate(convs: ConversationSummary[]) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
+  const today: ConversationSummary[] = [];
+  const thisWeek: ConversationSummary[] = [];
+  const earlier: ConversationSummary[] = [];
+  for (const c of convs) {
+    const t = new Date(c.updatedAt).getTime();
+    if (t >= todayStart) today.push(c);
+    else if (t >= weekStart) thisWeek.push(c);
+    else earlier.push(c);
+  }
+  return { today, thisWeek, earlier };
+}
+
+function ConversationSidebar({
+  activeId,
+  onSelect,
+  onNew,
+}: {
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+}) {
+  const { data: convs = [] } = useConversations();
+  const deleteConv = useDeleteConversation();
+  const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const filtered = search
+    ? convs.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
+    : convs;
+
+  const { today, thisWeek, earlier } = groupByDate(filtered);
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await deleteConv.mutateAsync(id);
+      toast.success("Conversation deleted");
+    } catch {
+      toast.error("Could not delete conversation");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const renderGroup = (label: string, items: ConversationSummary[]) => {
+    if (items.length === 0) return null;
+    return (
+      <div key={label} style={{ marginBottom: 16 }}>
+        <p className="eyebrow" style={{ padding: "0 12px", marginBottom: 4, fontSize: 10 }}>
+          {label}
+        </p>
+        {items.map((c) => (
+          <button
+            key={c.id}
+            className="copilot-thread-item"
+            data-active={c.id === activeId}
+            onClick={() => onSelect(c.id)}
+            title={c.title}
+          >
+            <span className="copilot-thread-title">{c.title}</span>
+            <span
+              className="copilot-thread-delete"
+              role="button"
+              tabIndex={0}
+              aria-label="Delete conversation"
+              onClick={(e) => void handleDelete(c.id, e)}
+            >
+              {deletingId === c.id ? "…" : <I.X width={11} height={11} />}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <aside className="copilot-sidebar">
+      <div className="copilot-sidebar-header">
+        <span className="eyebrow" style={{ fontSize: 10 }}>Conversations</span>
+        <button className="copilot-new-btn" onClick={onNew} title="New conversation">
+          <I.Plus width={14} height={14} />
+        </button>
+      </div>
+
+      <div className="copilot-search">
+        <I.Search width={13} height={13} />
+        <input
+          type="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="copilot-search-input"
+        />
+      </div>
+
+      <div className="copilot-thread-list">
+        {filtered.length === 0 ? (
+          <div className="muted" style={{ padding: "12px", fontSize: 12.5 }}>
+            {search ? "No matching conversations" : "No conversations yet."}
+          </div>
+        ) : (
+          <>
+            {renderGroup("Today", today)}
+            {renderGroup("This week", thisWeek)}
+            {renderGroup("Earlier", earlier)}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ── Memory panel ──────────────────────────────────────────────────────────────
+
+function MemoryPanel() {
+  const { data: memories = [] } = useAgentMemory();
+  const forget = useForgetAgentMemory();
+
+  if (memories.length === 0) {
+    return (
+      <div className="copilot-memory-empty muted">
+        <I.Brain width={28} height={28} style={{ marginBottom: 10, color: "var(--ink-faint)" }} />
+        <p>No saved memory yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack stack-md" style={{ padding: "0 0 24px" }}>
+      {memories.map((memory: AgentMemory) => (
+        <div key={memory.id} className="card" style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <div className="stack stack-xs">
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <Badge tone="accent">{memory.kind}</Badge>
+                <span className="muted" style={{ fontSize: 11.5 }}>
+                  {new Date(memory.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <div style={{ fontSize: 13.5 }}>{memory.description}</div>
+              {memory.merchantKey && (
+                <div className="muted" style={{ fontSize: 11.5 }}>Key: {memory.merchantKey}</div>
+              )}
+            </div>
             <Button
               variant="ghost"
-              className="row-md"
-              style={{
-                width: "100%",
-                justifyContent: "space-between",
-                padding: "12px 18px",
-                background: expandedId === bundle.id ? "var(--surface-2)" : "transparent",
-                textAlign: "left",
-                gap: 12,
-                borderRadius: 0,
+              size="sm"
+              loading={forget.isPending}
+              onClick={async () => {
+                try {
+                  await forget.mutateAsync(memory.id);
+                  toast.success("Forgot memory");
+                } catch {
+                  toast.error("Could not forget memory");
+                }
               }}
-              onClick={() => setExpandedId(expandedId === bundle.id ? null : bundle.id)}
             >
-              <span className="row-sm" style={{ minWidth: 0 }}>
-                <I.Brain width={13} height={13} style={{ color: "var(--ink-faint)", flexShrink: 0 }} />
-                <span style={{ fontSize: 13.5, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {bundle.title}
-                </span>
-              </span>
-              <span className="row-sm" style={{ flexShrink: 0 }}>
-                <Badge tone={bundle.status === "executed" ? "positive" : bundle.status === "pending" ? "warning" : "default"}>
-                  {bundle.status}
-                </Badge>
-                <span className="num muted" style={{ fontSize: 11.5 }}>
-                  {new Date(bundle.createdAt).toLocaleDateString()}
-                </span>
-                {expandedId === bundle.id ? <I.Up width={12} height={12} /> : <I.Down width={12} height={12} />}
-              </span>
+              Forget
             </Button>
-
-            {expandedId === bundle.id && expandedBundle && (
-              <div className="stack stack-sm" style={{ padding: "0 18px 16px", borderTop: "1px solid var(--hairline)" }}>
-                <p className="muted" style={{ margin: "12px 0 10px", fontSize: 13 }}>
-                  {expandedBundle.summary}
-                </p>
-                {expandedBundle.items.map((item) => (
-                  <div key={item.id} className="row-sm" style={{ alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--hairline)", fontSize: 12.5 }}>
-                    <span className="muted" aria-hidden="true">
-                      {actionKindIcon(item.actionKind)}
-                    </span>
-                    <span>{actionKindLabel(item.actionKind)}</span>
-                    <ItemStatusBadge status={item.status} />
-                    <span className="muted" style={{ marginLeft: "auto", fontSize: 11.5 }}>
-                      {item.rationale.slice(0, 60)}{item.rationale.length > 60 ? "…" : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {idx < bundles.length - 1 && (
-              <hr className="divider" />
-            )}
           </div>
-        ))}
-      </Card>
-    </section>
+        </div>
+      ))}
+    </div>
   );
 }
 
-// ── Main screen ─────────────────────────────────────────────────────────────
+// ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function Copilot() {
-  const [question, setQuestion] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [planResult, setPlanResult] = useState<AgentAnswer | null>(null);
-  const [activeBundleId, setActiveBundleId] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { data: activeBundle } = useActionBundle(activeBundleId);
-  const qc = useQueryClient();
+  const createConv = useCreateConversation();
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"chat" | "memory">("chat");
 
-  // Auto-resize textarea
-  const handleInput = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  };
+  const { runtime, messages, latestMeta, metaByMessageId } = useTauriCopilotRuntime(activeConvId);
+
+  const handleNew = useCallback(async () => {
+    try {
+      const id = await createConv.mutateAsync();
+      setActiveConvId(id);
+      setActiveTab("chat");
+    } catch {
+      toast.error("Could not create conversation");
+    }
+  }, [createConv]);
+
+  const handleFollowUp = useCallback(
+    (q: string) => {
+      if (runtime.thread) {
+        runtime.thread.composer.setText(q);
+      }
+    },
+    [runtime]
+  );
 
   // Pick up pre-filled prompt from CopilotNudge navigation
   useEffect(() => {
     const prefill = sessionStorage.getItem("copilot.prefill");
     if (prefill) {
       sessionStorage.removeItem("copilot.prefill");
-      setQuestion(prefill);
-      setTimeout(() => void handleAsk(prefill), 100);
+      void createConv.mutateAsync().then((id) => {
+        setActiveConvId(id);
+        setTimeout(() => {
+          if (runtime.thread) {
+            runtime.thread.composer.setText(prefill);
+          }
+        }, 300);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleAsk = async (q: string = question) => {
-    const trimmed = q.trim();
-    if (!trimmed) return;
-
-    setIsLoading(true);
-    setPlanResult(null);
-    setActiveBundleId(null);
-    setQuestion("");
-
-    try {
-      const raw = await invoke<AgentAnswer>("ask_agent", {
-        question: trimmed,
-        mode: "deep",
-      });
-      setPlanResult(raw);
-      setActiveBundleId(raw.bundleId);
-      await qc.invalidateQueries({ queryKey: ["action-bundles"] });
-    } catch (e) {
-      const err = e as { message?: string };
-      const msg = err?.message ?? String(e);
-      if (msg.includes("no_provider") || msg.includes("Configure an AI provider")) {
-        toast.error("AI provider not configured", {
-          description: "Go to Settings → Agent to set up your AI provider.",
-          action: { label: "Settings", onClick: () => { window.location.hash = "/settings"; } },
-        });
-      } else {
-        toast.error("Copilot request failed", { description: msg });
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      void handleAsk();
-    }
-  };
-
   return (
-    <div className="screen">
-      {/* Header */}
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <I.Brain width={12} height={12} />
-            Your personal financial analyst
-          </div>
-          <h1>Copilot</h1>
-        </div>
-        <div className="row-sm">
-          <span
-            className="chip"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "5px 12px",
-            }}
-          >
-            <span className="dot" aria-hidden="true" />
-            AI-assisted · local provider
-          </span>
-        </div>
-      </header>
+    <div className="copilot-screen">
+      <ConversationSidebar
+        activeId={activeConvId}
+        onSelect={(id) => { setActiveConvId(id); setActiveTab("chat"); }}
+        onNew={() => void handleNew()}
+      />
 
-      {/* Ask bar */}
-      <Card
-        style={{
-          padding: 0,
-          overflow: "hidden",
-          borderColor: isLoading ? "var(--accent-3)" : undefined,
-        }}
-      >
-        <textarea
-          ref={textareaRef}
-          value={question}
-          onChange={(e) => { setQuestion(e.target.value); handleInput(); }}
-          onKeyDown={handleKeyDown}
-          placeholder={'Ask your financial analyst anything\u2026 e.g., "How can I reach my goals faster?"'}
-          disabled={isLoading}
-          rows={2}
-          style={{
-            width: "100%",
-            resize: "none",
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            padding: "18px 20px 12px",
-            fontSize: 14.5,
-            color: "var(--ink)",
-            fontFamily: "var(--sans)",
-            lineHeight: 1.55,
-            boxSizing: "border-box",
-          }}
-        />
-        <div
-          className="row-md"
-          style={{
-            justifyContent: "space-between",
-            padding: "8px 12px 12px",
-            gap: 8,
-          }}
-        >
-          {/* Suggested prompts */}
-          <div className="row-sm wrap" style={{ flex: 1, minWidth: 0 }}>
-            {SUGGESTED_PROMPTS.slice(0, 4).map((p) => (
-              <button
-                key={p}
-                className="chip"
-                style={{ cursor: "pointer", fontSize: 11.5 }}
-                disabled={isLoading}
-                onClick={() => {
-                  setQuestion(p);
-                  textareaRef.current?.focus();
-                }}
-              >
-                {p}
+      <div className="copilot-main">
+        <header className="copilot-header">
+          <div>
+            <div className="eyebrow">
+              <span
+                className="dot"
+                style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }}
+              />
+              COPILOT · AI FINANCIAL ANALYST
+            </div>
+            <h1 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Copilot</h1>
+          </div>
+          <div className="row-sm">
+            <div className="toolbar" style={{ display: "inline-flex" }}>
+              <button className={activeTab === "chat" ? "on" : ""} onClick={() => setActiveTab("chat")}>
+                Chat
               </button>
-            ))}
+              <button className={activeTab === "memory" ? "on" : ""} onClick={() => setActiveTab("memory")}>
+                Memory
+              </button>
+            </div>
+            <span className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span className="dot" aria-hidden="true" />
+              AI-assisted
+            </span>
           </div>
+        </header>
 
-          {/* Submit */}
-          <Button
-            variant="primary"
-            disabled={isLoading || !question.trim()}
-            loading={isLoading}
-            onClick={() => void handleAsk()}
-            title="Ask Copilot (⌘↵)"
-            style={{ flexShrink: 0 }}
-          >
-            {isLoading ? (
-              <>
-                <span className="spinner" />
-                Thinking…
-              </>
+        {activeTab === "chat" && (
+          <>
+            {activeConvId ? (
+              <ThreadErrorBoundary>
+                <CopilotRuntimeProvider runtime={runtime}>
+                  <CopilotThread
+                    messages={messages}
+                    metaByMessageId={metaByMessageId}
+                    latestMeta={latestMeta}
+                    onFollowUp={handleFollowUp}
+                  />
+                </CopilotRuntimeProvider>
+              </ThreadErrorBoundary>
             ) : (
-              <>
-                <I.Send width={14} height={14} />
-                Ask Copilot
-                <span className="kbd">⌘↵</span>
-              </>
+              <div className="copilot-empty-screen">
+                <div className="copilot-empty">
+                  <div className="copilot-empty-icon">
+                    <I.Brain width={44} height={44} style={{ color: "var(--accent)" }} />
+                  </div>
+                  <h2 className="copilot-empty-title">Your AI Financial Analyst</h2>
+                  <p className="copilot-empty-sub">
+                    Start a new conversation to get personalized advice and action plans
+                    based on your real financial data.
+                  </p>
+                  <button
+                    className="btn primary"
+                    onClick={() => void handleNew()}
+                    disabled={createConv.isPending}
+                  >
+                    <I.Plus width={14} height={14} />
+                    Start a conversation
+                  </button>
+                  <div className="copilot-prompts-grid" style={{ marginTop: 32 }}>
+                    {SUGGESTED_PROMPTS.map((p) => (
+                      <button
+                        key={p.label}
+                        className="copilot-prompt-card"
+                        onClick={() => {
+                          void createConv.mutateAsync().then((id) => {
+                            setActiveConvId(id);
+                            setTimeout(() => {
+                              if (runtime.thread) {
+                                runtime.thread.composer.setText(p.label);
+                              }
+                            }, 300);
+                          });
+                        }}
+                      >
+                        <span className="copilot-prompt-icon">{p.icon}</span>
+                        <span>{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
-          </Button>
-        </div>
-      </Card>
+          </>
+        )}
 
-      {/* More prompts row */}
-      <div className="row-sm wrap" style={{ marginTop: 10 }}>
-        {SUGGESTED_PROMPTS.slice(4).map((p) => (
-          <button
-            key={p}
-            className="chip"
-            style={{ cursor: "pointer", fontSize: 11.5 }}
-            disabled={isLoading}
-            onClick={() => void handleAsk(p)}
-          >
-            <I.ArrowRight width={11} height={11} />
-            {p}
-          </button>
-        ))}
-      </div>
-
-      {/* Loading state */}
-      {isLoading && (
-        <Card className="row-md" style={{ marginTop: 20, padding: "24px 28px" }}>
-          <I.Brain width={16} height={16} style={{ color: "var(--accent)" }} />
-          <div className="stack stack-xs">
-            <div style={{ fontSize: 14, fontWeight: 500 }}>
-              Analyzing your finances…
-            </div>
-            <div className="muted" style={{ fontSize: 12.5 }}>
-              Building context · calling AI analyst · preparing recommendations
-            </div>
+        {activeTab === "memory" && (
+          <div className="main-inner">
+            <MemoryPanel />
           </div>
-        </Card>
-      )}
-
-      {/* Plan result */}
-      {planResult && !isLoading && (
-        <PlanCard
-          planResult={planResult}
-          bundle={activeBundle}
-          onFollowUp={(q) => {
-            setQuestion(q);
-            textareaRef.current?.focus();
-          }}
-        />
-      )}
-
-      {/* Past bundles */}
-      <PastBundlesSection />
-
-      {/* Empty state */}
-      {!isLoading && !planResult && (
-        <EmptyState
-          icon={<I.Brain style={{ color: "var(--ink-faint)", width: 48, height: 48 }} />}
-          title="Your personal financial analyst"
-          description="Ask anything about your finances. The Copilot analyzes your spending, budget, goals, and recurring bills to give you personalized recommendations and action plans."
-          actions={
-            <div className="row-sm wrap" style={{ justifyContent: "center" }}>
-              {["Plan", "Save", "Forecast", "Reduce", "Clean up", "Explain"].map((label) => (
-                <Badge key={label} tone="accent">{label}</Badge>
-              ))}
-            </div>
-          }
-        />
-      )}
+        )}
+      </div>
     </div>
   );
 }

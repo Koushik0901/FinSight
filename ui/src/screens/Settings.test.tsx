@@ -51,6 +51,17 @@ vi.mock("../api/hooks/settings", () => ({
   useNotificationsEnabled: vi.fn(() => ({ data: true })),
   useSetNotificationsEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
+vi.mock("../api/hooks/simplefin", () => ({
+  useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
+  useDisconnectSimpleFin: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSimpleFinConnections: vi.fn(() => ({ data: [] })),
+  useDeleteSimpleFinConnection: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSimpleFinSyncSettings: vi.fn(() => ({ data: { backgroundSyncEnabled: true, backgroundSyncIntervalMinutes: 360 } })),
+  useSetSimpleFinSyncSettings: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSaveSimpleFinToken: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useSimpleFinAccounts: vi.fn(() => ({ data: [], refetch: vi.fn(), isFetching: false })),
+  useImportSimpleFinAccounts: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
 
 describe("Settings — Appearance section", () => {
   it("renders theme, density, accent, currency controls", () => {

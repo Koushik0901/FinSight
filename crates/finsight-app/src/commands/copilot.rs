@@ -66,12 +66,13 @@ pub async fn close_agent_session(state: tauri::State<'_, AppState>, id: String) 
 pub async fn list_action_bundles(
     state: tauri::State<'_, AppState>,
     status_filter: Option<String>,
+    session_id: Option<String>,
     limit: Option<u32>,
 ) -> AppResult<Vec<AgentActionBundle>> {
     let db = (*state.db).clone();
     let limit = limit.unwrap_or(25);
     run(&db, move |conn| {
-        copilot_actions::list_bundles(conn, status_filter.as_deref(), limit)
+        copilot_actions::list_bundles(conn, status_filter.as_deref(), session_id.as_deref(), limit)
     })
     .await
     .map_err(AppError::from)

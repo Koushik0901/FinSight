@@ -92,6 +92,18 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )?;
 
@@ -114,6 +126,10 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
                 status: TransactionStatus::Cleared,
                 imported_id: None,
                 source: Some("sample".to_string()),
+                raw_synced_data: None,
+                pending: false,
+                external_tx_id: None,
+                external_account_id: None,
             },
         )?;
         // Link merchant

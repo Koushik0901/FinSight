@@ -51,6 +51,14 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalBalance: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
 }));
 
+vi.mock("../api/hooks/insights", () => ({
+  useHealthScore: () => ({ data: null }),
+}));
+
+vi.mock("../api/hooks/assets", () => ({
+  useUncelebratedMilestones: () => ({ data: [] }),
+}));
+
 function wrap(node: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (

@@ -144,6 +144,10 @@ pub fn into_new_transaction(parsed: ParsedRow, account_id: String) -> NewTransac
         status: TransactionStatus::Cleared, // CSV imports are always cleared
         imported_id: None,
         source: Some("csv".to_string()),
+        raw_synced_data: None,
+        pending: false,
+        external_tx_id: None,
+        external_account_id: None,
     }
 }
 

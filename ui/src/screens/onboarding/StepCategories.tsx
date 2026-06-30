@@ -55,52 +55,73 @@ export default function StepCategories({ onNext }: Props) {
   }
 
   return (
-    <div className="step-categories">
-      <h2>Confirm your categories</h2>
-      <p>Edit or delete anything that doesn't fit. We'll only store what you keep.</p>
-      <ul className="category-list">
-        {rows.map((row, i) => (
-          <li key={row.id} className="row-md" style={{ alignItems: "center" }}>
-            <Input
-              value={row.label}
-              onChange={(e) => update(i, { label: e.target.value })}
-              aria-label={`Category ${i + 1} label`}
-              style={{ marginBottom: 0 }}
-            />
-            <Select
-              value={row.group_id}
-              onChange={(e) => update(i, { group_id: e.target.value })}
-              aria-label={`Category ${i + 1} group`}
-              style={{ marginBottom: 0 }}
-            >
-              {GROUPS.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </Select>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => remove(i)}
-              aria-label={`Remove ${row.label || "row"}`}
-            >
-              ×
-            </Button>
-          </li>
-        ))}
-      </ul>
-      <Button variant="default" onClick={add}>+ Add category</Button>
-      {saveError && (
-        <p role="alert" className="err">
-          {saveError}
-        </p>
-      )}
-      <footer>
-        <Button variant="primary" onClick={commit} disabled={saving} loading={saving}>
-          {saving ? "Saving…" : "Use these →"}
-        </Button>
-      </footer>
+    <div className="step-categories onb-split">
+      <div className="onb-left">
+        <div className="num-step">003 · Categories</div>
+        <h1>Confirm your starter categories.</h1>
+        <p className="lead">Edit or delete anything that does not fit. We only store what you keep.</p>
+        <ul className="category-list">
+          {rows.map((row, i) => (
+            <li key={row.id} className="row-md" style={{ alignItems: "center" }}>
+              <Input
+                value={row.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                aria-label={`Category ${i + 1} label`}
+                style={{ marginBottom: 0 }}
+              />
+              <Select
+                value={row.group_id}
+                onChange={(e) => update(i, { group_id: e.target.value })}
+                aria-label={`Category ${i + 1} group`}
+                style={{ marginBottom: 0 }}
+              >
+                {GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(i)}
+                aria-label={`Remove ${row.label || "row"}`}
+              >
+                ×
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <div className="onb-actions">
+          <Button variant="default" onClick={add}>+ Add category</Button>
+          <Button variant="primary" onClick={commit} disabled={saving} loading={saving}>
+            {saving ? "Saving…" : "Use these →"}
+          </Button>
+        </div>
+        {saveError && (
+          <p role="alert" className="err">
+            {saveError}
+          </p>
+        )}
+      </div>
+
+      <div className="onb-right">
+        <div className="card">
+          <div className="eyebrow"><span className="dot" />Preview</div>
+          <div className="h3" style={{ marginBottom: 10 }}>How this will look in the app</div>
+          <div className="stack stack-sm">
+            {rows.slice(0, 10).map((row) => (
+              <div key={row.id} className="onb-category-preview">
+                <span className="cswatch" style={{ background: "var(--accent)" }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5 }}>{row.label || "Untitled category"}</div>
+                  <div className="muted" style={{ fontSize: 11.5, textTransform: "capitalize" }}>{row.group_id}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

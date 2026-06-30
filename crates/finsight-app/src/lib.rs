@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod error;
 pub mod notifications;
+pub mod sync_scheduler;
 
 use finsight_agent::{
     agent::{AgentEvent, AgentHandle, EventCallback},
@@ -13,12 +14,14 @@ use finsight_agent::{
 };
 use finsight_core::{db::run_migrations, settings, Db};
 use std::sync::{Arc, RwLock};
+use sync_scheduler::SyncScheduler;
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub db: Arc<Db>,
     pub agent: AgentHandle,
     pub agent_provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
+    pub sync_scheduler: SyncScheduler,
 }
 
 impl AppState {
@@ -26,10 +29,12 @@ impl AppState {
         let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
             Arc::new(RwLock::new(None));
         let agent = AgentHandle::spawn(db.clone(), Arc::clone(&provider), on_event);
+        let sync_scheduler = SyncScheduler::new(db.clone());
         Self {
             db: Arc::new(db),
             agent,
             agent_provider: provider,
+            sync_scheduler,
         }
     }
 }
@@ -150,6 +155,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::test_completion_provider,
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
+        commands::agent::trigger_recategorize_low_confidence,
         commands::agent::get_agent_status,
         commands::agent::ask_agent,
         commands::transactions::list_categories_with_spending,
@@ -165,6 +171,9 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::recurring::list_recurring,
         commands::reports::get_report_data,
         commands::reports::get_month_totals,
+        commands::reports::get_savings_rate_history,
+        commands::reports::create_monthly_review,
+        commands::reports::list_monthly_reviews,
         commands::scenarios::run_scenario,
         commands::scenarios::save_scenario,
         commands::scenarios::list_scenario_history,
@@ -180,8 +189,11 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::assets::delete_liability,
         commands::assets::record_net_worth_snapshot,
         commands::assets::list_net_worth_history,
+        commands::assets::compute_debt_payoff,
+        commands::assets::get_uncelebrated_milestones,
         commands::insights::list_agent_memory,
         commands::insights::forget_agent_memory,
+        commands::insights::get_financial_health_score,
         commands::agent::list_rule_proposals,
         commands::agent::accept_rule_proposal,
         commands::agent::decline_rule_proposal,
@@ -219,14 +231,37 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::list_recent_agent_activity,
         commands::transactions::export_transactions_csv,
         commands::accounts::export_account_csv,
+        commands::accounts::list_account_balance_history,
+        commands::accounts::list_account_balance_sparklines,
         commands::journey::get_journey_status,
         commands::inbox::get_action_items,
         commands::simplefin::save_simplefin_setup_token,
         commands::simplefin::get_simplefin_status,
+        commands::simplefin::list_simplefin_connections,
         commands::simplefin::list_simplefin_accounts,
         commands::simplefin::import_simplefin_accounts,
         commands::simplefin::sync_simplefin_account,
         commands::simplefin::disconnect_simplefin,
+        commands::simplefin::delete_simplefin_connection,
+        commands::simplefin::sync_all_simplefin_accounts,
+        commands::simplefin::get_simplefin_sync_settings,
+        commands::simplefin::set_simplefin_sync_settings,
+        commands::simplefin::list_simplefin_alerts,
+        commands::simplefin::acknowledge_simplefin_alert,
+        commands::simplefin::list_simplefin_transfer_suggestions,
+        commands::simplefin::confirm_simplefin_transfer,
+        commands::simplefin::reject_simplefin_transfer,
+        commands::simplefin::list_import_review_candidates,
+        commands::simplefin::accept_import_candidate_match,
+        commands::simplefin::create_import_candidate_transaction,
+        commands::simplefin::dismiss_import_candidate,
+        commands::copilot_chat::stream_copilot_message,
+        commands::copilot_chat::list_conversations,
+        commands::copilot_chat::get_conversation_messages,
+        commands::copilot_chat::delete_conversation,
+        commands::copilot_chat::create_conversation,
+        commands::copilot_chat::edit_conversation_user_message,
+        commands::copilot_chat::delete_conversation_messages_after,
     ])
 }
 
@@ -295,6 +330,8 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 state.agent.set_provider(provider);
             }
             app.manage(state);
+
+            let _scheduler = app.state::<AppState>().sync_scheduler.start();
 
             let check_agent = app.state::<AppState>().agent.tx.clone();
             tauri::async_runtime::spawn(async move {

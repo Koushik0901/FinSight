@@ -3,6 +3,7 @@ use crate::{
     AppState,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
+use finsight_agent::LOW_CONFIDENCE_THRESHOLD;
 use finsight_core::repos::run;
 use rusqlite::params;
 use serde::Serialize;
@@ -108,7 +109,39 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
             });
         }
 
-        // ── 3. Reimbursable transactions pending ─────────────────────────────
+        // ── 3. Low-confidence AI categorizations ─────────────────────────────
+        let low_confidence_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions \
+                 WHERE ai_confidence IS NOT NULL AND ai_confidence < ?1 \
+                   AND (SELECT source FROM categorizations c \
+                        WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm'",
+                params![LOW_CONFIDENCE_THRESHOLD],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        if low_confidence_count > 0 {
+            items.push(ActionItem {
+                id: "low-confidence-categorizations".to_string(),
+                category: "review".to_string(),
+                priority: if low_confidence_count >= 5 { "medium".to_string() } else { "low".to_string() },
+                title: format!(
+                    "{low_confidence_count} categor{} flagged as uncertain by the AI",
+                    if low_confidence_count == 1 { "y" } else { "ies" }
+                ),
+                detail: "The AI assigned these categories with low confidence. \
+                         Run a re-check to apply any rules you've added since the last import, \
+                         or correct them manually in your transactions."
+                    .to_string(),
+                action_label: "Review in transactions".to_string(),
+                action_route: "/transactions?filter=needs_review".to_string(),
+                badge_count: Some(low_confidence_count),
+                amount_cents: None,
+            });
+        }
+
+        // ── 4. Reimbursable transactions pending ─────────────────────────────
         let reimbursable_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM transactions WHERE is_reimbursable = 1",

@@ -58,3 +58,31 @@ pub struct AgentExecutionEntry {
     pub error: Option<String>,
     pub executed_at: String,
 }
+
+/// Summary of a conversation thread shown in the sidebar.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationSummary {
+    pub id: String,
+    pub title: String,
+    pub message_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A single message within a conversation thread.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    /// JSON-encoded array of tool names used, e.g. `["spending_by_category"]`
+    pub tool_trace: Option<String>,
+    pub action_bundle_id: Option<String>,
+    pub branch_parent_id: Option<String>,
+    /// JSON-encoded assistant-ui message parts. `content` remains the text fallback.
+    pub parts_json: Option<String>,
+    pub created_at: String,
+}

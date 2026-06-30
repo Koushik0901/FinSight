@@ -385,13 +385,10 @@ export default function Insights() {
     <div className="screen">
       <AgentStatusBar />
 
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }} />
-            Insights · {visible.length} active
-          </div>
-          <h1>What FinSight noticed.</h1>
+      <header className="day-hdr">
+        <div>
+          <div className="eyebrow"><span className="dot" style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }} />INSIGHTS · {new Date().toLocaleDateString("en-US", { month: "long" }).toUpperCase()}</div>
+          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>What the numbers are saying.</h1>
         </div>
         <div className="row-md wrap">
           {dismissed.size > 0 && (

@@ -201,10 +201,10 @@ export default function Rules() {
 
   return (
     <div className="screen screen-rules">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">Rules &amp; agents</div>
-          <h1>The mechanics underneath.</h1>
+      <header className="day-hdr">
+        <div>
+          <div className="eyebrow"><span className="dot" />WORKSHOP · RULES & AGENTS</div>
+          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Automate the mundane.</h1>
         </div>
         <Button variant="default" onClick={() => setShowNewRule(true)}>
           + New rule

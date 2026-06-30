@@ -8,6 +8,55 @@
 
 ---
 
+## ✅ Agent rich responses shipped (2026-06-28)
+
+Detailed handoff: `docs/agent-rich-responses-handoff.md`.
+
+- `[x]` Extend `AgentAnswer` with typed `responseBlocks` for safe markdown, tables, metric grids, callouts, and charts.
+- `[x]` Add backend validation and fallback enrichment so existing prose/reasoning/alternatives render through rich blocks.
+- `[x]` Add `AgentResponseRenderer` using `react-markdown`, `remark-gfm`, `rehype-sanitize`, and existing Nivo chart libraries.
+- `[x]` Wire the shared renderer into the Copilot screen and Command Palette ask mode.
+- `[x]` Add rich markdown/table rendering tests and unsafe-HTML sanitization coverage.
+- `[x]` Regenerate TypeScript bindings and validate backend/frontend builds and targeted tests.
+
+---
+
+## ✅ SimpleFIN production hardening shipped (2026-06-28)
+
+Design: `docs/superpowers/specs/2026-06-28-simplefin-production-hardening-design.md`.
+Handoff: `docs/simplefin-production-hardening-handoff.md`.
+
+- `[x]` Add migration `V026__import_reconciliation_workbench.sql` for durable import candidates, candidate matches, sync run audit rows, and source-separated account balances.
+- `[x]` Harden background sync so Off pauses without killing the scheduler, On resumes it, and manual/background sync jobs cannot overlap.
+- `[x]` Add SimpleFIN fetch retry/backoff for transient failures and avoid retrying auth/payment/invalid credential failures.
+- `[x]` Record sync runs with success/partial/failed status and per-run added/updated/skipped/queued counts.
+- `[x]` Create durable Inbox sync-error alerts when SimpleFIN sync fails after retry or fails with unretryable access/payment errors.
+- `[x]` Separate `simplefin` bank balance snapshots from `ledger_recomputed` balances so drift checks compare ledger totals against the latest bank-reported snapshot only.
+- `[x]` Refresh account `extra_json`/`raw_json` from the fresh SimpleFIN account payload before importing investment holdings.
+- `[x]` Upgrade CSV/SimpleFIN reconciliation with amount tolerance, confidence scoring, collision handling, and pending-to-posted matching.
+- `[x]` Queue ambiguous/colliding import candidates in a durable Import Review workbench instead of silently duplicating or merging them.
+- `[x]` Add Inbox Import Review actions: accept recommended/alternative match, create new transaction, or dismiss candidate.
+- `[x]` Regenerate TypeScript bindings and update frontend hooks for import review commands and queued-for-review sync counts.
+
+---
+
+## ✅ SimpleFIN + import coordination shipped (2026-06-28)
+
+Detailed handoff: `docs/simplefin-import-coordination-handoff.md`.
+
+- `[x]` Refresh revoked SimpleFIN credentials using a replacement setup token and store the new access URL in the OS keychain.
+- `[x]` Relink existing SimpleFIN accounts to refreshed connection rows instead of creating stale duplicate connections/accounts.
+- `[x]` Run local SimpleFIN sync after credential refresh; result was 7 linked accounts synced, 253 transactions added, 7 updated, 3 skipped, 0 errors.
+- `[x]` Cap SimpleFIN initial sync lookback to 44 days to stay under the bridge's 45-day recommended range; keep 14-day subsequent lookback.
+- `[x]` Make account display names prefer `nickname`, then `official_name`, then provider `name` so raw SimpleFIN IDs are not shown when better labels exist.
+- `[x]` Add shared transaction reconciliation for CSV and SimpleFIN imports: exact `imported_id` first, then conservative fuzzy same-account amount/date/merchant matching.
+- `[x]` Add per-batch collision avoidance so multiple incoming rows cannot match the same existing ledger transaction.
+- `[x]` Let SimpleFIN enrich matching CSV-created transactions with provider IDs/raw sync metadata while preserving user notes and categories.
+- `[x]` Make CSV imports skip matching SimpleFIN transactions and persist full transaction metadata for new CSV rows.
+- `[x]` Add regression tests for CSV-before-SimpleFIN and SimpleFIN-before-CSV duplicate prevention.
+
+---
+
 ## ✅ Wave D shipped (2026-06-16)
 
 All Wave D features are done and pushed to main.

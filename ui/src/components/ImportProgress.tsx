@@ -13,8 +13,8 @@ export default function ImportProgress() {
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
-    const u1 = listen<ProgressPayload>("import.progress", (e) => setActive(e.payload));
-    const u2 = listen<unknown>("import.complete", () => setActive(null));
+    const u1 = listen<ProgressPayload>("import-progress", (e) => setActive(e.payload));
+    const u2 = listen<unknown>("import-complete", () => setActive(null));
     return () => {
       u1.then((fn) => fn());
       u2.then((fn) => fn());

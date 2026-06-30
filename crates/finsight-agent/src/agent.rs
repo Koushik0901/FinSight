@@ -5,9 +5,16 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum AgentJob {
-    CategorizeImport { import_id: String },
+    CategorizeImport {
+        import_id: String,
+    },
     CategorizeAll,
-    RunRecipe { recipe_id: String },
+    /// Re-run LLM categorization on transactions whose current AI confidence
+    /// is below the threshold. Useful after a user adds new rules or corrections.
+    RecategorizeLowConfidence,
+    RunRecipe {
+        recipe_id: String,
+    },
     CheckDueRecipes,
 }
 
@@ -101,7 +108,9 @@ async fn run_loop(
                     }
                 }
             }
-            job @ (AgentJob::CategorizeImport { .. } | AgentJob::CategorizeAll) => {
+            job @ (AgentJob::CategorizeImport { .. }
+            | AgentJob::CategorizeAll
+            | AgentJob::RecategorizeLowConfidence) => {
                 let p = provider.read().unwrap().clone();
                 match p {
                     None => {

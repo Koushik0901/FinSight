@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SimpleFinAccountSet {
@@ -16,15 +17,26 @@ pub struct SimpleFinAccountSet {
 pub struct SimpleFinError {
     pub code: String,
     pub msg: String,
+    #[serde(rename = "conn_id")]
+    pub connection_id: Option<String>,
+    #[serde(rename = "account_id")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SimpleFinConnection {
+    #[serde(rename = "conn_id")]
     pub conn_id: String,
     pub name: String,
+    #[serde(rename = "org_id")]
+    pub org_id: String,
+    #[serde(rename = "org_url")]
+    pub org_url: Option<String>,
+    #[serde(rename = "sfin_url")]
+    pub sfin_url: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleFinAccount {
     pub id: String,
     pub name: String,
@@ -34,13 +46,17 @@ pub struct SimpleFinAccount {
     pub connection_id: Option<String>,
     pub currency: String,
     pub balance: String,
+    #[serde(rename = "available-balance")]
+    pub available_balance: Option<String>,
     #[serde(rename = "balance-date")]
     pub balance_date: i64,
     #[serde(default)]
     pub transactions: Option<Vec<SimpleFinTransaction>>,
+    #[serde(default)]
+    pub extra: Option<Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleFinTransaction {
     pub id: String,
     pub posted: i64,
@@ -49,6 +65,10 @@ pub struct SimpleFinTransaction {
     pub description: String,
     #[serde(default)]
     pub payee: String,
+    #[serde(default)]
+    pub pending: bool,
+    #[serde(default)]
+    pub extra: Option<Value>,
 }
 
 impl SimpleFinTransaction {

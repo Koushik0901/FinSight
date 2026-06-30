@@ -2,7 +2,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
-const DEFAULT_FILTER: TxnFilterInput = { accountId: null, limit: null, offset: null, search: null, filterPreset: null };
+const DEFAULT_FILTER: TxnFilterInput = {
+  accountId: null,
+  limit: null,
+  offset: null,
+  search: null,
+  filterPreset: null,
+  startDate: null,
+  endDate: null,
+};
 
 export function useTransactions(filter: TxnFilterInput = DEFAULT_FILTER) {
   return useQuery<Transaction[]>({

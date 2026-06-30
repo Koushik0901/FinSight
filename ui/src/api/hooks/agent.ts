@@ -122,3 +122,21 @@ export function useTriggerCategorize() {
     },
   });
 }
+
+export function useTriggerRecategorizeLowConfidence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.triggerRecategorizeLowConfidence();
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      setTimeout(() => {
+        void qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+        void qc.invalidateQueries({ queryKey: ["action-items"] });
+        void qc.invalidateQueries({ queryKey: ["agent-status"] });
+      }, 2000);
+    },
+  });
+}

@@ -1,7 +1,20 @@
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ActionItem } from "../api/client";
+import { toast } from "sonner";
+import type { ActionItem, ImportCandidateWithMatches, SimpleFinAlert, TransferSuggestionInfo } from "../api/client";
 import { useActionItems } from "../api/hooks/inbox";
+import { useTriggerRecategorizeLowConfidence } from "../api/hooks/agent";
+import {
+  useSimpleFinAlerts,
+  useAcknowledgeSimpleFinAlert,
+  useSimpleFinTransferSuggestions,
+  useConfirmSimpleFinTransfer,
+  useRejectSimpleFinTransfer,
+  useImportReviewCandidates,
+  useAcceptImportCandidateMatch,
+  useCreateImportCandidateTransaction,
+  useDismissImportCandidate,
+} from "../api/hooks/simplefin";
 import { money } from "../utils/format";
 import Button from "../components/Button";
 import Card from "../components/Card";
@@ -46,7 +59,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   savings: "Savings & emergency fund",
 };
 
-function ActionItemCard({ item }: { item: ActionItem }) {
+function ActionItemCard({ item, onRerunAi }: { item: ActionItem; onRerunAi?: () => void }) {
   const navigate = useNavigate();
   const CategoryIcon = CATEGORY_ICONS[item.category] ?? I.Bell;
   const catTone = CATEGORY_TONES[item.category] ?? "default";
@@ -107,9 +120,287 @@ function ActionItemCard({ item }: { item: ActionItem }) {
         {item.detail}
       </p>
 
-      <div style={{ paddingLeft: 46 }}>
+      <div className="row-sm" style={{ paddingLeft: 46 }}>
         <Button variant="default" size="sm" onClick={handleAction}>
           {item.actionLabel} →
+        </Button>
+        {onRerunAi && (
+          <Button variant="ghost" size="sm" onClick={onRerunAi} title="Re-run AI categorization on uncertain transactions">
+            ↻ Re-run AI
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function AlertCard({ alert }: { alert: SimpleFinAlert }) {
+  const ack = useAcknowledgeSimpleFinAlert();
+  const tone =
+    alert.severity === "error" ? "negative" :
+    alert.severity === "warning" ? "warning" :
+    "default";
+
+  return (
+    <Card
+      className="stack stack-sm"
+      style={{
+        padding: "18px 20px",
+        borderLeftWidth: 3,
+        borderLeftColor:
+          alert.severity === "error" ? "var(--negative)" :
+          alert.severity === "warning" ? "var(--warning)" :
+          "var(--line)",
+      }}
+    >
+      <div className="row-md" style={{ alignItems: "flex-start" }}>
+        <div
+          className="row"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: "var(--surface-2)",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+          aria-hidden="true"
+        >
+          <I.Bell width={16} height={16} style={{ color: "var(--accent)" }} />
+        </div>
+        <div className="grow stack stack-xs">
+          <div className="row-sm wrap" style={{ marginBottom: 4 }}>
+            <Badge tone={tone}>{alert.severity}</Badge>
+            <Badge tone="default">Sync</Badge>
+          </div>
+          <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4 }}>{alert.message}</div>
+        </div>
+      </div>
+      <div className="row-sm" style={{ paddingLeft: 46 }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            ack.mutate(alert.id, {
+              onSuccess: () => toast.success("Alert dismissed"),
+              onError: () => toast.error("Could not dismiss alert"),
+            })
+          }
+          loading={ack.isPending}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function TransferSuggestionCard({ suggestion }: { suggestion: TransferSuggestionInfo }) {
+  const confirm = useConfirmSimpleFinTransfer();
+  const reject = useRejectSimpleFinTransfer();
+  const tone =
+    suggestion.confidence === "high" ? "positive" :
+    suggestion.confidence === "medium" ? "warning" :
+    "default";
+
+  return (
+    <Card
+      className="stack stack-sm"
+      style={{
+        padding: "18px 20px",
+        borderLeftWidth: 3,
+        borderLeftColor:
+          suggestion.confidence === "high" ? "var(--positive)" :
+          suggestion.confidence === "medium" ? "var(--warning)" :
+          "var(--line)",
+      }}
+    >
+      <div className="row-md" style={{ alignItems: "flex-start" }}>
+        <div
+          className="row"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: "var(--surface-2)",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+          aria-hidden="true"
+        >
+          <I.ArrowRight width={16} height={16} style={{ color: "var(--accent)" }} />
+        </div>
+        <div className="grow stack stack-xs">
+          <div className="row-sm wrap" style={{ marginBottom: 4 }}>
+            <Badge tone={tone}>{suggestion.confidence} confidence</Badge>
+            <Badge tone="default">Transfer</Badge>
+          </div>
+          <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4 }}>
+            Transfer from {suggestion.fromAccountName} to {suggestion.toAccountName}
+          </div>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 13, lineHeight: 1.6, paddingLeft: 46, margin: 0 }}>
+        {suggestion.fromMerchant} ({money(suggestion.fromAmountCents)}) →{" "}
+        {suggestion.toMerchant} ({money(suggestion.toAmountCents)})
+      </p>
+      <div className="row-sm" style={{ paddingLeft: 46 }}>
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() =>
+            confirm.mutate(suggestion.id, {
+              onSuccess: () => toast.success("Transfer confirmed"),
+              onError: () => toast.error("Could not confirm transfer"),
+            })
+          }
+          loading={confirm.isPending}
+        >
+          Confirm
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            reject.mutate(suggestion.id, {
+              onSuccess: () => toast.success("Suggestion removed"),
+              onError: () => toast.error("Could not remove suggestion"),
+            })
+          }
+          loading={reject.isPending}
+        >
+          Not a transfer
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function ImportReviewCard({ item }: { item: ImportCandidateWithMatches }) {
+  const accept = useAcceptImportCandidateMatch();
+  const createNew = useCreateImportCandidateTransaction();
+  const dismiss = useDismissImportCandidate();
+  const { candidate, matches } = item;
+  const recommended = matches.find((m) => m.isRecommended) ?? matches[0] ?? null;
+  const source = candidate.source === "simplefin" ? "SimpleFIN" : "CSV";
+
+  return (
+    <Card
+      className="stack stack-sm"
+      style={{
+        padding: "18px 20px",
+        borderLeftWidth: 3,
+        borderLeftColor: candidate.confidence >= 85 ? "var(--warning)" : "var(--accent)",
+      }}
+    >
+      <div className="row-md" style={{ alignItems: "flex-start" }}>
+        <div
+          className="row"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 8,
+            background: "var(--surface-2)",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+          aria-hidden="true"
+        >
+          <I.Flow width={16} height={16} style={{ color: "var(--accent)" }} />
+        </div>
+        <div className="grow stack stack-xs">
+          <div className="row-sm wrap" style={{ marginBottom: 4 }}>
+            <Badge tone="accent">{source}</Badge>
+            <Badge tone={candidate.confidence >= 85 ? "warning" : "default"}>
+              {candidate.confidence}% confidence
+            </Badge>
+          </div>
+          <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.4 }}>
+            Review {candidate.merchantRaw}
+          </div>
+        </div>
+        <div className="num money" style={{ fontSize: 13, color: "var(--ink-mute)", flexShrink: 0 }}>
+          {money(candidate.amountCents)}
+        </div>
+      </div>
+
+      <p className="muted" style={{ fontSize: 13, lineHeight: 1.6, paddingLeft: 46, margin: 0 }}>
+        {candidate.reason}. Posted {new Date(candidate.postedAt).toLocaleDateString()}.
+        {recommended && (
+          <>
+            {" "}Recommended match: transaction {recommended.transactionId.slice(0, 8)} · score {recommended.score}.
+          </>
+        )}
+      </p>
+
+      {matches.length > 1 && (
+        <div className="stack stack-xs" style={{ paddingLeft: 46 }}>
+          {matches.slice(0, 3).map((match) => (
+            <button
+              key={match.id}
+              type="button"
+              className="chip"
+              onClick={() =>
+                accept.mutate(
+                  { candidateId: candidate.id, transactionId: match.transactionId },
+                  {
+                    onSuccess: () => toast.success("Import candidate matched"),
+                    onError: () => toast.error("Could not match candidate"),
+                  },
+                )
+              }
+            >
+              Match {match.transactionId.slice(0, 8)} · {match.score}
+              {match.isRecommended ? " · recommended" : ""}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="row-sm wrap" style={{ paddingLeft: 46 }}>
+        {recommended && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() =>
+              accept.mutate(
+                { candidateId: candidate.id, transactionId: recommended.transactionId },
+                {
+                  onSuccess: () => toast.success("Import candidate matched"),
+                  onError: () => toast.error("Could not match candidate"),
+                },
+              )
+            }
+            loading={accept.isPending}
+          >
+            Accept match
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            createNew.mutate(candidate.id, {
+              onSuccess: () => toast.success("Transaction created"),
+              onError: () => toast.error("Could not create transaction"),
+            })
+          }
+          loading={createNew.isPending}
+        >
+          Create new
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            dismiss.mutate(candidate.id, {
+              onSuccess: () => toast.success("Candidate dismissed"),
+              onError: () => toast.error("Could not dismiss candidate"),
+            })
+          }
+          loading={dismiss.isPending}
+        >
+          Dismiss
         </Button>
       </div>
     </Card>
@@ -118,11 +409,17 @@ function ActionItemCard({ item }: { item: ActionItem }) {
 
 export default function Inbox() {
   const { data: items = [], isLoading, error, dataUpdatedAt } = useActionItems();
+  const { data: alerts = [] } = useSimpleFinAlerts();
+  const { data: transfers = [] } = useSimpleFinTransferSuggestions();
+  const { data: importReview = [] } = useImportReviewCandidates();
   const qc = useQueryClient();
+  const rerunAi = useTriggerRecategorizeLowConfidence();
 
   const highItems = items.filter((i) => i.priority === "high");
   const mediumItems = items.filter((i) => i.priority === "medium");
   const lowItems = items.filter((i) => i.priority === "low");
+
+  const allCount = items.length + alerts.length + transfers.length + importReview.length;
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
@@ -130,6 +427,16 @@ export default function Inbox() {
 
   const handleRefresh = () => {
     void qc.invalidateQueries({ queryKey: ["action-items"] });
+    void qc.invalidateQueries({ queryKey: ["simplefin", "alerts"] });
+    void qc.invalidateQueries({ queryKey: ["simplefin", "transfers"] });
+    void qc.invalidateQueries({ queryKey: ["simplefin", "importReview"] });
+  };
+
+  const handleRerunAi = () => {
+    rerunAi.mutate(undefined, {
+      onSuccess: () => toast.success("Re-categorization queued", { description: "The AI will re-check uncertain categories shortly." }),
+      onError: (e) => toast.error("Could not queue re-check", { description: String(e) }),
+    });
   };
 
   if (isLoading) return <div className="stub">Scanning your finances…</div>;
@@ -141,12 +448,12 @@ export default function Inbox() {
         <div className="screen-header-text">
           <div className="screen-eyebrow">
             <span className="dot" />
-            Inbox · {items.length} item{items.length !== 1 ? "s" : ""}
+            Inbox · {allCount} item{allCount !== 1 ? "s" : ""}
           </div>
           <h1>What needs your attention.</h1>
         </div>
         <div className="row-md wrap">
-          {items.length > 0 && (
+          {allCount > 0 && (
             <CopilotNudge
               prompt="I have some action items in my financial inbox. Help me prioritize and tackle them one by one."
               label="Help me work through these"
@@ -166,7 +473,36 @@ export default function Inbox() {
         )}
       </p>
 
-      {items.length === 0 ? (
+      {importReview.length > 0 && (
+        <section className="stack stack-md" style={{ marginBottom: 24 }} aria-labelledby="inbox-import-review">
+          <div id="inbox-import-review" className="eyebrow">
+            Import review · {importReview.length}
+          </div>
+          <div className="stack stack-md">
+            {importReview.map((candidate) => (
+              <ImportReviewCard key={candidate.candidate.id} item={candidate} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(alerts.length > 0 || transfers.length > 0) && (
+        <section className="stack stack-md" style={{ marginBottom: 24 }} aria-labelledby="inbox-simplefin">
+          <div id="inbox-simplefin" className="eyebrow">
+            Bank sync
+          </div>
+          <div className="stack stack-md">
+            {alerts.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} />
+            ))}
+            {transfers.map((t) => (
+              <TransferSuggestionCard key={t.id} suggestion={t} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {allCount === 0 ? (
         <EmptyState
           icon={<I.Check style={{ color: "var(--positive)", width: 40, height: 40 }} />}
           title="All clear"
@@ -192,7 +528,11 @@ export default function Inbox() {
               </div>
               <div className="stack stack-md">
                 {highItems.map((item) => (
-                  <ActionItemCard key={item.id} item={item} />
+                  <ActionItemCard
+                    key={item.id}
+                    item={item}
+                    onRerunAi={item.id === "low-confidence-categorizations" ? handleRerunAi : undefined}
+                  />
                 ))}
               </div>
             </section>
@@ -209,7 +549,11 @@ export default function Inbox() {
               </div>
               <div className="stack stack-md">
                 {mediumItems.map((item) => (
-                  <ActionItemCard key={item.id} item={item} />
+                  <ActionItemCard
+                    key={item.id}
+                    item={item}
+                    onRerunAi={item.id === "low-confidence-categorizations" ? handleRerunAi : undefined}
+                  />
                 ))}
               </div>
             </section>
@@ -226,7 +570,11 @@ export default function Inbox() {
               </div>
               <div className="stack stack-md">
                 {lowItems.map((item) => (
-                  <ActionItemCard key={item.id} item={item} />
+                  <ActionItemCard
+                    key={item.id}
+                    item={item}
+                    onRerunAi={item.id === "low-confidence-categorizations" ? handleRerunAi : undefined}
+                  />
                 ))}
               </div>
             </section>

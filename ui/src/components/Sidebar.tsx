@@ -2,9 +2,10 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import * as I from "./Icons";
-import { useNeedsReviewCount } from "../api/hooks/agent";
+import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { useResetOnboarding } from "../api/hooks/onboarding";
-import { useActionItems } from "../api/hooks/inbox";
+import { useAccounts } from "../api/hooks/accounts";
+import { useGoals } from "../api/hooks/budget";
 import { commands } from "../api/client";
 import { isTauriRuntime } from "../utils/runtime";
 
@@ -17,10 +18,6 @@ interface NavEntry {
 
 const NAV_MAIN: NavEntry[] = [
   { id: "today", path: "/", label: "Today", Icon: I.Today },
-  { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
-  { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
-  { id: "journey", path: "/journey", label: "Journey", Icon: I.Journey },
-  { id: "recipes", path: "/recipes", label: "Recipes", Icon: I.Recipe },
   { id: "insights", path: "/insights", label: "Insights", Icon: I.Sparkle },
   { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
   { id: "transactions", path: "/transactions", label: "Transactions", Icon: I.Flow },
@@ -33,6 +30,7 @@ const NAV_MAIN: NavEntry[] = [
 ];
 
 const NAV_WORKSHOP: NavEntry[] = [
+  { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
   { id: "rules", path: "/rules", label: "Rules & agents", Icon: I.Bolt },
   { id: "settings", path: "/settings", label: "Settings", Icon: I.Gear },
 ];
@@ -43,10 +41,11 @@ interface Props {
 
 export function Sidebar({ onOpenCmd }: Props) {
   const { data: needsReview = 0 } = useNeedsReviewCount();
+  const { data: agentStatus } = useAgentStatus();
+  const { data: accounts = [] } = useAccounts();
+  const { data: goals = [] } = useGoals();
   const navigate = useNavigate();
   const resetOnboarding = useResetOnboarding();
-  const { data: actionItems = [] } = useActionItems();
-  const highPriorityCount = actionItems.filter((i) => i.priority === "high").length;
   const canUseDesktopApi = isTauriRuntime();
 
   const { data: txnCount = 0 } = useQuery<number>({
@@ -56,27 +55,27 @@ export function Sidebar({ onOpenCmd }: Props) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    staleTime: 120_000,
     enabled: canUseDesktopApi,
   });
 
   const { data: pendingBundles = [] } = useQuery({
     queryKey: ["action-bundles", "pending", null],
     queryFn: async () => {
-      const result = await commands.listActionBundles("pending", null);
+      const result = await commands.listActionBundles("pending", null, null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
     enabled: canUseDesktopApi,
   });
 
   const pendingBundleCount = pendingBundles.length;
-
-  const formattedTxnCount =
-    txnCount >= 1000 ? `${(txnCount / 1000).toFixed(1)}k` : String(txnCount);
+  const formattedTxnCount = txnCount >= 1000 ? `${(txnCount / 1000).toFixed(1)}k` : String(txnCount);
+  const leadAvatar = (accounts[0]?.name?.trim().slice(0, 1) || "Y").toUpperCase();
+  const altAvatar = (accounts[1]?.name?.trim().slice(0, 1) || "F").toUpperCase();
+  const profileLabel = accounts.length > 1 ? "Household" : "Personal";
+  const hasAgentActivity = Boolean(agentStatus?.lastScanAt || pendingBundleCount > 0);
 
   const handleRunSetup = async () => {
     try {
@@ -87,11 +86,39 @@ export function Sidebar({ onOpenCmd }: Props) {
     }
   };
 
+  const renderBadge = (id: string) => {
+    if (id === "accounts" && accounts.length > 0) return <span className="badge">{accounts.length}</span>;
+    if (id === "transactions" && txnCount > 0) return <span className="badge">{formattedTxnCount}</span>;
+    if (id === "goals" && goals.length > 0) return <span className="badge">{goals.length}</span>;
+    if (id === "copilot" && pendingBundleCount > 0) return <span className="badge accent">{pendingBundleCount}</span>;
+    return null;
+  };
+
+  const renderPulse = (id: string) => {
+    if (id === "insights" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
+    if (id === "rules" && needsReview > 0) return <span className="pulse" />;
+    return null;
+  };
+
   return (
     <aside className="sidebar" aria-label="Primary navigation">
       <div className="brand">
         <div className="mark" aria-hidden="true" />
         <div className="wm">FinSight</div>
+      </div>
+
+      <div className="who" aria-label={`${profileLabel} workspace`}>
+        <div className="stack" aria-hidden="true">
+          <div className="av">{leadAvatar}</div>
+          <div className="av b">{altAvatar}</div>
+        </div>
+        <div className="meta">
+          <div className="name">Your workspace</div>
+          <div className="sub">
+            {profileLabel} · {accounts.length} account{accounts.length === 1 ? "" : "s"}
+          </div>
+        </div>
+        <I.Down className="ico" style={{ color: "var(--ink-faint)" }} aria-hidden="true" />
       </div>
 
       <button
@@ -115,29 +142,10 @@ export function Sidebar({ onOpenCmd }: Props) {
           >
             <n.Icon className="ico" aria-hidden="true" />
             <span>{n.label}</span>
-            {n.id === "inbox" && highPriorityCount > 0 && (
-              <span
-                className="badge negative"
-                style={{ marginLeft: "auto" }}
-                title={`${highPriorityCount} high-priority item${highPriorityCount !== 1 ? "s" : ""}`}
-              >
-                {highPriorityCount}
-              </span>
-            )}
-            {n.id === "copilot" && pendingBundleCount > 0 && (
-              <span
-                className="badge accent"
-                style={{ marginLeft: "auto" }}
-                title={`${pendingBundleCount} bundle${pendingBundleCount !== 1 ? "s" : ""} awaiting review`}
-              >
-                {pendingBundleCount}
-              </span>
-            )}
-            {n.id === "transactions" && txnCount > 0 && (
-              <span className="badge" style={{ marginLeft: "auto" }}>
-                {formattedTxnCount}
-              </span>
-            )}
+            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {renderPulse(n.id)}
+              {renderBadge(n.id)}
+            </span>
           </NavLink>
         ))}
 
@@ -151,22 +159,23 @@ export function Sidebar({ onOpenCmd }: Props) {
           >
             <n.Icon className="ico" aria-hidden="true" />
             <span>{n.label}</span>
-            {n.id === "rules" && needsReview > 0 && (
-              <span className="pulse" title={`${needsReview} need review`} />
-            )}
+            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {renderPulse(n.id)}
+              {renderBadge(n.id)}
+            </span>
           </NavLink>
         ))}
       </nav>
 
       <div className="foot">
-        <div className="nav-item trust" aria-hidden="false">
-          <I.Lock className="ico" aria-hidden="true" />
-          <span>Local-only · encrypted</span>
-        </div>
         <button type="button" className="nav-item ghost" onClick={() => void handleRunSetup()}>
           <I.Sparkle className="ico" aria-hidden="true" />
           <span>Run setup again</span>
         </button>
+        <div className="nav-item trust" aria-hidden="false">
+          <I.Lock className="ico" aria-hidden="true" />
+          <span>Local-only · encrypted</span>
+        </div>
       </div>
     </aside>
   );

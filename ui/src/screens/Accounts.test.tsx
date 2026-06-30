@@ -10,6 +10,13 @@ vi.mock("../api/hooks/accounts", () => ({
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useArchiveAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useAccountBalanceSparklines: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useAccountBalanceHistory: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+}));
+
+vi.mock("../api/hooks/simplefin", () => ({
+  useSyncSimpleFinAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useSyncAllSimpleFinAccounts: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
 vi.mock("../api/hooks/assets", () => ({
@@ -41,10 +48,11 @@ describe("Accounts — manual assets", () => {
     expect(screen.getByText("Mortgage")).toBeInTheDocument();
   });
 
-  it("shows a net-worth header of accounts + assets − liabilities", () => {
+  it("shows a net-worth stat of accounts + assets − liabilities", () => {
     render(<Accounts />, { wrapper: createWrapper() });
-    expect(screen.getByText("Net worth")).toBeInTheDocument();
-    const header = screen.getByText("Net worth").closest("header")!;
-    expect(within(header).getByText("$300,000")).toBeInTheDocument();
+    expect(screen.getByText("Net worth total")).toBeInTheDocument();
+    // $300,000 value appears in the stat row (outside the header)
+    const statValues = screen.getAllByText("$300,000");
+    expect(statValues.length).toBeGreaterThan(0);
   });
 });

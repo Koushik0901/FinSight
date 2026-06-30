@@ -1,6 +1,6 @@
 use crate::error::CoreResult;
 use crate::models::{NewTransaction, ProposedRule, Transaction, TransactionStatus, TxnPatch};
-use crate::repos::categorizations;
+use crate::repos::{accounts, categorizations};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
@@ -10,8 +10,8 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
     let now = Utc::now();
     conn.execute(
         "INSERT INTO transactions \
-         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at, imported_id, source) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11)",
+         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at, imported_id, source, raw_synced_data, pending, external_tx_id, external_account_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             &id,
             &input.account_id,
@@ -24,9 +24,13 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
             now.to_rfc3339(),
             &input.imported_id,
             &input.source,
+            &input.raw_synced_data,
+            input.pending,
+            &input.external_tx_id,
+            &input.external_account_id,
         ],
     )?;
-    Ok(Transaction {
+    let txn = Transaction {
         id,
         account_id: input.account_id,
         posted_at: input.posted_at,
@@ -49,7 +53,15 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         is_split: false,
         imported_id: input.imported_id,
         source: input.source,
-    })
+        raw_synced_data: input.raw_synced_data,
+        pending: input.pending,
+        external_tx_id: input.external_tx_id,
+        external_account_id: input.external_account_id,
+    };
+    let account_id = txn.account_id.clone();
+    // Keep SimpleFin-linked account balances in sync with the ledger.
+    accounts::recompute_balance_if_linked(conn, &account_id)?;
+    Ok(txn)
 }
 
 pub struct TxnFilter {
@@ -58,6 +70,8 @@ pub struct TxnFilter {
     pub offset: i64,
     pub search: Option<String>,
     pub filter_preset: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
 }
 
 impl Default for TxnFilter {
@@ -68,6 +82,8 @@ impl Default for TxnFilter {
             offset: 0,
             search: None,
             filter_preset: None,
+            start_date: None,
+            end_date: None,
         }
     }
 }
@@ -78,7 +94,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source \
+                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id ",
@@ -99,6 +116,14 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
         let pattern = format!("%{}%", search);
         params.push(Box::new(pattern.clone()));
         params.push(Box::new(pattern));
+    }
+    if let Some(start_date) = filter.start_date.as_ref() {
+        conditions.push("t.posted_at >= ?".to_string());
+        params.push(Box::new(start_date.clone()));
+    }
+    if let Some(end_date) = filter.end_date.as_ref() {
+        conditions.push("t.posted_at <= ?".to_string());
+        params.push(Box::new(end_date.clone()));
     }
     match filter.filter_preset.as_deref() {
         Some("needs_review") => {
@@ -166,6 +191,10 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 is_split: r.get::<_, i64>(19)? != 0,
                 imported_id: r.get(20)?,
                 source: r.get(21)?,
+                raw_synced_data: r.get(22)?,
+                pending: r.get::<_, i64>(23)? != 0,
+                external_tx_id: r.get(24)?,
+                external_account_id: r.get(25)?,
             })
         },
     )?;
@@ -197,6 +226,12 @@ pub fn update(
         conn.execute(
             "UPDATE transactions SET merchant_raw = ?1 WHERE id = ?2",
             params![merchant, id],
+        )?;
+    }
+    if let Some(ai_confidence) = patch.ai_confidence {
+        conn.execute(
+            "UPDATE transactions SET ai_confidence = ?1 WHERE id = ?2",
+            params![ai_confidence, id],
         )?;
     }
 
@@ -272,11 +307,14 @@ pub fn update(
 
     // Fetch and return updated transaction
     let txn = get_by_id(conn, id)?;
+    accounts::recompute_balance_if_linked(conn, &txn.account_id)?;
     Ok((txn, proposed_rule))
 }
 
 pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
+    let txn = get_by_id(conn, id)?;
     conn.execute("DELETE FROM transactions WHERE id = ?1", params![id])?;
+    accounts::recompute_balance_if_linked(conn, &txn.account_id)?;
     Ok(())
 }
 
@@ -300,7 +338,8 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source \
+                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -348,6 +387,10 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 is_split: r.get::<_, i64>(19)? != 0,
                 imported_id: r.get(20)?,
                 source: r.get(21)?,
+                raw_synced_data: r.get(22)?,
+                pending: r.get::<_, i64>(23)? != 0,
+                external_tx_id: r.get(24)?,
+                external_account_id: r.get(25)?,
             })
         },
     )
@@ -401,6 +444,18 @@ mod tests {
                 apy_pct: None,
                 simplefin_account_id: None,
                 nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "cash".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
             },
         )
         .unwrap();
@@ -417,6 +472,10 @@ mod tests {
                 status: TransactionStatus::Cleared,
                 imported_id: None,
                 source: None,
+                raw_synced_data: None,
+                pending: false,
+                external_tx_id: None,
+                external_account_id: None,
             },
         )
         .unwrap();

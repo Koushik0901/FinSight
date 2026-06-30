@@ -44,7 +44,7 @@ pub async fn import_csv(
     let summary = tokio::task::spawn_blocking(move || {
         CsvProvider::import(&path, &account_id, &import_id, &mapping, &db, |p| {
             let _ = app_emit.emit(
-                "import.progress",
+                "import-progress",
                 ProgressPayload {
                     import_id: import_id_for_progress.clone(),
                     rows_done: p.rows_done,
@@ -58,7 +58,7 @@ pub async fn import_csv(
     .map_err(|e| AppError::new("internal", format!("join: {e}")))?;
 
     let summary = summary?;
-    app.emit("import.complete", &summary).ok();
+    app.emit("import-complete", &summary).ok();
 
     let notify_app = app.clone();
     let notify_db = (*state.db).clone();

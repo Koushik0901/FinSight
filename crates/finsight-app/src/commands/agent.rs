@@ -12,7 +12,7 @@ use finsight_agent::{
         engine::ReasoningEngine,
         tools::{act, read, ToolSet},
     },
-    CompletionProvider, ReasoningResult,
+    CompletionProvider, ReasoningResult, LOW_CONFIDENCE_THRESHOLD,
 };
 use finsight_core::models::{NewRule, RuleProposal};
 use finsight_core::repos::{rule_proposals, rules, run};
@@ -192,10 +192,10 @@ pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppRes
     run(&db, |conn| {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM transactions \
-             WHERE ai_confidence < 0.6 \
+             WHERE ai_confidence < ?1 \
                AND (SELECT source FROM categorizations c \
                     WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm'",
-            [],
+            rusqlite::params![LOW_CONFIDENCE_THRESHOLD],
             |r| r.get(0),
         )?;
         Ok(count as u32)
@@ -211,6 +211,22 @@ pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<
         .agent
         .tx
         .try_send(AgentJob::CategorizeAll)
+        .map_err(|e| AppError::new("agent", format!("queue full: {e}")))?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+/// Queue a re-categorization pass for all low-confidence LLM assignments.
+/// Runs the rule engine first (picks up any new rules the user created), then
+/// the LLM for whatever remains uncertain.
+pub async fn trigger_recategorize_low_confidence(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<()> {
+    state
+        .agent
+        .tx
+        .try_send(AgentJob::RecategorizeLowConfidence)
         .map_err(|e| AppError::new("agent", format!("queue full: {e}")))?;
     Ok(())
 }
@@ -441,6 +457,57 @@ pub struct AgentScenarioAlternative {
     pub tradeoff: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTableBlock {
+    pub title: Option<String>,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentChartPoint {
+    pub label: String,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentChartBlock {
+    pub title: Option<String>,
+    pub series_label: Option<String>,
+    pub data: Vec<AgentChartPoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMetricBlock {
+    pub label: String,
+    pub value: String,
+    pub detail: Option<String>,
+    pub tone: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AgentResponseBlock {
+    Markdown {
+        markdown: String,
+    },
+    Table(AgentTableBlock),
+    BarChart(AgentChartBlock),
+    LineChart(AgentChartBlock),
+    MetricGrid {
+        metrics: Vec<AgentMetricBlock>,
+    },
+    Callout {
+        tone: String,
+        title: Option<String>,
+        body: String,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentAnswer {
@@ -456,9 +523,77 @@ pub struct AgentAnswer {
     pub missing_data: Vec<String>,
     pub alternatives: Vec<AgentScenarioAlternative>,
     pub follow_up_questions: Vec<String>,
+    pub response_blocks: Vec<AgentResponseBlock>,
 }
 
-fn build_toolset() -> ToolSet {
+pub(crate) fn enrich_agent_answer(answer: &mut AgentAnswer) {
+    if answer.response_blocks.is_empty() {
+        if !answer.prose.trim().is_empty() {
+            answer.response_blocks.push(AgentResponseBlock::Markdown {
+                markdown: answer.prose.clone(),
+            });
+        }
+        if !answer.reasoning.trim().is_empty() {
+            answer.response_blocks.push(AgentResponseBlock::Callout {
+                tone: "info".to_string(),
+                title: Some("Reasoning".to_string()),
+                body: answer.reasoning.clone(),
+            });
+        }
+        if !answer.alternatives.is_empty() {
+            answer
+                .response_blocks
+                .push(AgentResponseBlock::Table(AgentTableBlock {
+                    title: Some("Alternatives compared".to_string()),
+                    columns: vec![
+                        "Scenario".to_string(),
+                        "Numbers used".to_string(),
+                        "Tradeoff".to_string(),
+                    ],
+                    rows: answer
+                        .alternatives
+                        .iter()
+                        .map(|alt| {
+                            vec![alt.name.clone(), alt.summary.clone(), alt.tradeoff.clone()]
+                        })
+                        .collect(),
+                }));
+        }
+    }
+}
+
+pub(crate) fn parse_response_blocks(raw: &serde_json::Value) -> Vec<AgentResponseBlock> {
+    raw.get("response_blocks")
+        .or_else(|| raw.get("responseBlocks"))
+        .and_then(|v| serde_json::from_value::<Vec<AgentResponseBlock>>(v.clone()).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(valid_response_block)
+        .take(8)
+        .collect()
+}
+
+fn valid_response_block(block: &AgentResponseBlock) -> bool {
+    match block {
+        AgentResponseBlock::Markdown { markdown } => !markdown.trim().is_empty(),
+        AgentResponseBlock::Table(table) => {
+            !table.columns.is_empty()
+                && table.columns.len() <= 8
+                && table.rows.len() <= 50
+                && table
+                    .rows
+                    .iter()
+                    .all(|row| row.len() == table.columns.len())
+        }
+        AgentResponseBlock::BarChart(chart) | AgentResponseBlock::LineChart(chart) => {
+            !chart.data.is_empty() && chart.data.len() <= 30
+        }
+        AgentResponseBlock::MetricGrid { metrics } => !metrics.is_empty() && metrics.len() <= 12,
+        AgentResponseBlock::Callout { body, .. } => !body.trim().is_empty(),
+    }
+}
+
+pub(crate) fn build_toolset() -> ToolSet {
     let mut tools = ToolSet::new();
     tools.register(read::get_financial_snapshot());
     tools.register(read::analyze_cash_inflow());
@@ -580,7 +715,7 @@ fn mentions_investing(question: &str) -> bool {
         .any(|term| q.contains(term))
 }
 
-fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
+pub(crate) fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
     answer.missing_data.sort();
     answer.missing_data.dedup();
     answer.assumptions.sort();
@@ -646,7 +781,9 @@ fn debt_goal_alternatives_to_agent(
         })
         .collect()
 }
-fn planner_answer_to_agent_answer(answer: planning::StructuredFinanceAnswer) -> AgentAnswer {
+pub(crate) fn planner_answer_to_agent_answer(
+    answer: planning::StructuredFinanceAnswer,
+) -> AgentAnswer {
     let mut prose_parts = Vec::new();
     if !answer.recommendation.trim().is_empty() {
         prose_parts.push(answer.recommendation.clone());
@@ -720,9 +857,10 @@ fn planner_answer_to_agent_answer(answer: planning::StructuredFinanceAnswer) -> 
         missing_data,
         alternatives: planner_alternatives_to_agent(&answer.alternatives),
         follow_up_questions: answer.follow_up_questions,
+        response_blocks: Vec::new(),
     }
 }
-fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
+pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
     let used_tool = result
         .trace
         .iter()
@@ -730,7 +868,7 @@ fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
     used_tool && !result.content.trim().is_empty() && !result.data_sources.is_empty()
 }
 
-fn reasoning_result_to_agent_answer(
+pub(crate) fn reasoning_result_to_agent_answer(
     result: ReasoningResult,
     bundle_id: Option<String>,
 ) -> AgentAnswer {
@@ -762,6 +900,7 @@ fn reasoning_result_to_agent_answer(
         missing_data: result.missing_data,
         alternatives: Vec::new(),
         follow_up_questions: result.follow_up_questions,
+        response_blocks: Vec::new(),
     }
 }
 #[cfg(test)]
@@ -798,6 +937,7 @@ fn direct_finance_answer(
                         missing_data,
                         alternatives: Vec::new(),
                         follow_up_questions,
+                        response_blocks: Vec::new(),
                     }));
                 }
             };
@@ -843,6 +983,7 @@ fn direct_finance_answer(
                 missing_data,
                 alternatives: Vec::new(),
                 follow_up_questions,
+                response_blocks: Vec::new(),
             })
         }
         FinanceQuestionKind::GoalEta => {
@@ -865,6 +1006,7 @@ fn direct_finance_answer(
                         missing_data,
                         alternatives: Vec::new(),
                         follow_up_questions,
+                        response_blocks: Vec::new(),
                     }));
                 }
             };
@@ -897,6 +1039,7 @@ fn direct_finance_answer(
                     missing_data,
                     alternatives: Vec::new(),
                     follow_up_questions,
+                    response_blocks: Vec::new(),
                 }));
             };
             let eta = finance::calculate_goal_eta(conn, &goal.id, amount_cents, &cadence)
@@ -939,6 +1082,7 @@ fn direct_finance_answer(
                 missing_data,
                 alternatives: Vec::new(),
                 follow_up_questions,
+                response_blocks: Vec::new(),
             })
         }
         FinanceQuestionKind::DebtVsGoal => {
@@ -959,6 +1103,7 @@ fn direct_finance_answer(
                     missing_data,
                     alternatives: Vec::new(),
                     follow_up_questions,
+                    response_blocks: Vec::new(),
                 }));
             };
             let liability = find_best_liability_match(question, &snapshot.liabilities);
@@ -1039,6 +1184,7 @@ fn direct_finance_answer(
                 missing_data,
                 alternatives: debt_goal_alternatives_to_agent(&comparison.alternatives),
                 follow_up_questions,
+                response_blocks: Vec::new(),
             })
         }
         FinanceQuestionKind::DebtRanking => {
@@ -1089,6 +1235,7 @@ fn direct_finance_answer(
                 missing_data,
                 alternatives: Vec::new(),
                 follow_up_questions,
+                response_blocks: Vec::new(),
             })
         }
         FinanceQuestionKind::Snapshot => {
@@ -1118,6 +1265,7 @@ fn direct_finance_answer(
                 missing_data,
                 alternatives: Vec::new(),
                 follow_up_questions,
+                response_blocks: Vec::new(),
             })
         }
         FinanceQuestionKind::GeneralPlanning | FinanceQuestionKind::Unknown => None,
@@ -1230,6 +1378,7 @@ pub async fn ask_agent(
 
                 let mut answer = reasoning_result_to_agent_answer(result, Some(bundle_id));
                 validate_finance_answer(&question, &mut answer);
+                enrich_agent_answer(&mut answer);
                 return Ok(answer);
             }
             Ok(result) => {
@@ -1248,6 +1397,7 @@ pub async fn ask_agent(
                         .trace
                         .insert(0, "Tool loop produced an incomplete structured answer; used verified deterministic planner fallback.".to_string());
                     validate_finance_answer(&question, &mut mapped);
+                    enrich_agent_answer(&mut mapped);
                     return Ok(mapped);
                 }
 
@@ -1256,6 +1406,7 @@ pub async fn ask_agent(
                     "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.".to_string(),
                 );
                 validate_finance_answer(&question, &mut answer);
+                enrich_agent_answer(&mut answer);
                 return Ok(answer);
             }
             Err(tool_err) => {
@@ -1275,6 +1426,7 @@ pub async fn ask_agent(
                         format!("Tool loop failed; used verified deterministic planner fallback: {tool_err}"),
                     );
                     validate_finance_answer(&question, &mut mapped);
+                    enrich_agent_answer(&mut mapped);
                     return Ok(mapped);
                 }
                 return Err(AppError::new("agent.reasoning", tool_err.to_string()));
@@ -1395,7 +1547,15 @@ pub async fn ask_agent(
         let system = format!(
             "You are a personal finance assistant. Answer the user's question concisely \
              based on their real financial data provided below. \
-             Respond with JSON only, shape: {{\"prose\": \"...\", \"action_label\": \"...\", \"action_path\": \"...\"}}. \
+             Respond with JSON only. Shape: {{\"prose\": \"...\", \"action_label\": \"...\", \"action_path\": \"...\", \"response_blocks\": [...]}}. \
+             response_blocks is optional. Use it only when it improves clarity. Supported blocks: \
+             {{\"kind\":\"markdown\",\"markdown\":\"...\"}}, \
+             {{\"kind\":\"table\",\"title\":\"...\",\"columns\":[\"...\"],\"rows\":[[\"...\"]]}}, \
+             {{\"kind\":\"barChart\",\"title\":\"...\",\"seriesLabel\":\"...\",\"data\":[{{\"label\":\"...\",\"value\":123}}]}}, \
+             {{\"kind\":\"lineChart\",\"title\":\"...\",\"seriesLabel\":\"...\",\"data\":[{{\"label\":\"...\",\"value\":123}}]}}, \
+             {{\"kind\":\"metricGrid\",\"metrics\":[{{\"label\":\"...\",\"value\":\"...\",\"detail\":\"...\",\"tone\":\"neutral\"}}]}}, \
+             {{\"kind\":\"callout\",\"tone\":\"info\",\"title\":\"...\",\"body\":\"...\"}}. \
+             Do not include HTML. \
              action_label and action_path are optional — include only if a specific screen is directly relevant. \
              Valid paths: /, /accounts, /transactions, /budget, /categories, /recurring, /goals, /reports, /rules, /settings.\n\n\
              Financial context:\n{context}"
@@ -1435,8 +1595,10 @@ pub async fn ask_agent(
             missing_data: Vec::new(),
             alternatives: Vec::new(),
             follow_up_questions: Vec::new(),
+            response_blocks: parse_response_blocks(&raw),
         };
         validate_finance_answer(&question, &mut answer);
+        enrich_agent_answer(&mut answer);
         Ok(answer)
     }
 }

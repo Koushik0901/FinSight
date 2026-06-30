@@ -1,132 +1,50 @@
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCategoriesWithSpending, useSetCategorySpendingType } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
-import Card from "../components/Card";
-import Table from "../components/Table";
-import { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../components/Table";
-import Badge from "../components/Badge";
-import ProgressBar from "../components/ProgressBar";
 
-function PaceBar({ value, compare, color, label }: { value: number; compare: number; color: string; label: string }) {
-  const max = Math.max(value, compare, 1);
-  const pct = Math.min(120, (value / max) * 100);
-  const over = value > compare && compare > 0;
-  return (
-    <div className="row row-sm">
-      <div style={{ flex: 1, maxWidth: 180 }}>
-        <div style={{ "--accent": color } as React.CSSProperties}>
-          <ProgressBar
-            value={Math.round(pct)}
-            max={100}
-            size="sm"
-            tone={over ? "negative" : "default"}
-            aria-label={`Pace for ${label}`}
-          />
-        </div>
-      </div>
-      <span className={`num tabular ${over ? "neg" : "muted"}`} style={{ fontSize: 12, minWidth: 32 }}>
-        {Math.round(pct)}%
-      </span>
-    </div>
-  );
-}
+type Scope = "month" | "avg" | "year";
 
 const SPENDING_TYPE_OPTIONS = [
-  { value: "fixed", label: "Fixed", background: "var(--ink-mute)", color: "var(--bg)", border: "var(--ink-mute)" },
-  { value: "investments", label: "Investments", background: "var(--accent)", color: "var(--bg)", border: "var(--accent)" },
-  { value: "savings", label: "Savings", background: "#34D399", color: "var(--bg)", border: "#34D399" },
-  { value: "guilt_free", label: "Guilt-free", background: "#FB923C", color: "var(--bg)", border: "#FB923C" },
-  { value: "", label: "Untagged", background: "transparent", color: "var(--ink-mute)", border: "var(--line)" },
+  { value: "fixed", label: "Fixed" },
+  { value: "investments", label: "Investments" },
+  { value: "savings", label: "Savings" },
+  { value: "guilt_free", label: "Guilt-free" },
+  { value: "", label: "Untagged" },
 ] as const;
 
-function spendingTypeStyle(spendingType: string | null | undefined) {
-  const selected = SPENDING_TYPE_OPTIONS.find((option) => option.value === (spendingType ?? "")) ?? SPENDING_TYPE_OPTIONS[4];
-  return {
-    background: selected.background,
-    color: selected.color,
-    border: selected.value
-      ? `1px solid ${selected.border}`
-      : `1px dashed ${selected.border}`,
-  };
+function valueFor(category: CategoryWithSpending, scope: Scope) {
+  if (scope === "avg") return Math.round((category.thisMonthCents + category.lastMonthCents) / 2);
+  if (scope === "year") return category.yearTotalCents;
+  return category.thisMonthCents;
+}
+
+function compareFor(category: CategoryWithSpending, scope: Scope) {
+  if (scope === "avg") return category.thisMonthCents;
+  return category.lastMonthCents;
 }
 
 export default function Categories() {
-  const [scope, setScope] = useState<"month" | "avg" | "year">("month");
-  const { data: cats = [], isLoading, error } = useCategoriesWithSpending();
+  const [scope, setScope] = useState<Scope>("month");
+  const { data: categories = [], isLoading, error } = useCategoriesWithSpending();
   const setSpendingType = useSetCategorySpendingType();
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  // Filter to non-zero categories and sort by spend desc
-  const active = cats
-    .filter((c) =>
-      c.thisMonthCents > 0 ||
-      c.lastMonthCents > 0 ||
-      (scope === "year" && c.yearTotalCents > 0)
-    )
-    .sort((a, b) => b.thisMonthCents - a.thisMonthCents);
+  const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const compareLabel = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
 
-  const valueFor = (c: CategoryWithSpending) => {
-    if (scope === "avg") return Math.round((c.thisMonthCents + c.lastMonthCents) / 2);
-    if (scope === "year") return c.yearTotalCents;
-    return c.thisMonthCents;
-  };
-  const compareFor = (c: CategoryWithSpending) =>
-    scope === "avg" ? c.thisMonthCents : c.lastMonthCents;
-  const sorted = [...cats].sort((a, b) => {
-    const delta = valueFor(b) - valueFor(a);
-    if (delta !== 0) return delta;
-    return a.groupLabel.localeCompare(b.groupLabel) || a.label.localeCompare(b.label);
-  });
+  const sorted = useMemo(() => [...categories].sort((a, b) => valueFor(b, scope) - valueFor(a, scope) || a.label.localeCompare(b.label)), [categories, scope]);
+  const active = sorted.filter((category) => valueFor(category, scope) > 0 || compareFor(category, scope) > 0 || category.budgetCents > 0);
+  const totalThis = active.reduce((sum, category) => sum + valueFor(category, scope), 0);
+  const totalCompare = active.reduce((sum, category) => sum + compareFor(category, scope), 0);
+  const biggestDrop = active.map((category) => ({ category, delta: valueFor(category, scope) - compareFor(category, scope) })).sort((a, b) => a.delta - b.delta)[0];
+  const biggestRise = active.map((category) => ({ category, delta: valueFor(category, scope) - compareFor(category, scope) })).sort((a, b) => b.delta - a.delta)[0];
 
-  const totalThis = active.reduce((s, c) => s + valueFor(c), 0);
-  const totalLast = active.reduce((s, c) => s + compareFor(c), 0);
-
-  const delta = totalLast > 0 ? ((totalThis - totalLast) / totalLast) * 100 : 0;
-
-  const now = new Date();
-  const monthLabel = now.toLocaleString("default", { month: "long", year: "numeric" });
-  const lastMonthLabel = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    .toLocaleString("default", { month: "long" });
-
-  // §6c: AI insight sentence
-  const hasLastMonthData = active.some((c) => c.lastMonthCents > 0);
-  let insightJSX: ReactNode = null;
-  if (scope === "month" && hasLastMonthData && active.length >= 2) {
-    const withDelta = active.map((c) => ({ ...c, delta: c.thisMonthCents - c.lastMonthCents }));
-    const topGainer = withDelta.reduce((best, c) => c.delta < best.delta ? c : best);
-    const topRiser  = withDelta.reduce((best, c) => c.delta > best.delta ? c : best);
-    if (topGainer.delta < 0 && topRiser.delta > 0) {
-      insightJSX = (
-        <div className="muted" style={{ fontSize: 13, fontStyle: "italic", marginBottom: 12 }}>
-          ✦ <strong>{topGainer.label}</strong> dropped {money(Math.abs(topGainer.delta))} — biggest improvement.{" "}
-          <strong>{topRiser.label}</strong> rose by {money(topRiser.delta)}.
-        </div>
-      );
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="stub" aria-live="polite" aria-busy="true">
-        Loading categories…
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="stub" role="alert" aria-live="assertive">
-        Error loading categories.
-      </div>
-    );
-  }
-
-  const saveSpendingType = async (id: string, next: string) => {
+  const saveSpendingType = async (id: string, spendingType: string) => {
     setSavingId(id);
     try {
-      await setSpendingType.mutateAsync({ id, spendingType: next || null });
+      await setSpendingType.mutateAsync({ id, spendingType: spendingType || null });
       toast.success("Saved");
     } catch {
       toast.error("Could not save spending type");
@@ -135,171 +53,89 @@ export default function Categories() {
     }
   };
 
+  if (isLoading) return <div className="stub">Loading categories…</div>;
+  if (error) return <div className="stub" role="alert">Error loading categories.</div>;
+
   return (
     <div className="screen screen-categories">
-      {/* Header */}
-      <div className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            Categories · {scope === "avg" ? "trailing average" : monthLabel}
-          </div>
-          <h1>Where the money is going.</h1>
+      <div className="day-hdr">
+        <div>
+          <div className="eyebrow"><span className="dot" />CATEGORIES · {(scope === "year" ? "YEAR" : monthLabel).toUpperCase()}</div>
+          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the money is going.</h1>
         </div>
-        <div className="toolbar" role="tablist" aria-label="Spending scope">
-          <button className={scope === "month" ? "on" : ""} onClick={() => setScope("month")} role="tab" aria-selected={scope === "month"}>
-            This month
-          </button>
-          <button className={scope === "avg" ? "on" : ""} onClick={() => setScope("avg")} role="tab" aria-selected={scope === "avg"}>
-            vs. last month
-          </button>
-          <button className={scope === "year" ? "on" : ""} onClick={() => setScope("year")} role="tab" aria-selected={scope === "year"}>
-            Year to date
-          </button>
+        <div className="toolbar" role="tablist" aria-label="Category time scope">
+          <button className={scope === "month" ? "on" : ""} type="button" onClick={() => setScope("month")}>This month</button>
+          <button className={scope === "avg" ? "on" : ""} type="button" onClick={() => setScope("avg")}>vs. average</button>
+          <button className={scope === "year" ? "on" : ""} type="button" onClick={() => setScope("year")}>Year</button>
         </div>
       </div>
 
-      {insightJSX}
-
-      {/* Summary card */}
-      <Card>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
+      <div className="card" style={{ padding: 28 }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 16 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>
-              {scope === "avg" ? "Average" : "Total spent"}
-            </div>
-            <div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>
-              {money(totalThis)}
-            </div>
-            {active.length === 0 && (
-              <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
-                No spending yet — tag categories below to prepare your conscious spending split.
-              </div>
-            )}
+            <div className="eyebrow">THIS MONTH</div>
+            <div className="figure money" style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}>{money(totalThis, { currency: "USD" })}</div>
           </div>
-          {scope !== "year" && totalLast > 0 && (
-            <div className="right">
-              <div className="muted" style={{ fontSize: 13 }}>vs. {lastMonthLabel}</div>
-              <div className={`num ${totalThis < totalLast ? "pos" : "neg"}`} style={{ fontSize: 18 }}>
-                {totalThis < totalLast ? "↓" : "↑"}{" "}
-                {money(Math.abs(totalLast - totalThis))} · {Math.abs(Math.round(delta))}%
-              </div>
-            </div>
-          )}
+          <div style={{ textAlign: "right" }}>
+            <div className="muted" style={{ fontSize: 13 }}>vs. {scope === "avg" ? "current month" : compareLabel}</div>
+            <div className={`figure money ${totalThis <= totalCompare ? "pos" : "neg"}`} style={{ fontSize: 22, marginTop: 4 }}>{totalCompare > 0 ? money(Math.abs(totalThis - totalCompare), { currency: "USD" }) : money(0, { currency: "USD" })}</div>
+          </div>
         </div>
 
-        {/* Category stream bar */}
         <div className="stream" style={{ height: 18, borderRadius: 6 }}>
-          {active.map((c) => (
-            <span
-              key={c.id}
-              title={`${c.label} · ${money(valueFor(c))}`}
-              style={{
-                width: totalThis > 0 ? `${(valueFor(c) / totalThis) * 100}%` : "0%",
-                background: c.color || "var(--ink-faint)",
-              }}
-            />
-          ))}
+          {active.map((category) => <span key={category.id} title={`${category.label} · ${money(valueFor(category, scope), { currency: "USD" })}`} style={{ width: `${totalThis > 0 ? (valueFor(category, scope) / totalThis) * 100 : 0}%`, background: category.color || "var(--accent)" }} />)}
         </div>
-      </Card>
 
-      {/* Full table */}
-      <div className="section">
-        <Card flush>
+        {biggestDrop && biggestRise && biggestDrop.delta < 0 && biggestRise.delta > 0 && (
+          <p className="muted" style={{ marginTop: 18, marginBottom: 0 }}>
+            ✦ <strong>{biggestDrop.category.label}</strong> dropped <span className="money">{money(Math.abs(biggestDrop.delta), { currency: "USD" })}</span> — biggest move. <strong>{biggestRise.category.label}</strong> rose by <span className="money">{money(biggestRise.delta, { currency: "USD" })}</span>.
+          </p>
+        )}
+      </div>
+
+      <section className="section">
+        <div className="card flush">
           <div className="card-head">
-            <div className="h3">All categories</div>
-            <div className="row row-sm" style={{ alignItems: "center" }}>
-              <span className="muted" style={{ fontSize: 13 }}>
-                Sorted by spend
-              </span>
-              <Badge>{active.length} active</Badge>
+            <div>
+              <div className="h3">All categories</div>
+              <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Budget set by you · agent suggests adjustments quarterly</div>
             </div>
           </div>
-          <Table>
-            <TableHead>
+          <table className="tbl">
+            <thead>
               <tr>
-                <TableHeader>Category</TableHeader>
-                <TableHeader>Spending type</TableHeader>
-                <TableHeader>Pace vs. {lastMonthLabel}</TableHeader>
-                <TableHeader right>{scope === "avg" ? "Average" : scope === "year" ? "Year to date" : "This month"}</TableHeader>
-                <TableHeader right>{lastMonthLabel}</TableHeader>
-                <TableHeader right>Transactions</TableHeader>
-                <TableHeader right>Budget</TableHeader>
+                <th>Category</th>
+                <th>Pace</th>
+                <th className="right">{scope === "year" ? "Year" : "This Month"}</th>
+                <th className="right">{compareLabel}</th>
+                <th className="right">Budget</th>
+                <th className="right">Transactions</th>
+                <th>Type</th>
               </tr>
-            </TableHead>
-            <TableBody>
-              {sorted.map((c) => {
-                const v = valueFor(c);
-                const cmp = scope === "year" ? 0 : compareFor(c);
-                const color = c.color || "var(--ink-mute)";
-                const style = spendingTypeStyle(c.spendingType);
+            </thead>
+            <tbody>
+              {sorted.map((category) => {
+                const current = valueFor(category, scope);
+                const compare = compareFor(category, scope);
+                const budget = category.budgetCents;
+                const pct = budget > 0 ? Math.min(100, (current / budget) * 100) : 0;
+                const over = budget > 0 && current > budget;
                 return (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      <div className="row row-sm">
-                        <span
-                          className="cswatch"
-                          style={{
-                            background: color + "22",
-                            border: `1px solid ${color}44`,
-                            width: 18,
-                            height: 18,
-                            borderRadius: 6,
-                          }}
-                        />
-                        <span>{c.label}</span>
-                        <span className="muted" style={{ fontSize: 12 }}>{c.groupLabel}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <select
-                        className="spending-type-select"
-                        value={c.spendingType ?? ""}
-                        disabled={savingId === c.id}
-                        onChange={(e) => void saveSpendingType(c.id, e.target.value)}
-                        aria-label={`Spending type for ${c.label}`}
-                        style={{
-                          width: "100%",
-                          minWidth: 120,
-                          borderRadius: 999,
-                          padding: "6px 10px",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          outline: "none",
-                          cursor: "pointer",
-                          ...style,
-                        }}
-                      >
-                        {SPENDING_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value || "untagged"} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </TableCell>
-                    <TableCell>
-                      <PaceBar value={v} compare={cmp} color={color} label={c.label} />
-                    </TableCell>
-                    <TableCell right>
-                      <span className="num tabular money">{money(v)}</span>
-                    </TableCell>
-                    <TableCell right>
-                      <span className="num tabular muted">{cmp > 0 ? money(cmp) : "—"}</span>
-                    </TableCell>
-                    <TableCell right>
-                      <span className="num tabular muted">{c.txnCount}</span>
-                    </TableCell>
-                    <TableCell right>
-                      <span className={`num tabular ${c.budgetCents > 0 && c.thisMonthCents > c.budgetCents ? "neg" : "muted"}`}>
-                        {c.budgetCents > 0 ? money(c.budgetCents) : "—"}
-                      </span>
-                    </TableCell>
-                  </TableRow>
+                  <tr key={category.id}>
+                    <td><div className="row row-sm"><span className="cswatch" style={{ background: category.color || "var(--accent)" }} /><span>{category.label}</span></div></td>
+                    <td><div className="row row-sm" style={{ alignItems: "center" }}><div className={`goal-bar ${over ? "negative" : ""}`} style={{ width: 180, height: 6 }}><span style={{ width: `${pct}%`, background: over ? "var(--negative)" : category.color || "var(--accent)" }} /></div><span className={`num ${over ? "neg" : "muted"}`} style={{ fontSize: 12 }}>{Math.round(pct)}%</span></div></td>
+                    <td className="right"><span className="money">{money(current, { currency: "USD" })}</span></td>
+                    <td className="right"><span className="money muted">{compare > 0 ? money(compare, { currency: "USD" }) : "—"}</span></td>
+                    <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget, { currency: "USD" }) : "—"}</span></td>
+                    <td className="right"><span className="num muted">{category.txnCount}</span></td>
+                    <td><select className="control" value={category.spendingType ?? ""} disabled={savingId === category.id} onChange={(e) => void saveSpendingType(category.id, e.target.value)} aria-label={`Spending type for ${category.label}`} style={{ minWidth: 130 }}>{SPENDING_TYPE_OPTIONS.map((option) => <option key={option.value || "untagged"} value={option.value}>{option.label}</option>)}</select></td>
+                  </tr>
                 );
               })}
-            </TableBody>
-          </Table>
-        </Card>
-      </div>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

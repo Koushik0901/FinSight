@@ -1,14 +1,23 @@
 :root {
-  /* Accent — sage green for growth, calm, financial freedom */
-  --accent:     #7FB069;
-  --accent-ink: #0F1A0C;
-  --accent-2:   rgba(127, 176, 105, 0.14);
-  --accent-3:   rgba(127, 176, 105, 0.28);
-  --accent-glow: 0 0 40px rgba(127, 176, 105, 0.18);
+  /* Accent — vivid lime from design handoff */
+  --accent:     #C9F950;
+  --accent-ink: #0A0F02;
+  --accent-2:   rgba(201, 249, 80, 0.12);
+  --accent-3:   rgba(201, 249, 80, 0.24);
+  --accent-glow: 0 0 48px rgba(201, 249, 80, 0.24);
 
   /* Brand mark — a desaturated lime kept only for the logo and celebratory moments */
   --brand:     #C9F950;
   --brand-ink: #0A0F02;
+
+  /* Account-type colours — used by account charts and indicators */
+  --c-checking:   #60A5FA;
+  --c-savings:    #34D399;
+  --c-credit:     #FB923C;
+  --c-investment: #A78BFA;
+  --c-cash:       #FACC15;
+  --c-loan:       #F8718C;
+  --c-other:      #9CA3AF;
 
   /* Category colours */
   --c-housing:   #A78BFA;
@@ -21,6 +30,8 @@
   --c-shopping:  #FCA5A5;
   --c-travel:    #818CF8;
   --c-gifts:     #FDE68A;
+  --c-savings:   var(--c-groceries);
+  --c-guiltfree: var(--c-dining);
   --c-income:    var(--accent);
 
   /* Semantic status aliases */
@@ -82,6 +93,7 @@
   --line:     rgba(255, 255, 255, 0.06);
   --line-2:   rgba(255, 255, 255, 0.10);
   --line-3:   rgba(255, 255, 255, 0.16);
+  --kbd-bg:   rgba(255, 255, 255, 0.06);
 
   /* Text */
   --ink:       #F4F4F7;
@@ -120,6 +132,7 @@
   --line:     rgba(0,0,0,0.06);
   --line-2:   rgba(0,0,0,0.10);
   --line-3:   rgba(0,0,0,0.16);
+  --kbd-bg:   rgba(20,18,14,0.06);
 
   --ink:       rgba(0,0,0,0.92);
   --ink-2:     rgba(0,0,0,0.68);

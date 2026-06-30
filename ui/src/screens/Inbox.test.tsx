@@ -8,6 +8,18 @@ vi.mock("../api/hooks/inbox", () => ({
   useActionItems: vi.fn(() => ({ data: undefined, isLoading: true, error: null, dataUpdatedAt: 0 })),
 }));
 
+vi.mock("../api/hooks/simplefin", () => ({
+  useSimpleFinAlerts: vi.fn(() => ({ data: [] })),
+  useAcknowledgeSimpleFinAlert: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useSimpleFinTransferSuggestions: vi.fn(() => ({ data: [] })),
+  useConfirmSimpleFinTransfer: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useRejectSimpleFinTransfer: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useImportReviewCandidates: vi.fn(() => ({ data: [] })),
+  useAcceptImportCandidateMatch: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useCreateImportCandidateTransaction: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDismissImportCandidate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
   return { ...actual, useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })) };

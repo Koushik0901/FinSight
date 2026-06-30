@@ -180,36 +180,41 @@ pub fn get_bundle(conn: &mut Connection, id: &str) -> CoreResult<Option<AgentAct
 pub fn list_bundles(
     conn: &mut Connection,
     status_filter: Option<&str>,
+    session_id: Option<&str>,
     limit: u32,
 ) -> CoreResult<Vec<AgentActionBundle>> {
     let mut bundles = Vec::new();
-    match status_filter {
-        Some(status) => {
-            let mut stmt = conn.prepare(
-                "SELECT id, session_id, title, summary, rationale, confidence, status,
-                        provider_id, model_id, created_at, updated_at
-                 FROM agent_action_bundles
-                 WHERE status = ?1
-                 ORDER BY created_at DESC
-                 LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![status, limit as i64], map_bundle_row)?;
-            for row in rows {
-                bundles.push(row?);
-            }
-        }
-        None => {
-            let mut stmt = conn.prepare(
-                "SELECT id, session_id, title, summary, rationale, confidence, status,
-                        provider_id, model_id, created_at, updated_at
-                 FROM agent_action_bundles
-                 ORDER BY created_at DESC
-                 LIMIT ?1",
-            )?;
-            let rows = stmt.query_map(params![limit as i64], map_bundle_row)?;
-            for row in rows {
-                bundles.push(row?);
-            }
+    let mut sql = String::from(
+        "SELECT id, session_id, title, summary, rationale, confidence, status,
+                provider_id, model_id, created_at, updated_at
+         FROM agent_action_bundles",
+    );
+    let mut conditions = Vec::new();
+    let mut query_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(status) = status_filter {
+        conditions.push("status = ?".to_string());
+        query_params.push(Box::new(status.to_string()));
+    }
+    if let Some(session_id) = session_id {
+        conditions.push("session_id = ?".to_string());
+        query_params.push(Box::new(session_id.to_string()));
+    }
+    if !conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&conditions.join(" AND "));
+    }
+    sql.push_str(" ORDER BY created_at DESC LIMIT ?");
+    query_params.push(Box::new(limit as i64));
+
+    {
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(query_params.iter().map(|p| p.as_ref())),
+            map_bundle_row,
+        )?;
+        for row in rows {
+            bundles.push(row?);
         }
     }
 
@@ -380,7 +385,7 @@ mod tests {
         assert_eq!(fetched.items[0].id, item_a.id);
         assert_eq!(fetched.items[1].id, item_b.id);
 
-        let listed = list_bundles(&mut conn, Some("pending"), 10).unwrap();
+        let listed = list_bundles(&mut conn, Some("pending"), None, 10).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].items.len(), 2);
     }

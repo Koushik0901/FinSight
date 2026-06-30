@@ -69,7 +69,7 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Database migrations
 
-SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V016. Next migration = `V017__description.sql`.
+SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. Refinery (`embed_migrations!`) discovers them by filename prefix. Current: V001–V026. Next migration = `V027__description.sql`.
 
 ### Frontend data flow
 

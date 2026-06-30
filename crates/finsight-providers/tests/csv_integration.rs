@@ -1,5 +1,6 @@
 use chrono::Utc;
-use finsight_core::{db::run_migrations, keychain, Db};
+use finsight_core::models::{NewTransaction, TransactionStatus};
+use finsight_core::{db::run_migrations, keychain, repos::transactions, Db};
 use finsight_providers::{AmountConvention, ColumnRole, CsvImportMapping, CsvProvider};
 use rusqlite::params;
 use std::path::PathBuf;
@@ -103,4 +104,74 @@ fn preview_returns_correct_row_count_and_first_rows() {
     assert_eq!(p.total_rows, 3);
     assert_eq!(p.rows.len(), 3);
     assert_eq!(p.detected_delimiter, ',');
+}
+
+#[test]
+fn csv_import_skips_matching_simplefin_transaction() {
+    let (dir, db, acct) = fresh_db();
+    let posted_at = chrono::NaiveDate::from_ymd_opt(2026, 5, 19)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_utc();
+    {
+        let mut conn = db.get().unwrap();
+        transactions::insert(
+            &mut conn,
+            NewTransaction {
+                account_id: acct.clone(),
+                posted_at,
+                amount_cents: -842,
+                merchant_raw: "Safeway".into(),
+                category_id: None,
+                notes: Some("from bank sync".into()),
+                status: TransactionStatus::Cleared,
+                imported_id: Some("sf-1".into()),
+                source: Some("simplefin".into()),
+                raw_synced_data: Some("{}".into()),
+                pending: false,
+                external_tx_id: Some("sf-1".into()),
+                external_account_id: Some("sf-acct".into()),
+            },
+        )
+        .unwrap();
+    }
+
+    let csv_path = dir.path().join("overlap.csv");
+    std::fs::write(
+        &csv_path,
+        "date,merchant,amount\n2026-05-19,Safeway,-8.42\n",
+    )
+    .unwrap();
+    let mapping = CsvImportMapping {
+        skip_header_rows: 1,
+        columns: vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+        date_format: "%Y-%m-%d".to_string(),
+        amount_convention: AmountConvention::NegativeIsOutflow,
+        decimal_separator: '.',
+        delimiter: Some(','),
+    };
+
+    let summary = CsvProvider::import(
+        &csv_path,
+        &acct,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(summary.rows_imported, 0);
+    assert_eq!(summary.rows_skipped_duplicates, 1);
+    let count: i64 = db
+        .get()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = ?1",
+            [&acct],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }

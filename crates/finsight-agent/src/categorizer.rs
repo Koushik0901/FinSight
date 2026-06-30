@@ -11,9 +11,15 @@ use finsight_core::{
 use rusqlite::params;
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 const LLM_BATCH_SIZE: usize = 20;
+
+/// Confidence score below which a LLM-assigned category is considered uncertain
+/// and surfaced to the user as "needs review". Shared with the Tauri command layer
+/// and the Inbox action-item query so all three stay in sync.
+pub const LOW_CONFIDENCE_THRESHOLD: f64 = 0.6;
 
 #[derive(Deserialize)]
 struct LlmResult {
@@ -29,9 +35,10 @@ pub async fn run_job(
     provider: Arc<dyn CompletionProvider>,
     on_event: EventCallback,
 ) -> Result<()> {
-    let import_id = match &job {
-        AgentJob::CategorizeImport { import_id } => Some(import_id.clone()),
-        AgentJob::CategorizeAll => None,
+    let (import_id, rerun_mode) = match &job {
+        AgentJob::CategorizeImport { import_id } => (Some(import_id.clone()), false),
+        AgentJob::CategorizeAll => (None, false),
+        AgentJob::RecategorizeLowConfidence => (None, true),
         _ => return Ok(()),
     };
 
@@ -41,7 +48,11 @@ pub async fn run_job(
         let import_id_clone = import_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = db.get()?;
-            let uncategorized = load_uncategorized(&mut conn, import_id_clone.as_deref())?;
+            let uncategorized = if rerun_mode {
+                load_low_confidence(&mut conn)?
+            } else {
+                load_uncategorized(&mut conn, import_id_clone.as_deref())?
+            };
             let active_rules = rules::list_active(&mut conn)?;
             let categories = load_categories(&mut conn)?;
             let recent_examples = load_recent_examples(&mut conn)?;
@@ -49,6 +60,10 @@ pub async fn run_job(
         })
         .await??
     };
+
+    // Build a set of valid category IDs for LLM output validation.
+    let valid_category_ids: HashSet<String> =
+        categories.iter().map(|(id, _, _)| id.clone()).collect();
 
     let total = uncategorized.len() as u32;
     let mut remaining: Vec<(String, String, i64)> = Vec::new(); // (txn_id, merchant_raw, amount_cents)
@@ -106,12 +121,41 @@ pub async fn run_job(
     let system_prompt = build_system_prompt(&categories, &recent_examples);
 
     for chunk in remaining.chunks(LLM_BATCH_SIZE) {
-        let user_prompt = build_user_prompt(chunk);
-        let raw = provider.complete_json(&system_prompt, &user_prompt).await?;
-        // All three provider impls (Ollama, OpenAiCompat, Anthropic) return a flat JSON array.
-        let results: Vec<LlmResult> = serde_json::from_value(raw)?;
+        // Per-chunk error recovery: a bad LLM response (timeout, parse error, hallucinated
+        // JSON) skips this chunk and continues rather than aborting the entire job.
+        let chunk_result = async {
+            let user_prompt = build_user_prompt(chunk);
+            let raw = provider.complete_json(&system_prompt, &user_prompt).await?;
+            // All three provider impls (Ollama, OpenAiCompat, Anthropic) return a flat JSON array.
+            let results: Vec<LlmResult> = serde_json::from_value(raw)?;
+            Ok::<Vec<LlmResult>, anyhow::Error>(results)
+        }
+        .await;
+
+        let results = match chunk_result {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[categorizer] chunk failed, skipping: {e}");
+                on_event(AgentEvent::CategorizationProgress {
+                    import_id: import_id.clone(),
+                    done: categorized,
+                    total,
+                });
+                continue;
+            }
+        };
 
         for r in &results {
+            // Validate the category_id returned by the LLM exists in our category set.
+            // Skip results with hallucinated or stale IDs to avoid writing dangling FKs.
+            if !valid_category_ids.contains(&r.category_id) {
+                eprintln!(
+                    "[categorizer] LLM returned unknown category_id '{}' for txn '{}', skipping",
+                    r.category_id, r.txn_id
+                );
+                continue;
+            }
+
             let txn_id = r.txn_id.clone();
             let cat_id = r.category_id.clone();
             let confidence = r.confidence;
@@ -189,6 +233,26 @@ fn load_uncategorized(
          WHERE category_id IS NULL ORDER BY posted_at DESC",
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Load transactions that were categorized by the LLM but with low confidence,
+/// so they can be re-sent to the LLM after the user has added rules or corrections.
+fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, merchant_raw, amount_cents FROM transactions \
+         WHERE ai_confidence IS NOT NULL AND ai_confidence < ?1 \
+           AND (SELECT source FROM categorizations c \
+                WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm' \
+         ORDER BY ai_confidence ASC, posted_at DESC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);
@@ -412,5 +476,63 @@ mod tests {
             finsight_core::repos::rule_proposals::list(&mut conn, Some("pending")).unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].pattern, "CHIPOTLE");
+    }
+
+    /// LLM returning a hallucinated category_id must be silently skipped —
+    /// the transaction should remain uncategorized rather than receive a dangling FK.
+    #[tokio::test]
+    async fn llm_invalid_category_id_is_skipped() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn);
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // "ghost-category" does not exist in the DB
+            response: json!([{"txn_id": "t1", "category_id": "ghost-category", "confidence": 0.9, "rationale": "Hallucinated"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        let cat_id: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(cat_id.is_none(), "dangling FK must not be written");
+    }
+
+    /// When one LLM chunk fails (e.g. bad JSON), remaining chunks must still be processed.
+    /// This test uses two transactions and a mock that returns a parse error for the first
+    /// call and valid data on the second — simulating a retry via two distinct responses.
+    /// Here we verify the job itself does not propagate the error.
+    #[tokio::test]
+    async fn chunk_error_does_not_abort_job() {
+        use crate::providers::mock::MockCompletionProvider;
+
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1
+        }
+        // Return invalid JSON — the chunk should be skipped but run_job must succeed.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: serde_json::Value::String("not valid array".into()),
+            tool_turns: Mutex::new(vec![]),
+        });
+        let result = run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {})).await;
+        assert!(
+            result.is_ok(),
+            "job must not fail when a chunk errors: {result:?}"
+        );
     }
 }

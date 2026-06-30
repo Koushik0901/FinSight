@@ -1,301 +1,194 @@
-/* ── Onboarding wizard ────────────────────────────────── */
+/* ── Onboarding (Plutus-aligned) ───────────────────────── */
 
-.onboarding-shell {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 48px 0 80px;
+.onb-shell {
+  min-height: min(840px, calc(100vh - 92px));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--bg);
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
-/* ── Stepper nav ──────────────────────────────────────── */
-
-.onboarding-stepper {
+.onb-top {
+  padding: 16px 22px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 48px;
-  padding: 0 4px;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in oklab, var(--bg), var(--bg-2) 55%);
 }
 
-.step-chip {
+.onb-steps {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--ink-faint);
+  gap: 6px;
+}
+
+.onb-step-pip {
+  width: 44px;
+  height: 28px;
+  border-radius: 3px;
+  border: 0;
+  padding: 0;
   background: transparent;
-  border: 1px solid transparent;
+  position: relative;
+  transition: background .2s;
+}
+
+.onb-step-pip::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--line-2);
+}
+
+.onb-step-pip:disabled {
   cursor: default;
-  transition: background .12s, color .12s, border-color .12s;
+  opacity: 0.8;
 }
 
-.step-chip.reached {
+.onb-step-pip.done {
   cursor: pointer;
-  color: var(--ink-mute);
 }
-.step-chip.reached:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
+.onb-step-pip.done::before { background: var(--ink-mute); }
 
-.step-chip.current {
-  background: var(--accent-2);
-  color: var(--accent);
-  border-color: var(--accent-3);
-  font-weight: 600;
+.onb-step-pip.cur {
+  box-shadow: none;
 }
-
-.step-chip .step-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--mono);
-  background: var(--surface-2);
-  color: var(--ink-faint);
-  flex-shrink: 0;
-}
-
-.step-chip.current .step-index {
+.onb-step-pip.cur::before {
   background: var(--accent);
-  color: var(--accent-ink);
+  box-shadow: 0 0 8px var(--accent-3);
 }
 
-.step-chip.reached .step-index {
-  background: var(--accent-2);
-  color: var(--accent);
-}
-
-.step-chip .step-title {
+.onb-step-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
   white-space: nowrap;
 }
 
-@media (max-width: 520px) {
-  .onboarding-shell {
-    padding-top: 24px;
-  }
-
-  .onboarding-stepper {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-bottom: 32px;
-    padding: 0;
-  }
-
-  .step-chip {
-    justify-content: flex-start;
-    width: 100%;
-    min-width: 0;
-    padding: 8px 10px;
-  }
-
-  .step-chip .step-title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+.onb-stage {
+  min-height: 0;
 }
 
-@media (max-width: 340px) {
-  .onboarding-stepper {
-    grid-template-columns: 1fr;
-  }
+.onb-split {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
 }
 
-/* ── Step content area ────────────────────────────────── */
-
-.onboarding-step {
-  animation: step-fade .2s ease-out;
+.onb-left {
+  padding: 56px 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
 }
 
-@keyframes step-fade {
-  from { opacity: 0; transform: translateY(6px); }
+.onb-left .num-step {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin-bottom: 20px;
+  text-transform: uppercase;
 }
 
-.onboarding-step h1 {
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+.onb-left h1 {
+  font-size: clamp(36px, 5vw, 58px);
+  line-height: 1.02;
+  font-weight: 620;
+  letter-spacing: -0.042em;
+  margin: 0 0 16px;
+  text-wrap: pretty;
   color: var(--ink);
-  margin: 0 0 12px;
-  line-height: 1.15;
 }
 
-.onboarding-step h2 {
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  color: var(--ink);
-  margin: 0 0 8px;
-  line-height: 1.2;
-}
-
-.onboarding-step p {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--ink-2);
+.onb-left p,
+.onb-left .lead {
+  font-size: 14.5px;
+  line-height: 1.58;
+  color: var(--ink-mute);
   margin: 0 0 24px;
-  max-width: 52ch;
+  max-width: 54ch;
+  text-wrap: pretty;
 }
 
-.onboarding-step footer {
-  margin-top: 32px;
-}
-
-.onboarding-step .error-message {
+.onb-left .err,
+.onb-left .error-message {
+  margin-top: 12px;
   color: var(--negative);
   font-size: 13px;
-  margin-top: 12px;
 }
 
-.onboarding-step .warning {
-  background: var(--warning-2);
-  color: var(--warning);
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  font-size: 13.5px;
-  line-height: 1.5;
-  margin: 16px 0;
-}
-
-.onboarding-step .warning code {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  background: rgba(0, 0, 0, 0.15);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-[data-theme="light"] .onboarding-step .warning code {
-  background: rgba(0, 0, 0, 0.06);
-}
-
-/* ── Buttons (onboarding-specific) ────────────────────── */
-
-.onboarding-step button,
-.step-welcome button,
-.step-connect button,
-.step-categories button,
-.step-agent button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 16px;
-  border-radius: 8px;
-  font-size: 13.5px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  transition: background .12s, border-color .12s, color .12s;
-  white-space: nowrap;
-}
-
-.onboarding-step button:hover,
-.step-welcome button:hover,
-.step-connect button:hover,
-.step-categories button:hover,
-.step-agent button:hover {
-  background: var(--hover);
-  border-color: var(--line-2);
-}
-
-.onboarding-step button:disabled,
-.step-welcome button:disabled,
-.step-connect button:disabled,
-.step-categories button:disabled,
-.step-agent button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.onboarding-step button.primary,
-.step-welcome button.primary,
-.step-connect button.primary,
-.step-categories button.primary,
-.step-agent button.primary {
-  color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
-.onboarding-step button.primary:hover:not(:disabled),
-.step-welcome button.primary:hover:not(:disabled),
-.step-connect button.primary:hover:not(:disabled),
-.step-categories button.primary:hover:not(:disabled),
-.step-agent button.primary:hover:not(:disabled) {
-  filter: brightness(1.05);
-}
-
-.onboarding-step button.tertiary,
-.step-welcome button.tertiary,
-.step-connect button.tertiary,
-.step-categories button.tertiary,
-.step-agent button.tertiary {
-  background: transparent;
-  border-color: transparent;
-  color: var(--ink-mute);
-}
-
-.onboarding-step button.tertiary:hover,
-.step-welcome button.tertiary:hover,
-.step-connect button.tertiary:hover,
-.step-categories button.tertiary:hover,
-.step-agent button.tertiary:hover {
-  color: var(--ink);
-  background: var(--hover);
-}
-
-.actions {
+.onb-right {
+  background: var(--bg-2);
+  border-left: 1px solid var(--hairline);
+  padding: 48px 44px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.onb-right::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+  pointer-events: none;
+}
+
+[data-theme="light"] .onb-right::before {
+  background-image:
+    linear-gradient(rgba(20, 18, 14, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 18, 14, 0.02) 1px, transparent 1px);
+}
+
+.onb-right > * {
+  position: relative;
+  z-index: 1;
+}
+
+.onb-actions {
+  display: flex;
   gap: 10px;
+  align-items: center;
   flex-wrap: wrap;
 }
 
-/* ── Step: Welcome ────────────────────────────────────── */
-
-.step-welcome {
-  padding-top: 24px;
+.onb-art-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.step-welcome h1 {
-  font-size: 36px;
-  max-width: 14ch;
+.onb-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
-.step-welcome p {
-  font-size: 16px;
-  line-height: 1.65;
-  max-width: 48ch;
-}
-
-.step-welcome .actions {
-  margin-top: 8px;
-}
-
-/* ── Step: Connect ────────────────────────────────────── */
-
-.step-connect h2 {
-  margin-bottom: 4px;
-}
-
+/* Step: Connect */
 .connect-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin: 20px 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .connect-cards .card {
@@ -305,21 +198,20 @@
 }
 
 .connect-cards .card h3 {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--ink);
-  margin: 0;
 }
 
 .connect-cards .card p {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink-mute);
-  margin: 0;
   flex: 1;
 }
 
-.connect-cards .card .button-row {
+.connect-cards .button-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -328,30 +220,25 @@
 .connect-tally {
   font-size: 13px;
   color: var(--ink-mute);
-  padding: 12px 16px;
+  padding: 12px 14px;
   background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  margin-top: 8px;
 }
 
 .connect-tally strong {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 620;
 }
 
-/* ── Step: Categories ─────────────────────────────────── */
-
-.step-categories p {
-  margin-bottom: 16px;
-}
-
+/* Step: Categories */
 .category-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .category-list li {
@@ -360,126 +247,114 @@
   gap: 8px;
 }
 
-.category-list input {
+.category-list li .field {
   flex: 1;
-  min-width: 0;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 13.5px;
-  transition: border-color .12s;
+  margin: 0;
 }
 
-.category-list input:focus {
-  outline: none;
-  border-color: var(--accent);
+.category-list li .field:last-of-type {
+  flex: 0 0 150px;
 }
 
-.category-list select {
-  appearance: none;
-  padding: 8px 10px;
-  padding-right: 30px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--ink-mute) 50%),
-    linear-gradient(135deg, var(--ink-mute) 50%, transparent 50%);
-  background-position:
-    calc(100% - 15px) 50%,
-    calc(100% - 10px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  color: var(--ink);
-  font-size: 13px;
-  cursor: pointer;
-  min-width: 110px;
+.category-list li .field input,
+.category-list li .field select {
+  min-height: 38px;
 }
 
-.category-list select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.category-list button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  font-size: 16px;
-  color: var(--ink-faint);
+.category-list li button {
   flex-shrink: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
 }
 
-.category-list button:hover {
-  background: var(--negative-2);
-  color: var(--negative);
-}
-
-.step-categories > button {
-  margin-top: 10px;
-}
-
-/* ── Step: Agent ──────────────────────────────────────── */
-
-.step-agent label {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-  margin-bottom: 8px;
-}
-
-.step-agent input,
-.step-agent select {
-  display: block;
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
+.onb-category-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
   border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 13.5px;
-  margin-top: 4px;
-  transition: border-color .12s;
 }
 
-.step-agent select {
-  appearance: none;
-  padding-right: 32px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--ink-mute) 50%),
-    linear-gradient(135deg, var(--ink-mute) 50%, transparent 50%);
-  background-position:
-    calc(100% - 16px) 50%,
-    calc(100% - 11px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+/* Step: Agent */
+.step-agent .field {
+  margin: 0;
 }
 
-.step-agent option,
-.category-list option {
-  background: var(--elevated);
-  color: var(--ink);
+.step-agent .warning {
+  background: var(--warning-2);
+  color: var(--warning);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0;
 }
 
-.step-agent input:focus,
-.step-agent select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.step-agent input::placeholder {
-  color: var(--ink-faint);
+.step-agent .warning code {
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .step-agent .actions {
-  margin-top: 20px;
+  margin-top: 12px;
+}
+
+/* Keep legacy class for tests and compatibility */
+.onboarding-shell {
+  width: 100%;
+}
+
+/* ── Responsive onboarding ─────────────────────────────── */
+@media (max-width: 1260px) {
+  .onb-left { padding: 46px 42px; }
+  .onb-right { padding: 40px 32px; }
+}
+
+@media (max-width: 980px) {
+  .onb-shell {
+    min-height: auto;
+    border-radius: 14px;
+  }
+
+  .onb-top {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+  }
+
+  .onb-step-label {
+    width: 100%;
+    order: 3;
+  }
+
+  .onb-split {
+    grid-template-columns: 1fr;
+  }
+
+  .onb-left,
+  .onb-right {
+    padding: 28px 22px;
+  }
+
+  .onb-right {
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .connect-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .onb-left h1 {
+    font-size: clamp(32px, 10vw, 42px);
+  }
+
+  .onb-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .onb-step-pip {
+    width: 36px;
+  }
 }

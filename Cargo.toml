@@ -39,5 +39,6 @@ rstest = "0.21"
 tempfile = "3"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 reqwest = { version = "0.12", features = ["json"] }
+rust_decimal = { version = "1.35", features = ["serde"] }
 base64 = "0.22"
 url = "2.5"

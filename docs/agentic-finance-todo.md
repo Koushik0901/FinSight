@@ -99,6 +99,12 @@ Important current limits:
 - `[x]` Add `draft_budget_changes` through existing draft action patterns.
 - `[x]` Add `draft_goal_contribution_changes`.
 - `[x]` Add `draft_debt_payment_plan`.
+- `[ ]` Add transaction categorization tools for Copilot:
+  - List uncategorized transactions with enough context for review: transaction id, posted date, merchant, amount, account, existing notes, inferred merchant key, and candidate categories.
+  - Accept natural-language categorization rules from the user, such as "Amazon under $50 is shopping, paychecks are income, Shell is transport."
+  - Apply rules as draft actions first, then let the user approve all or selected category updates.
+  - After approval, refresh affected transaction/category/budget/report queries so graphs, plots, and summaries reflect the new categories without requiring manual navigation or app restart.
+  - Consider saving high-confidence repeated mappings as rule proposals or agent memory rather than silently creating permanent rules.
 - `[~]` Make tools return structured citations and data warnings.
 - `[~]` Require tool outputs to include units, dates, account scope, and data freshness.
 - `[x]` Add strict tool argument validation and friendly recovery from invalid tool calls.
@@ -160,6 +166,12 @@ Important current limits:
 - `[~]` Let users save a scenario and revisit assumptions later.
 - `[ ]` Make missing data actionable with links to edit liabilities, goals, accounts, or planned transactions.
 - `[~]` Add a "why this recommendation" explainer through reasoning text and data sources.
+- `[ ]` Let Copilot navigate the app after user-approved actions or when a screen is the clearest way to inspect a result.
+  - Support route targets such as Today, Transactions, Budget, Reports, Settings, Goals, Rules, and Categories.
+  - Prefer navigation as a follow-up action after Copilot changes or drafts data, for example "I updated 18 uncategorized transactions. Open Reports to review the updated spending breakdown?"
+  - Allow explicit user requests such as "take me to the budget page" while keeping this secondary to finance workflows.
+  - Expose navigation as a UI-level command/event from Copilot rather than as a backend finance tool, because it changes app state, not financial data.
+  - Use this to show the result of a change directly, such as opening Transactions filtered to newly categorized rows or Reports after category updates.
 
 ## Milestones
 
@@ -188,6 +200,10 @@ Important current limits:
    - `[x]` Scenario comparison UI.
    - `[ ]` Actionable missing-data prompts.
    - `[~]` Approval workflow polish.
+
+6. Copilot operator UX:
+   - `[ ]` Conversational uncategorized-transaction review and category assignment.
+   - `[ ]` Agent-triggered app navigation for showing the result of approved changes.
 
 
 

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   commands,
   type ManualAsset, type NewManualAsset, type ManualAssetPatch,
-  type Liability, type NewLiability, type LiabilityPatch,
+  type Liability, type NewLiability, type LiabilityPatch, type DebtPayoffResult,
 } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
@@ -109,5 +109,30 @@ export function useDeleteLiability() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["liabilities"] }); },
+  });
+}
+
+export function useDebtPayoff(extraMonthlyCents: number) {
+  return useQuery<DebtPayoffResult[]>({
+    queryKey: ["debt-payoff", extraMonthlyCents],
+    queryFn: async () => {
+      const result = await commands.computeDebtPayoff(extraMonthlyCents);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime(),
+  });
+}
+
+export function useUncelebratedMilestones() {
+  return useQuery<number[]>({
+    queryKey: ["networth-milestones"],
+    queryFn: async () => {
+      const result = await commands.getUncelebratedMilestones();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: Infinity,
+    enabled: isTauriRuntime(),
   });
 }

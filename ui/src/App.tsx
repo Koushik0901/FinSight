@@ -12,6 +12,7 @@ import * as I from "./components/Icons";
 
 const Today = lazy(() => import("./screens/Today"));
 const Inbox = lazy(() => import("./screens/Inbox"));
+const ImportReview = lazy(() => import("./screens/ImportReview"));
 const Insights = lazy(() => import("./screens/Insights"));
 const Transactions = lazy(() => import("./screens/Transactions"));
 const Accounts = lazy(() => import("./screens/Accounts"));
@@ -85,6 +86,7 @@ export function App() {
               <Routes>
                 <Route path="/" element={<Today />} />
                 <Route path="/inbox" element={<Inbox />} />
+                <Route path="/import-review" element={<ImportReview />} />
                 <Route path="/insights" element={<Insights />} />
                 <Route path="/accounts" element={<Accounts />} />
                 <Route path="/transactions" element={<Transactions />} />

@@ -2,8 +2,9 @@ use crate::error::{AppError, AppResult};
 use crate::AppState;
 use chrono::{Datelike, Utc};
 use finsight_core::repos::run;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
+use uuid::Uuid;
 
 /// One month's summary for the bar chart.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -308,6 +309,281 @@ pub async fn get_month_totals(state: tauri::State<'_, AppState>) -> AppResult<Mo
             savings_rate_pct: savings_rate,
             txn_count,
         })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SavingsRatePoint {
+    pub month: String,
+    pub savings_rate_pct: i64,
+    pub income_cents: i64,
+    pub expense_cents: i64,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_savings_rate_history(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<SavingsRatePoint>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(365))
+            .format("%Y-%m-01")
+            .to_string();
+        let mut stmt = conn.prepare(
+            "SELECT
+                strftime('%Y-%m', posted_at) AS month,
+                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS income,
+                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS expense
+             FROM transactions
+             WHERE posted_at >= ?1
+             GROUP BY month
+             ORDER BY month ASC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows.flatten() {
+            let (month, income, expense) = row;
+            let net = income - expense;
+            let savings_rate_pct = if income > 0 {
+                (net.max(0) * 100) / income
+            } else {
+                0
+            };
+            out.push(SavingsRatePoint {
+                month,
+                savings_rate_pct,
+                income_cents: income,
+                expense_cents: expense,
+            });
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthlyReviewSnapshot {
+    pub income_cents: i64,
+    pub expense_cents: i64,
+    pub savings_rate_pct: i64,
+    pub over_budget_categories: Vec<String>,
+    pub goal_progress: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthlyReview {
+    pub id: String,
+    pub year: i32,
+    pub month: i32,
+    pub month_label: String,
+    pub notes: Option<String>,
+    pub snapshot: MonthlyReviewSnapshot,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMonthlyReviewInput {
+    pub year: i32,
+    pub month: i32,
+    pub notes: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_monthly_review(
+    state: tauri::State<'_, AppState>,
+    input: CreateMonthlyReviewInput,
+) -> AppResult<MonthlyReview> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        if !(1..=12).contains(&input.month) {
+            return Err(finsight_core::CoreError::InvalidState(
+                "month must be between 1 and 12".to_string(),
+            ));
+        }
+        let id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let month_start = format!("{}-{:02}-01", input.year, input.month);
+        let month_end = format!(
+            "{}-{:02}-01",
+            if input.month == 12 { input.year + 1 } else { input.year },
+            if input.month == 12 { 1 } else { input.month + 1 }
+        );
+        let (income_cents, expense_cents): (i64, i64) = conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+             FROM transactions
+             WHERE posted_at >= ?1 AND posted_at < ?2",
+            rusqlite::params![&month_start, &month_end],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let net = income_cents - expense_cents;
+        let savings_rate_pct = if income_cents > 0 {
+            (net.max(0) * 100) / income_cents
+        } else {
+            0
+        };
+
+        let month_str = format!("{}-{:02}", input.year, input.month);
+        let mut over_budget_categories = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "WITH actuals AS (
+               SELECT category_id, SUM(ABS(amount_cents)) AS spent
+               FROM transactions
+               WHERE posted_at >= ?1 AND posted_at < ?2 AND amount_cents < 0
+               GROUP BY category_id
+             )
+             SELECT c.label FROM budgets b
+             JOIN categories c ON c.id = b.category_id
+             JOIN actuals a ON a.category_id = b.category_id
+             WHERE b.month = ?3 AND a.spent > b.amount_cents",
+        ) {
+            if let Ok(rows) =
+                stmt.query_map(rusqlite::params![&month_start, &month_end, &month_str], |r| {
+                    r.get::<_, String>(0)
+                })
+            {
+                over_budget_categories = rows.flatten().collect();
+            }
+        }
+
+        let goal_progress = finsight_core::repos::goals::list(conn)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|goal| {
+                serde_json::json!({
+                    "id": goal.id,
+                    "name": goal.name,
+                    "currentCents": goal.current_cents,
+                    "targetCents": goal.target_cents,
+                    "pctComplete": if goal.target_cents > 0 {
+                        ((goal.current_cents * 100) / goal.target_cents).clamp(0, 100)
+                    } else {
+                        0
+                    }
+                })
+            })
+            .collect();
+
+        let snapshot = MonthlyReviewSnapshot {
+            income_cents,
+            expense_cents,
+            savings_rate_pct,
+            over_budget_categories,
+            goal_progress,
+        };
+        let snapshot_json = serde_json::to_string(&snapshot).unwrap_or_default();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO monthly_reviews(id, year, month, notes, snapshot_json, created_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                &id,
+                input.year,
+                input.month,
+                &input.notes,
+                snapshot_json,
+                &now
+            ],
+        )?;
+
+        let month_names = [
+            "",
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+        Ok(MonthlyReview {
+            id,
+            year: input.year,
+            month: input.month,
+            month_label: format!("{} {}", month_names[input.month as usize], input.year),
+            notes: input.notes.clone(),
+            snapshot,
+            created_at: now,
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_monthly_reviews(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<MonthlyReview>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, year, month, notes, snapshot_json, created_at
+             FROM monthly_reviews
+             ORDER BY year DESC, month DESC",
+        )?;
+        let month_names = [
+            "",
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i32>(1)?,
+                r.get::<_, i32>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows.flatten() {
+            let (id, year, month, notes, snapshot_json, created_at) = row;
+            let snapshot: MonthlyReviewSnapshot =
+                serde_json::from_str(&snapshot_json).unwrap_or_default();
+            out.push(MonthlyReview {
+                id,
+                year,
+                month,
+                month_label: format!(
+                    "{} {}",
+                    month_names.get(month as usize).copied().unwrap_or(""),
+                    year
+                ),
+                notes,
+                snapshot,
+                created_at,
+            });
+        }
+        Ok(out)
     })
     .await
     .map_err(AppError::from)

@@ -4,6 +4,7 @@ import * as I from "./Icons";
 import { useAskAgent } from "../api/hooks/agent";
 import type { AgentAnswer } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
+import { AgentResponseRenderer } from "./AgentResponseRenderer";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ export function CommandPalette({ open, onClose }: Props) {
               missingData: [],
               alternatives: [],
               followUpQuestions: [],
+              responseBlocks: [],
             });
           },
         }
@@ -212,7 +214,7 @@ export function CommandPalette({ open, onClose }: Props) {
                 </div>
               ) : answer ? (
                 <>
-                  <p className="cmdk-answer-prose">{answer.prose}</p>
+                  <AgentResponseRenderer answer={answer} compact />
                   {answer.actionLabel && answer.actionPath && (
                     <div className="cmdk-answer-action">
                       <button

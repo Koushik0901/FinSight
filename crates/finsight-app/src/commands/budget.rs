@@ -230,7 +230,7 @@ pub async fn create_goal(
         .map(goal_to_dto)
     })
     .await
-.map_err(AppError::from)
+    .map_err(AppError::from)
 }
 
 #[derive(Debug, Clone, Serialize, Type)]

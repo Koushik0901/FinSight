@@ -40,6 +40,18 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
             apy_pct: None,
             simplefin_account_id: None,
             nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
         },
     )
     .unwrap();
@@ -55,6 +67,10 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
             status: TransactionStatus::Cleared,
             imported_id: None,
             source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
         },
     )
     .unwrap();

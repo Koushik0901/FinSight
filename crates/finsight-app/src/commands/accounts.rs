@@ -1,6 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::{Account, AccountPatch, AccountSummary, NewAccount};
+use finsight_core::models::{
+    Account, AccountBalancePoint, AccountPatch, AccountSparkline, AccountSummary, NewAccount,
+};
 use finsight_core::repos::{accounts, run};
 use tauri_plugin_dialog::DialogExt;
 
@@ -145,4 +147,33 @@ pub async fn export_account_csv(
     let path_str = path.to_string_lossy().to_string();
     std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
     Ok(path_str)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_account_balance_history(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    days: u32,
+) -> AppResult<Vec<AccountBalancePoint>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        accounts::list_balance_history(conn, &account_id, days)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_account_balance_sparklines(
+    state: tauri::State<'_, AppState>,
+    days: u32,
+) -> AppResult<Vec<AccountSparkline>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        accounts::list_all_balance_sparklines(conn, days)
+    })
+    .await
+    .map_err(AppError::from)
 }

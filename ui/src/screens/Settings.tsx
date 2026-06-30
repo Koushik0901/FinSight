@@ -1,13 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
-import {
-  useResetOnboarding,
-  useClearSampleData,
-  useSeedDevDemo,
-  useOnboardingState,
-} from "../api/hooks/onboarding";
+import { useResetOnboarding, useClearSampleData, useSeedDevDemo, useOnboardingState } from "../api/hooks/onboarding";
 import {
   useCompletionProvider,
   useSetCompletionProvider,
@@ -17,68 +12,72 @@ import {
   useListProviderModels,
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled } from "../api/hooks/settings";
-import { useSimpleFinStatus, useDisconnectSimpleFin } from "../api/hooks/simplefin";
+import {
+  useSimpleFinStatus,
+  useDisconnectSimpleFin,
+  useSimpleFinConnections,
+  useDeleteSimpleFinConnection,
+  useSimpleFinSyncSettings,
+  useSetSimpleFinSyncSettings,
+} from "../api/hooks/simplefin";
 import SimpleFinDialog from "./onboarding/SimpleFinDialog";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
-import Button from "../components/Button";
-import Card from "../components/Card";
-import Input from "../components/Input";
-import Select from "../components/Select";
-import Swatch from "../components/Swatch";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;
 
-const OPENAI_COMPAT_PRESETS: { label: string; preset: string; base_url: string }[] = [
+const OPENAI_COMPAT_PRESETS = [
   { label: "OpenAI", preset: "openai", base_url: "https://api.openai.com/v1" },
   { label: "OpenRouter", preset: "openrouter", base_url: "https://openrouter.ai/api/v1" },
   { label: "Google", preset: "google", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/" },
   { label: "Custom", preset: "custom", base_url: "" },
-];
+] as const;
+type CompatPreset = (typeof OPENAI_COMPAT_PRESETS)[number];
 
-const CURRENCIES = ["USD","EUR","GBP","CAD","AUD","JPY","CHF","NZD","SGD","HKD"];
+const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"];
+const SECTIONS = [
+  ["profile", "Profile"],
+  ["privacy", "Privacy & data"],
+  ["provider", "AI Provider"],
+  ["appearance", "Appearance"],
+  ["connections", "Connections"],
+  ["notifications", "Notifications"],
+  ["keyboard", "Keyboard"],
+  ["about", "About"],
+] as const;
 
-function providerDisplayName(cfg: CompletionProviderConfig): string {
-  switch (cfg.kind) {
-    case "ollama":
-      return `Ollama (${cfg.model})`;
-    case "openai_compat":
-      return `${cfg.preset} (${cfg.model})`;
-    case "anthropic":
-      return `Anthropic (${cfg.model})`;
-    case "unconfigured":
-      return "Not configured";
-  }
+function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
+  if (!cfg || cfg.kind === "unconfigured") return "Not configured";
+  if (cfg.kind === "ollama") return `Configured — Ollama (${cfg.model})`;
+  if (cfg.kind === "anthropic") return `Configured — Anthropic (${cfg.model})`;
+  return `Configured — ${cfg.preset} (${cfg.model})`;
+}
+
+function Tog({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return <span className={`tog${checked ? " on" : ""}`} role="switch" aria-checked={checked} tabIndex={0} onClick={() => onChange(!checked)} onKeyDown={(e) => e.key === "Enter" && onChange(!checked)} />;
+}
+
+function Section({ id, title, description, children }: { id: string; title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section id={`sec-${id}`}>
+      <h2 className="h1" style={{ fontSize: 26 }}>{title}</h2>
+      <div className="muted" style={{ marginTop: 6 }}>{description}</div>
+      <div style={{ marginTop: 18 }}>{children}</div>
+    </section>
+  );
 }
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { data: accounts = [] } = useAccounts();
+  const { data: onboarding } = useOnboardingState();
   const reset = useResetOnboarding();
   const clearSample = useClearSampleData();
   const seedDemo = useSeedDevDemo();
-  const { data: accounts = [] } = useAccounts();
-  const { data: onboarding } = useOnboardingState();
-  const hasSample = accounts.some((a) => a.source === "sample");
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [clearError, setClearError] = useState<string | null>(null);
-  const [sfDialogOpen, setSfDialogOpen] = useState(false);
-  const { data: sfStatus } = useSimpleFinStatus();
-  const disconnectSf = useDisconnectSimpleFin();
+  const hasSample = accounts.some((account) => account.source === "sample");
 
-  // AI Provider panel state
-  const [providerPanelOpen, setProviderPanelOpen] = useState(false);
-  const [selectedKind, setSelectedKind] = useState<ProviderKind>(null);
-  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
-  const [ollamaModel, setOllamaModel] = useState("");
-  const [selectedPreset, setSelectedPreset] = useState(OPENAI_COMPAT_PRESETS[0]!);
-  const [compatModel, setCompatModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [anthropicModel, setAnthropicModel] = useState("claude-3-5-haiku-latest");
-  const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const { theme, density, accent, setTheme, setDensity, setAccent } = useTweaks();
+  const { theme, density, accent, privacy, setTheme, setDensity, setAccent, setPrivacy } = useTweaks();
   const setCurrencyMutation = useSetCurrency();
   const exportJson = useExportJson();
   const exportCsv = useExportCsv();
@@ -91,475 +90,207 @@ export default function Settings() {
   const saveKey = useSaveProviderApiKey();
   const testProvider = useTestCompletionProvider();
   const triggerCategorize = useTriggerCategorize();
-  const { data: ollamaModels = [] } = useListProviderModels(
-    selectedKind === "ollama"
-      ? { kind: "ollama", base_url: ollamaUrl, model: ollamaModel }
-      : null
-  );
 
-  // Pre-populate the provider panel from the saved configuration when it opens.
+  const { data: sfStatus } = useSimpleFinStatus();
+  const { data: sfConnections = [] } = useSimpleFinConnections();
+  const disconnectSf = useDisconnectSimpleFin();
+  const deleteConnection = useDeleteSimpleFinConnection();
+  const { data: sfSyncSettings } = useSimpleFinSyncSettings();
+  const setSfSyncSettings = useSetSimpleFinSyncSettings();
+
+  const [sfDialogOpen, setSfDialogOpen] = useState(false);
+  const [providerPanelOpen, setProviderPanelOpen] = useState(false);
+  const [selectedKind, setSelectedKind] = useState<ProviderKind>(null);
+  const [selectedPreset, setSelectedPreset] = useState<CompatPreset>(OPENAI_COMPAT_PRESETS[0]);
+  const [ollamaUrl, setOllamaUrl] = useState("http://localhost:11434");
+  const [ollamaModel, setOllamaModel] = useState("");
+  const [compatModel, setCompatModel] = useState("");
+  const [anthropicModel, setAnthropicModel] = useState("claude-3-5-haiku-latest");
+  const [apiKey, setApiKey] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
+
+  const modelsConfig = useMemo<CompletionProviderConfig | null>(() => {
+    if (selectedKind !== "ollama") return null;
+    return { kind: "ollama", base_url: ollamaUrl, model: ollamaModel };
+  }, [ollamaModel, ollamaUrl, selectedKind]);
+  const { data: ollamaModels = [] } = useListProviderModels(modelsConfig);
+
   useEffect(() => {
     if (!providerPanelOpen || !currentProvider) return;
-    switch (currentProvider.kind) {
-      case "ollama":
-        setSelectedKind("ollama");
-        setOllamaUrl(currentProvider.base_url);
-        setOllamaModel(currentProvider.model);
-        break;
-      case "openai_compat": {
-        setSelectedKind("openai_compat");
-        const preset = OPENAI_COMPAT_PRESETS.find((p) => p.preset === currentProvider.preset);
-        if (preset) {
-          setSelectedPreset(preset);
-        } else {
-          setSelectedPreset({
-            label: currentProvider.preset,
-            preset: currentProvider.preset,
-            base_url: currentProvider.base_url,
-          });
-        }
-        setCompatModel(currentProvider.model);
-        break;
-      }
-      case "anthropic":
-        setSelectedKind("anthropic");
-        setAnthropicModel(currentProvider.model);
-        break;
-      case "unconfigured":
-        setSelectedKind(null);
-        break;
+    if (currentProvider.kind === "ollama") {
+      setSelectedKind("ollama");
+      setOllamaUrl(currentProvider.base_url);
+      setOllamaModel(currentProvider.model);
+    } else if (currentProvider.kind === "openai_compat") {
+      setSelectedKind("openai_compat");
+      setSelectedPreset(OPENAI_COMPAT_PRESETS.find((preset) => preset.preset === currentProvider.preset) ?? OPENAI_COMPAT_PRESETS[0]);
+      setCompatModel(currentProvider.model);
+    } else if (currentProvider.kind === "anthropic") {
+      setSelectedKind("anthropic");
+      setAnthropicModel(currentProvider.model);
+    } else {
+      setSelectedKind(null);
     }
-  }, [providerPanelOpen, currentProvider]);
+  }, [currentProvider, providerPanelOpen]);
 
-  async function reRunOnboarding() {
-    if (!confirm("This will re-open the welcome wizard. Your existing accounts, transactions, and categories are kept.")) return;
+  const buildConfig = (): CompletionProviderConfig | null => {
+    if (selectedKind === "ollama") return { kind: "ollama", base_url: ollamaUrl, model: ollamaModel };
+    if (selectedKind === "openai_compat") return { kind: "openai_compat", preset: selectedPreset.preset, base_url: selectedPreset.base_url, model: compatModel };
+    if (selectedKind === "anthropic") return { kind: "anthropic", model: anthropicModel };
+    return null;
+  };
+
+  const reRunOnboarding = async () => {
     setResetError(null);
     try {
       await reset.mutateAsync();
       navigate("/onboarding");
-    } catch (err) {
-      setResetError(userErrorMessage(err, "Could not reopen setup. Try again from the desktop app."));
+    } catch (error) {
+      setResetError(userErrorMessage(error, "Could not reopen setup."));
     }
-  }
+  };
 
-  async function replaceSampleData() {
-    if (!confirm("This will permanently delete the Mira & Adam sample accounts and their transactions. Anything you added manually or imported is kept.")) return;
+  const replaceSampleData = async () => {
     setClearError(null);
     try {
       await clearSample.mutateAsync();
       navigate("/onboarding");
-    } catch (err) {
-      setClearError(userErrorMessage(err, "Could not clear sample data. Try again from the desktop app."));
+    } catch (error) {
+      setClearError(userErrorMessage(error, "Could not clear sample data."));
     }
-  }
+  };
 
-  async function handleTestConnection() {
-    if (!selectedKind) return;
+  const handleTestConnection = async () => {
     const config = buildConfig();
     if (!config) return;
-    setTestResult(null);
     try {
-      const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
-      setTestResult(r);
-    } catch (err) {
-      setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(err, "Connection failed. Check the provider settings and try again.") });
+      const result = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
+      setTestResult(result);
+    } catch (error) {
+      setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(error, "Connection failed.") });
     }
-  }
+  };
 
-  async function handleSave() {
-    if (!selectedKind) return;
+  const handleSave = async () => {
     const config = buildConfig();
     if (!config) return;
     setSaveError(null);
     try {
-      if (apiKey && selectedKind !== "ollama") {
-        const pid = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
-        await saveKey.mutateAsync({ providerId: pid, key: apiKey });
+      if (apiKey && selectedKind && selectedKind !== "ollama") {
+        const providerId = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
+        await saveKey.mutateAsync({ providerId, key: apiKey });
       }
       await setProvider.mutateAsync(config);
       setProviderPanelOpen(false);
-    } catch (err) {
-      setSaveError(userErrorMessage(err, "Could not save provider settings. Check the fields and try again."));
+    } catch (error) {
+      setSaveError(userErrorMessage(error, "Could not save provider settings."));
     }
-  }
-
-  function buildConfig(): CompletionProviderConfig | null {
-    switch (selectedKind) {
-      case "ollama": return { kind: "ollama", base_url: ollamaUrl, model: ollamaModel };
-      case "openai_compat": return { kind: "openai_compat", preset: selectedPreset.preset, base_url: selectedPreset.base_url, model: compatModel };
-      case "anthropic": return { kind: "anthropic", model: anthropicModel };
-      default: return null;
-    }
-  }
+  };
 
   return (
-    <div className="screen-settings">
-      <h1 style={{ fontSize: 32, fontWeight: 600, marginTop: 0, marginBottom: 24 }}>Settings</h1>
+    <div className="screen screen-settings">
+      <div className="day-hdr">
+        <div>
+          <div className="eyebrow">SETTINGS</div>
+          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Make it yours.</h1>
+        </div>
+      </div>
 
-      <section className="section-stack" style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Onboarding</h2>
-        <p style={{ marginBottom: 12 }}>
-          Completed: <strong>{onboarding?.completion_marked ? "yes" : "no"}</strong>
-        </p>
-        {resetError && <p role="alert" className="err">{resetError}</p>}
-        <Button variant="default" onClick={reRunOnboarding}>Re-run onboarding</Button>
-      </section>
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 56 }}>
+        <nav style={{ position: "sticky", top: 16, alignSelf: "start", display: "flex", flexDirection: "column", gap: 4 }}>
+          {SECTIONS.map(([id, label]) => <a key={id} href={`#sec-${id}`} className="btn ghost sm" style={{ justifyContent: "flex-start" }}>Go to {label}</a>)}
+        </nav>
 
-      {hasSample && (
-        <section className="section-stack" style={{ marginBottom: 32 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Sample data</h2>
-          <p style={{ marginBottom: 12 }}>
-            You're currently looking at the Mira &amp; Adam sample household. Replace it with your own when you're ready.
-          </p>
-          {clearError && <p role="alert" className="err">{clearError}</p>}
-          <Button variant="danger" onClick={replaceSampleData}>Replace sample data with my own</Button>
-        </section>
-      )}
-
-      <section className="section-stack" style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>AI Provider</h2>
-        {!providerPanelOpen ? (
-          <Card className="stack stack-md" tight>
-            <p className="muted" style={{ margin: 0 }}>
-              {currentProvider && currentProvider.kind !== "unconfigured"
-                ? `Configured — ${providerDisplayName(currentProvider)}.`
-                : "Not configured — categories won't be assigned automatically."}
-            </p>
-            <Button variant="default" onClick={() => setProviderPanelOpen(true)}>
-              {currentProvider && currentProvider.kind !== "unconfigured" ? "Edit" : "Configure"}
-            </Button>
-          </Card>
-        ) : (
-          <Card className="stack stack-md" tight>
-            <div className="row-sm wrap">
-              {(["ollama", "openai_compat", "anthropic"] as ProviderKind[]).map((k) => (
-                <Button
-                  key={k!}
-                  variant={selectedKind === k ? "primary" : "outline"}
-                  size="sm"
-                  onClick={() => { setSelectedKind(k); setApiKey(""); }}
-                  aria-pressed={selectedKind === k}
-                >
-                  {k === "ollama" ? "Ollama" : k === "anthropic" ? "Anthropic" : "Cloud"}
-                </Button>
-              ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 56 }}>
+          <Section id="profile" title="Profile" description="Who this setup is for and how to restart it.">
+            <div className="s-row">
+              <div><div className="label">Onboarding</div><div className="desc">Completed: {onboarding?.completion_marked ? "yes" : "no"}</div></div>
+              <div>{resetError && <div className="muted">{resetError}</div>}</div>
+              <button className="btn sm" type="button" onClick={() => void reRunOnboarding()}>Re-run onboarding</button>
             </div>
+            {hasSample && <div className="s-row"><div><div className="label">Sample household</div><div className="desc">Replace the demo data with your own accounts when you're ready.</div></div><div>{clearError && <div className="muted">{clearError}</div>}</div><button className="btn outline sm" type="button" onClick={() => void replaceSampleData()}>Replace sample data</button></div>}
+            <div className="s-row"><div><div className="label">Account name</div><div className="desc">This desktop app is configured for your local FinSight profile.</div></div><div className="muted">FinSight desktop</div><div /></div>
+          </Section>
 
-            {selectedKind === "ollama" && (
-              <div className="stack stack-md">
-                <Input
-                  label="Base URL"
-                  value={ollamaUrl}
-                  onChange={(e) => setOllamaUrl(e.target.value)}
-                />
-                <Select
-                  label="Model"
-                  value={ollamaModel}
-                  onChange={(e) => setOllamaModel(e.target.value)}
-                >
-                  {ollamaModels.map((m: string) => <option key={m} value={m}>{m}</option>)}
-                </Select>
-              </div>
-            )}
+          <Section id="privacy" title="Privacy & data" description="Keep control of your data and what appears on-screen.">
+            <div className="s-row">
+              <div><div className="label">Privacy mode</div><div className="desc">Blur displayed amounts when you are sharing your screen or want extra discretion.</div></div>
+              <div className="muted">Shortcut: ⌘.</div>
+              <Tog checked={privacy} onChange={setPrivacy} />
+            </div>
+            <div className="s-row">
+              <div><div className="label">Export data</div><div className="desc">Download the full dataset as JSON or CSV whenever you want a local backup.</div></div>
+              <div className="row row-sm wrap"><button className="btn sm" type="button" onClick={async () => { try { await exportJson.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as JSON</button><button className="btn sm" type="button" onClick={async () => { try { await exportCsv.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as CSV</button></div>
+              <div />
+            </div>
+          </Section>
 
-            {selectedKind === "openai_compat" && (
-              <div className="stack stack-md">
-                <div className="row-sm wrap">
-                  {OPENAI_COMPAT_PRESETS.map((p) => (
-                    <Button
-                      key={p.preset}
-                      variant={selectedPreset.preset === p.preset ? "primary" : "outline"}
-                      size="sm"
-                      onClick={() => setSelectedPreset(p)}
-                      aria-pressed={selectedPreset.preset === p.preset}
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
+          <Section id="provider" title="AI Provider" description="Choose where categorization and forecasting run.">
+            {!providerPanelOpen ? (
+              <div className="card tight">
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+                  <div className="muted">{providerDisplayName(currentProvider)}</div>
+                  <button className="btn sm" type="button" onClick={() => setProviderPanelOpen(true)}>{currentProvider && currentProvider.kind !== "unconfigured" ? "Edit" : "Configure"}</button>
                 </div>
-                <Input
-                  label="Model"
-                  value={compatModel}
-                  onChange={(e) => setCompatModel(e.target.value)}
-                  placeholder="e.g. gpt-4o-mini"
-                />
-                <Input
-                  label="API Key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-…"
-                />
               </div>
-            )}
-
-            {selectedKind === "anthropic" && (
-              <div className="stack stack-md">
-                <Input
-                  label="Model"
-                  value={anthropicModel}
-                  onChange={(e) => setAnthropicModel(e.target.value)}
-                />
-                <Input
-                  label="API Key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-ant-…"
-                />
-              </div>
-            )}
-
-            {testResult && (
-              <p style={{ color: testResult.ok ? "var(--success, green)" : "var(--error, red)", margin: 0 }}>
-                {testResult.ok ? `✓ Connected — ${testResult.latency_ms}ms` : `✗ ${testResult.error}`}
-              </p>
-            )}
-
-            {saveError && <p role="alert" className="err">{saveError}</p>}
-
-            <div className="row-sm wrap">
-              <Button
-                variant="default"
-                onClick={handleTestConnection}
-                disabled={!selectedKind || testProvider.isPending}
-                loading={testProvider.isPending}
-              >
-                Test connection
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleSave}
-                disabled={!selectedKind || setProvider.isPending}
-                loading={setProvider.isPending}
-              >
-                Save
-              </Button>
-              <Button variant="ghost" onClick={() => { setProviderPanelOpen(false); setTestResult(null); }}>
-                Cancel
-              </Button>
-            </div>
-
-            <div style={{ paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
-              <Button
-                variant="outline"
-                onClick={() => triggerCategorize.mutate()}
-                disabled={triggerCategorize.isPending}
-                loading={triggerCategorize.isPending}
-              >
-                Re-categorize all
-              </Button>
-            </div>
-          </Card>
-        )}
-      </section>
-
-      <section className="section-stack" style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Appearance</h2>
-
-        <div className="stack stack-lg">
-          <div className="row-md wrap" style={{ alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13 }} className="muted">Theme</span>
-            <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button className={theme === "light" ? "on" : ""} aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Light</button>
-              <button className={theme === "dark" ? "on" : ""} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Dark</button>
-            </div>
-          </div>
-
-          <div className="row-md wrap" style={{ alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13 }} className="muted">Density</span>
-            <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button className={density === "cozy" ? "on" : ""} aria-pressed={density === "cozy"} onClick={() => setDensity("cozy")}>Cozy</button>
-              <button className={density === "compact" ? "on" : ""} aria-pressed={density === "compact"} onClick={() => setDensity("compact")}>Compact</button>
-            </div>
-          </div>
-
-          <div className="row-md wrap" style={{ alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13 }} className="muted">Accent</span>
-            <div className="row-sm">
-              {(Object.entries(ACCENTS) as [AccentId, { hex: string; ink: string }][]).map(([id, { hex }]) => (
-                <Swatch
-                  key={id}
-                  color={hex}
-                  selected={accent === id}
-                  onClick={() => setAccent(id)}
-                  label={id}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="row-md wrap" style={{ alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13 }} className="muted">Currency</span>
-            <Select
-              aria-label="Currency"
-              value={currentCurrency}
-              onChange={(e) => {
-                setCurrencyMutation.mutate(e.target.value, {
-                  onError: (err) => toast.error("Currency update failed — " + (err instanceof Error ? err.message : "unknown error")),
-                });
-              }}
-              style={{ width: "auto", minWidth: 100 }}
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="row-md wrap" style={{ alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13 }} className="muted">Notifications</span>
-            <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button
-                className={notificationsEnabled ? "on" : ""}
-                aria-pressed={notificationsEnabled}
-                onClick={() => setNotificationsMutation.mutate(true)}
-              >
-                On
-              </button>
-              <button
-                className={!notificationsEnabled ? "on" : ""}
-                aria-pressed={!notificationsEnabled}
-                onClick={() => setNotificationsMutation.mutate(false)}
-              >
-                Off
-              </button>
-            </div>
-            <span className="muted" style={{ fontSize: 12 }}>Budget alerts and bill reminders</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="section-stack" style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Export data</h2>
-        <p className="muted" style={{ marginBottom: 14, fontSize: 14 }}>
-          Download your complete data as JSON or a transaction CSV.
-        </p>
-        <div className="row-sm">
-          <Button
-            variant="default"
-            loading={exportJson.isPending}
-            disabled={exportJson.isPending}
-            onClick={async () => {
-              try {
-                await exportJson.mutateAsync();
-                toast.success("File saved");
-              } catch (err) {
-                toast.error("Export failed", {
-                  description: userErrorMessage(err, "Try exporting again from the desktop app."),
-                });
-              }
-            }}
-          >
-            {exportJson.isPending ? "Exporting…" : "Export as JSON"}
-          </Button>
-          <Button
-            variant="default"
-            loading={exportCsv.isPending}
-            disabled={exportCsv.isPending}
-            onClick={async () => {
-              try {
-                await exportCsv.mutateAsync();
-                toast.success("File saved");
-              } catch (err) {
-                toast.error("Export failed", {
-                  description: userErrorMessage(err, "Try exporting again from the desktop app."),
-                });
-              }
-            }}
-          >
-            {exportCsv.isPending ? "Exporting…" : "Export as CSV"}
-          </Button>
-        </div>
-      </section>
-
-      {import.meta.env.DEV && (
-        <section style={{ marginBottom: 32 }}>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>Development</div>
-          <Card tone="accent" style={{ opacity: 0.9 }} className="stack stack-md">
-            <div className="stack stack-xs">
-              <strong>Load demo data</strong>
-              <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                Seeds the "Mira & Adam" prototype dataset — 6 accounts, 6 months of transactions,
-                goals, assets, liabilities, and budgets. Replaces any existing sample data. Dev only.
-              </p>
-            </div>
-            <Button
-              variant="default"
-              loading={seedDemo.isPending}
-              disabled={seedDemo.isPending}
-              onClick={async () => {
-                try {
-                  const s = await seedDemo.mutateAsync();
-                  toast.success(`Demo data loaded — ${s.transactions_created} transactions`);
-                } catch (err) {
-                  toast.error("Could not load demo data", {
-                    description: userErrorMessage(err, "Open FinSight with the desktop runtime and try again."),
-                  });
-                }
-              }}
-            >
-              {seedDemo.isPending ? "Loading…" : "Load demo data"}
-            </Button>
-          </Card>
-        </section>
-      )}
-
-      <section className="section-stack">
-        <div className="eyebrow" style={{ marginBottom: 14 }}>Bank connections</div>
-        <Card className="stack stack-md">
-          <div className="row-md" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <span>SimpleFin: {sfStatus?.configured ? "Connected" : "Not connected"}</span>
-            {sfStatus?.configured ? (
-              <Button
-                variant="default"
-                onClick={() => {
-                  disconnectSf.mutate(undefined, {
-                    onSuccess: () => toast.success("SimpleFin credentials removed"),
-                    onError: () => toast.error("Failed to remove credentials"),
-                  });
-                }}
-              >
-                Reset credentials
-              </Button>
             ) : (
-              <Button variant="default" onClick={() => setSfDialogOpen(true)}>
-                Set up SimpleFin
-              </Button>
-            )}
-          </div>
-        </Card>
-        <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
-      </section>
+              <div className="card">
+                <div className="toolbar" style={{ marginBottom: 18 }}>
+                  <button className={selectedKind === "ollama" ? "on" : ""} type="button" onClick={() => { setSelectedKind("ollama"); setApiKey(""); }}>Ollama</button>
+                  <button className={selectedKind === "openai_compat" ? "on" : ""} type="button" onClick={() => { setSelectedKind("openai_compat"); setApiKey(""); }}>Cloud</button>
+                  <button className={selectedKind === "anthropic" ? "on" : ""} type="button" onClick={() => { setSelectedKind("anthropic"); setApiKey(""); }}>Anthropic</button>
+                </div>
 
-      <section className="section-stack">
-        <div className="eyebrow" style={{ marginBottom: 14 }}>Keyboard shortcuts</div>
-        <Card tight className="stack">
-          {[
-            { key: "⌘K", label: "Open command palette" },
-            { key: "⌘.", label: "Toggle privacy mode" },
-          ].map(({ key, label }, i, arr) => (
-            <div
-              key={key}
-              className="row-md"
-              style={{
-                alignItems: "center",
-                padding: "10px 0",
-                borderBottom: i < arr.length - 1 ? "1px solid var(--line)" : "none",
-              }}
-            >
-              <kbd className="num" style={{
-                fontFamily: "var(--mono)", fontSize: 13, padding: "3px 8px",
-                background: "var(--surface-2)", border: "1px solid var(--line)",
-                borderRadius: 5, color: "var(--ink)", minWidth: 36, textAlign: "center",
-              }}>
-                {key}
-              </kbd>
-              <span style={{ fontSize: 14 }}>{label}</span>
-            </div>
-          ))}
-        </Card>
-      </section>
+                {selectedKind === "ollama" && <div className="stack stack-md"><label className="stack stack-xs"><span className="muted">Base URL</span><input className="control" value={ollamaUrl} onChange={(e) => setOllamaUrl(e.target.value)} /></label><label className="stack stack-xs"><span className="muted">Model</span><select className="control" value={ollamaModel} onChange={(e) => setOllamaModel(e.target.value)}>{ollamaModels.map((model) => <option key={model} value={model}>{model}</option>)}{ollamaModels.length === 0 && <option value="">Pick a model</option>}</select></label></div>}
+                {selectedKind === "openai_compat" && <div className="stack stack-md"><div className="row row-sm wrap">{OPENAI_COMPAT_PRESETS.map((preset) => <button key={preset.preset} className={`btn ${selectedPreset.preset === preset.preset ? "primary" : "outline"} sm`} type="button" onClick={() => setSelectedPreset(preset)}>{preset.label}</button>)}</div><label className="stack stack-xs"><span className="muted">Model</span><input className="control" value={compatModel} onChange={(e) => setCompatModel(e.target.value)} placeholder="e.g. gpt-4o-mini" /></label><label className="stack stack-xs"><span className="muted">API key</span><input className="control" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" /></label></div>}
+                {selectedKind === "anthropic" && <div className="stack stack-md"><label className="stack stack-xs"><span className="muted">Model</span><input className="control" value={anthropicModel} onChange={(e) => setAnthropicModel(e.target.value)} /></label><label className="stack stack-xs"><span className="muted">API key</span><input className="control" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-…" /></label></div>}
+
+                {testResult && <div className="muted" style={{ marginTop: 14 }}>{testResult.ok ? `Connected — ${testResult.latency_ms}ms` : testResult.error}</div>}
+                {saveError && <div className="muted" style={{ marginTop: 14 }}>{saveError}</div>}
+
+                <div className="row row-sm wrap" style={{ marginTop: 18 }}>
+                  <button className="btn sm" type="button" onClick={() => void handleTestConnection()}>Test connection</button>
+                  <button className="btn primary sm" type="button" onClick={() => void handleSave()}>Save</button>
+                  <button className="btn ghost sm" type="button" onClick={() => { setProviderPanelOpen(false); setTestResult(null); }}>Cancel</button>
+                  <button className="btn outline sm" type="button" onClick={() => triggerCategorize.mutate()}>Re-categorize all</button>
+                </div>
+              </div>
+            )}
+          </Section>
+
+          <Section id="appearance" title="Appearance" description="Theme, density, accent, and currency.">
+            <div className="s-row"><div><div className="label">Theme</div><div className="desc">Switch between dark and light modes.</div></div><div className="toolbar"><button className={theme === "dark" ? "on" : ""} type="button" onClick={() => setTheme("dark")}>Dark</button><button className={theme === "light" ? "on" : ""} type="button" onClick={() => setTheme("light")}>Light</button></div><div /></div>
+            <div className="s-row"><div><div className="label">Density</div><div className="desc">Use cozy spacing or fit more on screen.</div></div><div className="toolbar"><button className={density === "cozy" ? "on" : ""} type="button" onClick={() => setDensity("cozy")}>Cozy</button><button className={density === "compact" ? "on" : ""} type="button" onClick={() => setDensity("compact")}>Compact</button></div><div /></div>
+            <div className="s-row"><div><div className="label">Accent</div><div className="desc">Pick the accent used in hero states and active controls.</div></div><div className="row row-sm wrap">{(Object.entries(ACCENTS) as [AccentId, { hex: string }][]).map(([id, value]) => <button key={id} type="button" aria-label={id} onClick={() => setAccent(id)} style={{ width: 28, height: 28, borderRadius: 999, background: value.hex, border: accent === id ? "2px solid var(--ink)" : "1px solid var(--line)" }} />)}</div><div /></div>
+            <div className="s-row"><div><div className="label">Currency</div><div className="desc">Used for all money formatting in the app.</div></div><div><select className="control" value={currentCurrency} onChange={(e) => setCurrencyMutation.mutate(e.target.value)} style={{ maxWidth: 140 }}>{CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><div /></div>
+          </Section>
+
+          <Section id="connections" title="Connections" description="Bank feeds and background sync via SimpleFin.">
+            <div className="s-row"><div><div className="label">SimpleFin</div><div className="desc">Connect or add institutions and import synced transactions.</div></div><div className="muted">{sfStatus?.configured ? "Connected" : "Not connected"}</div><button className="btn sm" type="button" onClick={() => setSfDialogOpen(true)}>{sfStatus?.configured ? "Add connection" : "Set up SimpleFin"}</button></div>
+            {sfStatus?.configured && <div className="s-row"><div><div className="label">Background sync</div><div className="desc">Choose how often the desktop app checks for updates.</div></div><div className="toolbar">{[0, 60, 180, 360, 720].map((minutes) => <button key={minutes} className={(sfSyncSettings?.backgroundSyncIntervalMinutes ?? 360) === minutes ? "on" : ""} type="button" onClick={() => setSfSyncSettings.mutate({ backgroundSyncEnabled: minutes > 0, backgroundSyncIntervalMinutes: minutes })}>{minutes === 0 ? "Off" : minutes === 60 ? "1 hour" : minutes === 180 ? "3 hours" : minutes === 360 ? "6 hours" : "12 hours"}</button>)}</div><div /></div>}
+            {sfConnections.map((connection) => <div key={connection.id} className="s-row"><div><div className="label">{connection.label || connection.orgName || "SimpleFin connection"}</div><div className="desc">{connection.status}{connection.lastSyncedAt ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : ""}</div></div><div className="muted">Connected</div><button className="btn ghost sm" type="button" onClick={() => deleteConnection.mutate(connection.id, { onSuccess: () => toast.success("Connection removed"), onError: () => toast.error("Failed to remove connection") })}>Remove</button></div>)}
+            {sfConnections.length > 0 && <div className="s-row"><div><div className="label">Disconnect all</div><div className="desc">Remove all stored SimpleFin credentials.</div></div><div /><button className="btn outline sm" type="button" onClick={() => disconnectSf.mutate(undefined, { onSuccess: () => toast.success("All SimpleFin credentials removed"), onError: () => toast.error("Failed to remove credentials") })}>Disconnect all</button></div>}
+            <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
+          </Section>
+
+          <Section id="notifications" title="Notifications" description="Control reminders and nudges.">
+            <div className="s-row"><div><div className="label">Notifications enabled</div><div className="desc">Budget alerts, recurring reminders, and daily prompts.</div></div><div className="muted">{notificationsEnabled ? "Currently on" : "Currently off"}</div><Tog checked={notificationsEnabled} onChange={(value) => setNotificationsMutation.mutate(value)} /></div>
+          </Section>
+
+          <Section id="keyboard" title="Keyboard" description="Shortcuts available across the app.">
+            <div className="s-row"><div><div className="label">Command palette</div><div className="desc">Jump to screens and quick actions.</div></div><div><kbd className="tok">⌘K</kbd></div><div /></div>
+            <div className="s-row"><div><div className="label">Privacy mode</div><div className="desc">Toggle amount blurring instantly.</div></div><div><kbd className="tok">⌘.</kbd></div><div /></div>
+          </Section>
+
+          <Section id="about" title="About" description="Version info and development helpers.">
+            <div className="s-row"><div><div className="label">App version</div><div className="desc">Desktop runtime build information.</div></div><div className="muted">FinSight desktop · local build</div><div /></div>
+            {import.meta.env.DEV && <div className="s-row"><div><div className="label">Reset demo data</div><div className="desc">Seed the demo dataset again for local development.</div></div><div className="muted">Dev only</div><button className="btn sm" type="button" onClick={async () => { try { const result = await seedDemo.mutateAsync(); toast.success(`Demo data loaded — ${result.transactions_created} transactions`); } catch (error) { toast.error("Could not load demo data", { description: userErrorMessage(error, "Open FinSight with the desktop runtime and try again.") }); } }}>Load demo data</button></div>}
+          </Section>
+        </div>
+      </div>
     </div>
   );
 }

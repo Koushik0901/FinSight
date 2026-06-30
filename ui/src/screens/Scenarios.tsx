@@ -218,10 +218,11 @@ export default function Scenarios() {
 
   return (
     <div className="screen screen-scenarios">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">Scenarios · run any what-if</div>
-          <h1>Imagine a future, see the math.</h1>
+      <header className="day-hdr">
+        <div>
+          <div className="eyebrow"><span className="dot" />SCENARIOS · WHAT-IF</div>
+          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Play out the possibilities.</h1>
+          <div className="muted" style={{ marginTop: 6 }}>Imagine a future, see the math.</div>
         </div>
       </header>
 

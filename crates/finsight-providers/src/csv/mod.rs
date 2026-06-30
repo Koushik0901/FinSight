@@ -8,10 +8,14 @@ use crate::csv::encoding::{decode_layered, DetectedEncoding};
 use crate::csv::mapping::CsvImportMapping;
 use crate::csv::parse::{into_new_transaction, parse_row};
 use crate::error::{ProviderError, ProviderResult};
+use crate::simplefin::matcher::{reconcile_excluding, ReconciliationDecision};
 use chrono::Utc;
+use finsight_core::models::{NewImportCandidate, NewImportCandidateMatch};
+use finsight_core::repos::{accounts, import_candidates};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashSet;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -34,6 +38,7 @@ pub struct ImportSummary {
     pub import_id: String,
     pub rows_imported: u32,
     pub rows_skipped_duplicates: u32,
+    pub rows_queued_for_review: u32,
     pub errors: Vec<RowError>,
 }
 
@@ -154,8 +159,10 @@ impl CsvProvider {
 
         let mut rows_imported: u32 = 0;
         let mut rows_skipped: u32 = 0;
+        let mut rows_queued: u32 = 0;
         let mut errors: Vec<RowError> = Vec::new();
         let mut processed: u32 = 0;
+        let mut matched_existing_ids: HashSet<String> = HashSet::new();
         // in_batch tracks rows in the current open transaction so we can
         // commit every BATCH_SIZE rows without the monotonic `processed` check.
         let mut in_batch: usize = 0;
@@ -193,36 +200,77 @@ impl CsvProvider {
             };
             let new_tx = into_new_transaction(parsed, account_id.to_string());
 
-            // Dedup check via V002 covering index.
-            let exists: bool = tx.query_row(
-                "SELECT 1 FROM transactions WHERE account_id = ?1 AND posted_at = ?2 \
-                                                AND amount_cents = ?3 AND merchant_raw = ?4 LIMIT 1",
-                params![&new_tx.account_id, new_tx.posted_at.to_rfc3339(),
-                        new_tx.amount_cents, &new_tx.merchant_raw],
-                |_| Ok(true),
-            ).or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(false),
-                other => Err(other),
-            }).map_err(|e| ProviderError::Internal(format!("dedup: {e}")))?;
-
-            if exists {
-                rows_skipped += 1;
-            } else {
-                tx.execute(
-                    "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
-                                              status, notes, created_at) \
-                     VALUES(?1, ?2, ?3, ?4, ?5, 'cleared', ?6, ?7)",
-                    params![
-                        Uuid::new_v4().to_string(),
-                        &new_tx.account_id,
-                        new_tx.posted_at.to_rfc3339(),
-                        new_tx.amount_cents,
-                        &new_tx.merchant_raw,
-                        &new_tx.notes,
-                        Utc::now().to_rfc3339(),
-                    ],
-                ).map_err(|e| ProviderError::Internal(format!("insert: {e}")))?;
-                rows_imported += 1;
+            match reconcile_excluding(&tx, account_id, &new_tx, None, 7, &matched_existing_ids)? {
+                ReconciliationDecision::AutoMatch(existing) => {
+                    matched_existing_ids.insert(existing.id);
+                    rows_skipped += 1;
+                }
+                ReconciliationDecision::NeedsReview {
+                    matches,
+                    confidence,
+                    reason,
+                } => {
+                    import_candidates::create(
+                        &mut tx,
+                        NewImportCandidate {
+                            source: "csv".to_string(),
+                            import_id: Some(import_id.to_string()),
+                            sync_run_id: None,
+                            account_id: account_id.to_string(),
+                            candidate_json: serde_json::to_string(&new_tx).map_err(|e| {
+                                ProviderError::Internal(format!("serialize candidate: {e}"))
+                            })?,
+                            raw_payload_json: None,
+                            imported_id: new_tx.imported_id.clone(),
+                            external_tx_id: new_tx.external_tx_id.clone(),
+                            external_account_id: new_tx.external_account_id.clone(),
+                            posted_at: new_tx.posted_at,
+                            amount_cents: new_tx.amount_cents,
+                            merchant_raw: new_tx.merchant_raw.clone(),
+                            confidence,
+                            reason,
+                        },
+                        matches
+                            .into_iter()
+                            .map(|m| NewImportCandidateMatch {
+                                transaction_id: m.transaction.id,
+                                match_kind: m.match_kind,
+                                score: m.score,
+                                is_recommended: m.is_recommended,
+                                explanation_json: m.explanation_json,
+                            })
+                            .collect(),
+                    )
+                    .map_err(ProviderError::Core)?;
+                    rows_queued += 1;
+                }
+                ReconciliationDecision::None => {
+                    tx.execute(
+                        "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
+                                                  category_id, status, notes, created_at, imported_id, source, \
+                                                  raw_synced_data, pending, external_tx_id, external_account_id) \
+                         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                        params![
+                            Uuid::new_v4().to_string(),
+                            &new_tx.account_id,
+                            new_tx.posted_at.to_rfc3339(),
+                            new_tx.amount_cents,
+                            &new_tx.merchant_raw,
+                            &new_tx.category_id,
+                            new_tx.status.as_db(),
+                            &new_tx.notes,
+                            Utc::now().to_rfc3339(),
+                            &new_tx.imported_id,
+                            &new_tx.source,
+                            &new_tx.raw_synced_data,
+                            new_tx.pending,
+                            &new_tx.external_tx_id,
+                            &new_tx.external_account_id,
+                        ],
+                    )
+                    .map_err(|e| ProviderError::Internal(format!("insert: {e}")))?;
+                    rows_imported += 1;
+                }
             }
 
             processed += 1;
@@ -258,6 +306,8 @@ impl CsvProvider {
         .map_err(|e| ProviderError::Internal(format!("imports finish: {e}")))?;
         tx.commit()
             .map_err(|e| ProviderError::Internal(format!("commit final: {e}")))?;
+        accounts::recompute_balance_if_linked(&mut conn, account_id)
+            .map_err(ProviderError::Core)?;
 
         on_progress(BatchProgress {
             rows_done: processed,
@@ -268,6 +318,7 @@ impl CsvProvider {
             import_id: import_id.to_string(),
             rows_imported,
             rows_skipped_duplicates: rows_skipped,
+            rows_queued_for_review: rows_queued,
             errors,
         })
     }

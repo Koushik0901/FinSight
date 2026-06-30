@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useAccounts } from "../api/hooks/accounts";
+import {
+  useAccounts,
+  useAccountBalanceHistory,
+  useAccountBalanceSparklines,
+} from "../api/hooks/accounts";
 import { useTransactions } from "../api/hooks/transactions";
 import { useSyncSimpleFinAccount, useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets, useLiabilities } from "../api/hooks/assets";
@@ -9,10 +13,12 @@ import type { Account, AccountSummary, Liability, ManualAsset } from "../api/cli
 import { commands } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
-import { getAccountDisplayName } from "../utils/accounts";
+import { getAccountDisplayName, getAccountTypeColor } from "../utils/accounts";
 import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
+import AccountSparkline from "../components/AccountSparkline";
+import AccountBalanceChart from "../components/AccountBalanceChart";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -34,12 +40,21 @@ export default function Accounts() {
   const syncAccount = useSyncSimpleFinAccount();
   const syncAll = useSyncAllSimpleFinAccounts();
   const netWorth = useNetWorth();
+  const { data: sparklines = [] } = useAccountBalanceSparklines(90);
+  const sparklineById = useMemo(
+    () => Object.fromEntries(sparklines.map((s) => [s.accountId, s.points])),
+    [sparklines]
+  );
 
   useEffect(() => {
     if (!selectedId && accounts.length > 0) setSelectedId(accounts[0]!.id);
   }, [accounts, selectedId]);
 
   const selectedAccount = accounts.find((account) => account.id === selectedId) ?? accounts[0] ?? null;
+  const { data: balanceHistory = [] } = useAccountBalanceHistory(
+    selectedAccount?.id,
+    90
+  );
   const txFilter = useMemo(() => ({
     accountId: selectedAccount?.id ?? null,
     limit: null,
@@ -128,9 +143,10 @@ export default function Accounts() {
                     <div>{getAccountDisplayName(account)}</div>
                     <div className="muted" style={{ fontSize: 12 }}>{account.bank} · {account.type}</div>
                   </div>
-                  <svg viewBox="0 0 72 24" width="72" height="24" aria-hidden="true">
-                    <path d="M2 15 C16 10, 28 11, 38 8 S56 9, 70 5" fill="none" stroke={account.color || "var(--accent)"} strokeWidth="2" />
-                  </svg>
+                  <AccountSparkline
+                    points={sparklineById[account.id] ?? []}
+                    color={getAccountTypeColor(account.type)}
+                  />
                   <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
                 </button>
               ))}
@@ -191,9 +207,10 @@ export default function Accounts() {
                     }}>Sync now</button>
                   )}
                 </div>
-                <svg viewBox="0 0 520 84" width="100%" height="84" style={{ marginTop: 18 }} aria-hidden="true">
-                  <path d="M0 60 C80 42, 120 54, 180 36 S300 22, 360 28 S440 16, 520 12" fill="none" stroke={selectedAccount.color || "var(--accent)"} strokeWidth="3" />
-                </svg>
+                <AccountBalanceChart
+                  points={balanceHistory}
+                  color={getAccountTypeColor(selectedAccount.type)}
+                />
               </div>
 
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center", padding: "14px 22px" }}>

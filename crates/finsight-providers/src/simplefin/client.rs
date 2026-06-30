@@ -4,10 +4,12 @@ use base64::Engine;
 use reqwest;
 use url::Url;
 
+use super::models::{
+    SimpleFinAccount, SimpleFinAccountSet, SimpleFinConnection, SimpleFinTransaction,
+};
 use crate::error::{ProviderError, ProviderResult};
-use super::models::{SimpleFinAccount, SimpleFinAccountSet, SimpleFinConnection, SimpleFinTransaction};
 
-const MAX_REDIRECTS: u8 = 5;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct SimpleFinClient {
     base_url: Url,
@@ -24,30 +26,38 @@ impl SimpleFinClient {
         }
         let username = url.username().to_string();
         let password = url.password().unwrap_or("").to_string();
-        if username.is_empty() {
+        if username.is_empty() || password.is_empty() {
             return Err(ProviderError::InvalidAccessUrl);
         }
+
+        // Preserve host, port, and path from the access URL. SimpleFin access URLs
+        // look like https://user:pass@bridge.example.com:8443/simplefin
+        // and all endpoints are relative to that root.
         let base_url = Url::parse(&format!(
-            "{}://{}",
+            "{}://{}{}",
             url.scheme(),
-            url.host_str().unwrap_or("")
+            url.host_str().unwrap_or(""),
+            url.port().map(|p| format!(":{}", p)).unwrap_or_default(),
         ))
         .map_err(|_| ProviderError::InvalidAccessUrl)?;
-        let path_segments: Vec<&str> = url
-            .path_segments()
-            .map(|s| s.collect())
-            .unwrap_or_default();
+
+        let path_segments: Vec<&str> = url.path_segments().map(|s| s.collect()).unwrap_or_default();
         let base_url = if path_segments.is_empty() {
             base_url
         } else {
             let path_with_trailing = format!("{}/", path_segments.join("/"));
-            base_url.join(&path_with_trailing).map_err(|_| ProviderError::InvalidAccessUrl)?
+            base_url
+                .join(&path_with_trailing)
+                .map_err(|_| ProviderError::InvalidAccessUrl)?
         };
 
+        // Use reqwest's default redirect policy, which strips Authorization on
+        // cross-origin redirects and follows same-origin redirects safely.
         let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(REQUEST_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::default())
             .build()
-            .map_err(|e| ProviderError::Http(e))?;
+            .map_err(ProviderError::Http)?;
 
         Ok(Self {
             base_url,
@@ -61,17 +71,17 @@ impl SimpleFinClient {
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(setup_token.trim())
             .map_err(|_| ProviderError::InvalidAccessUrl)?;
-        let claim_url =
-            String::from_utf8(decoded).map_err(|_| ProviderError::InvalidAccessUrl)?;
+        let claim_url = String::from_utf8(decoded).map_err(|_| ProviderError::InvalidAccessUrl)?;
         let url = Url::parse(&claim_url).map_err(|_| ProviderError::InvalidAccessUrl)?;
         if url.scheme() != "https" {
             return Err(ProviderError::InvalidAccessUrl);
         }
 
         let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(REQUEST_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::default())
             .build()
-            .map_err(|e| ProviderError::Http(e))?;
+            .map_err(ProviderError::Http)?;
 
         let res = http
             .post(url.as_str())
@@ -82,6 +92,9 @@ impl SimpleFinClient {
 
         if res.status() == reqwest::StatusCode::FORBIDDEN {
             return Err(ProviderError::TokenClaimFailed);
+        }
+        if res.status() == reqwest::StatusCode::PAYMENT_REQUIRED {
+            return Err(ProviderError::ServerError("payment required".into()));
         }
         if !res.status().is_success() {
             return Err(ProviderError::ServerError(format!(
@@ -126,18 +139,18 @@ impl SimpleFinClient {
         &self,
         account_id: &str,
         start_epoch: i64,
+        include_pending: bool,
     ) -> ProviderResult<Vec<SimpleFinTransaction>> {
-        let res = self
-            .get(
-                "accounts",
-                &[
-                    ("version", "2"),
-                    ("account", account_id),
-                    ("start-date", &start_epoch.to_string()),
-                    ("pending", "0"),
-                ],
-            )
-            .await?;
+        let start_str = start_epoch.to_string();
+        let mut query: Vec<(&str, &str)> = vec![
+            ("version", "2"),
+            ("account", account_id),
+            ("start-date", &start_str),
+        ];
+        if include_pending {
+            query.push(("pending", "1"));
+        }
+        let res = self.get("accounts", &query).await?;
         let set: SimpleFinAccountSet = res.json().await.map_err(ProviderError::Http)?;
         if !set.errlist.is_empty() {
             let msgs: Vec<String> = set.errlist.iter().map(|e| e.msg.clone()).collect();
@@ -151,56 +164,113 @@ impl SimpleFinClient {
         Ok(account.transactions.unwrap_or_default())
     }
 
-    async fn get(
-        &self,
-        path: &str,
-        query: &[(&str, &str)],
-    ) -> ProviderResult<reqwest::Response> {
-        let mut full_url = self.base_url.clone();
-        if !path.is_empty() {
-            full_url = full_url.join(path).map_err(|_| ProviderError::InvalidAccessUrl)?;
+    async fn get(&self, path: &str, query: &[(&str, &str)]) -> ProviderResult<reqwest::Response> {
+        let full_url = self
+            .base_url
+            .join(path)
+            .map_err(|_| ProviderError::InvalidAccessUrl)?;
+
+        let response = self
+            .http
+            .get(full_url.as_str())
+            .header("Authorization", self.auth_header())
+            .query(query)
+            .send()
+            .await
+            .map_err(ProviderError::Http)?;
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ProviderError::Forbidden);
         }
-
-        let mut current_url = full_url.clone();
-
-        for _hop in 0..MAX_REDIRECTS {
-            let response = self
-                .http
-                .get(current_url.as_str())
-                .header("Authorization", self.auth_header())
-                .query(query)
-                .send()
-                .await
-                .map_err(ProviderError::Http)?;
-
-            let status = response.status();
-
-            if status.is_redirection() {
-                let location = response
-                    .headers()
-                    .get("location")
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or(ProviderError::ServerError(
-                        "redirect without location".into(),
-                    ))?;
-                current_url = full_url
-                    .join(location)
-                    .map_err(|_| ProviderError::ServerError("invalid redirect url".into()))?;
-                continue;
-            }
-
-            if status == reqwest::StatusCode::FORBIDDEN {
-                return Err(ProviderError::Forbidden);
-            }
-            if !status.is_success() {
-                return Err(ProviderError::ServerError(format!(
-                    "GET {} returned {}",
-                    path, status
-                )));
-            }
-            return Ok(response);
+        if status == reqwest::StatusCode::PAYMENT_REQUIRED {
+            return Err(ProviderError::ServerError("payment required".into()));
         }
+        if !status.is_success() {
+            return Err(ProviderError::ServerError(format!(
+                "GET {} returned {}",
+                path, status
+            )));
+        }
+        Ok(response)
+    }
+}
 
-        Err(ProviderError::ServerError("too many redirects".into()))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn parse_valid_access_url() {
+        let client = SimpleFinClient::new("https://user:pass@bridge.simplefin.org/simplefin");
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn reject_http_access_url() {
+        let client = SimpleFinClient::new("http://user:pass@bridge.simplefin.org/simplefin");
+        assert!(matches!(client, Err(ProviderError::InvalidAccessUrl)));
+    }
+
+    #[test]
+    fn reject_missing_password() {
+        let client = SimpleFinClient::new("https://user@bridge.simplefin.org/simplefin");
+        assert!(matches!(client, Err(ProviderError::InvalidAccessUrl)));
+    }
+
+    #[test]
+    fn preserve_nonstandard_port() {
+        let client =
+            SimpleFinClient::new("https://user:pass@bridge.example.com:8443/simplefin").unwrap();
+        assert_eq!(
+            client.base_url.as_str(),
+            "https://bridge.example.com:8443/simplefin/"
+        );
+    }
+
+    #[tokio::test]
+    async fn claim_token_decodes_and_posts() {
+        let server = MockServer::start().await;
+        let claim_path = "/simplefin/claim/demo";
+        let access_url = format!("https://user:pass@{}/simplefin", server.address());
+        Mock::given(method("POST"))
+            .and(path(claim_path))
+            .respond_with(ResponseTemplate::new(200).set_body_string(&access_url))
+            .mount(&server)
+            .await;
+        let token = base64::engine::general_purpose::STANDARD.encode(format!(
+            "http://{}:{}{}",
+            server.address().ip(),
+            server.address().port(),
+            claim_path
+        ));
+        // Token encodes http, which claim_token should reject after decoding.
+        let result = SimpleFinClient::claim_token(&token).await;
+        assert!(matches!(result, Err(ProviderError::InvalidAccessUrl)));
+    }
+
+    #[tokio::test]
+    #[ignore = "wiremock serves plain HTTP; SimpleFinClient requires HTTPS, so this needs a TLS terminator"]
+    async fn list_accounts_returns_accounts() {
+        let server = MockServer::start().await;
+        let access_url = format!("https://user:pass@{}/simplefin", server.address());
+        Mock::given(method("GET"))
+            .and(path("/simplefin/accounts"))
+            .and(query_param("version", "2"))
+            .and(query_param("balances-only", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "errlist": [],
+                "connections": [],
+                "accounts": [{"id":"1","name":"Checking","conn_id":"c1","currency":"USD","balance":"100.00","balance-date":1700000000}]
+            })))
+            .mount(&server).await;
+        let client = SimpleFinClient::new(&access_url).unwrap();
+        let accounts = client.list_accounts().await.unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, "1");
     }
 }

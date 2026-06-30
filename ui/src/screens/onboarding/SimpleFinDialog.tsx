@@ -8,10 +8,15 @@ import {
   useSimpleFinAccounts,
   useImportSimpleFinAccounts,
 } from "../../api/hooks/simplefin";
+import type { SimpleFinAccountInfo } from "../../api/bindings";
 
 interface Props {
   open: boolean;
   onClose: () => void;
+}
+
+function accountKey(a: SimpleFinAccountInfo) {
+  return `${a.connectionId}:${a.id}`;
 }
 
 export default function SimpleFinDialog({ open, onClose }: Props) {
@@ -40,27 +45,36 @@ export default function SimpleFinDialog({ open, onClose }: Props) {
     }
   };
 
-  const toggleAccount = (id: string) => {
+  const toggleAccount = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(id);
+        next.add(key);
       }
       return next;
     });
   };
 
   const handleImport = async () => {
-    if (selected.size === 0) return;
-    const reqs = [...selected].map((id) => ({
-      simplefinId: id,
-      nickname: nicknames[id] || null,
-    }));
+    if (selected.size === 0 || !accounts) return;
+    const byKey = new Map(accounts.map((a) => [accountKey(a), a]));
+    const reqs = [...selected]
+      .map((key) => {
+        const a = byKey.get(key);
+        if (!a) return null;
+        return {
+          simplefinId: a.id,
+          connectionId: a.connectionId,
+          nickname: nicknames[key] || null,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
     try {
       await importAccounts.mutateAsync(reqs);
-      toast.success(`Imported ${selected.size} account(s)`);
+      toast.success(`Imported ${reqs.length} account(s)`);
       onClose();
     } catch (e) {
       toast.error("Failed to import accounts");
@@ -123,37 +137,40 @@ export default function SimpleFinDialog({ open, onClose }: Props) {
 
             {accounts && accounts.length > 0 && (
               <div className="stack stack-md">
-                {accounts.map((a) => (
-                  <Card key={a.id} className="stack stack-sm">
-                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(a.id)}
-                        onChange={() => toggleAccount(a.id)}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <strong>{a.name}</strong>
-                        <p className="muted">
-                          {a.connectionName} · {a.currency} {a.balance}
-                        </p>
-                      </div>
-                    </label>
-                    {selected.has(a.id) && (
-                      <input
-                        type="text"
-                        placeholder="Nickname (optional)"
-                        value={nicknames[a.id] || ""}
-                        onChange={(e) =>
-                          setNicknames((prev) => ({
-                            ...prev,
-                            [a.id]: e.target.value,
-                          }))
-                        }
-                        style={{ marginLeft: 28 }}
-                      />
-                    )}
-                  </Card>
-                ))}
+                {accounts.map((a) => {
+                  const key = accountKey(a);
+                  return (
+                    <Card key={key} className="stack stack-sm">
+                      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(key)}
+                          onChange={() => toggleAccount(key)}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <strong>{a.name}</strong>
+                          <p className="muted">
+                            {a.connectionName} · {a.accountType} · {a.currency} {a.balance}
+                          </p>
+                        </div>
+                      </label>
+                      {selected.has(key) && (
+                        <input
+                          type="text"
+                          placeholder="Nickname (optional)"
+                          value={nicknames[key] || ""}
+                          onChange={(e) =>
+                            setNicknames((prev) => ({
+                              ...prev,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          style={{ marginLeft: 28 }}
+                        />
+                      )}
+                    </Card>
+                  );
+                })}
               </div>
             )}
 

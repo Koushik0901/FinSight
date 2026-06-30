@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type AccountSummary, type NewAccount, type AccountPatch } from "../client";
+import {
+  commands,
+  type AccountSummary,
+  type NewAccount,
+  type AccountPatch,
+  type AccountBalancePoint,
+  type AccountSparkline,
+} from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
 export function useAccounts() {
@@ -50,6 +57,31 @@ export function useUpdateAccount() {
       qc.invalidateQueries({ queryKey: ["month-totals"] });
       qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
+  });
+}
+
+export function useAccountBalanceHistory(accountId: string | undefined, days: number) {
+  return useQuery<AccountBalancePoint[]>({
+    queryKey: ["account-balance-history", accountId, days],
+    queryFn: async () => {
+      if (!accountId) return [];
+      const result = await commands.listAccountBalanceHistory(accountId, days);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: !!accountId && isTauriRuntime(),
+  });
+}
+
+export function useAccountBalanceSparklines(days: number) {
+  return useQuery<AccountSparkline[]>({
+    queryKey: ["account-balance-sparklines", days],
+    queryFn: async () => {
+      const result = await commands.listAccountBalanceSparklines(days);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime(),
   });
 }
 

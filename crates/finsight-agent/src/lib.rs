@@ -12,6 +12,7 @@ pub mod providers;
 pub mod reasoning;
 pub mod recipe_runner;
 
+pub use categorizer::LOW_CONFIDENCE_THRESHOLD;
 pub use reasoning::engine::ReasoningEngine;
 pub use reasoning::messages::{
     AgentChange, AgentDraftAction, AssistantTurn, ChatMessage, ReasoningResult, ToolCall,

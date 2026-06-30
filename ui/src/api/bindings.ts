@@ -270,6 +270,19 @@ async triggerCategorize() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Queue a re-categorization pass for all low-confidence LLM assignments.
+ * Runs the rule engine first (picks up any new rules the user created), then
+ * the LLM for whatever remains uncertain.
+ */
+async triggerRecategorizeLowConfidence() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("trigger_recategorize_low_confidence") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAgentStatus() : Promise<Result<AgentStatus, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_agent_status") };
@@ -385,6 +398,30 @@ async getReportData(scope: string) : Promise<Result<ReportData, AppError>> {
 async getMonthTotals() : Promise<Result<MonthTotals, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_month_totals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSavingsRateHistory() : Promise<Result<SavingsRatePoint[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_savings_rate_history") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createMonthlyReview(input: CreateMonthlyReviewInput) : Promise<Result<MonthlyReview, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_monthly_review", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_monthly_reviews") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -510,6 +547,22 @@ async listNetWorthHistory(days: number) : Promise<Result<NetWorthPoint[], AppErr
     else return { status: "error", error: e  as any };
 }
 },
+async computeDebtPayoff(extraMonthlyCents: number) : Promise<Result<DebtPayoffResult[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("compute_debt_payoff", { extraMonthlyCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getUncelebratedMilestones() : Promise<Result<number[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_uncelebrated_milestones") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAgentMemory() : Promise<Result<AgentMemory[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_agent_memory") };
@@ -521,6 +574,14 @@ async listAgentMemory() : Promise<Result<AgentMemory[], AppError>> {
 async forgetAgentMemory(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("forget_agent_memory", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getFinancialHealthScore() : Promise<Result<HealthScore, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_financial_health_score") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -574,9 +635,9 @@ async closeAgentSession(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async listActionBundles(statusFilter: string | null, limit: number | null) : Promise<Result<AgentActionBundle[], AppError>> {
+async listActionBundles(statusFilter: string | null, sessionId: string | null, limit: number | null) : Promise<Result<AgentActionBundle[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_action_bundles", { statusFilter, limit }) };
+    return { status: "ok", data: await TAURI_INVOKE("list_action_bundles", { statusFilter, sessionId, limit }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -822,6 +883,22 @@ async exportAccountCsv(accountId: string) : Promise<Result<string, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listAccountBalanceHistory(accountId: string, days: number) : Promise<Result<AccountBalancePoint[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_account_balance_history", { accountId, days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAccountBalanceSparklines(days: number) : Promise<Result<AccountSparkline[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_account_balance_sparklines", { days }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getJourneyStatus() : Promise<Result<JourneyStatus, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_journey_status") };
@@ -838,7 +915,11 @@ async getActionItems() : Promise<Result<ActionItem[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async saveSimplefinSetupToken(token: string) : Promise<Result<null, AppError>> {
+/**
+ * Claim a SimpleFin setup token and persist the resulting bridge access URL
+ * plus every connection exposed by that access URL.
+ */
+async saveSimplefinSetupToken(token: string) : Promise<Result<SimpleFinConnectionInfo[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_simplefin_setup_token", { token }) };
 } catch (e) {
@@ -849,6 +930,14 @@ async saveSimplefinSetupToken(token: string) : Promise<Result<null, AppError>> {
 async getSimplefinStatus() : Promise<Result<SimpleFinStatus, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_simplefin_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSimplefinConnections() : Promise<Result<SimpleFinConnectionInfo[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_simplefin_connections") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -885,6 +974,195 @@ async disconnectSimplefin() : Promise<Result<null, AppError>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async deleteSimplefinConnection(connectionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_simplefin_connection", { connectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async syncAllSimplefinAccounts() : Promise<Result<AccountSyncResult[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_all_simplefin_accounts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSimplefinSyncSettings() : Promise<Result<SimpleFinSyncSettings, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_simplefin_sync_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setSimplefinSyncSettings(settings: SimpleFinSyncSettings) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_simplefin_sync_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSimplefinAlerts() : Promise<Result<SimpleFinAlert[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_simplefin_alerts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async acknowledgeSimplefinAlert(alertId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("acknowledge_simplefin_alert", { alertId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSimplefinTransferSuggestions() : Promise<Result<TransferSuggestionInfo[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_simplefin_transfer_suggestions") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async confirmSimplefinTransfer(transferId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("confirm_simplefin_transfer", { transferId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async rejectSimplefinTransfer(transferId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reject_simplefin_transfer", { transferId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listImportReviewCandidates() : Promise<Result<ImportCandidateWithMatches[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_import_review_candidates") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async acceptImportCandidateMatch(candidateId: string, transactionId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_import_candidate_match", { candidateId, transactionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createImportCandidateTransaction(candidateId: string) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_import_candidate_transaction", { candidateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissImportCandidate(candidateId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_import_candidate", { candidateId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Send a message to the Copilot within a conversation.
+ * 
+ * 1. Persists the user message.
+ * 2. Runs the reasoning engine (deep-mode agent pipeline).
+ * 3. Streams the answer word-by-word via `copilot-token` events.
+ * 4. Persists the assistant message and emits `copilot-done`.
+ * 5. Auto-generates a title for new conversations after the first message.
+ */
+async streamCopilotMessage(conversationId: string, runId: string, text: string, history: ChatHistoryEntry[], sourceMessageId: string | null) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stream_copilot_message", { conversationId, runId, text, history, sourceMessageId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * List all conversations for the sidebar, most-recent first.
+ */
+async listConversations() : Promise<Result<ConversationSummary[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_conversations") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Fetch all messages for a given conversation, ordered oldest-first.
+ */
+async getConversationMessages(conversationId: string) : Promise<Result<ConversationMessage[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_conversation_messages", { conversationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a conversation and all its messages.
+ */
+async deleteConversation(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_conversation", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a new empty conversation and return its ID.
+ */
+async createConversation() : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_conversation") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Edit a persisted user message and remove later turns so assistant-ui reload/edit
+ * operations have durable backend semantics.
+ */
+async editConversationUserMessage(input: EditConversationMessageInput) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("edit_conversation_user_message", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete messages after a selected turn. The frontend then starts a fresh run
+ * from the remaining thread history.
+ */
+async deleteConversationMessagesAfter(conversationId: string, messageId: string) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_conversation_messages_after", { conversationId, messageId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -898,10 +1176,13 @@ async disconnectSimplefin() : Promise<Result<null, AppError>> {
 
 /** user-defined types **/
 
-export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; liquidity_type: string; emergency_fund_eligible: boolean; goal_earmark: string | null; apy_pct: number | null; created_at: string; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null }
-export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null }
-export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null }
-export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Other"
+export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; liquidity_type: string; emergency_fund_eligible: boolean; goal_earmark: string | null; apy_pct: number | null; created_at: string; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean }
+export type AccountBalancePoint = { date: string; balanceCents: number }
+export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null }
+export type AccountSparkline = { accountId: string; points: AccountBalancePoint[] }
+export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean }
+export type AccountSyncResult = { accountId: string; added: number; updated: number; skipped: number; queuedForReview: number; error: string | null }
+export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other"
 /**
  * A single prioritized action item in the Financial Inbox.
  */
@@ -933,15 +1214,20 @@ amountCents: number | null }
 export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
-export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[] }
+export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
 export type AgentChange = { kind: string; description: string }
+export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
+export type AgentChartPoint = { label: string; value: number }
 export type AgentExecutionEntry = { id: string; itemId: string; bundleId: string; actionKind: string; status: string; resultJson: string | null; error: string | null; executedAt: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
+export type AgentMetricBlock = { label: string; value: string; detail: string | null; tone: string | null }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
+export type AgentTableBlock = { title: string | null; columns: string[]; rows: string[][] }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
@@ -985,16 +1271,45 @@ lastMonthCents: number;
  * Number of transactions categorised here this month
  */
 txnCount: number; yearTotalCents: number; budgetCents: number }
+/**
+ * A single prior turn from the conversation history for multi-turn awareness.
+ */
+export type ChatHistoryEntry = { role: string; content: string }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
+/**
+ * A single message within a conversation thread.
+ */
+export type ConversationMessage = { id: string; conversationId: string; role: string; content: string; 
+/**
+ * JSON-encoded array of tool names used, e.g. `["spending_by_category"]`
+ */
+toolTrace: string | null; actionBundleId: string | null; branchParentId: string | null; 
+/**
+ * JSON-encoded assistant-ui message parts. `content` remains the text fallback.
+ */
+partsJson: string | null; createdAt: string }
+/**
+ * Summary of a conversation thread shown in the sidebar.
+ */
+export type ConversationSummary = { id: string; title: string; messageCount: number; createdAt: string; updatedAt: string }
+export type CreateMonthlyReviewInput = { year: number; month: number; notes: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
+export type DebtPayoffResult = { strategy: string; extraMonthlyCents: number; totalInterestCents: number; totalMonths: number; payoffDateLabel: string; summaries: DebtPayoffSummary[] }
+export type DebtPayoffSummary = { liabilityId: string; liabilityName: string; initialBalanceCents: number; totalInterestCents: number; payoffMonthLabel: string; monthsToPayoff: number }
+export type EditConversationMessageInput = { conversationId: string; messageId: string; content: string }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; liabilityId: string | null; accountId: string | null }
+export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
+export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: number; debtRatioPts: number; goalProgressPts: number; budgetAdherencePts: number; savingsRatePct: number; emergencyFundMonths: number; debtToIncomePct: number; avgGoalPct: number; budgetAdherencePct: number }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
+export type ImportCandidate = { id: string; source: string; importId: string | null; syncRunId: string | null; accountId: string; candidateJson: string; rawPayloadJson: string | null; importedId: string | null; externalTxId: string | null; externalAccountId: string | null; postedAt: string; amountCents: number; merchantRaw: string; confidence: number; reason: string; status: string; resolution: string | null; resolvedTransactionId: string | null; createdAt: string; resolvedAt: string | null }
+export type ImportCandidateMatch = { id: string; candidateId: string; transactionId: string; matchKind: string; score: number; isRecommended: boolean; explanationJson: string | null; createdAt: string }
+export type ImportCandidateWithMatches = { candidate: ImportCandidate; matches: ImportCandidateMatch[] }
 export type ImportSource = "csv" | "manual" | "sample" | "simple_fin"
-export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; errors: RowError[] }
+export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; rows_queued_for_review: number; errors: RowError[] }
 export type JourneyMilestone = { stage: number; name: string; description: string; status: string; progressPct: number; detail: string; actionPrompt: string }
 export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
@@ -1040,12 +1355,14 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  */
 txnCount: number }
 export type MonthlyActual = { month: string; label: string; cents: number }
+export type MonthlyReview = { id: string; year: number; month: number; monthLabel: string; notes: string | null; snapshot: MonthlyReviewSnapshot; createdAt: string }
+export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
-export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null }
+export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group?: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending?: boolean }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; liabilityId: string | null; accountId: string | null }
 export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
-export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null }
+export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type PlanAssignment = { categoryId: string; amountCents: number }
@@ -1094,21 +1411,26 @@ export type RuleProposal = { id: string; whenLabel: string; description: string;
  */
 export type RuleWithCategory = { id: string; pattern: string; categoryId: string; categoryLabel: string; categoryColor: string; enabled: boolean; source: string; createdAt: string }
 export type SavedScenario = { id: string; description: string; result: ScenarioResult; createdAt: string }
+export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
 export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
-export type SimpleFinAccountImportRequest = { simplefinId: string; nickname: string | null }
-export type SimpleFinAccountInfo = { id: string; name: string; connectionName: string; currency: string; balance: string }
+export type SimpleFinAccountImportRequest = { simplefinId: string; connectionId: string; nickname: string | null }
+export type SimpleFinAccountInfo = { id: string; name: string; connectionName: string; connectionId: string; currency: string; balance: string; accountType: AccountType; accountGroup: string }
+export type SimpleFinAlert = { id: string; accountId: string; alertType: string; severity: string; message: string; detailsJson: string | null; acknowledgedAt: string | null; createdAt: string }
+export type SimpleFinConnectionInfo = { id: string; orgName: string | null; label: string | null; status: string; lastSyncedAt: string | null; createdAt: string }
 export type SimpleFinStatus = { configured: boolean }
+export type SimpleFinSyncSettings = { backgroundSyncEnabled: boolean; backgroundSyncIntervalMinutes: number }
 export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string }
-export type SyncSummary = { added: number; skipped: number }
-export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; imported_id: string | null; source: string | null }
+export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }
+export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }
 export type TransactionStatus = "cleared" | "pending" | "manual"
-export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null }
-export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null }
+export type TransferSuggestionInfo = { id: string; confidence: string; detectedAt: string; fromTransactionId: string; fromAccountName: string; fromMerchant: string; fromAmountCents: number; fromPostedAt: string; toTransactionId: string; toAccountName: string; toMerchant: string; toAmountCents: number; toPostedAt: string }
+export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
+export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
 
 /** tauri-specta globals **/

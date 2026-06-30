@@ -27,66 +27,74 @@ export default function StepConnect({ onNext }: Props) {
   const canContinue = accounts.length > 0;
 
   return (
-    <div className="step-connect">
-      <h2>Connect your money</h2>
-
-      {!hasError && isLoading && <p>Checking for accounts and recent transactions…</p>}
-      {hasError && (
-        <p role="alert" className="muted">
-          We could not read your local data. You can still review the setup options, then open the desktop app to import or save changes.
+    <div className="step-connect onb-split">
+      <div className="onb-left">
+        <div className="num-step">002 · Connect accounts</div>
+        <h1>Connect your money source.</h1>
+        <p className="lead">
+          Import a CSV, add accounts manually, or connect with SimpleFin. You can combine methods and continue once at least one account is available.
         </p>
-      )}
-      {!isTauriRuntime() && (
-        <p className="muted">
-          Browser preview mode: imports and manual saves require the desktop app runtime.
-        </p>
-      )}
+        {!hasError && isLoading && <p>Checking for accounts and recent transactions…</p>}
+        {hasError && (
+          <p role="alert" className="muted">
+            We could not read your local data. You can still review setup options, then open the desktop app to import or save changes.
+          </p>
+        )}
+        {!isTauriRuntime() && (
+          <p className="muted">
+            Browser preview mode: imports and manual saves require the desktop app runtime.
+          </p>
+        )}
 
-      <div className="connect-cards">
-        <Card className="stack stack-md">
-          <h3>Import a statement</h3>
-          <p>Pick a CSV exported from your bank and map its columns.</p>
-          <FilePicker onPicked={setCsvPath} label="Pick a file…" />
-        </Card>
+        <div className="connect-cards">
+          <Card className="stack stack-md">
+            <h3>Import a statement</h3>
+            <p>Pick a CSV exported from your bank and map its columns.</p>
+            <FilePicker onPicked={setCsvPath} label="Pick a file…" />
+          </Card>
 
-        <Card className="stack stack-md">
-          <h3>Add manually</h3>
-          <p>Walk through accounts and a few recent transactions by hand.</p>
-          <div className="button-row">
-            <Button variant="default" onClick={() => setAcctOpen(true)}>+ Account</Button>
-            <Button variant="default" onClick={() => setTxnOpen(true)} disabled={accounts.length === 0}>+ Transaction</Button>
-          </div>
-        </Card>
+          <Card className="stack stack-md">
+            <h3>Add manually</h3>
+            <p>Walk through accounts and a few recent transactions by hand.</p>
+            <div className="button-row">
+              <Button variant="default" onClick={() => setAcctOpen(true)}>+ Account</Button>
+              <Button variant="default" onClick={() => setTxnOpen(true)} disabled={accounts.length === 0}>+ Transaction</Button>
+            </div>
+          </Card>
 
-        <Card className="stack stack-md">
-          <h3>Skip for now</h3>
-          <p>You can always add or import later from the Accounts screen.</p>
-          <Button variant="ghost" onClick={onNext}>Skip →</Button>
-        </Card>
+          <Card className="stack stack-md">
+            <h3>Connect with SimpleFin</h3>
+            <p>Link bank accounts securely using your SimpleFin bridge token.</p>
+            <Button variant="default" onClick={() => setSfOpen(true)}>
+              Set up SimpleFin
+            </Button>
+          </Card>
 
-        <Card className="stack stack-md">
-          <h3>Connect with SimpleFin</h3>
-          <p>Link bank accounts securely using your SimpleFin bridge token.</p>
-          <Button variant="default" onClick={() => setSfOpen(true)}>
-            Set up SimpleFin
-          </Button>
-        </Card>
+        </div>
       </div>
 
-      {(!isLoading || hasError) && (
-        <>
+      <div className="onb-right">
+        <Card className="stack stack-md">
+          <div className="eyebrow"><span className="dot" />Setup progress</div>
+          <div className="h3">Your data import status</div>
           <aside className="connect-tally" aria-live="polite">
             <strong>{accounts.length}</strong> account{accounts.length === 1 ? "" : "s"} added,{" "}
             <strong>{txns.length}</strong> transaction{txns.length === 1 ? "" : "s"} so far
           </aside>
-
-          <footer>
-            <Button variant="primary" disabled={!canContinue} onClick={onNext}>
-              Continue →
-            </Button>
-          </footer>
-        </>
-      )}
+          <div className="row row-sm wrap">
+            <span className={`chip ${canContinue ? "positive" : ""}`}>
+              {canContinue ? "Ready to continue" : "Add 1 account to continue"}
+            </span>
+            {txns.length > 0 && <span className="chip">Transactions detected</span>}
+          </div>
+          <Button variant="primary" disabled={!canContinue} onClick={onNext}>
+            Continue →
+          </Button>
+          <Button variant="ghost" onClick={onNext}>
+            Skip for now →
+          </Button>
+        </Card>
+      </div>
 
       <AccountDrawer open={acctOpen} onClose={() => setAcctOpen(false)} />
       <TransactionDrawer open={txnOpen} onClose={() => setTxnOpen(false)} />

@@ -15,6 +15,8 @@ pub struct TxnFilterInput {
     pub offset: Option<i64>,
     pub search: Option<String>,
     pub filter_preset: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
 }
 
 #[tauri::command]
@@ -33,6 +35,8 @@ pub async fn list_transactions(
                 offset: filter.offset.unwrap_or(0),
                 search: filter.search,
                 filter_preset: filter.filter_preset,
+                start_date: filter.start_date,
+                end_date: filter.end_date,
             },
         )
     })
@@ -558,6 +562,8 @@ pub async fn export_transactions_csv(
                 offset: 0,
                 search: filter.search,
                 filter_preset: filter.filter_preset,
+                start_date: filter.start_date,
+                end_date: filter.end_date,
             },
         )?;
         let mut out = String::from("date,merchant,category,amount_dollars,notes\n");

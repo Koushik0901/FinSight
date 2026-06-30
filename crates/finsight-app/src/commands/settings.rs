@@ -61,6 +61,8 @@ pub async fn export_all_data_json(
                 offset: 0,
                 search: None,
                 filter_preset: None,
+                start_date: None,
+                end_date: None,
             },
         )?;
         let gs: Vec<serde_json::Value> = goals::list(conn)?
@@ -165,6 +167,8 @@ pub async fn export_all_data_csv(
                 offset: 0,
                 search: None,
                 filter_preset: None,
+                start_date: None,
+                end_date: None,
             },
         )?;
 

@@ -38,6 +38,7 @@ const existingTxn = {
   created_at: "2024-01-15T00:00:00Z",
   is_reimbursable: false, is_split: false,
   imported_id: null, source: null,
+  raw_synced_data: null, pending: false, external_tx_id: null, external_account_id: null,
 };
 
 describe("TransactionDrawer — edit mode", () => {

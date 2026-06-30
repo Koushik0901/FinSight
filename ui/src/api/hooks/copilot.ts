@@ -48,9 +48,20 @@ export function useCloseAgentSession() {
 
 export function useActionBundles(statusFilter?: string | null, limit?: number) {
   return useQuery<AgentActionBundle[]>({
-    queryKey: ["action-bundles", statusFilter ?? null, limit ?? null],
+    queryKey: ["action-bundles", statusFilter ?? null, null, limit ?? null],
     queryFn: async () => {
-      const result = await commands.listActionBundles(statusFilter ?? null, limit ?? null);
+      const result = await commands.listActionBundles(statusFilter ?? null, null, limit ?? null);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+  });
+}
+
+export function useSessionActionBundles(sessionId?: string | null, statusFilter?: string | null, limit?: number) {
+  return useQuery<AgentActionBundle[]>({
+    queryKey: ["action-bundles", statusFilter ?? null, sessionId ?? null, limit ?? null],
+    queryFn: async () => {
+      const result = await commands.listActionBundles(statusFilter ?? null, sessionId ?? null, limit ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
