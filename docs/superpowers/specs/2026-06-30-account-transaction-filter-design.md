@@ -1,8 +1,18 @@
 # Account Page Transaction Filter
 
 **Date:** 2026-06-30  
-**Status:** Approved  
+**Status:** Implemented  
 **Scope:** Make the "Filter" button on the Accounts detail page functional by adding inline search, date range, and preset chips. Extract a reusable `TransactionFilter` component from the existing Transactions screen.
+
+## Implementation
+
+Implemented on 2026-06-30 via subagent-driven execution of `docs/superpowers/plans/2026-06-30-account-transaction-filter.md`.
+
+- `193f8dc` — feat: add reusable TransactionFilter component
+- `cf20b0a` — feat: wire TransactionFilter into Accounts page
+- `67bca37` — refactor: Transactions page uses shared TransactionFilter
+
+Verification: `cargo check --workspace` passed; `TransactionFilter`, `Accounts`, and `Transactions` tests passed; `tsc --noEmit` passed. The full suite has one pre-existing failure in `src/components/copilot/TauriRuntime.test.tsx` unrelated to this work.
 
 ## Context
 
