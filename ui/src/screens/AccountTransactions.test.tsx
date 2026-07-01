@@ -1,7 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import AccountTransactions from "./AccountTransactions";
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+}));
+
+vi.mock("../components/ImportMappingDialog", () => ({
+  default: ({ path }: { path: string }) => <div data-testid="import-mapping-dialog">Map CSV columns for {path}</div>,
+}));
 
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: () => ({
@@ -73,6 +82,22 @@ describe("AccountTransactions", () => {
     expect(await screen.findByText("Chase Checking")).toBeInTheDocument();
     expect(screen.getByText("Whole Foods")).toBeInTheDocument();
     expect(screen.getByText(/-\$84\.32/)).toBeInTheDocument();
+  });
+
+  it("opens the import mapping dialog after picking a CSV", async () => {
+    (openDialog as ReturnType<typeof vi.fn>).mockResolvedValueOnce("/path/to/export.csv");
+    render(
+      <MemoryRouter initialEntries={["/accounts/acc-1/transactions"]}>
+        <Routes>
+          <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const importBtn = await screen.findByRole("button", { name: /Import/i });
+    fireEvent.click(importBtn);
+    await waitFor(() => {
+      expect(screen.getByText("Map CSV columns for /path/to/export.csv")).toBeInTheDocument();
+    });
   });
 
   it("navigates back to accounts when back button is clicked", async () => {
