@@ -106,14 +106,18 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
   const extraCents = extra * 100;
   const baseMonths = monthsToGoal(selected);
   const newMonths = monthsToGoal(selected, selected.monthlyCents + extraCents);
-  const monthsSaved = Number.isFinite(baseMonths) && Number.isFinite(newMonths) ? Math.max(0, baseMonths - newMonths) : 0;
+  const bothFinite = Number.isFinite(baseMonths) && Number.isFinite(newMonths);
+  const monthsSaved = bothFinite ? Math.max(0, baseMonths - newMonths) : 0;
+  const newlyAchievable = !Number.isFinite(baseMonths) && Number.isFinite(newMonths);
 
   const apply = async () => {
     if (extra === 0) return;
     try {
       await updateGoalMonthly.mutateAsync({ id: selected.id, monthlyCents: selected.monthlyCents + extraCents });
       toast.success(`Applied +${money(extraCents, { currency: "USD" })}/mo to ${selected.name}`, {
-        description: `New ETA: ${etaLabel(newMonths)} · saves ${monthsSaved} ${monthsSaved === 1 ? "month" : "months"}`,
+        description: newlyAchievable
+          ? `New ETA: ${etaLabel(newMonths)} · now on a path to finish`
+          : `New ETA: ${etaLabel(newMonths)} · saves ${monthsSaved} ${monthsSaved === 1 ? "month" : "months"}`,
       });
       setExtra(0);
     } catch {
@@ -195,6 +199,11 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
             <div className="muted" style={{ marginTop: 16, fontSize: 14, lineHeight: 1.55 }}>
               {extra === 0 ? (
                 <span>You're on track for the original plan. Drag the slider to see what changes.</span>
+              ) : newlyAchievable ? (
+                <span>
+                  Adding <strong>{money(extraCents, { currency: "USD" })}/mo</strong> puts <strong>{selected.name}</strong> on a path to finish by{" "}
+                  <strong>{etaLabel(newMonths)}</strong> — it wasn't projected to complete before.
+                </span>
               ) : (
                 <span>
                   Adding <strong>{money(extraCents, { currency: "USD" })}/mo</strong> brings <strong>{selected.name}</strong> in by{" "}

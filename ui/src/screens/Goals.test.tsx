@@ -142,6 +142,29 @@ describe("Goals — what-if scenario", () => {
     expect(screen.getAllByText("Italy Fund").length).toBeGreaterThanOrEqual(1);
     expect(radiogroup).not.toHaveTextContent("Dining cap");
   });
+
+  it("shows a 'newly achievable' message instead of '0 months saved' when the goal has no current monthly contribution", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "g5", name: "Stalled fund", goalType: "save-by-date",
+          targetCents: 500000, currentCents: 100000, monthlyCents: 0,
+          targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    const slider = screen.getByLabelText("Extra monthly contribution");
+    fireEvent.change(slider, { target: { value: "500" } });
+
+    expect(screen.getByText(/on a path to finish by/i)).toBeInTheDocument();
+    expect(screen.getByText(/wasn't projected to complete before/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 months/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("Goals — linked liability", () => {
