@@ -126,6 +126,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::accounts::create_account,
         commands::accounts::update_account,
         commands::accounts::archive_account,
+        commands::categories::update_category_color,
         commands::transactions::list_transactions,
         commands::transactions::create_transaction,
         commands::transactions::update_transaction,

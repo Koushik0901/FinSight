@@ -162,6 +162,25 @@ export function useSetCategorySpendingType() {
   });
 }
 
+export function useUpdateCategoryColor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, color }: { id: string; color: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.updateCategoryColor(id, color);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
 export function useRulesWithCategories() {
   return useQuery<RuleWithCategory[]>({
     queryKey: ["rules"],

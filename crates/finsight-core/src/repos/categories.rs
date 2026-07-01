@@ -60,3 +60,60 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Category>> {
     }
     Ok(out)
 }
+
+pub fn update_color(conn: &mut Connection, id: &str, color: &str) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE categories SET color = ?1 WHERE id = ?2",
+        rusqlite::params![color, id],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("c.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    #[test]
+    fn update_color_changes_category_color() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label) VALUES('daily', 'Daily')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) \
+             VALUES('food', 'daily', 'Food', '#94A3B8', 0)",
+            [],
+        )
+        .unwrap();
+
+        update_color(&mut conn, "food", "#FF0000").unwrap();
+
+        let color: String = conn
+            .query_row("SELECT color FROM categories WHERE id = 'food'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(color, "#FF0000");
+    }
+
+    #[test]
+    fn update_color_is_noop_for_missing_category() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // No rows should be updated, but the call must not fail.
+        update_color(&mut conn, "missing", "#FF0000").unwrap();
+    }
+}
