@@ -15,6 +15,7 @@ import NetWorthChart from "../components/NetWorthChart";
 import { CopilotNudge } from "../components/CopilotNudge";
 import { CopilotQuickAsk } from "../components/CopilotQuickAsk";
 import { money } from "../utils/format";
+import * as I from "../components/Icons";
 
 const RANGES = [
   { key: "1M", days: 30 },
@@ -85,7 +86,7 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
 
   return (
     <div className="card accent" style={{ height: "100%" }}>
-      <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />SMART SWEEP</div>
+      <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Smart sweep</div>
       <div className="h3" style={{ marginBottom: 10 }}>You have {money(netCents)} unallocated this month.</div>
       <p className="muted" style={{ marginTop: 0, lineHeight: 1.6 }}>
         Put surplus cash to work before it disappears into drift. FinSight can park it in your next goal or let you choose where it goes.
@@ -149,8 +150,8 @@ export default function Today() {
   const { data: nwHistory = [] } = useNetWorthHistory(days);
   const { data: recurring = [] } = useRecurring();
   const now = new Date();
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
-  const dateLong = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }).toUpperCase();
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const dateLong = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
   const primaryCurrency = accounts[0]?.currency ?? "USD";
   const isLoading = accLoading || totLoading;
@@ -192,18 +193,32 @@ export default function Today() {
   const trendText = trendDelta === null ? "Baseline building" : `${trendDelta >= 0 ? "↑" : "↓"} ${money(Math.abs(trendDelta), { currency: primaryCurrency })} over ${range}`;
   const biggestCategory = activeCats[0];
   const briefingText = totals ? `You have ${money(Math.max(totals.netCents, 0))} left from ${monthLabel.toLowerCase()} cash flow. ${needsReview > 0 ? `${needsReview} transactions still need review.` : `${biggestCategory?.label ?? "Spending"} is carrying most of the load this month.`}` : "Your latest local snapshot is ready. Open insights for the full story.";
+  const lastMonthSpendTotal = cats.reduce((s, c) => s + c.lastMonthCents, 0);
+  const spendNarrative = lastMonthSpendTotal > 0
+    ? (() => {
+        const pct = Math.round(((lastMonthSpendTotal - totalSpendRaw) / lastMonthSpendTotal) * 100);
+        if (pct > 0) return `You're tracking ${pct}% below last month's spending.`;
+        if (pct < 0) return `You're tracking ${Math.abs(pct)}% above last month's spending.`;
+        return "You're tracking even with last month's spending.";
+      })()
+    : null;
 
   return (
     <div className="screen">
       <div className="day-hdr">
-        <div><div className="eyebrow"><span className="dot" />TODAY · {weekday} · {dateLong}</div></div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><span className="chip">🔒 Local-only</span><span className="chip accent">• Agent · {minutesAgoLabel(agentStatus?.lastScanAt)}</span></div>
+        <div><div className="eyebrow"><span className="dot" />{weekday} · {dateLong}</div></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><span className="chip"><I.Lock width="11" height="11" /> Local-only</span><span className="chip accent"><span className="dot" />Agent · {minutesAgoLabel(agentStatus?.lastScanAt)}</span></div>
       </div>
 
       <section className="hero-num">
-        <div className="eyebrow" style={{ color: "var(--ink-mute)" }}>NET WORTH</div>
-        <div className="figure money" style={{ fontSize: 112, lineHeight: 0.9, fontWeight: 600, letterSpacing: "-0.04em", color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}>{money(netWorth, { currency: primaryCurrency })}</div>
-        <div className="hero-meta"><span className={`npill${trendChipClass}`}>{trendText}</span><span>·</span><span>{totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent so far this month` : "Fresh month, fresh baseline."}</span></div>
+        <div className="eyebrow" style={{ color: "var(--ink-mute)" }}>Net worth</div>
+        <div className="h-display" style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}><span className="figure money">{money(netWorth, { currency: primaryCurrency })}</span></div>
+        <div className="hero-meta">
+          <span className={`npill${trendChipClass}`}>{trendText}</span>
+          <span>·</span>
+          <span>{totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent so far this month` : "Fresh month, fresh baseline."}</span>
+          {spendNarrative && <><span>·</span><span>{spendNarrative}</span></>}
+        </div>
       </section>
 
       <section>
@@ -219,7 +234,7 @@ export default function Today() {
 
       <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(320px, 0.95fr)", gap: 16 }}>
         <div className="card">
-          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />MORNING BRIEFING · 60 SECONDS</div>
+          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Morning briefing · 60 seconds</div>
           <div className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</div>
           <p className="muted" style={{ marginTop: 0, lineHeight: 1.65, fontSize: 14 }}>{briefingText}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
@@ -230,7 +245,7 @@ export default function Today() {
 
         {celebrateMilestones.length > 0 ? (
           <div className="card accent">
-            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />MILESTONE UNLOCKED</div>
+            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Milestone unlocked</div>
             <div className="h3" style={{ marginBottom: 10 }}>Net worth crossed {milestoneLabel(celebrateMilestones[0]!, primaryCurrency)}</div>
             <p className="muted" style={{ lineHeight: 1.6 }}>Quiet compounding is working. Take a moment, then decide where the next increment should go.</p>
             <button className="btn ghost sm" type="button" onClick={() => setDismissedMilestones((prev) => [...prev, celebrateMilestones[0]!])}>Dismiss</button>
@@ -238,13 +253,13 @@ export default function Today() {
         ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} />}
       </section>
 
-      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>MONTH IN REVIEW</div><div className="h3">Capture this month’s snapshot before the calendar rolls over.</div></div><button className="btn primary" type="button" disabled={createMonthlyReview.isPending} onClick={async () => { try { const nowDate = new Date(); await createMonthlyReview.mutateAsync({ year: nowDate.getFullYear(), month: nowDate.getMonth() + 1, notes: null }); toast.success("Monthly review saved", { description: "Open Reports to revisit it later." }); navigate("/reports"); } catch { toast.error("Could not create monthly review"); } }}>{createMonthlyReview.isPending ? "Saving…" : "Save review"}</button></div></div></section>}
+      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month in review</div><div className="h3">Capture this month’s snapshot before the calendar rolls over.</div></div><button className="btn primary" type="button" disabled={createMonthlyReview.isPending} onClick={async () => { try { const nowDate = new Date(); await createMonthlyReview.mutateAsync({ year: nowDate.getFullYear(), month: nowDate.getMonth() + 1, notes: null }); toast.success("Monthly review saved", { description: "Open Reports to revisit it later." }); navigate("/reports"); } catch { toast.error("Could not create monthly review"); } }}>{createMonthlyReview.isPending ? "Saving…" : "Save review"}</button></div></div></section>}
 
-      {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>SPENT THIS MONTH</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
+      {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Spent this month</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
 
       <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(320px, 0.9fr)", gap: 16 }}>
-        <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />AGENT · WHILE YOU WERE AWAY</div><AgentActivityFeed />{needsReview > 0 && <button className="chip warning" style={{ marginTop: 8, cursor: "pointer" }} onClick={() => navigate("/transactions")} type="button">{needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →</button>}</div>
-        <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>LOOKING AHEAD</div>{recurringSoon.length === 0 ? <div className="muted">No recurring items are due in the next two weeks.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>Due</th><th className="right">Amount</th></tr></thead><tbody>{recurringSoon.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected)}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
+        <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Agent · while you were away</div><AgentActivityFeed />{needsReview > 0 && <button className="chip warning" style={{ marginTop: 8, cursor: "pointer" }} onClick={() => navigate("/accounts")} type="button">{needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →</button>}</div>
+        <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>Looking ahead</div>{recurringSoon.length === 0 ? <div className="muted">No recurring items are due in the next two weeks.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>Due</th><th className="right">Amount</th></tr></thead><tbody>{recurringSoon.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected)}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
       </section>
 
       <CopilotQuickAsk prompt="Based on my spending this month, what adjustments should I make?" label="Ask Copilot about today" />
