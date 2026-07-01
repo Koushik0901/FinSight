@@ -184,7 +184,7 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
             </div>
           </div>
 
-          <div style={{ padding: 22, background: "var(--surface-2)", borderRadius: 12, border: "1px solid var(--line)" }}>
+          <div style={{ padding: 22, background: "linear-gradient(180deg, var(--accent-2) 0%, var(--surface-2) 60%)", borderRadius: 12, border: "1px solid var(--accent-3)" }}>
             <div className="eyebrow" style={{ marginBottom: 14 }}>Updated horizon</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
               <span className="figure" style={{ fontSize: 56, lineHeight: 1, color: "var(--accent)" }}>
