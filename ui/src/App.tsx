@@ -15,6 +15,7 @@ const Inbox = lazy(() => import("./screens/Inbox"));
 const ImportReview = lazy(() => import("./screens/ImportReview"));
 const Insights = lazy(() => import("./screens/Insights"));
 const Accounts = lazy(() => import("./screens/Accounts"));
+const AccountTransactions = lazy(() => import("./screens/AccountTransactions"));
 const Budget = lazy(() => import("./screens/Budget"));
 const Categories = lazy(() => import("./screens/Categories"));
 const Recurring = lazy(() => import("./screens/Recurring"));
@@ -88,6 +89,7 @@ export function App() {
                 <Route path="/import-review" element={<ImportReview />} />
                 <Route path="/insights" element={<Insights />} />
                 <Route path="/accounts" element={<Accounts />} />
+                <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
                 <Route path="/budget" element={<Budget />} />
                 <Route path="/categories" element={<Categories />} />
                 <Route path="/recurring" element={<Recurring />} />
