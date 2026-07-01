@@ -16,19 +16,6 @@ function recurringFrequency(item: { cadence: string; avgGapDays: number }) {
   return "irregular";
 }
 
-// Detects a meaningful price increase from real history: the most recent charge
-// is at least $1 and 10% higher than the smallest observed charge, with enough
-// occurrences to call it a trend rather than noise.
-function priceIncreaseDelta(item: { lastAmountCents: number; minAmountCents: number; occurrences: number }) {
-  if (item.occurrences < 2) return null;
-  const last = Math.abs(item.lastAmountCents);
-  const min = Math.abs(item.minAmountCents);
-  if (last <= min) return null;
-  const delta = last - min;
-  if (delta < 100 || delta / min < 0.1) return null;
-  return delta;
-}
-
 export default function Recurring() {
   const { data: items = [], isLoading, error } = useRecurring();
   const [view, setView] = useState<"monthly" | "upcoming" | "all">("monthly");
@@ -101,28 +88,14 @@ export default function Recurring() {
                   <tr key={`${group.label}-hdr`}>
                     <td colSpan={4} style={{ paddingTop: 18, paddingBottom: 10, fontSize: 12, color: "var(--ink-faint)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{group.label}</td>
                   </tr>,
-                  ...group.items.map((item) => {
-                    const priceUp = priceIncreaseDelta(item);
-                    return (
-                      <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`}>
-                        <td>
-                          <div className="row row-sm">
-                            <span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} />
-                            <div>
-                              <div className="row row-sm" style={{ alignItems: "center" }}>
-                                <span>{item.merchantRaw}</span>
-                                {priceUp !== null && <span className="chip negative" style={{ padding: "1px 7px", fontSize: 11 }}>price up {money(priceUp, { currency: "USD", decimals: 2 })}</span>}
-                              </div>
-                              <div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td><span className="chip">{recurringFrequency(item)}</span></td>
-                        <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
-                        <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { currency: "USD", decimals: 2 })}</span></td>
-                      </tr>
-                    );
-                  }),
+                  ...group.items.map((item) => (
+                    <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`}>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{item.merchantRaw}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label}</div></div></div></td>
+                      <td><span className="chip">{recurringFrequency(item)}</span></td>
+                      <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
+                      <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { currency: "USD", decimals: 2 })}</span></td>
+                    </tr>
+                  )),
                 ] : null
               ))}
             </tbody>
