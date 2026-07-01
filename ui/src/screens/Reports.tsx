@@ -8,6 +8,25 @@ import { useNetWorth } from "../api/hooks/networth";
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
 
+export function buildReportCsv(data: ReportData): string {
+  const rows: string[] = [];
+  rows.push("Section,Label,Income,Expense,Net");
+  for (const month of data.monthly) {
+    rows.push(`Monthly,${month.label},${(month.incomeCents / 100).toFixed(2)},${(month.expenseCents / 100).toFixed(2)},${(month.netCents / 100).toFixed(2)}`);
+  }
+  rows.push("");
+  rows.push("Section,Category,Amount,Txns");
+  for (const category of data.topCategories) {
+    rows.push(`Top category,"${category.label.replace(/"/g, '""')}",${(category.totalCents / 100).toFixed(2)},${category.txnCount}`);
+  }
+  rows.push("");
+  rows.push("Section,Merchant,Amount,Txns");
+  for (const merchant of data.topMerchants) {
+    rows.push(`Top merchant,"${merchant.merchantRaw.replace(/"/g, '""')}",${(merchant.totalCents / 100).toFixed(2)},${merchant.txnCount}`);
+  }
+  return rows.join("\n");
+}
+
 function useReportData(scope: Scope) {
   return useQuery<ReportData>({
     queryKey: ["report-data", scope],
@@ -44,22 +63,7 @@ export default function Reports() {
 
   const handleExport = () => {
     if (!data) return;
-    const rows: string[] = [];
-    rows.push("Section,Label,Income,Expense,Net");
-    for (const month of data.monthly) {
-      rows.push(`Monthly,${month.label},${(month.incomeCents / 100).toFixed(2)},${(month.expenseCents / 100).toFixed(2)},${(month.netCents / 100).toFixed(2)}`);
-    }
-    rows.push("");
-    rows.push("Section,Category,Amount,Txns");
-    for (const category of data.topCategories) {
-      rows.push(`Top category,"${category.label.replace(/"/g, '""')}",${(category.totalCents / 100).toFixed(2)},${category.txnCount}`);
-    }
-    rows.push("");
-    rows.push("Section,Merchant,Amount,Txns");
-    for (const merchant of data.topMerchants) {
-      rows.push(`Top merchant,"${merchant.merchantRaw.replace(/"/g, '""')}",${(merchant.totalCents / 100).toFixed(2)},${merchant.txnCount}`);
-    }
-    const csv = rows.join("\n");
+    const csv = buildReportCsv(data);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
