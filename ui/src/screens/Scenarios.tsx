@@ -120,6 +120,19 @@ function Results({
             <div className="value figure">{result.goalsAffected.length}</div>
           </div>
         </div>
+
+        {result.goalsAffected.length > 0 && (
+          <div className="stack stack-xs" style={{ marginTop: 4 }}>
+            <div className="label" style={{ fontSize: 11.5 }}>Which goals</div>
+            <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+              {result.goalsAffected.map((g, i) => (
+                <li key={i} style={{ fontSize: 13.5, color: "var(--ink-2)" }}>
+                  {g}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Card>
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -220,7 +233,7 @@ export default function Scenarios() {
     <div className="screen screen-scenarios">
       <header className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />SCENARIOS · WHAT-IF</div>
+          <div className="eyebrow"><span className="dot" />Scenarios · what-if</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Play out the possibilities.</h1>
           <div className="muted" style={{ marginTop: 6 }}>Imagine a future, see the math.</div>
         </div>
