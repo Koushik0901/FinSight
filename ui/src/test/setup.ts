@@ -14,3 +14,16 @@ vi.mock("@tauri-apps/api/event", () => ({
   once: vi.fn(() => Promise.resolve(() => {})),
   emit: vi.fn(() => Promise.resolve()),
 }));
+
+// jsdom does not implement IntersectionObserver; stub it so components using
+// scroll-spy / visibility observers (e.g. Settings sidebar nav) don't throw.
+class MockIntersectionObserver implements IntersectionObserver {
+  readonly root: Element | Document | null = null;
+  readonly rootMargin: string = "";
+  readonly thresholds: ReadonlyArray<number> = [];
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  takeRecords = vi.fn(() => []);
+}
+vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);

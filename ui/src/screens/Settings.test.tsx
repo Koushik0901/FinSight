@@ -66,7 +66,7 @@ vi.mock("../api/hooks/simplefin", () => ({
 describe("Settings — Appearance section", () => {
   it("renders theme, density, accent, currency controls", () => {
     render(<Settings />, { wrapper: createWrapper() });
-    expect(screen.getByText("Appearance")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cozy/i })).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("Settings — AI Provider panel", () => {
 
   it("shows 'AI Provider' section", () => {
     render(<Settings />, { wrapper: createWrapper() });
-    expect(screen.getByText("AI Provider")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI Provider" })).toBeInTheDocument();
   });
 
   it("expands config panel on Configure click", async () => {

@@ -46,6 +46,7 @@ const SECTIONS = [
   ["keyboard", "Keyboard"],
   ["about", "About"],
 ] as const;
+const SECTION_IDS = SECTIONS.map(([id]) => id);
 
 function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
   if (!cfg || cfg.kind === "unconfigured") return "Not configured";
@@ -68,6 +69,41 @@ function Section({ id, title, description, children }: { id: string; title: stri
   );
 }
 
+function useActiveSection(ids: readonly string[]) {
+  const [active, setActive] = useState<string>(ids[0] ?? "");
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const visibleRatios = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          visibleRatios.set(entry.target.id, entry.isIntersecting ? entry.intersectionRatio : 0);
+        }
+        let bestId = "";
+        let bestRatio = 0;
+        for (const [id, ratio] of visibleRatios) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            bestId = id;
+          }
+        }
+        if (bestId) setActive(bestId.replace(/^sec-/, ""));
+      },
+      { rootMargin: "-96px 0px -60% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+    );
+
+    const elements = ids
+      .map((id) => document.getElementById(`sec-${id}`))
+      .filter((el): el is HTMLElement => el !== null);
+    elements.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, [ids]);
+
+  return active;
+}
+
 export default function Settings() {
   const navigate = useNavigate();
   const { data: accounts = [] } = useAccounts();
@@ -76,6 +112,7 @@ export default function Settings() {
   const clearSample = useClearSampleData();
   const seedDemo = useSeedDevDemo();
   const hasSample = accounts.some((account) => account.source === "sample");
+  const activeSection = useActiveSection(SECTION_IDS);
 
   const { theme, density, accent, privacy, setTheme, setDensity, setAccent, setPrivacy } = useTweaks();
   const setCurrencyMutation = useSetCurrency();
@@ -194,14 +231,14 @@ export default function Settings() {
     <div className="screen screen-settings">
       <div className="day-hdr">
         <div>
-          <div className="eyebrow">SETTINGS</div>
+          <div className="eyebrow">Settings</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Make it yours.</h1>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 56 }}>
         <nav style={{ position: "sticky", top: 16, alignSelf: "start", display: "flex", flexDirection: "column", gap: 4 }}>
-          {SECTIONS.map(([id, label]) => <a key={id} href={`#sec-${id}`} className="btn ghost sm" style={{ justifyContent: "flex-start" }}>Go to {label}</a>)}
+          {SECTIONS.map(([id, label]) => <a key={id} href={`#sec-${id}`} className={`nav-item${activeSection === id ? " active" : ""}`}>{label}</a>)}
         </nav>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 56 }}>
