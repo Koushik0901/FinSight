@@ -66,14 +66,16 @@ describe("PlanNextMonthModal", () => {
 
   it("renders the Income step by default", () => {
     render(<PlanNextMonthModal onClose={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText(/Plan Next Month — Income/i)).toBeInTheDocument();
+    expect(screen.getByText("Your estimated income.")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 6 · Income")).toBeInTheDocument();
     expect(screen.getAllByText("$5,000").length).toBeGreaterThan(0);
   });
 
   it("navigates to the next step on Next click", () => {
     render(<PlanNextMonthModal onClose={vi.fn()} />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByText("Next →"));
-    expect(screen.getByText(/Plan Next Month — Essentials/i)).toBeInTheDocument();
+    expect(screen.getByText("Essential expenses.")).toBeInTheDocument();
+    expect(screen.getByText("Step 2 of 6 · Essentials")).toBeInTheDocument();
   });
 
   it("shows Back button after navigating forward", () => {

@@ -292,9 +292,6 @@ export default function PlanNextMonthModal({ onClose }: Props) {
         <section className="onb-stage" aria-label="Plan next month steps">
           <div className="onb-split">
             <div className="onb-left">
-              <h2 style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
-                Plan Next Month — {STEPS[step]}
-              </h2>
               {renderStep()}
 
               <div className="onb-actions" style={{ marginTop: 24 }}>
