@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Accounts from "./Accounts";
-import { createWrapper } from "../test-utils";
+import { createWrapper, createWrapperWithEntries } from "../test-utils";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async () => {
@@ -47,45 +47,29 @@ vi.mock("../api/hooks/assets", () => ({
 }));
 
 describe("Accounts — navigation", () => {
-  it("does not navigate away when a connected-account row is clicked", async () => {
+  beforeEach(() => {
+    mockNavigate.mockClear();
+  });
+
+  it("navigates to the account register when a connected-account row is clicked", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
     const rows = await screen.findAllByText("Chase Checking");
     const listRow = rows.map((el) => el.closest("button")).find((btn) => btn !== null)!;
     fireEvent.click(listRow);
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("switches the detail panel to the clicked account", async () => {
-    render(<Accounts />, { wrapper: createWrapper() });
-    // acc-1 (Chase Checking) is selected by default; its balance appears in
-    // both the list row and the detail panel heading.
-    expect(screen.getAllByText("Chase Checking").length).toBeGreaterThan(1);
-    expect(screen.queryAllByText("Ally Savings").length).toBe(1); // list row only, not yet in detail panel
-
-    const allySavingsRows = screen.getAllByText("Ally Savings").map((el) => el.closest("button")).filter((btn): btn is HTMLButtonElement => btn !== null);
-    fireEvent.click(allySavingsRows[0]!);
-
-    // Detail panel now shows Ally Savings' heading and balance; it appears twice (list row + detail heading).
-    expect(screen.getAllByText("Ally Savings").length).toBeGreaterThan(1);
-    expect(screen.getAllByText("$250,000.00").length).toBeGreaterThan(1);
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it("navigates to the account register from the detail panel's full-register link", async () => {
-    render(<Accounts />, { wrapper: createWrapper() });
-    const openRegister = await screen.findByText("Open full register →");
-    fireEvent.click(openRegister);
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
   });
 
-  it("navigates to the correct account's register after switching selection", async () => {
+  it("navigates to the correct account after clicking a different row", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
     const allySavingsRows = screen.getAllByText("Ally Savings").map((el) => el.closest("button")).filter((btn): btn is HTMLButtonElement => btn !== null);
     fireEvent.click(allySavingsRows[0]!);
-
-    const openRegister = await screen.findByText("Open full register →");
-    fireEvent.click(openRegister);
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-2/transactions");
+  });
+
+  it("opens the liability editor when focusLiability is present", async () => {
+    render(<Accounts />, { wrapper: createWrapperWithEntries(["/accounts?focusLiability=l1"]) });
+    expect(await screen.findByText("Edit liability")).toBeInTheDocument();
+    expect(screen.getByText("Mortgage")).toBeInTheDocument();
   });
 });
 
