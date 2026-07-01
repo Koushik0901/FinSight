@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -56,7 +57,7 @@ function AgentStatusBar() {
   }, [tickers]);
 
   return (
-    <Card className="row-md" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 24 }} tight>
+    <Card tone="accent" className="row-md" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 24 }} tight>
       <div className="row-sm">
         <span className="dot" aria-hidden="true" />
         <span style={{ fontSize: 13.5, fontWeight: 500 }}>Agent · running locally</span>
@@ -115,6 +116,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 function InsightCard({ ins, onDismiss }: { ins: Insight; onDismiss: (id: string) => void }) {
+  const navigate = useNavigate();
   return (
     <Card
       className="stack stack-md"
@@ -147,7 +149,13 @@ function InsightCard({ ins, onDismiss }: { ins: Insight; onDismiss: (id: string)
 
       {ins.action && (
         <div>
-          <Button variant="outline" size="sm">{ins.action} →</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => ins.actionRoute && navigate(ins.actionRoute)}
+          >
+            {ins.action} →
+          </Button>
         </div>
       )}
     </Card>
@@ -300,7 +308,7 @@ export default function Insights() {
         headline: `${spike.label} up ${pct}% vs last month`,
         body: `${money(spike.lastMonthCents)} last month → ${money(spike.thisMonthCents)} this month. Worth reviewing.`,
         action: "See Transactions",
-        actionRoute: "/transactions",
+        actionRoute: "/accounts",
         severity: "warn",
       });
     }
@@ -387,7 +395,7 @@ export default function Insights() {
 
       <header className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }} />INSIGHTS · {new Date().toLocaleDateString("en-US", { month: "long" }).toUpperCase()}</div>
+          <div className="eyebrow"><span className="dot" style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }} />Insights · {new Date().toLocaleDateString("en-US", { month: "long" })}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>What the numbers are saying.</h1>
         </div>
         <div className="row-md wrap">
