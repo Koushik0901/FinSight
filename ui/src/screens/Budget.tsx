@@ -39,7 +39,7 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
 
   return (
     <div className="card tight" style={{ marginTop: 12, padding: 16 }}>
-      <div className="eyebrow">Adjust monthly budget</div>
+      <div className="eyebrow"><span className="dot" />Adjust monthly budget</div>
       <div className="row row-sm" style={{ marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input
           className="control"
