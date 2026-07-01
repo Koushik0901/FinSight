@@ -122,12 +122,12 @@ function Results({
         </div>
 
         {result.goalsAffected.length > 0 && (
-          <div className="stack stack-xs" style={{ marginTop: 4 }}>
-            <div className="label" style={{ fontSize: 11.5 }}>Which goals</div>
-            <ul className="stack stack-xs" style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+          <div className="stack stack-sm" style={{ marginTop: 4 }}>
+            <div className="screen-eyebrow">Which goals</div>
+            <ul className="stack stack-sm" style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
               {result.goalsAffected.map((g, i) => (
-                <li key={i} style={{ fontSize: 13.5, color: "var(--ink-2)" }}>
-                  {g}
+                <li key={i} className="row-sm" style={{ fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.5, alignItems: "flex-start" }}>
+                  <span>{g}</span>
                 </li>
               ))}
             </ul>
