@@ -188,7 +188,7 @@ export default function Budget() {
     <div className="screen screen-budget">
       <header className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />BUDGET · {monthLabel.toUpperCase()} · DAY {today} OF {totalDays}</div>
+          <div className="eyebrow"><span className="dot" />Budget · {monthLabel} · day {today} of {totalDays}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the plan stands today.</h1>
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
@@ -200,7 +200,7 @@ export default function Budget() {
       <div className="card accent" style={{ padding: 28 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 3fr", gap: 24 }}>
           <div>
-            <div className="eyebrow">MONTH PROGRESS</div>
+            <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
               <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.max(remaining, 0), { currency: "USD" })}</div>
               <div className="muted">left to spend</div>
@@ -226,7 +226,7 @@ export default function Budget() {
 
       <div className="card tight" style={{ marginTop: 16, padding: 18, display: "grid", gridTemplateColumns: "1.7fr auto", gap: 16, alignItems: "center" }}>
         <div>
-          <div className="eyebrow"><span className="dot" />TO BUDGET · UNASSIGNED</div>
+          <div className="eyebrow"><span className="dot" />To budget · unassigned</div>
           <div className="row row-sm wrap" style={{ alignItems: "baseline", marginTop: 8 }}>
             <div className="figure money" style={{ fontSize: 32, color: toBudget >= 0 ? "var(--accent)" : "var(--negative)" }}>{money(Math.abs(toBudget), { currency: "USD" })}</div>
             <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0, { currency: "USD" })}</span> income · <span className="money">{money(totalBudget, { currency: "USD" })}</span> assigned</div>
@@ -235,16 +235,16 @@ export default function Budget() {
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button">Assign to a goal</button><button className="btn sm" type="button">Park in House Fund</button></div>
       </div>
 
-      {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow">SPENDING MIX</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
+      {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />NEEDS A GLANCE · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
       <section className="section">
-        <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />ALL ENVELOPES</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
+        <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
         {sorted.length === 0 ? <EmptyState title="No envelopes yet" description="Import transactions or set a budget to see the month take shape." /> : <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => <div key={label}><div className="eyebrow" style={{ marginBottom: 12 }}>{label}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></div>)}</div>}
       </section>
 
-      {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}>Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents, { currency: "USD" })}</span></td>)}</tr>)}</tbody></table></div></section>}
+      {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents, { currency: "USD" })}</span></td>)}</tr>)}</tbody></table></div></section>}
 
       <CopilotQuickAsk prompt="Looking at my current budget, what should I rebalance first to improve my financial health?" label="Ask Copilot about budget" />
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
