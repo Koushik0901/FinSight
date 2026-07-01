@@ -27,7 +27,7 @@ export default function Onboarding() {
           <div className="wm">FinSight</div>
         </div>
         <nav className="onb-steps" aria-label="Onboarding progress">
-          {STEP_ORDER.map((s, idx) => {
+          {STEP_ORDER.map((s) => {
             const reached = reachedSteps.has(s);
             const isCurrent = s === step;
             return (
@@ -48,25 +48,6 @@ export default function Onboarding() {
           Step <span className="num">{stepIndex + 1}</span> of {STEP_ORDER.length} · {STEP_TITLES[step]}
         </div>
       </header>
-
-      <nav className="onboarding-stepper" aria-label="Onboarding progress" style={{ display: "none" }}>
-        {STEP_ORDER.map((s, idx) => {
-          const reached = reachedSteps.has(s);
-          const isCurrent = s === step;
-          return (
-            <button
-              key={s}
-              className={`step-chip ${isCurrent ? "current" : ""} ${reached ? "reached" : "locked"}`}
-              disabled={!reached}
-              onClick={() => reached && setStep(s)}
-              aria-current={isCurrent ? "step" : undefined}
-            >
-              <span className="step-index">{idx + 1}</span>
-              <span className="step-title">{STEP_TITLES[s]}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       <section className="onboarding-step onb-stage" aria-label="Onboarding steps">
         {step === "welcome"    && <StepWelcome onNext={() => setStep("connect")} onSkipToToday={() => navigate("/")} />}
