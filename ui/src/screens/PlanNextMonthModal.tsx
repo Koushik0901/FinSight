@@ -10,9 +10,18 @@ interface Props {
 export default function PlanNextMonthModal({ onClose }: Props) {
   const { data, isLoading } = usePlanNextMonthData();
   const apply = useApplyNextMonthPlan();
-  const [step, setStep] = useState(0);
+  const [step, setStepRaw] = useState(0);
+  const [reachedSteps, setReachedSteps] = useState<Set<number>>(new Set([0]));
   // assignments: categoryId → cents
   const [assignments, setAssignments] = useState<Record<string, number>>({});
+
+  const setStep = (updater: number | ((s: number) => number)) => {
+    setStepRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      setReachedSteps(r => (r.has(next) ? r : new Set(r).add(next)));
+      return next;
+    });
+  };
 
   const fmt = (cents: number) =>
     new Intl.NumberFormat("en-US", {
@@ -235,21 +244,113 @@ export default function PlanNextMonthModal({ onClose }: Props) {
     }
   };
 
-  // Live preview: sums the currently-entered assignments (the same values
-  // handleApply will send) grouped by category group, against income.
-  const groupTotals = new Map<string, { color: string; cents: number }>();
-  for (const cat of data.categories) {
-    const cents = assignments[cat.categoryId] ?? 0;
-    if (cents <= 0) continue;
-    const existing = groupTotals.get(cat.groupLabel);
-    if (existing) {
-      existing.cents += cents;
-    } else {
-      groupTotals.set(cat.groupLabel, { color: cat.color, cents });
+  const renderPreview = () => {
+    // Live preview: sums the currently-entered assignments (the same values
+    // handleApply will send) grouped by category group, against income.
+    const groupTotals = new Map<string, { color: string; cents: number }>();
+    for (const cat of data.categories) {
+      const cents = assignments[cat.categoryId] ?? 0;
+      if (cents <= 0) continue;
+      const existing = groupTotals.get(cat.groupLabel);
+      if (existing) {
+        existing.cents += cents;
+      } else {
+        groupTotals.set(cat.groupLabel, { color: cat.color, cents });
+      }
     }
-  }
-  const assignedTotal = [...groupTotals.values()].reduce((s, g) => s + g.cents, 0);
-  const remainingCents = data.incomeCents - assignedTotal;
+    const assignedTotal = [...groupTotals.values()].reduce((s, g) => s + g.cents, 0);
+    const remainingCents = data.incomeCents - assignedTotal;
+
+    return (
+      <>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>
+          <span className="dot" />Live preview
+        </div>
+        <div className="card" style={{ padding: 22 }}>
+          <div
+            className="muted"
+            style={{
+              fontSize: 12,
+              fontFamily: "var(--mono)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 8,
+            }}
+          >
+            Income
+          </div>
+          <div style={{ fontSize: 32, fontFamily: "var(--mono)", marginBottom: 16 }}>
+            <span className="money">{fmt(data.incomeCents)}</span>
+          </div>
+
+          <div
+            style={{
+              height: 24,
+              borderRadius: 6,
+              background: "var(--surface-2)",
+              overflow: "hidden",
+              display: "flex",
+              gap: 2,
+            }}
+          >
+            {[...groupTotals.entries()].map(([label, g]) => (
+              <span
+                key={label}
+                title={`${label} ${fmt(g.cents)}`}
+                style={{
+                  width: `${data.incomeCents > 0 ? Math.min(100, (g.cents / data.incomeCents) * 100) : 0}%`,
+                  background: g.color,
+                }}
+              />
+            ))}
+            {remainingCents > 0 && (
+              <span
+                title={`Unassigned ${fmt(remainingCents)}`}
+                style={{
+                  flex: 1,
+                  background: "var(--surface)",
+                  borderLeft: "1px dashed var(--ink-faint)",
+                }}
+              />
+            )}
+          </div>
+
+          <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+            {[...groupTotals.entries()].map(([label, g]) => (
+              <div
+                key={label}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="cswatch" style={{ background: g.color }} />
+                  <span style={{ fontSize: 14 }}>{label}</span>
+                </div>
+                <span className="num money" style={{ fontSize: 14 }}>
+                  {fmt(g.cents)}
+                </span>
+              </div>
+            ))}
+            <div style={{ height: 1, background: "var(--hairline)", margin: "4px 0" }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>
+                {remainingCents >= 0 ? "Unassigned" : "Over"}
+              </span>
+              <span
+                className="num money"
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: remainingCents < 0 ? "var(--negative)" : undefined,
+                }}
+              >
+                {fmt(Math.abs(remainingCents))}
+              </span>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
 
   return (
     <div
@@ -271,18 +372,21 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             <div className="wm">FinSight</div>
           </div>
           <nav className="onb-steps" aria-label="Plan next month progress">
-            {STEPS.map((s, i) => (
-              <button
-                key={s}
-                className={`onb-step-pip ${i === step ? "cur" : ""} ${i <= step ? "done" : ""}`}
-                disabled={i > step}
-                onClick={() => i <= step && setStep(i)}
-                aria-current={i === step ? "step" : undefined}
-                aria-label={`Go to ${s} step`}
-                title={s}
-                type="button"
-              />
-            ))}
+            {STEPS.map((s, i) => {
+              const reached = reachedSteps.has(i);
+              return (
+                <button
+                  key={s}
+                  className={`onb-step-pip ${i === step ? "cur" : ""} ${reached ? "done" : ""}`}
+                  disabled={!reached}
+                  onClick={() => reached && setStep(i)}
+                  aria-current={i === step ? "step" : undefined}
+                  aria-label={`Go to ${s} step`}
+                  title={s}
+                  type="button"
+                />
+              );
+            })}
           </nav>
           <button className="btn ghost sm" onClick={onClose}>
             ✕ Close
@@ -316,93 +420,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
               </div>
             </div>
 
-            <div className="onb-right">
-              <div className="eyebrow" style={{ marginBottom: 14 }}>
-                <span className="dot" />Live preview
-              </div>
-              <div className="card" style={{ padding: 22 }}>
-                <div
-                  className="muted"
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "var(--mono)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    marginBottom: 8,
-                  }}
-                >
-                  Income
-                </div>
-                <div style={{ fontSize: 32, fontFamily: "var(--mono)", marginBottom: 16 }}>
-                  <span className="money">{fmt(data.incomeCents)}</span>
-                </div>
-
-                <div
-                  style={{
-                    height: 24,
-                    borderRadius: 6,
-                    background: "var(--surface-2)",
-                    overflow: "hidden",
-                    display: "flex",
-                    gap: 2,
-                  }}
-                >
-                  {[...groupTotals.entries()].map(([label, g]) => (
-                    <span
-                      key={label}
-                      title={`${label} ${fmt(g.cents)}`}
-                      style={{
-                        width: `${Math.min(100, (g.cents / data.incomeCents) * 100)}%`,
-                        background: g.color,
-                      }}
-                    />
-                  ))}
-                  {remainingCents > 0 && (
-                    <span
-                      title={`Unassigned ${fmt(remainingCents)}`}
-                      style={{
-                        flex: 1,
-                        background: "var(--surface)",
-                        borderLeft: "1px dashed var(--ink-faint)",
-                      }}
-                    />
-                  )}
-                </div>
-
-                <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[...groupTotals.entries()].map(([label, g]) => (
-                    <div
-                      key={label}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span className="cswatch" style={{ background: g.color }} />
-                        <span style={{ fontSize: 14 }}>{label}</span>
-                      </div>
-                      <span className="num money" style={{ fontSize: 14 }}>
-                        {fmt(g.cents)}
-                      </span>
-                    </div>
-                  ))}
-                  <div style={{ height: 1, background: "var(--hairline)", margin: "4px 0" }} />
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 14, fontWeight: 500 }}>
-                      {remainingCents >= 0 ? "Unassigned" : "Over"}
-                    </span>
-                    <span
-                      className="num money"
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: remainingCents < 0 ? "var(--negative)" : undefined,
-                      }}
-                    >
-                      {fmt(Math.abs(remainingCents))}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div className="onb-right">{renderPreview()}</div>
           </div>
         </section>
       </div>

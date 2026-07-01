@@ -111,6 +111,20 @@ describe("PlanNextMonthModal", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it("updates the live preview's Unassigned total as amounts are entered", () => {
+    render(<PlanNextMonthModal onClose={vi.fn()} />, { wrapper: createWrapper() });
+    // Income step: nothing assigned yet, full income is unassigned.
+    expect(screen.getAllByText("$5,000").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByText("Next →")); // → Essentials
+    const rentInput = screen.getByDisplayValue("1500"); // Rent budgetCents 150000 → $1,500
+    fireEvent.change(rentInput, { target: { value: "2000" } });
+
+    // Assigned $2,000 of $5,000 income → $3,000 unassigned.
+    expect(screen.getByText("Unassigned")).toBeInTheDocument();
+    expect(screen.getByText("$3,000")).toBeInTheDocument();
+  });
+
   it("shows loading state when data is not ready", async () => {
     const budget = await import("../api/hooks/budget");
     vi.mocked(budget.usePlanNextMonthData).mockReturnValue({
