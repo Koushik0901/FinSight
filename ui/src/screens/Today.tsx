@@ -194,14 +194,15 @@ export default function Today() {
   const biggestCategory = activeCats[0];
   const briefingText = totals ? `You have ${money(Math.max(totals.netCents, 0))} left from ${monthLabel.toLowerCase()} cash flow. ${needsReview > 0 ? `${needsReview} transactions still need review.` : `${biggestCategory?.label ?? "Spending"} is carrying most of the load this month.`}` : "Your latest local snapshot is ready. Open insights for the full story.";
   const lastMonthSpendTotal = cats.reduce((s, c) => s + c.lastMonthCents, 0);
-  const spendNarrative = lastMonthSpendTotal > 0
-    ? (() => {
-        const pct = Math.round(((lastMonthSpendTotal - totalSpendRaw) / lastMonthSpendTotal) * 100);
-        if (pct > 0) return `You're tracking ${pct}% below last month's spending.`;
-        if (pct < 0) return `You're tracking ${Math.abs(pct)}% above last month's spending.`;
-        return "You're tracking even with last month's spending.";
-      })()
-    : null;
+  const daysInLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+  const lastMonthPaceCents = lastMonthSpendTotal * (Math.min(dayOfMonth, daysInLastMonth) / daysInLastMonth);
+  let spendNarrative: string | null = null;
+  if (lastMonthPaceCents > 0) {
+    const pct = Math.round(((lastMonthPaceCents - totalSpendRaw) / lastMonthPaceCents) * 100);
+    if (pct > 0) spendNarrative = `You're tracking ${pct}% below last month's pace.`;
+    else if (pct < 0) spendNarrative = `You're tracking ${Math.abs(pct)}% above last month's pace.`;
+    else spendNarrative = "You're tracking even with last month's pace.";
+  }
 
   return (
     <div className="screen">
