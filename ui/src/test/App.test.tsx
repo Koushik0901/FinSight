@@ -15,7 +15,7 @@ describe("App", () => {
     );
     expect(screen.getByText("Today")).toBeInTheDocument();
     expect(screen.getByText("Insights")).toBeInTheDocument();
-    expect(screen.getByText("Transactions")).toBeInTheDocument();
+    expect(screen.getByText("Accounts")).toBeInTheDocument();
     expect(screen.getByText("Categories")).toBeInTheDocument();
     expect(screen.getByText("Rules & agents")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();

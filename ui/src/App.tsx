@@ -14,7 +14,6 @@ const Today = lazy(() => import("./screens/Today"));
 const Inbox = lazy(() => import("./screens/Inbox"));
 const ImportReview = lazy(() => import("./screens/ImportReview"));
 const Insights = lazy(() => import("./screens/Insights"));
-const Transactions = lazy(() => import("./screens/Transactions"));
 const Accounts = lazy(() => import("./screens/Accounts"));
 const Budget = lazy(() => import("./screens/Budget"));
 const Categories = lazy(() => import("./screens/Categories"));
@@ -89,7 +88,6 @@ export function App() {
                 <Route path="/import-review" element={<ImportReview />} />
                 <Route path="/insights" element={<Insights />} />
                 <Route path="/accounts" element={<Accounts />} />
-                <Route path="/transactions" element={<Transactions />} />
                 <Route path="/budget" element={<Budget />} />
                 <Route path="/categories" element={<Categories />} />
                 <Route path="/recurring" element={<Recurring />} />

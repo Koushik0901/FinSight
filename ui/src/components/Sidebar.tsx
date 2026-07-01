@@ -20,7 +20,6 @@ const NAV_MAIN: NavEntry[] = [
   { id: "today", path: "/", label: "Today", Icon: I.Today },
   { id: "insights", path: "/insights", label: "Insights", Icon: I.Sparkle },
   { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
-  { id: "transactions", path: "/transactions", label: "Transactions", Icon: I.Flow },
   { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
   { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
   { id: "recurring", path: "/recurring", label: "Recurring", Icon: I.Repeat },
@@ -48,17 +47,6 @@ export function Sidebar({ onOpenCmd }: Props) {
   const resetOnboarding = useResetOnboarding();
   const canUseDesktopApi = isTauriRuntime();
 
-  const { data: txnCount = 0 } = useQuery<number>({
-    queryKey: ["transaction-count"],
-    queryFn: async () => {
-      const result = await commands.getTransactionCount();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
-    },
-    staleTime: 120_000,
-    enabled: canUseDesktopApi,
-  });
-
   const { data: pendingBundles = [] } = useQuery({
     queryKey: ["action-bundles", "pending", null],
     queryFn: async () => {
@@ -71,7 +59,6 @@ export function Sidebar({ onOpenCmd }: Props) {
   });
 
   const pendingBundleCount = pendingBundles.length;
-  const formattedTxnCount = txnCount >= 1000 ? `${(txnCount / 1000).toFixed(1)}k` : String(txnCount);
   const leadAvatar = (accounts[0]?.name?.trim().slice(0, 1) || "Y").toUpperCase();
   const altAvatar = (accounts[1]?.name?.trim().slice(0, 1) || "F").toUpperCase();
   const profileLabel = accounts.length > 1 ? "Household" : "Personal";
@@ -88,7 +75,6 @@ export function Sidebar({ onOpenCmd }: Props) {
 
   const renderBadge = (id: string) => {
     if (id === "accounts" && accounts.length > 0) return <span className="badge">{accounts.length}</span>;
-    if (id === "transactions" && txnCount > 0) return <span className="badge">{formattedTxnCount}</span>;
     if (id === "goals" && goals.length > 0) return <span className="badge">{goals.length}</span>;
     if (id === "copilot" && pendingBundleCount > 0) return <span className="badge accent">{pendingBundleCount}</span>;
     return null;
