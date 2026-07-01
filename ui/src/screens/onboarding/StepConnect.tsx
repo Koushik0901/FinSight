@@ -4,7 +4,7 @@ import { useTransactions } from "../../api/hooks/transactions";
 import AccountDrawer from "../../components/AccountDrawer";
 import TransactionDrawer from "../../components/TransactionDrawer";
 import FilePicker from "../../components/FilePicker";
-import ImportMappingDialog from "./ImportMappingDialog";
+import ImportMappingDialog from "../../components/ImportMappingDialog";
 import { isTauriRuntime } from "../../utils/runtime";
 import Button from "../../components/Button";
 import Card from "../../components/Card";

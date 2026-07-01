@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import FocusLock from "react-focus-lock";
 import { toast } from "sonner";
-import { usePreviewCsvColumns } from "../../api/hooks/csv";
-import { useImportCsv } from "../../api/hooks/transactions";
-import { useAccounts } from "../../api/hooks/accounts";
-import type { CsvImportMapping, ImportSummary, ColumnRole } from "../../api/client";
-import Button from "../../components/Button";
-import Select from "../../components/Select";
-import Input from "../../components/Input";
-import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "../../components/Table";
+import { usePreviewCsvColumns } from "../api/hooks/csv";
+import { useImportCsv } from "../api/hooks/transactions";
+import { useAccounts } from "../api/hooks/accounts";
+import type { CsvImportMapping, ImportSummary, ColumnRole } from "../api/client";
+import Button from "./Button";
+import Select from "./Select";
+import Input from "./Input";
+import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "./Table";
 
 const COLUMN_ROLES: ColumnRole[] = ["Date", "Amount", "Merchant", "Notes", "Category", "Skip", "Debit", "Credit"];
 

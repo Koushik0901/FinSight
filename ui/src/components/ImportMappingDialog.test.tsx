@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import ImportMappingDialog from "../screens/onboarding/ImportMappingDialog";
+import ImportMappingDialog from "./ImportMappingDialog";
 
 vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
