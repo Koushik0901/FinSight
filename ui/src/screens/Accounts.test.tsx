@@ -16,7 +16,14 @@ vi.mock("../api/hooks/accounts", () => ({
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useArchiveAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useAccountBalanceHistory: vi.fn(() => ({ data: [] })),
+  useAccountBalanceSparklines: vi.fn(() => ({ data: [] })),
 }));
+
+vi.mock("../api/hooks/transactions", async () => {
+  const actual = await vi.importActual("../api/hooks/transactions");
+  return { ...actual, useTransactions: vi.fn(() => ({ data: [], isLoading: false, error: null })) };
+});
 
 vi.mock("../api/hooks/simplefin", () => ({
   useSyncSimpleFinAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -39,10 +46,18 @@ vi.mock("../api/hooks/assets", () => ({
 }));
 
 describe("Accounts — navigation", () => {
-  it("navigates to the account register when an account row is clicked", async () => {
+  it("selects an account when its row is clicked", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
-    const row = await screen.findByText("Chase Checking");
-    fireEvent.click(row.closest("button")!);
+    const rows = await screen.findAllByText("Chase Checking");
+    const listRow = rows.map((el) => el.closest("button")).find((btn) => btn !== null)!;
+    fireEvent.click(listRow);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("navigates to the account register from the detail panel's full-register link", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    const openRegister = await screen.findByText("Open full register →");
+    fireEvent.click(openRegister);
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
   });
 });
