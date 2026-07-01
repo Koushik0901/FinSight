@@ -203,7 +203,7 @@ export default function Rules() {
     <div className="screen screen-rules">
       <header className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />WORKSHOP · RULES & AGENTS</div>
+          <div className="eyebrow"><span className="dot" />Workshop · Rules & agents</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Automate the mundane.</h1>
         </div>
         <Button variant="default" onClick={() => setShowNewRule(true)}>
@@ -251,6 +251,7 @@ export default function Rules() {
               {paused.length > 0 && (
                 <section className="stack stack-md" aria-labelledby="rules-paused">
                   <div id="rules-paused" className="eyebrow">
+                    <span className="dot" />
                     Paused · {paused.length}
                   </div>
                   <div className="stack stack-md">
@@ -302,7 +303,7 @@ export default function Rules() {
           </Card>
 
           <Card className="stack stack-md" tight>
-            <div className="eyebrow">Trust dial</div>
+            <div className="eyebrow"><span className="dot" />Trust dial</div>
             <p className="muted" style={{ fontSize: 13, lineHeight: 1.55, margin: 0 }}>
               Adjust how much the agent acts without asking. You can change this per category in Settings.
             </p>
