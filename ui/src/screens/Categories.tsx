@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useCategoriesWithSpending, useSetCategorySpendingType } from "../api/hooks/transactions";
+import { useCategoriesWithSpending, useSetCategorySpendingType, useUpdateCategoryColor } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
+import { DEFAULT_CATEGORY_COLOR } from "../utils/categoryColor";
+import Swatch from "../components/Swatch";
 
 type Scope = "month" | "avg" | "year";
+
+const COLOR_CHOICES = [
+  "#A78BFA", "#34D399", "#FB923C", "#60A5FA", "#FACC15",
+  "#F472B6", "#2DD4BF", "#FCA5A5", "#818CF8", "#FDE68A",
+  DEFAULT_CATEGORY_COLOR,
+];
 
 const SPENDING_TYPE_OPTIONS = [
   { value: "fixed", label: "Fixed" },
@@ -29,10 +37,14 @@ export default function Categories() {
   const [scope, setScope] = useState<Scope>("month");
   const { data: categories = [], isLoading, error } = useCategoriesWithSpending();
   const setSpendingType = useSetCategorySpendingType();
+  const updateColor = useUpdateCategoryColor();
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [openColorId, setOpenColorId] = useState<string | null>(null);
 
   const monthLabel = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const compareLabel = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const prevMonthLabel = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const valueLabel = scope === "year" ? "Year total" : scope === "avg" ? "2-mo average" : "This month";
+  const compareLabel = scope === "year" ? null : scope === "avg" ? "This month" : prevMonthLabel;
 
   const sorted = useMemo(() => [...categories].sort((a, b) => valueFor(b, scope) - valueFor(a, scope) || a.label.localeCompare(b.label)), [categories, scope]);
   const active = sorted.filter((category) => valueFor(category, scope) > 0 || compareFor(category, scope) > 0 || category.budgetCents > 0);
@@ -53,6 +65,15 @@ export default function Categories() {
     }
   };
 
+  const saveColor = async (id: string, color: string) => {
+    try {
+      await updateColor.mutateAsync({ id, color });
+      toast.success("Color updated");
+    } catch {
+      toast.error("Could not save color");
+    }
+  };
+
   if (isLoading) return <div className="stub">Loading categories…</div>;
   if (error) return <div className="stub" role="alert">Error loading categories.</div>;
 
@@ -60,7 +81,7 @@ export default function Categories() {
     <div className="screen screen-categories">
       <div className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />CATEGORIES · {(scope === "year" ? "YEAR" : monthLabel).toUpperCase()}</div>
+          <div className="eyebrow"><span className="dot" />Categories · {scope === "year" ? "Year" : monthLabel}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the money is going.</h1>
         </div>
         <div className="toolbar" role="tablist" aria-label="Category time scope">
@@ -73,13 +94,18 @@ export default function Categories() {
       <div className="card" style={{ padding: 28 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 16 }}>
           <div>
-            <div className="eyebrow">THIS MONTH</div>
+            <div className="eyebrow">{valueLabel}</div>
             <div className="figure money" style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}>{money(totalThis, { currency: "USD" })}</div>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div className="muted" style={{ fontSize: 13 }}>vs. {scope === "avg" ? "current month" : compareLabel}</div>
-            <div className={`figure money ${totalThis <= totalCompare ? "pos" : "neg"}`} style={{ fontSize: 22, marginTop: 4 }}>{totalCompare > 0 ? money(Math.abs(totalThis - totalCompare), { currency: "USD" }) : money(0, { currency: "USD" })}</div>
-          </div>
+          {compareLabel && (
+            <div style={{ textAlign: "right" }}>
+              <div className="muted" style={{ fontSize: 13 }}>vs. {compareLabel}</div>
+              <div className={`figure money ${totalThis <= totalCompare ? "pos" : "neg"}`} style={{ fontSize: 22, marginTop: 4 }}>
+                {totalCompare > 0 ? money(Math.abs(totalThis - totalCompare), { currency: "USD" }) : money(0, { currency: "USD" })}
+                {totalCompare > 0 && ` · ${Math.round((Math.abs(totalThis - totalCompare) / totalCompare) * 100)}%`}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="stream" style={{ height: 18, borderRadius: 6 }}>
@@ -106,8 +132,8 @@ export default function Categories() {
               <tr>
                 <th>Category</th>
                 <th>Pace</th>
-                <th className="right">{scope === "year" ? "Year" : "This Month"}</th>
-                <th className="right">{compareLabel}</th>
+                <th className="right">{valueLabel}</th>
+                {compareLabel && <th className="right">{compareLabel}</th>}
                 <th className="right">Budget</th>
                 <th className="right">Transactions</th>
                 <th>Type</th>
@@ -120,12 +146,41 @@ export default function Categories() {
                 const budget = category.budgetCents;
                 const pct = budget > 0 ? Math.min(100, (current / budget) * 100) : 0;
                 const over = budget > 0 && current > budget;
+                const colorPickerOpen = openColorId === category.id;
                 return (
                   <tr key={category.id}>
-                    <td><div className="row row-sm"><span className="cswatch" style={{ background: category.color || "var(--accent)" }} /><span>{category.label}</span></div></td>
+                    <td>
+                      <div className="row row-sm">
+                        <button
+                          type="button"
+                          className="cswatch"
+                          style={{ background: category.color || "var(--accent)", cursor: "pointer" }}
+                          onClick={() => setOpenColorId(colorPickerOpen ? null : category.id)}
+                          aria-label={`Change color for ${category.label}`}
+                          aria-expanded={colorPickerOpen}
+                        />
+                        <span>{category.label}</span>
+                      </div>
+                      {colorPickerOpen && (
+                        <div className="swatch-row" role="radiogroup" aria-label={`Color for ${category.label}`} style={{ marginTop: 8 }}>
+                          {COLOR_CHOICES.map((c) => (
+                            <Swatch
+                              key={c}
+                              color={c}
+                              selected={c === (category.color || DEFAULT_CATEGORY_COLOR)}
+                              onClick={() => {
+                                void saveColor(category.id, c);
+                                setOpenColorId(null);
+                              }}
+                              label={`Choose ${c}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td><div className="row row-sm" style={{ alignItems: "center" }}><div className={`goal-bar ${over ? "negative" : ""}`} style={{ width: 180, height: 6 }}><span style={{ width: `${pct}%`, background: over ? "var(--negative)" : category.color || "var(--accent)" }} /></div><span className={`num ${over ? "neg" : "muted"}`} style={{ fontSize: 12 }}>{Math.round(pct)}%</span></div></td>
                     <td className="right"><span className="money">{money(current, { currency: "USD" })}</span></td>
-                    <td className="right"><span className="money muted">{compare > 0 ? money(compare, { currency: "USD" }) : "—"}</span></td>
+                    {compareLabel && <td className="right"><span className="money muted">{compare > 0 ? money(compare, { currency: "USD" }) : "—"}</span></td>}
                     <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget, { currency: "USD" }) : "—"}</span></td>
                     <td className="right"><span className="num muted">{category.txnCount}</span></td>
                     <td><select className="control" value={category.spendingType ?? ""} disabled={savingId === category.id} onChange={(e) => void saveSpendingType(category.id, e.target.value)} aria-label={`Spending type for ${category.label}`} style={{ minWidth: 130 }}>{SPENDING_TYPE_OPTIONS.map((option) => <option key={option.value || "untagged"} value={option.value}>{option.label}</option>)}</select></td>

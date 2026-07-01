@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import Categories from "./Categories";
 import { createWrapper } from "../test-utils";
 
@@ -15,6 +15,7 @@ vi.mock("../api/hooks/transactions", () => ({
     error: null,
   })),
   useSetCategorySpendingType: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useUpdateCategoryColor: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
 
 describe("Categories — AI insight sentence", () => {
@@ -27,5 +28,33 @@ describe("Categories — AI insight sentence", () => {
     expect(screen.getByText(/dropped/)).toBeInTheDocument();
     expect(screen.getAllByText(/Dining Out/).length).toBeGreaterThan(0);
     expect(screen.getByText(/rose/)).toBeInTheDocument();
+  });
+});
+
+describe("Categories — scope-aware labels", () => {
+  it("shows a scope-aware value label and omits the compare column for the year scope", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+
+    // Default "month" scope shows a "vs. <prior month>" comparison label (a real
+    // calendar month name, not the "vs. average" toolbar button).
+    expect(screen.getByText(/^vs\. (January|February|March|April|May|June|July|August|September|October|November|December)/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Year" }));
+
+    // Year scope: value label switches, and there is no honest "compare" dataset,
+    // so the vs./compare label and table column should not be rendered.
+    expect(screen.getAllByText("Year total").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^vs\. (January|February|March|April|May|June|July|August|September|October|November|December)/)).not.toBeInTheDocument();
+    expect(screen.queryByText("vs. This month")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "This month" })).not.toBeInTheDocument();
+  });
+
+  it("labels the average scope honestly as a 2-month average, not a 12-month one", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByRole("button", { name: "vs. average" }));
+
+    expect(screen.getAllByText("2-mo average").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/12-mo average/)).not.toBeInTheDocument();
   });
 });
