@@ -110,7 +110,7 @@ export default function AccountTransactions() {
       <div className="day-hdr">
         <div>
           <button className="btn ghost sm" type="button" onClick={() => navigate("/accounts")}>← Back to accounts</button>
-          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" />{account.bank.toUpperCase()} · {account.type.toUpperCase()}</div>
+          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" />{account.bank} · {account.type}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -164,10 +164,10 @@ export default function AccountTransactions() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>DATE</th>
-                <th>MERCHANT</th>
-                <th>CATEGORY</th>
-                <th className="right">AMOUNT</th>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th className="right">Amount</th>
               </tr>
             </thead>
             <tbody>
