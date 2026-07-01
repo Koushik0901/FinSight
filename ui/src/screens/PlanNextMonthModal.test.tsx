@@ -67,7 +67,7 @@ describe("PlanNextMonthModal", () => {
   it("renders the Income step by default", () => {
     render(<PlanNextMonthModal onClose={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByText(/Plan Next Month — Income/i)).toBeInTheDocument();
-    expect(screen.getByText("$5,000")).toBeInTheDocument();
+    expect(screen.getAllByText("$5,000").length).toBeGreaterThan(0);
   });
 
   it("navigates to the next step on Next click", () => {

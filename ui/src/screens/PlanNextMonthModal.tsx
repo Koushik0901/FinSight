@@ -119,9 +119,11 @@ export default function PlanNextMonthModal({ onClose }: Props) {
       case 0: // Income
         return (
           <div>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Estimated monthly income
-            </div>
+            <div className="num-step">Step 1 of 6 · Income</div>
+            <h1>Your estimated income.</h1>
+            <p className="lead">
+              Based on your average income over the last 3 months.
+            </p>
             <div
               style={{
                 fontSize: 32,
@@ -131,35 +133,32 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             >
               <span className="money">{fmt(data.incomeCents)}</span>
             </div>
-            <p className="muted" style={{ fontSize: 13 }}>
-              Based on your average income over the last 3 months.
-            </p>
           </div>
         );
       case 1: // Essentials
         return (
-          <>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Essential expenses
-            </div>
+          <div>
+            <div className="num-step">Step 2 of 6 · Essentials</div>
+            <h1>Essential expenses.</h1>
+            <p className="lead">Fixed costs that show up every month.</p>
             {renderCategoryStep(true)}
-          </>
+          </div>
         );
       case 2: // Wants
         return (
-          <>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Discretionary spending
-            </div>
+          <div>
+            <div className="num-step">Step 3 of 6 · Wants</div>
+            <h1>Discretionary spending.</h1>
+            <p className="lead">Everything outside fixed costs.</p>
             {renderCategoryStep(false)}
-          </>
+          </div>
         );
       case 3: // Goals
         return (
           <div>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Active goals
-            </div>
+            <div className="num-step">Step 4 of 6 · Goals</div>
+            <h1>Active goals.</h1>
+            <p className="lead">What you're working toward right now.</p>
             {data.goals.length === 0 ? (
               <p className="muted">No active goals.</p>
             ) : (
@@ -181,9 +180,11 @@ export default function PlanNextMonthModal({ onClose }: Props) {
       case 4: // Recurring
         return (
           <div>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Estimated recurring charges
-            </div>
+            <div className="num-step">Step 5 of 6 · Recurring</div>
+            <h1>Estimated recurring charges.</h1>
+            <p className="lead">
+              Monthly-cadence subscriptions and bills.
+            </p>
             <div
               style={{
                 fontSize: 28,
@@ -193,17 +194,14 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             >
               <span className="money">{fmt(data.recurringExpenseCents)}</span>
             </div>
-            <p className="muted" style={{ fontSize: 13 }}>
-              Monthly-cadence subscriptions and bills.
-            </p>
           </div>
         );
       case 5: // Review
         return (
           <div>
-            <div className="eyebrow" style={{ marginBottom: 16 }}>
-              Review &amp; apply
-            </div>
+            <div className="num-step">Step 6 of 6 · Review</div>
+            <h1>Review &amp; apply.</h1>
+            <p className="lead">Confirm the amounts below before applying next month's budget.</p>
             {Object.entries(assignments).filter(([, v]) => v > 0).length === 0 ? (
               <p className="muted">No budget amounts set yet.</p>
             ) : (
@@ -237,6 +235,22 @@ export default function PlanNextMonthModal({ onClose }: Props) {
     }
   };
 
+  // Live preview: sums the currently-entered assignments (the same values
+  // handleApply will send) grouped by category group, against income.
+  const groupTotals = new Map<string, { color: string; cents: number }>();
+  for (const cat of data.categories) {
+    const cents = assignments[cat.categoryId] ?? 0;
+    if (cents <= 0) continue;
+    const existing = groupTotals.get(cat.groupLabel);
+    if (existing) {
+      existing.cents += cents;
+    } else {
+      groupTotals.set(cat.groupLabel, { color: cat.color, cents });
+    }
+  }
+  const assignedTotal = [...groupTotals.values()].reduce((s, g) => s + g.cents, 0);
+  const remainingCents = data.incomeCents - assignedTotal;
+
   return (
     <div
       style={{
@@ -245,85 +259,155 @@ export default function PlanNextMonthModal({ onClose }: Props) {
         zIndex: 70,
         background: "var(--bg)",
         display: "flex",
-        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          padding: "16px 24px",
-          borderBottom: "1px solid var(--line)",
-        }}
-      >
-        <button
-          className="btn ghost"
-          onClick={onClose}
-          style={{ marginRight: "auto" }}
-        >
-          ✕ Close
-        </button>
-        <div style={{ display: "flex", gap: 8 }}>
-          {STEPS.map((s, i) => (
-            <button
-              key={s}
-              className={`btn ghost sm${i === step ? " active" : ""}`}
-              style={{ opacity: i > step ? 0.4 : 1, fontWeight: i === step ? 600 : undefined }}
-              onClick={() => i <= step && setStep(i)}
-            >
-              {i + 1}. {s}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="onb-shell" style={{ width: "100%", maxWidth: 1120 }}>
+        <header className="onb-top">
+          <div className="brand" style={{ padding: 0 }}>
+            <div className="mark" aria-hidden="true" />
+            <div className="wm">FinSight</div>
+          </div>
+          <nav className="onb-steps" aria-label="Plan next month progress">
+            {STEPS.map((s, i) => (
+              <button
+                key={s}
+                className={`onb-step-pip ${i === step ? "cur" : ""} ${i <= step ? "done" : ""}`}
+                disabled={i > step}
+                onClick={() => i <= step && setStep(i)}
+                aria-current={i === step ? "step" : undefined}
+                aria-label={`Go to ${s} step`}
+                title={s}
+                type="button"
+              />
+            ))}
+          </nav>
+          <button className="btn ghost sm" onClick={onClose}>
+            ✕ Close
+          </button>
+        </header>
 
-      {/* Body */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "32px 40px",
-          maxWidth: 640,
-          margin: "0 auto",
-          width: "100%",
-        }}
-      >
-        <h2 style={{ marginBottom: 24, fontWeight: 600 }}>
-          Plan Next Month — {STEPS[step]}
-        </h2>
-        {renderStep()}
-      </div>
+        <section className="onb-stage" aria-label="Plan next month steps">
+          <div className="onb-split">
+            <div className="onb-left">
+              <h2 style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>
+                Plan Next Month — {STEPS[step]}
+              </h2>
+              {renderStep()}
 
-      {/* Footer */}
-      <div
-        style={{
-          padding: "16px 24px",
-          borderTop: "1px solid var(--line)",
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 12,
-        }}
-      >
-        {step > 0 && (
-          <button className="btn ghost" onClick={() => setStep(s => s - 1)}>
-            ← Back
-          </button>
-        )}
-        {step < STEPS.length - 1 ? (
-          <button className="btn" onClick={() => setStep(s => s + 1)}>
-            Next →
-          </button>
-        ) : (
-          <button
-            className="btn"
-            onClick={handleApply}
-            disabled={apply.isPending}
-          >
-            {apply.isPending ? "Applying…" : "Apply budget"}
-          </button>
-        )}
+              <div className="onb-actions" style={{ marginTop: 24 }}>
+                {step > 0 && (
+                  <button className="btn ghost" onClick={() => setStep(s => s - 1)}>
+                    ← Back
+                  </button>
+                )}
+                {step < STEPS.length - 1 ? (
+                  <button className="btn primary" onClick={() => setStep(s => s + 1)}>
+                    Next →
+                  </button>
+                ) : (
+                  <button
+                    className="btn primary"
+                    onClick={handleApply}
+                    disabled={apply.isPending}
+                  >
+                    {apply.isPending ? "Applying…" : "Apply budget"}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="onb-right">
+              <div className="eyebrow" style={{ marginBottom: 14 }}>
+                <span className="dot" />Live preview
+              </div>
+              <div className="card" style={{ padding: 22 }}>
+                <div
+                  className="muted"
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "var(--mono)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 8,
+                  }}
+                >
+                  Income
+                </div>
+                <div style={{ fontSize: 32, fontFamily: "var(--mono)", marginBottom: 16 }}>
+                  <span className="money">{fmt(data.incomeCents)}</span>
+                </div>
+
+                <div
+                  style={{
+                    height: 24,
+                    borderRadius: 6,
+                    background: "var(--surface-2)",
+                    overflow: "hidden",
+                    display: "flex",
+                    gap: 2,
+                  }}
+                >
+                  {[...groupTotals.entries()].map(([label, g]) => (
+                    <span
+                      key={label}
+                      title={`${label} ${fmt(g.cents)}`}
+                      style={{
+                        width: `${Math.min(100, (g.cents / data.incomeCents) * 100)}%`,
+                        background: g.color,
+                      }}
+                    />
+                  ))}
+                  {remainingCents > 0 && (
+                    <span
+                      title={`Unassigned ${fmt(remainingCents)}`}
+                      style={{
+                        flex: 1,
+                        background: "var(--surface)",
+                        borderLeft: "1px dashed var(--ink-faint)",
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {[...groupTotals.entries()].map(([label, g]) => (
+                    <div
+                      key={label}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span className="cswatch" style={{ background: g.color }} />
+                        <span style={{ fontSize: 14 }}>{label}</span>
+                      </div>
+                      <span className="num money" style={{ fontSize: 14 }}>
+                        {fmt(g.cents)}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ height: 1, background: "var(--hairline)", margin: "4px 0" }} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>
+                      {remainingCents >= 0 ? "Unassigned" : "Over"}
+                    </span>
+                    <span
+                      className="num money"
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: remainingCents < 0 ? "var(--negative)" : undefined,
+                      }}
+                    >
+                      {fmt(Math.abs(remainingCents))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
