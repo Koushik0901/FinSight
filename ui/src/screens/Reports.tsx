@@ -36,11 +36,40 @@ export default function Reports() {
   const maxExpense = Math.max(1, ...chartValues.map((month) => month.expenseCents));
 
   const scopeLabel = useMemo(() => {
-    if (scope === "quarter") return "QUARTER";
-    if (scope === "year") return "YEAR";
-    if (scope === "all") return "ALL-TIME";
-    return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase();
+    if (scope === "quarter") return "Quarter";
+    if (scope === "year") return "Year";
+    if (scope === "all") return "All-time";
+    return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }, [scope]);
+
+  const handleExport = () => {
+    if (!data) return;
+    const rows: string[] = [];
+    rows.push("Section,Label,Income,Expense,Net");
+    for (const month of data.monthly) {
+      rows.push(`Monthly,${month.label},${(month.incomeCents / 100).toFixed(2)},${(month.expenseCents / 100).toFixed(2)},${(month.netCents / 100).toFixed(2)}`);
+    }
+    rows.push("");
+    rows.push("Section,Category,Amount,Txns");
+    for (const category of data.topCategories) {
+      rows.push(`Top category,"${category.label.replace(/"/g, '""')}",${(category.totalCents / 100).toFixed(2)},${category.txnCount}`);
+    }
+    rows.push("");
+    rows.push("Section,Merchant,Amount,Txns");
+    for (const merchant of data.topMerchants) {
+      rows.push(`Top merchant,"${merchant.merchantRaw.replace(/"/g, '""')}",${(merchant.totalCents / 100).toFixed(2)},${merchant.txnCount}`);
+    }
+    const csv = rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finsight-report-${scope}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   if (isLoading) return <div className="stub">Loading reports…</div>;
   if (error) return <div className="stub" role="alert">Error loading reports.</div>;
@@ -49,7 +78,7 @@ export default function Reports() {
     <div className="screen screen-reports">
       <div className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />REPORTS · {scopeLabel}</div>
+          <div className="eyebrow"><span className="dot" />Reports · {scopeLabel}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>How money is moving.</h1>
           <div className="muted" style={{ marginTop: 6 }}>See the shape of your money over time.</div>
         </div>
@@ -60,8 +89,7 @@ export default function Reports() {
             <button className={scope === "year" ? "on" : ""} type="button" onClick={() => setScope("year")}>Year</button>
             <button className={scope === "all" ? "on" : ""} type="button" onClick={() => setScope("all")}>All time</button>
           </div>
-          <button className="btn outline sm" type="button">Export</button>
-          <button className="btn sm" type="button">Customize</button>
+          <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
         </div>
       </div>
 
@@ -81,7 +109,7 @@ export default function Reports() {
       <div className="bigchart">
         <div className="bigchart-head">
           <div>
-            <div className="eyebrow">{tab === "overview" ? "MONTHLY OVERVIEW" : tab === "networth" ? "NET WORTH" : "SPENDING DEEP DIVE"}</div>
+            <div className="eyebrow">{tab === "overview" ? "Monthly overview" : tab === "networth" ? "Net worth" : "Spending deep dive"}</div>
             <div className="h3" style={{ marginTop: 6 }}>{tab === "overview" ? "Income and expenses over time" : tab === "networth" ? "Balance momentum" : "Expense concentration"}</div>
           </div>
         </div>
