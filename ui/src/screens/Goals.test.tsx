@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Goals from "./Goals";
 import { createWrapper } from "../test-utils";
 
@@ -46,6 +46,101 @@ describe("Goals — sinking funds", () => {
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText("Sinking funds")).toBeInTheDocument();
     expect(screen.getAllByText("Car repair").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("Goals — eyebrow casing", () => {
+  it("renders eyebrows in natural case, relying on CSS for uppercase", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Goals · 2 active/)).toBeInTheDocument();
+    expect(screen.getByText(/Sinking funds · 2/)).toBeInTheDocument();
+    expect(screen.queryByText(/GOALS ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SINKING FUNDS ·/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Goals — what-if scenario", () => {
+  beforeEach(() => {
+    mockUpdateMonthly.mockClear();
+  });
+
+  it("defaults to the first eligible goal and shows its base ETA with no extra", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.getByText("What if · scenario")).toBeInTheDocument();
+    expect(screen.getByText(/on track for the original plan/i)).toBeInTheDocument();
+  });
+
+  it("updates the projection live when the slider moves", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    // g1: target 500000c, current 100000c, monthly 20000c -> base months = ceil(400000/20000) = 20
+    expect(screen.getByText("20")).toBeInTheDocument();
+
+    const slider = screen.getByLabelText("Extra monthly contribution");
+    fireEvent.change(slider, { target: { value: "500" } });
+
+    // with +$500/mo (50000c), monthly becomes 70000c -> ceil(400000/70000) = 6
+    expect(screen.getByText("6")).toBeInTheDocument();
+    expect(screen.queryByText("20")).not.toBeInTheDocument();
+    expect(screen.getByText(/brings/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$500\/mo/)).toBeInTheDocument();
+  });
+
+  it("switches the selected goal when a different one is clicked", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    const radios = screen.getAllByRole("radio");
+    expect(radios.length).toBeGreaterThanOrEqual(2);
+    const second = radios[1]!;
+    fireEvent.click(second);
+    expect(second).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("calls useUpdateGoalMonthly with the original plus extra when applying", async () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    const slider = screen.getByLabelText("Extra monthly contribution");
+    fireEvent.change(slider, { target: { value: "500" } });
+    const applyButton = screen.getByRole("button", { name: /apply this scenario/i });
+    fireEvent.click(applyButton);
+    await waitFor(() => {
+      expect(mockUpdateMonthly).toHaveBeenCalledWith({ id: "g1", monthlyCents: 20000 + 50000 });
+    });
+  });
+
+  it("resets the slider to 0 without applying", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    const slider = screen.getByLabelText("Extra monthly contribution") as HTMLInputElement;
+    fireEvent.change(slider, { target: { value: "500" } });
+    expect(slider.value).toBe("500");
+    fireEvent.click(screen.getByRole("button", { name: /^reset$/i }));
+    expect(slider.value).toBe("0");
+    expect(mockUpdateMonthly).not.toHaveBeenCalled();
+  });
+
+  it("excludes spending-cap goals from the scenario picker", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "g1", name: "Italy Fund", goalType: "save-by-date",
+          targetCents: 500000, currentCents: 100000, monthlyCents: 20000,
+          targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+        {
+          id: "g4", name: "Dining cap", goalType: "spending-cap",
+          targetCents: 40000, currentCents: 10000, monthlyCents: 0,
+          targetDate: null, color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 2, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    const radiogroup = screen.getByRole("radiogroup", { name: /scenario goal/i });
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(1);
+    expect(screen.getAllByText("Italy Fund").length).toBeGreaterThanOrEqual(1);
+    expect(radiogroup).not.toHaveTextContent("Dining cap");
   });
 });
 

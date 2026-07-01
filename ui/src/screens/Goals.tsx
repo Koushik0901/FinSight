@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
 import { useLiabilities } from "../api/hooks/assets";
-import { useGoals, useCreateGoal } from "../api/hooks/budget";
+import { useGoals, useCreateGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
@@ -69,6 +69,156 @@ function GoalCard({ goal }: { goal: GoalDto }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function monthsToGoal(goal: GoalDto, monthlyOverrideCents?: number) {
+  const monthly = monthlyOverrideCents ?? goal.monthlyCents;
+  const remaining = goal.targetCents - goal.currentCents;
+  if (remaining <= 0) return 0;
+  if (monthly <= 0) return Infinity;
+  return Math.ceil(remaining / monthly);
+}
+
+function etaLabel(months: number) {
+  if (!Number.isFinite(months)) return "—";
+  const date = new Date();
+  date.setMonth(date.getMonth() + months);
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
+  const eligibleGoals = useMemo(() => goals.filter((goal) => goal.goalType !== "spending-cap"), [goals]);
+  const [scenarioGoalId, setScenarioGoalId] = useState(eligibleGoals[0]?.id ?? "");
+  const [extra, setExtra] = useState(0);
+  const updateGoalMonthly = useUpdateGoalMonthly();
+
+  useEffect(() => {
+    if (!eligibleGoals.some((goal) => goal.id === scenarioGoalId)) {
+      setScenarioGoalId(eligibleGoals[0]?.id ?? "");
+    }
+  }, [eligibleGoals, scenarioGoalId]);
+
+  const selected = eligibleGoals.find((goal) => goal.id === scenarioGoalId);
+
+  if (!selected) return null;
+
+  const extraCents = extra * 100;
+  const baseMonths = monthsToGoal(selected);
+  const newMonths = monthsToGoal(selected, selected.monthlyCents + extraCents);
+  const monthsSaved = Number.isFinite(baseMonths) && Number.isFinite(newMonths) ? Math.max(0, baseMonths - newMonths) : 0;
+
+  const apply = async () => {
+    if (extra === 0) return;
+    try {
+      await updateGoalMonthly.mutateAsync({ id: selected.id, monthlyCents: selected.monthlyCents + extraCents });
+      toast.success(`Applied +${money(extraCents, { currency: "USD" })}/mo to ${selected.name}`, {
+        description: `New ETA: ${etaLabel(newMonths)} · saves ${monthsSaved} ${monthsSaved === 1 ? "month" : "months"}`,
+      });
+      setExtra(0);
+    } catch {
+      toast.error("Failed to apply scenario");
+    }
+  };
+
+  return (
+    <section className="section">
+      <div className="day-hdr" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow"><span className="dot" />What if · scenario</div>
+          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Move a slider, see the future shift.</h2>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 26 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Goal</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }} role="radiogroup" aria-label="Scenario goal">
+              {eligibleGoals.map((goal) => (
+                <button
+                  key={goal.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={scenarioGoalId === goal.id}
+                  onClick={() => setScenarioGoalId(goal.id)}
+                  className="btn ghost"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 12px",
+                    background: scenarioGoalId === goal.id ? "var(--surface-2)" : "transparent",
+                    border: `1px solid ${scenarioGoalId === goal.id ? "var(--line)" : "transparent"}`,
+                    textAlign: "left",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{goal.name}</div>
+                    <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>ETA {etaLabel(monthsToGoal(goal))}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 22 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span className="eyebrow">Extra per month</span>
+                <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{money(extraCents, { currency: "USD" })}</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1500}
+                step={50}
+                value={extra}
+                onChange={(e) => setExtra(Number(e.target.value))}
+                aria-label="Extra monthly contribution"
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+                <span>$0</span>
+                <span>$750</span>
+                <span>$1,500</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: 22, background: "var(--surface-2)", borderRadius: 12, border: "1px solid var(--line)" }}>
+            <div className="eyebrow" style={{ marginBottom: 14 }}>Updated horizon</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <span className="figure" style={{ fontSize: 56, lineHeight: 1, color: "var(--accent)" }}>
+                {Number.isFinite(newMonths) ? newMonths : "—"}
+              </span>
+              <span className="muted" style={{ fontSize: 16 }}>months to go</span>
+            </div>
+            <div className="muted" style={{ marginTop: 16, fontSize: 14, lineHeight: 1.55 }}>
+              {extra === 0 ? (
+                <span>You're on track for the original plan. Drag the slider to see what changes.</span>
+              ) : (
+                <span>
+                  Adding <strong>{money(extraCents, { currency: "USD" })}/mo</strong> brings <strong>{selected.name}</strong> in by{" "}
+                  <strong>{monthsSaved} {monthsSaved === 1 ? "month" : "months"}</strong> — moving the ETA from{" "}
+                  <strong>{etaLabel(baseMonths)}</strong> to roughly <strong>{etaLabel(newMonths)}</strong>.
+                </span>
+              )}
+            </div>
+            <div className="row row-sm" style={{ marginTop: 20 }}>
+              <button
+                className="btn primary"
+                type="button"
+                disabled={extra === 0 || updateGoalMonthly.isPending}
+                style={{ opacity: extra === 0 ? 0.5 : 1 }}
+                onClick={() => void apply()}
+              >
+                Apply this scenario
+              </button>
+              <button className="btn ghost" type="button" onClick={() => setExtra(0)}>Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -158,7 +308,7 @@ export default function Goals() {
     <div className="screen screen-goals">
       <div className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />GOALS · {goals.length} ACTIVE</div>
+          <div className="eyebrow"><span className="dot" />Goals · {goals.length} active</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Things you're moving toward.</h1>
         </div>
         <button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button>
@@ -180,10 +330,12 @@ export default function Goals() {
         {visible.map((goal) => <GoalCard key={goal.id} goal={goal} />)}
       </div>
 
+      {goals.length > 0 && <WhatIfScenario goals={goals} />}
+
       <section className="section">
         <div className="day-hdr" style={{ marginBottom: 14 }}>
           <div>
-            <div className="eyebrow"><span className="dot" />SINKING FUNDS · {sinkingFunds.length}</div>
+            <div className="eyebrow"><span className="dot" />Sinking funds · {sinkingFunds.length}</div>
             <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Sinking funds</h2>
           </div>
         </div>
