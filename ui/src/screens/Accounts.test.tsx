@@ -12,6 +12,7 @@ vi.mock("react-router-dom", async () => {
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [
     { id: "acc-1", name: "Chase Checking", bank: "Chase", type: "Checking", balance_cents: 10000000, currency: "USD", color: "#3B82F6" },
+    { id: "acc-2", name: "Ally Savings", bank: "Ally", type: "Savings", balance_cents: 25000000, currency: "USD", color: "#22C55E" },
   ], isLoading: false, error: null })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
@@ -46,11 +47,27 @@ vi.mock("../api/hooks/assets", () => ({
 }));
 
 describe("Accounts — navigation", () => {
-  it("selects an account when its row is clicked", async () => {
+  it("does not navigate away when a connected-account row is clicked", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
     const rows = await screen.findAllByText("Chase Checking");
     const listRow = rows.map((el) => el.closest("button")).find((btn) => btn !== null)!;
     fireEvent.click(listRow);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("switches the detail panel to the clicked account", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    // acc-1 (Chase Checking) is selected by default; its balance appears in
+    // both the list row and the detail panel heading.
+    expect(screen.getAllByText("Chase Checking").length).toBeGreaterThan(1);
+    expect(screen.queryAllByText("Ally Savings").length).toBe(1); // list row only, not yet in detail panel
+
+    const allySavingsRows = screen.getAllByText("Ally Savings").map((el) => el.closest("button")).filter((btn): btn is HTMLButtonElement => btn !== null);
+    fireEvent.click(allySavingsRows[0]!);
+
+    // Detail panel now shows Ally Savings' heading and balance; it appears twice (list row + detail heading).
+    expect(screen.getAllByText("Ally Savings").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("$250,000.00").length).toBeGreaterThan(1);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
@@ -59,6 +76,16 @@ describe("Accounts — navigation", () => {
     const openRegister = await screen.findByText("Open full register →");
     fireEvent.click(openRegister);
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
+  });
+
+  it("navigates to the correct account's register after switching selection", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+    const allySavingsRows = screen.getAllByText("Ally Savings").map((el) => el.closest("button")).filter((btn): btn is HTMLButtonElement => btn !== null);
+    fireEvent.click(allySavingsRows[0]!);
+
+    const openRegister = await screen.findByText("Open full register →");
+    fireEvent.click(openRegister);
+    expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-2/transactions");
   });
 });
 
@@ -79,8 +106,8 @@ describe("Accounts — manual assets", () => {
   it("shows a net-worth stat of accounts + assets − liabilities", () => {
     render(<Accounts />, { wrapper: createWrapper() });
     expect(screen.getByText("Net worth total")).toBeInTheDocument();
-    // $300,000 value appears in the stat row (outside the header)
-    const statValues = screen.getAllByText("$300,000");
+    // (acc-1 $100,000 + acc-2 $250,000) + manual asset $500,000 − liability $300,000 = $550,000
+    const statValues = screen.getAllByText("$550,000");
     expect(statValues.length).toBeGreaterThan(0);
   });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts, useAccountBalanceHistory } from "../api/hooks/accounts";
@@ -37,6 +37,7 @@ function AccountSparkline({ points, color }: { points: AccountBalancePoint[]; co
 }
 
 function AccountDetailChart({ points, color }: { points: AccountBalancePoint[]; color: string }) {
+  const gradId = useId();
   if (points.length < 2) {
     return <div className="stub">Balance history is still building for this account.</div>;
   }
@@ -52,13 +53,13 @@ function AccountDetailChart({ points, color }: { points: AccountBalancePoint[]; 
   return (
     <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: "100%", height: 80, display: "block" }}>
       <defs>
-        <linearGradient id="acct-detail-grad" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.34" />
           <stop offset="60%" stopColor={color} stopOpacity="0.06" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={areaD} fill="url(#acct-detail-grad)" stroke="none" />
+      <path d={areaD} fill={`url(#${gradId})`} stroke="none" />
       <path d={lineD} fill="none" stroke={color} strokeWidth="1.2" />
     </svg>
   );
