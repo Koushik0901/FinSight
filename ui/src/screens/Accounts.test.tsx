@@ -1,25 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import Accounts from "./Accounts";
 import { createWrapper } from "../test-utils";
 
-const mocks = vi.hoisted(() => ({
-  useTransactions: vi.fn(() => ({ data: [], isLoading: false, error: null })),
-}));
-
-vi.mock("../api/hooks/transactions", () => ({
-  useTransactions: mocks.useTransactions,
-}));
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual("react-router-dom");
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [
-    { id: "acc1", name: "Checking", bank: "Bank", type: "Checking", balance_cents: 10000000, currency: "USD", color: "#3B82F6" },
+    { id: "acc-1", name: "Chase Checking", bank: "Chase", type: "Checking", balance_cents: 10000000, currency: "USD", color: "#3B82F6" },
   ], isLoading: false, error: null })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useArchiveAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
-  useAccountBalanceSparklines: vi.fn(() => ({ data: [], isLoading: false, error: null })),
-  useAccountBalanceHistory: vi.fn(() => ({ data: [], isLoading: false, error: null })),
 }));
 
 vi.mock("../api/hooks/simplefin", () => ({
@@ -42,31 +38,12 @@ vi.mock("../api/hooks/assets", () => ({
   useDeleteLiability: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
-describe("Accounts — transaction filters", () => {
-  beforeEach(() => {
-    mocks.useTransactions.mockClear();
-  });
-
-  it("toggles the filter bar when Filter is clicked", () => {
+describe("Accounts — navigation", () => {
+  it("navigates to the account register when an account row is clicked", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
-    const filterBtn = screen.getByRole("button", { name: "Filter" });
-    expect(screen.queryByLabelText("Search transactions")).not.toBeInTheDocument();
-    fireEvent.click(filterBtn);
-    expect(screen.getByLabelText("Search transactions")).toBeInTheDocument();
-    fireEvent.click(filterBtn);
-    expect(screen.queryByLabelText("Search transactions")).not.toBeInTheDocument();
-  });
-
-  it("calls useTransactions with search when typing in the filter search input", async () => {
-    render(<Accounts />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-    const input = screen.getByLabelText("Search transactions");
-    fireEvent.change(input, { target: { value: "coffee" } });
-    await waitFor(() => {
-      expect(mocks.useTransactions).toHaveBeenCalledWith(
-        expect.objectContaining({ search: "coffee" })
-      );
-    });
+    const row = await screen.findByText("Chase Checking");
+    fireEvent.click(row.closest("button")!);
+    expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
   });
 });
 
