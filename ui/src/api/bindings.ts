@@ -875,6 +875,46 @@ async listRecentAgentActivity(limit: number) : Promise<Result<AgentActivity[], A
     else return { status: "error", error: e  as any };
 }
 },
+async listPlannedTransactions(filter: PlannedTxnFilter) : Promise<Result<PlannedTransaction[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_planned_transactions", { filter }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPlannedTransaction(id: string) : Promise<Result<PlannedTransaction | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_planned_transaction", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createPlannedTransaction(input: NewPlannedTransaction) : Promise<Result<PlannedTransaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_planned_transaction", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updatePlannedTransaction(id: string, patch: PlannedTransactionPatch) : Promise<Result<PlannedTransaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_planned_transaction", { id, patch }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deletePlannedTransaction(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_planned_transaction", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async exportTransactionsCsv(filter: TxnFilterInput) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_transactions_csv", { filter }) };
@@ -1223,6 +1263,7 @@ export type AgentActionBundle = { id: string; sessionId: string | null; title: s
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
+export type AgentCalloutAction = { label: string; path: string }
 export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
 export type AgentChartPoint = { label: string; value: number }
@@ -1231,7 +1272,7 @@ export type AgentMemory = { id: string; kind: string; description: string; merch
 export type AgentMetricBlock = { label: string; value: string; detail: string | null; tone: string | null }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string }
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string; actions?: AgentCalloutAction[] }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
@@ -1278,7 +1319,11 @@ lastMonthCents: number;
 /**
  * Number of transactions categorised here this month
  */
-txnCount: number; yearTotalCents: number; budgetCents: number }
+txnCount: number; yearTotalCents: number; 
+/**
+ * Number of transactions categorised here so far this calendar year
+ */
+yearTxnCount: number; budgetCents: number }
 /**
  * A single prior turn from the conversation history for multi-turn awareness.
  */
@@ -1370,11 +1415,15 @@ export type NewAccount = { owner: string; bank: string; type: AccountType; name:
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; liabilityId: string | null; accountId: string | null }
 export type NewLiability = { name: string; liabilityType: string; balanceCents: number; limitCents: number | null; aprPct: number | null; minPaymentCents: number | null; payoffDate: string | null; originalBalanceCents: number | null; startedAt: string | null; currency: string }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
+export type NewPlannedTransaction = { description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; source: string }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 export type PlanAssignment = { categoryId: string; amountCents: number }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
+export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
+export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
+export type PlannedTxnFilter = { status: string | null; dueBefore: string | null }
 export type ProjectedValue = { years: number; valueCents: number; annualRate: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
@@ -1431,7 +1480,7 @@ export type SimpleFinStatus = { configured: boolean }
 export type SimpleFinSyncSettings = { backgroundSyncEnabled: boolean; backgroundSyncIntervalMinutes: number }
 export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
-export type StarterCategory = { id: string; label: string; group_id: string }
+export type StarterCategory = { id: string; label: string; group_id: string; color: string }
 export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }
 export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }

@@ -33,6 +33,10 @@ function compareFor(category: CategoryWithSpending, scope: Scope) {
   return category.lastMonthCents;
 }
 
+function txnCountFor(category: CategoryWithSpending, scope: Scope) {
+  return scope === "year" ? category.yearTxnCount : category.txnCount;
+}
+
 export default function Categories() {
   const [scope, setScope] = useState<Scope>("month");
   const { data: categories = [], isLoading, error } = useCategoriesWithSpending();
@@ -182,7 +186,7 @@ export default function Categories() {
                     <td className="right"><span className="money">{money(current, { currency: "USD" })}</span></td>
                     {compareLabel && <td className="right"><span className="money muted">{compare > 0 ? money(compare, { currency: "USD" }) : "—"}</span></td>}
                     <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget, { currency: "USD" }) : "—"}</span></td>
-                    <td className="right"><span className="num muted">{category.txnCount}</span></td>
+                    <td className="right"><span className="num muted">{txnCountFor(category, scope)}</span></td>
                     <td><select className="control" value={category.spendingType ?? ""} disabled={savingId === category.id} onChange={(e) => void saveSpendingType(category.id, e.target.value)} aria-label={`Spending type for ${category.label}`} style={{ minWidth: 130 }}>{SPENDING_TYPE_OPTIONS.map((option) => <option key={option.value || "untagged"} value={option.value}>{option.label}</option>)}</select></td>
                   </tr>
                 );

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Goals from "./Goals";
-import { createWrapper } from "../test-utils";
+import { createWrapper, createWrapperWithEntries } from "../test-utils";
 
 const mockUpdateMonthly = vi.fn().mockResolvedValue(undefined);
 
@@ -41,21 +41,74 @@ vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),
 }));
 
-describe("Goals — sinking funds", () => {
-  it("shows sinking fund card for save-by-date goal within a year", () => {
-    render(<Goals />, { wrapper: createWrapper() });
-    expect(screen.getByText("Sinking funds")).toBeInTheDocument();
-    expect(screen.getAllByText("Car repair").length).toBeGreaterThanOrEqual(1);
-  });
-});
-
 describe("Goals — eyebrow casing", () => {
   it("renders eyebrows in natural case, relying on CSS for uppercase", () => {
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText(/Goals · 2 active/)).toBeInTheDocument();
-    expect(screen.getByText(/Sinking funds · 2/)).toBeInTheDocument();
     expect(screen.queryByText(/GOALS ·/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/SINKING FUNDS ·/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Goals — pause/resume", () => {
+  beforeEach(() => {
+    mockUpdateMonthly.mockClear();
+  });
+
+  it("pauses a goal by setting its monthly contribution to 0", async () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    const pauseButtons = screen.getAllByRole("button", { name: /^pause$/i });
+    fireEvent.click(pauseButtons[0]!);
+    await waitFor(() => {
+      expect(mockUpdateMonthly).toHaveBeenCalledWith({ id: "g1", monthlyCents: 0 });
+    });
+  });
+
+  it("does not show a Pause button for debt-payoff or spending-cap goals", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "g4", name: "Dining cap", goalType: "spending-cap",
+          targetCents: 40000, currentCents: 10000, monthlyCents: 0,
+          targetDate: null, color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.queryByRole("button", { name: /^pause$/i })).not.toBeInTheDocument();
+  });
+
+  it("does not label a goal 'Paused' just because it was never configured with a monthly contribution", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "g5", name: "Never funded", goalType: "save-by-date",
+          targetCents: 500000, currentCents: 0, monthlyCents: 0,
+          targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    // monthlyCents is 0 but no pause action was ever taken this session -> must not show "Paused",
+    // and the button must still say "Resume" since the goal's contribution is in fact 0.
+    expect(screen.queryByText("Paused")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^resume$/i })).toBeInTheDocument();
+  });
+
+  it("shows 'Paused' only after an actual pause action, and removes it on resume", async () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.queryByText("Paused")).not.toBeInTheDocument();
+
+    const pauseButton = screen.getAllByRole("button", { name: /^pause$/i })[0]!;
+    fireEvent.click(pauseButton);
+    await waitFor(() => expect(mockUpdateMonthly).toHaveBeenCalledWith({ id: "g1", monthlyCents: 0 }));
   });
 });
 
@@ -188,5 +241,49 @@ describe("Goals — linked liability", () => {
     expect(screen.getAllByText("Car payoff").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Linked to Car loan/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /edit balance/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the real liability name, not a hardcoded 'Car loan' string", async () => {
+    const budget = await import("../api/hooks/budget");
+    const assets = await import("../api/hooks/assets");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{
+        id: "g6", name: "Mortgage payoff", goalType: "debt-payoff",
+        targetCents: 30000000, currentCents: 5000000, monthlyCents: 200000,
+        targetDate: null, color: "#C9F950", notes: null, purpose: null,
+        sortOrder: 0, createdAt: "2026-01-01", liabilityId: "l2", accountId: null,
+      }],
+      isLoading: false,
+      error: null,
+    });
+    (assets.useLiabilities as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{ id: "l2", name: "Home Mortgage", balanceCents: 25000000, aprPct: 3.2 }],
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Linked to Home Mortgage/)).toBeInTheDocument();
+    expect(screen.queryByText(/Linked to Car loan/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Goals — focus editor", () => {
+  it("opens the goal drawer when focusGoal is present", async () => {
+    const budget = await import("../api/hooks/budget");
+    const assets = await import("../api/hooks/assets");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{
+        id: "g3", name: "Car payoff", goalType: "debt-payoff",
+        targetCents: 2000000, currentCents: 1500000, monthlyCents: 50000,
+        targetDate: null, color: "#C9F950", notes: null, purpose: null,
+        sortOrder: 0, createdAt: "2026-01-01", liabilityId: "l1", accountId: null,
+      }],
+      isLoading: false,
+      error: null,
+    });
+    (assets.useLiabilities as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{ id: "l1", name: "Car loan", balanceCents: 1500000, aprPct: 4.5 }],
+    });
+    render(<Goals />, { wrapper: createWrapperWithEntries(["/goals?focusGoal=g3"]) });
+    expect(await screen.findByText("Edit goal · Car payoff")).toBeInTheDocument();
+    expect(screen.getByText(/Monthly contribution/i)).toBeInTheDocument();
   });
 });

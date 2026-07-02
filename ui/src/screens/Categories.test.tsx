@@ -7,9 +7,9 @@ vi.mock("../api/hooks/transactions", () => ({
   useCategoriesWithSpending: vi.fn(() => ({
     data: [
       { id: "c1", label: "Groceries", color: "#4ade80", groupId: "g1", groupLabel: "Food",
-        thisMonthCents: 30000, lastMonthCents: 50000, txnCount: 5, yearTotalCents: 300000, budgetCents: 40000 },
+        thisMonthCents: 30000, lastMonthCents: 50000, txnCount: 5, yearTotalCents: 300000, yearTxnCount: 42, budgetCents: 40000 },
       { id: "c2", label: "Dining Out", color: "#fb923c", groupId: "g1", groupLabel: "Food",
-        thisMonthCents: 20000, lastMonthCents: 10000, txnCount: 3, yearTotalCents: 150000, budgetCents: 0 },
+        thisMonthCents: 20000, lastMonthCents: 10000, txnCount: 3, yearTotalCents: 150000, yearTxnCount: 27, budgetCents: 0 },
     ],
     isLoading: false,
     error: null,
@@ -56,5 +56,21 @@ describe("Categories — scope-aware labels", () => {
 
     expect(screen.getAllByText("2-mo average").length).toBeGreaterThan(0);
     expect(screen.queryByText(/12-mo average/)).not.toBeInTheDocument();
+  });
+
+  it("shows the year-scoped transaction count under Year, not the this-month count", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+
+    // Default "month" scope shows this-month counts (5, 3).
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Year" }));
+
+    // Year scope must switch to the real year-scoped counts (42, 27), not stay on month counts.
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("27")).toBeInTheDocument();
+    expect(screen.queryByText("5")).not.toBeInTheDocument();
+    expect(screen.queryByText("3")).not.toBeInTheDocument();
   });
 });

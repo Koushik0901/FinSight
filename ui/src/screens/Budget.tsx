@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useBudgetEnvelopes, useBudgetHistory, useSetBudget } from "../api/hooks/budget";
+import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useUpdateGoalBalance } from "../api/hooks/budget";
 import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
@@ -62,7 +63,7 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
   );
 }
 
-function EnvelopeCard({ env, editing, onEdit }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void }) {
+function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null }) {
   const status = envelopeStatus(env);
   const remaining = env.budgetCents - env.spentCents;
   const pct = env.budgetCents > 0 ? Math.min(100, (env.spentCents / env.budgetCents) * 100) : 0;
@@ -113,7 +114,25 @@ function EnvelopeCard({ env, editing, onEdit }: { env: BudgetEnvelope; editing: 
         <span className="money">of {money(env.budgetCents, { currency: "USD" })}</span>
       </div>
 
-      {status.tone === "negative" && <button className="btn outline sm" type="button" style={{ marginTop: 14, width: "100%" }}>Cover from another envelope</button>}
+      {status.tone === "negative" && (
+        <button
+          className="btn outline sm"
+          type="button"
+          style={{ marginTop: 14, width: "100%" }}
+          onClick={() => {
+            if (!donor) {
+              toast("No envelope has spare room to cover this right now.");
+              return;
+            }
+            const donorRemaining = donor.budgetCents - donor.spentCents;
+            toast(`${donor.categoryLabel} has ${money(donorRemaining, { currency: "USD" })} unspent — often the best donor.`, {
+              description: "Adjust each envelope's budget below to move the amount over.",
+            });
+          }}
+        >
+          Cover from another envelope
+        </button>
+      )}
 
       {status.tone === "warning" && remaining > 0 && (
         <div className="card tight" style={{ marginTop: 14, padding: 12, background: "var(--warning-2)", borderColor: "var(--warning)" }}>
@@ -131,9 +150,12 @@ function EnvelopeCard({ env, editing, onEdit }: { env: BudgetEnvelope; editing: 
 }
 
 export default function Budget() {
+  const navigate = useNavigate();
   const { data: envelopes = [], isLoading, error } = useBudgetEnvelopes();
   const { data: history = [] } = useBudgetHistory(5);
   const { data: totals } = useMonthTotals();
+  const { data: goals = [] } = useGoals();
+  const updateGoalBalance = useUpdateGoalBalance();
   const { data: breakdown } = useQuery<SpendingBreakdown>({
     queryKey: ["spending-breakdown"],
     queryFn: async () => {
@@ -181,6 +203,30 @@ export default function Budget() {
 
   const totalTagged = breakdown ? breakdown.fixedCents + breakdown.investmentsCents + breakdown.savingsCents + breakdown.guiltFreeCents + breakdown.untaggedCents : 0;
 
+  const donorFor = (categoryId: string): BudgetEnvelope | null => {
+    const candidates = sorted.filter((env) => env.categoryId !== categoryId && env.budgetCents - env.spentCents > 0);
+    if (candidates.length === 0) return null;
+    return candidates.reduce((best, env) => (env.budgetCents - env.spentCents > best.budgetCents - best.spentCents ? env : best));
+  };
+
+  const handleParkInGoal = async () => {
+    const firstGoal = goals[0];
+    if (!firstGoal) {
+      toast("No goals to park funds in yet — create one on the Goals screen.");
+      return;
+    }
+    if (toBudget <= 0) {
+      toast("Nothing unassigned to park right now.");
+      return;
+    }
+    try {
+      await updateGoalBalance.mutateAsync({ id: firstGoal.id, currentCents: firstGoal.currentCents + toBudget });
+      toast.success(`Parked ${money(toBudget, { currency: "USD" })} in ${firstGoal.name}`);
+    } catch {
+      toast.error("Could not park funds");
+    }
+  };
+
   if (isLoading) return <div className="stub" aria-live="polite" aria-busy="true">Loading budget…</div>;
   if (error) return <div className="stub" role="alert">Error loading budget.</div>;
 
@@ -193,7 +239,6 @@ export default function Budget() {
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           <button className="btn primary" type="button" onClick={() => setShowPlan(true)}>Plan next month</button>
-          <div className="toolbar"><button className="on" type="button">Envelope</button><button type="button">Tracking</button></div>
         </div>
       </header>
 
@@ -218,7 +263,7 @@ export default function Budget() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget, { currency: "USD" })}</div><div className="sub">Across {sorted.length} envelopes</div></div>
             <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent, { currency: "USD" })}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today), { currency: "USD" }) : money(0, { currency: "USD" })}/day pace</div></div>
-            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom, { currency: "USD" })}</div><div className="sub">{projectedEom > totalBudget ? <span className="npill neg">Over plan</span> : <span className="npill pos">Under plan</span>}</div></div>
+            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom, { currency: "USD" })}</div><div className="sub">{projectedEom > totalBudget ? <span className="npill neg">Over by {money(projectedEom - totalBudget, { currency: "USD" })}</span> : <span className="npill pos">Under by {money(totalBudget - projectedEom, { currency: "USD" })}</span>}</div></div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 18, marginBottom: 0, maxWidth: 900 }}>{insight}</p>
@@ -232,16 +277,28 @@ export default function Budget() {
             <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0, { currency: "USD" })}</span> income · <span className="money">{money(totalBudget, { currency: "USD" })}</span> assigned</div>
           </div>
         </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button">Assign to a goal</button><button className="btn sm" type="button">Park in House Fund</button></div>
+        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={updateGoalBalance.isPending} onClick={() => void handleParkInGoal()}>Park in {goals[0]?.name ?? "a goal"}</button></div>
       </div>
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
       <section className="section">
         <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
-        {sorted.length === 0 ? <EmptyState title="No envelopes yet" description="Import transactions or set a budget to see the month take shape." /> : <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => <div key={label}><div className="eyebrow" style={{ marginBottom: 12 }}>{label}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></div>)}</div>}
+        {sorted.length === 0 ? <EmptyState title="No envelopes yet" description="Import transactions or set a budget to see the month take shape." /> : <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => {
+          const groupSpent = items.reduce((sum, env) => sum + env.spentCents, 0);
+          const groupBudget = items.reduce((sum, env) => sum + env.budgetCents, 0);
+          return (
+            <div key={label}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <div className="eyebrow">{label}</div>
+                {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent, { currency: "USD" })} / {money(groupBudget, { currency: "USD" })}</span>}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
+            </div>
+          );
+        })}</div>}
       </section>
 
       {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents, { currency: "USD" })}</span></td>)}</tr>)}</tbody></table></div></section>}

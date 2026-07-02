@@ -2,7 +2,7 @@ import { type ReactNode, useId } from "react";
 import type { NetWorthPoint } from "../api/client";
 import { money } from "../utils/format";
 
-export default function NetWorthChart({ points, controls }: { points: NetWorthPoint[]; controls?: ReactNode }) {
+export default function NetWorthChart({ points, controls, rangeLabel = "6 months" }: { points: NetWorthPoint[]; controls?: ReactNode; rangeLabel?: string }) {
   const gradId = useId();
 
   if (points.length < 2) {
@@ -29,7 +29,7 @@ export default function NetWorthChart({ points, controls }: { points: NetWorthPo
     <div className="bigchart">
       <div className="bigchart-head">
         <div>
-          <div className="eyebrow">Net worth · last 6 months</div>
+          <div className="h3">Net worth · last {rangeLabel}</div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Local trendline</div>
         </div>
         {controls}

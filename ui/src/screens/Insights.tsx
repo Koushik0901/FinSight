@@ -16,6 +16,7 @@ import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 import { useTriggerCategorize, useAgentStatus } from "../api/hooks/agent";
 import { money } from "../utils/format";
 import { CopilotNudge } from "../components/CopilotNudge";
+import { getAccountDisplayName } from "../utils/accounts";
 
 function AgentStatusBar() {
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -363,7 +364,7 @@ export default function Insights() {
         id: "net-worth",
         kind: "pattern",
         headline: `Net worth across ${accounts.length} accounts: ${money(netWorth)}`,
-        body: highest ? `Your highest balance is in ${highest.name}.` : "",
+        body: highest ? `Your highest balance is in ${getAccountDisplayName(highest)}.` : "",
         severity: "info",
       });
     }

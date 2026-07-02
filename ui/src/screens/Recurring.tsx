@@ -1,6 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useRecurring } from "../api/hooks/recurring";
+import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
+import type { PlannedTransaction } from "../api/client";
 import { money } from "../utils/format";
+import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
 
 function recurringGroup(item: { isSubscription: boolean; lastAmountCents: number; categoryLabel: string }) {
   if (item.lastAmountCents > 0) return "Income";
@@ -18,7 +22,10 @@ function recurringFrequency(item: { cadence: string; avgGapDays: number }) {
 
 export default function Recurring() {
   const { data: items = [], isLoading, error } = useRecurring();
+  const { data: plannedTransactions = [] } = usePlannedTransactions();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<"monthly" | "upcoming" | "all">("monthly");
+  const [editingPlanned, setEditingPlanned] = useState<PlannedTransaction | null>(null);
 
   const groups = useMemo(() => {
     const filtered = items.filter((item) => {
@@ -40,6 +47,18 @@ export default function Recurring() {
   const subscriptionsCount = items.filter((item) => recurringGroup(item) === "Subscriptions").length;
   const incomeCount = items.filter((item) => recurringGroup(item) === "Income").length;
   const nextSevenDays = items.filter((item) => new Date(item.nextExpected).getTime() <= Date.now() + 7 * 86400000).length;
+  const activePlanned = plannedTransactions.filter((item) => item.status === "planned");
+
+  useEffect(() => {
+    const focus = searchParams.get("focusPlanned");
+    if (!focus || editingPlanned) return;
+    const target = plannedTransactions.find((item) => item.id === focus || item.description.toLowerCase() === focus.toLowerCase());
+    if (!target) return;
+    setEditingPlanned(target);
+    const next = new URLSearchParams(searchParams);
+    next.delete("focusPlanned");
+    setSearchParams(next, { replace: true });
+  }, [editingPlanned, plannedTransactions, searchParams, setSearchParams]);
 
   if (isLoading) return <div className="stub">Loading recurring items…</div>;
   if (error) return <div className="stub" role="alert">Error loading recurring items.</div>;
@@ -48,7 +67,7 @@ export default function Recurring() {
     <div className="screen screen-recurring">
       <div className="day-hdr">
         <div>
-          <div className="eyebrow"><span className="dot" />Recurring · {items.length} items</div>
+          <div className="eyebrow"><span className="dot" />Recurring · {items.length} items · {subscriptionsCount} subscriptions</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>What happens every month.</h1>
         </div>
         <div className="toolbar">
@@ -102,6 +121,50 @@ export default function Recurring() {
           </table>
         </div>
       </section>
+
+      <section className="section">
+        <div className="day-hdr" style={{ marginBottom: 14 }}>
+          <div>
+            <div className="eyebrow"><span className="dot" />Planned transactions · {activePlanned.length}</div>
+            <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>What needs a date and a decision.</h2>
+          </div>
+        </div>
+        <div className="card flush">
+          {activePlanned.length === 0 ? (
+            <div className="muted" style={{ padding: 18 }}>No planned transactions yet.</div>
+          ) : (
+            activePlanned.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setEditingPlanned(item)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto",
+                  gap: 14,
+                  alignItems: "center",
+                  padding: "14px 16px",
+                  borderBottom: index === activePlanned.length - 1 ? "none" : "1px solid var(--hairline)",
+                  background: "transparent",
+                }}
+              >
+                <div>
+                  <div>{item.description}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {item.accountId ? "Linked account" : "No linked account"} · {item.categoryId ? "linked category" : "uncategorized"}
+                  </div>
+                </div>
+                <span className="chip">{new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                <span className={`money ${item.amountCents > 0 ? "pos" : ""}`}>{money(item.amountCents, { currency: "USD", decimals: 2 })}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
+
+      <PlannedTransactionDrawer open={editingPlanned !== null} onClose={() => setEditingPlanned(null)} planned={editingPlanned} />
     </div>
   );
 }

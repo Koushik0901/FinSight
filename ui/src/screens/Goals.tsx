@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
 import { useLiabilities } from "../api/hooks/assets";
 import { useGoals, useCreateGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
-import type { GoalDto, NewGoalInput } from "../api/client";
+import type { GoalDto, Liability, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
+import GoalDrawer from "../components/GoalDrawer";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap";
 
@@ -24,9 +26,11 @@ function paceLabel(goal: GoalDto) {
   return { label: "On track", className: "chip accent" };
 }
 
-function GoalCard({ goal }: { goal: GoalDto }) {
+function GoalCard({ goal, onEdit, liabilityName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; liabilityName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
   const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
   const pace = paceLabel(goal);
+  const canPause = goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff";
+  const isPaused = canPause && goal.monthlyCents === 0;
 
   return (
     <div className="card" style={{ padding: 22 }}>
@@ -34,7 +38,7 @@ function GoalCard({ goal }: { goal: GoalDto }) {
         <div>
           <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
             <span className="chip">{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
-            <span className="chip">Personal</span>
+            {canPause && pausedByUser && <span className="chip warning">Paused</span>}
             <span className={pace.className}>{pace.label}</span>
           </div>
           <h2 className="h1" style={{ fontSize: 24 }}>{goal.name}</h2>
@@ -46,11 +50,11 @@ function GoalCard({ goal }: { goal: GoalDto }) {
                 : `Auto-moves ${money(goal.monthlyCents, { currency: "USD" })}/month`}
             {goal.targetDate && ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
           </div>
-          {goal.liabilityId && <div className="muted" style={{ marginTop: 8 }}>Linked to Car loan</div>}
+          {goal.liabilityId && liabilityName && <div className="muted" style={{ marginTop: 8 }}>Linked to {liabilityName}</div>}
         </div>
 
         <div>
-          <div className="eyebrow">PROGRESS</div>
+          <div className="eyebrow">{goal.goalType === "spending-cap" ? "This month" : "Progress"}</div>
           <div className={`goal-bar ${goal.goalType === "spending-cap" && goal.currentCents > goal.targetCents ? "negative" : ""}`} style={{ marginTop: 10 }}>
             <span style={{ width: `${pct}%` }} />
           </div>
@@ -63,8 +67,10 @@ function GoalCard({ goal }: { goal: GoalDto }) {
         <div style={{ textAlign: "right" }}>
           <div className="figure" style={{ fontSize: 34 }}>{pct}%</div>
           <div className="row row-sm" style={{ justifyContent: "flex-end", marginTop: 10 }}>
-            <button className="btn ghost sm" type="button">Pause</button>
-            <button className="btn outline sm" type="button">Adjust</button>
+            {goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff" && (
+              <button className="btn ghost sm" type="button" disabled={pausePending} onClick={() => onTogglePause(goal)}>{isPaused ? "Resume" : "Pause"}</button>
+            )}
+            <button className="btn outline sm" type="button" onClick={() => onEdit(goal)}>Adjust</button>
           </div>
         </div>
       </div>
@@ -299,8 +305,36 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
 
 export default function Goals() {
   const { data: goals = [], isLoading, error } = useGoals();
+  const { data: liabilities = [] } = useLiabilities();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<GoalFilter>("all");
   const [creating, setCreating] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
+  const [pausedPrevious, setPausedPrevious] = useState<Record<string, number>>({});
+  const updateGoalMonthly = useUpdateGoalMonthly();
+
+  const liabilityNameById = useMemo(() => new Map(liabilities.map((liability: Liability) => [liability.id, liability.name])), [liabilities]);
+
+  const handleTogglePause = async (goal: GoalDto) => {
+    try {
+      if (goal.monthlyCents > 0) {
+        setPausedPrevious((prev) => ({ ...prev, [goal.id]: goal.monthlyCents }));
+        await updateGoalMonthly.mutateAsync({ id: goal.id, monthlyCents: 0 });
+        toast.success(`Paused ${goal.name}`, { description: "Monthly auto-contribution set to $0. Resume anytime." });
+      } else {
+        const restore = pausedPrevious[goal.id];
+        if (restore === undefined) {
+          toast("No previous amount to restore — use Adjust to set a new monthly contribution.");
+          return;
+        }
+        await updateGoalMonthly.mutateAsync({ id: goal.id, monthlyCents: restore });
+        setPausedPrevious((prev) => { const next = { ...prev }; delete next[goal.id]; return next; });
+        toast.success(`Resumed ${goal.name} at ${money(restore, { currency: "USD" })}/month`);
+      }
+    } catch {
+      toast.error("Could not update this goal");
+    }
+  };
 
   const counts = useMemo(() => goals.reduce<Record<string, number>>((acc, goal) => {
     acc[goal.goalType] = (acc[goal.goalType] ?? 0) + 1;
@@ -308,7 +342,20 @@ export default function Goals() {
   }, {}), [goals]);
 
   const visible = filter === "all" ? goals : goals.filter((goal) => goal.goalType === filter);
-  const sinkingFunds = goals.filter((goal) => goal.goalType === "save-by-date");
+  const focusedGoal = useMemo(() => {
+    const focus = searchParams.get("focusGoal");
+    if (!focus) return null;
+    return goals.find((goal) => goal.id === focus || goal.name.toLowerCase() === focus.toLowerCase()) ?? null;
+  }, [goals, searchParams]);
+  const activeEditingGoal = editingGoal ?? focusedGoal;
+
+  useEffect(() => {
+    if (!focusedGoal || editingGoal) return;
+    setEditingGoal(focusedGoal);
+    const next = new URLSearchParams(searchParams);
+    next.delete("focusGoal");
+    setSearchParams(next, { replace: true });
+  }, [editingGoal, focusedGoal, searchParams, setSearchParams]);
 
   if (isLoading) return <div className="stub">Loading goals…</div>;
   if (error) return <div className="stub" role="alert">Error loading goals.</div>;
@@ -334,36 +381,23 @@ export default function Goals() {
       </div>
 
       {creating && <NewGoalForm onClose={() => setCreating(false)} />}
+      <GoalDrawer open={activeEditingGoal !== null} onClose={() => setEditingGoal(null)} goal={activeEditingGoal} />
 
       <div className="section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {visible.map((goal) => <GoalCard key={goal.id} goal={goal} />)}
+        {visible.map((goal) => (
+          <GoalCard
+            key={goal.id}
+            goal={goal}
+            onEdit={setEditingGoal}
+            liabilityName={goal.liabilityId ? liabilityNameById.get(goal.liabilityId) ?? null : null}
+            onTogglePause={(g) => void handleTogglePause(g)}
+            pausePending={updateGoalMonthly.isPending}
+            pausedByUser={goal.id in pausedPrevious}
+          />
+        ))}
       </div>
 
       {goals.length > 0 && <WhatIfScenario goals={goals} />}
-
-      <section className="section">
-        <div className="day-hdr" style={{ marginBottom: 14 }}>
-          <div>
-            <div className="eyebrow"><span className="dot" />Sinking funds · {sinkingFunds.length}</div>
-            <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Sinking funds</h2>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-          {sinkingFunds.map((goal) => {
-            const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
-            return (
-              <div key={goal.id} className="card tight">
-                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div><div className="h3">{goal.name}</div><div className="muted" style={{ fontSize: 12.5 }}>{goal.targetDate ? `Due ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}` : "No due date"}</div></div>
-                  <div className="figure">{pct}%</div>
-                </div>
-                <div className="goal-bar" style={{ marginTop: 12, height: 5 }}><span style={{ width: `${pct}%` }} /></div>
-                <div className="row" style={{ justifyContent: "space-between", marginTop: 8, fontSize: 12.5 }}><span className="money">{money(goal.currentCents, { currency: "USD" })}</span><span className="money muted">of {money(goal.targetCents, { currency: "USD" })}</span></div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 }

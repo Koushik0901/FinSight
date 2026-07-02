@@ -10,7 +10,12 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("../api/hooks/accounts", () => ({
-  useAccounts: vi.fn(() => ({ data: [] })),
+  useAccounts: vi.fn(() => ({
+    data: [
+      { id: "acc-1", name: "ACT-c5a9bdc6-7350-4a95-873e-ea87042fd3de", nickname: "Joint Checking", official_name: null, balance_cents: 900000 },
+      { id: "acc-2", name: "ACT-8e21a1a2-0000-4a95-873e-ea87042fd3df", nickname: "Savings", official_name: null, balance_cents: 100000 },
+    ],
+  })),
 }));
 vi.mock("../api/hooks/transactions", () => ({
   useCategoriesWithSpending: vi.fn(() => ({ data: [] })),
@@ -59,5 +64,12 @@ describe("Insights — insight card action buttons", () => {
     fireEvent.click(screen.getByRole("button", { name: /open budget/i }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/budget");
+  });
+
+  it("net-worth insight shows the account's display name, not its raw id", () => {
+    render(<Insights />, { wrapper: createWrapper() });
+
+    expect(screen.getByText(/highest balance is in/i)).toHaveTextContent("Your highest balance is in Joint Checking.");
+    expect(screen.queryByText(/ACT-c5a9bdc6/)).not.toBeInTheDocument();
   });
 });

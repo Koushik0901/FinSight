@@ -69,6 +69,33 @@ describe("Reports screen", () => {
     expect(screen.getByText("Chipotle")).toBeInTheDocument();
   });
 
+  it("shows each merchant's real category instead of dropping it", async () => {
+    render(<Reports />, { wrapper: createWrapper() });
+    await screen.findByText("Top merchants");
+    expect(screen.getAllByText("Food & Drink").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows a year-over-year delta computed from monthlyLastYear", async () => {
+    render(<Reports />, { wrapper: createWrapper() });
+    await screen.findByText(/vs the same months last year/i);
+  });
+
+  it("switches to a distinct spending breakdown when the Spending deep dive tab is clicked", async () => {
+    render(<Reports />, { wrapper: createWrapper() });
+    await screen.findByText("Top categories");
+    fireEvent.click(screen.getByText("Spending deep dive"));
+    expect(await screen.findByText("Where it concentrates, this period")).toBeInTheDocument();
+    expect(screen.queryByText("Income and expenses over time")).not.toBeInTheDocument();
+  });
+
+  it("switches to a net worth view when the Net worth tab is clicked", async () => {
+    render(<Reports />, { wrapper: createWrapper() });
+    await screen.findByText("Top categories");
+    fireEvent.click(screen.getByRole("button", { name: "Net worth" }));
+    expect(screen.queryByText("Income and expenses over time")).not.toBeInTheDocument();
+    expect(screen.queryByText("Where it concentrates, this period")).not.toBeInTheDocument();
+  });
+
   describe("Export button", () => {
     let createObjectURLSpy: ReturnType<typeof vi.fn>;
     let revokeObjectURLSpy: ReturnType<typeof vi.fn>;

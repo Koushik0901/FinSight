@@ -184,6 +184,8 @@ pub struct CategoryWithSpending {
     /// Number of transactions categorised here this month
     pub txn_count: i64,
     pub year_total_cents: i64,
+    /// Number of transactions categorised here so far this calendar year
+    pub year_txn_count: i64,
     pub budget_cents: i64,
 }
 
@@ -227,6 +229,7 @@ pub async fn list_categories_with_spending(
                COALESCE(SUM(CASE WHEN s.posted_at >= ?2 AND s.posted_at < ?1 THEN s.cents ELSE 0 END), 0),
                COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
                COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
+               COUNT(CASE WHEN s.posted_at >= ?3 THEN 1 END),
                COALESCE(MAX(b.amount_cents), 0)
              FROM categories c
              LEFT JOIN category_groups g ON g.id = c.group_id
@@ -250,7 +253,8 @@ pub async fn list_categories_with_spending(
                     last_month_cents: r.get(7)?,
                     txn_count: r.get(8)?,
                     year_total_cents: r.get(9)?,
-                    budget_cents: r.get(10)?,
+                    year_txn_count: r.get(10)?,
+                    budget_cents: r.get(11)?,
                 })
             },
         )?;
