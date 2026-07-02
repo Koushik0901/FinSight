@@ -42,7 +42,9 @@ pub use institution::{Institution, NewInstitution};
 pub use liability::{Liability, LiabilityPatch, NewLiability};
 pub use manual_asset::{ManualAsset, ManualAssetPatch, NewManualAsset};
 pub use net_worth::NetWorthPoint;
-pub use planned_transaction::{NewPlannedTransaction, PlannedTransaction, PlannedTxnFilter};
+pub use planned_transaction::{
+    NewPlannedTransaction, PlannedTransaction, PlannedTransactionPatch, PlannedTxnFilter,
+};
 pub use recipes::{AgentRecipe, AgentRecipeRun};
 pub use rule::{NewRule, Rule};
 pub use rule_proposal::RuleProposal;

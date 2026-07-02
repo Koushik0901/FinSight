@@ -319,19 +319,22 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         return Ok(());
     }
 
-    let opening_balance: i64 = conn
+    // The earliest balance snapshot is the "opening" baseline for this account.
+    // We then add only transactions that occurred *after* that snapshot date so
+    // we don't double-count activity already reflected in the baseline.
+    let (opening_balance, opening_date): (i64, String) = conn
         .query_row(
-            "SELECT COALESCE(balance_cents, 0) FROM account_balances \
-             WHERE account_id = ?1 ORDER BY as_of_date ASC LIMIT 1",
+            "SELECT COALESCE(balance_cents, 0), as_of_date FROM account_balances \
+             WHERE account_id = ?1 ORDER BY as_of_date ASC, rowid ASC LIMIT 1",
             params![account_id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .unwrap_or(0);
+        .unwrap_or((0, "1970-01-01".to_string()));
 
     let txn_sum: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
-         WHERE account_id = ?1 AND pending = 0",
-        params![account_id],
+         WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
+        params![account_id, opening_date],
         |r| r.get(0),
     )?;
 

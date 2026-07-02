@@ -15,8 +15,6 @@ vi.mock("../api/hooks/accounts", () => ({
 }));
 vi.mock("../api/hooks/onboarding", () => ({
   useResetOnboarding: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
-  useClearSampleData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
-  useSeedDevDemo: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ transactions_created: 142, accounts_created: 6, import_id: "test" }), isPending: false })),
   useOnboardingState: vi.fn(() => ({ data: { completion_marked: true, account_count: 0, category_count: 0 } })),
 }));
 vi.mock("../api/hooks/agent", () => ({
@@ -54,6 +52,7 @@ vi.mock("../api/hooks/settings", () => ({
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
   useDisconnectSimpleFin: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  usePurgeSimpleFinData: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useSimpleFinConnections: vi.fn(() => ({ data: [] })),
   useDeleteSimpleFinConnection: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useSimpleFinSyncSettings: vi.fn(() => ({ data: { backgroundSyncEnabled: true, backgroundSyncIntervalMinutes: 360 } })),

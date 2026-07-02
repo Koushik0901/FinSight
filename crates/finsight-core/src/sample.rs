@@ -103,18 +103,18 @@ const MERCHANTS: &[(&str, i64, i64)] = &[
     ("Acme Payroll", 220_000, 380_000), // bi-weekly inflow
 ];
 
-const CATEGORIES: &[(&str, &str, &str)] = &[
-    // (id, group_id, label)
-    ("groceries", "daily", "Groceries"),
-    ("dining", "daily", "Dining"),
-    ("transport", "daily", "Transport"),
-    ("housing", "fixed", "Housing"),
-    ("utilities", "fixed", "Utilities"),
-    ("subscriptions", "fixed", "Subscriptions"),
-    ("shopping", "lifestyle", "Shopping"),
-    ("travel", "lifestyle", "Travel"),
-    ("gifts", "lifestyle", "Gifts"),
-    ("health", "wellbeing", "Health"),
+const CATEGORIES: &[(&str, &str, &str, &str)] = &[
+    // (id, group_id, label, color)
+    ("groceries", "daily", "Groceries", "#34D399"),
+    ("dining", "daily", "Dining", "#FB923C"),
+    ("transport", "daily", "Transport", "#60A5FA"),
+    ("housing", "fixed", "Housing", "#A78BFA"),
+    ("utilities", "fixed", "Utilities", "#FACC15"),
+    ("subscriptions", "fixed", "Subscriptions", "#F472B6"),
+    ("shopping", "lifestyle", "Shopping", "#FCA5A5"),
+    ("travel", "lifestyle", "Travel", "#818CF8"),
+    ("gifts", "lifestyle", "Gifts", "#FDE68A"),
+    ("health", "wellbeing", "Health", "#2DD4BF"),
 ];
 
 const CATEGORY_GROUPS: &[(&str, &str)] = &[
@@ -526,11 +526,11 @@ pub fn seed_household(db: &Db) -> CoreResult<SeedSummary> {
             params![id, label],
         )?;
     }
-    for &(id, group, label) in CATEGORIES {
+    for &(id, group, label, color) in CATEGORIES {
         tx.execute(
             "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) \
-             VALUES(?1, ?2, ?3, '#94A3B8', 0)",
-            params![id, group, label],
+             VALUES(?1, ?2, ?3, ?4, 0)",
+            params![id, group, label, color],
         )?;
     }
 
@@ -692,11 +692,11 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
             params![id, label],
         )?;
     }
-    for &(id, group, label) in CATEGORIES {
+    for &(id, group, label, color) in CATEGORIES {
         sql_tx.execute(
             "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) \
-             VALUES(?1, ?2, ?3, '#94A3B8', 0)",
-            params![id, group, label],
+             VALUES(?1, ?2, ?3, ?4, 0)",
+            params![id, group, label, color],
         )?;
     }
 

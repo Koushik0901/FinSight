@@ -26,7 +26,7 @@ export function userErrorMessage(error: unknown, fallback = "That did not work. 
     raw.includes("transformCallback") ||
     raw.includes("__TAURI")
   ) {
-    return "This action needs the desktop app runtime. Open FinSight with Tauri, or use sample data to explore the web preview.";
+    return "This action needs the desktop app runtime. Open FinSight with Tauri to use your local financial data.";
   }
 
   return raw.trim() || fallback;

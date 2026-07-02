@@ -18,11 +18,11 @@ import { money } from "../utils/format";
 import * as I from "../components/Icons";
 
 const RANGES = [
-  { key: "1M", days: 30 },
-  { key: "3M", days: 90 },
-  { key: "6M", days: 180 },
-  { key: "1Y", days: 365 },
-  { key: "All", days: 36500 },
+  { key: "1M", days: 30, label: "month" },
+  { key: "3M", days: 90, label: "3 months" },
+  { key: "6M", days: 180, label: "6 months" },
+  { key: "1Y", days: 365, label: "year" },
+  { key: "All", days: 36500, label: "all time" },
 ] as const;
 
 function minutesAgoLabel(iso: string | null | undefined) {
@@ -164,11 +164,11 @@ export default function Today() {
         <section className="empty-panel" aria-labelledby="today-empty-title">
           <div className="eyebrow">First step</div>
           <h2 id="today-empty-title">No accounts yet. Add your first account to unlock Today.</h2>
-          <p>Import a CSV statement, add accounts by hand, or load the demo dataset from Settings to explore FinSight before connecting real data.</p>
+          <p>Import a CSV statement, connect SimpleFIN, or add accounts by hand to start using your own financial data.</p>
           <div className="empty-actions">
             <button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Start setup</button>
             <button className="btn" type="button" onClick={() => navigate("/accounts")}>Add manually</button>
-            <button className="btn ghost" type="button" onClick={() => navigate("/settings")}>Load demo data</button>
+            <button className="btn ghost" type="button" onClick={() => navigate("/settings")}>Connect SimpleFIN</button>
           </div>
         </section>
       </div>
@@ -223,7 +223,7 @@ export default function Today() {
       </section>
 
       <section>
-        <NetWorthChart points={nwHistory} controls={<div className="toolbar">{RANGES.map((r) => <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)} aria-pressed={range === r.key} type="button">{r.key}</button>)}</div>} />
+        <NetWorthChart points={nwHistory} rangeLabel={RANGES.find((r) => r.key === range)!.label} controls={<div className="toolbar">{RANGES.map((r) => <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)} aria-pressed={range === r.key} type="button">{r.key}</button>)}</div>} />
       </section>
 
       <section className="stat-row">
@@ -267,4 +267,3 @@ export default function Today() {
     </div>
   );
 }
-

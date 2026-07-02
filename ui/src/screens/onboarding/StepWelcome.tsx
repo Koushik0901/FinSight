@@ -1,6 +1,3 @@
-import { useState } from "react";
-import { useSeedSampleHousehold, useMarkOnboardingComplete } from "../../api/hooks/onboarding";
-import { userErrorMessage } from "../../utils/runtime";
 import Button from "../../components/Button";
 
 interface Props {
@@ -9,21 +6,6 @@ interface Props {
 }
 
 export default function StepWelcome({ onNext, onSkipToToday }: Props) {
-  const seedSample = useSeedSampleHousehold();
-  const markComplete = useMarkOnboardingComplete();
-  const [seedError, setSeedError] = useState<string | null>(null);
-
-  async function trySample() {
-    setSeedError(null);
-    try {
-      await seedSample.mutateAsync();
-      await markComplete.mutateAsync();
-      onSkipToToday();
-    } catch (err) {
-      setSeedError(userErrorMessage(err, "Could not load sample data. Try again from the desktop app."));
-    }
-  }
-
   return (
     <div className="step-welcome onb-split">
       <div className="onb-left">
@@ -31,7 +13,7 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         <h1>A quiet way to understand your money.</h1>
         <p className="lead">
           FinSight is local-first and encrypted. Nothing leaves your machine. Start by importing a statement,
-          adding accounts manually, or using realistic sample data to explore the full experience immediately.
+          connecting SimpleFIN, or adding accounts manually.
         </p>
         <div className="row row-sm wrap" style={{ marginBottom: 20 }}>
           <span className="chip"><span className="dot" /> Local-first</span>
@@ -40,18 +22,8 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         </div>
         <div className="onb-actions">
           <Button variant="primary" onClick={onNext}>Get started →</Button>
-          <Button
-            variant="ghost"
-            onClick={trySample}
-            disabled={seedSample.isPending}
-            loading={seedSample.isPending}
-            data-testid="try-sample-data"
-          >
-            {seedSample.isPending ? "Seeding…" : "Try with sample data"}
-          </Button>
           <Button variant="outline" onClick={onSkipToToday}>Skip setup</Button>
         </div>
-        {seedError && <p role="alert" className="error-message">{seedError}</p>}
       </div>
 
       <div className="onb-right">

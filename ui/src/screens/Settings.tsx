@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useAccounts } from "../api/hooks/accounts";
-import { useResetOnboarding, useClearSampleData, useSeedDevDemo, useOnboardingState } from "../api/hooks/onboarding";
+import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
 import {
   useCompletionProvider,
   useSetCompletionProvider,
@@ -15,6 +14,7 @@ import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNot
 import {
   useSimpleFinStatus,
   useDisconnectSimpleFin,
+  usePurgeSimpleFinData,
   useSimpleFinConnections,
   useDeleteSimpleFinConnection,
   useSimpleFinSyncSettings,
@@ -106,12 +106,8 @@ function useActiveSection(ids: readonly string[]) {
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { data: accounts = [] } = useAccounts();
   const { data: onboarding } = useOnboardingState();
   const reset = useResetOnboarding();
-  const clearSample = useClearSampleData();
-  const seedDemo = useSeedDevDemo();
-  const hasSample = accounts.some((account) => account.source === "sample");
   const activeSection = useActiveSection(SECTION_IDS);
 
   const { theme, density, accent, privacy, setTheme, setDensity, setAccent, setPrivacy } = useTweaks();
@@ -131,6 +127,7 @@ export default function Settings() {
   const { data: sfStatus } = useSimpleFinStatus();
   const { data: sfConnections = [] } = useSimpleFinConnections();
   const disconnectSf = useDisconnectSimpleFin();
+  const purgeSf = usePurgeSimpleFinData();
   const deleteConnection = useDeleteSimpleFinConnection();
   const { data: sfSyncSettings } = useSimpleFinSyncSettings();
   const setSfSyncSettings = useSetSimpleFinSyncSettings();
@@ -147,7 +144,6 @@ export default function Settings() {
   const [testResult, setTestResult] = useState<{ ok: boolean; latency_ms: number; error: string | null } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
-  const [clearError, setClearError] = useState<string | null>(null);
 
   const modelsConfig = useMemo<CompletionProviderConfig | null>(() => {
     if (selectedKind !== "ollama") return null;
@@ -187,16 +183,6 @@ export default function Settings() {
       navigate("/onboarding");
     } catch (error) {
       setResetError(userErrorMessage(error, "Could not reopen setup."));
-    }
-  };
-
-  const replaceSampleData = async () => {
-    setClearError(null);
-    try {
-      await clearSample.mutateAsync();
-      navigate("/onboarding");
-    } catch (error) {
-      setClearError(userErrorMessage(error, "Could not clear sample data."));
     }
   };
 
@@ -248,7 +234,6 @@ export default function Settings() {
               <div>{resetError && <div className="muted">{resetError}</div>}</div>
               <button className="btn sm" type="button" onClick={() => void reRunOnboarding()}>Re-run onboarding</button>
             </div>
-            {hasSample && <div className="s-row"><div><div className="label">Sample household</div><div className="desc">Replace the demo data with your own accounts when you're ready.</div></div><div>{clearError && <div className="muted">{clearError}</div>}</div><button className="btn outline sm" type="button" onClick={() => void replaceSampleData()}>Replace sample data</button></div>}
             <div className="s-row"><div><div className="label">Account name</div><div className="desc">This desktop app is configured for your local FinSight profile.</div></div><div className="muted">FinSight desktop</div><div /></div>
           </Section>
 
@@ -310,6 +295,13 @@ export default function Settings() {
             {sfStatus?.configured && <div className="s-row"><div><div className="label">Background sync</div><div className="desc">Choose how often the desktop app checks for updates.</div></div><div className="toolbar">{[0, 60, 180, 360, 720].map((minutes) => <button key={minutes} className={(sfSyncSettings?.backgroundSyncIntervalMinutes ?? 360) === minutes ? "on" : ""} type="button" onClick={() => setSfSyncSettings.mutate({ backgroundSyncEnabled: minutes > 0, backgroundSyncIntervalMinutes: minutes })}>{minutes === 0 ? "Off" : minutes === 60 ? "1 hour" : minutes === 180 ? "3 hours" : minutes === 360 ? "6 hours" : "12 hours"}</button>)}</div><div /></div>}
             {sfConnections.map((connection) => <div key={connection.id} className="s-row"><div><div className="label">{connection.label || connection.orgName || "SimpleFin connection"}</div><div className="desc">{connection.status}{connection.lastSyncedAt ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : ""}</div></div><div className="muted">Connected</div><button className="btn ghost sm" type="button" onClick={() => deleteConnection.mutate(connection.id, { onSuccess: () => toast.success("Connection removed"), onError: () => toast.error("Failed to remove connection") })}>Remove</button></div>)}
             {sfConnections.length > 0 && <div className="s-row"><div><div className="label">Disconnect all</div><div className="desc">Remove all stored SimpleFin credentials.</div></div><div /><button className="btn outline sm" type="button" onClick={() => disconnectSf.mutate(undefined, { onSuccess: () => toast.success("All SimpleFin credentials removed"), onError: () => toast.error("Failed to remove credentials") })}>Disconnect all</button></div>}
+            {sfConnections.length > 0 && <div className="s-row"><div><div className="label">Remove imported SimpleFin data</div><div className="desc">Deletes SimpleFin accounts, synced transactions, connection records, and stored credentials. Manual accounts are not touched.</div></div><div /><button className="btn outline sm" type="button" disabled={purgeSf.isPending} onClick={() => {
+              if (!confirm("Remove all imported SimpleFin accounts and transactions from this local profile? This keeps manual data but requires reconnecting SimpleFin.")) return;
+              purgeSf.mutate(undefined, {
+                onSuccess: (summary) => toast.success("Imported SimpleFin data removed", { description: `${summary.accountsDeleted} accounts and ${summary.transactionsDeleted} transactions removed.` }),
+                onError: () => toast.error("Failed to remove imported SimpleFin data"),
+              });
+            }}>{purgeSf.isPending ? "Removing..." : "Remove imported data"}</button></div>}
             <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
           </Section>
 
@@ -324,7 +316,6 @@ export default function Settings() {
 
           <Section id="about" title="About" description="Version info and development helpers.">
             <div className="s-row"><div><div className="label">App version</div><div className="desc">Desktop runtime build information.</div></div><div className="muted">FinSight desktop · local build</div><div /></div>
-            {import.meta.env.DEV && <div className="s-row"><div><div className="label">Reset demo data</div><div className="desc">Seed the demo dataset again for local development.</div></div><div className="muted">Dev only</div><button className="btn sm" type="button" onClick={async () => { try { const result = await seedDemo.mutateAsync(); toast.success(`Demo data loaded — ${result.transactions_created} transactions`); } catch (error) { toast.error("Could not load demo data", { description: userErrorMessage(error, "Open FinSight with the desktop runtime and try again.") }); } }}>Load demo data</button></div>}
           </Section>
         </div>
       </div>

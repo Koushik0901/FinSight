@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import Onboarding from "../screens/Onboarding";
@@ -10,10 +10,6 @@ vi.mock("../api/client", () => ({
     getOnboardingState: vi.fn().mockResolvedValue({
       status: "ok",
       data: { account_count: 0, category_count: 0, completion_marked: false },
-    }),
-    seedSampleHousehold: vi.fn().mockResolvedValue({
-      status: "ok",
-      data: { accounts_created: 6, transactions_created: 250, import_id: "abc" },
     }),
     markOnboardingComplete: vi.fn().mockResolvedValue({ status: "ok", data: null }),
   },
@@ -44,15 +40,9 @@ describe("Onboarding · Welcome step", () => {
     expect(screen.getByRole("heading", { name: /quiet way/i })).toBeInTheDocument();
   });
 
-  it("Try sample seeds, marks complete, navigates to /", async () => {
+  it("does not expose sample-data loading", () => {
     renderOnboarding();
-    fireEvent.click(screen.getByTestId("try-sample-data"));
-    await waitFor(() => {
-      expect(screen.getByText("TODAY ROUTE")).toBeInTheDocument();
-    });
-    const { commands } = await import("../api/client");
-    expect(commands.seedSampleHousehold).toHaveBeenCalledOnce();
-    expect(commands.markOnboardingComplete).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/sample data/i)).not.toBeInTheDocument();
   });
 
   it("Get started advances to Connect step", () => {

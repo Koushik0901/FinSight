@@ -43,10 +43,8 @@ vi.mock("../api/hooks/transactions", () => ({
 
 vi.mock("../api/hooks/onboarding", () => ({
   useOnboardingState: vi.fn(() => ({ data: { account_count: 0, category_count: 0, completion_marked: false }, isLoading: false })),
-  useSeedSampleHousehold: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
   useMarkOnboardingComplete: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
   useResetOnboarding: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
-  useClearSampleData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
 
 vi.mock("../api/client", () => ({
@@ -59,7 +57,6 @@ vi.mock("../api/client", () => ({
       status: "ok",
       data: { account_count: 0, category_count: 0, completion_marked: false },
     }),
-    seedSampleHousehold: vi.fn().mockResolvedValue({ status: "ok", data: null }),
     markOnboardingComplete: vi.fn().mockResolvedValue({ status: "ok", data: null }),
   },
 }));

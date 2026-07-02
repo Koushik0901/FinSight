@@ -1,25 +1,33 @@
 import { useState } from "react";
 import { commands } from "../../api/client";
 import { userErrorMessage } from "../../utils/runtime";
+import { DEFAULT_CATEGORY_COLOR, paletteFor } from "../../utils/categoryColor";
 import Button from "../../components/Button";
 import Input from "../../components/Input";
 import Select from "../../components/Select";
+import Swatch from "../../components/Swatch";
 
 interface Props { onNext: () => void; }
 
-interface Row { id: string; label: string; group_id: string; }
+interface Row { id: string; label: string; group_id: string; color: string; }
+
+const COLOR_CHOICES = [
+  "#A78BFA", "#34D399", "#FB923C", "#60A5FA", "#FACC15",
+  "#F472B6", "#2DD4BF", "#FCA5A5", "#818CF8", "#FDE68A",
+  DEFAULT_CATEGORY_COLOR,
+];
 
 const STARTERS: Row[] = [
-  { id: "housing",       label: "Housing",       group_id: "fixed" },
-  { id: "utilities",     label: "Utilities",     group_id: "fixed" },
-  { id: "subscriptions", label: "Subscriptions", group_id: "fixed" },
-  { id: "groceries",     label: "Groceries",     group_id: "daily" },
-  { id: "dining",        label: "Dining",        group_id: "daily" },
-  { id: "transport",     label: "Transport",     group_id: "daily" },
-  { id: "shopping",      label: "Shopping",      group_id: "lifestyle" },
-  { id: "travel",        label: "Travel",        group_id: "lifestyle" },
-  { id: "gifts",         label: "Gifts",         group_id: "lifestyle" },
-  { id: "health",        label: "Health",        group_id: "wellbeing" },
+  { id: "housing",       label: "Housing",       group_id: "fixed",     color: paletteFor("housing") },
+  { id: "utilities",     label: "Utilities",     group_id: "fixed",     color: paletteFor("utilities") },
+  { id: "subscriptions", label: "Subscriptions", group_id: "fixed",     color: paletteFor("subscriptions") },
+  { id: "groceries",     label: "Groceries",     group_id: "daily",     color: paletteFor("groceries") },
+  { id: "dining",        label: "Dining",        group_id: "daily",     color: paletteFor("dining") },
+  { id: "transport",     label: "Transport",     group_id: "daily",     color: paletteFor("transport") },
+  { id: "shopping",      label: "Shopping",      group_id: "lifestyle", color: paletteFor("shopping") },
+  { id: "travel",        label: "Travel",        group_id: "lifestyle", color: paletteFor("travel") },
+  { id: "gifts",         label: "Gifts",         group_id: "lifestyle", color: paletteFor("gifts") },
+  { id: "health",        label: "Health",        group_id: "wellbeing", color: paletteFor("health") },
 ];
 
 const GROUPS = ["fixed", "daily", "lifestyle", "wellbeing"] as const;
@@ -33,7 +41,10 @@ export default function StepCategories({ onNext }: Props) {
     setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
   }
   function add() {
-    setRows((r) => [...r, { id: crypto.randomUUID(), label: "", group_id: "daily" }]);
+    setRows((r) => [
+      ...r,
+      { id: crypto.randomUUID(), label: "", group_id: "daily", color: DEFAULT_CATEGORY_COLOR },
+    ]);
   }
   function remove(i: number) {
     setRows((r) => r.filter((_, idx) => idx !== i));
@@ -81,6 +92,21 @@ export default function StepCategories({ onNext }: Props) {
                   </option>
                 ))}
               </Select>
+              <div
+                className="swatch-row"
+                aria-label={`Category ${i + 1} color`}
+                role="radiogroup"
+              >
+                {COLOR_CHOICES.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    selected={c === row.color}
+                    onClick={() => update(i, { color: c })}
+                    label={`Choose ${c}`}
+                  />
+                ))}
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -112,7 +138,7 @@ export default function StepCategories({ onNext }: Props) {
           <div className="stack stack-sm">
             {rows.slice(0, 10).map((row) => (
               <div key={row.id} className="onb-category-preview">
-                <span className="cswatch" style={{ background: "var(--accent)" }} />
+                <span className="cswatch" style={{ background: row.color }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13.5 }}>{row.label || "Untitled category"}</div>
                   <div className="muted" style={{ fontSize: 11.5, textTransform: "capitalize" }}>{row.group_id}</div>

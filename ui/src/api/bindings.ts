@@ -118,22 +118,6 @@ async getOnboardingState() : Promise<Result<OnboardingState, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async seedSampleHousehold() : Promise<Result<SeedSummary, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("seed_sample_household") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async seedDevDemo() : Promise<Result<SeedSummary, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("seed_dev_demo") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async markOnboardingComplete() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mark_onboarding_complete") };
@@ -145,14 +129,6 @@ async markOnboardingComplete() : Promise<Result<null, AppError>> {
 async resetOnboardingCompletion() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_onboarding_completion") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async clearSampleData() : Promise<Result<null, AppError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("clear_sample_data") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1023,6 +999,14 @@ async disconnectSimplefin() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async purgeSimplefinData() : Promise<Result<SimpleFinPurgeSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("purge_simplefin_data") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteSimplefinConnection(connectionId: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_simplefin_connection", { connectionId }) };
@@ -1263,7 +1247,6 @@ export type AgentActionBundle = { id: string; sessionId: string | null; title: s
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
-export type AgentCalloutAction = { label: string; path: string }
 export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
 export type AgentChartPoint = { label: string; value: number }
@@ -1272,7 +1255,7 @@ export type AgentMemory = { id: string; kind: string; description: string; merch
 export type AgentMetricBlock = { label: string; value: string; detail: string | null; tone: string | null }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string; actions?: AgentCalloutAction[] }
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
@@ -1471,11 +1454,11 @@ export type SavedScenario = { id: string; description: string; result: ScenarioR
 export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
-export type SeedSummary = { accounts_created: number; transactions_created: number; import_id: string }
 export type SimpleFinAccountImportRequest = { simplefinId: string; connectionId: string; nickname: string | null }
 export type SimpleFinAccountInfo = { id: string; name: string; connectionName: string; connectionId: string; currency: string; balance: string; accountType: AccountType; accountGroup: string }
 export type SimpleFinAlert = { id: string; accountId: string; alertType: string; severity: string; message: string; detailsJson: string | null; acknowledgedAt: string | null; createdAt: string }
 export type SimpleFinConnectionInfo = { id: string; orgName: string | null; label: string | null; status: string; lastSyncedAt: string | null; createdAt: string }
+export type SimpleFinPurgeSummary = { accountsDeleted: number; transactionsDeleted: number; connectionsDeleted: number }
 export type SimpleFinStatus = { configured: boolean }
 export type SimpleFinSyncSettings = { backgroundSyncEnabled: boolean; backgroundSyncIntervalMinutes: number }
 export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }

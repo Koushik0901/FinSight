@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 use finsight_core::repos::run;
-use finsight_core::{sample, settings};
+use finsight_core::settings;
 use serde::Serialize;
 use specta::Type;
 
@@ -42,16 +42,6 @@ pub async fn get_onboarding_state(state: tauri::State<'_, AppState>) -> AppResul
 
 #[tauri::command]
 #[specta::specta]
-pub async fn seed_sample_household(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<sample::SeedSummary> {
-    let db = (*state.db).clone();
-    // seed_household finishes its own import row atomically inside its transaction.
-    sample::seed_household(&db).map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn mark_onboarding_complete(state: tauri::State<'_, AppState>) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &true))
@@ -66,26 +56,6 @@ pub async fn reset_onboarding_completion(state: tauri::State<'_, AppState>) -> A
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &false))
         .await
         .map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn seed_dev_demo(state: tauri::State<'_, AppState>) -> AppResult<sample::SeedSummary> {
-    let db = (*state.db).clone();
-    sample::seed_dev_demo(&db).map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn clear_sample_data(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, |conn| {
-        conn.execute("DELETE FROM accounts WHERE source = 'sample'", [])?;
-        settings::set(conn, KEY_COMPLETION, &false)?;
-        Ok(())
-    })
-    .await
-    .map_err(AppError::from)
 }
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -179,6 +149,7 @@ pub struct StarterCategory {
     pub id: String,
     pub label: String,
     pub group_id: String,
+    pub color: String,
 }
 
 #[tauri::command]
@@ -204,8 +175,8 @@ pub async fn commit_starter_categories(
         for c in &categories {
             tx.execute(
                 "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) \
-                 VALUES(?1, ?2, ?3, '#94A3B8', 0)",
-                rusqlite::params![c.id, c.group_id, c.label],
+                 VALUES(?1, ?2, ?3, ?4, 0)",
+                rusqlite::params![c.id, c.group_id, c.label, c.color],
             )?;
         }
         tx.commit()?;
