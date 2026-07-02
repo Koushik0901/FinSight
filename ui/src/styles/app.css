@@ -797,6 +797,17 @@
   vertical-align: middle;
   margin-right: 8px;
 }
+.cat-icon-tile {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+}
 
 .swatch-btn {
   width: var(--touch-target);
