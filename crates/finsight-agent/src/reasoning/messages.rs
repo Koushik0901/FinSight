@@ -64,4 +64,5 @@ pub struct ReasoningResult {
     pub data_sources: Vec<String>,
     pub missing_data: Vec<String>,
     pub follow_up_questions: Vec<String>,
+    pub response_blocks: Vec<Value>,
 }

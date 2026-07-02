@@ -62,7 +62,16 @@ async fn structured_final_answer_populates_answer_metadata() {
                 "assumptions": ["Local data only"],
                 "data_sources": ["liabilities"],
                 "missing_data": ["APR"],
-                "follow_up_questions": ["What is the APR?"]
+                "follow_up_questions": ["What is the APR?"],
+                "response_blocks": [{
+                    "kind": "metricGrid",
+                    "metrics": [{
+                        "label": "Decision",
+                        "value": "Debt first",
+                        "detail": "APR is missing, so this is provisional.",
+                        "tone": "warning"
+                    }]
+                }]
             })
             .to_string(),
             reasoning: "provider reasoning".to_string(),
@@ -79,6 +88,8 @@ async fn structured_final_answer_populates_answer_metadata() {
     assert_eq!(result.data_sources, vec!["liabilities"]);
     assert_eq!(result.missing_data, vec!["APR"]);
     assert_eq!(result.follow_up_questions, vec!["What is the APR?"]);
+    assert_eq!(result.response_blocks.len(), 1);
+    assert_eq!(result.response_blocks[0]["kind"], "metricGrid");
     assert!(result.reasoning.contains("Used local liabilities"));
     assert!(result.reasoning.contains("provider reasoning"));
 }
