@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useLocalRuntime } from "@assistant-ui/react";
+import {
+  RuntimeAdapterProvider,
+  useAui,
+  useLocalRuntime,
+  useRemoteThreadListRuntime,
+} from "@assistant-ui/react";
 import type {
   AssistantRuntime,
   ChatModelAdapter,
   ChatModelRunOptions,
   ChatModelRunResult,
+  ExportedMessageRepositoryItem,
+  RemoteThreadListAdapter,
+  ThreadHistoryAdapter,
   ThreadAssistantMessagePart,
   ThreadMessage,
   ThreadMessageLike,
@@ -18,6 +27,7 @@ import type {
   ConversationMessage,
   CopilotStreamFrame,
   CopilotDonePayload,
+  CopilotResponseBlock,
 } from "../../api/client";
 
 export interface MessageMeta {
@@ -33,6 +43,11 @@ export interface MessageMeta {
 }
 
 type MetaByMessageId = Record<string, MessageMeta>;
+
+function unwrapCommandResult<T>(result: { status: "ok"; data: T } | { status: "error"; error: unknown }): T {
+  if (result.status === "error") throw result.error;
+  return result.data;
+}
 
 type StreamEvent =
   | { type: "frame"; frame: CopilotStreamFrame }
@@ -115,6 +130,111 @@ function createEventQueue<T>(): EventQueue<T> {
       });
     },
   };
+}
+
+function normalizeFrameType(type: unknown): CopilotStreamFrame["type"] | null {
+  if (typeof type !== "string") return null;
+  const mapped: Record<string, CopilotStreamFrame["type"]> = {
+    text: "text",
+    reasoning: "reasoning",
+    toolCallStart: "toolCallStart",
+    tool_call_start: "toolCallStart",
+    toolCallResult: "toolCallResult",
+    tool_call_result: "toolCallResult",
+    responseBlock: "responseBlock",
+    response_block: "responseBlock",
+    source: "source",
+    usage: "usage",
+    done: "done",
+    error: "error",
+  };
+  return mapped[type] ?? null;
+}
+
+function pickFrameValue<T = unknown>(raw: Record<string, unknown>, camelKey: string, snakeKey: string): T {
+  return (raw[camelKey] ?? raw[snakeKey]) as T;
+}
+
+function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | null {
+  if (!payload || typeof payload !== "object") return null;
+  const raw = payload as Record<string, unknown>;
+  const type = normalizeFrameType(raw.type);
+  if (!type) return null;
+
+  const base = {
+    type,
+    conversationId: pickFrameValue<string>(raw, "conversationId", "conversation_id"),
+    runId: pickFrameValue<string>(raw, "runId", "run_id"),
+  };
+  if (!base.conversationId || !base.runId) return null;
+
+  switch (type) {
+    case "text":
+      return { ...base, type, delta: pickFrameValue<string>(raw, "delta", "delta") ?? "" };
+    case "reasoning":
+      return { ...base, type, text: pickFrameValue<string>(raw, "text", "text") ?? "" };
+    case "toolCallStart":
+      return {
+        ...base,
+        type,
+        toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
+        toolName: pickFrameValue<string>(raw, "toolName", "tool_name"),
+        args: (pickFrameValue(raw, "args", "args") ?? {}) as Record<string, unknown>,
+      };
+    case "toolCallResult":
+      return {
+        ...base,
+        type,
+        toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
+        result: pickFrameValue(raw, "result", "result"),
+        isError: Boolean(pickFrameValue(raw, "isError", "is_error")),
+      };
+    case "responseBlock":
+      return {
+        ...base,
+        type,
+        blockId: pickFrameValue<string>(raw, "blockId", "block_id"),
+        block: pickFrameValue(raw, "block", "block") as CopilotResponseBlock,
+      };
+    case "source":
+      return {
+        ...base,
+        type,
+        sourceId: pickFrameValue<string>(raw, "sourceId", "source_id"),
+        title: pickFrameValue<string>(raw, "title", "title") ?? "FinSight source",
+      };
+    case "usage":
+      return {
+        ...base,
+        type,
+        providerId: pickFrameValue<string>(raw, "providerId", "provider_id") ?? "unknown",
+        modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
+        elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
+        toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
+      };
+    case "done":
+      return {
+        ...base,
+        type,
+        messageId: pickFrameValue<string>(raw, "messageId", "message_id"),
+        bundleId: pickFrameValue<string | null>(raw, "bundleId", "bundle_id") ?? null,
+        toolTrace: (pickFrameValue(raw, "toolTrace", "tool_trace") ?? []) as string[],
+        followUpQuestions: (pickFrameValue(raw, "followUpQuestions", "follow_up_questions") ?? []) as string[],
+        actionLabel: pickFrameValue<string | null>(raw, "actionLabel", "action_label") ?? null,
+        actionPath: pickFrameValue<string | null>(raw, "actionPath", "action_path") ?? null,
+        providerId: pickFrameValue<string>(raw, "providerId", "provider_id") ?? "unknown",
+        modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
+        elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
+        toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
+      };
+    case "error":
+      return {
+        ...base,
+        type,
+        code: pickFrameValue<string>(raw, "code", "code") ?? "copilot.error",
+        message: pickFrameValue<string>(raw, "message", "message") ?? "Copilot request failed.",
+      };
+  }
 }
 
 export function formatCommandError(error: unknown) {
@@ -225,18 +345,15 @@ function isMessagePartLike(value: unknown): value is { type: string } {
 }
 
 export function createTauriChatModelAdapter({
-  getConversationId,
+  ensureConversationId,
   onDone,
 }: {
-  getConversationId: () => string | null;
+  ensureConversationId: () => Promise<string>;
   onDone?: (payload: Extract<CopilotStreamFrame, { type: "done" }>, meta: MessageMeta) => void;
 }): ChatModelAdapter {
   return {
     async *run(options: ChatModelRunOptions): AsyncGenerator<ChatModelRunResult, void> {
-      const conversationId = getConversationId();
-      if (!conversationId) {
-        throw new Error("Start a conversation before sending a message.");
-      }
+      const conversationId = await ensureConversationId();
 
       const latestMessage = options.messages[options.messages.length - 1];
       const text = latestMessage ? textFromMessage(latestMessage).trim() : "";
@@ -274,15 +391,17 @@ export function createTauriChatModelAdapter({
 
       try {
         cleanup.push(
-          await listen<CopilotStreamFrame>("copilot-stream-frame", (event) => {
+          await listen<unknown>("copilot-stream-frame", (event) => {
+            const frame = normalizeCopilotStreamFrame(event.payload);
+            if (!frame) return;
             if (
-              event.payload.conversationId !== conversationId ||
-              event.payload.runId !== runId
+              frame.conversationId !== conversationId ||
+              frame.runId !== runId
             ) {
               return;
             }
-            queue.push({ type: "frame", frame: event.payload });
-            if (event.payload.type === "done" || event.payload.type === "error") queue.end();
+            queue.push({ type: "frame", frame });
+            if (frame.type === "done" || frame.type === "error") queue.end();
           })
         );
 
@@ -434,19 +553,94 @@ export function createTauriChatModelAdapter({
   };
 }
 
-export function useTauriCopilotRuntime(conversationId: string | null): {
+function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMessageId {
+  return Object.fromEntries(
+    messages.flatMap((message) => {
+      const meta: MessageMeta = {};
+      if (message.actionBundleId) meta.bundleId = message.actionBundleId;
+      if (message.toolTrace) {
+        try {
+          const parsed = JSON.parse(message.toolTrace) as unknown;
+          meta.toolTrace = Array.isArray(parsed)
+            ? parsed.filter((item): item is string => typeof item === "string")
+            : [message.toolTrace];
+        } catch {
+          meta.toolTrace = [message.toolTrace];
+        }
+      }
+      return Object.keys(meta).length > 0 ? [[message.id, meta]] : [];
+    })
+  );
+}
+
+function FinSightThreadHistoryProvider({
+  children,
+  onLoadedMeta,
+}: {
+  children: ReactNode;
+  onLoadedMeta: (meta: MetaByMessageId) => void;
+}) {
+  const aui = useAui();
+  const history = useMemo<ThreadHistoryAdapter>(
+    () => ({
+      async load() {
+        const { remoteId } = aui.threadListItem().getState();
+        if (!remoteId) return { messages: [] };
+
+        const messages = unwrapCommandResult(
+          await commands.getConversationMessages(remoteId)
+        );
+        onLoadedMeta(buildMetaFromMessages(messages));
+        return {
+          messages: conversationMessagesToThreadMessages(messages).map((message) => ({
+            parentId: null,
+            message: message as ThreadMessage,
+          })),
+        };
+      },
+      async append(_item: ExportedMessageRepositoryItem) {
+        // Rust streamCopilotMessage persists user and assistant turns atomically.
+      },
+      async update(item: ExportedMessageRepositoryItem) {
+        if (item.message.role !== "user") return;
+        const messageId = backendMessageId(item.message);
+        const conversationId = aui.threadListItem().getState().remoteId;
+        const content = textFromMessage(item.message).trim();
+        if (!messageId || !conversationId || !content) return;
+        unwrapCommandResult(
+          await commands.editConversationUserMessage({
+            conversationId,
+            messageId,
+            content,
+          })
+        );
+      },
+      async delete(items: ExportedMessageRepositoryItem[]) {
+        const conversationId = aui.threadListItem().getState().remoteId;
+        const firstBackendId = items
+          .map((item) => backendMessageId(item.message))
+          .find((id): id is string => Boolean(id));
+        if (!conversationId || !firstBackendId) return;
+        unwrapCommandResult(
+          await commands.deleteConversationMessagesAfter(conversationId, firstBackendId)
+        );
+      },
+    }),
+    [aui, onLoadedMeta]
+  );
+
+  return createElement(RuntimeAdapterProvider, { adapters: { history }, children });
+}
+
+export function useTauriCopilotRuntime(initialConversationId?: string | null): {
   runtime: AssistantRuntime;
-  messages: ThreadMessageLike[];
-  isRunning: boolean;
   latestMeta: MessageMeta | null;
   metaByMessageId: MetaByMessageId;
 } {
-  const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[]>([]);
   const [latestMeta, setLatestMeta] = useState<MessageMeta | null>(null);
   const [metaByMessageId, setMetaByMessageId] = useState<MetaByMessageId>({});
   const queryClient = useQueryClient();
-  const convIdRef = useRef<string | null>(conversationId);
-  convIdRef.current = conversationId;
+  const convIdRef = useRef<string | null>(initialConversationId ?? null);
 
   const onDone = useCallback(
     (payload: CopilotDonePayload, meta: MessageMeta) => {
@@ -461,55 +655,112 @@ export function useTauriCopilotRuntime(conversationId: string | null): {
     [queryClient]
   );
 
+  const ensureConversationId = useCallback(async () => {
+    if (convIdRef.current) return convIdRef.current;
+    const conversationId = unwrapCommandResult(await commands.createConversation());
+    convIdRef.current = conversationId;
+    return conversationId;
+  }, []);
+
   const adapter = useMemo(
     () =>
       createTauriChatModelAdapter({
-        getConversationId: () => convIdRef.current,
+        ensureConversationId,
         onDone,
       }),
-    [onDone]
+    [ensureConversationId, onDone]
   );
 
-  const runtime = useLocalRuntime(adapter, { initialMessages });
+  const setLoadedMeta = useCallback((meta: MetaByMessageId) => {
+    setMetaByMessageId(meta);
+  }, []);
 
-  useEffect(() => {
-    setLatestMeta(null);
-    setMetaByMessageId({});
-    if (!conversationId) {
-      setInitialMessages([]);
-      return;
-    }
+  const threadListAdapter = useMemo<RemoteThreadListAdapter>(
+    () => ({
+      async list() {
+        const conversations = unwrapCommandResult(await commands.listConversations());
+        return {
+          threads: conversations.map((conversation) => ({
+            status: "regular" as const,
+            remoteId: conversation.id,
+            title: conversation.title,
+            lastMessageAt: new Date(conversation.updatedAt),
+            custom: {
+              createdAt: conversation.createdAt,
+              messageCount: conversation.messageCount,
+            },
+          })),
+        };
+      },
+      async initialize() {
+        const remoteId = unwrapCommandResult(await commands.createConversation());
+        convIdRef.current = remoteId;
+        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        return { remoteId, externalId: undefined };
+      },
+      async rename(_remoteId, _newTitle) {
+        // Conversation titles are generated by the Rust agent today.
+      },
+      async archive(_remoteId) {
+        // FinSight does not yet persist archived Copilot threads.
+      },
+      async unarchive(_remoteId) {
+        // FinSight does not yet persist archived Copilot threads.
+      },
+      async delete(remoteId) {
+        unwrapCommandResult(await commands.deleteConversation(remoteId));
+        if (convIdRef.current === remoteId) convIdRef.current = null;
+        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      },
+      async fetch(remoteId) {
+        const conversations = unwrapCommandResult(await commands.listConversations());
+        const conversation = conversations.find((item) => item.id === remoteId);
+        if (!conversation) throw new Error("Conversation not found.");
+        return {
+          status: "regular" as const,
+          remoteId: conversation.id,
+          title: conversation.title,
+          lastMessageAt: new Date(conversation.updatedAt),
+          custom: {
+            createdAt: conversation.createdAt,
+            messageCount: conversation.messageCount,
+          },
+        };
+      },
+      async generateTitle(_remoteId, messages) {
+        return new ReadableStream<string>({
+          start(controller) {
+            const firstUserText =
+              messages.find((message) => message.role === "user")
+                ? textFromMessage(messages.find((message) => message.role === "user")!)
+                : "New conversation";
+            controller.enqueue(firstUserText.trim().slice(0, 48) || "New conversation");
+            controller.close();
+          },
+        }) as never;
+      },
+      unstable_Provider({ children }) {
+        return createElement(FinSightThreadHistoryProvider, { onLoadedMeta: setLoadedMeta, children });
+      },
+    }),
+    [queryClient, setLoadedMeta]
+  );
 
-    let cancelled = false;
-    commands
-      .getConversationMessages(conversationId)
-      .then((result) => {
-        if (cancelled || result.status === "error") return;
-        const loaded = conversationMessagesToThreadMessages(result.data);
-        const nextMetaByMessageId = Object.fromEntries(
-          result.data
-            .filter((message) => message.actionBundleId)
-            .map((message) => [
-              message.id,
-              { bundleId: message.actionBundleId ?? undefined } satisfies MessageMeta,
-            ])
-        );
-        setInitialMessages(loaded);
-        setMetaByMessageId(nextMetaByMessageId);
-      })
-      .catch(() => {
-        if (!cancelled) setInitialMessages([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId]);
+  const runtime = useRemoteThreadListRuntime({
+    runtimeHook: () =>
+      useLocalRuntime(adapter, {
+        unstable_enableMessageQueue: true,
+      }),
+    adapter: threadListAdapter,
+    threadId: initialConversationId ?? undefined,
+    onThreadIdChange: (threadId) => {
+      convIdRef.current = threadId ?? null;
+      setLatestMeta(null);
+    },
+  });
 
   return {
     runtime,
-    messages: initialMessages,
-    isRunning: false,
     latestMeta,
     metaByMessageId,
   };

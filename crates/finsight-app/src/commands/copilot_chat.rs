@@ -7,18 +7,25 @@
 
 use crate::commands::agent::{
     build_toolset, enrich_agent_answer, is_usable_tool_answer, planner_answer_to_agent_answer,
-    reasoning_result_to_agent_answer, validate_finance_answer, AgentAnswer, AgentResponseBlock,
+    reasoning_result_to_agent_answer, validate_finance_answer, AgentAnswer, AgentChartBlock,
+    AgentChartPoint, AgentMetricBlock, AgentResponseBlock, AgentTableBlock,
 };
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_agent::{planning, reasoning::engine::ReasoningEngine};
+use finsight_agent::{
+    planning,
+    reasoning::engine::{ReasoningEngine, ReasoningEngineEvent},
+};
 use finsight_core::models::{ConversationMessage, ConversationSummary};
 use finsight_core::repos::{conversations, run};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use specta::Type;
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 // ── Public types emitted as Tauri events ────────────────────────────────────
@@ -131,6 +138,15 @@ pub async fn stream_copilot_message(
     source_message_id: Option<String>,
 ) -> AppResult<String> {
     let started_at = Instant::now();
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "copilot stream start conversation_id={} run_id={} chars={}",
+            conversation_id,
+            run_id,
+            text.chars().count()
+        );
+    }
     let provider = state.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         return Err(AppError::new(
@@ -207,23 +223,93 @@ pub async fn stream_copilot_message(
     let tools = build_toolset();
     let provider_clone = Arc::clone(&provider);
     let question_for_engine = enriched_question.clone();
+    let emitted_live_tool_frames = Arc::new(AtomicBool::new(false));
+    emit_copilot_frame(
+        &app,
+        CopilotStreamFrame::Reasoning {
+            conversation_id: conv_id.clone(),
+            run_id: run_id.clone(),
+            text: "Preparing local financial context and running the planning tool loop.\n"
+                .to_string(),
+        },
+    );
+    let app_for_engine = app.clone();
+    let conv_id_for_engine = conv_id.clone();
+    let run_id_for_engine = run_id.clone();
+    let live_tool_frames_for_engine = Arc::clone(&emitted_live_tool_frames);
+    let command_run_id = run_id.clone();
     let tool_result = run(&db, move |conn| {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("copilot reasoning engine enter run_id={command_run_id}");
+        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| {
                 finsight_core::CoreError::InvalidState(format!("Failed to create runtime: {e}"))
             })?;
-        rt.block_on(ReasoningEngine::run(
-            conn,
-            &question_for_engine,
-            &tools,
-            provider_clone,
-            10,
-        ))
+        let app_for_events = app_for_engine.clone();
+        let event_conversation_id = conv_id_for_engine.clone();
+        let event_run_id = run_id_for_engine.clone();
+        let emitted_tool_frames = Arc::clone(&live_tool_frames_for_engine);
+        rt.block_on(async move {
+            tokio::time::timeout(
+                Duration::from_secs(30),
+                ReasoningEngine::run_with_events(
+                    conn,
+                    &question_for_engine,
+                    &tools,
+                    provider_clone,
+                    10,
+                    move |event| match event {
+                        ReasoningEngineEvent::ToolCallStart { call } => {
+                            emitted_tool_frames.store(true, Ordering::Relaxed);
+                            emit_copilot_frame(
+                                &app_for_events,
+                                CopilotStreamFrame::ToolCallStart {
+                                    conversation_id: event_conversation_id.clone(),
+                                    run_id: event_run_id.clone(),
+                                    tool_call_id: call.id,
+                                    tool_name: call.name,
+                                    args: call.arguments,
+                                },
+                            );
+                        }
+                        ReasoningEngineEvent::ToolCallResult {
+                            tool_call_id,
+                            tool_name: _,
+                            result,
+                            is_error,
+                        } => {
+                            emit_copilot_frame(
+                                &app_for_events,
+                                CopilotStreamFrame::ToolCallResult {
+                                    conversation_id: event_conversation_id.clone(),
+                                    run_id: event_run_id.clone(),
+                                    tool_call_id,
+                                    result,
+                                    is_error,
+                                },
+                            );
+                        }
+                    },
+                ),
+            )
+            .await
+            .map_err(|_| anyhow::anyhow!("Reasoning engine timed out after 30 seconds"))?
+        })
         .map_err(|e| finsight_core::CoreError::InvalidState(format!("Reasoning engine error: {e}")))
     })
     .await;
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "copilot reasoning engine exit run_id={} ok={}",
+            run_id,
+            tool_result.is_ok()
+        );
+    }
 
     // 5. Build AgentAnswer from result
     let mut answer: AgentAnswer = match tool_result {
@@ -323,6 +409,20 @@ pub async fn stream_copilot_message(
                 validate_finance_answer(&enriched_question, &mut mapped);
                 enrich_agent_answer(&mut mapped);
                 mapped
+            } else if let Some(mut fallback) = run(&db, {
+                let q = enriched_question.clone();
+                move |conn| deterministic_copilot_fallback(conn, &q)
+            })
+            .await
+            .map_err(AppError::from)?
+            {
+                fallback.trace.insert(
+                    0,
+                    format!("Tool loop failed; used deterministic fallback: {tool_err}"),
+                );
+                validate_finance_answer(&enriched_question, &mut fallback);
+                enrich_agent_answer(&mut fallback);
+                fallback
             } else {
                 return Err(AppError::new("agent.reasoning", tool_err.to_string()));
             }
@@ -362,6 +462,7 @@ pub async fn stream_copilot_message(
     let provider_id = provider.provider_id().to_string();
     let model_id = provider.model_id().to_string();
     let tool_names = tool_names_from_trace(&answer.trace);
+    let already_emitted_tool_frames = emitted_live_tool_frames.load(Ordering::Relaxed);
 
     // 6. Emit rich assistant-ui parts before the final text stream.
     if !answer.reasoning.trim().is_empty() {
@@ -375,34 +476,42 @@ pub async fn stream_copilot_message(
         );
     }
 
-    for (i, tool_name) in tool_names.iter().enumerate() {
-        let tool_call_id = format!("tool-{i}");
-        emit_copilot_frame(
-            &app,
-            CopilotStreamFrame::ToolCallStart {
-                conversation_id: conv_id.clone(),
-                run_id: run_id.clone(),
-                tool_call_id: tool_call_id.clone(),
-                tool_name: tool_name.clone(),
-                args: json!({}),
-            },
-        );
-        emit_copilot_frame(
-            &app,
-            CopilotStreamFrame::ToolCallResult {
-                conversation_id: conv_id.clone(),
-                run_id: run_id.clone(),
-                tool_call_id,
-                result: json!({
-                    "ok": true,
-                    "summary": answer.trace.get(i).cloned().unwrap_or_else(|| tool_name.clone()),
-                }),
-                is_error: false,
-            },
-        );
+    if !already_emitted_tool_frames {
+        for (i, tool_name) in tool_names.iter().enumerate() {
+            let tool_call_id = format!("tool-{i}");
+            emit_copilot_frame(
+                &app,
+                CopilotStreamFrame::ToolCallStart {
+                    conversation_id: conv_id.clone(),
+                    run_id: run_id.clone(),
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                    args: json!({}),
+                },
+            );
+            emit_copilot_frame(
+                &app,
+                CopilotStreamFrame::ToolCallResult {
+                    conversation_id: conv_id.clone(),
+                    run_id: run_id.clone(),
+                    tool_call_id,
+                    result: json!({
+                        "ok": true,
+                        "summary": answer.trace.get(i).cloned().unwrap_or_else(|| tool_name.clone()),
+                    }),
+                    is_error: false,
+                },
+            );
+        }
     }
 
-    for (i, block) in answer.response_blocks.iter().cloned().enumerate() {
+    for (i, block) in answer
+        .response_blocks
+        .iter()
+        .filter(|block| should_emit_response_block(block))
+        .cloned()
+        .enumerate()
+    {
         emit_copilot_frame(
             &app,
             CopilotStreamFrame::ResponseBlock {
@@ -684,7 +793,12 @@ fn assistant_parts_json(answer: &AgentAnswer) -> String {
         }));
     }
 
-    for (i, block) in answer.response_blocks.iter().enumerate() {
+    for (i, block) in answer
+        .response_blocks
+        .iter()
+        .filter(|block| should_emit_response_block(block))
+        .enumerate()
+    {
         parts.push(response_block_part(format!("block-{i}"), block));
     }
 
@@ -722,6 +836,204 @@ fn response_block_part(id: String, block: &AgentResponseBlock) -> Value {
             }
         }
     })
+}
+
+fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
+    match block {
+        AgentResponseBlock::Markdown { .. } => false,
+        AgentResponseBlock::Callout { title, .. } => title.as_deref() != Some("Reasoning"),
+        AgentResponseBlock::Table(_)
+        | AgentResponseBlock::BarChart(_)
+        | AgentResponseBlock::LineChart(_)
+        | AgentResponseBlock::MetricGrid { .. } => true,
+    }
+}
+
+fn deterministic_copilot_fallback(
+    conn: &mut rusqlite::Connection,
+    question: &str,
+) -> Result<Option<AgentAnswer>, finsight_core::CoreError> {
+    let q = question.to_lowercase();
+    let asks_spending = (q.contains("spend") || q.contains("spent") || q.contains("expense"))
+        && (q.contains("most")
+            || q.contains("top")
+            || q.contains("category")
+            || q.contains("month"));
+    if !asks_spending {
+        return Ok(None);
+    }
+
+    let rows = top_spending_categories_this_month(conn)
+        .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))?;
+    if rows.is_empty() {
+        return Ok(Some(AgentAnswer {
+            prose: "I could not find cleared spending transactions for the current month. If this looks wrong, check the transaction dates, account sync status, and whether expenses are imported as negative amounts.".to_string(),
+            reasoning: "The deterministic fallback queried current-month negative transactions grouped by category and found no rows.".to_string(),
+            trace: vec!["Called tool: get_top_spending_categories".to_string()],
+            changes: Vec::new(),
+            action_label: None,
+            action_path: None,
+            bundle_id: None,
+            assumptions: vec![
+                "Current month is calculated from the local database clock.".to_string(),
+                "Expenses are treated as negative transaction amounts.".to_string(),
+            ],
+            data_sources: vec!["Local transactions table".to_string()],
+            missing_data: vec!["No current-month expense rows were found.".to_string()],
+            alternatives: Vec::new(),
+            follow_up_questions: vec![
+                "Show the largest individual transactions this month.".to_string(),
+                "Compare this month against last month.".to_string(),
+            ],
+            response_blocks: Vec::new(),
+        }));
+    }
+
+    let total_cents: i64 = rows.iter().map(|row| row.amount_cents).sum();
+    let top = &rows[0];
+    let prose = format!(
+        "Your largest spending category this month is **{}** at {}, across {} transaction{}. That is about {:.0}% of the categorized spending I found for the month.",
+        top.category,
+        format_cents(top.amount_cents),
+        top.transaction_count,
+        if top.transaction_count == 1 { "" } else { "s" },
+        if total_cents > 0 {
+            (top.amount_cents as f64 / total_cents as f64) * 100.0
+        } else {
+            0.0
+        }
+    );
+
+    let table = AgentResponseBlock::Table(AgentTableBlock {
+        title: Some("Top spending categories this month".to_string()),
+        columns: vec![
+            "Category".to_string(),
+            "Spent".to_string(),
+            "Transactions".to_string(),
+        ],
+        rows: rows
+            .iter()
+            .map(|row| {
+                vec![
+                    row.category.clone(),
+                    format_cents(row.amount_cents),
+                    row.transaction_count.to_string(),
+                ]
+            })
+            .collect(),
+    });
+    let chart = AgentResponseBlock::BarChart(AgentChartBlock {
+        title: Some("Spending by category".to_string()),
+        series_label: Some("Spent".to_string()),
+        data: rows
+            .iter()
+            .map(|row| AgentChartPoint {
+                label: row.category.clone(),
+                value: row.amount_cents as f64 / 100.0,
+            })
+            .collect(),
+    });
+    let metrics = AgentResponseBlock::MetricGrid {
+        metrics: vec![
+            AgentMetricBlock {
+                label: "Top category".to_string(),
+                value: top.category.clone(),
+                detail: Some(format!(
+                    "{} transaction{}",
+                    top.transaction_count,
+                    if top.transaction_count == 1 { "" } else { "s" }
+                )),
+                tone: Some("neutral".to_string()),
+            },
+            AgentMetricBlock {
+                label: "Top category spend".to_string(),
+                value: format_cents(top.amount_cents),
+                detail: Some("Current month".to_string()),
+                tone: Some("warning".to_string()),
+            },
+            AgentMetricBlock {
+                label: "Total in top categories".to_string(),
+                value: format_cents(total_cents),
+                detail: Some(format!("{} categories", rows.len())),
+                tone: Some("neutral".to_string()),
+            },
+        ],
+    };
+
+    Ok(Some(AgentAnswer {
+        prose,
+        reasoning: "Deterministic fallback queried current-month negative transactions, grouped them by category, and ranked categories by total spend.".to_string(),
+        trace: vec!["Called tool: get_top_spending_categories".to_string()],
+        changes: Vec::new(),
+        action_label: None,
+        action_path: None,
+        bundle_id: None,
+        assumptions: vec![
+            "Current month is calculated from the local database clock.".to_string(),
+            "Expenses are treated as negative transaction amounts.".to_string(),
+            "Uncategorized transactions are grouped as Uncategorized.".to_string(),
+        ],
+        data_sources: vec![
+            "Local transactions table".to_string(),
+            "Local categories table".to_string(),
+        ],
+        missing_data: Vec::new(),
+        alternatives: Vec::new(),
+        follow_up_questions: vec![
+            "Show the largest individual transactions in this category.".to_string(),
+            "Compare this category against last month.".to_string(),
+            "Help me reduce this category next month.".to_string(),
+        ],
+        response_blocks: vec![metrics, table, chart],
+    }))
+}
+
+struct SpendingCategoryRow {
+    category: String,
+    amount_cents: i64,
+    transaction_count: i64,
+}
+
+fn top_spending_categories_this_month(
+    conn: &mut rusqlite::Connection,
+) -> rusqlite::Result<Vec<SpendingCategoryRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(c.label, 'Uncategorized') AS category,
+                CAST(SUM(-t.amount_cents) AS INTEGER) AS spent_cents,
+                COUNT(*) AS txn_count
+         FROM transactions t
+         LEFT JOIN categories c ON c.id = t.category_id
+         WHERE t.amount_cents < 0
+           AND COALESCE(t.pending, 0) = 0
+           AND date(t.posted_at) >= date('now', 'start of month')
+           AND date(t.posted_at) < date('now', 'start of month', '+1 month')
+         GROUP BY COALESCE(c.label, 'Uncategorized')
+         HAVING spent_cents > 0
+         ORDER BY spent_cents DESC
+         LIMIT 5",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(SpendingCategoryRow {
+            category: row.get(0)?,
+            amount_cents: row.get(1)?,
+            transaction_count: row.get(2)?,
+        })
+    })?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn format_cents(cents: i64) -> String {
+    let value = cents as f64 / 100.0;
+    if value.fract().abs() < 0.005 {
+        format!("${value:.0}")
+    } else {
+        format!("${value:.2}")
+    }
 }
 
 /// Build the final question string by prepending conversation history as context.

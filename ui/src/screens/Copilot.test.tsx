@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { forwardRef } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Copilot from "./Copilot";
 import { createWrapper } from "../test-utils";
 
 // ── Mock external hooks / modules ─────────────────────────────────────────────
+
+const assistantUiMocks = vi.hoisted(() => ({
+  threadList: [] as Array<{ id: string; title: string }>,
+  switchToNewThread: vi.fn(),
+  setComposerText: vi.fn(),
+}));
 
 vi.mock("../api/hooks/copilot", () => ({
   useActionBundles: vi.fn(() => ({ data: [], isLoading: false })),
@@ -35,7 +42,7 @@ vi.mock("../components/copilot/TauriRuntime", () => ({
   useTauriCopilotRuntime: vi.fn(() => ({
     runtime: {
       thread: {
-        composer: { setText: vi.fn() },
+        composer: { setText: assistantUiMocks.setComposerText },
         reset: vi.fn(),
         getState: vi.fn(() => ({ isRunning: false })),
       },
@@ -62,21 +69,29 @@ vi.mock("@assistant-ui/react", async (importOriginal) => {
       Viewport: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div className={className}>{children}</div>
       ),
+      ViewportFooter: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+        <div className={className}>{children}</div>
+      ),
       Messages: () => null,
       Empty: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      ScrollToBottom: ({ children, className, ...rest }: { children: React.ReactNode; className?: string }) => (
+        <button type="button" className={className} {...rest}>{children}</button>
+      ),
     },
     ComposerPrimitive: {
       Root: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <form className={className} onSubmit={(e) => e.preventDefault()}>{children}</form>
       ),
-      Input: ({ placeholder, className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-        <textarea placeholder={placeholder} className={className} {...rest} />
+      Input: forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
+        ({ placeholder, className, ...rest }, ref) => (
+          <textarea ref={ref} placeholder={placeholder} className={className} {...rest} />
+        )
       ),
-      Send: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-        <button type="submit" className={className}>{children}</button>
+      Send: ({ children, className, ...rest }: { children: React.ReactNode; className?: string }) => (
+        <button type="submit" className={className} {...rest}>{children}</button>
       ),
-      Cancel: ({ children, className }: { children: React.ReactNode; className?: string }) => (
-        <button type="button" className={className}>{children}</button>
+      Cancel: ({ children, className, ...rest }: { children: React.ReactNode; className?: string }) => (
+        <button type="button" className={className} {...rest}>{children}</button>
       ),
     },
     MessagePrimitive: {
@@ -87,6 +102,8 @@ vi.mock("@assistant-ui/react", async (importOriginal) => {
       Parts: () => null,
       GroupedParts: () => null,
       GenerativeUI: () => null,
+      Quote: ({ children, className }: { children: React.ReactNode; className?: string }) => <blockquote className={className}>{children}</blockquote>,
+      Error: ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={className}>{children}</div>,
     },
     ActionBarPrimitive: {
       Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -101,24 +118,85 @@ vi.mock("@assistant-ui/react", async (importOriginal) => {
       Number: () => <span>1</span>,
       Count: () => <span>1</span>,
     },
+    ThreadListPrimitive: {
+      Root: ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={className}>{children}</div>,
+      New: ({ children, className, title, onClick }: { children: React.ReactNode; className?: string; title?: string; onClick?: () => void }) => (
+        <button type="button" className={className} title={title} onClick={() => { onClick?.(); assistantUiMocks.switchToNewThread(); }}>{children}</button>
+      ),
+      Items: ({ children }: { children?: (value: { threadListItem: { id: string; title: string; lastMessageAt?: Date } }) => React.ReactNode }) =>
+        assistantUiMocks.threadList.length === 0 ? (
+          <div>No conversations yet.</div>
+        ) : (
+          <div>
+            {assistantUiMocks.threadList.map((thread) => (
+              <div key={thread.id}>
+                {children
+                  ? children({ threadListItem: { ...thread, lastMessageAt: new Date("2026-06-30") } })
+                  : <button type="button">{thread.title}</button>}
+              </div>
+            ))}
+          </div>
+        ),
+      LoadMore: ({ children, className }: { children: React.ReactNode; className?: string }) => <button type="button" className={className}>{children}</button>,
+    },
+    ThreadListItemPrimitive: {
+      Root: ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={className}>{children}</div>,
+      Trigger: ({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) => <button type="button" className={className} onClick={onClick}>{children}</button>,
+      Title: ({ fallback }: { fallback?: string }) => <span>{fallback}</span>,
+      Delete: ({ children, className }: { children: React.ReactNode; className?: string }) => <button type="button" className={className}>{children}</button>,
+    },
+    AuiIf: ({
+      children,
+      condition,
+    }: {
+      children: React.ReactNode;
+      condition?: (state: { thread: { isEmpty: boolean } }) => boolean;
+    }) => {
+      const state = { thread: { isEmpty: true } };
+      return condition && !condition(state) ? null : <>{children}</>;
+    },
+    ErrorPrimitive: {
+      Message: () => <span>Copilot error</span>,
+    },
     Tools: vi.fn(() => ({})),
     groupPartByType: vi.fn(() => vi.fn()),
     useMessage: vi.fn(() => ({ id: "msg-1", role: "assistant", status: { type: "complete" }, content: [] })),
     useMessageTiming: vi.fn(() => null),
-    useAui: vi.fn(() => ({})),
+    useAui: vi.fn(() => ({
+      threads: () => ({
+        switchToNewThread: assistantUiMocks.switchToNewThread,
+      }),
+    })),
     useThreadRuntime: vi.fn(() => ({
-      composer: { setText: vi.fn() },
+      composer: { setText: assistantUiMocks.setComposerText },
       reset: vi.fn(),
     })),
     useThread: vi.fn(() => ({
       composer: { setText: vi.fn() },
       isRunning: false,
+      isEmpty: true,
     })),
   };
 });
 
-vi.mock("@assistant-ui/react-markdown", () => ({
-  MarkdownTextPrimitive: () => null,
+vi.mock("@assistant-ui/react-streamdown", () => ({
+  StreamdownTextPrimitive: () => null,
+}));
+
+vi.mock("@streamdown/code", () => ({
+  code: { name: "shiki", type: "code-highlighter" },
+}));
+
+vi.mock("@streamdown/cjk", () => ({
+  cjk: { name: "cjk", type: "cjk" },
+}));
+
+vi.mock("@streamdown/math", () => ({
+  math: { name: "katex", type: "math" },
+}));
+
+vi.mock("@streamdown/mermaid", () => ({
+  mermaid: { name: "mermaid", type: "diagram", language: "mermaid" },
 }));
 
 vi.mock("sonner", () => ({
@@ -133,184 +211,64 @@ vi.mock("sonner", () => ({
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  assistantUiMocks.threadList = [];
 });
 
 describe("Copilot screen — rendering", () => {
-  it("renders the heading", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByRole("heading", { name: /copilot/i })).toBeInTheDocument();
-  });
-
-  it("renders the conversation sidebar", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByText("Conversations")).toBeInTheDocument();
-  });
-
-  it("renders the New conversation button in sidebar", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    const newBtn = screen.getByTitle("New conversation");
-    expect(newBtn).toBeInTheDocument();
-  });
-
-  it("renders Chat and Memory tab buttons in the header", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByRole("button", { name: /Chat/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Memory/i })).toBeInTheDocument();
+  it("renders the FinSight Copilot shell without assistant-ui demo chrome", () => {
+    const { container } = render(<Copilot />, { wrapper: createWrapper() });
+    expect(container.querySelector(".copilot-finsight-chat")).toBeInTheDocument();
+    expect(container.querySelector(".copilot-playground-clone")).not.toBeInTheDocument();
+    expect(screen.queryByText("assistant-ui")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /AI Builder/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /UI Builder/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Templates/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /GitHub/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Copilot$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New thread/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /what should we work through/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^History$/i })).toBeInTheDocument();
   });
 
   it("shows suggested prompts when no conversation is active", () => {
     render(<Copilot />, { wrapper: createWrapper() });
     expect(screen.getByText(/Plan next month's budget/i)).toBeInTheDocument();
-    expect(screen.getByText(/What can I cut to improve my savings rate/i)).toBeInTheDocument();
+    expect(screen.getByText(/Improve my savings rate/i)).toBeInTheDocument();
+    expect(screen.getByText(/Clean up uncategorized transactions/i)).toBeInTheDocument();
   });
 
-  it("shows empty sidebar message when no conversations exist", () => {
+  it("renders the base composer and scroll control", () => {
     render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByText(/No conversations yet/i)).toBeInTheDocument();
-  });
-});
-
-describe("Copilot screen — conversation list", () => {
-  it("shows conversations from the sidebar with grouping", async () => {
-    const { useConversations } = await import("../api/hooks/copilotChat");
-    vi.mocked(useConversations).mockReturnValue({
-      data: [
-        {
-          id: "c1",
-          title: "Budget analysis",
-          messageCount: 3,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-    } as ReturnType<typeof useConversations>);
-
-    render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByText("Budget analysis")).toBeInTheDocument();
-  });
-
-  it("filters conversations via search", async () => {
-    const { useConversations } = await import("../api/hooks/copilotChat");
-    vi.mocked(useConversations).mockReturnValue({
-      data: [
-        {
-          id: "c1",
-          title: "Budget analysis",
-          messageCount: 2,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: "c2",
-          title: "Debt payoff plan",
-          messageCount: 1,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-    } as ReturnType<typeof useConversations>);
-
-    render(<Copilot />, { wrapper: createWrapper() });
-    const searchInput = screen.getByPlaceholderText("Search…");
-    fireEvent.change(searchInput, { target: { value: "budget" } });
-
-    expect(screen.getByText("Budget analysis")).toBeInTheDocument();
-    expect(screen.queryByText("Debt payoff plan")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Ask FinSight to plan/i)).toBeInTheDocument();
+    expect(screen.queryByText("FinSight Copilot")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Send message/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Scroll to bottom/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New thread/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Powered by/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("0 (0%)")).not.toBeInTheDocument();
   });
 });
 
 describe("Copilot screen — new conversation", () => {
-  it("creates a new conversation when the new button is clicked", async () => {
-    const { useCreateConversation } = await import("../api/hooks/copilotChat");
-    const mockCreate = vi.fn().mockResolvedValue("new-conv-id");
-    vi.mocked(useCreateConversation).mockReturnValue({
-      mutateAsync: mockCreate,
-      isPending: false,
-    } as unknown as ReturnType<typeof useCreateConversation>);
-
-    render(<Copilot />, { wrapper: createWrapper() });
-    const newBtn = screen.getByTitle("New conversation");
-    fireEvent.click(newBtn);
-
-    await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalled();
-    });
-  });
-
-  it("creates a new conversation when a prompt card is clicked", async () => {
-    const { useCreateConversation } = await import("../api/hooks/copilotChat");
-    const mockCreate = vi.fn().mockResolvedValue("new-conv-id");
-    vi.mocked(useCreateConversation).mockReturnValue({
-      mutateAsync: mockCreate,
-      isPending: false,
-    } as unknown as ReturnType<typeof useCreateConversation>);
-
+  it("prefills the composer when a prompt card is clicked", async () => {
     render(<Copilot />, { wrapper: createWrapper() });
     const promptCard = screen.getByText(/Plan next month's budget/i);
     fireEvent.click(promptCard);
 
     await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalled();
-    });
-  });
-});
-
-describe("Copilot screen — memory tab", () => {
-  it("switches to Memory tab when clicked", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /Memory/i }));
-    expect(screen.queryByText(/Start a conversation/i)).not.toBeInTheDocument();
-  });
-
-  it("shows empty memory state when there are no memories", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /Memory/i }));
-    expect(screen.getByText(/No saved memory yet/i)).toBeInTheDocument();
-  });
-});
-
-describe("Copilot screen — conversation selection", () => {
-  it("selecting a conversation shows the thread with composer", async () => {
-    const { useConversations } = await import("../api/hooks/copilotChat");
-    vi.mocked(useConversations).mockReturnValue({
-      data: [
-        {
-          id: "c1",
-          title: "My first conversation",
-          messageCount: 2,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-    } as ReturnType<typeof useConversations>);
-
-    render(<Copilot />, { wrapper: createWrapper() });
-    const convBtn = screen.getByText("My first conversation");
-    fireEvent.click(convBtn);
-
-    await waitFor(() => {
-      // Composer input should be visible
-      expect(
-        screen.getByPlaceholderText(/Ask your financial analyst anything/i)
-      ).toBeInTheDocument();
+      expect(assistantUiMocks.setComposerText).toHaveBeenCalled();
     });
   });
 });
 
 describe("Copilot screen — sessionStorage prefill", () => {
-  it("reads copilot.prefill and creates a conversation", async () => {
-    const { useCreateConversation } = await import("../api/hooks/copilotChat");
-    const mockCreate = vi.fn().mockResolvedValue("prefill-conv-id");
-    vi.mocked(useCreateConversation).mockReturnValue({
-      mutateAsync: mockCreate,
-      isPending: false,
-    } as unknown as ReturnType<typeof useCreateConversation>);
-
+  it("reads copilot.prefill and starts a new assistant-ui thread", async () => {
     sessionStorage.setItem("copilot.prefill", "Auto-filled question");
     render(<Copilot />, { wrapper: createWrapper() });
 
     await waitFor(() => {
       expect(sessionStorage.getItem("copilot.prefill")).toBeNull();
+      expect(assistantUiMocks.switchToNewThread).toHaveBeenCalled();
     });
   });
 });

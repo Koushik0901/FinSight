@@ -2,10 +2,10 @@
  * Copilot screen — full ChatGPT-style threaded AI chat.
  *
  * Architecture:
- *   • Left sidebar: persistent conversation list grouped by Today / This Week / Earlier
- *   • Right area: @assistant-ui/react Thread driven by TauriRuntime (ExternalStoreRuntime)
- *   • Streaming via copilot-token / copilot-done Tauri events (simulated word-by-word)
- *   • Action-item approval preserved inline below assistant bubbles
+ *   • Base assistant-ui demo-style single thread shell
+ *   • @assistant-ui/react Thread driven by TauriRuntime + copilot-stream-frame
+ *   • Structured parts for text, reasoning, tool calls, sources, and generative UI
+ *   • Action-item approval preserved inline below assistant bubbles as compatibility UI
  */
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
@@ -14,10 +14,14 @@ import { toast } from "sonner";
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
+  ThreadListPrimitive,
+  ThreadListItemPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
   ActionBarPrimitive,
   BranchPickerPrimitive,
+  AuiIf,
+  ErrorPrimitive,
   Tools,
   groupPartByType,
   useMessage,
@@ -26,42 +30,56 @@ import {
   useThreadRuntime,
   useThread,
 } from "@assistant-ui/react";
-import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import "@assistant-ui/react-markdown/styles/dot.css";
+import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
+import { code } from "@streamdown/code";
+import { cjk } from "@streamdown/cjk";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
+import "katex/dist/katex.min.css";
+import "streamdown/styles.css";
 import * as I from "../components/Icons";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
-import {
-  useConversations,
-  useCreateConversation,
-  useDeleteConversation,
-} from "../api/hooks/copilotChat";
 import {
   useApproveActionItem,
   useRejectActionItem,
   useActionBundle,
 } from "../api/hooks/copilot";
-import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import {
   copilotToolkit,
   generativeUIComponents,
 } from "../components/copilot/renderers";
-import type { AgentMemory, ConversationSummary } from "../api/client";
 import { invoke } from "@tauri-apps/api/core";
 import type { ExecutionSummary } from "../api/client";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SUGGESTED_PROMPTS = [
-  { icon: "📊", label: "Plan next month's budget" },
-  { icon: "💰", label: "How much should I save toward each goal?" },
-  { icon: "✂️", label: "What can I cut to improve my savings rate?" },
-  { icon: "📈", label: "Explain my spending this month" },
-  { icon: "🧹", label: "Clean up uncategorized transactions" },
-  { icon: "⚠️", label: "What financial risks am I facing?" },
-  { icon: "🏦", label: "Can I afford a $2,000 expense right now?" },
-  { icon: "❄️", label: "Create a plan to pay off debt faster" },
+  {
+    label: "Plan next month's budget",
+    detail: "Use recent spending and goals to propose a practical allocation.",
+  },
+  {
+    label: "Clean up uncategorized transactions",
+    detail: "Find messy transactions and suggest safe categorization steps.",
+  },
+  {
+    label: "Improve my savings rate",
+    detail: "Identify cuts that matter without making the budget brittle.",
+  },
+  {
+    label: "Explain this month's spending",
+    detail: "Summarize the drivers, outliers, and trend changes.",
+  },
+  {
+    label: "Check my financial risks",
+    detail: "Review cash buffer, debt pressure, and upcoming obligations.",
+  },
+  {
+    label: "Create a faster debt payoff plan",
+    detail: "Compare payoff ordering and monthly contribution tradeoffs.",
+  },
 ];
 
 // ── Action item helpers ───────────────────────────────────────────────────────
@@ -260,21 +278,27 @@ function MessageActions({ align = "start" }: { align?: "start" | "end" }) {
     <div className="copilot-msg-actions" data-align={align}>
       <ActionBarPrimitive.Root>
         <ActionBarPrimitive.Copy className="copilot-action-btn">Copy</ActionBarPrimitive.Copy>
-        <ActionBarPrimitive.Edit className="copilot-action-btn">Edit</ActionBarPrimitive.Edit>
+        <ActionBarPrimitive.FeedbackPositive className="copilot-action-btn">Helpful</ActionBarPrimitive.FeedbackPositive>
+        <ActionBarPrimitive.FeedbackNegative className="copilot-action-btn">Not helpful</ActionBarPrimitive.FeedbackNegative>
         <ActionBarPrimitive.Reload className="copilot-action-btn">Regenerate</ActionBarPrimitive.Reload>
       </ActionBarPrimitive.Root>
-      <BranchPickerPrimitive.Root className="copilot-branch-picker">
-        <BranchPickerPrimitive.Previous className="copilot-action-btn">Prev</BranchPickerPrimitive.Previous>
-        <span><BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count /></span>
-        <BranchPickerPrimitive.Next className="copilot-action-btn">Next</BranchPickerPrimitive.Next>
-      </BranchPickerPrimitive.Root>
+      <AuiIf condition={({ message }) => message.branchCount > 1}>
+        <BranchPickerPrimitive.Root className="copilot-branch-picker">
+          <BranchPickerPrimitive.Previous className="copilot-action-btn">Prev</BranchPickerPrimitive.Previous>
+          <span><BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count /></span>
+          <BranchPickerPrimitive.Next className="copilot-action-btn">Next</BranchPickerPrimitive.Next>
+        </BranchPickerPrimitive.Root>
+      </AuiIf>
     </div>
   );
 }
 
 function ReasoningGroup({ children }: { children: ReactNode }) {
+  const message = useMessage();
+  const isRunning = message.status?.type === "running";
+
   return (
-    <details className="copilot-reasoning">
+    <details className="copilot-reasoning" open={isRunning}>
       <summary>Analysis path</summary>
       <div>{children}</div>
     </details>
@@ -297,6 +321,23 @@ function SourcePill({ part }: { part: { title?: string; id: string } }) {
   return <span className="copilot-source-pill">{part.title ?? part.id}</span>;
 }
 
+function CopilotMarkdown() {
+  return (
+    <StreamdownTextPrimitive
+      className="aui-md"
+      containerClassName="copilot-streamdown"
+      plugins={{ code, cjk, math, mermaid }}
+      shikiTheme={["github-dark", "github-dark"]}
+      security={{
+        allowedImagePrefixes: ["https://", "data:image/"],
+        allowedLinkPrefixes: ["https://", "http://", "mailto:"],
+        allowedProtocols: ["https", "http", "mailto"],
+        allowDataImages: true,
+      }}
+    />
+  );
+}
+
 function AssistantMessage({
   meta,
   onFollowUp,
@@ -312,6 +353,12 @@ function AssistantMessage({
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
     .join("\n");
+  const hasReadableContent = message.content.some((part) => {
+    if (part.type === "text" || part.type === "reasoning") {
+      return Boolean(part.text.trim());
+    }
+    return part.type === "tool-call" || part.type === "generative-ui" || part.type === "source";
+  });
 
   return (
     <MessagePrimitive.Root className="copilot-msg-asst">
@@ -320,7 +367,17 @@ function AssistantMessage({
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
+        <MessagePrimitive.Quote>
+          {({ text }) => (
+            <blockquote className="copilot-quote">
+              {text}
+            </blockquote>
+          )}
+        </MessagePrimitive.Quote>
         <div className="copilot-bubble-asst">
+          {isRunning && !hasReadableContent && (
+            <div className="copilot-progress">Analyzing your local financial data…</div>
+          )}
           {isError ? (
             <span style={{ whiteSpace: "pre-wrap" }}>{plainText}</span>
           ) : (
@@ -360,7 +417,7 @@ function AssistantMessage({
                     return isRunning ? (
                       <span style={{ whiteSpace: "pre-wrap" }}>{part.text}</span>
                     ) : (
-                      <MarkdownTextPrimitive className="aui-md" />
+                      <CopilotMarkdown />
                     );
                   case "indicator":
                     return <span className="copilot-cursor" aria-hidden="true" />;
@@ -372,6 +429,11 @@ function AssistantMessage({
           )}
           {isRunning && <span className="copilot-cursor" aria-hidden="true" />}
         </div>
+        <MessagePrimitive.Error>
+          <ErrorPrimitive.Root className="copilot-message-error">
+            <ErrorPrimitive.Message />
+          </ErrorPrimitive.Root>
+        </MessagePrimitive.Error>
 
         {!isRunning && !isError && (
           <div className="copilot-msg-meta">
@@ -417,16 +479,22 @@ function AssistantMessage({
 
 // ── EmptyThreadState ──────────────────────────────────────────────────────────
 
-function EmptyThreadState({ onPrompt }: { onPrompt: (text: string) => void }) {
+function EmptyThreadState({
+  onPrompt,
+  children,
+}: {
+  onPrompt: (text: string) => void;
+  children: ReactNode;
+}) {
   return (
     <div className="copilot-empty">
-      <div className="copilot-empty-icon">
-        <I.Brain width={36} height={36} style={{ color: "var(--accent)" }} />
-      </div>
-      <h2 className="copilot-empty-title">What would you like to know?</h2>
+      <p className="copilot-empty-kicker">Private financial assistant</p>
+      <h2 className="copilot-empty-title">What should we work through?</h2>
       <p className="copilot-empty-sub">
-        Ask anything about your finances — spending, goals, budget, or savings.
+        Ask for a plan, explanation, cleanup pass, or tradeoff analysis. FinSight can use
+        your local accounts, budgets, goals, and transactions when a tool is needed.
       </p>
+      {children}
       <div className="copilot-prompts-grid">
         {SUGGESTED_PROMPTS.map((p) => (
           <button
@@ -434,8 +502,11 @@ function EmptyThreadState({ onPrompt }: { onPrompt: (text: string) => void }) {
             className="copilot-prompt-card"
             onClick={() => onPrompt(p.label)}
           >
-            <span className="copilot-prompt-icon">{p.icon}</span>
-            <span>{p.label}</span>
+            <span className="copilot-prompt-mark" aria-hidden="true" />
+            <span className="copilot-prompt-copy">
+              <strong>{p.label}</strong>
+              <small>{p.detail}</small>
+            </span>
           </button>
         ))}
       </div>
@@ -505,15 +576,11 @@ class ThreadErrorBoundary extends Component<
 // ── Thread with composer ──────────────────────────────────────────────────────
 
 function CopilotThread({
-  messages,
   metaByMessageId,
   latestMeta,
-  onFollowUp,
 }: {
-  messages: ReturnType<typeof useTauriCopilotRuntime>["messages"];
   metaByMessageId: ReturnType<typeof useTauriCopilotRuntime>["metaByMessageId"];
   latestMeta: MessageMeta | null;
-  onFollowUp: (q: string) => void;
 }) {
   const threadRuntime = useThreadRuntime();
   const thread = useThread();
@@ -527,17 +594,17 @@ function CopilotThread({
     [threadRuntime]
   );
 
-  useEffect(() => {
-    threadRuntime.reset(messages);
-  }, [messages, threadRuntime]);
-
   return (
     <div className="copilot-thread-wrap">
       <ThreadPrimitive.Root className="copilot-thread">
-        <ThreadPrimitive.Viewport className="copilot-viewport">
-          <ThreadPrimitive.Empty>
-            <EmptyThreadState onPrompt={handlePrompt} />
-          </ThreadPrimitive.Empty>
+        <ThreadPrimitive.Viewport className="copilot-viewport copilot-scrollbar">
+          <AuiIf condition={(s) => s.thread.isEmpty}>
+            <EmptyThreadState onPrompt={handlePrompt}>
+              <div className="copilot-empty-composer">
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} />
+              </div>
+            </EmptyThreadState>
+          </AuiIf>
 
           <ThreadPrimitive.Messages
           >
@@ -545,40 +612,122 @@ function CopilotThread({
               message.role === "user" ? (
                 <UserMessage />
               ) : (
-                <AssistantMessageWithMeta
-                  metaByMessageId={metaByMessageId}
-                  latestMeta={latestMeta}
-                  onFollowUp={onFollowUp}
-                />
-              )
+                  <AssistantMessageWithMeta
+                    metaByMessageId={metaByMessageId}
+                    latestMeta={latestMeta}
+                    onFollowUp={handlePrompt}
+                  />
+                )
             }
           </ThreadPrimitive.Messages>
-        </ThreadPrimitive.Viewport>
-
-        <div className="copilot-composer-wrap">
-          <ComposerPrimitive.Root className="copilot-composer">
-            <ComposerPrimitive.Input
-              ref={composerRef}
-              placeholder='Ask your financial analyst anything…'
-              className="copilot-composer-input"
-              autoFocus
-            />
-            {thread.isRunning ? (
-              <ComposerPrimitive.Cancel className="copilot-send-btn" aria-label="Stop response">
-                <I.X width={15} height={15} />
-              </ComposerPrimitive.Cancel>
-            ) : (
-              <ComposerPrimitive.Send className="copilot-send-btn" aria-label="Send message">
-                <I.Send width={15} height={15} />
-              </ComposerPrimitive.Send>
-            )}
-          </ComposerPrimitive.Root>
-          <p className="copilot-composer-hint muted">
-            Press <kbd>↵</kbd> to send · <kbd>Shift+↵</kbd> for new line
-          </p>
-        </div>
+          <AuiIf condition={(s) => !s.thread.isEmpty}>
+            <ThreadPrimitive.ScrollToBottom className="copilot-scroll-bottom" aria-label="Scroll to bottom">
+              <I.ArrowDown width={16} height={16} />
+            </ThreadPrimitive.ScrollToBottom>
+          </AuiIf>
+          <AuiIf condition={(s) => !s.thread.isEmpty}>
+            <ThreadPrimitive.ViewportFooter className="copilot-viewport-footer">
+              <div className="copilot-composer-wrap">
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} />
+              </div>
+            </ThreadPrimitive.ViewportFooter>
+          </AuiIf>
+          </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
     </div>
+  );
+}
+
+function CopilotComposerBox({
+  composerRef,
+  isRunning,
+}: {
+  composerRef: React.RefObject<HTMLTextAreaElement>;
+  isRunning: boolean;
+}) {
+  return (
+    <ComposerPrimitive.Root className="copilot-composer">
+      <button
+        type="button"
+        className="copilot-context-btn"
+        title="FinSight automatically attaches relevant financial context"
+        onClick={() => composerRef.current?.focus()}
+      >
+        <I.Plus width={16} height={16} />
+      </button>
+      <ComposerPrimitive.Input
+        ref={composerRef}
+        placeholder='Ask FinSight to plan, explain, or clean up your finances...'
+        className="copilot-composer-input"
+        autoFocus
+      />
+      {isRunning ? (
+        <ComposerPrimitive.Cancel className="copilot-send-btn" aria-label="Stop response">
+          <I.X width={15} height={15} />
+        </ComposerPrimitive.Cancel>
+      ) : (
+        <ComposerPrimitive.Send className="copilot-send-btn" aria-label="Send message">
+          <I.ArrowUp width={18} height={18} />
+        </ComposerPrimitive.Send>
+      )}
+    </ComposerPrimitive.Root>
+  );
+}
+
+function CopilotHeader() {
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  return (
+    <header className="copilot-header">
+      <div className="copilot-title-block">
+        <p className="copilot-kicker">Workshop</p>
+        <h1>Copilot</h1>
+        <span>Plan, explain, and act on your FinSight data.</span>
+      </div>
+      <div className="copilot-header-actions">
+        <div className="copilot-history-menu">
+          <button
+            type="button"
+            className="copilot-top-button"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((open) => !open)}
+          >
+            <I.Today width={15} height={15} />
+            History
+            <I.Down width={13} height={13} />
+          </button>
+          {historyOpen && (
+            <div className="copilot-history-popover" role="menu">
+              <p>Recent threads</p>
+              <ThreadListPrimitive.Root className="copilot-history-list">
+                <ThreadListPrimitive.Items>
+                  {({ threadListItem }) => (
+                    <ThreadListItemPrimitive.Root className="copilot-history-row">
+                      <ThreadListItemPrimitive.Trigger
+                        className="copilot-history-trigger"
+                        onClick={() => setHistoryOpen(false)}
+                      >
+                        <ThreadListItemPrimitive.Title fallback={threadListItem.title || "New conversation"} />
+                      </ThreadListItemPrimitive.Trigger>
+                      <ThreadListItemPrimitive.Delete
+                        className="copilot-history-delete"
+                        aria-label="Delete thread"
+                      >
+                        <I.Trash width={13} height={13} />
+                      </ThreadListItemPrimitive.Delete>
+                    </ThreadListItemPrimitive.Root>
+                  )}
+                </ThreadListPrimitive.Items>
+              </ThreadListPrimitive.Root>
+            </div>
+          )}
+        </div>
+        <ThreadListPrimitive.New className="copilot-top-button copilot-top-button-primary" title="New thread">
+          <I.Plus width={15} height={15} />
+          New thread
+        </ThreadListPrimitive.New>
+      </div>
+    </header>
   );
 }
 
@@ -597,325 +746,40 @@ function CopilotRuntimeProvider({
   );
 }
 
-// ── Conversation sidebar ──────────────────────────────────────────────────────
+function CopilotPrefill() {
+  const aui = useAui();
+  const threadRuntime = useThreadRuntime();
 
-function groupByDate(convs: ConversationSummary[]) {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
-  const today: ConversationSummary[] = [];
-  const thisWeek: ConversationSummary[] = [];
-  const earlier: ConversationSummary[] = [];
-  for (const c of convs) {
-    const t = new Date(c.updatedAt).getTime();
-    if (t >= todayStart) today.push(c);
-    else if (t >= weekStart) thisWeek.push(c);
-    else earlier.push(c);
-  }
-  return { today, thisWeek, earlier };
-}
+  useEffect(() => {
+    const prefill = sessionStorage.getItem("copilot.prefill");
+    if (!prefill) return;
+    sessionStorage.removeItem("copilot.prefill");
+    void aui.threads().switchToNewThread();
+    window.setTimeout(() => {
+      threadRuntime.composer.setText(prefill);
+    }, 100);
+  }, [aui, threadRuntime]);
 
-function ConversationSidebar({
-  activeId,
-  onSelect,
-  onNew,
-}: {
-  activeId: string | null;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-}) {
-  const { data: convs = [] } = useConversations();
-  const deleteConv = useDeleteConversation();
-  const [search, setSearch] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const filtered = search
-    ? convs.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
-    : convs;
-
-  const { today, thisWeek, earlier } = groupByDate(filtered);
-
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeletingId(id);
-    try {
-      await deleteConv.mutateAsync(id);
-      toast.success("Conversation deleted");
-    } catch {
-      toast.error("Could not delete conversation");
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const renderGroup = (label: string, items: ConversationSummary[]) => {
-    if (items.length === 0) return null;
-    return (
-      <div key={label} style={{ marginBottom: 16 }}>
-        <p className="eyebrow" style={{ padding: "0 12px", marginBottom: 4, fontSize: 10 }}>
-          {label}
-        </p>
-        {items.map((c) => (
-          <button
-            key={c.id}
-            className="copilot-thread-item"
-            data-active={c.id === activeId}
-            onClick={() => onSelect(c.id)}
-            title={c.title}
-          >
-            <span className="copilot-thread-title">{c.title}</span>
-            <span
-              className="copilot-thread-delete"
-              role="button"
-              tabIndex={0}
-              aria-label="Delete conversation"
-              onClick={(e) => void handleDelete(c.id, e)}
-            >
-              {deletingId === c.id ? "…" : <I.X width={11} height={11} />}
-            </span>
-          </button>
-        ))}
-      </div>
-    );
-  };
-
-  return (
-    <aside className="copilot-sidebar">
-      <div className="copilot-sidebar-header">
-        <span className="eyebrow" style={{ fontSize: 10 }}>Conversations</span>
-        <button className="copilot-new-btn" onClick={onNew} title="New conversation">
-          <I.Plus width={14} height={14} />
-        </button>
-      </div>
-
-      <div className="copilot-search">
-        <I.Search width={13} height={13} />
-        <input
-          type="search"
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="copilot-search-input"
-        />
-      </div>
-
-      <div className="copilot-thread-list">
-        {filtered.length === 0 ? (
-          <div className="muted" style={{ padding: "12px", fontSize: 12.5 }}>
-            {search ? "No matching conversations" : "No conversations yet."}
-          </div>
-        ) : (
-          <>
-            {renderGroup("Today", today)}
-            {renderGroup("This week", thisWeek)}
-            {renderGroup("Earlier", earlier)}
-          </>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-// ── Memory panel ──────────────────────────────────────────────────────────────
-
-function MemoryPanel() {
-  const { data: memories = [] } = useAgentMemory();
-  const forget = useForgetAgentMemory();
-
-  if (memories.length === 0) {
-    return (
-      <div className="copilot-memory-empty muted">
-        <I.Brain width={28} height={28} style={{ marginBottom: 10, color: "var(--ink-faint)" }} />
-        <p>No saved memory yet.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="stack stack-md" style={{ padding: "0 0 24px" }}>
-      {memories.map((memory: AgentMemory) => (
-        <div key={memory.id} className="card" style={{ padding: "14px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-            <div className="stack stack-xs">
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <Badge tone="accent">{memory.kind}</Badge>
-                <span className="muted" style={{ fontSize: 11.5 }}>
-                  {new Date(memory.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <div style={{ fontSize: 13.5 }}>{memory.description}</div>
-              {memory.merchantKey && (
-                <div className="muted" style={{ fontSize: 11.5 }}>Key: {memory.merchantKey}</div>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={forget.isPending}
-              onClick={async () => {
-                try {
-                  await forget.mutateAsync(memory.id);
-                  toast.success("Forgot memory");
-                } catch {
-                  toast.error("Could not forget memory");
-                }
-              }}
-            >
-              Forget
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return null;
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function Copilot() {
-  const createConv = useCreateConversation();
-  const [activeConvId, setActiveConvId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "memory">("chat");
-
-  const { runtime, messages, latestMeta, metaByMessageId } = useTauriCopilotRuntime(activeConvId);
-
-  const handleNew = useCallback(async () => {
-    try {
-      const id = await createConv.mutateAsync();
-      setActiveConvId(id);
-      setActiveTab("chat");
-    } catch {
-      toast.error("Could not create conversation");
-    }
-  }, [createConv]);
-
-  const handleFollowUp = useCallback(
-    (q: string) => {
-      if (runtime.thread) {
-        runtime.thread.composer.setText(q);
-      }
-    },
-    [runtime]
-  );
-
-  // Pick up pre-filled prompt from CopilotNudge navigation
-  useEffect(() => {
-    const prefill = sessionStorage.getItem("copilot.prefill");
-    if (prefill) {
-      sessionStorage.removeItem("copilot.prefill");
-      void createConv.mutateAsync().then((id) => {
-        setActiveConvId(id);
-        setTimeout(() => {
-          if (runtime.thread) {
-            runtime.thread.composer.setText(prefill);
-          }
-        }, 300);
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { runtime, latestMeta, metaByMessageId } = useTauriCopilotRuntime();
 
   return (
-    <div className="copilot-screen">
-      <ConversationSidebar
-        activeId={activeConvId}
-        onSelect={(id) => { setActiveConvId(id); setActiveTab("chat"); }}
-        onNew={() => void handleNew()}
-      />
-
-      <div className="copilot-main">
-        <header className="copilot-header">
-          <div>
-            <div className="eyebrow">
-              <span
-                className="dot"
-                style={{ background: "var(--accent)", boxShadow: "0 0 6px var(--accent)" }}
-              />
-              COPILOT · AI FINANCIAL ANALYST
-            </div>
-            <h1 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Copilot</h1>
-          </div>
-          <div className="row-sm">
-            <div className="toolbar" style={{ display: "inline-flex" }}>
-              <button className={activeTab === "chat" ? "on" : ""} onClick={() => setActiveTab("chat")}>
-                Chat
-              </button>
-              <button className={activeTab === "memory" ? "on" : ""} onClick={() => setActiveTab("memory")}>
-                Memory
-              </button>
-            </div>
-            <span className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span className="dot" aria-hidden="true" />
-              AI-assisted
-            </span>
-          </div>
-        </header>
-
-        {activeTab === "chat" && (
-          <>
-            {activeConvId ? (
-              <ThreadErrorBoundary>
-                <CopilotRuntimeProvider runtime={runtime}>
-                  <CopilotThread
-                    messages={messages}
-                    metaByMessageId={metaByMessageId}
-                    latestMeta={latestMeta}
-                    onFollowUp={handleFollowUp}
-                  />
-                </CopilotRuntimeProvider>
-              </ThreadErrorBoundary>
-            ) : (
-              <div className="copilot-empty-screen">
-                <div className="copilot-empty">
-                  <div className="copilot-empty-icon">
-                    <I.Brain width={44} height={44} style={{ color: "var(--accent)" }} />
-                  </div>
-                  <h2 className="copilot-empty-title">Your AI Financial Analyst</h2>
-                  <p className="copilot-empty-sub">
-                    Start a new conversation to get personalized advice and action plans
-                    based on your real financial data.
-                  </p>
-                  <button
-                    className="btn primary"
-                    onClick={() => void handleNew()}
-                    disabled={createConv.isPending}
-                  >
-                    <I.Plus width={14} height={14} />
-                    Start a conversation
-                  </button>
-                  <div className="copilot-prompts-grid" style={{ marginTop: 32 }}>
-                    {SUGGESTED_PROMPTS.map((p) => (
-                      <button
-                        key={p.label}
-                        className="copilot-prompt-card"
-                        onClick={() => {
-                          void createConv.mutateAsync().then((id) => {
-                            setActiveConvId(id);
-                            setTimeout(() => {
-                              if (runtime.thread) {
-                                runtime.thread.composer.setText(p.label);
-                              }
-                            }, 300);
-                          });
-                        }}
-                      >
-                        <span className="copilot-prompt-icon">{p.icon}</span>
-                        <span>{p.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {activeTab === "memory" && (
-          <div className="main-inner">
-            <MemoryPanel />
-          </div>
-        )}
+    <CopilotRuntimeProvider runtime={runtime}>
+      <div className="copilot-screen copilot-finsight-chat">
+        <CopilotHeader />
+        <ThreadErrorBoundary>
+          <CopilotPrefill />
+          <CopilotThread
+            metaByMessageId={metaByMessageId}
+            latestMeta={latestMeta}
+          />
+        </ThreadErrorBoundary>
       </div>
-    </div>
+    </CopilotRuntimeProvider>
   );
 }

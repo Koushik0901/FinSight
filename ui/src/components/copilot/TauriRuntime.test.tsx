@@ -75,7 +75,7 @@ describe("createTauriChatModelAdapter", () => {
         payload: { type: "text", conversationId: "conv-1", runId: "stale-run", delta: "ignored " },
       });
       listeners["copilot-stream-frame"]?.({
-        payload: { type: "reasoning", conversationId: "conv-1", runId, text: "Checked budget context." },
+        payload: { type: "reasoning", conversation_id: "conv-1", run_id: runId, text: "Checked budget context." },
       });
       listeners["copilot-stream-frame"]?.({
         payload: { type: "toolCallStart", conversationId: "conv-1", runId, toolCallId: "tool-1", toolName: "get_budgets", args: {} },
@@ -114,7 +114,7 @@ describe("createTauriChatModelAdapter", () => {
 
     const done = vi.fn();
     const adapter = createTauriChatModelAdapter({
-      getConversationId: () => "conv-1",
+      ensureConversationId: async () => "conv-1",
       onDone: done,
     });
 
@@ -170,7 +170,7 @@ describe("createTauriChatModelAdapter", () => {
       return { status: "ok", data: "conv-1" };
     });
 
-    const adapter = createTauriChatModelAdapter({ getConversationId: () => "conv-1" });
+    const adapter = createTauriChatModelAdapter({ ensureConversationId: async () => "conv-1" });
     for await (const _ of adapter.run(
       makeRunOptions([
         userMessage("u1", "First"),
@@ -200,7 +200,7 @@ describe("createTauriChatModelAdapter", () => {
       error: { code: "agent.empty_response", message: "empty" },
     });
 
-    const adapter = createTauriChatModelAdapter({ getConversationId: () => "conv-1" });
+    const adapter = createTauriChatModelAdapter({ ensureConversationId: async () => "conv-1" });
     const chunks: ChatModelRunResult[] = [];
     for await (const chunk of adapter.run(
       makeRunOptions([userMessage("u1", "Clean up uncategorized transactions")])
