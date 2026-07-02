@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Goals from "./Goals";
+import Goals, { buildHorizonRows } from "./Goals";
 import { createWrapper, createWrapperWithEntries } from "../test-utils";
 
 const mockUpdateMonthly = vi.fn().mockResolvedValue(undefined);
@@ -46,6 +46,86 @@ describe("Goals — eyebrow casing", () => {
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText(/Goals · 2 active/)).toBeInTheDocument();
     expect(screen.queryByText(/GOALS ·/)).not.toBeInTheDocument();
+  });
+});
+
+function future(monthsFromNow: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + monthsFromNow);
+  return d.toISOString().slice(0, 10);
+}
+
+describe("Goals — buildHorizonRows", () => {
+  const baseGoal = {
+    id: "x", name: "X", color: "#C9F950", notes: null, purpose: null,
+    sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null, targetDate: null,
+  };
+
+  it("excludes spending-cap goals even when they would have a finite ETA", () => {
+    const spendingCap = { ...baseGoal, id: "sc1", goalType: "spending-cap", targetCents: 40000, currentCents: 10000, monthlyCents: 10000 };
+    const { rows } = buildHorizonRows([spendingCap]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("excludes goals with no monthly contribution and incomplete progress (infinite ETA)", () => {
+    const stalled = { ...baseGoal, id: "st1", goalType: "save-by-date", targetCents: 500000, currentCents: 100000, monthlyCents: 0 };
+    const { rows } = buildHorizonRows([stalled]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("includes an already-complete goal at months: 0 and xPercent: 0", () => {
+    const done = { ...baseGoal, id: "d1", goalType: "save-by-date", targetCents: 100000, currentCents: 150000, monthlyCents: 5000 };
+    const { rows } = buildHorizonRows([done]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.months).toBe(0);
+    expect(rows[0]!.xPercent).toBe(0);
+  });
+
+  it("clamps pct to 100 when currentCents exceeds targetCents", () => {
+    const over = { ...baseGoal, id: "o1", goalType: "build-balance", targetCents: 100000, currentCents: 150000, monthlyCents: 5000 };
+    const { rows } = buildHorizonRows([over]);
+    expect(rows[0]!.pct).toBe(100);
+  });
+
+  it("sizes the window to a floor of 6 months when all goals are near-term", () => {
+    const near = { ...baseGoal, id: "n1", goalType: "save-by-date", targetCents: 20000, currentCents: 10000, monthlyCents: 10000 };
+    // remaining 10000, monthly 10000 -> months = 1
+    const { windowMonths } = buildHorizonRows([near]);
+    expect(windowMonths).toBe(6);
+  });
+
+  it("grows the window dynamically to fit the furthest-out goal", () => {
+    const far = { ...baseGoal, id: "f1", goalType: "save-by-date", targetCents: 400000, currentCents: 0, monthlyCents: 20000 };
+    // remaining 400000, monthly 20000 -> months = 20
+    const { windowMonths } = buildHorizonRows([far]);
+    expect(windowMonths).toBe(21);
+  });
+
+  it("sorts rows ascending by months (soonest first)", () => {
+    const soon = { ...baseGoal, id: "s1", goalType: "save-by-date", targetCents: 100000, currentCents: 90000, monthlyCents: 10000 }; // 1 month
+    const later = { ...baseGoal, id: "l1", goalType: "save-by-date", targetCents: 500000, currentCents: 0, monthlyCents: 50000 }; // 10 months
+    const { rows } = buildHorizonRows([later, soon]);
+    expect(rows.map((r) => r.goal.id)).toEqual(["s1", "l1"]);
+  });
+
+  it("flags a goal as needing attention when its projected ETA lands later than its target date", () => {
+    // remaining 400000, monthly 20000 -> 20 months out, but committed to a target date only 10 months away
+    const behind = { ...baseGoal, id: "b1", goalType: "save-by-date", targetCents: 400000, currentCents: 0, monthlyCents: 20000, targetDate: future(10) };
+    const { rows } = buildHorizonRows([behind]);
+    expect(rows[0]!.needsAttention).toBe(true);
+  });
+
+  it("does not flag a goal as needing attention when it will finish on or before its target date", () => {
+    // same 20-month projection, but target date is comfortably further out (25 months)
+    const onTrack = { ...baseGoal, id: "ot1", goalType: "save-by-date", targetCents: 400000, currentCents: 0, monthlyCents: 20000, targetDate: future(25) };
+    const { rows } = buildHorizonRows([onTrack]);
+    expect(rows[0]!.needsAttention).toBe(false);
+  });
+
+  it("does not flag a goal with no target date, regardless of its projected ETA", () => {
+    const noTargetDate = { ...baseGoal, id: "nt1", goalType: "save-by-date", targetCents: 400000, currentCents: 0, monthlyCents: 20000, targetDate: null };
+    const { rows } = buildHorizonRows([noTargetDate]);
+    expect(rows[0]!.needsAttention).toBe(false);
   });
 });
 

@@ -93,6 +93,50 @@ function etaLabel(months: number) {
   return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
+type HorizonRow = {
+  goal: GoalDto;
+  months: number;
+  pct: number;
+  xPercent: number;
+  needsAttention: boolean;
+};
+
+// A goal counts as "behind schedule" if its computed ETA lands later than its
+// own targetDate. This is deliberately NOT paceLabel()'s "Needs attention"
+// (monthlyCents <= 0): every goal in that state has an infinite ETA and is
+// already excluded by the withEta filter below, which would make that branch
+// permanently unreachable here. Goals with no targetDate are never flagged.
+function isBehindSchedule(goal: GoalDto, months: number): boolean {
+  if (!goal.targetDate) return false;
+  const eta = new Date();
+  eta.setMonth(eta.getMonth() + months);
+  return eta.getTime() > new Date(goal.targetDate).getTime();
+}
+
+export function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; windowMonths: number } {
+  const eligible = goals.filter((goal) => goal.goalType !== "spending-cap");
+  const withEta = eligible
+    .map((goal) => ({ goal, months: monthsToGoal(goal) }))
+    .filter((entry) => Number.isFinite(entry.months));
+
+  if (withEta.length === 0) return { rows: [], windowMonths: 0 };
+
+  const furthest = Math.max(...withEta.map((entry) => entry.months));
+  const windowMonths = Math.max(6, furthest + 1);
+
+  const rows: HorizonRow[] = withEta
+    .map(({ goal, months }) => ({
+      goal,
+      months,
+      pct: goal.targetCents > 0 ? Math.min(100, (goal.currentCents / goal.targetCents) * 100) : 0,
+      xPercent: (months / windowMonths) * 100,
+      needsAttention: isBehindSchedule(goal, months),
+    }))
+    .sort((a, b) => a.months - b.months);
+
+  return { rows, windowMonths };
+}
+
 function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
   const eligibleGoals = useMemo(() => goals.filter((goal) => goal.goalType !== "spending-cap"), [goals]);
   const [scenarioGoalId, setScenarioGoalId] = useState(eligibleGoals[0]?.id ?? "");
