@@ -6,7 +6,7 @@ import { createWrapper } from "../test-utils";
 vi.mock("../api/hooks/transactions", () => ({
   useCategoriesWithSpending: vi.fn(() => ({
     data: [
-      { id: "c1", label: "Groceries", color: "#4ade80", groupId: "g1", groupLabel: "Food",
+      { id: "groceries", label: "Groceries", color: "#4ade80", groupId: "g1", groupLabel: "Food",
         thisMonthCents: 30000, lastMonthCents: 50000, txnCount: 5, yearTotalCents: 300000, yearTxnCount: 42, budgetCents: 40000 },
       { id: "c2", label: "Dining Out", color: "#fb923c", groupId: "g1", groupLabel: "Food",
         thisMonthCents: 20000, lastMonthCents: 10000, txnCount: 3, yearTotalCents: 150000, yearTxnCount: 27, budgetCents: 0 },
@@ -72,5 +72,21 @@ describe("Categories — scope-aware labels", () => {
     expect(screen.getByText("27")).toBeInTheDocument();
     expect(screen.queryByText("5")).not.toBeInTheDocument();
     expect(screen.queryByText("3")).not.toBeInTheDocument();
+  });
+});
+
+describe("Categories — icon tiles", () => {
+  it("renders the semantic icon for a known seeded category id", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+    const groceriesIcon = screen.getByTestId("cat-icon-groceries");
+    // Cart icon's distinguishing path data (see ui/src/components/Icons.tsx `Cart`)
+    expect(groceriesIcon.innerHTML).toContain("M2.5 3h2l1 8h7");
+  });
+
+  it("falls back to the generic tag icon for a category id with no semantic match", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+    const diningIcon = screen.getByTestId("cat-icon-c2");
+    // Tag icon's distinguishing path data (see ui/src/components/Icons.tsx `Tag`)
+    expect(diningIcon.innerHTML).toContain("M3 3h5.5L13 7.5 8.5 12 4 7.5z");
   });
 });

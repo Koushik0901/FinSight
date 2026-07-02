@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useCategoriesWithSpending, useSetCategorySpendingType, useUpdateCategoryColor } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
-import { DEFAULT_CATEGORY_COLOR } from "../utils/categoryColor";
+import { DEFAULT_CATEGORY_COLOR, iconFor } from "../utils/categoryColor";
 import Swatch from "../components/Swatch";
 
 type Scope = "month" | "avg" | "year";
@@ -151,18 +151,21 @@ export default function Categories() {
                 const pct = budget > 0 ? Math.min(100, (current / budget) * 100) : 0;
                 const over = budget > 0 && current > budget;
                 const colorPickerOpen = openColorId === category.id;
+                const CategoryIcon = iconFor(category.id);
                 return (
                   <tr key={category.id}>
                     <td>
                       <div className="row row-sm">
                         <button
                           type="button"
-                          className="cswatch"
-                          style={{ background: category.color || "var(--accent)", cursor: "pointer" }}
+                          className="cat-icon-tile"
+                          style={{ color: category.color || DEFAULT_CATEGORY_COLOR, cursor: "pointer" }}
                           onClick={() => setOpenColorId(colorPickerOpen ? null : category.id)}
                           aria-label={`Change color for ${category.label}`}
                           aria-expanded={colorPickerOpen}
-                        />
+                        >
+                          <CategoryIcon data-testid={`cat-icon-${category.id}`} />
+                        </button>
                         <span>{category.label}</span>
                       </div>
                       {colorPickerOpen && (
