@@ -25,6 +25,7 @@ The Goals screen has no visual answer to "when does each goal land?" The design 
 2. **Spending-cap goals are excluded** from the timeline (they reset monthly and have no long-term finish-line concept), matching the existing `WhatIfScenario` filter (`goals.filter((goal) => goal.goalType !== "spending-cap")`).
 3. **Placement:** a new section between the goal-cards list and the "What if · scenario" section (the mockup's original position, previously occupied by the now-removed duplicate "Sinking funds" section).
 4. **Empty state:** if zero eligible goals have a finite ETA, the entire Horizon section is hidden (no empty timeline card).
+5. **Color differentiation (corrected during plan write-up):** the mockup renders "needs attention" rows in red. The obvious implementation — reusing `paceLabel(goal).label === "Needs attention"` (which fires when `monthlyCents <= 0`) — is dead code here: decision 1 already excludes every goal with `monthlyCents <= 0` and incomplete progress, since that's exactly what makes `monthsToGoal` return `Infinity`. Any row that reaches this point necessarily has `monthlyCents > 0`, so that branch could never fire. Redefined "needs attention" for this view specifically as **behind schedule**: the goal's projected ETA (from `monthsToGoal`) lands later than its own `targetDate`. This is a different, reachable condition using data already on `GoalDto`, and it preserves the two-color timeline from the approved mockup instead of silently downgrading it to a single accent color. Goals with no `targetDate` are never flagged (there's nothing to be behind).
 5. **Window sizing (implementation decision, not asked as a separate question):** the mockup hardcodes a 14-month window sized for its own mock data. Since real user goals could have any ETA, the window is **dynamic**: `windowMonths = Math.max(6, furthestEligibleMonths + 1)`, so the furthest-out real goal is never clipped off the visible area, with a floor of 6 months so the timeline doesn't look absurdly zoomed-in when all goals are near-term.
 
 ## Design
@@ -41,6 +42,19 @@ type HorizonRow = {
   xPercent: number;    // 0-100, marker position along the timeline
   needsAttention: boolean;
 };
+
+// A goal counts as "behind schedule" here if its computed ETA lands later than
+// its own targetDate. NOTE: this is deliberately NOT paceLabel()'s "Needs
+// attention" (monthlyCents <= 0) -- every goal in that state has an infinite
+// ETA and is already excluded by the withEta filter below, which would make
+// the branch permanently unreachable. Goals with no targetDate are never
+// flagged (there's nothing to be behind).
+function isBehindSchedule(goal: GoalDto, months: number): boolean {
+  if (!goal.targetDate) return false;
+  const eta = new Date();
+  eta.setMonth(eta.getMonth() + months);
+  return eta.getTime() > new Date(goal.targetDate).getTime();
+}
 
 function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; windowMonths: number } {
   const eligible = goals.filter((goal) => goal.goalType !== "spending-cap");
@@ -59,7 +73,7 @@ function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; windowMonths:
       months,
       pct: goal.targetCents > 0 ? Math.min(100, (goal.currentCents / goal.targetCents) * 100) : 0,
       xPercent: (months / windowMonths) * 100,
-      needsAttention: paceLabel(goal).label === "Needs attention",
+      needsAttention: isBehindSchedule(goal, months),
     }))
     .sort((a, b) => a.months - b.months);
 
@@ -135,6 +149,7 @@ Add a new test file `ui/src/screens/goalsHorizon.test.ts` (or a `describe` block
 - `windowMonths` is `Math.max(6, furthest + 1)` — verify both the floor-of-6 case (all goals near-term) and the dynamic-growth case (one goal far out).
 - Rows are sorted ascending by `months`.
 - `pct` is correctly clamped to 100 when `currentCents > targetCents`.
+- `needsAttention` (via `isBehindSchedule`) is `true` when the projected ETA is later than `targetDate`, `false` when the ETA is on or before `targetDate`, and `false` when `targetDate` is `null` — using relative dates (e.g. "N months from now") rather than hardcoded calendar dates, so the tests aren't sensitive to when they're run.
 
 Add a `Goals.test.tsx` test asserting: the Horizon section doesn't render when all goals are spending-cap or have infinite ETA (no "Horizon" eyebrow text found); it does render with the correct goal names/eta/target text when at least one eligible goal exists.
 
