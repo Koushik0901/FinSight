@@ -59,11 +59,12 @@ interface TableHeaderProps {
   children: ReactNode;
   right?: boolean;
   scope?: "col" | "row";
+  className?: string;
 }
 
-export function TableHeader({ children, right = false, scope = "col" }: TableHeaderProps) {
+export function TableHeader({ children, right = false, scope = "col", className = "" }: TableHeaderProps) {
   return (
-    <th className={right ? "right" : undefined} scope={scope}>
+    <th className={[className, right ? "right" : ""].filter(Boolean).join(" ")} scope={scope}>
       {children}
     </th>
   );
@@ -72,8 +73,9 @@ export function TableHeader({ children, right = false, scope = "col" }: TableHea
 interface TableCellProps {
   children: ReactNode;
   right?: boolean;
+  className?: string;
 }
 
-export function TableCell({ children, right = false }: TableCellProps) {
-  return <td className={right ? "right" : undefined}>{children}</td>;
+export function TableCell({ children, right = false, className = "" }: TableCellProps) {
+  return <td className={[className, right ? "right" : ""].filter(Boolean).join(" ")}>{children}</td>;
 }
