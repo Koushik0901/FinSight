@@ -1,0 +1,86 @@
+[   15066ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=98a45cfc:21550
+[   15719ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:4435
+[   15721ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:4435
+[   15949ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[   48691ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@assistant-ui_react-ag-ui.js?v=5bc94d86:0
+[   48757ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[   48828ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[   48717ms] [ERROR] The above error occurred in one of your React components:
+
+    at Lazy
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:4601:5)
+    at Suspense
+    at div
+    at main
+    at div
+    at ThemeProvider (http://localhost:5173/src/components/ThemeProvider.tsx:20:33)
+    at App (http://localhost:5173/src/App.tsx:88:32)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=735fe5a6:5290:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=21b04a0e:3235:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=98a45cfc:14031
+[   48829ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[   48833ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@assistant-ui_react.js?v=77c93982:0
+[   48834ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@ag-ui_client.js?v=cdb71e7c:0
+[   48834ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/rxjs.js?v=f9ee5f5a:0
+[   85909ms] [ERROR] WebSocket connection to 'ws://localhost:5173/?token=RZt4acF0aHkf' failed:  @ http://localhost:5173/@vite/client:535
+[   85910ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:559
+[   91742ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[   97289ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=23bab58a:21550
+[   97523ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4435
+[   97523ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4435
+[  104859ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@assistant-ui_react-ag-ui.js?v=16fa2386:0
+[  104860ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@assistant-ui_react.js?v=03e5188d:0
+[  104860ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/@ag-ui_client.js?v=156c0444:0
+[  104864ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  104869ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Outdated Optimize Dep) @ http://localhost:5173/node_modules/.vite/deps/rxjs.js?v=ac843d7d:0
+[  104959ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  104882ms] [ERROR] The above error occurred in one of your React components:
+
+    at Lazy
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4601:5)
+    at Suspense
+    at div
+    at main
+    at div
+    at ThemeProvider (http://localhost:5173/src/components/ThemeProvider.tsx:20:33)
+    at App (http://localhost:5173/src/App.tsx:88:32)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:5290:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=23bab58a:3235:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=23bab58a:14031
+[  104959ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  105507ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  105508ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  105474ms] [ERROR] The above error occurred in one of your React components:
+
+    at Lazy
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4131:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4601:5)
+    at Suspense
+    at div
+    at main
+    at div
+    at ThemeProvider (http://localhost:5173/src/components/ThemeProvider.tsx:20:33)
+    at App (http://localhost:5173/src/App.tsx?t=1782938036595:88:32)
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:4544:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=23bab58a:5290:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=23bab58a:3235:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=23bab58a:14031
+[  105508ms] Failed to fetch dynamically imported module: http://localhost:5173/src/screens/CopilotAgUiSpike.tsx
+[  154557ms] [ERROR] WebSocket connection to 'ws://localhost:5173/?token=7FkLIv9X18IZ' failed:  @ http://localhost:5173/@vite/client:535
+[  154558ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:559
+[  157929ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  161314ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  164678ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[  181452ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-ILO4JA4Q.js?v=ab159ce3:21550
+[  181606ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=cbdfb051:4435
+[  181606ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=cbdfb051:4435

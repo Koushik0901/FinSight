@@ -1,0 +1,79 @@
+- generic [ref=e2]:
+  - link "Skip to main content" [ref=e3] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e4]:
+    - complementary "Primary navigation" [ref=e5]:
+      - generic [ref=e8]: FinSight
+      - generic "Personal workspace" [ref=e9]:
+        - generic [ref=e10]:
+          - generic [ref=e11]: "Y"
+          - generic [ref=e12]: F
+        - generic [ref=e13]:
+          - generic [ref=e14]: Your workspace
+          - generic [ref=e15]: Personal · 0 accounts
+        - img [ref=e16]
+      - button "Open command palette" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - generic [ref=e22]: Search or ask…
+        - generic [ref=e23]: ⌘K
+      - navigation "Main" [ref=e24]:
+        - link "Today" [ref=e25] [cursor=pointer]:
+          - /url: /
+          - img [ref=e26]
+          - generic [ref=e29]: Today
+        - link "Insights" [ref=e30] [cursor=pointer]:
+          - /url: /insights
+          - img [ref=e31]
+          - generic [ref=e33]: Insights
+        - link "Accounts" [ref=e34] [cursor=pointer]:
+          - /url: /accounts
+          - img [ref=e35]
+          - generic [ref=e38]: Accounts
+        - link "Budget" [ref=e39] [cursor=pointer]:
+          - /url: /budget
+          - img [ref=e40]
+          - generic [ref=e43]: Budget
+        - link "Categories" [ref=e44] [cursor=pointer]:
+          - /url: /categories
+          - img [ref=e45]
+          - generic [ref=e50]: Categories
+        - link "Recurring" [ref=e51] [cursor=pointer]:
+          - /url: /recurring
+          - img [ref=e52]
+          - generic [ref=e55]: Recurring
+        - link "Goals" [ref=e56] [cursor=pointer]:
+          - /url: /goals
+          - img [ref=e57]
+          - generic [ref=e61]: Goals
+        - link "Scenarios" [ref=e62] [cursor=pointer]:
+          - /url: /scenarios
+          - img [ref=e63]
+          - generic [ref=e65]: Scenarios
+        - link "Reports" [ref=e66] [cursor=pointer]:
+          - /url: /reports
+          - img [ref=e67]
+          - generic [ref=e69]: Reports
+        - generic [ref=e70]: Workshop
+        - link "Copilot" [ref=e71] [cursor=pointer]:
+          - /url: /copilot
+          - img [ref=e72]
+          - generic [ref=e78]: Copilot
+        - link "Rules & agents" [ref=e79] [cursor=pointer]:
+          - /url: /rules
+          - img [ref=e80]
+          - generic [ref=e82]: Rules & agents
+        - link "Settings" [ref=e83] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e84]
+          - generic [ref=e87]: Settings
+      - generic [ref=e88]:
+        - button "Run setup again" [ref=e89] [cursor=pointer]:
+          - img [ref=e90]
+          - generic [ref=e92]: Run setup again
+        - generic [ref=e93]:
+          - img [ref=e94]
+          - generic [ref=e97]: Local-only · encrypted
+    - main [ref=e98]:
+      - status "Loading page" [ref=e100]:
+        - paragraph [ref=e102]: Loading…
+  - region "Notifications alt+T"

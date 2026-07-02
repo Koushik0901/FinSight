@@ -1,0 +1,79 @@
+- generic [ref=f3e2]:
+  - link "Skip to main content" [ref=f3e3] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f3e4]:
+    - complementary "Primary navigation" [ref=f3e5]:
+      - generic [ref=f3e8]: FinSight
+      - generic "Personal workspace" [ref=f3e9]:
+        - generic [ref=f3e10]:
+          - generic [ref=f3e11]: "Y"
+          - generic [ref=f3e12]: F
+        - generic [ref=f3e13]:
+          - generic [ref=f3e14]: Your workspace
+          - generic [ref=f3e15]: Personal · 0 accounts
+        - img [ref=f3e16]
+      - button "Open command palette" [ref=f3e18] [cursor=pointer]:
+        - img [ref=f3e19]
+        - generic [ref=f3e22]: Search or ask…
+        - generic [ref=f3e23]: ⌘K
+      - navigation "Main" [ref=f3e24]:
+        - link "Today" [ref=f3e25] [cursor=pointer]:
+          - /url: /
+          - img [ref=f3e26]
+          - generic [ref=f3e29]: Today
+        - link "Insights" [ref=f3e30] [cursor=pointer]:
+          - /url: /insights
+          - img [ref=f3e31]
+          - generic [ref=f3e33]: Insights
+        - link "Accounts" [ref=f3e34] [cursor=pointer]:
+          - /url: /accounts
+          - img [ref=f3e35]
+          - generic [ref=f3e38]: Accounts
+        - link "Budget" [ref=f3e39] [cursor=pointer]:
+          - /url: /budget
+          - img [ref=f3e40]
+          - generic [ref=f3e43]: Budget
+        - link "Categories" [ref=f3e44] [cursor=pointer]:
+          - /url: /categories
+          - img [ref=f3e45]
+          - generic [ref=f3e50]: Categories
+        - link "Recurring" [ref=f3e51] [cursor=pointer]:
+          - /url: /recurring
+          - img [ref=f3e52]
+          - generic [ref=f3e55]: Recurring
+        - link "Goals" [ref=f3e56] [cursor=pointer]:
+          - /url: /goals
+          - img [ref=f3e57]
+          - generic [ref=f3e61]: Goals
+        - link "Scenarios" [ref=f3e62] [cursor=pointer]:
+          - /url: /scenarios
+          - img [ref=f3e63]
+          - generic [ref=f3e65]: Scenarios
+        - link "Reports" [ref=f3e66] [cursor=pointer]:
+          - /url: /reports
+          - img [ref=f3e67]
+          - generic [ref=f3e69]: Reports
+        - generic [ref=f3e70]: Workshop
+        - link "Copilot" [ref=f3e71] [cursor=pointer]:
+          - /url: /copilot
+          - img [ref=f3e72]
+          - generic [ref=f3e78]: Copilot
+        - link "Rules & agents" [ref=f3e79] [cursor=pointer]:
+          - /url: /rules
+          - img [ref=f3e80]
+          - generic [ref=f3e82]: Rules & agents
+        - link "Settings" [ref=f3e83] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=f3e84]
+          - generic [ref=f3e87]: Settings
+      - generic [ref=f3e88]:
+        - button "Run setup again" [ref=f3e89] [cursor=pointer]:
+          - img [ref=f3e90]
+          - generic [ref=f3e92]: Run setup again
+        - generic [ref=f3e93]:
+          - img [ref=f3e94]
+          - generic [ref=f3e97]: Local-only · encrypted
+    - main [ref=f3e98]:
+      - status "Loading page" [ref=f3e100]:
+        - paragraph [ref=f3e102]: Loading…
+  - region "Notifications alt+T"

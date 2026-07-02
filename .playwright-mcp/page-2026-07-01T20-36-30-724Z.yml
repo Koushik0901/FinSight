@@ -1,0 +1,92 @@
+- generic [ref=f4e2]:
+  - link "Skip to main content" [ref=f4e3] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f4e4]:
+    - complementary "Primary navigation" [ref=f4e5]:
+      - generic [ref=f4e8]: FinSight
+      - generic "Personal workspace" [ref=f4e9]:
+        - generic [ref=f4e10]:
+          - generic [ref=f4e11]: "Y"
+          - generic [ref=f4e12]: F
+        - generic [ref=f4e13]:
+          - generic [ref=f4e14]: Your workspace
+          - generic [ref=f4e15]: Personal · 0 accounts
+        - img [ref=f4e16]
+      - button "Open command palette" [ref=f4e18] [cursor=pointer]:
+        - img [ref=f4e19]
+        - generic [ref=f4e22]: Search or ask…
+        - generic [ref=f4e23]: ⌘K
+      - navigation "Main" [ref=f4e24]:
+        - link "Today" [ref=f4e25] [cursor=pointer]:
+          - /url: /
+          - img [ref=f4e26]
+          - generic [ref=f4e29]: Today
+        - link "Insights" [ref=f4e30] [cursor=pointer]:
+          - /url: /insights
+          - img [ref=f4e31]
+          - generic [ref=f4e33]: Insights
+        - link "Accounts" [ref=f4e34] [cursor=pointer]:
+          - /url: /accounts
+          - img [ref=f4e35]
+          - generic [ref=f4e38]: Accounts
+        - link "Budget" [ref=f4e39] [cursor=pointer]:
+          - /url: /budget
+          - img [ref=f4e40]
+          - generic [ref=f4e43]: Budget
+        - link "Categories" [ref=f4e44] [cursor=pointer]:
+          - /url: /categories
+          - img [ref=f4e45]
+          - generic [ref=f4e50]: Categories
+        - link "Recurring" [ref=f4e51] [cursor=pointer]:
+          - /url: /recurring
+          - img [ref=f4e52]
+          - generic [ref=f4e55]: Recurring
+        - link "Goals" [ref=f4e56] [cursor=pointer]:
+          - /url: /goals
+          - img [ref=f4e57]
+          - generic [ref=f4e61]: Goals
+        - link "Scenarios" [ref=f4e62] [cursor=pointer]:
+          - /url: /scenarios
+          - img [ref=f4e63]
+          - generic [ref=f4e65]: Scenarios
+        - link "Reports" [ref=f4e66] [cursor=pointer]:
+          - /url: /reports
+          - img [ref=f4e67]
+          - generic [ref=f4e69]: Reports
+        - generic [ref=f4e70]: Workshop
+        - link "Copilot" [ref=f4e71] [cursor=pointer]:
+          - /url: /copilot
+          - img [ref=f4e72]
+          - generic [ref=f4e78]: Copilot
+        - link "Rules & agents" [ref=f4e79] [cursor=pointer]:
+          - /url: /rules
+          - img [ref=f4e80]
+          - generic [ref=f4e82]: Rules & agents
+        - link "Settings" [ref=f4e83] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=f4e84]
+          - generic [ref=f4e87]: Settings
+      - generic [ref=f4e88]:
+        - button "Run setup again" [ref=f4e89] [cursor=pointer]:
+          - img [ref=f4e90]
+          - generic [ref=f4e92]: Run setup again
+        - generic [ref=f4e93]:
+          - img [ref=f4e94]
+          - generic [ref=f4e97]: Local-only · encrypted
+    - main [ref=f4e98]:
+      - generic [ref=f4e101]:
+        - generic [ref=f4e102]:
+          - generic [ref=f4e103]:
+            - paragraph [ref=f4e104]: Copilot · AG-UI Phase 0
+            - heading "Custom-agent streaming spike" [level=1] [ref=f4e105]
+          - generic [ref=f4e106]: "feature flag: off by default"
+        - generic [ref=f4e108]:
+          - paragraph [ref=f4e123]: test ag-ui streaming
+          - generic [ref=f4e124]:
+            - img [ref=f4e126]
+            - paragraph [ref=f4e133]: "AG-UI Phase 0 spike is streaming from a custom `AbstractAgent`. This path is isolated behind `copilot.agUiRuntime` and does"
+          - generic [ref=f4e116]:
+            - textbox "Send any message to verify AG-UI custom-agent streaming..." [ref=f4e117]
+            - button "Send AG-UI spike message" [disabled] [ref=f4e118]:
+              - img [ref=f4e119]
+  - region "Notifications alt+T"
