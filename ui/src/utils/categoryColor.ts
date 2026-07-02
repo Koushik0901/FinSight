@@ -2,6 +2,9 @@
  * Mirrors `crates/finsight-core/src/palette.rs`.
  * If you change one side, change the other.
  */
+import type { ComponentType, SVGProps } from "react";
+import { Box, Bulb, Car, Cart, Fork, Gift, Heart, House, Plane, Tag } from "../components/Icons";
+
 export const DEFAULT_CATEGORY_COLOR = "#94A3B8";
 
 const PALETTE: Record<string, string> = {
@@ -20,4 +23,24 @@ const PALETTE: Record<string, string> = {
 
 export function paletteFor(id: string): string {
   return PALETTE[id] ?? DEFAULT_CATEGORY_COLOR;
+}
+
+type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+
+const CATEGORY_ICONS: Record<string, IconComponent> = {
+  housing: House,
+  groceries: Cart,
+  dining: Fork,
+  transport: Car,
+  utilities: Bulb,
+  subscriptions: Box,
+  subs: Box,
+  health: Heart,
+  shopping: Tag,
+  travel: Plane,
+  gifts: Gift,
+};
+
+export function iconFor(id: string): IconComponent {
+  return CATEGORY_ICONS[id] ?? Tag;
 }

@@ -210,3 +210,55 @@ export const Cpu = icon(
     <path d="M7 4.5V3M9 4.5V3M7 13v-1.5M9 13v-1.5M4.5 7H3M4.5 9H3M13 7h-1.5M13 9h-1.5" />
   </>
 );
+
+export const House = icon(<path d="M2.5 8 8 3l5.5 5M4 7.5V13h8V7.5" />);
+
+export const Cart = icon(
+  <>
+    <path d="M2.5 3h2l1 8h7M5.5 8h6.5" />
+    <circle cx="6.5" cy="13" r="0.9" />
+    <circle cx="11" cy="13" r="0.9" />
+  </>
+);
+
+export const Fork = icon(
+  <>
+    <path d="M4 2v12M4 6h3a1 1 0 0 1 1 1v4" />
+    <path d="M12 2v12M12 6V2" />
+  </>
+);
+
+export const Car = icon(
+  <>
+    <path d="M2.5 11V8l1.5-3h8l1.5 3v3" />
+    <path d="M2.5 11h11M3.5 13a1 1 0 1 0 0-2M12.5 13a1 1 0 1 0 0-2" />
+  </>
+);
+
+export const Bulb = icon(
+  <>
+    <path d="M5.5 10.5a4 4 0 1 1 5 0V12H5.5z" />
+    <path d="M6.5 14h3" />
+  </>
+);
+
+export const Box = icon(
+  <>
+    <path d="M2.5 5.5 8 3l5.5 2.5L8 8z" />
+    <path d="M2.5 5.5V11L8 13.5V8M13.5 5.5V11L8 13.5" />
+  </>
+);
+
+export const Heart = icon(
+  <path d="M8 13s-5-3.2-5-7a2.5 2.5 0 0 1 5-.5 2.5 2.5 0 0 1 5 .5c0 3.8-5 7-5 7z" />
+);
+
+export const Plane = icon(<path d="m2 9 12-5-3 11-3-4.5z" />);
+
+export const Gift = icon(
+  <>
+    <rect x="2.5" y="6" width="11" height="3" rx="0.6" />
+    <rect x="3.5" y="9" width="9" height="5" rx="0.6" />
+    <path d="M8 6v8M5.5 6c0-1.5 1-2.5 2.5-2.5S10.5 4.5 10.5 6" />
+  </>
+);

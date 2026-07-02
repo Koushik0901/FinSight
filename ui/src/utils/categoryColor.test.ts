@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CATEGORY_COLOR, paletteFor } from "./categoryColor";
+import { Box, Bulb, Car, Cart, Fork, Gift, Heart, House, Plane, Tag } from "../components/Icons";
+import { DEFAULT_CATEGORY_COLOR, iconFor, paletteFor } from "./categoryColor";
 
 describe("paletteFor", () => {
   it("returns the canonical color for known starter ids", () => {
@@ -30,5 +31,26 @@ describe("paletteFor", () => {
     for (const id of ids) {
       expect(paletteFor(id)).toMatch(/^#[0-9A-F]{6}$/);
     }
+  });
+});
+
+describe("iconFor", () => {
+  it("returns the canonical semantic icon for known starter ids", () => {
+    expect(iconFor("housing")).toBe(House);
+    expect(iconFor("groceries")).toBe(Cart);
+    expect(iconFor("dining")).toBe(Fork);
+    expect(iconFor("transport")).toBe(Car);
+    expect(iconFor("utilities")).toBe(Bulb);
+    expect(iconFor("subscriptions")).toBe(Box);
+    expect(iconFor("subs")).toBe(Box);
+    expect(iconFor("health")).toBe(Heart);
+    expect(iconFor("shopping")).toBe(Tag);
+    expect(iconFor("travel")).toBe(Plane);
+    expect(iconFor("gifts")).toBe(Gift);
+  });
+
+  it("falls back to the generic tag icon for unknown ids", () => {
+    expect(iconFor("unknown")).toBe(Tag);
+    expect(iconFor("")).toBe(Tag);
   });
 });
