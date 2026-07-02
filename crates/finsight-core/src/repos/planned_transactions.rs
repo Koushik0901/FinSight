@@ -1,6 +1,6 @@
 use crate::error::CoreResult;
 use crate::models::planned_transaction::{
-    NewPlannedTransaction, PlannedTransaction, PlannedTxnFilter,
+    NewPlannedTransaction, PlannedTransaction, PlannedTransactionPatch, PlannedTxnFilter,
 };
 use chrono::Utc;
 use rusqlite::{params, Connection};
@@ -100,6 +100,49 @@ pub fn update_status(conn: &mut Connection, id: &str, status: &str) -> CoreResul
         params![status, id],
     )?;
     Ok(())
+}
+
+pub fn update(
+    conn: &mut Connection,
+    id: &str,
+    patch: PlannedTransactionPatch,
+) -> CoreResult<PlannedTransaction> {
+    let current = get(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let description = patch.description.unwrap_or(current.description);
+    let amount_cents = patch.amount_cents.unwrap_or(current.amount_cents);
+    let account_id = patch.account_id.unwrap_or(current.account_id);
+    let category_id = patch.category_id.unwrap_or(current.category_id);
+    let due_date = patch.due_date.unwrap_or(current.due_date);
+    let status = patch.status.unwrap_or(current.status);
+    let source = patch.source.unwrap_or(current.source);
+
+    conn.execute(
+        "UPDATE planned_transactions \
+         SET description = ?1, amount_cents = ?2, account_id = ?3, category_id = ?4, due_date = ?5, status = ?6, source = ?7 \
+         WHERE id = ?8",
+        params![
+            description,
+            amount_cents,
+            account_id,
+            category_id,
+            due_date,
+            status,
+            source,
+            id
+        ],
+    )?;
+
+    Ok(PlannedTransaction {
+        id: current.id,
+        description,
+        amount_cents,
+        account_id,
+        category_id,
+        due_date,
+        status,
+        source,
+        created_at: current.created_at,
+    })
 }
 
 pub fn delete(conn: &mut Connection, id: &str) -> CoreResult<()> {
