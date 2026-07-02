@@ -118,6 +118,28 @@ export function useDisconnectSimpleFin() {
   });
 }
 
+export function usePurgeSimpleFinData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const result = await commands.purgeSimplefinData();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: simplefinKeys.status });
+      qc.invalidateQueries({ queryKey: simplefinKeys.connections });
+      qc.invalidateQueries({ queryKey: simplefinKeys.accounts });
+      qc.invalidateQueries({ queryKey: simplefinKeys.alerts });
+      qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
+      qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+    },
+  });
+}
+
 export function useDeleteSimpleFinConnection() {
   const qc = useQueryClient();
   return useMutation({

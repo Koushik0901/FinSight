@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 use chrono::{DateTime, Utc};
-use finsight_core::keychain;
+use finsight_core::{keychain, settings};
 use finsight_core::models::{
     AccountType, ImportCandidateWithMatches, Institution as InstitutionModel, NewAccount,
     NewInstitution, NewSimpleFinConnection, SimpleFinAlert, SimpleFinConnection as DbConnection,
@@ -19,6 +19,7 @@ use specta::Type;
 use uuid::Uuid;
 
 const SIMPLEFIN_ACCESS_SERVICE: &str = "com.finsight.simplefin.access";
+const ONBOARDING_COMPLETION_KEY: &str = "onboarding_completion_marked";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +36,14 @@ pub struct SimpleFinConnectionInfo {
     pub status: String,
     pub last_synced_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SimpleFinPurgeSummary {
+    pub accounts_deleted: i64,
+    pub transactions_deleted: i64,
+    pub connections_deleted: i64,
 }
 
 impl From<DbConnection> for SimpleFinConnectionInfo {
@@ -657,6 +666,116 @@ pub async fn disconnect_simplefin(state: tauri::State<'_, AppState>) -> AppResul
     .map_err(AppError::from)?;
 
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn purge_simplefin_data(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<SimpleFinPurgeSummary> {
+    let db = state.db.clone();
+    let bridge_ids = run(&db, |conn| {
+        let mut stmt = conn.prepare("SELECT DISTINCT access_url_ref FROM simplefin_connections")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for id in rows {
+            ids.push(id?);
+        }
+        Ok::<_, finsight_core::CoreError>(ids)
+    })
+    .await
+    .map_err(AppError::from)?;
+
+    for id in bridge_ids {
+        keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &id).map_err(AppError::from)?;
+    }
+
+    run(&db, |conn| {
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "
+            DROP TABLE IF EXISTS temp.purge_accounts;
+            CREATE TEMP TABLE purge_accounts(id TEXT PRIMARY KEY);
+            INSERT INTO purge_accounts(id)
+            SELECT id FROM accounts WHERE source IN ('simplefin', 'sample');
+            DROP TABLE IF EXISTS temp.purge_transactions;
+            CREATE TEMP TABLE purge_transactions(id TEXT PRIMARY KEY);
+            INSERT INTO purge_transactions(id)
+            SELECT id FROM transactions
+            WHERE account_id IN (SELECT id FROM purge_accounts)
+               OR source IN ('simplefin', 'sample');
+            ",
+        )?;
+        let accounts_deleted: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM purge_accounts",
+            [],
+            |r| r.get(0),
+        )?;
+        let transactions_deleted: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM purge_transactions",
+            [],
+            |r| r.get(0),
+        )?;
+        let connections_deleted: i64 =
+            tx.query_row("SELECT COUNT(*) FROM simplefin_connections", [], |r| r.get(0))?;
+
+        tx.execute_batch(
+            "
+            DELETE FROM transaction_transfers
+            WHERE from_transaction_id IN (SELECT id FROM purge_transactions)
+               OR to_transaction_id IN (SELECT id FROM purge_transactions);
+            DELETE FROM transaction_splits
+            WHERE txn_id IN (SELECT id FROM purge_transactions);
+            DELETE FROM categorizations
+            WHERE txn_id IN (SELECT id FROM purge_transactions);
+            DELETE FROM import_candidate_matches
+            WHERE transaction_id IN (SELECT id FROM purge_transactions)
+               OR candidate_id IN (
+                    SELECT id FROM import_candidates
+                    WHERE account_id IN (SELECT id FROM purge_accounts)
+                       OR source = 'simplefin'
+               );
+            DELETE FROM import_candidates
+            WHERE account_id IN (SELECT id FROM purge_accounts)
+               OR source = 'simplefin';
+            DELETE FROM transactions
+            WHERE id IN (SELECT id FROM purge_transactions);
+            DELETE FROM account_balances
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            DELETE FROM simplefin_alerts
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            DELETE FROM holdings
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            DELETE FROM csv_import_mappings
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            UPDATE goals
+            SET account_id = NULL
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            UPDATE planned_transactions
+            SET account_id = NULL
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            UPDATE imports
+            SET account_id = NULL
+            WHERE account_id IN (SELECT id FROM purge_accounts);
+            DELETE FROM imports
+            WHERE source IN ('simplefin', 'sample');
+            DELETE FROM accounts
+            WHERE id IN (SELECT id FROM purge_accounts);
+            DELETE FROM securities;
+            ",
+        )?;
+        tx.execute("DELETE FROM simplefin_connections", [])?;
+        settings::set(&tx, ONBOARDING_COMPLETION_KEY, &false)?;
+        tx.commit()?;
+
+        Ok::<_, finsight_core::CoreError>(SimpleFinPurgeSummary {
+            accounts_deleted,
+            transactions_deleted,
+            connections_deleted,
+        })
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
