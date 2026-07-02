@@ -10,6 +10,16 @@
   grid-template-rows: auto 1fr;
 }
 
+/* Fullscreen onboarding route: takes over the entire app window, no sidebar */
+.onb-fullscreen.onb-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  overflow: auto;
+}
+
 .onb-top {
   padding: 16px 22px;
   display: flex;

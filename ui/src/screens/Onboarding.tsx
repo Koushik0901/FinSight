@@ -20,7 +20,7 @@ export default function Onboarding() {
   const stepIndex = STEP_ORDER.indexOf(step);
 
   return (
-    <div className="onboarding-shell onb-shell" data-testid="onboarding-shell">
+    <div className="onboarding-shell onb-shell onb-fullscreen" data-testid="onboarding-shell">
       <header className="onb-top">
         <div className="brand" style={{ padding: 0 }}>
           <div className="mark" aria-hidden="true" />
