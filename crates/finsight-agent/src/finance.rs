@@ -540,7 +540,7 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
     let recurring_bills = recurring_bills(conn)?;
     let planned_transactions = planned_transactions(conn)?;
     let uncategorized_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1504,7 +1504,7 @@ pub fn run_purchase_affordability(
 pub fn get_data_quality_report(conn: &mut Connection) -> rusqlite::Result<DataQualityReport> {
     let snapshot = build_snapshot(conn)?;
     let uncategorized_expense_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
         [],
         |r| r.get(0),
     )?;

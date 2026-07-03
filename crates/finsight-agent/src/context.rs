@@ -568,7 +568,7 @@ fn transaction_context(conn: &mut Connection, month_start: &str) -> TransactionC
         .query_row(
             "SELECT
                 COUNT(*),
-                COALESCE(SUM(CASE WHEN category_id IS NULL THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
              FROM transactions",
