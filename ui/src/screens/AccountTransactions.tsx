@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAccounts } from "../api/hooks/accounts";
-import { useTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
+import { useInfiniteTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useNeedsReviewCount, useAgentStatus } from "../api/hooks/agent";
 import { useSyncSimpleFinAccount } from "../api/hooks/simplefin";
 import { commands } from "../api/client";
@@ -69,7 +69,15 @@ export default function AccountTransactions() {
     [id, search, preset, startDate, endDate]
   );
 
-  const { data: transactions = [], isLoading, error } = useTransactions(filterValue);
+  const {
+    data: txnPages,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteTransactions(filterValue);
+  const transactions = useMemo(() => txnPages?.pages.flat() ?? [], [txnPages]);
 
   const categoryById = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
@@ -218,6 +226,23 @@ export default function AccountTransactions() {
               )}
             </tbody>
           </table>
+          {(hasNextPage || isFetchingNextPage) && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+              <button
+                className="btn outline sm"
+                type="button"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          )}
+          {!hasNextPage && transactions.length > 0 && (
+            <div className="muted" style={{ textAlign: "center", padding: "12px 0", fontSize: 12 }}>
+              {transactions.length} transaction{transactions.length === 1 ? "" : "s"} · end of list
+            </div>
+          )}
         </div>
       </div>
 

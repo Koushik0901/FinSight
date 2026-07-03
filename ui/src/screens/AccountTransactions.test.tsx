@@ -32,19 +32,29 @@ vi.mock("../api/hooks/accounts", () => ({
 }));
 
 vi.mock("../api/hooks/transactions", () => ({
-  useTransactions: () => ({
-    data: [
-      {
-        id: "txn-1",
-        account_id: "acc-1",
-        posted_at: "2026-06-28T00:00:00Z",
-        merchant_raw: "Whole Foods",
-        merchant_label: "Whole Foods",
-        amount_cents: -8432,
-        category_label: "Groceries",
-        category_color: "#4caf50",
-      },
-    ],
+  useInfiniteTransactions: () => ({
+    data: {
+      pages: [
+        [
+          {
+            id: "txn-1",
+            account_id: "acc-1",
+            posted_at: "2026-06-28T00:00:00Z",
+            merchant_raw: "Whole Foods",
+            merchant_label: "Whole Foods",
+            amount_cents: -8432,
+            category_label: "Groceries",
+            category_color: "#4caf50",
+          },
+        ],
+      ],
+      pageParams: [0],
+    },
+    isLoading: false,
+    error: null,
+    fetchNextPage: vi.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
   }),
   useCategoriesWithSpending: () => ({ data: [] }),
 }));
