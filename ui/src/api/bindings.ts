@@ -819,6 +819,22 @@ async setNotificationsEnabled(enabled: boolean) : Promise<Result<null, AppError>
     else return { status: "error", error: e  as any };
 }
 },
+async getAutoCategorizeEnabled() : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_auto_categorize_enabled") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setAutoCategorizeEnabled(enabled: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_auto_categorize_enabled", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getPlanNextMonthData() : Promise<Result<PlanData, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_plan_next_month_data") };
@@ -1324,7 +1340,15 @@ toolTrace: string | null; actionBundleId: string | null; branchParentId: string 
 /**
  * JSON-encoded assistant-ui message parts. `content` remains the text fallback.
  */
-partsJson: string | null; createdAt: string }
+partsJson: string | null; 
+/**
+ * Run lifecycle state for AG-UI/assistant reload semantics.
+ */
+runStatus: string; 
+/**
+ * JSON-encoded AG-UI metadata for tool calls, artifacts, approvals, and usage.
+ */
+agUiMetadataJson: string | null; createdAt: string }
 /**
  * Summary of a conversation thread shown in the sidebar.
  */

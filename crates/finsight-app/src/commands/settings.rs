@@ -4,6 +4,7 @@ use finsight_core::{repos::run, settings};
 use tauri_plugin_dialog::DialogExt;
 
 const CURRENCY_KEY: &str = "display_currency";
+const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
 
 #[tauri::command]
 #[specta::specta]
@@ -129,6 +130,32 @@ pub async fn set_notifications_enabled(
     .map_err(AppError::from)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn get_auto_categorize_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let val: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
+        Ok(val.unwrap_or(true))
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_auto_categorize_enabled(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &enabled)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
         format!("\"{}\"", s.replace('"', "\"\""))
@@ -187,4 +214,46 @@ pub async fn export_all_data_csv(
     .map_err(AppError::from)?;
 
     std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, repos::run, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("settings.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    #[tokio::test]
+    async fn auto_categorize_enabled_defaults_true() {
+        let (_dir, db) = fresh_db();
+        let val: bool = run(&db, |conn| {
+            let v: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
+            Ok(v.unwrap_or(true))
+        })
+        .await
+        .unwrap();
+        assert!(val);
+    }
+
+    #[tokio::test]
+    async fn auto_categorize_enabled_round_trips() {
+        let (_dir, db) = fresh_db();
+        run(&db, |conn| settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &false))
+            .await
+            .unwrap();
+        let val: bool = run(&db, |conn| {
+            let v: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
+            Ok(v.unwrap_or(true))
+        })
+        .await
+        .unwrap();
+        assert!(!val);
+    }
 }

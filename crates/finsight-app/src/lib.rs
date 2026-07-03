@@ -223,6 +223,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::settings::export_all_data_csv,
         commands::settings::get_notifications_enabled,
         commands::settings::set_notifications_enabled,
+        commands::settings::get_auto_categorize_enabled,
+        commands::settings::set_auto_categorize_enabled,
         commands::budget::get_plan_next_month_data,
         commands::budget::apply_next_month_plan,
         commands::budget::list_budget_history,
