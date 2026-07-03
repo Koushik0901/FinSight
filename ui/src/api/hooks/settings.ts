@@ -57,6 +57,31 @@ export function useSetNotificationsEnabled() {
   });
 }
 
+export function useAutoCategorizeEnabled() {
+  return useQuery<boolean>({
+    queryKey: ["auto-categorize-enabled"],
+    queryFn: async () => {
+      const result = await commands.getAutoCategorizeEnabled();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: Infinity,
+    enabled: isTauriRuntime(),
+  });
+}
+
+export function useSetAutoCategorizeEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setAutoCategorizeEnabled(enabled);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auto-categorize-enabled"] }),
+  });
+}
+
 export function useExportJson() {
   return useMutation({
     mutationFn: async () => {
