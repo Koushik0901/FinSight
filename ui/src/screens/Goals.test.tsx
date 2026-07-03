@@ -396,4 +396,24 @@ describe("Goals — Horizon timeline", () => {
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.queryByText("Horizon")).not.toBeInTheDocument();
   });
+
+  it("shows a text cue (not just color) when a goal is behind its target date", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "behind1", name: "Behind Fund", goalType: "save-by-date",
+          targetCents: 400000, currentCents: 0, monthlyCents: 20000,
+          // 20 months to complete, but target date is only 5 months away -> behind schedule
+          targetDate: (() => { const d = new Date(); d.setMonth(d.getMonth() + 5); return d.toISOString().slice(0, 10); })(),
+          color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Behind schedule/)).toBeInTheDocument();
+  });
 });

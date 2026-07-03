@@ -177,6 +177,7 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
                 <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
                 <div style={{ position: "absolute", left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" }}>
                   {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents, { currency: "USD" })}</span>
+                  {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
                 </div>
               </div>
             );
