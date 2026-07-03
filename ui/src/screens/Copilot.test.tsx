@@ -38,22 +38,43 @@ vi.mock("../api/hooks/copilotChat", () => ({
   })),
 }));
 
-vi.mock("../components/copilot/TauriRuntime", () => ({
-  useTauriCopilotRuntime: vi.fn(() => ({
-    runtime: {
-      thread: {
-        composer: { setText: assistantUiMocks.setComposerText },
-        reset: vi.fn(),
-        getState: vi.fn(() => ({ isRunning: false })),
-      },
-      threads: {},
-      registerModelContextProvider: vi.fn(),
+const runtimeStub = {
+  runtime: {
+    thread: {
+      composer: { setText: assistantUiMocks.setComposerText },
+      reset: vi.fn(),
+      getState: vi.fn(() => ({ isRunning: false })),
     },
-    messages: [],
-    isRunning: false,
-    latestMeta: null,
-    metaByMessageId: {},
-  })),
+    threads: {},
+    registerModelContextProvider: vi.fn(),
+  },
+  messages: [],
+  isRunning: false,
+  latestMeta: null,
+  metaByMessageId: {},
+};
+
+vi.mock("../components/copilot/TauriRuntime", () => ({
+  useTauriCopilotRuntime: vi.fn(() => runtimeStub),
+}));
+
+// AG-UI is the default runtime (Phase 5B); mock it so the screen renders
+// deterministically without a live Tauri bridge.
+vi.mock("../components/copilot/agUi/TauriAgUiRuntime", () => ({
+  useTauriAgUiRuntime: vi.fn(() => runtimeStub),
+}));
+
+// Grounding-stats data sources. Defaults to an empty workspace (honest
+// "no data imported" state); individual tests override as needed.
+const accountsMock = vi.hoisted(() => ({ list: [] as unknown[] }));
+vi.mock("../api/hooks/accounts", () => ({
+  useAccounts: vi.fn(() => ({ data: accountsMock.list })),
+}));
+const txnCountMock = vi.hoisted(() => ({ count: 0 }));
+vi.mock("../api/client", () => ({
+  commands: {
+    getTransactionCount: vi.fn(async () => ({ status: "ok", data: txnCountMock.count })),
+  },
 }));
 
 // Mock assistant-ui to avoid complex runtime setup in tests
@@ -212,6 +233,8 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   assistantUiMocks.threadList = [];
+  accountsMock.list = [];
+  txnCountMock.count = 0;
 });
 
 describe("Copilot screen — rendering", () => {
@@ -235,6 +258,22 @@ describe("Copilot screen — rendering", () => {
     expect(screen.getByText(/Plan next month's budget/i)).toBeInTheDocument();
     expect(screen.getByText(/Improve my savings rate/i)).toBeInTheDocument();
     expect(screen.getByText(/Clean up uncategorized transactions/i)).toBeInTheDocument();
+  });
+
+  it("is honest about an empty workspace (no fabricated data)", async () => {
+    render(<Copilot />, { wrapper: createWrapper() });
+    await waitFor(() =>
+      expect(screen.getByText(/No financial data imported yet/i)).toBeInTheDocument()
+    );
+  });
+
+  it("shows real grounded counts when data exists", async () => {
+    accountsMock.list = [{ id: "a" }, { id: "b" }];
+    txnCountMock.count = 1247;
+    render(<Copilot />, { wrapper: createWrapper() });
+    await waitFor(() => expect(screen.getByText(/1,247 transactions/i)).toBeInTheDocument());
+    expect(screen.getByText(/2 accounts/i)).toBeInTheDocument();
+    expect(screen.getByText(/100% local/i)).toBeInTheDocument();
   });
 
   it("renders the base composer and scroll control", () => {

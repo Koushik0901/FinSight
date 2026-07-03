@@ -219,6 +219,161 @@ pub fn save_scenario() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn draft_recategorization() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "draft_recategorization"
+        }
+        fn description(&self) -> &str {
+            "Draft a bulk recategorization of currently-uncategorized transactions for user approval. Provide assignments from list_uncategorized_transactions: each maps a transaction_id to a category_id (from available_categories) with a confidence 0..1. This does NOT write data — it previews the proposed changes; the user must approve before anything is applied. Invalid assignments (unknown category, or a transaction that is no longer uncategorized) are dropped and reported."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "assignments": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "transaction_id": {"type": "string"},
+                                "category_id": {"type": "string"},
+                                "confidence": {"type": "number"}
+                            },
+                            "required": ["transaction_id", "category_id"]
+                        }
+                    }
+                },
+                "required": ["assignments"]
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let raw = args["assignments"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("assignments array required"))?;
+            if raw.is_empty() {
+                return Err(anyhow::anyhow!("assignments must not be empty"));
+            }
+
+            // Cap the batch so the preview payload stays bounded.
+            const MAX_ASSIGNMENTS: usize = 100;
+
+            let mut valid: Vec<Value> = Vec::new();
+            let mut dropped: Vec<Value> = Vec::new();
+            let mut seen_txns = std::collections::HashSet::new();
+
+            for a in raw.iter().take(MAX_ASSIGNMENTS) {
+                let (Some(txn_id), Some(cat_id)) =
+                    (a["transaction_id"].as_str(), a["category_id"].as_str())
+                else {
+                    dropped.push(json!({"reason": "missing transaction_id or category_id"}));
+                    continue;
+                };
+                if !seen_txns.insert(txn_id.to_string()) {
+                    dropped.push(json!({"transaction_id": txn_id, "reason": "duplicate"}));
+                    continue;
+                }
+                // Category must exist and be active.
+                let cat_label: Option<String> = ctx
+                    .conn
+                    .query_row(
+                        "SELECT label FROM categories WHERE id = ?1 AND archived_at IS NULL",
+                        rusqlite::params![cat_id],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                let Some(cat_label) = cat_label else {
+                    dropped.push(json!({"transaction_id": txn_id, "reason": "unknown category_id"}));
+                    continue;
+                };
+                // Transaction must exist AND still be uncategorized.
+                let merchant: Option<String> = ctx
+                    .conn
+                    .query_row(
+                        "SELECT merchant_raw FROM transactions WHERE id = ?1 AND category_id IS NULL",
+                        rusqlite::params![txn_id],
+                        |r| r.get(0),
+                    )
+                    .ok();
+                let Some(merchant) = merchant else {
+                    dropped.push(json!({"transaction_id": txn_id, "reason": "transaction not found or already categorized"}));
+                    continue;
+                };
+                let confidence = a["confidence"].as_f64().unwrap_or(0.7).clamp(0.0, 1.0);
+                valid.push(json!({
+                    "transactionId": txn_id,
+                    "categoryId": cat_id,
+                    "categoryLabel": cat_label,
+                    "merchant": merchant,
+                    "confidence": confidence
+                }));
+            }
+
+            if valid.is_empty() {
+                return Ok(json!({
+                    "drafted": false,
+                    "proposed": 0,
+                    "dropped": dropped.len(),
+                    "dropped_detail": dropped,
+                    "message": "No valid recategorization assignments to preview."
+                }));
+            }
+
+            let proposed = valid.len();
+            let avg_conf = valid
+                .iter()
+                .filter_map(|v| v["confidence"].as_f64())
+                .sum::<f64>()
+                / proposed as f64;
+            let preview_labels: Vec<String> = valid
+                .iter()
+                .take(5)
+                .map(|v| {
+                    format!(
+                        "{} → {}",
+                        v["merchant"].as_str().unwrap_or(""),
+                        v["categoryLabel"].as_str().unwrap_or("")
+                    )
+                })
+                .collect();
+            let more = proposed.saturating_sub(preview_labels.len());
+            let rationale = if more > 0 {
+                format!(
+                    "Recategorize {proposed} uncategorized transactions ({}, +{more} more).",
+                    preview_labels.join(", ")
+                )
+            } else {
+                format!(
+                    "Recategorize {proposed} uncategorized transactions ({}).",
+                    preview_labels.join(", ")
+                )
+            };
+
+            let payload = json!({ "assignments": valid });
+            ctx.draft_actions.push(AgentDraftAction {
+                action_kind: "recategorize_bulk".to_string(),
+                payload_json: payload.to_string(),
+                rationale: rationale.clone(),
+                confidence: avg_conf,
+            });
+            ctx.changes.push(AgentChange {
+                kind: "draft_action".to_string(),
+                description: rationale,
+            });
+
+            Ok(json!({
+                "drafted": true,
+                "proposed": proposed,
+                "dropped": dropped.len(),
+                "dropped_detail": dropped,
+                "requires_approval": true
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn create_debt_payoff_plan() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
@@ -255,4 +410,89 @@ pub fn create_debt_payoff_plan() -> Arc<dyn Tool> {
         }
     }
     Arc::new(T)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reasoning::messages::{AgentChange, AgentDraftAction};
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use rusqlite::Connection;
+    use tempfile::TempDir;
+
+    fn fresh() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("act.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn seed(conn: &mut Connection) -> (String, String) {
+        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)", []).unwrap();
+        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('dining','g','Dining','#f00',0)", []).unwrap();
+        conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a','Me','Bank','Checking','Chk','USD','#fff',datetime('now'))", []).unwrap();
+        // one uncategorized, one already categorized
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES('t_uncat','a','2026-03-01T00:00:00Z',-2500,'Cafe','cleared',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t_done','a','2026-03-02T00:00:00Z',-3000,'Diner','dining','cleared',datetime('now'))", []).unwrap();
+        ("t_uncat".to_string(), "t_done".to_string())
+    }
+
+    fn run_tool(conn: &mut Connection, args: Value) -> (Value, Vec<AgentDraftAction>) {
+        let mut changes: Vec<AgentChange> = Vec::new();
+        let mut drafts: Vec<AgentDraftAction> = Vec::new();
+        let out = {
+            let mut ctx = ToolContext {
+                conn,
+                changes: &mut changes,
+                draft_actions: &mut drafts,
+            };
+            draft_recategorization().execute(&mut ctx, args).unwrap()
+        };
+        (out, drafts)
+    }
+
+    #[test]
+    fn draft_recategorization_validates_and_drops_invalid_assignments() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let (t_uncat, t_done) = seed(&mut conn);
+
+        let (out, drafts) = run_tool(
+            &mut conn,
+            json!({"assignments": [
+                {"transaction_id": t_uncat, "category_id": "dining", "confidence": 0.9},
+                {"transaction_id": t_done, "category_id": "dining"},        // already categorized -> drop
+                {"transaction_id": "ghost", "category_id": "dining"},        // missing txn -> drop
+                {"transaction_id": t_uncat, "category_id": "no-such-cat"},   // duplicate + bad cat -> drop
+            ]}),
+        );
+
+        assert_eq!(out["drafted"], true);
+        assert_eq!(out["proposed"], 1, "only the still-uncategorized valid row");
+        assert_eq!(out["dropped"], 3);
+        assert_eq!(out["requires_approval"], true);
+
+        // Exactly one bulk draft action, nothing written to the DB yet.
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].action_kind, "recategorize_bulk");
+        let still_uncat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id = 't_uncat'", [], |r| r.get(0))
+            .unwrap();
+        assert!(still_uncat.is_none(), "draft must not write data");
+    }
+
+    #[test]
+    fn draft_recategorization_returns_not_drafted_when_all_invalid() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        let (out, drafts) = run_tool(
+            &mut conn,
+            json!({"assignments": [{"transaction_id": "ghost", "category_id": "dining"}]}),
+        );
+        assert_eq!(out["drafted"], false);
+        assert_eq!(out["proposed"], 0);
+        assert!(drafts.is_empty());
+    }
 }

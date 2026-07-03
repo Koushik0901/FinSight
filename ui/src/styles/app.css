@@ -3907,6 +3907,39 @@ body::-webkit-scrollbar-track,
   background: var(--surface-2);
 }
 
+/* Grounding trust chip — signals every answer is computed from local data. */
+.copilot-msg-meta span.copilot-grounded {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface-2));
+}
+
+/* Grounded empty-state stats (real counts, or an honest "no data" line). */
+.copilot-empty-ground {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0 4px;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+
+.copilot-empty-ground span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.copilot-empty-ground-empty {
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-mute);
+}
+
 .copilot-finsight-chat {
   --copilot-rail: min(940px, calc(100vw - 360px));
   --copilot-panel: color-mix(in oklab, var(--elevated) 82%, var(--bg));

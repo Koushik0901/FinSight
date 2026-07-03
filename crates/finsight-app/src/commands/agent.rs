@@ -601,13 +601,17 @@ pub(crate) fn build_toolset() -> ToolSet {
     tools.register(read::rank_debt_payoff());
     tools.register(read::compare_debt_vs_goal());
     tools.register(read::get_account_balances());
+    tools.register(read::get_net_worth());
     tools.register(read::get_month_totals());
     tools.register(read::get_top_spending_categories());
+    tools.register(read::get_spending_breakdown());
     tools.register(read::get_budgets());
     tools.register(read::get_goals());
     tools.register(read::get_recurring_bills());
     tools.register(read::get_liabilities());
     tools.register(read::search_transactions());
+    tools.register(read::find_anomalies());
+    tools.register(read::list_uncategorized_transactions());
     tools.register(read::run_cashflow_projection());
     tools.register(read::run_debt_payoff_scenarios());
     tools.register(read::run_goal_allocation_scenarios());
@@ -621,6 +625,7 @@ pub(crate) fn build_toolset() -> ToolSet {
     tools.register(act::create_planned_transaction());
     tools.register(act::save_scenario());
     tools.register(act::create_debt_payoff_plan());
+    tools.register(act::draft_recategorization());
     tools
 }
 

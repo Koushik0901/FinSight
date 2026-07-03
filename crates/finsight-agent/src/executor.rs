@@ -90,6 +90,19 @@ struct CreatePlannedTransactionPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RecategorizeBulkPayload {
+    assignments: Vec<RecategorizeAssignment>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecategorizeAssignment {
+    transaction_id: String,
+    category_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DebtPayoffPlanPayload {
     method: String,
     extra_monthly_cents: i64,
@@ -341,6 +354,63 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 payload.description, payload.due_date, row.id
             ))
         }
+        "recategorize_bulk" => {
+            let payload: RecategorizeBulkPayload = parse_payload(&item.payload_json)?;
+            if payload.assignments.is_empty() {
+                return Err(CoreError::InvalidState(
+                    "validation: recategorize_bulk has no assignments".to_string(),
+                ));
+            }
+            let mut applied = 0usize;
+            let mut skipped = 0usize;
+            for a in &payload.assignments {
+                // Category must still exist and be active.
+                let cat_ok: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM categories WHERE id = ?1 AND archived_at IS NULL",
+                        params![a.category_id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+                if !cat_ok {
+                    skipped += 1;
+                    continue;
+                }
+                // EXECUTE-TIME GUARD: only apply when the transaction is STILL
+                // uncategorized. If the user categorized it manually between the
+                // preview and now, do not clobber their choice.
+                let changed = conn.execute(
+                    "UPDATE transactions
+                     SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL
+                     WHERE id = ?2 AND category_id IS NULL",
+                    params![a.category_id, a.transaction_id],
+                )?;
+                if changed == 0 {
+                    skipped += 1;
+                    continue;
+                }
+                // Record the categorization + a correction memory so the built-in
+                // categorizer learns this merchant mapping going forward.
+                if let Ok((merchant_raw, category_label)) = conn.query_row(
+                    "SELECT t.merchant_raw, COALESCE(c.label, ?2)
+                     FROM transactions t LEFT JOIN categories c ON c.id = ?1
+                     WHERE t.id = ?3",
+                    params![a.category_id, a.category_id, a.transaction_id],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                ) {
+                    let memo = format!("{merchant_raw} → {category_label} (agent recategorization)");
+                    let _ = agent_memory::upsert_correction(
+                        conn,
+                        &merchant_raw.to_lowercase(),
+                        &memo,
+                    );
+                }
+                applied += 1;
+            }
+            Ok(format!(
+                "Recategorized {applied} transaction(s); skipped {skipped} (already categorized or invalid)"
+            ))
+        }
         "debt_payoff_plan" => {
             let payload: DebtPayoffPlanPayload = parse_payload(&item.payload_json)?;
             let tracked = payload
@@ -565,6 +635,134 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM agent_memory", [], |r| r.get(0))
             .unwrap();
         assert_eq!(memory_count, 1);
+    }
+
+    #[test]
+    fn recategorize_bulk_applies_only_still_uncategorized() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn);
+        // Second category to prove the guard, not category identity, is what skips.
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES('cat2', 'grp1', 'Dining', '#ff0000', 1)",
+            [],
+        )
+        .unwrap();
+        let account = accounts::insert(&mut conn, base_account()).unwrap();
+
+        let mk = |conn: &mut Connection, merchant: &str| {
+            transactions::insert(
+                conn,
+                NewTransaction {
+                    account_id: account.id.clone(),
+                    posted_at: Utc::now() - Duration::days(2),
+                    amount_cents: -5_000,
+                    merchant_raw: merchant.into(),
+                    category_id: None,
+                    notes: None,
+                    status: TransactionStatus::Cleared,
+                    imported_id: None,
+                    source: None,
+                    raw_synced_data: None,
+                    pending: false,
+                    external_tx_id: None,
+                    external_account_id: None,
+                },
+            )
+            .unwrap()
+            .id
+        };
+        let t_uncat = mk(&mut conn, "Mystery Merchant");
+        let t_already = mk(&mut conn, "Already Categorized");
+        // Simulate the user categorizing t_already AFTER the preview was drafted.
+        conn.execute(
+            "UPDATE transactions SET category_id = 'cat2' WHERE id = ?1",
+            params![t_already],
+        )
+        .unwrap();
+
+        let bundle = copilot_actions::insert_bundle(
+            &mut conn, None, "Recat", "Summary", "Rationale", 0.8, None, None,
+        )
+        .unwrap();
+        let payload = serde_json::json!({
+            "assignments": [
+                {"transactionId": t_uncat, "categoryId": "cat1"},
+                {"transactionId": t_already, "categoryId": "cat1"},
+                {"transactionId": "nonexistent", "categoryId": "cat1"},
+                {"transactionId": t_uncat, "categoryId": "ghost-category"},
+            ]
+        });
+        let item = copilot_actions::insert_item(
+            &mut conn,
+            &bundle.id,
+            "recategorize_bulk",
+            &payload.to_string(),
+            "Recategorize",
+            0.8,
+            0,
+        )
+        .unwrap();
+        copilot_actions::set_item_status(&mut conn, &item.id, "approved").unwrap();
+
+        let result = execute_bundle(&mut conn, &bundle.id).unwrap();
+        assert_eq!(result.succeeded, 1);
+        assert!(result.executed[0]
+            .result_summary
+            .as_ref()
+            .unwrap()
+            .contains("Recategorized 1"));
+
+        // Only the still-uncategorized txn was updated.
+        let uncat_cat: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id = ?1",
+                params![t_uncat],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(uncat_cat.as_deref(), Some("cat1"));
+        // The manually-categorized txn was NOT clobbered.
+        let already_cat: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id = ?1",
+                params![t_already],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(already_cat.as_deref(), Some("cat2"), "manual category preserved");
+    }
+
+    fn base_account() -> NewAccount {
+        NewAccount {
+            owner: "Me".into(),
+            bank: "Bank".into(),
+            r#type: AccountType::Checking,
+            name: "Checking".into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#112233".into(),
+            opening_balance_cents: 200_000,
+            source: "manual".into(),
+            liquidity_type: "liquid".into(),
+            emergency_fund_eligible: true,
+            goal_earmark: None,
+            apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
+        }
     }
 
     #[test]

@@ -148,6 +148,64 @@ mod tests {
     }
 
     #[test]
+    fn wipes_copilot_history_memory_and_context_so_no_stale_data_survives() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Seed Copilot conversation history, an agent action bundle + item,
+        // agent memory, a cached context snapshot, and a net-worth snapshot —
+        // exactly the kinds of stale data a reset must not leave behind.
+        conn.execute(
+            "INSERT INTO conversations(id, title, created_at, updated_at) VALUES('c1','Old chat',?1,?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO conversation_messages(id, conversation_id, role, content, created_at) \
+             VALUES('m1','c1','assistant','Your net worth is $123,456',?1)",
+            params![now],
+        )
+        .unwrap();
+        let bundle = super::super::copilot_actions::insert_bundle(
+            &mut conn, None, "Recat", "summary", "rationale", 0.9, None, None,
+        )
+        .unwrap();
+        super::super::copilot_actions::insert_item(
+            &mut conn,
+            &bundle.id,
+            "recategorize_bulk",
+            "{}",
+            "rationale",
+            0.9,
+            0,
+        )
+        .unwrap();
+        super::super::agent_memory::upsert_correction(&mut conn, "cafe", "cafe -> Dining").unwrap();
+        super::super::net_worth::record_snapshot(&mut conn, 5_000_000).unwrap();
+
+        delete_all_data(&mut conn).unwrap();
+
+        for table in [
+            "conversations",
+            "conversation_messages",
+            "agent_action_bundles",
+            "agent_action_items",
+            "agent_memory",
+            "agent_context_snapshots",
+            "net_worth_snapshots",
+        ] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 0, "{table} must be empty after reset");
+        }
+
+        // Net worth is no longer meaningful with nothing tracked.
+        assert!(!super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+    }
+
+    #[test]
     fn is_safe_to_run_on_an_already_empty_database() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();

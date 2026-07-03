@@ -9,7 +9,7 @@
  */
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AssistantRuntimeProvider,
@@ -50,6 +50,8 @@ import {
   useConversations,
   useDeleteConversation,
 } from "../api/hooks/copilotChat";
+import { useAccounts } from "../api/hooks/accounts";
+import { commands } from "../api/client";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import { useTauriAgUiRuntime } from "../components/copilot/agUi/TauriAgUiRuntime";
 import { isCopilotAgUiRuntimeEnabled } from "../components/copilot/agUi/featureFlag";
@@ -101,6 +103,9 @@ function actionKindLabel(kind: string): string {
     create_rule: "Create category rule",
     save_scenario: "Save scenario",
     generate_report: "Generate report",
+    recategorize_bulk: "Recategorize transactions",
+    debt_payoff_plan: "Debt payoff plan",
+    create_planned_transaction: "Planned transaction",
   };
   return labels[kind] ?? kind;
 }
@@ -204,10 +209,25 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
                     color: "var(--ink-faint)",
                     wordBreak: "break-all",
                   }}>
-                    {Object.entries(payload)
-                      .filter(([k]) => k !== "params")
-                      .map(([k, v]) => `${k}: ${String(v)}`)
-                      .join(" · ")}
+                    {(() => {
+                      // Bulk actions carry a list payload (e.g. recategorize_bulk's
+                      // `assignments`) — summarize the count instead of rendering
+                      // "[object Object]". Scalar payloads render as key: value.
+                      const scalars = Object.entries(payload).filter(
+                        ([k, v]) =>
+                          k !== "params" &&
+                          v !== null &&
+                          typeof v !== "object",
+                      );
+                      const lists = Object.entries(payload).filter(
+                        ([, v]) => Array.isArray(v),
+                      );
+                      const parts = [
+                        ...scalars.map(([k, v]) => `${k}: ${String(v)}`),
+                        ...lists.map(([k, v]) => `${(v as unknown[]).length} ${k}`),
+                      ];
+                      return parts.join(" · ");
+                    })()}
                   </div>
                 )}
               </div>
@@ -444,6 +464,10 @@ function AssistantMessage({
 
         {!isRunning && !isError && (
           <div className="copilot-msg-meta">
+            <span className="copilot-grounded" title="Answers are computed from your local FinSight data only.">
+              <I.Lock width={10} height={10} />
+              Grounded on your data
+            </span>
             {meta?.modelId && <span>{meta.providerId} · {meta.modelId}</span>}
             {(meta?.elapsedMs ?? timing?.totalStreamTime) && (
               <span>{Math.round((meta?.elapsedMs ?? timing?.totalStreamTime ?? 0) / 100) / 10}s</span>
@@ -486,6 +510,48 @@ function AssistantMessage({
 
 // ── EmptyThreadState ──────────────────────────────────────────────────────────
 
+/**
+ * Grounding stats shown under the Copilot hero. Uses REAL local counts (never
+ * fabricated) so the empty state is honest: when no data has been imported it
+ * says so plainly, which is also the after-Delete-All-Data experience.
+ */
+function CopilotGroundingStats() {
+  const { data: accounts = [] } = useAccounts();
+  const { data: txnCount = 0 } = useQuery({
+    queryKey: ["transaction-count"],
+    queryFn: async () => {
+      const res = await commands.getTransactionCount();
+      return res.status === "ok" ? res.data : 0;
+    },
+  });
+
+  if (txnCount === 0 && accounts.length === 0) {
+    return (
+      <p className="copilot-empty-ground copilot-empty-ground-empty">
+        <I.Lock width={11} height={11} />
+        No financial data imported yet — import a CSV to give the Copilot something to work with.
+      </p>
+    );
+  }
+
+  return (
+    <div className="copilot-empty-ground">
+      <span>
+        <I.Flow width={11} height={11} />
+        {txnCount.toLocaleString()} transaction{txnCount === 1 ? "" : "s"}
+      </span>
+      <span>
+        <I.Wallet width={11} height={11} />
+        {accounts.length} account{accounts.length === 1 ? "" : "s"}
+      </span>
+      <span>
+        <I.Lock width={11} height={11} />
+        100% local
+      </span>
+    </div>
+  );
+}
+
 function EmptyThreadState({
   onPrompt,
   children,
@@ -501,6 +567,7 @@ function EmptyThreadState({
         Ask for a plan, explanation, cleanup pass, or tradeoff analysis. FinSight can use
         your local accounts, budgets, goals, and transactions when a tool is needed.
       </p>
+      <CopilotGroundingStats />
       {children}
       <div className="copilot-prompts-grid">
         {SUGGESTED_PROMPTS.map((p) => (

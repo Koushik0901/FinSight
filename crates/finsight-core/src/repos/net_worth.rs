@@ -3,7 +3,69 @@ use crate::models::NetWorthPoint;
 use crate::repos::{accounts, liabilities, manual_assets};
 use chrono::Utc;
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+/// Deterministic net-worth breakdown: assets (known-balance accounts + manual
+/// assets) minus liabilities. Accounts whose balance is not confirmed
+/// (`balance_known == false`, e.g. CSV history with no balance field) are
+/// EXCLUDED from the totals and surfaced separately so the Copilot can mark
+/// them clearly rather than counting a phantom $0. Mirrors `record_today` and
+/// the frontend `useNetWorth()`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NetWorthBreakdown {
+    pub net_worth_cents: i64,
+    pub total_assets_cents: i64,
+    pub known_account_balance_cents: i64,
+    pub manual_asset_cents: i64,
+    pub liability_cents: i64,
+    pub accounts_with_known_balance: i64,
+    pub accounts_with_unknown_balance: i64,
+    /// Names of accounts excluded from the total because their balance is not
+    /// confirmed. The Copilot should mention these as unknown, not as $0.
+    pub unknown_balance_accounts: Vec<String>,
+    /// True when there is at least one account, manual asset, or liability to
+    /// compute from. When false, net worth is not meaningful (no data).
+    pub has_data: bool,
+}
+
+/// Compute the current net-worth breakdown from live account, manual-asset, and
+/// liability data. Uses the exact same inclusion rules as [`record_today`].
+pub fn breakdown(conn: &mut Connection) -> CoreResult<NetWorthBreakdown> {
+    let accounts = accounts::list_summaries(conn)?;
+    let assets = manual_assets::list(conn)?;
+    let liabilities = liabilities::list(conn)?;
+
+    let has_data = !(accounts.is_empty() && assets.is_empty() && liabilities.is_empty());
+
+    let known_account_balance_cents: i64 = accounts
+        .iter()
+        .filter(|a| a.balance_known)
+        .map(|a| a.balance_cents)
+        .sum();
+    let accounts_with_known_balance = accounts.iter().filter(|a| a.balance_known).count() as i64;
+    let unknown_balance_accounts: Vec<String> = accounts
+        .iter()
+        .filter(|a| !a.balance_known)
+        .map(|a| a.name.clone())
+        .collect();
+    let accounts_with_unknown_balance = unknown_balance_accounts.len() as i64;
+    let manual_asset_cents: i64 = assets.iter().map(|a| a.value_cents).sum();
+    let liability_cents: i64 = liabilities.iter().map(|l| l.balance_cents).sum();
+    let total_assets_cents = known_account_balance_cents + manual_asset_cents;
+
+    Ok(NetWorthBreakdown {
+        net_worth_cents: total_assets_cents - liability_cents,
+        total_assets_cents,
+        known_account_balance_cents,
+        manual_asset_cents,
+        liability_cents,
+        accounts_with_known_balance,
+        accounts_with_unknown_balance,
+        unknown_balance_accounts,
+        has_data,
+    })
+}
 
 pub fn record_snapshot(conn: &mut Connection, total_cents: i64) -> CoreResult<()> {
     let id = Uuid::new_v4().to_string();
@@ -166,6 +228,116 @@ mod tests {
         assert_eq!(hist.len(), 1);
         // 10,000,000 accounts + 50,000,000 assets − 30,000,000 liabilities
         assert_eq!(hist[0].total_cents, 30_000_000);
+    }
+
+    #[test]
+    fn breakdown_excludes_unknown_balance_accounts() {
+        use crate::models::{NewLiability, NewTransaction, TransactionStatus};
+        use crate::repos::{accounts, liabilities, transactions};
+        use chrono::Duration;
+
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        // Known-balance account (manual, no unaccounted history).
+        let known = accounts::insert(&mut conn, base_account("Checking", 500_000, "manual")).unwrap();
+        let _ = known;
+
+        // Unknown-balance account: seed source + transaction activity means the
+        // seed balance is not a trustworthy current balance → excluded.
+        let unknown = accounts::insert(&mut conn, base_account("Imported Card", 0, "seed")).unwrap();
+        transactions::insert(
+            &mut conn,
+            NewTransaction {
+                account_id: unknown.id.clone(),
+                posted_at: Utc::now() - Duration::days(5),
+                amount_cents: -4_200,
+                merchant_raw: "Store".into(),
+                category_id: None,
+                notes: None,
+                status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: None,
+                raw_synced_data: None,
+                pending: false,
+                external_tx_id: None,
+                external_account_id: None,
+            },
+        )
+        .unwrap();
+
+        liabilities::create(
+            &mut conn,
+            NewLiability {
+                name: "Card".into(),
+                liability_type: "credit-card".into(),
+                balance_cents: 120_000,
+                limit_cents: Some(500_000),
+                apr_pct: Some(19.9),
+                min_payment_cents: Some(3_000),
+                payoff_date: None,
+                original_balance_cents: None,
+                started_at: None,
+                currency: "USD".into(),
+            },
+        )
+        .unwrap();
+
+        let b = breakdown(&mut conn).unwrap();
+        assert!(b.has_data);
+        assert_eq!(b.known_account_balance_cents, 500_000);
+        assert_eq!(b.accounts_with_known_balance, 1);
+        assert_eq!(b.accounts_with_unknown_balance, 1);
+        assert_eq!(b.unknown_balance_accounts, vec!["Imported Card".to_string()]);
+        assert_eq!(b.liability_cents, 120_000);
+        // 500,000 known assets − 120,000 liabilities = 380,000
+        assert_eq!(b.net_worth_cents, 380_000);
+    }
+
+    #[test]
+    fn breakdown_has_no_data_on_empty_db() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let b = breakdown(&mut conn).unwrap();
+        assert!(!b.has_data);
+        assert_eq!(b.net_worth_cents, 0);
+    }
+
+    fn base_account(
+        name: &str,
+        opening_balance_cents: i64,
+        source: &str,
+    ) -> crate::models::NewAccount {
+        use crate::models::{AccountType, NewAccount};
+        NewAccount {
+            owner: "me".into(),
+            bank: "Bank".into(),
+            r#type: AccountType::Checking,
+            name: name.into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#3B82F6".into(),
+            source: source.into(),
+            liquidity_type: "liquid".into(),
+            emergency_fund_eligible: true,
+            goal_earmark: None,
+            apy_pct: None,
+            opening_balance_cents,
+            simplefin_account_id: None,
+            nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
+        }
     }
 
     #[test]

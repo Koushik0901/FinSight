@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -226,6 +226,12 @@ pub struct EmergencyFundScenarios {
     pub liquid_balance_cents: i64,
     pub avg_monthly_expense_cents: i64,
     pub current_months: f64,
+    /// Current monthly surplus (90-day avg income − expenses). Used as the
+    /// default savings rate toward the fund when the caller supplies none.
+    pub monthly_surplus_cents: i64,
+    /// The contribution actually used to project completion: the caller's
+    /// amount if positive, else the monthly surplus (when positive).
+    pub effective_monthly_contribution_cents: i64,
     pub targets: Vec<EmergencyFundTarget>,
     pub runway_if_income_lost_months: f64,
     pub missing_data: Vec<String>,
@@ -238,6 +244,10 @@ pub struct EmergencyFundTarget {
     pub target_cents: i64,
     pub gap_cents: i64,
     pub months_to_target_at_contribution: Option<i64>,
+    /// Estimated calendar date (YYYY-MM-DD) the target is reached at the
+    /// effective contribution. `None` when already funded's opposite: never
+    /// reached because there is no positive contribution.
+    pub estimated_completion_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1101,22 +1111,37 @@ pub fn run_emergency_fund_scenarios(
 ) -> rusqlite::Result<EmergencyFundScenarios> {
     let snapshot = build_snapshot(conn)?;
     let expense = snapshot.avg_monthly_expense_90d_cents.max(0);
+    // Default the savings rate to the current monthly surplus so "when will my
+    // emergency fund be full?" is answerable without the user quoting a number.
+    let monthly_surplus_cents =
+        expected_monthly_income_cents(&snapshot) - snapshot.avg_monthly_expense_90d_cents;
+    let effective_monthly_contribution_cents = if monthly_contribution_cents > 0 {
+        monthly_contribution_cents
+    } else {
+        monthly_surplus_cents.max(0)
+    };
+    let today = Utc::now().date_naive();
     let targets = [1, 3, 6]
         .into_iter()
         .map(|target_months| {
             let target_cents = expense * target_months;
             let gap_cents = (target_cents - snapshot.liquid_balance_cents).max(0);
+            let months_to_target = if gap_cents == 0 {
+                Some(0)
+            } else if effective_monthly_contribution_cents > 0 {
+                Some(div_ceil(gap_cents, effective_monthly_contribution_cents))
+            } else {
+                None
+            };
+            let estimated_completion_date = months_to_target.map(|m| {
+                add_months(today, m).format("%Y-%m-%d").to_string()
+            });
             EmergencyFundTarget {
                 target_months,
                 target_cents,
                 gap_cents,
-                months_to_target_at_contribution: if gap_cents == 0 {
-                    Some(0)
-                } else if monthly_contribution_cents > 0 {
-                    Some(div_ceil(gap_cents, monthly_contribution_cents))
-                } else {
-                    None
-                },
+                months_to_target_at_contribution: months_to_target,
+                estimated_completion_date,
             }
         })
         .collect();
@@ -1126,18 +1151,51 @@ pub fn run_emergency_fund_scenarios(
         0.0
     };
 
+    let mut assumptions = vec![
+        "Emergency fund targets use the 90-day average monthly expense from local transactions."
+            .to_string(),
+    ];
+    if monthly_contribution_cents <= 0 {
+        assumptions.push(if monthly_surplus_cents > 0 {
+            "Completion dates assume you keep saving your current monthly surplus (income minus expenses) toward the fund.".to_string()
+        } else {
+            "Your current monthly surplus is not positive, so no completion date can be projected until income exceeds expenses or you set a contribution.".to_string()
+        });
+    }
+
     Ok(EmergencyFundScenarios {
         liquid_balance_cents: snapshot.emergency_fund_balance_cents,
         avg_monthly_expense_cents: expense,
         current_months,
+        monthly_surplus_cents,
+        effective_monthly_contribution_cents,
         targets,
         runway_if_income_lost_months: current_months,
         missing_data: snapshot.data_warnings,
-        assumptions: vec![
-            "Emergency fund targets use the 90-day average monthly expense from local transactions."
-                .to_string(),
-        ],
+        assumptions,
     })
+}
+
+/// Add `months` calendar months to a date, clamping the day to the last valid
+/// day of the resulting month.
+fn add_months(date: chrono::NaiveDate, months: i64) -> chrono::NaiveDate {
+    if months <= 0 {
+        return date;
+    }
+    let zero_based = date.month0() as i64 + months;
+    let year = date.year() + (zero_based / 12) as i32;
+    let month0 = (zero_based % 12) as u32;
+    let month = month0 + 1;
+    // Clamp day to the last day of the target month.
+    let last_day = last_day_of_month(year, month);
+    let day = date.day().min(last_day);
+    chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap_or(date)
+}
+
+fn last_day_of_month(year: i32, month: u32) -> u32 {
+    let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let first_next = chrono::NaiveDate::from_ymd_opt(ny, nm, 1).unwrap();
+    (first_next - chrono::Duration::days(1)).day0() + 1
 }
 
 pub fn run_cashflow_timeline(
@@ -2112,6 +2170,64 @@ mod tests {
         assert_eq!(scenarios.targets.len(), 3);
         assert_eq!(scenarios.targets[0].target_months, 1);
         assert!(scenarios.current_months > 0.0);
+    }
+
+    #[test]
+    fn emergency_fund_defaults_contribution_to_surplus_and_projects_completion_date() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        // seed(): ~$3,000/mo income, ~$2,000/mo expense → positive surplus.
+        // Balance $5,000 → below the 3-month target ($6,000), so a gap exists.
+
+        // No contribution provided: should default to the monthly surplus.
+        let scenarios = run_emergency_fund_scenarios(&mut conn, 0).unwrap();
+        assert!(
+            scenarios.monthly_surplus_cents > 0,
+            "seed should produce a positive surplus"
+        );
+        assert_eq!(
+            scenarios.effective_monthly_contribution_cents, scenarios.monthly_surplus_cents,
+            "with no contribution, the surplus is used"
+        );
+
+        let three_month = scenarios
+            .targets
+            .iter()
+            .find(|t| t.target_months == 3)
+            .unwrap();
+        assert!(three_month.gap_cents > 0, "3-month target should have a gap");
+        assert!(
+            three_month.months_to_target_at_contribution.is_some(),
+            "a completion timeline should be projected from the surplus"
+        );
+        let date = three_month
+            .estimated_completion_date
+            .as_ref()
+            .expect("completion date present");
+        assert!(
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok(),
+            "completion date must be a valid YYYY-MM-DD: {date}"
+        );
+        assert!(
+            date.as_str() > chrono::Utc::now().format("%Y-%m-%d").to_string().as_str(),
+            "completion date must be in the future"
+        );
+    }
+
+    #[test]
+    fn add_months_handles_year_and_month_end_rollover() {
+        let d = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+        // +1 month from Jan 31 clamps to Feb 28 (2026 not a leap year).
+        assert_eq!(
+            add_months(d, 1),
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+        );
+        // +13 months crosses a year boundary.
+        assert_eq!(
+            add_months(chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(), 13),
+            chrono::NaiveDate::from_ymd_opt(2027, 7, 15).unwrap()
+        );
     }
 
     #[test]
