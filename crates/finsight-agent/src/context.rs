@@ -1016,6 +1016,34 @@ mod tests {
     }
 
     #[test]
+    fn uncategorized_count_excludes_transfers() {
+        // Regression: transfers are deliberately never categorized, so the
+        // Copilot context's uncategorized_count must exclude them — otherwise it
+        // reports "N uncategorized" that can never clear.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = seed_account(&mut conn, 0);
+        // One genuine uncategorized expense + one uncategorized transfer.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1',?1,'2026-01-05T00:00:00Z',-1200,'CORNER STORE','cleared',0,0,'2026-01-05T00:00:00Z')",
+            [&acct],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+             VALUES('t1',?1,'2026-01-06T00:00:00Z',-50000,'Internet Withdrawal to Savings','cleared',0,1,'2026-01-06T00:00:00Z')",
+            [&acct],
+        ).unwrap();
+
+        let ctx = build_context(&mut conn);
+        assert_eq!(ctx.transactions.total_count, 2);
+        assert_eq!(
+            ctx.transactions.uncategorized_count, 1,
+            "the transfer must not be counted as uncategorized"
+        );
+    }
+
+    #[test]
     fn test_wellness_includes_savings_apys_and_loan_history() {
         let (_dir, db) = fresh_db();
         let mut conn = db.get().unwrap();

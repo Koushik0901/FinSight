@@ -50,9 +50,12 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         let mut items: Vec<ActionItem> = Vec::new();
 
         // ── 1. Uncategorized expense transactions ─────────────────────────────
+        // Exclude transfers: the categorizer never assigns them a category, so a
+        // negative transfer (e.g. an internal "Internet Withdrawal") would keep
+        // this action item permanently non-clearable.
         let uncategorized_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
                 [],
                 |r| r.get(0),
             )

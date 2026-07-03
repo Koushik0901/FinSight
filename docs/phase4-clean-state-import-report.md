@@ -37,9 +37,12 @@ no hardcoding to specific visible rows. Data used: the real `samples/` CSVs
   case needs a one-click manual flip, by design. (`ui/src/utils/csvDetection.ts`.)
 
 ## 4. Categorization quality (looked, not just counted)
-- On the clean import: **builtin 1438 + LLM 606 = 2044 categorized, 0
-  uncategorized.** Auto-categorize (Gemma via OpenRouter) ran automatically after
-  import — see fix #2 below.
+- On the clean import *(figures as observed, before fixes #4/#5 landed)*:
+  **builtin 1438 + LLM 606 = 2044 categorized, 0 uncategorized.** Auto-categorize
+  (Gemma via OpenRouter) ran automatically after import — see fix #2 below. After
+  #4/#5, the ~83 transfers stay category-NULL (so they leave the LLM/Needs-Review
+  buckets), and the uncategorized *count* still reads ~0 because it now excludes
+  transfers — see §8 caveat.
 - Same merchant → same category across the file (TIM HORTONS→Dining, EVO CAR
   SHARE→Transport ×all, COMPASS→Transport, ANTHROPIC→Subscriptions).
 - **Low-confidence → review, not force-fit:** the AI-confidence spread is healthy
@@ -75,9 +78,11 @@ Five defects surfaced and were fixed at the root, each with a regression test:
    now excludes transfers. `crates/finsight-agent/src/categorizer.rs`.
 5. **Uncategorized counts would nag forever** (regression caught for #4) — with
    transfers never categorized, every `category_id IS NULL` tally had to also
-   exclude `is_transfer=1`, else the status bar/Insights/Today/Copilot would show
-   ~83 uncategorized that can never clear. Aligned all four count sites with the
-   categorizer and reports. `agent.rs`, `context.rs`, `finance.rs`.
+   exclude `is_transfer=1`, else the status bar / Insights / Today / Copilot / the
+   review inbox would show ~83 uncategorized that can never clear. Aligned all
+   five count sites with the categorizer and reports: `agent.rs` (AgentStatus),
+   `context.rs` (Copilot), `finance.rs` (planning ×2), `inbox.rs` (action items).
+   `read.rs` was already guarded. Verified exhaustive with an unbounded search.
 
 ## 6. Calculations validated against ground truth
 - **Reports** category totals reconcile exactly to the header: Year scope
@@ -103,10 +108,13 @@ Five defects surfaced and were fixed at the root, each with a regression test:
 ## 8. Repeatability & limitations
 - Delete → re-import reproduced identical counts (Amex 1988 twice; full 3-file set
   2044) and every derived surface reset and rebuilt cleanly.
-- Green bar: full Rust workspace + frontend tests pass; the five fixes ship with
-  new regression tests (`repeated_identical_rows_in_one_statement_all_import`,
-  `transfers_are_not_sent_to_the_llm_and_stay_uncategorized`, the
-  `ensure_default_categories*` trio, and the count-exclusion updates).
+- Green bar: full Rust workspace + frontend tests pass (0 TS errors, 278 frontend
+  tests); each fix ships with a regression test —
+  `repeated_identical_rows_in_one_statement_all_import` (#2),
+  `transfers_are_not_sent_to_the_llm_and_stay_uncategorized` (#4),
+  `uncategorized_count_excludes_transfers` (#5), the `ensure_default_categories*`
+  trio (#1). Fix #3 (auto-categorize enqueue) is verified live end-to-end (the 606
+  LLM categorizations) rather than via a Tauri-State harness.
 - **Mixed-state caveat:** this session's live data was categorized *before* fix
   #4/#5 landed, so its ledger labels and Needs-Review count still reflect the old
   behaviour (transfers tagged "Shopping"). Aggregates are already correct because
