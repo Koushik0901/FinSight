@@ -250,9 +250,14 @@ fn load_uncategorized(
     conn: &mut rusqlite::Connection,
     _import_id: Option<&str>,
 ) -> Result<Vec<(String, String, i64)>> {
+    // Exclude transfers / credit-card payments: the builtin pass already flags
+    // them (is_transfer = 1) and they are not spending or income, so they must
+    // not be handed to the LLM — otherwise it invents a bogus spending category
+    // (e.g. a "PAYMENT RECEIVED - THANK YOU" card payment tagged "Shopping")
+    // and burns a low-confidence "Needs review" slot on something already known.
     let mut stmt = conn.prepare(
         "SELECT id, merchant_raw, amount_cents FROM transactions \
-         WHERE category_id IS NULL ORDER BY posted_at DESC",
+         WHERE category_id IS NULL AND is_transfer = 0 ORDER BY posted_at DESC",
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
@@ -462,6 +467,54 @@ mod tests {
             .unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
         assert!((confidence.unwrap() - 0.87).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn transfers_are_not_sent_to_the_llm_and_stay_uncategorized() {
+        // Phase 4 finding: credit-card payments / internal transfers are flagged
+        // is_transfer=1 by the builtin pass but left uncategorized. They must NOT
+        // be handed to the LLM — otherwise it tags a "PAYMENT RECEIVED" card
+        // payment as "Shopping" and floods Needs Review. Even if the model
+        // volunteers a category for one, the batch guard drops it.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE (not a transfer) + cat1 + account
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+                 VALUES('t2','a1','2024-02-01T00:00:00Z',298614,'PAYMENT RECEIVED - THANK YOU','cleared',0,1,'2024-02-01T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // Model tries to categorize BOTH; t2 must be rejected as out-of-batch.
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"},
+                {"txn_id": "t2", "category_id": "cat1", "confidence": 0.8, "rationale": "guessed"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        let (cat, conf): (Option<String>, Option<f64>) = conn
+            .query_row(
+                "SELECT category_id, ai_confidence FROM transactions WHERE id='t2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cat, None, "a transfer must stay uncategorized");
+        assert_eq!(conf, None, "a transfer must not get an LLM confidence");
+        // The real spending txn was still categorized.
+        let t1: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t1.as_deref(), Some("cat1"));
     }
 
     #[tokio::test]
