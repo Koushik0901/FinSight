@@ -60,6 +60,38 @@ async updateCategoryColor(id: string, color: string) : Promise<Result<null, AppE
     else return { status: "error", error: e  as any };
 }
 },
+async createCategory(label: string, groupId: string | null, color: string) : Promise<Result<Category, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_category", { label, groupId, color }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameCategory(id: string, label: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_category", { id, label }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async archiveCategory(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_category", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCategoryGuidance(id: string, guidance: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_category_guidance", { id, guidance }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -1345,6 +1377,12 @@ budgetCents: number;
  * Actual outflow this month (positive = spent)
  */
 spentCents: number; txnCount: number }
+export type Category = { id: string; group_id: string; label: string; color: string; icon: string | null; spending_type: string | null; 
+/**
+ * Free-text guidance the user attaches so the categorizer/Copilot know when
+ * to use this category (merchant hints, exclusions, intent).
+ */
+guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
@@ -1371,7 +1409,11 @@ txnCount: number; yearTotalCents: number;
 /**
  * Number of transactions categorised here so far this calendar year
  */
-yearTxnCount: number; budgetCents: number }
+yearTxnCount: number; budgetCents: number; 
+/**
+ * Free-text categorizer/Copilot guidance the user attached.
+ */
+guidance: string | null }
 /**
  * A single prior turn from the conversation history for multi-turn awareness.
  */

@@ -1,5 +1,6 @@
 use crate::error::AppResult;
 use crate::AppState;
+use finsight_core::models::Category;
 use finsight_core::repos::{categories, run};
 
 #[tauri::command]
@@ -13,4 +14,57 @@ pub async fn update_category_color(
     run(&db, move |conn| categories::update_color(conn, &id, &color))
         .await
         .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_category(
+    state: tauri::State<'_, AppState>,
+    label: String,
+    group_id: Option<String>,
+    color: String,
+) -> AppResult<Category> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::create(conn, &label, group_id.as_deref(), &color)
+    })
+    .await
+    .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_category(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    label: String,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| categories::rename(conn, &id, &label))
+        .await
+        .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn archive_category(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| categories::archive(conn, &id))
+        .await
+        .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_category_guidance(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    guidance: Option<String>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::set_guidance(conn, &id, guidance.as_deref())
+    })
+    .await
+    .map_err(crate::error::AppError::from)
 }

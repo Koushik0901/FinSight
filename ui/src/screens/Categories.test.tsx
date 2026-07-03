@@ -16,6 +16,10 @@ vi.mock("../api/hooks/transactions", () => ({
   })),
   useSetCategorySpendingType: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
   useUpdateCategoryColor: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
+  useCreateCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ id: "new" }), isPending: false })),
+  useRenameCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useArchiveCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useSetCategoryGuidance: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 
 describe("Categories — AI insight sentence", () => {
@@ -72,6 +76,23 @@ describe("Categories — scope-aware labels", () => {
     expect(screen.getByText("27")).toBeInTheDocument();
     expect(screen.queryByText("5")).not.toBeInTheDocument();
     expect(screen.queryByText("3")).not.toBeInTheDocument();
+  });
+});
+
+describe("Categories — management", () => {
+  it("opens the new-category input and a per-row Manage panel with guidance", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+
+    // New category flow.
+    fireEvent.click(screen.getByRole("button", { name: /New category/i }));
+    expect(screen.getByPlaceholderText(/Category name/i)).toBeInTheDocument();
+
+    // Per-row Manage reveals rename + guidance + archive controls.
+    const manageButtons = screen.getAllByRole("button", { name: /^Manage/i });
+    fireEvent.click(manageButtons[0]!);
+    expect(screen.getByText(/Categorizer & Copilot guidance/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save guidance/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Archive category/i })).toBeInTheDocument();
   });
 });
 

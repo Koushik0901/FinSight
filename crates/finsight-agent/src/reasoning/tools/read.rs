@@ -520,11 +520,18 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
                 .collect();
 
             let mut cat_stmt = ctx.conn.prepare(
-                "SELECT id, label FROM categories WHERE archived_at IS NULL ORDER BY label",
+                "SELECT id, label, guidance FROM categories WHERE archived_at IS NULL ORDER BY label",
             )?;
             let available_categories: Vec<Value> = cat_stmt
                 .query_map([], |r| {
-                    Ok(json!({"id": r.get::<_, String>(0)?, "label": r.get::<_, String>(1)?}))
+                    let guidance: Option<String> = r.get(2)?;
+                    let mut obj = json!({"id": r.get::<_, String>(0)?, "label": r.get::<_, String>(1)?});
+                    // Surface the user's per-category guidance so the model
+                    // follows their intent when proposing categories.
+                    if let Some(g) = guidance.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        obj["guidance"] = json!(g);
+                    }
+                    Ok(obj)
                 })?
                 .filter_map(|r| r.ok())
                 .collect();

@@ -192,6 +192,65 @@ export function useSetCategorySpendingType() {
   });
 }
 
+const invalidateCategoryQueries = (qc: ReturnType<typeof useQueryClient>) => {
+  qc.invalidateQueries({ queryKey: ["categories"] });
+  qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+  qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+  qc.invalidateQueries({ queryKey: ["transactions"] });
+};
+
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ label, groupId, color }: { label: string; groupId: string | null; color: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.createCategory(label, groupId, color);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
+  });
+}
+
+export function useRenameCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, label }: { id: string; label: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.renameCategory(id, label);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
+  });
+}
+
+export function useArchiveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.archiveCategory(id);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      invalidateCategoryQueries(qc);
+      qc.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useSetCategoryGuidance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, guidance }: { id: string; guidance: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setCategoryGuidance(id, guidance);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
+  });
+}
+
 export function useUpdateCategoryColor() {
   const qc = useQueryClient();
   return useMutation({

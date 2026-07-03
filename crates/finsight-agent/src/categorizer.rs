@@ -63,7 +63,7 @@ pub async fn run_job(
 
     // Build a set of valid category IDs for LLM output validation.
     let valid_category_ids: HashSet<String> =
-        categories.iter().map(|(id, _, _)| id.clone()).collect();
+        categories.iter().map(|(id, _, _, _)| id.clone()).collect();
 
     let total = uncategorized.len() as u32;
     let mut remaining: Vec<(String, String, i64)> = Vec::new(); // (txn_id, merchant_raw, amount_cents)
@@ -260,14 +260,16 @@ fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, S
     Ok(out)
 }
 
-fn load_categories(conn: &mut rusqlite::Connection) -> Result<Vec<(String, String, String)>> {
-    // (id, label, group_label)
+type CategoryRow = (String, String, String, Option<String>);
+
+fn load_categories(conn: &mut rusqlite::Connection) -> Result<Vec<CategoryRow>> {
+    // (id, label, group_label, guidance)
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.label, COALESCE(g.label, '') \
+        "SELECT c.id, c.label, COALESCE(g.label, ''), c.guidance \
          FROM categories c LEFT JOIN category_groups g ON g.id = c.group_id \
          WHERE c.archived_at IS NULL ORDER BY g.sort_order, c.sort_order",
     )?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);
@@ -294,12 +296,19 @@ fn load_recent_examples(conn: &mut rusqlite::Connection) -> Result<Vec<(String, 
 }
 
 fn build_system_prompt(
-    categories: &[(String, String, String)],
+    categories: &[CategoryRow],
     recent_examples: &[(String, String)],
 ) -> String {
     let cats_json = json!(categories
         .iter()
-        .map(|(id, label, group)| { json!({"id": id, "label": label, "group_label": group}) })
+        .map(|(id, label, group, guidance)| {
+            let mut obj = json!({"id": id, "label": label, "group_label": group});
+            // User-authored guidance tells the model when this category applies.
+            if let Some(g) = guidance.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                obj["guidance"] = json!(g);
+            }
+            obj
+        })
         .collect::<Vec<_>>());
     let examples_json = json!(recent_examples
         .iter()
@@ -307,8 +316,10 @@ fn build_system_prompt(
         .collect::<Vec<_>>());
     format!(
         "You are a personal finance transaction categorizer. Classify each transaction into \
-         exactly one of the provided categories. Respond with a valid JSON array only — \
-         no markdown, no explanation outside the array.\n\nCategories:\n{}\n\nRecent examples from this user (for calibration):\n{}",
+         exactly one of the provided categories. When a category includes a \"guidance\" note, \
+         follow it — it is the user's own instruction for when that category applies (merchant \
+         hints, exclusions, intent). Respond with a valid JSON array only — no markdown, no \
+         explanation outside the array.\n\nCategories:\n{}\n\nRecent examples from this user (for calibration):\n{}",
         cats_json, examples_json
     )
 }
