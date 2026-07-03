@@ -225,11 +225,61 @@ pub fn is_transfer(merchant_raw: &str) -> bool {
     TRANSFER_KEYWORDS.iter().any(|kw| m.contains(kw))
 }
 
+/// The standard starter categories the built-in categorizer targets. Grouped
+/// so they slot into the conscious-spending breakdown. `(id, group_id, label)`.
+const DEFAULT_CATEGORIES: &[(&str, &str, &str)] = &[
+    ("dining", "daily", "Dining"),
+    ("groceries", "daily", "Groceries"),
+    ("transport", "daily", "Transport"),
+    ("shopping", "lifestyle", "Shopping"),
+    ("travel", "lifestyle", "Travel"),
+    ("gifts", "lifestyle", "Gifts"),
+    ("housing", "fixed", "Housing"),
+    ("utilities", "fixed", "Utilities"),
+    ("subscriptions", "fixed", "Subscriptions"),
+    ("health", "wellbeing", "Health"),
+];
+const DEFAULT_GROUPS: &[(&str, &str)] = &[
+    ("fixed", "Fixed"),
+    ("daily", "Daily"),
+    ("lifestyle", "Lifestyle"),
+    ("wellbeing", "Wellbeing"),
+];
+
+/// Seed the standard starter categories, but ONLY when the categories table is
+/// empty — so a user who imports before completing onboarding's category step
+/// still gets their transactions categorized, without ever overwriting a
+/// user-configured set. Idempotent and safe to call on every import.
+pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
+    let existing: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))?;
+    if existing > 0 {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    for (gid, label) in DEFAULT_GROUPS {
+        tx.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES(?1, ?2, 0)",
+            params![gid, label],
+        )?;
+    }
+    for (i, (id, group_id, label)) in DEFAULT_CATEGORIES.iter().enumerate() {
+        tx.execute(
+            "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) VALUES(?1, ?2, ?3, '#94A3B8', ?4)",
+            params![id, group_id, label, i as i64],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// Apply the built-in keyword categorizer to every currently-uncategorized
 /// transaction. Only assigns categories that exist in the `categories` table.
 /// Returns the number of transactions categorized. Idempotent: a second run
 /// touches nothing, because matched rows are no longer `category_id IS NULL`.
 pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
+    // Ensure the categorizer has categories to assign, even when the user
+    // imported before completing onboarding's category step.
+    ensure_default_categories(conn)?;
     let existing: HashSet<String> = {
         let mut stmt = conn.prepare("SELECT id FROM categories WHERE archived_at IS NULL")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -405,9 +455,10 @@ mod tests {
     }
 
     #[test]
-    fn flags_transfers_even_when_no_categories_exist_yet() {
-        // Onboarding imports before categories are committed; transfer flagging
-        // must still work so report totals are correct in that window.
+    fn flags_transfers_and_seeds_categories_on_import_first() {
+        // Onboarding imports before categories are committed. Transfer flagging
+        // must work, AND the categorizer now auto-seeds the default categories
+        // so import-first transactions still get categorized.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         conn.execute(
@@ -420,11 +471,15 @@ mod tests {
         insert_txn(&conn, "t2", "TIM HORTONS #3356 BURNABY");
 
         let n = apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(n, 0, "no categories exist, so nothing is categorized");
+        assert_eq!(n, 1, "TIM HORTONS categorized once default categories auto-seed");
         let is_tf: i64 = conn
             .query_row("SELECT is_transfer FROM transactions WHERE id='t1'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(is_tf, 1, "transfer still flagged without categories");
+        assert_eq!(is_tf, 1, "the card payment is still flagged as a transfer");
+        let cat2: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t2'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat2.as_deref(), Some("dining"));
     }
 
     #[test]
@@ -468,5 +523,47 @@ mod tests {
             .query_row("SELECT category_id FROM transactions WHERE id='t5'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cat5.as_deref(), Some("dining"));
+    }
+
+    #[test]
+    fn import_first_seeds_default_categories_and_categorizes() {
+        // The Phase 4 finding: importing before onboarding's category step left
+        // everything uncategorized because no categories existed. apply_builtin
+        // now seeds the standard set when the table is empty.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('a1','Me','Bank','Credit','Card','USD','#000','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // No categories seeded — simulate import-before-onboarding.
+        let cats_before: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        assert_eq!(cats_before, 0);
+
+        insert_txn(&conn, "t1", "TIM HORTONS #3356 BURNABY"); // dining
+        insert_txn(&conn, "t2", "SPOTIFY STOCKHOLM"); // subscriptions
+
+        let n = apply_builtin_categorization(&mut conn).unwrap();
+        assert!(n >= 2, "import-first should now categorize known merchants, got {n}");
+
+        let cats_after: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        assert!(cats_after >= 10, "default categories should be seeded");
+        let cat1: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat1.as_deref(), Some("dining"));
+    }
+
+    #[test]
+    fn ensure_default_categories_never_overwrites_a_user_set() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn); // a partial user set exists
+        let before: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        let after: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        assert_eq!(before, after, "must not seed defaults when a category set already exists");
     }
 }
