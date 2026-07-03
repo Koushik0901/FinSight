@@ -149,4 +149,29 @@ describe("TauriAgUiAgent", () => {
       source: "backend",
     });
   });
+
+  it("surfaces a structured command error's message, never [object Object]", async () => {
+    const { commands } = await import("../../../api/client");
+    (commands.streamCopilotMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "error",
+      error: { code: "agent.reasoning", message: "The Copilot could not complete this request." },
+    });
+
+    const agent = new TauriAgUiAgent();
+    const events: BaseEvent[] = [];
+    const done = new Promise<void>((resolve, reject) => {
+      agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
+    });
+    await done;
+
+    const runError = events.find((event) => event.type === "RUN_ERROR");
+    expect(runError && "message" in runError ? runError.message : "").toBe(
+      "The Copilot could not complete this request.",
+    );
+    const shownText = events
+      .filter((event) => event.type === "TEXT_MESSAGE_CONTENT")
+      .map((event) => ("delta" in event ? String(event.delta) : ""))
+      .join("");
+    expect(shownText).not.toContain("[object Object]");
+  });
 });

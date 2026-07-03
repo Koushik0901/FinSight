@@ -15,6 +15,18 @@ function createId(prefix: string) {
   return `${prefix}-${uuid}`;
 }
 
+/// Extract a UI-safe message from a backend command error. The backend returns
+/// a structured `{ code, message }` AppError; we surface only its `message`
+/// (already sanitized server-side) and never `String(err)` — which would render
+/// "[object Object]" or risk echoing raw internals.
+function safeCommandErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "The Copilot request failed. Please try again.";
+}
+
 function textFromAgUiMessage(message: unknown): string {
   if (!message || typeof message !== "object") return "";
   const content = (message as { content?: unknown }).content;
@@ -429,9 +441,9 @@ export class TauriAgUiAgent extends AbstractAgent {
             null,
           );
 
-          if (result.status === "error") fail(String(result.error), "copilot.command_error");
+          if (result.status === "error") fail(safeCommandErrorMessage(result.error), "copilot.command_error");
         } catch (error) {
-          fail(error instanceof Error ? error.message : String(error), "copilot.exception");
+          fail(error instanceof Error ? error.message : safeCommandErrorMessage(error), "copilot.exception");
         }
       };
 

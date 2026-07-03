@@ -505,7 +505,20 @@ pub async fn stream_copilot_message(
                 enrich_agent_answer(&mut fallback);
                 fallback
             } else {
-                return Err(AppError::new("agent.reasoning", tool_err.to_string()));
+                let safe = "The Copilot could not complete this request. Check the AI provider and model in Settings → Agent, then try again.";
+                emit_stream_error(
+                    &app,
+                    &conv_id,
+                    &run_id,
+                    &assistant_message_id,
+                    &parent_message_id,
+                    next_sequence(),
+                    "agent.reasoning",
+                    safe,
+                    &tool_err.to_string(),
+                );
+                persist_failed_run(&db, &conv_id, &run_id, "agent.reasoning", safe).await;
+                return Err(AppError::new("agent.reasoning", safe));
             }
         }
     };
@@ -533,10 +546,20 @@ pub async fn stream_copilot_message(
         }
 
         if answer.prose.trim().is_empty() {
-            return Err(AppError::new(
+            let safe = "Copilot finished without a text response. Check the configured AI provider/model in Settings → Agent, then try again.";
+            emit_stream_error(
+                &app,
+                &conv_id,
+                &run_id,
+                &assistant_message_id,
+                &parent_message_id,
+                next_sequence(),
                 "agent.empty_response",
-                "Copilot finished without a text response. Check the configured AI provider/model in Settings -> Agent, then try again.",
-            ));
+                safe,
+                "reasoning + planner both returned empty prose",
+            );
+            persist_failed_run(&db, &conv_id, &run_id, "agent.empty_response", safe).await;
+            return Err(AppError::new("agent.empty_response", safe));
         }
     }
 
@@ -604,6 +627,7 @@ pub async fn stream_copilot_message(
         .response_blocks
         .iter()
         .filter(|block| should_emit_response_block(block))
+        .filter(|block| response_block_within_artifact_bounds(block))
         .cloned()
         .enumerate()
     {
@@ -896,6 +920,77 @@ fn emit_copilot_frame(app: &tauri::AppHandle, frame: CopilotStreamFrame) {
     let _ = app.emit("copilot-stream-frame", frame);
 }
 
+/// Emit a Copilot `Error` stream frame with a UI-safe message. The raw error
+/// (which may contain provider URLs, response bodies, or other internals) is
+/// only logged locally in debug builds — never sent to the frontend. This keeps
+/// Task-4 guarantees: no raw stack traces, provider errors, URLs, or secrets in
+/// the UI.
+#[allow(clippy::too_many_arguments)]
+fn emit_stream_error(
+    app: &tauri::AppHandle,
+    conv_id: &str,
+    run_id: &str,
+    assistant_message_id: &str,
+    parent_message_id: &Option<String>,
+    sequence_number: u64,
+    code: &str,
+    safe_message: &str,
+    raw_detail: &str,
+) {
+    #[cfg(debug_assertions)]
+    {
+        eprintln!("copilot stream error code={code} run_id={run_id} detail={raw_detail}");
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = raw_detail;
+    }
+    emit_copilot_frame(
+        app,
+        CopilotStreamFrame::Error {
+            conversation_id: conv_id.to_string(),
+            run_id: run_id.to_string(),
+            thread_id: conv_id.to_string(),
+            assistant_message_id: assistant_message_id.to_string(),
+            parent_message_id: parent_message_id.clone(),
+            sequence_number,
+            code: code.to_string(),
+            message: safe_message.to_string(),
+        },
+    );
+}
+
+/// Persist a durable "failed" assistant turn so a reloaded conversation can tell
+/// a failed run apart from a completed one (Task 7 reload safety). Best-effort:
+/// a persistence failure here must not mask the original error.
+async fn persist_failed_run(
+    db: &finsight_core::Db,
+    conv_id: &str,
+    run_id: &str,
+    code: &str,
+    safe_message: &str,
+) {
+    let metadata = serde_json::to_string(&json!({
+        "schemaVersion": 1,
+        "runtime": "ag-ui",
+        "runId": run_id,
+        "threadId": conv_id,
+        "runStatus": "failed",
+        "errorCode": code,
+    }))
+    .unwrap_or_default();
+    let cid = conv_id.to_string();
+    let msg = safe_message.to_string();
+    let meta = metadata.clone();
+    let _ = run(db, move |conn| {
+        let message =
+            conversations::insert_message(conn, &cid, "assistant", &msg, None, None, None, None)?;
+        conversations::update_message_run_status(conn, &message.id, "failed", Some(&meta))?;
+        Ok::<_, finsight_core::CoreError>(())
+    })
+    .await;
+}
+
 fn tool_names_from_trace(trace: &[String]) -> Vec<String> {
     trace
         .iter()
@@ -987,6 +1082,61 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         | AgentResponseBlock::BarChart(_)
         | AgentResponseBlock::LineChart(_)
         | AgentResponseBlock::MetricGrid { .. } => true,
+    }
+}
+
+// Artifact bounds — kept in lockstep with `ui/src/components/copilot/agUi/artifacts.ts`
+// so the backend never emits a `ResponseBlock` the frontend would reject as
+// oversized/malformed. A block that violates a bound is simply not emitted as an
+// artifact (the prose still carries the information).
+const ARTIFACT_MAX_TABLE_ROWS: usize = 200;
+const ARTIFACT_MAX_TABLE_COLS: usize = 24;
+const ARTIFACT_MAX_METRICS: usize = 50;
+const ARTIFACT_MAX_CHART_POINTS: usize = 200;
+const ARTIFACT_MAX_TEXT: usize = 20_000;
+const ARTIFACT_MAX_LABEL: usize = 400;
+
+fn label_ok(value: &str) -> bool {
+    value.chars().count() <= ARTIFACT_MAX_LABEL
+}
+
+fn opt_label_ok(value: &Option<String>) -> bool {
+    value.as_deref().map(label_ok).unwrap_or(true)
+}
+
+/// True when a response block is safe to emit as a finance artifact: within all
+/// size bounds and free of non-finite chart values. Mirrors the TypeScript
+/// `CopilotResponseBlockSchema` validation on the receiving end.
+fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
+    match block {
+        AgentResponseBlock::Markdown { markdown } => markdown.chars().count() <= ARTIFACT_MAX_TEXT,
+        AgentResponseBlock::Callout { tone, title, body } => {
+            label_ok(tone) && opt_label_ok(title) && body.chars().count() <= ARTIFACT_MAX_TEXT
+        }
+        AgentResponseBlock::Table(t) => {
+            opt_label_ok(&t.title)
+                && t.columns.len() <= ARTIFACT_MAX_TABLE_COLS
+                && t.columns.iter().all(|c| label_ok(c))
+                && t.rows.len() <= ARTIFACT_MAX_TABLE_ROWS
+                && t.rows
+                    .iter()
+                    .all(|r| r.len() <= ARTIFACT_MAX_TABLE_COLS && r.iter().all(|c| label_ok(c)))
+        }
+        AgentResponseBlock::BarChart(c) | AgentResponseBlock::LineChart(c) => {
+            opt_label_ok(&c.title)
+                && opt_label_ok(&c.series_label)
+                && c.data.len() <= ARTIFACT_MAX_CHART_POINTS
+                && c.data.iter().all(|p| label_ok(&p.label) && p.value.is_finite())
+        }
+        AgentResponseBlock::MetricGrid { metrics } => {
+            metrics.len() <= ARTIFACT_MAX_METRICS
+                && metrics.iter().all(|m| {
+                    label_ok(&m.label)
+                        && label_ok(&m.value)
+                        && opt_label_ok(&m.detail)
+                        && opt_label_ok(&m.tone)
+                })
+        }
     }
 }
 
@@ -1212,4 +1362,59 @@ fn build_question_with_history(text: &str, history: &[ChatHistoryEntry]) -> Stri
         "--- Prior conversation context ---\n{}\n--- End context ---\n\nCurrent question: {text}",
         history_text.join("\n")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn small_table_is_within_artifact_bounds() {
+        let block = AgentResponseBlock::Table(AgentTableBlock {
+            title: Some("Top spending".into()),
+            columns: vec!["Category".into(), "Spent".into()],
+            rows: vec![vec!["Dining".into(), "$8,370".into()]],
+        });
+        assert!(response_block_within_artifact_bounds(&block));
+    }
+
+    #[test]
+    fn oversized_table_is_rejected() {
+        let block = AgentResponseBlock::Table(AgentTableBlock {
+            title: None,
+            columns: vec!["a".into(), "b".into()],
+            rows: (0..ARTIFACT_MAX_TABLE_ROWS + 1)
+                .map(|_| vec!["x".into(), "y".into()])
+                .collect(),
+        });
+        assert!(!response_block_within_artifact_bounds(&block));
+    }
+
+    #[test]
+    fn non_finite_chart_value_is_rejected() {
+        let block = AgentResponseBlock::BarChart(AgentChartBlock {
+            title: None,
+            series_label: None,
+            data: vec![AgentChartPoint {
+                label: "NaN point".into(),
+                value: f64::NAN,
+            }],
+        });
+        assert!(!response_block_within_artifact_bounds(&block));
+    }
+
+    #[test]
+    fn too_many_metrics_is_rejected() {
+        let block = AgentResponseBlock::MetricGrid {
+            metrics: (0..ARTIFACT_MAX_METRICS + 1)
+                .map(|_| AgentMetricBlock {
+                    label: "l".into(),
+                    value: "v".into(),
+                    detail: None,
+                    tone: None,
+                })
+                .collect(),
+        };
+        assert!(!response_block_within_artifact_bounds(&block));
+    }
 }
