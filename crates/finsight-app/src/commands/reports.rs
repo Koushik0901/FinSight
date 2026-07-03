@@ -160,9 +160,13 @@ pub async fn get_report_data(
                  FROM transactions
                  WHERE strftime('%Y-%m', posted_at) >= ?1
                    AND strftime('%Y-%m', posted_at) <= ?2
+                   AND is_transfer = 0
                  GROUP BY mo
                  ORDER BY mo",
                 )?;
+                // Every row must be readable — a corrupt page or query failure
+                // partway through must surface as a real error, not silently
+                // drop rows and render a fabricated $0 for the affected months.
                 let db_rows: std::collections::HashMap<String, (i64, i64)> = stmt
                     .query_map(rusqlite::params![first, last], |r| {
                         Ok((
@@ -171,7 +175,8 @@ pub async fn get_report_data(
                             r.get::<_, i64>(2)?,
                         ))
                     })?
-                    .filter_map(|r| r.ok())
+                    .collect::<Result<Vec<_>, rusqlite::Error>>()?
+                    .into_iter()
                     .map(|(mo, inc, exp)| (mo, (inc, exp)))
                     .collect();
                 Ok(month_list
@@ -217,14 +222,17 @@ pub async fn get_report_data(
                         SUM(-t.amount_cents) AS total, COUNT(t.id) \
                  FROM transactions t \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
                  GROUP BY c.id, c.label, c.color \
                  ORDER BY total DESC \
                  LIMIT 10",
             )?;
             let rows = stmt.query_map(rusqlite::params![scope_start, scope_end], |r| {
                 Ok(CategoryTotal {
-                    category_id: r.get(0)?,
+                    // Uncategorized spending groups on a NULL category id via the
+                    // LEFT JOIN; represent it with an empty id rather than
+                    // failing the whole report on the NULL.
+                    category_id: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
                     label: r
                         .get::<_, Option<String>>(1)?
                         .unwrap_or_else(|| "Uncategorized".to_string()),
@@ -233,8 +241,7 @@ pub async fn get_report_data(
                     txn_count: r.get(4)?,
                 })
             })?;
-            let out: Vec<_> = rows.flatten().collect();
-            out
+            rows.collect::<Result<Vec<_>, rusqlite::Error>>()?
         };
 
         let top_merchants = {
@@ -243,7 +250,7 @@ pub async fn get_report_data(
                         SUM(-t.amount_cents) AS total, COUNT(t.id) \
                  FROM transactions t \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
                  GROUP BY t.merchant_raw \
                  ORDER BY total DESC \
                  LIMIT 10",
@@ -257,8 +264,7 @@ pub async fn get_report_data(
                     txn_count: r.get(4)?,
                 })
             })?;
-            let out: Vec<_> = rows.flatten().collect();
-            out
+            rows.collect::<Result<Vec<_>, rusqlite::Error>>()?
         };
 
         Ok(ReportData {
@@ -293,8 +299,8 @@ pub async fn get_month_totals(state: tauri::State<'_, AppState>) -> AppResult<Mo
     run(&db, move |conn| {
         let (income, expense, txn_count): (i64, i64, i64) = conn.query_row(
             "SELECT \
-               COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents  ELSE 0 END), 0), \
-               COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0), \
+               COALESCE(SUM(CASE WHEN amount_cents > 0 AND is_transfer = 0 THEN amount_cents  ELSE 0 END), 0), \
+               COALESCE(SUM(CASE WHEN amount_cents < 0 AND is_transfer = 0 THEN -amount_cents ELSE 0 END), 0), \
                COUNT(*) \
              FROM transactions WHERE posted_at >= ?1",
             rusqlite::params![this_month_start],
@@ -339,7 +345,7 @@ pub async fn get_savings_rate_history(
                 COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS income,
                 COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS expense
              FROM transactions
-             WHERE posted_at >= ?1
+             WHERE posted_at >= ?1 AND is_transfer = 0
              GROUP BY month
              ORDER BY month ASC",
         )?;
@@ -424,7 +430,7 @@ pub async fn create_monthly_review(
                 COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
              FROM transactions
-             WHERE posted_at >= ?1 AND posted_at < ?2",
+             WHERE posted_at >= ?1 AND posted_at < ?2 AND is_transfer = 0",
             rusqlite::params![&month_start, &month_end],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
@@ -436,27 +442,26 @@ pub async fn create_monthly_review(
         };
 
         let month_str = format!("{}-{:02}", input.year, input.month);
-        let mut over_budget_categories = Vec::new();
-        if let Ok(mut stmt) = conn.prepare(
-            "WITH actuals AS (
-               SELECT category_id, SUM(ABS(amount_cents)) AS spent
-               FROM transactions
-               WHERE posted_at >= ?1 AND posted_at < ?2 AND amount_cents < 0
-               GROUP BY category_id
-             )
-             SELECT c.label FROM budgets b
-             JOIN categories c ON c.id = b.category_id
-             JOIN actuals a ON a.category_id = b.category_id
-             WHERE b.month = ?3 AND a.spent > b.amount_cents",
-        ) {
-            if let Ok(rows) =
-                stmt.query_map(rusqlite::params![&month_start, &month_end, &month_str], |r| {
+        let over_budget_categories: Vec<String> = {
+            let mut stmt = conn.prepare(
+                "WITH actuals AS (
+                   SELECT category_id, SUM(ABS(amount_cents)) AS spent
+                   FROM transactions
+                   WHERE posted_at >= ?1 AND posted_at < ?2 AND amount_cents < 0 AND is_transfer = 0
+                   GROUP BY category_id
+                 )
+                 SELECT c.label FROM budgets b
+                 JOIN categories c ON c.id = b.category_id
+                 JOIN actuals a ON a.category_id = b.category_id
+                 WHERE b.month = ?3 AND a.spent > b.amount_cents",
+            )?;
+            let collected = stmt
+                .query_map(rusqlite::params![&month_start, &month_end, &month_str], |r| {
                     r.get::<_, String>(0)
-                })
-            {
-                over_budget_categories = rows.flatten().collect();
-            }
-        }
+                })?
+                .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+            collected
+        };
 
         let goal_progress = finsight_core::repos::goals::list(conn)
             .unwrap_or_default()

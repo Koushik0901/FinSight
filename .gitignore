@@ -25,6 +25,7 @@ ui/dist/
 *.db
 .env
 .env.local
+samples/
 
 # Generated bindings — committed in this project
 # ui/src/api/bindings.ts is committed; do not ignore.

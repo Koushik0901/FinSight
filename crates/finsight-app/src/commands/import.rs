@@ -58,6 +58,16 @@ pub async fn import_csv(
     .map_err(|e| AppError::new("internal", format!("join: {e}")))?;
 
     let summary = summary?;
+
+    // Deterministic, provider-free baseline categorization. Runs on every import
+    // so common merchants get a stable category even with no LLM provider
+    // configured; the AI categorizer (if a provider is set) still refines the
+    // rest. Best-effort — a failure here must not fail the import itself.
+    {
+        let cat_db = (*state.db).clone();
+        let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
+    }
+
     app.emit("import-complete", &summary).ok();
 
     let notify_app = app.clone();

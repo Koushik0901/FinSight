@@ -25,7 +25,13 @@ export function useNetWorth(): number {
   const { data: accounts = [] } = useAccounts();
   const { data: assets = [] } = useManualAssets();
   const { data: liabilities = [] } = useLiabilities();
-  const accountCents = accounts.reduce((s, a) => s + a.balance_cents, 0);
+  // Accounts with no confirmed balance (e.g. CSV-imported history with no
+  // balance field) are excluded rather than silently counted as $0 — a
+  // fabricated zero would understate or overstate net worth without saying
+  // so. Mirrors the same exclusion in net_worth::record_today on the backend.
+  const accountCents = accounts
+    .filter((a) => a.balance_known)
+    .reduce((s, a) => s + a.balance_cents, 0);
   const assetCents = assets.reduce((s, a) => s + a.valueCents, 0);
   const liabilityCents = liabilities.reduce((s, l) => s + l.balanceCents, 0);
   return accountCents + assetCents - liabilityCents;

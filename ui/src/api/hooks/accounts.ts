@@ -102,3 +102,24 @@ export function useArchiveAccount() {
     },
   });
 }
+
+export function useSetAccountBalance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, balanceCents }: { id: string; balanceCents: number }) => {
+      if (!isTauriRuntime()) {
+        throw new Error("This action needs the desktop app runtime.");
+      }
+      const result = await commands.setAccountBalance(id, balanceCents);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["accounts"] });
+      qc.invalidateQueries({ queryKey: ["month-totals"] });
+      qc.invalidateQueries({ queryKey: ["net-worth"] });
+      qc.invalidateQueries({ queryKey: ["net-worth-history"] });
+      qc.invalidateQueries({ queryKey: ["account-balance-history"] });
+      qc.invalidateQueries({ queryKey: ["account-balance-sparklines"] });
+    },
+  });
+}

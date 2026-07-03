@@ -34,8 +34,10 @@ export default function Accounts() {
   const syncAll = useSyncAllSimpleFinAccounts();
   const netWorth = useNetWorth();
 
-  const connectedAssets = accounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
-  const connectedLiabilities = accounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
+  const knownAccounts = accounts.filter((account) => account.balance_known);
+  const unknownBalanceCount = accounts.length - knownAccounts.length;
+  const connectedAssets = knownAccounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
+  const connectedLiabilities = knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
   const manualAssetsTotal = assets.reduce((sum, asset) => sum + asset.valueCents, 0);
   const liabilitiesTotal = liabilities.reduce((sum, liability) => sum + liability.balanceCents, 0);
   const lastSyncLabel = accounts.map((account) => account.last_synced_at).filter(Boolean).sort().slice(-1)[0] ?? null;
@@ -92,11 +94,16 @@ export default function Accounts() {
       </header>
 
       <div className="stat-row">
-        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: "USD" })}</div><div className="sub">{accounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
+        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: "USD" })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
         <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: "USD" })}</div><div className="sub">{assets.length} tracked manually</div></div>
         <div className="stat"><div className="label">Liability total</div><div className="value money">{money(liabilitiesTotal || connectedLiabilities, { currency: "USD" })}</div><div className="sub">Debt and payoff accounts</div></div>
         <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: "USD" })}</div><div className="sub">Across every balance</div></div>
       </div>
+      {unknownBalanceCount > 0 && (
+        <div className="muted" style={{ fontSize: 12.5, marginTop: -8, marginBottom: 16 }} role="status">
+          {unknownBalanceCount} account{unknownBalanceCount === 1 ? "" : "s"} {unknownBalanceCount === 1 ? "has" : "have"} no balance set yet — totals above exclude {unknownBalanceCount === 1 ? "it" : "them"}.
+        </div>
+      )}
 
       <div className="section">
         <div>
@@ -126,12 +133,16 @@ export default function Accounts() {
                     cursor: "pointer",
                   }}
                 >
-                  <span className="cswatch" style={{ background: account.balance_cents >= 0 ? "var(--positive)" : "var(--negative)" }} />
+                  <span className="cswatch" style={{ background: !account.balance_known ? "var(--ink-faint)" : account.balance_cents >= 0 ? "var(--positive)" : "var(--negative)" }} />
                   <div>
                     <div>{getAccountDisplayName(account)}</div>
                     <div className="muted" style={{ fontSize: 12 }}>{account.bank} · {account.type}</div>
                   </div>
-                  <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+                  {account.balance_known ? (
+                    <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+                  ) : (
+                    <div className="muted" style={{ fontSize: 13, textAlign: "right" }}>Balance not set</div>
+                  )}
                 </button>
               ))
             )}

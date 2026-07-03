@@ -38,6 +38,20 @@ async archiveAccount(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * User-confirmed "this is my real balance right now" entry point — e.g. after
+ * importing CSV history that carries no balance field. Always stamped with
+ * source="manual" so `list_summaries` treats it as a trustworthy balance
+ * rather than the untouched account-creation seed value.
+ */
+async setAccountBalance(id: string, balanceCents: number) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_account_balance", { id, balanceCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateCategoryColor(id: string, color: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_category_color", { id, color }) };
@@ -787,6 +801,22 @@ async setCurrency(currency: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Factory-reset: wipes every local financial/user-data table (accounts,
+ * transactions, budgets, goals, categories, reports/insight caches,
+ * scenarios, recipes, agent memory/context, review queues, etc.) while
+ * preserving `settings` (provider selection, currency, toggles) and the OS
+ * keychain (API keys, DB encryption key) untouched. The frontend is
+ * responsible for the double-confirmation UX before calling this.
+ */
+async deleteAllData() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_all_data") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async exportAllDataJson() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_all_data_json") };
@@ -1228,7 +1258,14 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 export type AccountBalancePoint = { date: string; balanceCents: number }
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null }
 export type AccountSparkline = { accountId: string; points: AccountBalancePoint[] }
-export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean }
+export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; 
+/**
+ * False when `balance_cents` is just the untouched account-creation seed
+ * value and the account has transaction activity that could have moved
+ * the real balance since then. The UI must not present `balance_cents`
+ * as a trustworthy current balance when this is false.
+ */
+balance_known?: boolean; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean }
 export type AccountSyncResult = { accountId: string; added: number; updated: number; skipped: number; queuedForReview: number; error: string | null }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other"
 /**

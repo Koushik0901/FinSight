@@ -22,19 +22,29 @@ pub fn record_snapshot(conn: &mut Connection, total_cents: i64) -> CoreResult<()
 /// snapshot. Keeps the recorded net worth consistent with the headline shown
 /// on the Today/Accounts screens.
 pub fn record_today(conn: &mut Connection) -> CoreResult<()> {
-    let accounts_sum: i64 = accounts::list_summaries(conn)?
+    let accounts = accounts::list_summaries(conn)?;
+    let assets = manual_assets::list(conn)?;
+    let liabilities = liabilities::list(conn)?;
+
+    // If the user has removed every account, asset, and liability, there is
+    // nothing meaningful to trend. Wipe stale snapshots so the homepage chart
+    // does not keep showing a phantom net-worth history.
+    if accounts.is_empty() && assets.is_empty() && liabilities.is_empty() {
+        conn.execute("DELETE FROM net_worth_snapshots", [])?;
+        return Ok(());
+    }
+
+    // Accounts with no confirmed balance (e.g. CSV-imported history with no
+    // balance field) are excluded rather than silently counted as a real $0 —
+    // mirrors the same exclusion in the frontend's useNetWorth().
+    let accounts_sum: i64 = accounts
         .iter()
+        .filter(|a| a.balance_known)
         .map(|a| a.balance_cents)
         .sum();
-    let assets: i64 = manual_assets::list(conn)?
-        .iter()
-        .map(|a| a.value_cents)
-        .sum();
-    let liabilities: i64 = liabilities::list(conn)?
-        .iter()
-        .map(|l| l.balance_cents)
-        .sum();
-    record_snapshot(conn, accounts_sum + assets - liabilities)
+    let assets_sum: i64 = assets.iter().map(|a| a.value_cents).sum();
+    let liabilities_sum: i64 = liabilities.iter().map(|l| l.balance_cents).sum();
+    record_snapshot(conn, accounts_sum + assets_sum - liabilities_sum)
 }
 
 pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorthPoint>> {
@@ -156,5 +166,59 @@ mod tests {
         assert_eq!(hist.len(), 1);
         // 10,000,000 accounts + 50,000,000 assets − 30,000,000 liabilities
         assert_eq!(hist[0].total_cents, 30_000_000);
+    }
+
+    #[test]
+    fn record_today_clears_stale_snapshots_when_nothing_to_track() {
+        use crate::models::{AccountType, NewAccount};
+        use crate::repos::accounts;
+
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let acct = accounts::insert(
+            &mut conn,
+            NewAccount {
+                owner: "me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Checking,
+                name: "Checking".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#3B82F6".into(),
+                source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
+                opening_balance_cents: 100_000,
+                simplefin_account_id: None,
+                nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "cash".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
+            },
+        )
+        .unwrap();
+
+        record_today(&mut conn).unwrap();
+        assert_eq!(list_history(&mut conn, 30).unwrap().len(), 1);
+
+        // Remove the only source of net-worth data.
+        accounts::archive(&mut conn, &acct.id).unwrap();
+
+        // Recording today with nothing tracked should clean up stale snapshots
+        // instead of leaving a phantom trendline on the homepage.
+        record_today(&mut conn).unwrap();
+        assert!(list_history(&mut conn, 30).unwrap().is_empty());
     }
 }

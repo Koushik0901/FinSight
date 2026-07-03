@@ -39,7 +39,7 @@ function MatchCard({
           <div className="row row-sm wrap">
             <strong>{matchTxn?.merchant_raw ?? "Existing transaction"}</strong>
             {match.isRecommended && <span className="chip">Recommended</span>}
-            <span className="muted">Score {Math.round(match.score * 100)}%</span>
+            <span className="muted">Match strength {Math.round(match.score)}</span>
           </div>
           <div className="muted" style={{ fontSize: 12.5 }}>
             {matchTxn ? `${new Date(matchTxn.posted_at).toLocaleDateString()} · ${money(matchTxn.amount_cents, { decimals: 2 })}` : "Transaction details unavailable"}
@@ -89,7 +89,7 @@ function CandidateRow({
             <strong>{item.candidate.merchantRaw}</strong>
             <span className="chip">{new Date(item.candidate.postedAt).toLocaleDateString()}</span>
             <span className="chip">{accountName}</span>
-            <span className="chip">Confidence {Math.round(item.candidate.confidence * 100)}%</span>
+            <span className="chip">Match strength {Math.round(item.candidate.confidence)}</span>
           </div>
           <div className="row row-sm wrap">
             <span className={`money num${item.candidate.amountCents > 0 ? " pos" : ""}`}>

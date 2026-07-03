@@ -34,7 +34,7 @@ FinSight is designed around one goal: helping you become the master of your own 
 | Journey | ✅ | 7-milestone financial journey from stability to freedom, with Copilot entry points |
 | Rules | ✅ | Pattern rules, agent auto-categorization, toggle enable/disable |
 | Settings | ✅ | LLM provider config (Ollama / OpenAI-compat / Anthropic), test connection |
-| Onboarding | ✅ | Sample data seeding, category starter pack, provider setup |
+| Onboarding | ✅ | Connect accounts (CSV / manual / SimpleFin), category starter pack, provider setup |
 
 ## Development
 

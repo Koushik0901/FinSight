@@ -36,9 +36,14 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
         ],
     )?;
 
-    // Seed today's balance row.
+    // Seed today's balance row with source='seed' so it is distinguishable from
+    // a user-confirmed, synced, or recompute-derived balance. An untouched seed
+    // is NOT treated as a trustworthy current balance once the account also has
+    // transaction history it doesn't account for (see `list_summaries` /
+    // `recompute_balance_if_linked`).
     conn.execute(
-        "INSERT INTO account_balances (account_id, as_of_date, balance_cents) VALUES (?1, ?2, ?3)",
+        "INSERT INTO account_balances (account_id, as_of_date, balance_cents, source) \
+         VALUES (?1, ?2, ?3, 'seed')",
         params![
             &id,
             now.date_naive().to_string(),
@@ -83,12 +88,21 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
     let mut stmt = conn.prepare(
         "SELECT a.id, a.owner, a.bank, a.type, a.name, a.currency, a.color, \
                 COALESCE((SELECT balance_cents FROM account_balances b \
-                          WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance, \
+                          WHERE b.account_id = a.id \
+                          ORDER BY b.as_of_date DESC, \
+                            CASE b.source WHEN 'simplefin' THEN 0 WHEN 'seed' THEN 2 ELSE 1 END \
+                          LIMIT 1), 0) AS balance, \
                 a.source, a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct, \
                 a.simplefin_account_id, a.last_synced_at, a.nickname, \
                 a.connection_id, a.institution_id, a.external_account_id, a.official_name, a.mask, \
                 a.subtype, a.account_group, a.available_balance_cents, a.balance_date, a.extra_json, \
-                a.raw_json, a.import_pending \
+                a.raw_json, a.import_pending, \
+                CASE \
+                  WHEN EXISTS (SELECT 1 FROM account_balances b \
+                               WHERE b.account_id = a.id AND b.source <> 'seed') THEN 1 \
+                  WHEN NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id) THEN 1 \
+                  ELSE 0 \
+                END AS balance_known \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
@@ -105,6 +119,7 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             currency: r.get(5)?,
             color: r.get(6)?,
             balance_cents: r.get(7)?,
+            balance_known: r.get::<_, i64>(28)? != 0,
             source: r.get(8)?,
             liquidity_type: r.get(9)?,
             emergency_fund_eligible: r.get::<_, i64>(10)? != 0,
@@ -322,14 +337,34 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
     // The earliest balance snapshot is the "opening" baseline for this account.
     // We then add only transactions that occurred *after* that snapshot date so
     // we don't double-count activity already reflected in the baseline.
-    let (opening_balance, opening_date): (i64, String) = conn
+    let (opening_balance, opening_date, opening_source): (i64, String, Option<String>) = conn
         .query_row(
-            "SELECT COALESCE(balance_cents, 0), as_of_date FROM account_balances \
+            "SELECT COALESCE(balance_cents, 0), as_of_date, source FROM account_balances \
              WHERE account_id = ?1 ORDER BY as_of_date ASC, rowid ASC LIMIT 1",
             params![account_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
-        .unwrap_or((0, "1970-01-01".to_string()));
+        .unwrap_or((0, "1970-01-01".to_string(), None));
+
+    // If the only baseline is the untouched account-creation seed *and* there are
+    // transactions dated on or before it, those historical transactions are not
+    // reflected in the baseline and we cannot compute a trustworthy current
+    // balance from the data alone. Writing anything here would fabricate a
+    // misleading figure (typically $0 for a CSV import whose seed is dated at
+    // account-creation time, after all its historical rows). Leave the balance
+    // genuinely unknown so the UI can prompt the user to set it.
+    let only_seed_baseline = opening_source.as_deref() == Some("seed");
+    if only_seed_baseline {
+        let unaccounted: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transactions \
+             WHERE account_id = ?1 AND pending = 0 AND date(posted_at) <= ?2",
+            params![account_id, opening_date],
+            |r| r.get(0),
+        )?;
+        if unaccounted > 0 {
+            return Ok(());
+        }
+    }
 
     let txn_sum: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
@@ -845,5 +880,112 @@ mod tests {
         assert_eq!(a_series.points.len(), 1);
         assert_eq!(a_series.points[0].balance_cents, 100_000);
         assert_eq!(b_series.points[0].balance_cents, 500_000);
+    }
+
+    /// Inserts a cleared transaction directly (bypassing the higher-level repo
+    /// so the test controls the posted date precisely).
+    fn insert_txn(conn: &Connection, account_id: &str, cents: i64, posted_date: &str) {
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, status, created_at) \
+             VALUES(?1, ?2, ?3, ?4, 'X', 'cleared', ?5)",
+            params![
+                Uuid::new_v4().to_string(),
+                account_id,
+                format!("{posted_date}T12:00:00+00:00"),
+                cents,
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn recompute_leaves_balance_unknown_for_csv_style_historical_import() {
+        // Reproduces the "$0.00 after CSV import" defect: an account whose only
+        // baseline is the same-day auto-seed, with all transactions dated in the
+        // past. recompute must NOT fabricate a (sourced) balance here.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn); // seed: $0 @ today, source NULL
+        insert_txn(&conn, &acc.id, -8_432, "2023-06-01");
+        insert_txn(&conn, &acc.id, 500_000, "2023-06-15");
+
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+
+        // Only the 'seed' baseline remains — no fabricated computed snapshot.
+        let non_seed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account_balances WHERE account_id = ?1 AND source <> 'seed'",
+                params![acc.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(non_seed, 0, "recompute must not fabricate a computed balance");
+
+        // ...and the summary reports the balance as not known.
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert!(!summary.balance_known, "CSV-imported account balance must be unknown");
+    }
+
+    #[test]
+    fn balance_known_true_once_user_sets_a_balance_after_import() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, -8_432, "2023-06-01");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+
+        // User confirms a real balance (this is what set_account_balance does).
+        let today = Utc::now().date_naive().to_string();
+        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_234_56, None, Some("manual")).unwrap();
+
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert!(summary.balance_known);
+        assert_eq!(summary.balance_cents, 1_234_56);
+    }
+
+    #[test]
+    fn balance_known_true_for_account_with_no_transactions() {
+        // A fresh account with a seeded opening balance and no activity: its
+        // seed value IS the truth, so the balance is known.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert!(summary.balance_known);
+        assert_eq!(summary.balance_cents, 0);
+    }
+
+    #[test]
+    fn recompute_still_tracks_manual_account_with_future_dated_activity() {
+        // Regression guard: the fix must not break the normal manual-entry path
+        // where transactions are dated after the opening baseline.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn); // seed $0 @ today
+        let tomorrow = (Utc::now().date_naive() + chrono::Duration::days(1)).to_string();
+        insert_txn(&conn, &acc.id, 250_000, &tomorrow);
+
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert!(summary.balance_known);
+        assert_eq!(summary.balance_cents, 250_000);
     }
 }

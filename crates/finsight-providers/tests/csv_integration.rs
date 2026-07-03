@@ -107,6 +107,60 @@ fn preview_returns_correct_row_count_and_first_rows() {
 }
 
 #[test]
+fn amex_all_time_statement_imports_with_space_month_date() {
+    let (_d, db, acct) = fresh_db();
+    let mapping = CsvImportMapping {
+        skip_header_rows: 1,
+        columns: vec![
+            ColumnRole::Date,
+            ColumnRole::Skip,
+            ColumnRole::Merchant,
+            ColumnRole::Amount,
+        ],
+        date_format: "%d %b %Y".to_string(),
+        amount_convention: AmountConvention::PositiveIsOutflow,
+        decimal_separator: '.',
+        delimiter: Some(','),
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let s = CsvProvider::import(
+        &fixture("amex-all-time-statement.csv"),
+        &acct,
+        &id,
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(s.rows_imported, 5);
+    assert_eq!(s.rows_skipped_duplicates, 0);
+    assert!(s.errors.is_empty());
+
+    // Verify sign convention: charges are positive in the file but stored as negative cents
+    // (outflows), while the payment/credit is stored as positive cents (inflows).
+    let conn = db.get().unwrap();
+    let (payment, points_credit): (i64, i64) = conn
+        .query_row(
+            "SELECT \
+                (SELECT amount_cents FROM transactions WHERE merchant_raw LIKE 'PAYMENT RECEIVED%' LIMIT 1), \
+                (SELECT amount_cents FROM transactions WHERE merchant_raw LIKE 'Use Points%' LIMIT 1)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(payment, 298_614);
+    assert_eq!(points_credit, 21_390);
+    let charge: i64 = conn
+        .query_row(
+            "SELECT amount_cents FROM transactions WHERE merchant_raw LIKE 'TIM HORTONS%' LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(charge, -943);
+}
+
+#[test]
 fn csv_import_skips_matching_simplefin_transaction() {
     let (dir, db, acct) = fresh_db();
     let posted_at = chrono::NaiveDate::from_ymd_opt(2026, 5, 19)

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
@@ -181,9 +181,13 @@ export default function Today() {
   const dayOfMonth = now.getDate();
   const avgDailyBurn = totals ? totals.expenseCents / Math.max(dayOfMonth, 1) : 0;
   const recurringSoon = recurring.filter((item) => daysUntilLabel(item.nextExpected) !== null).slice(0, 6);
-  const liquidCents = accounts.filter((account) => account.balance_cents > 0 && !/investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
-  const investedCents = accounts.filter((account) => account.balance_cents > 0 && /investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
-  const creditCents = Math.abs(accounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + account.balance_cents, 0));
+  // Accounts with no confirmed balance (e.g. CSV-imported history with no
+  // balance field) are excluded rather than silently counted as a real $0.
+  const knownAccounts = accounts.filter((account) => account.balance_known);
+  const unknownBalanceCount = accounts.length - knownAccounts.length;
+  const liquidCents = knownAccounts.filter((account) => account.balance_cents > 0 && !/investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
+  const investedCents = knownAccounts.filter((account) => account.balance_cents > 0 && /investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
+  const creditCents = Math.abs(knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + account.balance_cents, 0));
   const runwayDays = avgDailyBurn > 0 ? Math.round(liquidCents / avgDailyBurn) : null;
   const showSweep = !sweepDismissed && !!totals && totals.netCents > 5000;
   const celebrateMilestones = milestones.filter((threshold): threshold is number => typeof threshold === "number").filter((threshold) => !dismissedMilestones.includes(threshold));
@@ -220,6 +224,11 @@ export default function Today() {
           <span>{totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent so far this month` : "Fresh month, fresh baseline."}</span>
           {spendNarrative && <><span>·</span><span>{spendNarrative}</span></>}
         </div>
+        {unknownBalanceCount > 0 && (
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }} role="status">
+            {unknownBalanceCount} account{unknownBalanceCount === 1 ? "" : "s"} {unknownBalanceCount === 1 ? "has" : "have"} no balance set — excluded from the totals above. <Link to="/accounts">Set balances →</Link>
+          </div>
+        )}
       </section>
 
       <section>

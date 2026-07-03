@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ImportMappingDialog from "./ImportMappingDialog";
 
 vi.mock("react-focus-lock", () => ({
@@ -33,11 +34,21 @@ vi.mock("../api/client", () => ({
           color: "#000",
           balance_cents: 0,
         },
+        {
+          id: "amex1",
+          bank: "Amex",
+          name: "Amex Card",
+          type: "Credit",
+          owner: "joint",
+          currency: "USD",
+          color: "#000",
+          balance_cents: 0,
+        },
       ],
     }),
     importCsv: vi.fn().mockResolvedValue({
       status: "ok",
-      data: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, errors: [] },
+      data: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, rows_queued_for_review: 0, errors: [] },
     }),
   },
 }));
@@ -45,9 +56,11 @@ vi.mock("../api/client", () => ({
 function renderDialog() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <ImportMappingDialog path="/tmp/x.csv" onClose={() => {}} onImported={() => {}} />
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>
+        <ImportMappingDialog path="/tmp/x.csv" onClose={() => {}} onImported={() => {}} />
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -61,51 +74,37 @@ describe("ImportMappingDialog", () => {
     expect(btn).toBeDisabled();
   });
 
-  it("resets column mapping when skipHeaderRows changes column count", async () => {
-    const { commands } = await import("../api/client");
-    // First call returns 3 columns (already set by default mock)
-    // Second call returns 2 columns
-    (commands.previewCsvColumns as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        status: "ok",
-        data: {
-          headers: ["Date", "Merchant", "Amount"],
-          rows: [["2026-05-19", "Safeway", "-8.42"]],
-          detected_delimiter: ",",
-          total_rows: 1,
-          encoding_note: null,
-        },
-      })
-      .mockResolvedValueOnce({
-        status: "ok",
-        data: {
-          headers: ["Date", "Amount"],
-          rows: [["2026-05-19", "-8.42"]],
-          detected_delimiter: ",",
-          total_rows: 1,
-          encoding_note: null,
-        },
-      });
-
+  it("auto-detects column roles when preview loads", async () => {
     renderDialog();
     await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
 
-    // Change skipHeaderRows to trigger a re-fetch
-    const skipInput = screen.getByRole("spinbutton");
-    fireEvent.change(skipInput, { target: { value: "2" } });
-
-    // Wait for the new preview to render (2 columns, not 3)
-    await waitFor(() => {
-      const headers = screen.getAllByRole("columnheader");
-      expect(headers).toHaveLength(2);
-    });
-
-    // The column dropdowns should reset to Skip (no sparse array)
     const headers = screen.getAllByRole("columnheader");
     const dropdowns = headers.map((h) => h.querySelector("select") as HTMLSelectElement);
-    expect(dropdowns).toHaveLength(2);
-    expect(dropdowns[0]!.value).toBe("Skip");
-    expect(dropdowns[1]!.value).toBe("Skip");
+    expect(dropdowns).toHaveLength(3);
+    expect(dropdowns[0]!.value).toBe("Date");
+    expect(dropdowns[1]!.value).toBe("Merchant");
+    expect(dropdowns[2]!.value).toBe("Amount");
+  });
+
+  it("defaults amount convention to positive-is-outflow for a credit account", async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    // A bank/asset account keeps the standard negative-is-outflow default.
+    const conv = () =>
+      screen.getAllByRole("radio").reduce<Record<string, boolean>>((acc, el) => {
+        acc[(el as HTMLInputElement).value] = (el as HTMLInputElement).checked;
+        return acc;
+      }, {});
+    expect(conv()["negative_is_outflow"]).toBe(true);
+
+    // Selecting a Credit account flips the default to positive-is-outflow,
+    // since credit-card exports use positive = a charge (outflow).
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "amex1" },
+    });
+    await waitFor(() => expect(conv()["positive_is_outflow"]).toBe(true));
+    expect(conv()["negative_is_outflow"]).toBe(false);
   });
 
   it("becomes enabled once required mapping is complete and submits", async () => {
@@ -140,5 +139,43 @@ describe("ImportMappingDialog", () => {
         })
       );
     });
+  });
+
+  it("navigates to /import-review when rows are queued for review", async () => {
+    const { commands } = await import("../api/client");
+    (commands.importCsv as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "ok",
+      data: { import_id: "imp1", rows_imported: 0, rows_skipped_duplicates: 0, rows_queued_for_review: 3, errors: [] },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/accounts/a1"]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <Routes>
+            <Route path="/accounts/:id" element={<ImportMappingDialog path="/tmp/x.csv" onClose={() => {}} onImported={() => {}} />} />
+            <Route path="/import-review" element={<div data-testid="review-screen">Review Screen</div>} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "a1" },
+    });
+
+    const headers = screen.getAllByRole("columnheader");
+    const dropdowns = headers.map((h) => h.querySelector("select")!);
+    const [dd0, dd1, dd2] = dropdowns;
+    fireEvent.change(dd0!, { target: { value: "Date" } });
+    fireEvent.change(dd1!, { target: { value: "Merchant" } });
+    fireEvent.change(dd2!, { target: { value: "Amount" } });
+
+    const btn = screen.getByRole("button", { name: /^import$/i });
+    await waitFor(() => expect(btn).not.toBeDisabled());
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(screen.getByTestId("review-screen")).toBeInTheDocument());
   });
 });

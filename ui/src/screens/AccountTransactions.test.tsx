@@ -21,12 +21,14 @@ vi.mock("../api/hooks/accounts", () => ({
         bank: "Chase",
         type: "checking",
         balance_cents: 324000,
+        balance_known: true,
         currency: "USD",
         color: "#0f0",
         last_synced_at: "2026-06-30T10:00:00Z",
       },
     ],
   }),
+  useSetAccountBalance: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
 }));
 
 vi.mock("../api/hooks/transactions", () => ({

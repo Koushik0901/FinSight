@@ -115,7 +115,24 @@ fn parse_date(s: &str, fmt: &str) -> Result<DateTime<Utc>, ParseError> {
 }
 
 fn parse_amount(s: &str, decimal_separator: char) -> Result<i64, ParseError> {
-    let cleaned: String = s
+    let trimmed = s.trim();
+
+    // Detect common bank suffixes before stripping punctuation/currency symbols.
+    let suffix = trimmed.split_whitespace().last().map(str::to_ascii_uppercase);
+    let is_credit = suffix.as_deref() == Some("CR");
+    let is_debit = suffix.as_deref() == Some("DR");
+    let amount_text = if is_credit || is_debit {
+        trimmed
+            .rsplit_once(char::is_whitespace)
+            .map(|(head, _)| head.trim_end())
+            .unwrap_or(trimmed)
+    } else {
+        trimmed
+    };
+    let has_trailing_minus = amount_text.ends_with('-');
+    let has_parentheses = amount_text.starts_with('(') && amount_text.ends_with(')');
+
+    let core: String = amount_text
         .chars()
         .filter_map(|c| match c {
             '\u{2212}' => Some('-'), // Unicode minus sign → ASCII hyphen
@@ -123,12 +140,26 @@ fn parse_amount(s: &str, decimal_separator: char) -> Result<i64, ParseError> {
             '.' if decimal_separator == ',' => None,
             ',' if decimal_separator == '.' => None,
             ' ' | '$' | '€' | '£' => None,
+            '(' | ')' | '+' => None,
+            '-' if has_trailing_minus => None, // strip trailing minus; we negate below
             other => Some(other),
         })
         .collect();
-    let f: f64 = cleaned
+
+    let mut f: f64 = core
         .parse()
         .map_err(|_| ParseError::UnparseableAmount(s.to_owned()))?;
+
+    if has_parentheses || has_trailing_minus {
+        f = -f.abs();
+    }
+    if is_debit {
+        f = -f.abs();
+    }
+    if is_credit {
+        f = f.abs();
+    }
+
     Ok((f * 100.0).round() as i64)
 }
 
@@ -289,5 +320,53 @@ mod tests {
                 expected: 3
             }
         ));
+    }
+
+    #[test]
+    fn parentheses_negative_amount() {
+        let m = map(
+            vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+            AmountConvention::NegativeIsOutflow,
+            "%Y-%m-%d",
+        );
+        let p = parse_row(&["2026-05-19", "Refund", "(8.42)"], &m).unwrap();
+        assert_eq!(p.amount_cents, -842);
+    }
+
+    #[test]
+    fn trailing_minus_sign() {
+        let m = map(
+            vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+            AmountConvention::NegativeIsOutflow,
+            "%Y-%m-%d",
+        );
+        let p = parse_row(&["2026-05-19", "Refund", "8.42-"], &m).unwrap();
+        assert_eq!(p.amount_cents, -842);
+    }
+
+    #[test]
+    fn leading_plus_sign() {
+        let m = map(
+            vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+            AmountConvention::NegativeIsOutflow,
+            "%Y-%m-%d",
+        );
+        let p = parse_row(&["2026-05-19", "Store", "+8.42"], &m).unwrap();
+        assert_eq!(p.amount_cents, 842);
+    }
+
+    #[test]
+    fn cr_dr_suffixes() {
+        let m = map(
+            vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+            AmountConvention::NegativeIsOutflow,
+            "%Y-%m-%d",
+        );
+        let p = parse_row(&["2026-05-19", "Store", "8.42 DR"], &m).unwrap();
+        assert_eq!(p.amount_cents, -842);
+        let p = parse_row(&["2026-05-19", "Refund", "8.42 CR"], &m).unwrap();
+        assert_eq!(p.amount_cents, 842);
+        let p = parse_row(&["2026-05-19", "Refund", "8.42 cr"], &m).unwrap();
+        assert_eq!(p.amount_cents, 842);
     }
 }

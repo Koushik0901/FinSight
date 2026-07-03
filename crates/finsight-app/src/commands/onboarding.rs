@@ -180,6 +180,12 @@ pub async fn commit_starter_categories(
             )?;
         }
         tx.commit()?;
+        // Onboarding imports transactions (step 2) before categories are
+        // committed (step 3), so anything imported earlier has no categories to
+        // match against. Now that the starter categories exist, run the
+        // deterministic categorizer so those transactions get a stable category.
+        // Idempotent and best-effort — never block category setup on it.
+        let _ = finsight_core::categorize::apply_builtin_categorization(conn);
         Ok(())
     })
     .await

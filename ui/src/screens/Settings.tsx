@@ -21,6 +21,7 @@ import {
   useSetSimpleFinSyncSettings,
 } from "../api/hooks/simplefin";
 import SimpleFinDialog from "./onboarding/SimpleFinDialog";
+import DeleteAllDataDialog from "../components/DeleteAllDataDialog";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
@@ -136,6 +137,7 @@ export default function Settings() {
   const setSfSyncSettings = useSetSimpleFinSyncSettings();
 
   const [sfDialogOpen, setSfDialogOpen] = useState(false);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [providerPanelOpen, setProviderPanelOpen] = useState(false);
   const [selectedKind, setSelectedKind] = useState<ProviderKind>(null);
   const [selectedPreset, setSelectedPreset] = useState<CompatPreset>(OPENAI_COMPAT_PRESETS[0]);
@@ -251,6 +253,11 @@ export default function Settings() {
               <div className="row row-sm wrap"><button className="btn sm" type="button" onClick={async () => { try { await exportJson.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as JSON</button><button className="btn sm" type="button" onClick={async () => { try { await exportCsv.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as CSV</button></div>
               <div />
             </div>
+            <div className="s-row">
+              <div><div className="label">Delete all data</div><div className="desc">Permanently remove every account, transaction, balance, budget, goal, insight, and agent memory from this device. Your AI provider settings and API keys are kept. This cannot be undone.</div></div>
+              <div><button className="btn danger sm" type="button" onClick={() => setDeleteAllOpen(true)}>Delete all data</button></div>
+              <div />
+            </div>
           </Section>
 
           <Section id="agent" title="Agent" description="Control what the agent does automatically.">
@@ -326,6 +333,7 @@ export default function Settings() {
           </Section>
         </div>
       </div>
+      <DeleteAllDataDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />
     </div>
   );
 }

@@ -81,6 +81,12 @@ pub struct AccountSummary {
     pub r#type: AccountType,
     pub name: String,
     pub balance_cents: i64,
+    /// False when `balance_cents` is just the untouched account-creation seed
+    /// value and the account has transaction activity that could have moved
+    /// the real balance since then. The UI must not present `balance_cents`
+    /// as a trustworthy current balance when this is false.
+    #[serde(default = "default_balance_known")]
+    pub balance_known: bool,
     pub currency: String,
     pub color: String,
     pub source: String,
@@ -116,6 +122,10 @@ fn default_liquidity_type() -> String {
 }
 
 fn default_emergency_fund_eligible() -> bool {
+    true
+}
+
+fn default_balance_known() -> bool {
     true
 }
 

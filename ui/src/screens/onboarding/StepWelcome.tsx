@@ -29,22 +29,22 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
       <div className="onb-right">
         <div className="onb-art-grid">
           <div className="card">
-            <div className="eyebrow"><span className="dot" />Today snapshot</div>
+            <div className="eyebrow"><span className="dot" />Example · Today snapshot</div>
             <h2 className="h1" style={{ fontSize: 30, marginTop: 14, lineHeight: 1.15, fontWeight: 500 }}>
-              You have <span className="figure" style={{ color: "var(--accent)" }}>$48,920</span> across 6 accounts.
+              See <span className="figure" style={{ color: "var(--accent)" }}>net worth</span> across every account.
             </h2>
             <p className="muted" style={{ fontSize: 14, marginTop: 14, lineHeight: 1.55 }}>
-              You are tracking below last month and one subscription likely needs your attention.
+              Once you import a statement, this is where your real balances, runway, and recurring costs appear.
             </p>
           </div>
           <div className="onb-kpis">
             <div className="card tight">
               <div className="eyebrow">Runway</div>
-              <div className="figure" style={{ fontSize: 26, marginTop: 6 }}>134 <span className="muted" style={{ fontSize: 14 }}>days</span></div>
+              <div className="figure muted" style={{ fontSize: 26, marginTop: 6 }}>—</div>
             </div>
             <div className="card tight">
               <div className="eyebrow">Recurring</div>
-              <div className="figure" style={{ fontSize: 26, marginTop: 6 }}>$2,584<span className="muted" style={{ fontSize: 14 }}>/mo</span></div>
+              <div className="figure muted" style={{ fontSize: 26, marginTop: 6 }}>—</div>
             </div>
           </div>
         </div>

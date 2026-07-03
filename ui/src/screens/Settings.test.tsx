@@ -50,6 +50,7 @@ vi.mock("../api/hooks/settings", () => ({
   useSetNotificationsEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useAutoCategorizeEnabled: vi.fn(() => ({ data: true })),
   useSetAutoCategorizeEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteAllData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),

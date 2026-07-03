@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import FocusLock from "react-focus-lock";
 import { toast } from "sonner";
 import { usePreviewCsvColumns } from "../api/hooks/csv";
@@ -10,6 +11,7 @@ import Select from "./Select";
 import Input from "./Input";
 import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "./Table";
 import { Grid, Check, ArrowRight } from "./Icons";
+import { buildDetectedMapping } from "../utils/csvDetection";
 
 const COLUMN_ROLES: ColumnRole[] = ["Date", "Amount", "Merchant", "Notes", "Category", "Skip", "Debit", "Credit"];
 
@@ -20,6 +22,8 @@ const DATE_FORMATS = [
   { label: "19.05.2026",   value: "%d.%m.%Y" },
   { label: "May 19, 2026", value: "%B %d, %Y" },
   { label: "19-May-2026",  value: "%d-%b-%Y" },
+  { label: "01 Jul 2026",  value: "%d %b %Y" },
+  { label: "Jul 01, 2026", value: "%b %d, %Y" },
   { label: "Custom",       value: "__CUSTOM__" },
 ];
 
@@ -37,6 +41,7 @@ interface Props {
 }
 
 export default function ImportMappingDialog({ path, onClose, onImported, defaultAccountId }: Props) {
+  const navigate = useNavigate();
   const [skipHeaderRows, setSkipHeaderRows] = useState(1);
   const { data: preview, isPending: previewLoading } = usePreviewCsvColumns(path, skipHeaderRows);
   const { data: accounts = [] } = useAccounts();
@@ -47,14 +52,53 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const [customDateFormat, setCustomDateFormat] = useState("");
   const [amountConvention, setAmountConvention] =
     useState<"negative_is_outflow" | "positive_is_outflow" | "split_debit_credit">("negative_is_outflow");
+  const [autoDetected, setAutoDetected] = useState<Set<string>>(new Set());
+  const detectionAppliedForPath = useRef<string | null>(null);
 
   useEffect(() => {
     if (!preview) return;
     const colCount = preview.headers?.length ?? preview.rows[0]?.length ?? 0;
-    setColumns((prev) =>
-      prev.length === colCount ? prev : Array<ColumnRole>(colCount).fill("Skip")
-    );
-  }, [preview]);
+
+    if (detectionAppliedForPath.current === path) {
+      setColumns((current) =>
+        current.length === colCount ? current : Array<ColumnRole>(colCount).fill("Skip"),
+      );
+      return;
+    }
+
+    detectionAppliedForPath.current = path;
+    const detected = buildDetectedMapping(preview);
+    setColumns(detected.columns.length === colCount ? detected.columns : Array<ColumnRole>(colCount).fill("Skip"));
+    setSkipHeaderRows(detected.skipHeaderRows);
+    if (detected.dateFormat) {
+      const preset = DATE_FORMATS.find((f) => f.value === detected.dateFormat);
+      if (preset) {
+        setDateFormat(detected.dateFormat);
+        setCustomDateFormat("");
+      } else {
+        setDateFormat("__CUSTOM__");
+        setCustomDateFormat(detected.dateFormat);
+      }
+    }
+    setAmountConvention(detected.amountConvention);
+    setAutoDetected(detected.detectedFields);
+  }, [path, preview]);
+
+  // Amount-convention default is account-type-aware. Credit-card and loan
+  // exports use positive = a charge (outflow); bank/asset exports use
+  // negative = outflow. Picking the wrong one silently inverts every row
+  // (charges counted as income, payments as spending). Only override while the
+  // convention is still auto-detected — a manual choice always wins.
+  useEffect(() => {
+    if (!autoDetected.has("amountConvention")) return;
+    const selected = accounts.find((a) => a.id === accountId);
+    if (!selected) return;
+    const isLiabilityAccount = selected.type === "Credit" || selected.type === "Loan";
+    setAmountConvention((current) => {
+      if (current === "split_debit_credit") return current;
+      return isLiabilityAccount ? "positive_is_outflow" : "negative_is_outflow";
+    });
+  }, [accountId, accounts, autoDetected]);
 
   const importCsv = useImportCsv();
 
@@ -93,10 +137,33 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
     };
     try {
       const summary = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
-      toast.success(
-        `Imported ${summary.rows_imported} transaction${summary.rows_imported === 1 ? "" : "s"}, skipped ${summary.rows_skipped_duplicates} duplicate${summary.rows_skipped_duplicates === 1 ? "" : "s"}`
-      );
+      const { rows_imported, rows_skipped_duplicates, rows_queued_for_review, errors } = summary;
+      const importedNoun = rows_imported === 1 ? "transaction" : "transactions";
+      const duplicateNoun = rows_skipped_duplicates === 1 ? "duplicate" : "duplicates";
+      const queuedNoun = rows_queued_for_review === 1 ? "item" : "items";
+      const parts: string[] = [];
+      if (rows_imported > 0) {
+        parts.push(`Imported ${rows_imported} ${importedNoun}`);
+      }
+      if (rows_skipped_duplicates > 0) {
+        parts.push(`skipped ${rows_skipped_duplicates} ${duplicateNoun}`);
+      }
+      if (rows_queued_for_review > 0) {
+        parts.push(`${rows_queued_for_review} queued for review`);
+      }
+      const summaryText = parts.length > 0 ? parts.join(", ") : "No rows were imported";
+      if (errors.length > 0) {
+        const firstReason = errors[0]?.reason ?? "Check the row details.";
+        toast.error(`Import finished with ${errors.length} row error${errors.length === 1 ? "" : "s"}`, {
+          description: `${summaryText}. ${errors.length === 1 ? firstReason : "Open Import Review to see details."}`,
+        });
+      } else {
+        toast.success(summaryText);
+      }
       onImported(summary);
+      if (rows_queued_for_review > 0) {
+        navigate("/import-review");
+      }
     } catch {
       // importCsv.error is now set; rendered in the footer
     }
@@ -171,13 +238,32 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
               type="number"
               min={0}
               value={skipHeaderRows}
-              onChange={(e) => setSkipHeaderRows(parseInt(e.target.value, 10) || 0)}
+              onChange={(e) => {
+                setSkipHeaderRows(parseInt(e.target.value, 10) || 0);
+                setAutoDetected((prev) => {
+                  const copy = new Set(prev);
+                  copy.delete("skipHeaderRows");
+                  return copy;
+                });
+              }}
             />
             <div className="stack stack-xs">
               <Select
-                label="Date format"
+                label={
+                  <span>
+                    Date format
+                    {autoDetected.has("dateFormat") && <span className="chip">Auto-detected</span>}
+                  </span>
+                }
                 value={dateFormat}
-                onChange={(e) => setDateFormat(e.target.value)}
+                onChange={(e) => {
+                  setDateFormat(e.target.value);
+                  setAutoDetected((prev) => {
+                    const copy = new Set(prev);
+                    copy.delete("dateFormat");
+                    return copy;
+                  });
+                }}
               >
                 {DATE_FORMATS.map((f) => (
                   <option key={f.value} value={f.value}>
@@ -194,7 +280,10 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
               )}
             </div>
             <fieldset className="import-convention">
-              <legend>Amount convention</legend>
+              <legend>
+                Amount convention
+                {autoDetected.has("amountConvention") && <span className="chip">Auto-detected</span>}
+              </legend>
               {AMOUNT_CONVENTIONS.map((c) => (
                 <label key={c.value} className={amountConvention === c.value ? "active" : undefined}>
                   <input
@@ -202,7 +291,14 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                     name="conv"
                     value={c.value}
                     checked={amountConvention === c.value}
-                    onChange={() => setAmountConvention(c.value)}
+                    onChange={() => {
+                      setAmountConvention(c.value);
+                      setAutoDetected((prev) => {
+                        const copy = new Set(prev);
+                        copy.delete("amountConvention");
+                        return copy;
+                      });
+                    }}
                   />
                   {c.label}
                 </label>
@@ -216,6 +312,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             <span className="eyebrow">
               <span className="dot" />
               Column mapping
+              {autoDetected.has("columns") && <span className="chip">Auto-detected</span>}
             </span>
             <div className="import-required" role="status" aria-live="polite">
               {requiredItems.map((item) => (
@@ -257,6 +354,11 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                                 const next = [...columns];
                                 next[i] = e.target.value as ColumnRole;
                                 setColumns(next);
+                                setAutoDetected((prev) => {
+                                  const copy = new Set(prev);
+                                  copy.delete("columns");
+                                  return copy;
+                                });
                               }}
                               aria-label={`Column ${i + 1} role`}
                             >

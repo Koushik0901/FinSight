@@ -101,3 +101,19 @@ export function useExportCsv() {
     },
   });
 }
+
+export function useDeleteAllData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.deleteAllData();
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      // Blow away every cached query so no stale dashboard/report/chart/balance
+      // /insight data survives the wipe. Cheaper and safer than enumerating keys.
+      qc.clear();
+    },
+  });
+}

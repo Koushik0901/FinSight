@@ -11,6 +11,7 @@ import type { Transaction, TxnFilterInput } from "../api/client";
 import TransactionFilter from "../components/TransactionFilter";
 import TransactionDrawer from "../components/TransactionDrawer";
 import ImportMappingDialog from "../components/ImportMappingDialog";
+import SetBalanceDialog from "../components/SetBalanceDialog";
 import { getAccountDisplayName } from "../utils/accounts";
 import { money } from "../utils/format";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
@@ -51,6 +52,7 @@ export default function AccountTransactions() {
   const [editTxnId, setEditTxnId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [csvPath, setCsvPath] = useState<string | null>(null);
+  const [balanceOpen, setBalanceOpen] = useState(false);
 
   const account = accounts.find((a) => a.id === id);
 
@@ -114,7 +116,16 @@ export default function AccountTransactions() {
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="figure money" style={{ fontSize: 34, color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+          {account.balance_known ? (
+            <div className="figure money" style={{ fontSize: 34, color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+          ) : (
+            <div>
+              <div className="figure" style={{ fontSize: 22, color: "var(--ink-mute)" }}>Balance not set</div>
+              <button className="btn outline sm" type="button" style={{ marginTop: 6 }} onClick={() => setBalanceOpen(true)}>
+                Set balance
+              </button>
+            </div>
+          )}
           <div className="row row-sm wrap" style={{ justifyContent: "flex-end", marginTop: 10 }}>
             <span className="chip">Updated {formatStamp(account.last_synced_at)}</span>
             {account.simplefin_account_id && (
@@ -217,9 +228,17 @@ export default function AccountTransactions() {
           path={csvPath}
           defaultAccountId={account.id}
           onClose={() => setCsvPath(null)}
-          onImported={() => setCsvPath(null)}
+          onImported={(summary) => {
+            setCsvPath(null);
+            // Imported history carries no balance field, so nudge the user to
+            // confirm the real balance right away instead of leaving it unset.
+            if (summary.rows_imported > 0 && !account.balance_known) {
+              setBalanceOpen(true);
+            }
+          }}
         />
       )}
+      <SetBalanceDialog open={balanceOpen} onClose={() => setBalanceOpen(false)} account={account} />
     </div>
   );
 }

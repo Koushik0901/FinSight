@@ -11,8 +11,8 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [
-    { id: "acc-1", name: "Chase Checking", bank: "Chase", type: "Checking", balance_cents: 10000000, currency: "USD", color: "#3B82F6" },
-    { id: "acc-2", name: "Ally Savings", bank: "Ally", type: "Savings", balance_cents: 25000000, currency: "USD", color: "#22C55E" },
+    { id: "acc-1", name: "Chase Checking", bank: "Chase", type: "Checking", balance_cents: 10000000, balance_known: true, currency: "USD", color: "#3B82F6" },
+    { id: "acc-2", name: "Ally Savings", bank: "Ally", type: "Savings", balance_cents: 25000000, balance_known: true, currency: "USD", color: "#22C55E" },
   ], isLoading: false, error: null })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
