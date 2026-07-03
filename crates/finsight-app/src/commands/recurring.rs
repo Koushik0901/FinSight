@@ -1,46 +1,42 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use chrono::{Duration, NaiveDate, Utc};
+use finsight_core::recurring::{detect_recurring, RecurringKind};
 use finsight_core::repos::run;
 use serde::Serialize;
 use specta::Type;
 
-/// A recurring transaction detected from transaction history.
+/// A recurring transaction detected from transaction history (Phase 6 redesign).
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RecurringItem {
     pub merchant_raw: String,
     pub category_label: String,
     pub category_color: String,
-    /// Most recent amount (negative = expense, positive = income)
+    /// "subscription" | "bill" | "income" — genuine recurring commitments only.
+    pub kind: String,
+    /// 0..1 confidence this is a genuine recurring item.
+    pub confidence: f64,
+    /// Human-readable evidence for the classification.
+    pub reasons: Vec<String>,
     pub last_amount_cents: i64,
     pub min_amount_cents: i64,
     pub max_amount_cents: i64,
-    /// Average gap between occurrences in days
     pub avg_gap_days: f64,
-    /// How many times this has appeared
     pub occurrences: i64,
-    /// Most recent posted_at date (ISO)
     pub last_seen: String,
-    /// Estimated next date (ISO), based on last_seen + avg_gap
     pub next_expected: String,
-    /// "monthly" | "weekly" | "biweekly" | "annual" | "irregular"
     pub cadence: String,
-    /// Whether this looks like a subscription (small, regular negative charge)
+    /// True only for genuine subscriptions (not repeat purchases).
     pub is_subscription: bool,
 }
 
-fn cadence_label(avg_gap: f64) -> &'static str {
-    if avg_gap < 10.0 {
-        "weekly"
-    } else if avg_gap < 20.0 {
-        "biweekly"
-    } else if avg_gap < 45.0 {
-        "monthly"
-    } else if avg_gap < 100.0 {
-        "quarterly"
-    } else {
-        "annual"
+fn kind_str(kind: RecurringKind) -> &'static str {
+    match kind {
+        RecurringKind::Subscription => "subscription",
+        RecurringKind::Bill => "bill",
+        RecurringKind::Income => "income",
+        RecurringKind::Transfer => "transfer",
+        RecurringKind::RepeatPurchase => "repeat_purchase",
     }
 }
 
@@ -50,100 +46,38 @@ pub async fn list_recurring(state: tauri::State<'_, AppState>) -> AppResult<Vec<
     let db = (*state.db).clone();
 
     run(&db, |conn| {
-        // Detect recurring by finding merchants that appear at consistent intervals.
-        // We look back 13 months so annual charges are detectable.
-        let cutoff = (Utc::now() - Duration::days(395)).format("%Y-%m-%d").to_string();
-
-        let mut stmt = conn.prepare(
-            "WITH dated AS (
-               SELECT t.merchant_raw,
-                      date(t.posted_at) AS d,
-                      t.amount_cents,
-                      c.label AS cat_label,
-                      COALESCE(c.color, '') AS cat_color,
-                      LAG(date(t.posted_at)) OVER (
-                        PARTITION BY t.merchant_raw
-                        ORDER BY t.posted_at
-                      ) AS prev_d
-               FROM transactions t
-               LEFT JOIN categories c ON c.id = t.category_id
-               WHERE t.posted_at >= ?1
-             ),
-             gaps AS (
-               SELECT merchant_raw, d, amount_cents, cat_label, cat_color,
-                      julianday(d) - julianday(prev_d) AS gap
-               FROM dated
-               WHERE prev_d IS NOT NULL
-             ),
-             agg AS (
-               SELECT merchant_raw,
-                      MAX(cat_label) AS cat_label,
-                      MAX(cat_color) AS cat_color,
-                      AVG(gap) AS avg_gap,
-                      COUNT(*) AS occurrences,
-                      MAX(d) AS last_seen,
-                      MAX(amount_cents) AS last_amount,
-                      MIN(amount_cents) AS min_amount,
-                      MAX(amount_cents) AS max_amount
-               FROM gaps
-               WHERE gap BETWEEN 5 AND 400
-               GROUP BY merchant_raw
-               HAVING occurrences >= 2 AND AVG(gap) < 400
-             )
-             SELECT merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount, min_amount, max_amount
-             FROM agg
-             ORDER BY ABS(last_amount) DESC",
-        )?;
-
-        let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
-            Ok((
-                r.get::<_, String>(0)?,          // merchant_raw
-                r.get::<_, Option<String>>(1)?,  // cat_label (NULL when uncategorised)
-                r.get::<_, String>(2)?,          // cat_color (COALESCE'd to '')
-                r.get::<_, f64>(3)?,             // avg_gap
-                r.get::<_, i64>(4)?,             // occurrences
-                r.get::<_, String>(5)?,          // last_seen
-                r.get::<_, i64>(6)?,             // last_amount
-                r.get::<_, i64>(7)?,             // min_amount
-                r.get::<_, i64>(8)?,             // max_amount
-            ))
-        })?;
-
-        let mut out = Vec::new();
-        for row in rows {
-            let (merchant_raw, cat_label, cat_color, avg_gap, occurrences, last_seen, last_amount, min_amount, max_amount) = row?;
-            let cat_label = cat_label.unwrap_or_default();
-            let cadence = cadence_label(avg_gap).to_string();
-
-            // Estimate next date
-            let next_expected = if let Ok(d) = NaiveDate::parse_from_str(&last_seen, "%Y-%m-%d") {
-                let next = d + Duration::days(avg_gap.round() as i64);
-                next.format("%Y-%m-%d").to_string()
-            } else {
-                last_seen.clone()
-            };
-
-            // Subscription heuristic: small-to-mid expense, monthly-or-shorter
-            let is_subscription = last_amount < 0
-                && last_amount > -20_000  // under $200
-                && avg_gap < 45.0;
-
-            out.push(RecurringItem {
-                merchant_raw,
-                category_label: cat_label,
-                category_color: cat_color,
-                last_amount_cents: last_amount,
-                min_amount_cents: min_amount,
-                max_amount_cents: max_amount,
-                avg_gap_days: avg_gap,
-                occurrences,
-                last_seen,
-                next_expected,
-                cadence,
-                is_subscription,
-            });
-        }
-        Ok(out)
+        // 13-month window so annual charges are detectable; the detector anchors
+        // on the most recent transaction so historical imports still work.
+        let items = detect_recurring(conn, 395)?;
+        Ok(items
+            .into_iter()
+            // Show genuine recurring commitments + income only. Repeat purchases
+            // (groceries/dining/ride-hailing) and internal transfers/card
+            // payments are deliberately excluded from the recurring view.
+            .filter(|i| {
+                matches!(
+                    i.kind,
+                    RecurringKind::Subscription | RecurringKind::Bill | RecurringKind::Income
+                )
+            })
+            .map(|i| RecurringItem {
+                merchant_raw: i.display_merchant,
+                category_label: i.category_label.unwrap_or_default(),
+                category_color: i.category_color.unwrap_or_default(),
+                kind: kind_str(i.kind).to_string(),
+                confidence: i.confidence,
+                reasons: i.reasons,
+                last_amount_cents: i.last_amount_cents,
+                min_amount_cents: i.min_amount_cents,
+                max_amount_cents: i.max_amount_cents,
+                avg_gap_days: i.avg_gap_days,
+                occurrences: i.occurrences,
+                next_expected: i.next_expected.clone().unwrap_or_else(|| i.last_seen.clone()),
+                last_seen: i.last_seen,
+                cadence: i.cadence,
+                is_subscription: i.kind == RecurringKind::Subscription,
+            })
+            .collect())
     })
     .await
     .map_err(AppError::from)

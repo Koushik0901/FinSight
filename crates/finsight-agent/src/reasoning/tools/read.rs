@@ -272,34 +272,53 @@ pub fn get_recurring_bills() -> Arc<dyn Tool> {
             "get_recurring_bills"
         }
         fn description(&self) -> &str {
-            "Get detected recurring bills with expected next date"
+            "Get detected recurring commitments — subscriptions and bills — classified deterministically with amount stability, cadence regularity, and vendor evidence. Each item has a kind, confidence, and reasons. Repeat purchases (groceries/dining/ride-hailing) and internal transfers/card payments are excluded. Use for 'what subscriptions am I paying for' and upcoming-bill questions."
         }
         fn parameters(&self) -> Value {
             json!({"type": "object", "properties": {"days_ahead": {"type": "integer", "default": 30}}})
         }
-        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let _days = args["days_ahead"].as_i64().unwrap_or(30);
-            let cutoff = (chrono::Utc::now() - chrono::Duration::days(395))
-                .format("%Y-%m-%d")
-                .to_string();
-            let mut stmt = ctx.conn.prepare(
-                "WITH gaps AS ( \
-                    SELECT merchant_raw, date(posted_at) AS d, LAG(date(posted_at)) OVER (PARTITION BY merchant_raw ORDER BY posted_at) AS prev_d \
-                    FROM transactions WHERE posted_at >= ?1 \
-                 ), agg AS ( \
-                    SELECT merchant_raw, AVG(julianday(d)-julianday(prev_d)) AS avg_gap, MAX(d) AS last_seen, MAX(amount_cents) AS last_amount, COUNT(*) AS occ \
-                    FROM gaps WHERE prev_d IS NOT NULL GROUP BY merchant_raw HAVING occ >= 2 AND AVG(julianday(d)-julianday(prev_d)) BETWEEN 5 AND 400 \
-                 ) SELECT merchant_raw, avg_gap, last_seen, last_amount FROM agg ORDER BY ABS(last_amount) DESC"
-            )?;
-            let rows: Vec<Value> = stmt.query_map(rusqlite::params![cutoff], |r| {
-                let avg_gap: f64 = r.get(1)?;
-                let last_seen: String = r.get(2)?;
-                let next = chrono::NaiveDate::parse_from_str(&last_seen, "%Y-%m-%d")
-                    .map(|d| (d + chrono::Duration::days(avg_gap.round() as i64)).format("%Y-%m-%d").to_string())
-                    .unwrap_or(last_seen.clone());
-                Ok(json!({"merchant": r.get::<_, String>(0)?, "avg_gap_days": avg_gap, "last_seen": last_seen, "next_expected": next, "last_amount_cents": r.get::<_, i64>(3)?}))
-            })?.filter_map(|r| r.ok()).collect();
-            Ok(json!({"recurring_bills": rows}))
+        fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
+            use finsight_core::recurring::{detect_recurring, RecurringKind};
+            let items = detect_recurring(ctx.conn, 395)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let rows: Vec<Value> = items
+                .into_iter()
+                .filter(|i| {
+                    matches!(
+                        i.kind,
+                        RecurringKind::Subscription | RecurringKind::Bill | RecurringKind::Income
+                    )
+                })
+                .map(|i| {
+                    let kind = match i.kind {
+                        RecurringKind::Subscription => "subscription",
+                        RecurringKind::Bill => "bill",
+                        RecurringKind::Income => "income",
+                        _ => "other",
+                    };
+                    json!({
+                        "merchant": i.display_merchant,
+                        "kind": kind,
+                        "confidence": (i.confidence * 100.0).round() / 100.0,
+                        "reasons": i.reasons,
+                        "median_amount_cents": i.median_amount_cents,
+                        "last_amount_cents": i.last_amount_cents,
+                        "avg_gap_days": (i.avg_gap_days * 10.0).round() / 10.0,
+                        "cadence": i.cadence,
+                        "occurrences": i.occurrences,
+                        "last_seen": i.last_seen,
+                        "next_expected": i.next_expected,
+                        "category": i.category_label,
+                    })
+                })
+                .collect();
+            let subscription_count = rows.iter().filter(|r| r["kind"] == "subscription").count();
+            let bill_count = rows.iter().filter(|r| r["kind"] == "bill").count();
+            Ok(json!({
+                "recurring": rows,
+                "subscription_count": subscription_count,
+                "bill_count": bill_count
+            }))
         }
     }
     Arc::new(T)

@@ -1472,35 +1472,23 @@ export type ProjectedValue = { years: number; valueCents: number; annualRate: nu
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 /**
- * A recurring transaction detected from transaction history.
+ * A recurring transaction detected from transaction history (Phase 6 redesign).
  */
 export type RecurringItem = { merchantRaw: string; categoryLabel: string; categoryColor: string; 
 /**
- * Most recent amount (negative = expense, positive = income)
+ * "subscription" | "bill" | "income" — genuine recurring commitments only.
  */
-lastAmountCents: number; minAmountCents: number; maxAmountCents: number; 
+kind: string; 
 /**
- * Average gap between occurrences in days
+ * 0..1 confidence this is a genuine recurring item.
  */
-avgGapDays: number; 
+confidence: number; 
 /**
- * How many times this has appeared
+ * Human-readable evidence for the classification.
  */
-occurrences: number; 
+reasons: string[]; lastAmountCents: number; minAmountCents: number; maxAmountCents: number; avgGapDays: number; occurrences: number; lastSeen: string; nextExpected: string; cadence: string; 
 /**
- * Most recent posted_at date (ISO)
- */
-lastSeen: string; 
-/**
- * Estimated next date (ISO), based on last_seen + avg_gap
- */
-nextExpected: string; 
-/**
- * "monthly" | "weekly" | "biweekly" | "annual" | "irregular"
- */
-cadence: string; 
-/**
- * Whether this looks like a subscription (small, regular negative charge)
+ * True only for genuine subscriptions (not repeat purchases).
  */
 isSubscription: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
