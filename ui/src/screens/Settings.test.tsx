@@ -48,6 +48,8 @@ vi.mock("../api/hooks/settings", () => ({
   useExportCsv: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useNotificationsEnabled: vi.fn(() => ({ data: true })),
   useSetNotificationsEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useAutoCategorizeEnabled: vi.fn(() => ({ data: true })),
+  useSetAutoCategorizeEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
@@ -77,6 +79,14 @@ describe("Settings — Appearance section", () => {
     expect(screen.getByText("Export data")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /export as json/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /export as csv/i })).toBeInTheDocument();
+  });
+});
+
+describe("Settings — Agent section", () => {
+  it("renders Auto-categorize toggle and Agent nav item", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByText("Auto-categorize new transactions")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Agent" })).toBeInTheDocument();
   });
 });
 

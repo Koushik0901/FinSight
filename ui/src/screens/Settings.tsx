@@ -10,7 +10,7 @@ import {
   useTriggerCategorize,
   useListProviderModels,
 } from "../api/hooks/agent";
-import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled } from "../api/hooks/settings";
+import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
 import {
   useSimpleFinStatus,
   useDisconnectSimpleFin,
@@ -39,6 +39,7 @@ const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"];
 const SECTIONS = [
   ["profile", "Profile"],
   ["privacy", "Privacy & data"],
+  ["agent", "Agent"],
   ["provider", "AI Provider"],
   ["appearance", "Appearance"],
   ["connections", "Connections"],
@@ -117,6 +118,8 @@ export default function Settings() {
   const { data: currentCurrency = "USD" } = useDefaultCurrency();
   const { data: notificationsEnabled = true } = useNotificationsEnabled();
   const setNotificationsMutation = useSetNotificationsEnabled();
+  const { data: autoCategorizeEnabled = true } = useAutoCategorizeEnabled();
+  const setAutoCategorizeMutation = useSetAutoCategorizeEnabled();
 
   const { data: currentProvider } = useCompletionProvider();
   const setProvider = useSetCompletionProvider();
@@ -248,6 +251,10 @@ export default function Settings() {
               <div className="row row-sm wrap"><button className="btn sm" type="button" onClick={async () => { try { await exportJson.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as JSON</button><button className="btn sm" type="button" onClick={async () => { try { await exportCsv.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as CSV</button></div>
               <div />
             </div>
+          </Section>
+
+          <Section id="agent" title="Agent" description="Control what the agent does automatically.">
+            <div className="s-row"><div><div className="label">Auto-categorize new transactions</div><div className="desc">Automatically categorize transactions after each import or sync, using your configured AI provider.</div></div><div className="muted">{autoCategorizeEnabled ? "Currently on" : "Currently off"}</div><Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} /></div>
           </Section>
 
           <Section id="provider" title="AI Provider" description="Choose where categorization and forecasting run.">
