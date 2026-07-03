@@ -367,3 +367,33 @@ describe("Goals — focus editor", () => {
     expect(screen.getByText(/Monthly contribution/i)).toBeInTheDocument();
   });
 });
+
+describe("Goals — Horizon timeline", () => {
+  it("renders a row per eligible goal with name, eta, and target amount", () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    // g1: Italy Fund, target 500000c, current 100000c, monthly 20000c -> 20 months
+    // g2: Car repair, target 200000c, current 50000c, monthly 10000c -> 15 months
+    expect(screen.getByText("Horizon")).toBeInTheDocument();
+    expect(screen.getByText("When each goal lands.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Italy Fund/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Car repair/).length).toBeGreaterThan(0);
+  });
+
+  it("hides the Horizon section entirely when no goal has a finite ETA", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [
+        {
+          id: "sc1", name: "Dining cap", goalType: "spending-cap",
+          targetCents: 40000, currentCents: 10000, monthlyCents: 0,
+          targetDate: null, color: "#C9F950", notes: null, purpose: null,
+          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.queryByText("Horizon")).not.toBeInTheDocument();
+  });
+});

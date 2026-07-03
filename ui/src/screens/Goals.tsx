@@ -137,6 +137,56 @@ export function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; window
   return { rows, windowMonths };
 }
 
+function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
+  const { rows, windowMonths } = useMemo(() => buildHorizonRows(goals), [goals]);
+  if (rows.length === 0) return null;
+
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount }, (_, i) => {
+    const monthsOut = Math.round((i / (tickCount - 1)) * windowMonths);
+    const date = new Date();
+    date.setMonth(date.getMonth() + monthsOut);
+    return {
+      xPercent: (monthsOut / windowMonths) * 100,
+      label: date.toLocaleDateString("en-US", { month: "short", year: monthsOut >= 12 ? "2-digit" : undefined }),
+    };
+  });
+
+  return (
+    <section className="section">
+      <div className="day-hdr" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow"><span className="dot" />Horizon</div>
+          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>When each goal lands.</h2>
+        </div>
+      </div>
+      <div className="card" style={{ padding: 26 }}>
+        <div style={{ position: "relative", height: 20, marginBottom: 8 }}>
+          {ticks.map((tick, i) => (
+            <span key={i} className="muted mono" style={{ position: "absolute", left: `${tick.xPercent}%`, fontSize: 11 }}>{tick.label}</span>
+          ))}
+        </div>
+        <div style={{ position: "relative", paddingTop: 8 }}>
+          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 2, background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
+          {rows.map((row) => {
+            const color = row.needsAttention ? "var(--negative)" : "var(--accent)";
+            return (
+              <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }}>
+                <div style={{ position: "absolute", left: 0, top: "50%", width: `${row.xPercent}%`, height: 1, background: "var(--hairline)" }} />
+                <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
+                <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
+                <div style={{ position: "absolute", left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" }}>
+                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents, { currency: "USD" })}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
   const eligibleGoals = useMemo(() => goals.filter((goal) => goal.goalType !== "spending-cap"), [goals]);
   const [scenarioGoalId, setScenarioGoalId] = useState(eligibleGoals[0]?.id ?? "");
@@ -440,6 +490,8 @@ export default function Goals() {
           />
         ))}
       </div>
+
+      <GoalsHorizon goals={goals} />
 
       {goals.length > 0 && <WhatIfScenario goals={goals} />}
     </div>
