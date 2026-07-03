@@ -67,6 +67,12 @@ pub async fn import_csv(
         let cat_db = (*state.db).clone();
         let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
     }
+    // Recompute statistical anomaly flags from the (now larger) history.
+    // Best-effort — must not fail the import.
+    {
+        let anom_db = (*state.db).clone();
+        let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
+    }
 
     app.emit("import-complete", &summary).ok();
 

@@ -204,6 +204,17 @@ pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppRes
     .map_err(AppError::from)
 }
 
+/// Recompute statistical anomaly flags deterministically from transaction
+/// patterns. Returns the number of transactions now flagged.
+#[tauri::command]
+#[specta::specta]
+pub async fn recompute_anomalies(state: tauri::State<'_, AppState>) -> AppResult<u32> {
+    let db = (*state.db).clone();
+    run(&db, |conn| finsight_core::anomaly::recompute_anomalies(conn))
+        .await
+        .map_err(AppError::from)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<()> {

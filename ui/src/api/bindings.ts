@@ -269,6 +269,18 @@ async triggerCategorize() : Promise<Result<null, AppError>> {
 }
 },
 /**
+ * Recompute statistical anomaly flags deterministically from transaction
+ * patterns. Returns the number of transactions now flagged.
+ */
+async recomputeAnomalies() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recompute_anomalies") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Queue a re-categorization pass for all low-confidence LLM assignments.
  * Runs the rule engine first (picks up any new rules the user created), then
  * the LLM for whatever remains uncertain.

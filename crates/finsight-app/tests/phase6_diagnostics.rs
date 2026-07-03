@@ -156,3 +156,21 @@ fn diagnose_recurring() {
     let sub = items.iter().filter(|i| i.kind == RecurringKind::Subscription).count();
     println!("\nSUMMARY: {sub} subscriptions, {repeat} repeat-purchases (excluded from subscriptions)");
 }
+
+#[test]
+#[ignore = "reads/writes the live dev DB"]
+fn diagnose_anomalies() {
+    let db = open();
+    let mut conn = db.get().unwrap();
+    let n = finsight_core::anomaly::recompute_anomalies(&mut conn).unwrap();
+    println!("flagged {n} anomalies");
+    let mut stmt = conn.prepare(
+        "SELECT substr(posted_at,1,10), merchant_raw, amount_cents, ai_explanation \
+         FROM transactions WHERE is_anomaly=1 ORDER BY amount_cents ASC LIMIT 25").unwrap();
+    let rows = stmt.query_map([], |r| Ok((
+        r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,i64>(2)?, r.get::<_,Option<String>>(3)?
+    ))).unwrap();
+    for row in rows.flatten() {
+        println!("  {} {:<32} {:>9} | {}", row.0, row.1.split("  ").next().unwrap_or(""), row.2, row.3.unwrap_or_default());
+    }
+}

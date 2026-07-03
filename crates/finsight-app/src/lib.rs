@@ -265,6 +265,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::test_completion_provider,
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
+        commands::agent::recompute_anomalies,
         commands::agent::trigger_recategorize_low_confidence,
         commands::agent::get_agent_status,
         commands::agent::ask_agent,
@@ -434,9 +435,12 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 Err(e) => tracing::warn!("OpenRouter .env bootstrap skipped: {e}"),
             }
 
-            // Best-effort: record today's net-worth snapshot on startup.
+            // Best-effort: record today's net-worth snapshot on startup, and
+            // recompute statistical anomaly flags so existing imported data
+            // populates the Anomaly view without waiting for a re-import.
             if let Ok(mut conn) = db.get() {
                 let _ = finsight_core::repos::net_worth::record_today(&mut conn);
+                let _ = finsight_core::anomaly::recompute_anomalies(&mut conn);
             }
 
             let window = app.get_webview_window("main").expect("main window");

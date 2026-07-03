@@ -1,5 +1,6 @@
 //! FinSight core: domain types, SQLCipher storage, repositories.
 
+pub mod anomaly;
 pub mod categorize;
 pub mod db;
 pub mod error;
