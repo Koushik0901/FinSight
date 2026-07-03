@@ -145,6 +145,12 @@ pub async fn run_job(
             }
         };
 
+        // The txn_ids actually sent in this chunk. The LLM sometimes echoes a
+        // garbled or hallucinated id; writing it would violate the
+        // categorizations.txn_id foreign key and abort the whole job.
+        let chunk_txn_ids: std::collections::HashSet<&str> =
+            chunk.iter().map(|(id, _, _)| id.as_str()).collect();
+
         for r in &results {
             // Validate the category_id returned by the LLM exists in our category set.
             // Skip results with hallucinated or stale IDs to avoid writing dangling FKs.
@@ -155,6 +161,15 @@ pub async fn run_job(
                 );
                 continue;
             }
+            // Validate the txn_id was actually in this batch (guards the
+            // transactions FK against LLM-hallucinated ids).
+            if !chunk_txn_ids.contains(r.txn_id.as_str()) {
+                eprintln!(
+                    "[categorizer] LLM returned unknown txn_id '{}', skipping",
+                    r.txn_id
+                );
+                continue;
+            }
 
             let txn_id = r.txn_id.clone();
             let cat_id = r.category_id.clone();
@@ -162,7 +177,7 @@ pub async fn run_job(
             let rationale = r.rationale.clone();
             let model = provider.model_id().to_string();
             let db = db.clone();
-            tokio::task::spawn_blocking(move || {
+            let write = tokio::task::spawn_blocking(move || {
                 let mut conn = db.get()?;
                 categorizations::insert(&mut conn, NewCategorization {
                     txn_id: txn_id.clone(),
@@ -176,8 +191,15 @@ pub async fn run_job(
                     params![cat_id, confidence, rationale, txn_id],
                 )?;
                 Ok::<_, anyhow::Error>(())
-            }).await??;
-            categorized += 1;
+            })
+            .await;
+            // Defense in depth: a single row's write failure must not abort the
+            // whole categorization job — log it and keep going.
+            match write {
+                Ok(Ok(())) => categorized += 1,
+                Ok(Err(e)) => eprintln!("[categorizer] write failed for one transaction, skipping: {e}"),
+                Err(e) => eprintln!("[categorizer] write task join error, skipping: {e}"),
+            }
         }
         on_event(AgentEvent::CategorizationProgress {
             import_id: import_id.clone(),
@@ -440,6 +462,44 @@ mod tests {
             .unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
         assert!((confidence.unwrap() - 0.87).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn hallucinated_txn_id_is_skipped_and_does_not_abort_the_job() {
+        // Regression: on real data Gemma occasionally echoes a garbled txn_id.
+        // Writing it violated the categorizations.txn_id FK and aborted the
+        // whole job. It must now be skipped without failing run_job.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 + cat1 + account
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // A hallucinated txn_id plus the real one.
+            response: json!([
+                {"txn_id": "ghost-txn-999", "category_id": "cat1", "confidence": 0.9, "rationale": "bogus"},
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.85, "rationale": "Fast food"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+
+        // Must not error despite the bad id.
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        // The real txn was categorized; the ghost wrote nothing.
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("cat1"));
+        let ghost: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categorizations WHERE txn_id='ghost-txn-999'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ghost, 0, "hallucinated txn_id must not be written");
     }
 
     #[tokio::test]
