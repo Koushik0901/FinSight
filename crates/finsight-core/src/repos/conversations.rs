@@ -112,6 +112,8 @@ pub fn insert_message(
         action_bundle_id: action_bundle_id.map(|s| s.to_string()),
         branch_parent_id: branch_parent_id.map(|s| s.to_string()),
         parts_json: parts_json.map(|s| s.to_string()),
+        run_status: "completed".to_string(),
+        ag_ui_metadata_json: None,
         created_at: now,
     })
 }
@@ -122,7 +124,7 @@ pub fn list_messages(
 ) -> CoreResult<Vec<ConversationMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, role, content, tool_trace,
-                action_bundle_id, branch_parent_id, parts_json, created_at
+                action_bundle_id, branch_parent_id, parts_json, run_status, ag_ui_metadata_json, created_at
          FROM conversation_messages
          WHERE conversation_id = ?1
          ORDER BY created_at ASC",
@@ -137,7 +139,9 @@ pub fn list_messages(
             action_bundle_id: r.get(5)?,
             branch_parent_id: r.get(6)?,
             parts_json: r.get(7)?,
-            created_at: r.get(8)?,
+            run_status: r.get(8)?,
+            ag_ui_metadata_json: r.get(9)?,
+            created_at: r.get(10)?,
         })
     })?;
     let mut out = Vec::new();
@@ -145,6 +149,21 @@ pub fn list_messages(
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn update_message_run_status(
+    conn: &mut Connection,
+    message_id: &str,
+    run_status: &str,
+    ag_ui_metadata_json: Option<&str>,
+) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE conversation_messages
+         SET run_status = ?1, ag_ui_metadata_json = ?2
+         WHERE id = ?3",
+        params![run_status, ag_ui_metadata_json, message_id],
+    )?;
+    Ok(())
 }
 
 pub fn update_user_message(

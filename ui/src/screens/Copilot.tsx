@@ -30,6 +30,7 @@ import {
   useThreadRuntime,
   useThread,
 } from "@assistant-ui/react";
+import type { AssistantRuntime } from "@assistant-ui/react";
 import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
@@ -45,7 +46,13 @@ import {
   useRejectActionItem,
   useActionBundle,
 } from "../api/hooks/copilot";
+import {
+  useConversations,
+  useDeleteConversation,
+} from "../api/hooks/copilotChat";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
+import { useTauriAgUiRuntime } from "../components/copilot/agUi/TauriAgUiRuntime";
+import { isCopilotAgUiRuntimeEnabled } from "../components/copilot/agUi/featureFlag";
 import {
   copilotToolkit,
   generativeUIComponents,
@@ -674,8 +681,77 @@ function CopilotComposerBox({
   );
 }
 
-function CopilotHeader() {
+function CopilotHeader({ threadControls = true }: { threadControls?: boolean }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  return (
+    <header className="copilot-header">
+      <div className="copilot-title-block">
+        <p className="copilot-kicker">Workshop</p>
+        <h1>Copilot</h1>
+        <span>Plan, explain, and act on your FinSight data.</span>
+      </div>
+      {threadControls && (
+        <div className="copilot-header-actions">
+          <div className="copilot-history-menu">
+            <button
+              type="button"
+              className="copilot-top-button"
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <I.Today width={15} height={15} />
+              History
+              <I.Down width={13} height={13} />
+            </button>
+            {historyOpen && (
+              <div className="copilot-history-popover" role="menu">
+                <p>Recent threads</p>
+                <ThreadListPrimitive.Root className="copilot-history-list">
+                  <ThreadListPrimitive.Items>
+                    {({ threadListItem }) => (
+                      <ThreadListItemPrimitive.Root className="copilot-history-row">
+                        <ThreadListItemPrimitive.Trigger
+                          className="copilot-history-trigger"
+                          onClick={() => setHistoryOpen(false)}
+                        >
+                          <ThreadListItemPrimitive.Title fallback={threadListItem.title || "New conversation"} />
+                        </ThreadListItemPrimitive.Trigger>
+                        <ThreadListItemPrimitive.Delete
+                          className="copilot-history-delete"
+                          aria-label="Delete thread"
+                        >
+                          <I.Trash width={13} height={13} />
+                        </ThreadListItemPrimitive.Delete>
+                      </ThreadListItemPrimitive.Root>
+                    )}
+                  </ThreadListPrimitive.Items>
+                </ThreadListPrimitive.Root>
+              </div>
+            )}
+          </div>
+          <ThreadListPrimitive.New className="copilot-top-button copilot-top-button-primary" title="New thread">
+            <I.Plus width={15} height={15} />
+            New thread
+          </ThreadListPrimitive.New>
+        </div>
+      )}
+    </header>
+  );
+}
+
+function CopilotAgUiHeader({
+  activeConversationId,
+  onSelectConversation,
+  onNewThread,
+}: {
+  activeConversationId: string | null;
+  onSelectConversation: (conversationId: string) => void;
+  onNewThread: () => void;
+}) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: conversations = [] } = useConversations();
+  const deleteConversation = useDeleteConversation();
 
   return (
     <header className="copilot-header">
@@ -699,33 +775,58 @@ function CopilotHeader() {
           {historyOpen && (
             <div className="copilot-history-popover" role="menu">
               <p>Recent threads</p>
-              <ThreadListPrimitive.Root className="copilot-history-list">
-                <ThreadListPrimitive.Items>
-                  {({ threadListItem }) => (
-                    <ThreadListItemPrimitive.Root className="copilot-history-row">
-                      <ThreadListItemPrimitive.Trigger
+              <div className="copilot-history-list">
+                {conversations.length === 0 ? (
+                  <div className="copilot-history-empty">No conversations yet.</div>
+                ) : (
+                  conversations.map((conversation) => (
+                    <div
+                      key={conversation.id}
+                      className="copilot-history-row"
+                      data-active={conversation.id === activeConversationId ? "true" : "false"}
+                    >
+                      <button
+                        type="button"
                         className="copilot-history-trigger"
-                        onClick={() => setHistoryOpen(false)}
+                        onClick={() => {
+                          onSelectConversation(conversation.id);
+                          setHistoryOpen(false);
+                        }}
                       >
-                        <ThreadListItemPrimitive.Title fallback={threadListItem.title || "New conversation"} />
-                      </ThreadListItemPrimitive.Trigger>
-                      <ThreadListItemPrimitive.Delete
+                        <span>{conversation.title || "New conversation"}</span>
+                      </button>
+                      <button
+                        type="button"
                         className="copilot-history-delete"
                         aria-label="Delete thread"
+                        disabled={deleteConversation.isPending}
+                        onClick={async () => {
+                          try {
+                            await deleteConversation.mutateAsync(conversation.id);
+                            if (conversation.id === activeConversationId) onNewThread();
+                          } catch {
+                            toast.error("Could not delete conversation");
+                          }
+                        }}
                       >
                         <I.Trash width={13} height={13} />
-                      </ThreadListItemPrimitive.Delete>
-                    </ThreadListItemPrimitive.Root>
-                  )}
-                </ThreadListPrimitive.Items>
-              </ThreadListPrimitive.Root>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
-        <ThreadListPrimitive.New className="copilot-top-button copilot-top-button-primary" title="New thread">
+        <button
+          type="button"
+          className="copilot-top-button copilot-top-button-primary"
+          title="New thread"
+          onClick={onNewThread}
+        >
           <I.Plus width={15} height={15} />
           New thread
-        </ThreadListPrimitive.New>
+        </button>
       </div>
     </header>
   );
@@ -735,7 +836,7 @@ function CopilotRuntimeProvider({
   runtime,
   children,
 }: {
-  runtime: ReturnType<typeof useTauriCopilotRuntime>["runtime"];
+  runtime: AssistantRuntime;
   children: ReactNode;
 }) {
   const aui = useAui({ tools: Tools({ toolkit: copilotToolkit }) });
@@ -766,12 +867,64 @@ function CopilotPrefill() {
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function Copilot() {
+  if (isCopilotAgUiRuntimeEnabled()) {
+    return <CopilotAgUiEnabled />;
+  }
+
+  return <CopilotLocalRuntime />;
+}
+
+function CopilotLocalRuntime() {
   const { runtime, latestMeta, metaByMessageId } = useTauriCopilotRuntime();
 
   return (
     <CopilotRuntimeProvider runtime={runtime}>
       <div className="copilot-screen copilot-finsight-chat">
         <CopilotHeader />
+        <ThreadErrorBoundary>
+          <CopilotPrefill />
+          <CopilotThread
+            metaByMessageId={metaByMessageId}
+            latestMeta={latestMeta}
+          />
+        </ThreadErrorBoundary>
+      </div>
+    </CopilotRuntimeProvider>
+  );
+}
+
+function CopilotAgUiEnabled() {
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  return (
+    <CopilotAgUiSession
+      key={activeConversationId ?? "new"}
+      activeConversationId={activeConversationId}
+      onSelectConversation={setActiveConversationId}
+      onNewThread={() => setActiveConversationId(null)}
+    />
+  );
+}
+
+function CopilotAgUiSession({
+  activeConversationId,
+  onSelectConversation,
+  onNewThread,
+}: {
+  activeConversationId: string | null;
+  onSelectConversation: (conversationId: string) => void;
+  onNewThread: () => void;
+}) {
+  const { runtime, latestMeta, metaByMessageId } = useTauriAgUiRuntime(activeConversationId);
+
+  return (
+    <CopilotRuntimeProvider runtime={runtime}>
+      <div className="copilot-screen copilot-finsight-chat" data-runtime="ag-ui">
+        <CopilotAgUiHeader
+          activeConversationId={activeConversationId}
+          onSelectConversation={onSelectConversation}
+          onNewThread={onNewThread}
+        />
         <ThreadErrorBoundary>
           <CopilotPrefill />
           <CopilotThread

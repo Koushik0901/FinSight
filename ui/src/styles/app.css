@@ -3755,6 +3755,38 @@ body::-webkit-scrollbar-track,
   font-size: 11px;
 }
 
+.copilot-approval-card {
+  display: grid;
+  gap: 10px;
+}
+
+.copilot-approval-row {
+  align-items: center;
+  background: color-mix(in oklab, var(--surface-2) 72%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 10px;
+}
+
+.copilot-approval-row strong {
+  color: var(--ink);
+  display: block;
+  font-size: 12.5px;
+  text-transform: capitalize;
+}
+
+.copilot-approval-row p {
+  margin: 3px 0 0;
+}
+
+.copilot-approval-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .copilot-sources {
   display: flex;
   flex-wrap: wrap;
@@ -4016,6 +4048,16 @@ body::-webkit-scrollbar-track,
 
 .copilot-history-row:hover {
   background: var(--surface-2);
+}
+
+.copilot-history-row[data-active="true"] {
+  background: color-mix(in oklab, var(--accent) 13%, var(--surface-2));
+}
+
+.copilot-history-empty {
+  color: var(--ink-faint);
+  font-size: 12px;
+  padding: 12px 10px;
 }
 
 .copilot-history-trigger,

@@ -25,34 +25,43 @@ export type CopilotDonePayload = {
 
 export type CopilotResponseBlock = AgentResponseBlock;
 
+export type CopilotStreamFrameMeta = {
+  threadId?: string;
+  assistantMessageId?: string;
+  reasoningMessageId?: string;
+  toolResultMessageId?: string;
+  parentMessageId?: string | null;
+  sequenceNumber?: number;
+};
+
 export type CopilotStreamFrame =
-  | { type: "text"; conversationId: string; runId: string; delta: string }
-  | { type: "reasoning"; conversationId: string; runId: string; text: string }
-  | {
+  | ({ type: "text"; conversationId: string; runId: string; delta: string } & CopilotStreamFrameMeta)
+  | ({ type: "reasoning"; conversationId: string; runId: string; text: string } & CopilotStreamFrameMeta)
+  | ({
       type: "toolCallStart";
       conversationId: string;
       runId: string;
       toolCallId: string;
       toolName: string;
       args: Record<string, unknown>;
-    }
-  | {
+    } & CopilotStreamFrameMeta)
+  | ({
       type: "toolCallResult";
       conversationId: string;
       runId: string;
       toolCallId: string;
       result: unknown;
       isError: boolean;
-    }
-  | {
+    } & CopilotStreamFrameMeta)
+  | ({
       type: "responseBlock";
       conversationId: string;
       runId: string;
       blockId: string;
       block: CopilotResponseBlock;
-    }
-  | { type: "source"; conversationId: string; runId: string; sourceId: string; title: string }
-  | {
+    } & CopilotStreamFrameMeta)
+  | ({ type: "source"; conversationId: string; runId: string; sourceId: string; title: string } & CopilotStreamFrameMeta)
+  | ({
       type: "usage";
       conversationId: string;
       runId: string;
@@ -60,8 +69,8 @@ export type CopilotStreamFrame =
       modelId: string;
       elapsedMs: number;
       toolCount: number;
-    }
-  | {
+    } & CopilotStreamFrameMeta)
+  | ({
       type: "done";
       conversationId: string;
       runId: string;
@@ -75,5 +84,5 @@ export type CopilotStreamFrame =
       modelId: string;
       elapsedMs: number;
       toolCount: number;
-    }
-  | { type: "error"; conversationId: string; runId: string; code: string; message: string };
+    } & CopilotStreamFrameMeta)
+  | ({ type: "error"; conversationId: string; runId: string; code: string; message: string } & CopilotStreamFrameMeta);

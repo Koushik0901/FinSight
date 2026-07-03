@@ -84,5 +84,9 @@ pub struct ConversationMessage {
     pub branch_parent_id: Option<String>,
     /// JSON-encoded assistant-ui message parts. `content` remains the text fallback.
     pub parts_json: Option<String>,
+    /// Run lifecycle state for AG-UI/assistant reload semantics.
+    pub run_status: String,
+    /// JSON-encoded AG-UI metadata for tool calls, artifacts, approvals, and usage.
+    pub ag_ui_metadata_json: Option<String>,
     pub created_at: String,
 }

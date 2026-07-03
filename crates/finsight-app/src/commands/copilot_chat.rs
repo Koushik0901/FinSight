@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use specta::Type;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
@@ -36,42 +36,72 @@ pub enum CopilotStreamFrame {
     Text {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         delta: String,
     },
     Reasoning {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        reasoning_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         text: String,
     },
     ToolCallStart {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
         tool_call_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         tool_name: String,
         args: Value,
     },
     ToolCallResult {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
         tool_call_id: String,
+        tool_result_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         result: Value,
         is_error: bool,
     },
     ResponseBlock {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         block_id: String,
         block: AgentResponseBlock,
     },
     Source {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         source_id: String,
         title: String,
     },
     Usage {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         provider_id: String,
         model_id: String,
         elapsed_ms: u64,
@@ -80,6 +110,10 @@ pub enum CopilotStreamFrame {
     Done {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         message_id: String,
         bundle_id: Option<String>,
         tool_trace: Vec<String>,
@@ -94,6 +128,10 @@ pub enum CopilotStreamFrame {
     Error {
         conversation_id: String,
         run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
         code: String,
         message: String,
     },
@@ -149,6 +187,20 @@ pub async fn stream_copilot_message(
     }
     let provider = state.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
+        emit_copilot_frame(
+            &app,
+            CopilotStreamFrame::Error {
+                conversation_id: conversation_id.clone(),
+                run_id: run_id.clone(),
+                thread_id: conversation_id.clone(),
+                assistant_message_id: format!("assistant-{run_id}"),
+                parent_message_id: source_message_id.clone(),
+                sequence_number: 0,
+                code: "no_provider".to_string(),
+                message: "Configure an AI provider in Settings -> Agent to use this feature."
+                    .to_string(),
+            },
+        );
         return Err(AppError::new(
             "no_provider",
             "Configure an AI provider in Settings → Agent to use this feature.",
@@ -175,17 +227,17 @@ pub async fn stream_copilot_message(
         "text": text.clone(),
     })])
     .unwrap_or_default();
-    if let Some(source_id) = source_message_id.clone() {
+    let user_message_id = if let Some(source_id) = source_message_id.clone() {
         let cid = conv_id.clone();
         let txt = text.clone();
         let parts = user_parts_json.clone();
         run(&db, move |conn| {
             conversations::update_user_message(conn, &source_id, &txt, Some(&parts))?;
             conversations::delete_messages_after(conn, &cid, &source_id)?;
-            Ok::<_, finsight_core::CoreError>(())
+            Ok::<_, finsight_core::CoreError>(source_id)
         })
         .await
-        .map_err(AppError::from)?;
+        .map_err(AppError::from)?
     } else {
         let cid = conv_id.clone();
         let txt = text.clone();
@@ -195,7 +247,16 @@ pub async fn stream_copilot_message(
                 .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
         })
         .await
-        .map_err(AppError::from)?;
+        .map_err(AppError::from)?
+        .id
+    };
+    let assistant_message_id = format!("assistant-{run_id}");
+    let reasoning_message_id = format!("reasoning-{run_id}");
+    let parent_message_id = Some(user_message_id.clone());
+    let sequence = Arc::new(AtomicU64::new(0));
+    let next_sequence = {
+        let sequence = Arc::clone(&sequence);
+        move || sequence.fetch_add(1, Ordering::Relaxed)
     };
 
     // Check whether this is the very first message (for auto-titling)
@@ -229,6 +290,11 @@ pub async fn stream_copilot_message(
         CopilotStreamFrame::Reasoning {
             conversation_id: conv_id.clone(),
             run_id: run_id.clone(),
+            thread_id: conv_id.clone(),
+            assistant_message_id: assistant_message_id.clone(),
+            reasoning_message_id: reasoning_message_id.clone(),
+            parent_message_id: parent_message_id.clone(),
+            sequence_number: next_sequence(),
             text: "Preparing local financial context and running the planning tool loop.\n"
                 .to_string(),
         },
@@ -236,6 +302,9 @@ pub async fn stream_copilot_message(
     let app_for_engine = app.clone();
     let conv_id_for_engine = conv_id.clone();
     let run_id_for_engine = run_id.clone();
+    let assistant_message_id_for_engine = assistant_message_id.clone();
+    let parent_message_id_for_engine = parent_message_id.clone();
+    let sequence_for_engine = Arc::clone(&sequence);
     let live_tool_frames_for_engine = Arc::clone(&emitted_live_tool_frames);
     let command_run_id = run_id.clone();
     let tool_result = run(&db, move |conn| {
@@ -252,6 +321,9 @@ pub async fn stream_copilot_message(
         let app_for_events = app_for_engine.clone();
         let event_conversation_id = conv_id_for_engine.clone();
         let event_run_id = run_id_for_engine.clone();
+        let event_assistant_message_id = assistant_message_id_for_engine.clone();
+        let event_parent_message_id = parent_message_id_for_engine.clone();
+        let event_sequence = Arc::clone(&sequence_for_engine);
         let emitted_tool_frames = Arc::clone(&live_tool_frames_for_engine);
         rt.block_on(async move {
             tokio::time::timeout(
@@ -270,7 +342,11 @@ pub async fn stream_copilot_message(
                                 CopilotStreamFrame::ToolCallStart {
                                     conversation_id: event_conversation_id.clone(),
                                     run_id: event_run_id.clone(),
+                                    thread_id: event_conversation_id.clone(),
+                                    assistant_message_id: event_assistant_message_id.clone(),
                                     tool_call_id: call.id,
+                                    parent_message_id: event_parent_message_id.clone(),
+                                    sequence_number: event_sequence.fetch_add(1, Ordering::Relaxed),
                                     tool_name: call.name,
                                     args: call.arguments,
                                 },
@@ -287,7 +363,12 @@ pub async fn stream_copilot_message(
                                 CopilotStreamFrame::ToolCallResult {
                                     conversation_id: event_conversation_id.clone(),
                                     run_id: event_run_id.clone(),
+                                    thread_id: event_conversation_id.clone(),
+                                    assistant_message_id: event_assistant_message_id.clone(),
+                                    tool_result_message_id: format!("tool-result-{tool_call_id}"),
                                     tool_call_id,
+                                    parent_message_id: event_parent_message_id.clone(),
+                                    sequence_number: event_sequence.fetch_add(1, Ordering::Relaxed),
                                     result,
                                     is_error,
                                 },
@@ -471,6 +552,11 @@ pub async fn stream_copilot_message(
             CopilotStreamFrame::Reasoning {
                 conversation_id: conv_id.clone(),
                 run_id: run_id.clone(),
+                thread_id: conv_id.clone(),
+                assistant_message_id: assistant_message_id.clone(),
+                reasoning_message_id: reasoning_message_id.clone(),
+                parent_message_id: parent_message_id.clone(),
+                sequence_number: next_sequence(),
                 text: answer.reasoning.clone(),
             },
         );
@@ -484,7 +570,11 @@ pub async fn stream_copilot_message(
                 CopilotStreamFrame::ToolCallStart {
                     conversation_id: conv_id.clone(),
                     run_id: run_id.clone(),
+                    thread_id: conv_id.clone(),
+                    assistant_message_id: assistant_message_id.clone(),
                     tool_call_id: tool_call_id.clone(),
+                    parent_message_id: parent_message_id.clone(),
+                    sequence_number: next_sequence(),
                     tool_name: tool_name.clone(),
                     args: json!({}),
                 },
@@ -494,7 +584,12 @@ pub async fn stream_copilot_message(
                 CopilotStreamFrame::ToolCallResult {
                     conversation_id: conv_id.clone(),
                     run_id: run_id.clone(),
+                    thread_id: conv_id.clone(),
+                    assistant_message_id: assistant_message_id.clone(),
+                    tool_result_message_id: format!("tool-result-{tool_call_id}"),
                     tool_call_id,
+                    parent_message_id: parent_message_id.clone(),
+                    sequence_number: next_sequence(),
                     result: json!({
                         "ok": true,
                         "summary": answer.trace.get(i).cloned().unwrap_or_else(|| tool_name.clone()),
@@ -517,6 +612,10 @@ pub async fn stream_copilot_message(
             CopilotStreamFrame::ResponseBlock {
                 conversation_id: conv_id.clone(),
                 run_id: run_id.clone(),
+                thread_id: conv_id.clone(),
+                assistant_message_id: assistant_message_id.clone(),
+                parent_message_id: parent_message_id.clone(),
+                sequence_number: next_sequence(),
                 block_id: format!("block-{i}"),
                 block,
             },
@@ -529,6 +628,10 @@ pub async fn stream_copilot_message(
             CopilotStreamFrame::Source {
                 conversation_id: conv_id.clone(),
                 run_id: run_id.clone(),
+                thread_id: conv_id.clone(),
+                assistant_message_id: assistant_message_id.clone(),
+                parent_message_id: parent_message_id.clone(),
+                sequence_number: next_sequence(),
                 source_id: format!("source-{i}"),
                 title,
             },
@@ -548,6 +651,10 @@ pub async fn stream_copilot_message(
             CopilotStreamFrame::Text {
                 conversation_id: conv_id.clone(),
                 run_id: run_id.clone(),
+                thread_id: conv_id.clone(),
+                assistant_message_id: assistant_message_id.clone(),
+                parent_message_id: parent_message_id.clone(),
+                sequence_number: next_sequence(),
                 delta,
             },
         );
@@ -560,6 +667,10 @@ pub async fn stream_copilot_message(
         CopilotStreamFrame::Usage {
             conversation_id: conv_id.clone(),
             run_id: run_id.clone(),
+            thread_id: conv_id.clone(),
+            assistant_message_id: assistant_message_id.clone(),
+            parent_message_id: parent_message_id.clone(),
+            sequence_number: next_sequence(),
             provider_id: provider_id.clone(),
             model_id: model_id.clone(),
             elapsed_ms,
@@ -572,11 +683,31 @@ pub async fn stream_copilot_message(
     let bundle_id_for_db = answer.bundle_id.clone();
     let trace_json = serde_json::to_string(&answer.trace).unwrap_or_default();
     let parts_json = assistant_parts_json(&answer);
+    let ag_ui_metadata_json = serde_json::to_string(&json!({
+        "schemaVersion": 1,
+        "runtime": "ag-ui",
+        "runId": run_id.clone(),
+        "threadId": conv_id.clone(),
+        "assistantMessageId": assistant_message_id.clone(),
+        "parentMessageId": parent_message_id.clone(),
+        "runStatus": "completed",
+        "providerId": provider_id.clone(),
+        "modelId": model_id.clone(),
+        "elapsedMs": elapsed_ms,
+        "toolCount": tool_names.len(),
+        "bundleId": answer.bundle_id.clone(),
+        "toolTrace": answer.trace.clone(),
+        "followUpQuestions": answer.follow_up_questions.clone(),
+        "actionLabel": answer.action_label.clone(),
+        "actionPath": answer.action_path.clone(),
+    }))
+    .unwrap_or_default();
     let asst_msg = {
         let cid = conv_id.clone();
         let parts = parts_json.clone();
+        let metadata = ag_ui_metadata_json.clone();
         run(&db, move |conn| {
-            conversations::insert_message(
+            let message = conversations::insert_message(
                 conn,
                 &cid,
                 "assistant",
@@ -585,8 +716,14 @@ pub async fn stream_copilot_message(
                 bundle_id_for_db.as_deref(),
                 None,
                 Some(&parts),
-            )
-            .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
+            )?;
+            conversations::update_message_run_status(
+                conn,
+                &message.id,
+                "completed",
+                Some(&metadata),
+            )?;
+            Ok(message)
         })
         .await
         .map_err(AppError::from)?
@@ -599,6 +736,10 @@ pub async fn stream_copilot_message(
         CopilotStreamFrame::Done {
             conversation_id: conv_id.clone(),
             run_id: run_id.clone(),
+            thread_id: conv_id.clone(),
+            assistant_message_id: assistant_message_id.clone(),
+            parent_message_id: parent_message_id.clone(),
+            sequence_number: next_sequence(),
             message_id: asst_msg_id.clone(),
             bundle_id: answer.bundle_id.clone(),
             tool_trace: answer.trace.clone(),

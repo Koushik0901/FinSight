@@ -165,6 +165,10 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
     type,
     conversationId: pickFrameValue<string>(raw, "conversationId", "conversation_id"),
     runId: pickFrameValue<string>(raw, "runId", "run_id"),
+    threadId: pickFrameValue<string | undefined>(raw, "threadId", "thread_id") ?? "",
+    assistantMessageId: pickFrameValue<string | undefined>(raw, "assistantMessageId", "assistant_message_id") ?? "",
+    parentMessageId: pickFrameValue<string | null | undefined>(raw, "parentMessageId", "parent_message_id") ?? null,
+    sequenceNumber: Number(pickFrameValue(raw, "sequenceNumber", "sequence_number") ?? -1),
   };
   if (!base.conversationId || !base.runId) return null;
 
@@ -172,12 +176,18 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
     case "text":
       return { ...base, type, delta: pickFrameValue<string>(raw, "delta", "delta") ?? "" };
     case "reasoning":
-      return { ...base, type, text: pickFrameValue<string>(raw, "text", "text") ?? "" };
+      return {
+        ...base,
+        type,
+        reasoningMessageId: pickFrameValue<string | undefined>(raw, "reasoningMessageId", "reasoning_message_id") ?? "",
+        text: pickFrameValue<string>(raw, "text", "text") ?? "",
+      };
     case "toolCallStart":
       return {
         ...base,
         type,
         toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
+        parentMessageId: pickFrameValue<string | null | undefined>(raw, "parentMessageId", "parent_message_id") ?? null,
         toolName: pickFrameValue<string>(raw, "toolName", "tool_name"),
         args: (pickFrameValue(raw, "args", "args") ?? {}) as Record<string, unknown>,
       };
@@ -186,6 +196,7 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
         ...base,
         type,
         toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
+        toolResultMessageId: pickFrameValue<string | undefined>(raw, "toolResultMessageId", "tool_result_message_id") ?? "",
         result: pickFrameValue(raw, "result", "result"),
         isError: Boolean(pickFrameValue(raw, "isError", "is_error")),
       };
@@ -553,11 +564,32 @@ export function createTauriChatModelAdapter({
   };
 }
 
-function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMessageId {
+export function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMessageId {
   return Object.fromEntries(
     messages.flatMap((message) => {
       const meta: MessageMeta = {};
       if (message.actionBundleId) meta.bundleId = message.actionBundleId;
+      const agUiMetadataJson = (message as ConversationMessage & { agUiMetadataJson?: string | null }).agUiMetadataJson;
+      if (agUiMetadataJson) {
+        try {
+          const parsed = JSON.parse(agUiMetadataJson) as Record<string, unknown>;
+          if (typeof parsed.bundleId === "string") meta.bundleId = parsed.bundleId;
+          if (Array.isArray(parsed.toolTrace)) {
+            meta.toolTrace = parsed.toolTrace.filter((item): item is string => typeof item === "string");
+          }
+          if (Array.isArray(parsed.followUpQuestions)) {
+            meta.followUpQuestions = parsed.followUpQuestions.filter((item): item is string => typeof item === "string");
+          }
+          if (typeof parsed.actionLabel === "string") meta.actionLabel = parsed.actionLabel;
+          if (typeof parsed.actionPath === "string") meta.actionPath = parsed.actionPath;
+          if (typeof parsed.providerId === "string") meta.providerId = parsed.providerId;
+          if (typeof parsed.modelId === "string") meta.modelId = parsed.modelId;
+          if (typeof parsed.elapsedMs === "number") meta.elapsedMs = parsed.elapsedMs;
+          if (typeof parsed.toolCount === "number") meta.toolCount = parsed.toolCount;
+        } catch {
+          // Ignore corrupt metadata and fall back to legacy fields.
+        }
+      }
       if (message.toolTrace) {
         try {
           const parsed = JSON.parse(message.toolTrace) as unknown;
