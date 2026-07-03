@@ -162,20 +162,28 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
       </div>
       <div className="card" style={{ padding: 26 }}>
         <div style={{ position: "relative", height: 20, marginBottom: 8 }}>
-          {ticks.map((tick, i) => (
-            <span key={i} className="muted mono" style={{ position: "absolute", left: `${tick.xPercent}%`, fontSize: 11 }}>{tick.label}</span>
-          ))}
+          {ticks.map((tick, i) =>
+            i === ticks.length - 1 ? (
+              <span key={i} className="muted mono" style={{ position: "absolute", right: 0, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
+            ) : (
+              <span key={i} className="muted mono" style={{ position: "absolute", left: `${tick.xPercent}%`, fontSize: 11, whiteSpace: "nowrap" }}>{tick.label}</span>
+            )
+          )}
         </div>
         <div style={{ position: "relative", paddingTop: 8 }}>
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 2, background: "var(--accent)", boxShadow: "0 0 8px var(--accent)" }} />
           {rows.map((row) => {
             const color = row.needsAttention ? "var(--negative)" : "var(--accent)";
+            const labelOnLeft = row.xPercent > 50;
+            const labelStyle = labelOnLeft
+              ? { position: "absolute" as const, right: `calc(${100 - row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const, textAlign: "right" as const }
+              : { position: "absolute" as const, left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" as const };
             return (
               <div key={row.goal.id} style={{ position: "relative", height: 44, display: "flex", alignItems: "center" }}>
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${row.xPercent}%`, height: 1, background: "var(--hairline)" }} />
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
                 <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
-                <div style={{ position: "absolute", left: `calc(${row.xPercent}% + 14px)`, top: "50%", transform: "translateY(-50%)", fontSize: 13, whiteSpace: "nowrap" }}>
+                <div style={labelStyle}>
                   {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents, { currency: "USD" })}</span>
                   {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
                 </div>
