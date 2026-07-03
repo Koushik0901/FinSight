@@ -103,6 +103,38 @@ pub fn reconcile_excluding(
     window_days: i64,
     excluded_fuzzy_ids: &HashSet<String>,
 ) -> ProviderResult<ReconciliationDecision> {
+    reconcile_excluding_batch(
+        conn,
+        account_id,
+        candidate,
+        imported_id,
+        window_days,
+        excluded_fuzzy_ids,
+        &HashSet::new(),
+    )
+}
+
+/// Like [`reconcile_excluding`], but additionally takes `self_import_ids`: the
+/// set of transaction ids inserted *earlier in this same import batch*.
+///
+/// A single authoritative statement (one CSV export) lists every posted
+/// transaction exactly once — two identical lines are two real charges (e.g. a
+/// handful of same-day pay-as-you-go API top-ups of the same amount), not an
+/// accidental double. So rows created by the current import must never be
+/// treated as duplicate *targets* for later rows in the same file: they are
+/// fully excluded from candidacy here. `excluded_fuzzy_ids` (pre-existing rows
+/// already consumed by an auto-match) keeps its distinct "collides with another
+/// row in this batch → review" semantics, which is correct for *re-importing*
+/// an overlapping statement against transactions that existed beforehand.
+pub fn reconcile_excluding_batch(
+    conn: &Connection,
+    account_id: &str,
+    candidate: &NewTransaction,
+    imported_id: Option<&str>,
+    window_days: i64,
+    excluded_fuzzy_ids: &HashSet<String>,
+    self_import_ids: &HashSet<String>,
+) -> ProviderResult<ReconciliationDecision> {
     if let Some(id) = imported_id {
         if let Some(txn) = find_by_imported_id(conn, account_id, id).map_err(ProviderError::Core)? {
             return Ok(ReconciliationDecision::AutoMatch(txn));
@@ -132,6 +164,9 @@ pub fn reconcile_excluding(
         window_days,
     )
     .map_err(ProviderError::Core)?;
+
+    // Rows inserted earlier in this same import are not duplicate targets.
+    matches.retain(|m| !self_import_ids.contains(&m.transaction.id));
 
     if matches.is_empty() {
         return Ok(ReconciliationDecision::None);

@@ -8,7 +8,7 @@ use crate::csv::encoding::{decode_layered, DetectedEncoding};
 use crate::csv::mapping::CsvImportMapping;
 use crate::csv::parse::{into_new_transaction, parse_row};
 use crate::error::{ProviderError, ProviderResult};
-use crate::simplefin::matcher::{reconcile_excluding, ReconciliationDecision};
+use crate::simplefin::matcher::{reconcile_excluding_batch, ReconciliationDecision};
 use chrono::Utc;
 use finsight_core::models::{NewImportCandidate, NewImportCandidateMatch};
 use finsight_core::repos::{accounts, import_candidates};
@@ -163,6 +163,10 @@ impl CsvProvider {
         let mut errors: Vec<RowError> = Vec::new();
         let mut processed: u32 = 0;
         let mut matched_existing_ids: HashSet<String> = HashSet::new();
+        // Ids of rows this import itself inserted. A single statement lists each
+        // posted transaction once, so identical lines are distinct real charges;
+        // these must never be dedup targets for later rows in the same file.
+        let mut self_import_ids: HashSet<String> = HashSet::new();
         // in_batch tracks rows in the current open transaction so we can
         // commit every BATCH_SIZE rows without the monotonic `processed` check.
         let mut in_batch: usize = 0;
@@ -200,7 +204,15 @@ impl CsvProvider {
             };
             let new_tx = into_new_transaction(parsed, account_id.to_string());
 
-            match reconcile_excluding(&tx, account_id, &new_tx, None, 7, &matched_existing_ids)? {
+            match reconcile_excluding_batch(
+                &tx,
+                account_id,
+                &new_tx,
+                None,
+                7,
+                &matched_existing_ids,
+                &self_import_ids,
+            )? {
                 ReconciliationDecision::AutoMatch(existing) => {
                     matched_existing_ids.insert(existing.id);
                     rows_skipped += 1;
@@ -245,13 +257,14 @@ impl CsvProvider {
                     rows_queued += 1;
                 }
                 ReconciliationDecision::None => {
+                    let new_id = Uuid::new_v4().to_string();
                     tx.execute(
                         "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
                                                   category_id, status, notes, created_at, imported_id, source, \
                                                   raw_synced_data, pending, external_tx_id, external_account_id) \
                          VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                         params![
-                            Uuid::new_v4().to_string(),
+                            new_id,
                             &new_tx.account_id,
                             new_tx.posted_at.to_rfc3339(),
                             new_tx.amount_cents,
@@ -269,6 +282,7 @@ impl CsvProvider {
                         ],
                     )
                     .map_err(|e| ProviderError::Internal(format!("insert: {e}")))?;
+                    self_import_ids.insert(new_id);
                     rows_imported += 1;
                 }
             }
