@@ -342,13 +342,20 @@ fn fuzzy_score_amount(
     {
         30
     } else {
-        // Jaccard-ish word overlap.
-        let words1: std::collections::HashSet<&str> = merchant_lower.split_whitespace().collect();
-        let words2: std::collections::HashSet<&str> = txn_merchant.split_whitespace().collect();
-        if words1.is_empty() {
+        // The vendor name leads the descriptor; the location/store trail it. Two
+        // different vendors that merely share a city ("WALMART … VICTORIA" vs
+        // "TIM HORTONS … VICTORIA") must NOT look similar, so a partial match
+        // requires the leading normalized token (the vendor identifier) to agree.
+        let norm_a = finsight_core::merchant::normalize_merchant(merchant_lower);
+        let norm_b = finsight_core::merchant::normalize_merchant(&txn.merchant_raw);
+        let first_a = norm_a.split_whitespace().next();
+        let first_b = norm_b.split_whitespace().next();
+        if first_a.is_none() || first_a != first_b {
             0
         } else {
-            (words1.intersection(&words2).count() * 8) as i64
+            let words1: std::collections::HashSet<&str> = norm_a.split_whitespace().collect();
+            let words2: std::collections::HashSet<&str> = norm_b.split_whitespace().collect();
+            (words1.intersection(&words2).count() * 8).max(15) as i64
         }
     };
     if merchant_score == 0 {
@@ -463,6 +470,19 @@ mod fuzzy_tests {
             "uber eats https://help.ub",
         );
         assert_eq!(score, 0, "different merchants must not be a duplicate candidate");
+    }
+
+    #[test]
+    fn different_vendors_sharing_only_a_city_are_not_duplicates() {
+        // WALMART … VICTORIA vs TIM HORTONS … VICTORIA share only the city.
+        let existing = txn("WALMART 1214 1214 VICTORIA", -289, 21);
+        let score = fuzzy_score_amount(
+            &existing,
+            -314,
+            Utc.with_ymd_and_hms(2026, 1, 22, 12, 0, 0).unwrap(),
+            "tim hortons #2619 victoria",
+        );
+        assert_eq!(score, 0, "sharing only a city must not be a duplicate");
     }
 
     #[test]
