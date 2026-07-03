@@ -305,7 +305,7 @@ export default function Rules() {
           <Card className="stack stack-md" tight>
             <div className="eyebrow"><span className="dot" />Trust dial</div>
             <p className="muted" style={{ fontSize: 13, lineHeight: 1.55, margin: 0 }}>
-              Adjust how much the agent acts without asking. You can change this per category in Settings.
+              Adjust how much the agent acts without asking. Auto-categorization is controlled in Settings.
             </p>
             <Card tone="muted" tight className="stack stack-sm">
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>

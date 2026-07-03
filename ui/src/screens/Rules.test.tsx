@@ -44,6 +44,14 @@ describe("Rules — agent proposals", () => {
   });
 });
 
+describe("Rules — trust dial copy", () => {
+  it("does not overclaim a per-category autonomy control in the trust dial copy", () => {
+    render(<Rules />, { wrapper: createWrapper() });
+    expect(screen.queryByText(/per category in Settings/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Auto-categorization is controlled in Settings/i)).toBeInTheDocument();
+  });
+});
+
 describe("Rules — new-rule builder", () => {
   it("opens inline form on New rule button click", () => {
     render(<Rules />, { wrapper: createWrapper() });
