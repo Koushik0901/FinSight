@@ -74,6 +74,29 @@ pub async fn import_csv(
         let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
     }
 
+    // Auto-categorize with the configured AI provider when the setting is on
+    // (default). The deterministic builtin pass above only covers well-known
+    // merchants; this enqueues the LLM categorizer for the long tail so import
+    // actually honours the "categorize after each import" promise. Best-effort:
+    // a missing provider or full queue must not fail the import (the user can
+    // still re-run the scan manually from Settings / Insights).
+    {
+        let cfg_db = (*state.db).clone();
+        let auto = run(&cfg_db, |conn| {
+            let v: Option<bool> =
+                finsight_core::settings::get(conn, crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY)?;
+            Ok(v.unwrap_or(true))
+        })
+        .await
+        .unwrap_or(true);
+        if auto {
+            let _ = state
+                .agent
+                .tx
+                .try_send(finsight_agent::agent::AgentJob::CategorizeAll);
+        }
+    }
+
     app.emit("import-complete", &summary).ok();
 
     let notify_app = app.clone();
