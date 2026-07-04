@@ -218,7 +218,11 @@ export default function AccountTransactions() {
                           </div>
                         </div>
                       </td>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></div></td>
+                      <td><div className="row row-sm">{transaction.is_transfer ? (
+                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">Transfer</span></>
+                      ) : (
+                        <><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></>
+                      )}</div></td>
                       <td className="right"><span className={`figure money ${transaction.amount_cents > 0 ? "pos" : ""}`} style={{ fontSize: 16 }}>{money(transaction.amount_cents, { currency: account.currency || "USD", decimals: 2 })}</span></td>
                     </tr>
                   );

@@ -208,8 +208,10 @@ const TRANSFER_KEYWORDS: &[&str] = &[
     "autopay",
     "internet deposit from",   // Tangerine internal transfer in
     "internet withdrawal to",  // Tangerine internal transfer out
-    "e-transfer",              // INTERAC e-Transfer to/from self
+    "e-transfer",              // INTERAC e-Transfer to/from self or a friend
     "e transfer",
+    "interac",                 // "INTERAC e-Transfer To/From …" (friend transfers)
+    "email money transfer",
     "transfer to",
     "transfer from",
     "internal transfer",
@@ -424,6 +426,7 @@ mod tests {
         assert!(is_transfer("Internet Withdrawal to Tangerine"));
         assert!(is_transfer("INTERAC e-Transfer To: Koushik C"));
         assert!(is_transfer("INTERAC e-Transfer From: BRITISH"));
+        assert!(is_transfer("Email Money Transfer to Alice")); // friend transfer
         // Real spending must NOT be flagged as a transfer.
         assert!(!is_transfer("TIM HORTONS #3356 BURNABY"));
         assert!(!is_transfer("WALMART SUPERCENTER BURNABY"));

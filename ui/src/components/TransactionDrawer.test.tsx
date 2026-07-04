@@ -36,7 +36,7 @@ const existingTxn = {
   status: "cleared" as const, notes: null,
   ai_confidence: null, ai_explanation: null, is_anomaly: false,
   created_at: "2024-01-15T00:00:00Z",
-  is_reimbursable: false, is_split: false,
+  is_reimbursable: false, is_split: false, is_transfer: false,
   imported_id: null, source: null,
   raw_synced_data: null, pending: false, external_tx_id: null, external_account_id: null,
 };
