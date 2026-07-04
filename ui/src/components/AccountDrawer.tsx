@@ -33,9 +33,11 @@ interface Props {
   /** Called after a successful create with the new account's id (so callers can
    *  auto-select it, e.g. the CSV import dialog). Not fired on edit. */
   onCreated?: (accountId: string) => void;
+  /** Stack above an already-open dialog (inline creation from the import dialog). */
+  elevated?: boolean;
 }
 
-export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated }: Props) {
+export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated, elevated }: Props) {
   const isEdit = !!account;
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
@@ -151,7 +153,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
   }
 
   return (
-    <Drawer open={open} onClose={onClose} title={isEdit ? "Edit Account" : "Add account"}>
+    <Drawer open={open} onClose={onClose} elevated={elevated} title={isEdit ? "Edit Account" : "Add account"}>
       <form onSubmit={handleSubmit(onSubmit)} className="drawer-form">
         <label> Bank
           <input {...register("bank")} aria-invalid={!!errors.bank} />

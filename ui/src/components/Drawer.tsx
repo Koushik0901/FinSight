@@ -9,9 +9,13 @@ interface DrawerProps {
   title: string;
   children: ReactNode;
   width?: number;
+  /** Stack above an already-open dialog (e.g. the CSV import dialog opening the
+   *  Add-account drawer inline). Without this the drawer renders behind the
+   *  dialog's backdrop. */
+  elevated?: boolean;
 }
 
-export default function Drawer({ open, onClose, title, children, width = 480 }: DrawerProps) {
+export default function Drawer({ open, onClose, title, children, width = 480, elevated = false }: DrawerProps) {
   const titleId = useId();
   const lastActive = useRef<HTMLElement | null>(null);
 
@@ -42,7 +46,7 @@ export default function Drawer({ open, onClose, title, children, width = 480 }: 
 
   return createPortal(
     <FocusLock returnFocus={false}>
-      <div className="drawer-root">
+      <div className={elevated ? "drawer-root drawer-root-elevated" : "drawer-root"}>
         <div
           className="drawer-backdrop"
           data-testid="drawer-backdrop"

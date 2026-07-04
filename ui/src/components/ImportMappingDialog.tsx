@@ -528,6 +528,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       </div>
       <AccountDrawer
         open={newAccountOpen}
+        elevated
         onClose={() => setNewAccountOpen(false)}
         onCreated={(id) => {
           setAccountId(id);
