@@ -440,10 +440,22 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 Err(e) => tracing::warn!("OpenRouter .env bootstrap skipped: {e}"),
             }
 
-            // Best-effort: record today's net-worth snapshot on startup, and
-            // recompute statistical anomaly flags so existing imported data
-            // populates the Anomaly view without waiting for a re-import.
+            // Best-effort: derive balances for existing imported accounts (so the
+            // "$0 after import" state resolves without a re-import), record today's
+            // net-worth snapshot, and recompute statistical anomaly flags so
+            // existing imported data populates without waiting for a re-import.
             if let Ok(mut conn) = db.get() {
+                if let Ok(ids) = conn
+                    .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
+                    .and_then(|mut s| {
+                        s.query_map([], |r| r.get::<_, String>(0))
+                            .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+                    })
+                {
+                    for id in ids {
+                        let _ = finsight_core::repos::accounts::recompute_balance_if_linked(&mut conn, &id);
+                    }
+                }
                 let _ = finsight_core::repos::net_worth::record_today(&mut conn);
                 let _ = finsight_core::anomaly::recompute_anomalies(&mut conn);
             }

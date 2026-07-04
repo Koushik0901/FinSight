@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn breakdown_excludes_unknown_balance_accounts() {
+    fn breakdown_includes_derived_balances_after_import() {
         use crate::models::{NewLiability, NewTransaction, TransactionStatus};
         use crate::repos::{accounts, liabilities, transactions};
         use chrono::Duration;
@@ -243,13 +243,13 @@ mod tests {
         let known = accounts::insert(&mut conn, base_account("Checking", 500_000, "manual")).unwrap();
         let _ = known;
 
-        // Unknown-balance account: seed source + transaction activity means the
-        // seed balance is not a trustworthy current balance → excluded.
-        let unknown = accounts::insert(&mut conn, base_account("Imported Card", 0, "seed")).unwrap();
+        // Imported account: seed opening ($0) + activity now DERIVES a balance
+        // (YNAB/Actual model), so it counts toward net worth (0 + −4,200).
+        let imported = accounts::insert(&mut conn, base_account("Imported Card", 0, "seed")).unwrap();
         transactions::insert(
             &mut conn,
             NewTransaction {
-                account_id: unknown.id.clone(),
+                account_id: imported.id.clone(),
                 posted_at: Utc::now() - Duration::days(5),
                 amount_cents: -4_200,
                 merchant_raw: "Store".into(),
@@ -285,13 +285,14 @@ mod tests {
 
         let b = breakdown(&mut conn).unwrap();
         assert!(b.has_data);
-        assert_eq!(b.known_account_balance_cents, 500_000);
-        assert_eq!(b.accounts_with_known_balance, 1);
-        assert_eq!(b.accounts_with_unknown_balance, 1);
-        assert_eq!(b.unknown_balance_accounts, vec!["Imported Card".to_string()]);
+        // Both accounts now have known balances: 500,000 + (0 − 4,200) = 495,800.
+        assert_eq!(b.known_account_balance_cents, 495_800);
+        assert_eq!(b.accounts_with_known_balance, 2);
+        assert_eq!(b.accounts_with_unknown_balance, 0);
+        assert!(b.unknown_balance_accounts.is_empty());
         assert_eq!(b.liability_cents, 120_000);
-        // 500,000 known assets − 120,000 liabilities = 380,000
-        assert_eq!(b.net_worth_cents, 380_000);
+        // 495,800 known assets − 120,000 liabilities = 375,800
+        assert_eq!(b.net_worth_cents, 375_800);
     }
 
     #[test]
