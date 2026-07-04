@@ -294,13 +294,14 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // must still run so report totals stay correct even before the user has set
     // up any categories.
 
-    // Consider every transaction that is either uncategorized OR not yet
-    // transfer-flagged, so a re-run after this feature ships back-fills existing
-    // rows too.
+    // Consider every uncategorized transaction (for category + transfer
+    // evaluation) plus every currently transfer-flagged one (so a re-run after
+    // the keyword list changes can *un-flag* a stale transfer even if it also
+    // carries a category, e.g. an "Interac - Purchase" once tagged a transfer).
     let pending: Vec<(String, String, bool)> = {
         let mut stmt = conn.prepare(
             "SELECT id, merchant_raw, category_id IS NULL FROM transactions \
-             WHERE category_id IS NULL OR is_transfer = 0",
+             WHERE category_id IS NULL OR is_transfer = 1",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)? != 0))
@@ -459,6 +460,35 @@ mod tests {
         assert_eq!(is_tf("t1"), 1, "CC payment flagged as transfer");
         assert_eq!(is_tf("t2"), 1, "internal transfer flagged");
         assert_eq!(is_tf("t3"), 0, "real spending not flagged");
+    }
+
+    #[test]
+    fn re_run_unflags_a_stale_transfer_even_if_it_carries_a_category() {
+        // Regression: a row that was flagged is_transfer=1 AND given a category
+        // must get un-flagged on a later re-run once its merchant no longer
+        // matches a transfer keyword (the "Interac - Purchase" false positive).
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        insert_txn(&conn, "t1", "Interac - Purchase - COSTCO WHOLESALE");
+        // Simulate the stale state: flagged AND categorized.
+        conn.execute(
+            "UPDATE transactions SET is_transfer = 1, category_id = 'groceries' WHERE id = 't1'",
+            [],
+        )
+        .unwrap();
+
+        apply_builtin_categorization(&mut conn).unwrap();
+
+        let (is_tf, cat): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_transfer, category_id FROM transactions WHERE id = 't1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(is_tf, 0, "stale transfer flag must be cleared");
+        assert_eq!(cat.as_deref(), Some("groceries"), "category is preserved");
     }
 
     #[test]
