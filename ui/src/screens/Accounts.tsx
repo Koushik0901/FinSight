@@ -71,25 +71,24 @@ export default function Accounts() {
           <h1 className="h1" style={{ marginTop: 6 }}>Everything in one place.</h1>
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
-          <button
-            className="btn outline sm"
-            type="button"
-            onClick={async () => {
-              if (hasSimpleFin) {
+          <button className="btn primary sm" type="button" onClick={() => setAddOpen(true)}>+ Add account</button>
+          {hasSimpleFin && (
+            <button
+              className="btn outline sm"
+              type="button"
+              onClick={async () => {
                 try {
                   await syncAll.mutateAsync();
                   toast.success("Synced all SimpleFin accounts");
                 } catch (syncError) {
                   toast.error("Sync failed", { description: userErrorMessage(syncError, "Check your bank connection and try again.") });
                 }
-              } else {
-                setAddOpen(true);
-              }
-            }}
-          >
-            Connect bank
-          </button>
-          <button className="btn primary sm" type="button" onClick={() => setAssetAddOpen(true)}>Add manual asset</button>
+              }}
+            >
+              Sync banks
+            </button>
+          )}
+          <button className="btn outline sm" type="button" onClick={() => setAssetAddOpen(true)}>Add manual asset</button>
         </div>
       </header>
 
