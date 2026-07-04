@@ -148,6 +148,43 @@ fn v036_migration_fixes_regreyed_defaults_but_keeps_user_chosen_colors() {
 }
 
 #[test]
+fn v037_migration_backfills_spending_types_but_keeps_user_tags() {
+    let db = open_db();
+    run_migrations(&db).unwrap();
+    let conn = db.get().unwrap();
+
+    // Categories seeded WITHOUT spending types (the pre-fix state), except the
+    // user already tagged one themselves.
+    seed_grey_categories(&conn);
+    conn.execute(
+        "UPDATE categories SET spending_type = 'savings' WHERE id = 'travel'",
+        [],
+    )
+    .unwrap();
+
+    run_migration_sql(
+        &conn,
+        &read_migration("V037__default_spending_types.sql"),
+    );
+
+    let read = |id: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT spending_type FROM categories WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(read("housing").as_deref(), Some("fixed"));
+    assert_eq!(read("dining").as_deref(), Some("guilt_free"));
+    assert_eq!(
+        read("travel").as_deref(),
+        Some("savings"),
+        "a user-chosen spending type must survive the backfill"
+    );
+}
+
+#[test]
 fn v030_migration_leaves_custom_categories_untouched() {
     let db = open_db();
     run_migrations(&db).unwrap();

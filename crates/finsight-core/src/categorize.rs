@@ -402,19 +402,35 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
 }
 
 /// The standard starter categories the built-in categorizer targets. Grouped
-/// so they slot into the conscious-spending breakdown. `(id, group_id, label)`.
-const DEFAULT_CATEGORIES: &[(&str, &str, &str)] = &[
-    ("dining", "daily", "Dining"),
-    ("groceries", "daily", "Groceries"),
-    ("transport", "daily", "Transport"),
-    ("shopping", "lifestyle", "Shopping"),
-    ("travel", "lifestyle", "Travel"),
-    ("gifts", "lifestyle", "Gifts"),
-    ("housing", "fixed", "Housing"),
-    ("utilities", "fixed", "Utilities"),
-    ("subscriptions", "fixed", "Subscriptions"),
-    ("health", "wellbeing", "Health"),
+/// so they slot into the conscious-spending breakdown.
+/// `(id, group_id, label, spending_type)` — spending_type is Ramit Sethi's
+/// Conscious Spending Plan bucket (`fixed` | `investments` | `savings` |
+/// `guilt_free`) that powers the Budget "Spending mix" breakdown. Essentials
+/// you can't easily opt out of are `fixed`; discretionary lifestyle spending
+/// is `guilt_free`. None of the starter categories are savings/investments —
+/// those flows are transfers, not spending categories.
+const DEFAULT_CATEGORIES: &[(&str, &str, &str, &str)] = &[
+    ("dining", "daily", "Dining", "guilt_free"),
+    ("groceries", "daily", "Groceries", "fixed"),
+    ("transport", "daily", "Transport", "fixed"),
+    ("shopping", "lifestyle", "Shopping", "guilt_free"),
+    ("travel", "lifestyle", "Travel", "guilt_free"),
+    ("gifts", "lifestyle", "Gifts", "guilt_free"),
+    ("housing", "fixed", "Housing", "fixed"),
+    ("utilities", "fixed", "Utilities", "fixed"),
+    ("subscriptions", "fixed", "Subscriptions", "fixed"),
+    ("health", "wellbeing", "Health", "fixed"),
 ];
+
+/// The canonical conscious-spending bucket for a starter category id, or
+/// `None` for unknown/custom categories (those stay untagged until the user
+/// decides — a wrong guess is worse than an honest blank).
+pub fn default_spending_type(id: &str) -> Option<&'static str> {
+    DEFAULT_CATEGORIES
+        .iter()
+        .find(|(cid, _, _, _)| *cid == id)
+        .map(|(_, _, _, st)| *st)
+}
 const DEFAULT_GROUPS: &[(&str, &str)] = &[
     ("fixed", "Fixed"),
     ("daily", "Daily"),
@@ -438,10 +454,11 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
             params![gid, label],
         )?;
     }
-    for (i, (id, group_id, label)) in DEFAULT_CATEGORIES.iter().enumerate() {
+    for (i, (id, group_id, label, spending_type)) in DEFAULT_CATEGORIES.iter().enumerate() {
         tx.execute(
-            "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) VALUES(?1, ?2, ?3, ?4, ?5)",
-            params![id, group_id, label, crate::palette::color_for(id), i as i64],
+            "INSERT OR IGNORE INTO categories(id, group_id, label, color, spending_type, sort_order) \
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, group_id, label, crate::palette::color_for(id), spending_type, i as i64],
         )?;
     }
     tx.commit()?;
@@ -962,6 +979,28 @@ mod tests {
             );
             assert_ne!(color, crate::palette::DEFAULT_COLOR, "{id} must not be grey");
         }
+    }
+
+    #[test]
+    fn ensure_default_categories_stamps_conscious_spending_types() {
+        // The Budget "Spending mix" is powered by spending_type; the seeder must
+        // assign the canonical bucket so it works without manual tagging.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        let read = |id: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT spending_type FROM categories WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read("housing").as_deref(), Some("fixed"));
+        assert_eq!(read("groceries").as_deref(), Some("fixed"));
+        assert_eq!(read("dining").as_deref(), Some("guilt_free"));
+        assert_eq!(read("travel").as_deref(), Some("guilt_free"));
+        assert_eq!(default_spending_type("not-a-starter"), None, "custom categories stay untagged");
     }
 
     #[test]

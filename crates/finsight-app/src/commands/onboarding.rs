@@ -173,10 +173,14 @@ pub async fn commit_starter_categories(
             )?;
         }
         for c in &categories {
+            // Known starter ids get their conscious-spending bucket up front so
+            // the Budget "Spending mix" works out of the box; custom categories
+            // stay untagged until the user decides.
+            let spending_type = finsight_core::categorize::default_spending_type(&c.id);
             tx.execute(
-                "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) \
-                 VALUES(?1, ?2, ?3, ?4, 0)",
-                rusqlite::params![c.id, c.group_id, c.label, c.color],
+                "INSERT OR IGNORE INTO categories(id, group_id, label, color, spending_type, sort_order) \
+                 VALUES(?1, ?2, ?3, ?4, ?5, 0)",
+                rusqlite::params![c.id, c.group_id, c.label, c.color, spending_type],
             )?;
         }
         tx.commit()?;
