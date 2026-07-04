@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import FocusLock from "react-focus-lock";
 import { toast } from "sonner";
-import { usePreviewCsvColumns } from "../api/hooks/csv";
+import { usePreviewCsvColumns, useSavedCsvMapping } from "../api/hooks/csv";
 import { useImportCsv } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { CsvImportMapping, ImportSummary, ColumnRole } from "../api/client";
@@ -27,11 +27,7 @@ const DATE_FORMATS = [
   { label: "Custom",       value: "__CUSTOM__" },
 ];
 
-const AMOUNT_CONVENTIONS = [
-  { label: "Negative = outflow",         value: "negative_is_outflow" as const },
-  { label: "Positive = outflow",         value: "positive_is_outflow" as const },
-  { label: "Separate debit/credit cols", value: "split_debit_credit" as const },
-];
+type AmountConventionValue = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit";
 
 interface Props {
   path: string;
@@ -47,13 +43,30 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const { data: accounts = [] } = useAccounts();
 
   const [accountId, setAccountId] = useState(defaultAccountId ?? "");
+  const { data: savedMapping } = useSavedCsvMapping(accountId || null);
   const [columns, setColumns] = useState<ColumnRole[]>([]);
   const [dateFormat, setDateFormat] = useState("%Y-%m-%d");
   const [customDateFormat, setCustomDateFormat] = useState("");
-  const [amountConvention, setAmountConvention] =
-    useState<"negative_is_outflow" | "positive_is_outflow" | "split_debit_credit">("negative_is_outflow");
+  // Amount handling is modelled as two independent toggles rather than a
+  // three-way "positive/negative = outflow" radio: the default is the standard
+  // negative-is-outflow, "Flip amounts" swaps it (for credit-card exports where
+  // charges are positive), and "Separate debit/credit columns" is a distinct
+  // shape. The wire value is derived below.
+  const [splitMode, setSplitMode] = useState(false);
+  const [flipAmounts, setFlipAmounts] = useState(false);
+  const amountConvention: AmountConventionValue = splitMode
+    ? "split_debit_credit"
+    : flipAmounts
+      ? "positive_is_outflow"
+      : "negative_is_outflow";
+  const applyConvention = (conv: AmountConventionValue) => {
+    setSplitMode(conv === "split_debit_credit");
+    setFlipAmounts(conv === "positive_is_outflow");
+  };
   const [autoDetected, setAutoDetected] = useState<Set<string>>(new Set());
+  const [usingSaved, setUsingSaved] = useState(false);
   const detectionAppliedForPath = useRef<string | null>(null);
+  const savedAppliedForAccount = useRef<string | null>(null);
 
   useEffect(() => {
     if (!preview) return;
@@ -80,25 +93,53 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
         setCustomDateFormat(detected.dateFormat);
       }
     }
-    setAmountConvention(detected.amountConvention);
+    applyConvention(detected.amountConvention);
     setAutoDetected(detected.detectedFields);
   }, [path, preview]);
 
-  // Amount-convention default is account-type-aware. Credit-card and loan
-  // exports use positive = a charge (outflow); bank/asset exports use
-  // negative = outflow. Picking the wrong one silently inverts every row
-  // (charges counted as income, payments as spending). Only override while the
-  // convention is still auto-detected — a manual choice always wins.
+  // Apply the mapping this account was last imported with, so a recurring
+  // import from the same bank needs zero fiddling. Runs once per account; a
+  // saved mapping wins over both auto-detection and the account-type default.
   useEffect(() => {
+    if (!accountId) return;
+    if (savedAppliedForAccount.current === accountId) return;
+    if (savedMapping === undefined) return; // still loading
+    savedAppliedForAccount.current = accountId;
+    if (!savedMapping) {
+      setUsingSaved(false);
+      return;
+    }
+    const colCount = preview?.headers?.length ?? preview?.rows[0]?.length ?? 0;
+    if (colCount > 0 && savedMapping.columns.length === colCount) {
+      setColumns(savedMapping.columns as ColumnRole[]);
+    }
+    setSkipHeaderRows(savedMapping.skip_header_rows);
+    const preset = DATE_FORMATS.find((f) => f.value === savedMapping.date_format);
+    if (preset) {
+      setDateFormat(savedMapping.date_format);
+      setCustomDateFormat("");
+    } else {
+      setDateFormat("__CUSTOM__");
+      setCustomDateFormat(savedMapping.date_format);
+    }
+    applyConvention(savedMapping.amount_convention);
+    setUsingSaved(true);
+    setAutoDetected(new Set()); // saved settings supersede the auto-detected badges
+  }, [accountId, savedMapping, preview]);
+
+  // Fallback default when the account has no saved mapping: credit-card and loan
+  // exports use positive = a charge (outflow), bank/asset exports negative =
+  // outflow. Picking wrong silently inverts every row, so bias the flip by
+  // account type — but only while still auto-detected (a manual choice wins).
+  useEffect(() => {
+    if (savedMapping) return; // saved mapping already applied
+    if (splitMode) return;
     if (!autoDetected.has("amountConvention")) return;
     const selected = accounts.find((a) => a.id === accountId);
     if (!selected) return;
     const isLiabilityAccount = selected.type === "Credit" || selected.type === "Loan";
-    setAmountConvention((current) => {
-      if (current === "split_debit_credit") return current;
-      return isLiabilityAccount ? "positive_is_outflow" : "negative_is_outflow";
-    });
-  }, [accountId, accounts, autoDetected]);
+    setFlipAmounts(isLiabilityAccount);
+  }, [accountId, accounts, autoDetected, savedMapping, splitMode]);
 
   const importCsv = useImportCsv();
 
@@ -233,6 +274,11 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                 </option>
               ))}
             </Select>
+            {usingSaved && (
+              <p className="import-saved-hint muted">
+                Using the settings from your last import for this account.
+              </p>
+            )}
             <Input
               label="Skip header rows"
               type="number"
@@ -281,18 +327,37 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             </div>
             <fieldset className="import-convention">
               <legend>
-                Amount convention
-                {autoDetected.has("amountConvention") && <span className="chip">Auto-detected</span>}
+                Amount handling
+                {usingSaved ? (
+                  <span className="chip">Saved</span>
+                ) : (
+                  autoDetected.has("amountConvention") && <span className="chip">Auto-detected</span>
+                )}
               </legend>
-              {AMOUNT_CONVENTIONS.map((c) => (
-                <label key={c.value} className={amountConvention === c.value ? "active" : undefined}>
+              <label className={splitMode ? "active" : undefined}>
+                <input
+                  type="checkbox"
+                  checked={splitMode}
+                  onChange={(e) => {
+                    setSplitMode(e.target.checked);
+                    setUsingSaved(false);
+                    setAutoDetected((prev) => {
+                      const copy = new Set(prev);
+                      copy.delete("amountConvention");
+                      return copy;
+                    });
+                  }}
+                />
+                Separate debit / credit columns
+              </label>
+              {!splitMode && (
+                <label className={flipAmounts ? "active" : undefined}>
                   <input
-                    type="radio"
-                    name="conv"
-                    value={c.value}
-                    checked={amountConvention === c.value}
-                    onChange={() => {
-                      setAmountConvention(c.value);
+                    type="checkbox"
+                    checked={flipAmounts}
+                    onChange={(e) => {
+                      setFlipAmounts(e.target.checked);
+                      setUsingSaved(false);
                       setAutoDetected((prev) => {
                         const copy = new Set(prev);
                         copy.delete("amountConvention");
@@ -300,9 +365,16 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                       });
                     }}
                   />
-                  {c.label}
+                  Flip amounts — my charges are positive numbers
                 </label>
-              ))}
+              )}
+              <p className="import-convention-hint muted">
+                {splitMode
+                  ? "One column is money out, the other money in."
+                  : flipAmounts
+                    ? "Positive rows count as spending — typical for credit-card exports."
+                    : "Negative rows count as spending — typical for bank exports."}
+              </p>
             </fieldset>
           </div>
         </section>

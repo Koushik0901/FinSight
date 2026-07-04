@@ -260,6 +260,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::meta::app_ready,
         commands::import::preview_csv_columns,
         commands::import::import_csv,
+        commands::import::get_saved_csv_mapping,
         commands::import::list_unfinished_imports,
         commands::import::discard_unfinished_import,
         commands::agent::set_completion_provider,

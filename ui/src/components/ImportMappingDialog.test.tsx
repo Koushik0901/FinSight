@@ -50,6 +50,7 @@ vi.mock("../api/client", () => ({
       status: "ok",
       data: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, rows_queued_for_review: 0, errors: [] },
     }),
+    getSavedCsvMapping: vi.fn().mockResolvedValue({ status: "ok", data: null }),
   },
 }));
 
@@ -86,25 +87,68 @@ describe("ImportMappingDialog", () => {
     expect(dropdowns[2]!.value).toBe("Amount");
   });
 
-  it("defaults amount convention to positive-is-outflow for a credit account", async () => {
+  it("defaults to negative-is-outflow and auto-checks Flip for a credit account", async () => {
     renderDialog();
     await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
 
-    // A bank/asset account keeps the standard negative-is-outflow default.
-    const conv = () =>
-      screen.getAllByRole("radio").reduce<Record<string, boolean>>((acc, el) => {
-        acc[(el as HTMLInputElement).value] = (el as HTMLInputElement).checked;
-        return acc;
-      }, {});
-    expect(conv()["negative_is_outflow"]).toBe(true);
+    // A bank/asset account keeps the standard default: Flip is unchecked.
+    const flip = () => screen.getByRole("checkbox", { name: /flip amounts/i }) as HTMLInputElement;
+    expect(flip().checked).toBe(false);
 
-    // Selecting a Credit account flips the default to positive-is-outflow,
-    // since credit-card exports use positive = a charge (outflow).
+    // Selecting a Credit account auto-checks Flip (charges are positive there).
     fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
       target: { value: "amex1" },
     });
-    await waitFor(() => expect(conv()["positive_is_outflow"]).toBe(true));
-    expect(conv()["negative_is_outflow"]).toBe(false);
+    await waitFor(() => expect(flip().checked).toBe(true));
+  });
+
+  it("Flip amounts sends positive_is_outflow to the backend", async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), { target: { value: "a1" } });
+    const headers = screen.getAllByRole("columnheader");
+    const [dd0, dd1, dd2] = headers.map((h) => h.querySelector("select")!);
+    fireEvent.change(dd0!, { target: { value: "Date" } });
+    fireEvent.change(dd1!, { target: { value: "Merchant" } });
+    fireEvent.change(dd2!, { target: { value: "Amount" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /flip amounts/i }));
+
+    const btn = screen.getByRole("button", { name: /^import$/i });
+    await waitFor(() => expect(btn).not.toBeDisabled());
+    fireEvent.click(btn);
+
+    const { commands } = await import("../api/client");
+    await waitFor(() => {
+      expect(commands.importCsv).toHaveBeenCalledWith(
+        "/tmp/x.csv",
+        "a1",
+        expect.objectContaining({ amount_convention: "positive_is_outflow" }),
+      );
+    });
+  });
+
+  it("pre-fills the amount handling from this account's saved mapping", async () => {
+    const { commands } = await import("../api/client");
+    (commands.getSavedCsvMapping as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "ok",
+      data: {
+        skip_header_rows: 1,
+        columns: ["Date", "Merchant", "Amount"],
+        date_format: "%Y-%m-%d",
+        amount_convention: "positive_is_outflow",
+        decimal_separator: ".",
+        delimiter: null,
+      },
+    });
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    // A bank account would normally default Flip off; the saved mapping wins.
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), { target: { value: "a1" } });
+    const flip = () => screen.getByRole("checkbox", { name: /flip amounts/i }) as HTMLInputElement;
+    await waitFor(() => expect(flip().checked).toBe(true));
+    expect(screen.getByText(/settings from your last import/i)).toBeInTheDocument();
   });
 
   it("becomes enabled once required mapping is complete and submits", async () => {

@@ -92,6 +92,9 @@ export function useImportCsv() {
       qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
       qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
       qc.invalidateQueries({ queryKey: ["journey-status"] });
+      // The import just persisted this account's mapping — drop the cached
+      // lookup so a repeat import reflects the freshly-saved settings.
+      qc.invalidateQueries({ queryKey: ["csv-saved-mapping"] });
     },
   });
 }

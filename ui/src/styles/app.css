@@ -2273,11 +2273,19 @@ body::-webkit-scrollbar-track,
   color: var(--accent);
 }
 
-.import-convention input[type="radio"] {
+.import-convention input[type="radio"],
+.import-convention input[type="checkbox"] {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
   flex-shrink: 0;
+}
+
+.import-convention-hint,
+.import-saved-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .import-preview-wrap {

@@ -228,6 +228,20 @@ async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Pr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The CSV import mapping (columns, date format, amount handling) last used for
+ * this account, so a recurring import from the same bank can pre-fill and the
+ * user never re-picks the same settings. `None` when the account has never been
+ * imported into.
+ */
+async getSavedCsvMapping(accountId: string) : Promise<Result<CsvImportMapping | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_saved_csv_mapping", { accountId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listUnfinishedImports() : Promise<Result<Import[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_unfinished_imports") };

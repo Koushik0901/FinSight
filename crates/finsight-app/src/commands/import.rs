@@ -108,6 +108,25 @@ pub async fn import_csv(
     Ok(summary)
 }
 
+/// The CSV import mapping (columns, date format, amount handling) last used for
+/// this account, so a recurring import from the same bank can pre-fill and the
+/// user never re-picks the same settings. `None` when the account has never been
+/// imported into.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_saved_csv_mapping(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> AppResult<Option<CsvImportMapping>> {
+    let db = (*state.db).clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.get().map_err(AppError::from)?;
+        finsight_providers::csv::mapping::load(&conn, &account_id).map_err(AppError::from)
+    })
+    .await
+    .map_err(|e| AppError::new("internal", format!("join: {e}")))?
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn list_unfinished_imports(
