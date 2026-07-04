@@ -30,7 +30,9 @@ interface Props {
   onClose: () => void;
   account?: Account;
   defaultOwner?: string;
-  onCreated?: () => void;
+  /** Called after a successful create with the new account's id (so callers can
+   *  auto-select it, e.g. the CSV import dialog). Not fired on edit. */
+  onCreated?: (accountId: string) => void;
 }
 
 export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated }: Props) {
@@ -95,7 +97,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           },
         });
       } else {
-        await createAccount.mutateAsync({
+        const created = await createAccount.mutateAsync({
           bank: values.bank,
           name: values.name,
           type: values.type,
@@ -124,9 +126,12 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           raw_json: null,
           import_pending: false,
         });
+        reset();
+        onCreated?.(created.id);
+        onClose();
+        return;
       }
       reset();
-      onCreated?.();
       onClose();
     } catch (err) {
       toast.error(userErrorMessage(err, "Could not save this account. Try again."));

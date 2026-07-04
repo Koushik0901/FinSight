@@ -6,6 +6,7 @@ import { usePreviewCsvColumns, useSavedCsvMapping } from "../api/hooks/csv";
 import { useImportCsv } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { CsvImportMapping, ImportSummary, ColumnRole } from "../api/client";
+import AccountDrawer from "./AccountDrawer";
 import Button from "./Button";
 import Select from "./Select";
 import Input from "./Input";
@@ -43,6 +44,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const { data: accounts = [] } = useAccounts();
 
   const [accountId, setAccountId] = useState(defaultAccountId ?? "");
+  const [newAccountOpen, setNewAccountOpen] = useState(false);
   const { data: savedMapping } = useSavedCsvMapping(accountId || null);
   const [columns, setColumns] = useState<ColumnRole[]>([]);
   const [dateFormat, setDateFormat] = useState("%Y-%m-%d");
@@ -265,7 +267,13 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             <Select
               label="Account"
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+              onChange={(e) => {
+                if (e.target.value === "__new__") {
+                  setNewAccountOpen(true);
+                  return;
+                }
+                setAccountId(e.target.value);
+              }}
             >
               <option value="">— Pick —</option>
               {accounts.map((a) => (
@@ -273,7 +281,13 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
                   {a.bank} · {a.name}
                 </option>
               ))}
+              <option value="__new__">+ Create new account…</option>
             </Select>
+            {accounts.length === 0 && (
+              <p className="import-saved-hint muted">
+                Pick “+ Create new account…” to make one for this statement.
+              </p>
+            )}
             {usingSaved && (
               <p className="import-saved-hint muted">
                 Using the settings from your last import for this account.
@@ -512,6 +526,14 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
           </div>
         </footer>
       </div>
+      <AccountDrawer
+        open={newAccountOpen}
+        onClose={() => setNewAccountOpen(false)}
+        onCreated={(id) => {
+          setAccountId(id);
+          setNewAccountOpen(false);
+        }}
+      />
     </FocusLock>
   );
 }

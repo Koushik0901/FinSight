@@ -51,6 +51,7 @@ vi.mock("../api/client", () => ({
       data: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, rows_queued_for_review: 0, errors: [] },
     }),
     getSavedCsvMapping: vi.fn().mockResolvedValue({ status: "ok", data: null }),
+    createAccount: vi.fn().mockResolvedValue({ status: "ok", data: { id: "new1" } }),
   },
 }));
 
@@ -149,6 +150,40 @@ describe("ImportMappingDialog", () => {
     const flip = () => screen.getByRole("checkbox", { name: /flip amounts/i }) as HTMLInputElement;
     await waitFor(() => expect(flip().checked).toBe(true));
     expect(screen.getByText(/settings from your last import/i)).toBeInTheDocument();
+  });
+
+  it("lets you create an account inline and imports into the new account", async () => {
+    // Regression: on first run (no accounts) the picker was a dead-end. It must
+    // offer inline account creation and import into the freshly-made account.
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    // Choose the inline-create option → the Add account drawer opens.
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "__new__" },
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText(/Bank/i), { target: { value: "Amex" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Card" } });
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    // Map the required columns, then import — into the new account id.
+    const headers = screen.getAllByRole("columnheader");
+    const [dd0, dd1, dd2] = headers.map((h) => h.querySelector("select")!);
+    fireEvent.change(dd0!, { target: { value: "Date" } });
+    fireEvent.change(dd1!, { target: { value: "Merchant" } });
+    fireEvent.change(dd2!, { target: { value: "Amount" } });
+
+    const btn = screen.getByRole("button", { name: /^import$/i });
+    await waitFor(() => expect(btn).not.toBeDisabled());
+    fireEvent.click(btn);
+
+    const { commands } = await import("../api/client");
+    await waitFor(() => {
+      expect(commands.importCsv).toHaveBeenCalledWith("/tmp/x.csv", "new1", expect.anything());
+    });
   });
 
   it("becomes enabled once required mapping is complete and submits", async () => {
