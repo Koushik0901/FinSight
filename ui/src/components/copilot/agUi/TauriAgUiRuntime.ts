@@ -114,7 +114,21 @@ export function conversationMessagesToAgUiThreadMessages(messages: ConversationM
       metadata: legacyMessage.metadata,
       createdAt: legacyMessage.createdAt,
     } : legacyById.get(legacyMessage.id) ?? legacyMessage;
-  });
+  }).map(withArrayContent);
+}
+
+// AG-UI's `applyExternalMessages` stores loaded history verbatim — unlike the
+// streaming path it does NOT run messages through `fromThreadMessageLike`, so
+// the render client calls `message.content.map(...)` on whatever we hand it.
+// `fromAgUiMessages` passes a user turn's string content straight through, which
+// crashes rendering (content.map is not a function) and drops the thread to its
+// empty state — i.e. "history isn't loading". Coerce any string content into a
+// text part so every loaded message is renderable.
+function withArrayContent(message: ThreadMessageLike): ThreadMessageLike {
+  if (typeof message.content === "string") {
+    return { ...message, content: [{ type: "text", text: message.content }] };
+  }
+  return message;
 }
 
 function metaFromDone(payload: Extract<CopilotStreamFrame, { type: "done" }>): MessageMeta {
