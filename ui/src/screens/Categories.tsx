@@ -11,16 +11,12 @@ import {
 } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
-import { DEFAULT_CATEGORY_COLOR, iconFor } from "../utils/categoryColor";
+import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconFor, nextCategoryColor } from "../utils/categoryColor";
 import Swatch from "../components/Swatch";
 
 type Scope = "month" | "avg" | "year";
 
-const COLOR_CHOICES = [
-  "#A78BFA", "#34D399", "#FB923C", "#60A5FA", "#FACC15",
-  "#F472B6", "#2DD4BF", "#FCA5A5", "#818CF8", "#FDE68A",
-  DEFAULT_CATEGORY_COLOR,
-];
+const COLOR_CHOICES = [...CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR];
 
 const SPENDING_TYPE_OPTIONS = [
   { value: "fixed", label: "Fixed" },
@@ -76,7 +72,10 @@ export default function Categories() {
     const label = newCatLabel.trim();
     if (!label) return;
     try {
-      await createCategory.mutateAsync({ label, groupId: null, color: DEFAULT_CATEGORY_COLOR });
+      // Auto-assign the least-used palette color so every category stays
+      // visually distinct across charts (user can still change it after).
+      const color = nextCategoryColor(categories.map((c) => c.color));
+      await createCategory.mutateAsync({ label, groupId: null, color });
       toast.success(`Created "${label}"`);
       setNewCatLabel("");
       setNewCatOpen(false);

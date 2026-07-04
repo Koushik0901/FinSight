@@ -17,11 +17,15 @@ const CANONICAL_CATEGORIES: &[(&str, &str)] = &[
     ("health", "wellbeing"),
 ];
 
-fn read_v030_migration() -> String {
+fn read_migration(name: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("migrations")
-        .join("V030__category_palette.sql");
+        .join(name);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn read_v030_migration() -> String {
+    read_migration("V030__category_palette.sql")
 }
 
 fn open_db() -> Db {
@@ -58,8 +62,7 @@ fn read_color(conn: &Connection, id: &str) -> String {
     .unwrap()
 }
 
-fn run_v030_sql(conn: &Connection) {
-    let sql = read_v030_migration();
+fn run_migration_sql(conn: &Connection, sql: &str) {
     let stripped: String = sql
         .lines()
         .filter(|l| !l.trim_start().starts_with("--"))
@@ -72,6 +75,14 @@ fn run_v030_sql(conn: &Connection) {
         }
         conn.execute(trimmed, []).unwrap();
     }
+}
+
+fn run_v030_sql(conn: &Connection) {
+    run_migration_sql(conn, &read_v030_migration());
+}
+
+fn run_v036_sql(conn: &Connection) {
+    run_migration_sql(conn, &read_migration("V036__category_palette_regrey_backfill.sql"));
 }
 
 #[test]
@@ -100,6 +111,40 @@ fn v030_migration_backfills_canonical_category_colors() {
             "{id} should be backfilled to {expected}"
         );
     }
+}
+
+#[test]
+fn v036_migration_fixes_regreyed_defaults_but_keeps_user_chosen_colors() {
+    let db = open_db();
+    run_migrations(&db).unwrap();
+    let conn = db.get().unwrap();
+
+    // Simulate the state fixed by V036: ensure_default_categories seeded grey
+    // AFTER V030 already ran — except the user re-colored one category.
+    seed_grey_categories(&conn);
+    conn.execute(
+        "UPDATE categories SET color = '#112233' WHERE id = 'dining'",
+        [],
+    )
+    .unwrap();
+
+    run_v036_sql(&conn);
+
+    for (id, _) in CANONICAL_CATEGORIES {
+        if *id == "dining" {
+            continue;
+        }
+        assert_eq!(
+            read_color(&conn, id),
+            palette::color_for(id),
+            "{id} should be backfilled to its palette color"
+        );
+    }
+    assert_eq!(
+        read_color(&conn, "dining"),
+        "#112233",
+        "a user-chosen color must survive the V036 backfill"
+    );
 }
 
 #[test]

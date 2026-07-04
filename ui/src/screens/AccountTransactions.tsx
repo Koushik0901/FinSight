@@ -13,6 +13,7 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import ImportMappingDialog from "../components/ImportMappingDialog";
 import SetBalanceDialog from "../components/SetBalanceDialog";
 import { getAccountDisplayName } from "../utils/accounts";
+import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
 
@@ -120,7 +121,7 @@ export default function AccountTransactions() {
       <div className="day-hdr">
         <div>
           <button className="btn ghost sm" type="button" onClick={() => navigate("/accounts")}>← Back to accounts</button>
-          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" />{account.bank} · {account.type}</div>
+          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" style={{ background: accountTypeColor(account.type) }} />{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
         </div>
         <div style={{ textAlign: "right" }}>

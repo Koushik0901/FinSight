@@ -13,6 +13,7 @@ import Input from "./Input";
 import Table, { TableHead, TableBody, TableRow, TableHeader, TableCell } from "./Table";
 import { Grid, Check, ArrowRight } from "./Icons";
 import { buildDetectedMapping } from "../utils/csvDetection";
+import { accountTypeColor } from "../utils/accountColor";
 
 const COLUMN_ROLES: ColumnRole[] = ["Date", "Amount", "Merchant", "Notes", "Category", "Skip", "Debit", "Credit"];
 
@@ -213,10 +214,11 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   }
 
   const headers = preview?.headers ?? preview?.rows[0] ?? [];
-  const accountLabel = useMemo(() => {
-    const acc = accounts.find((a) => a.id === accountId);
-    return acc ? `${acc.bank} · ${acc.name}` : null;
-  }, [accounts, accountId]);
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId) ?? null,
+    [accounts, accountId]
+  );
+  const accountLabel = selectedAccount ? `${selectedAccount.bank} · ${selectedAccount.name}` : null;
 
   const requiredItems = [
     { key: "date", label: "Date", ready: mappedCount.date },
@@ -261,7 +263,12 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
               <span className="dot" />
               Import settings
             </span>
-            {accountLabel && <span className="chip accent">{accountLabel}</span>}
+            {accountLabel && selectedAccount && (
+              <span className="chip accent">
+                <span className="cswatch" style={{ background: accountTypeColor(selectedAccount.type), width: 8, height: 8, marginRight: 6 }} />
+                {accountLabel}
+              </span>
+            )}
           </div>
           <div className="import-settings card tight">
             <Select

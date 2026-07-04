@@ -15,6 +15,7 @@ import NetWorthChart from "../components/NetWorthChart";
 import { CopilotNudge } from "../components/CopilotNudge";
 import { CopilotQuickAsk } from "../components/CopilotQuickAsk";
 import { money } from "../utils/format";
+import { accountTypeColor } from "../utils/accountColor";
 import * as I from "../components/Icons";
 
 const RANGES = [
@@ -239,9 +240,9 @@ export default function Today() {
       </section>
 
       <section className="stat-row">
-        <div className="stat"><div className="label">Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency }).replace(/,/g, "") }</div><div className="sub">Cash and near-cash accounts</div></div>
-        <div className="stat"><div className="label">Invested</div><div className="value money">{money(investedCents, { currency: primaryCurrency })}</div><div className="sub">Brokerage and retirement balances</div></div>
-        <div className="stat"><div className="label">Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
+        <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("checking"), width: 8, height: 8, marginRight: 6 }} />Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency }).replace(/,/g, "") }</div><div className="sub">Cash and near-cash accounts</div></div>
+        <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("investment"), width: 8, height: 8, marginRight: 6 }} />Invested</div><div className="value money">{money(investedCents, { currency: primaryCurrency })}</div><div className="sub">Brokerage and retirement balances</div></div>
+        <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("credit"), width: 8, height: 8, marginRight: 6 }} />Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
         <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">At current burn · {totals ? money(totals.expenseCents) : "—"} monthly spend</div></div>
       </section>
 

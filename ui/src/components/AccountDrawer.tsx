@@ -7,6 +7,7 @@ import Drawer from "./Drawer";
 import { useCreateAccount, useUpdateAccount, useArchiveAccount } from "../api/hooks/accounts";
 import type { Account } from "../api/bindings";
 import { userErrorMessage } from "../utils/runtime";
+import { accountTypeColor } from "../utils/accountColor";
 
 const schema = z.object({
   bank: z.string().min(1, "Required"),
@@ -105,7 +106,9 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           type: values.type,
           last4: values.last4 || null,
           currency: values.currency,
-          color: "#3B82F6",
+          // Account color = its type's canonical color, so every surface that
+          // shows the account inherits the type scheme automatically.
+          color: accountTypeColor(values.type),
           opening_balance_cents: Math.round(values.opening_dollars * 100),
           owner: values.owner,
           source: "manual",
@@ -170,7 +173,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           <fieldset>
             <legend>Type</legend>
             {(["Checking","Savings","Credit","Investment","Cash","Loan","Other"] as const).map(t => (
-              <label key={t}><input type="radio" value={t} {...register("type")} /> {t}</label>
+              <label key={t}><input type="radio" value={t} {...register("type")} /> <span className="cswatch" style={{ background: accountTypeColor(t), width: 8, height: 8 }} /> {t}</label>
             ))}
           </fieldset>
         )}

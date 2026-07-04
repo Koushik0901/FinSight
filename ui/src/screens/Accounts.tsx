@@ -9,6 +9,7 @@ import type { Account, Liability, ManualAsset } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
 import { getAccountDisplayName } from "../utils/accounts";
+import { accountTypeColor } from "../utils/accountColor";
 import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
@@ -132,10 +133,10 @@ export default function Accounts() {
                     cursor: "pointer",
                   }}
                 >
-                  <span className="cswatch" style={{ background: !account.balance_known ? "var(--ink-faint)" : account.balance_cents >= 0 ? "var(--positive)" : "var(--negative)" }} />
+                  <span className="cswatch" style={{ background: accountTypeColor(account.type) }} />
                   <div>
                     <div>{getAccountDisplayName(account)}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{account.bank} · {account.type}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
                   </div>
                   {account.balance_known ? (
                     <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>

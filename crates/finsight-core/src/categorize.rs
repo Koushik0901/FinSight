@@ -440,8 +440,8 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
     }
     for (i, (id, group_id, label)) in DEFAULT_CATEGORIES.iter().enumerate() {
         tx.execute(
-            "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) VALUES(?1, ?2, ?3, '#94A3B8', ?4)",
-            params![id, group_id, label, i as i64],
+            "INSERT OR IGNORE INTO categories(id, group_id, label, color, sort_order) VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![id, group_id, label, crate::palette::color_for(id), i as i64],
         )?;
     }
     tx.commit()?;
@@ -937,6 +937,31 @@ mod tests {
         let n2 = pair_transfers(&mut conn).unwrap();
         assert_eq!(n2, 0);
         assert_eq!(peer_of(&conn, "out1").as_deref(), Some("near"));
+    }
+
+    #[test]
+    fn ensure_default_categories_stamps_canonical_palette_colors() {
+        // Regression: this path used to stamp '#94A3B8' grey for every category,
+        // so an import-first user got indistinguishable chart colors that never
+        // matched the canonical palette used everywhere else.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        let mut stmt = conn.prepare("SELECT id, color FROM categories").unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(!rows.is_empty());
+        for (id, color) in rows {
+            assert_eq!(
+                color,
+                crate::palette::color_for(&id),
+                "category {id} must carry its canonical palette color"
+            );
+            assert_ne!(color, crate::palette::DEFAULT_COLOR, "{id} must not be grey");
+        }
     }
 
     #[test]
