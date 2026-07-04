@@ -22,3 +22,17 @@ export function money(cents: number, opts: MoneyOpts = {}): string {
     maximumFractionDigits: decimals,
   }).format(cents / 100);
 }
+
+/**
+ * Compact currency for chart callouts: "$137.5K", "-CA$1.2M", "$482".
+ * Same currency resolution as `money`.
+ */
+export function compactMoney(cents: number, opts: Pick<MoneyOpts, "currency"> = {}): string {
+  const currency = opts.currency ?? useTweaks.getState().currency ?? "USD";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(cents / 100);
+}

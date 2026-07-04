@@ -43,4 +43,30 @@ describe("NetWorthChart", () => {
     ]} />);
     expect(container.querySelector("path")).toBeTruthy();
   });
+
+  it("draws pixel-space gridlines, per-point markers, and a compact end-value callout", () => {
+    const { container } = render(<NetWorthChart points={POINTS} />);
+
+    // Never stretch with preserveAspectRatio="none" — that smears the stroke.
+    const svg = container.querySelector("svg")!;
+    expect(svg.getAttribute("preserveAspectRatio")).toBeNull();
+
+    // 4 horizontal gridlines.
+    expect(container.querySelectorAll("line")).toHaveLength(4);
+
+    // A marker per point: 2 small dots + 1 emphasized end dot.
+    expect(container.querySelectorAll("circle")).toHaveLength(3);
+
+    // Compact end-value callout ($1,400.00 → "$1.4K").
+    expect(screen.getByText("$1.4K")).toBeInTheDocument();
+  });
+
+  it("skips per-point markers on dense ranges but keeps the end dot", () => {
+    const dense = Array.from({ length: 24 }, (_, i) => ({
+      date: `2024-${String((i % 12) + 1).padStart(2, "0")}-15`,
+      totalCents: 100000 + i * 5000,
+    }));
+    const { container } = render(<NetWorthChart points={dense} />);
+    expect(container.querySelectorAll("circle")).toHaveLength(1);
+  });
 });
