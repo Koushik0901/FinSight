@@ -94,6 +94,27 @@ describe("Categories — management", () => {
     expect(screen.getByRole("button", { name: /Save guidance/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Archive category/i })).toBeInTheDocument();
   });
+
+  it("expands the Manage panel directly beneath the clicked row, not at the table bottom", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+
+    // Open Manage on the FIRST category (sorted by this-month spend: Groceries
+    // 30000 > Dining Out 20000, so Groceries is row one).
+    const manageButton = screen.getByRole("button", { name: "Manage Groceries" });
+    fireEvent.click(manageButton);
+
+    // The panel row must be the immediate next sibling of Groceries' row.
+    const groceriesRow = manageButton.closest("tr")!;
+    const panelRow = groceriesRow.nextElementSibling as HTMLElement;
+    expect(panelRow).not.toBeNull();
+    expect(panelRow.textContent).toContain("Rename");
+    // And the OTHER category's row comes after the panel, proving the panel is
+    // not appended after all rows.
+    const rows = Array.from(groceriesRow.parentElement!.children);
+    const panelIndex = rows.indexOf(panelRow);
+    const diningRow = screen.getByRole("button", { name: "Manage Dining Out" }).closest("tr")!;
+    expect(rows.indexOf(diningRow)).toBeGreaterThan(panelIndex);
+  });
 });
 
 describe("Categories — icon tiles", () => {

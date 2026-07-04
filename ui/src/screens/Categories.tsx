@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   useCategoriesWithSpending,
@@ -243,7 +243,8 @@ export default function Categories() {
                 const colorPickerOpen = openColorId === category.id;
                 const CategoryIcon = iconFor(category.id);
                 return (
-                  <tr key={category.id}>
+                  <Fragment key={category.id}>
+                  <tr>
                     <td>
                       <div className="row row-sm">
                         <button
@@ -283,10 +284,8 @@ export default function Categories() {
                     <td><select className="control" value={category.spendingType ?? ""} disabled={savingId === category.id} onChange={(e) => void saveSpendingType(category.id, e.target.value)} aria-label={`Spending type for ${category.label}`} style={{ minWidth: 130 }}>{SPENDING_TYPE_OPTIONS.map((option) => <option key={option.value || "untagged"} value={option.value}>{option.label}</option>)}</select></td>
                     <td className="right"><button className="btn ghost sm" type="button" onClick={() => openManage(category)} aria-expanded={manageId === category.id} aria-label={`Manage ${category.label}`}>{manageId === category.id ? "Close" : "Manage"}</button></td>
                   </tr>
-                );
-              })}
-              {sorted.map((category) => manageId === category.id ? (
-                <tr key={`${category.id}-manage`}>
+                  {manageId === category.id && (
+                <tr>
                   <td colSpan={8} style={{ background: "var(--surface-2)", padding: 16 }}>
                     <div className="stack stack-sm" style={{ maxWidth: 640 }}>
                       <label className="eyebrow" htmlFor={`rename-${category.id}`}>Rename</label>
@@ -304,7 +303,10 @@ export default function Categories() {
                     </div>
                   </td>
                 </tr>
-              ) : null)}
+                  )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
