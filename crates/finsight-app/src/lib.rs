@@ -477,6 +477,37 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                     .await;
             });
 
+            // Resume auto-categorization if a previous run was interrupted — e.g.
+            // the app was imported into and then closed before the LLM pass
+            // finished, which otherwise leaves those rows uncategorized forever.
+            // Best-effort: gated on the setting and on there being real work.
+            let cat_agent = app.state::<AppState>().agent.tx.clone();
+            let cat_db = db.clone();
+            tauri::async_runtime::spawn(async move {
+                let should = finsight_core::repos::run(&cat_db, |conn| {
+                    let auto: Option<bool> = finsight_core::settings::get(
+                        conn,
+                        crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY,
+                    )?;
+                    if !auto.unwrap_or(true) {
+                        return Ok(false);
+                    }
+                    let pending: i64 = conn.query_row(
+                        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND is_transfer = 0",
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    Ok(pending > 0)
+                })
+                .await
+                .unwrap_or(false);
+                if should {
+                    let _ = cat_agent
+                        .send(finsight_agent::agent::AgentJob::CategorizeAll)
+                        .await;
+                }
+            });
+
             let notify_app = app.handle().clone();
             let notify_db = db.clone();
             tauri::async_runtime::spawn(async move {
