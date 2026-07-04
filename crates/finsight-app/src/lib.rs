@@ -445,6 +445,9 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             // net-worth snapshot, and recompute statistical anomaly flags so
             // existing imported data populates without waiting for a re-import.
             if let Ok(mut conn) = db.get() {
+                // Re-run the deterministic builtin pass so transfer flags reflect
+                // the current keyword list (idempotent; fixes stale is_transfer).
+                let _ = finsight_core::categorize::apply_builtin_categorization(&mut conn);
                 if let Ok(ids) = conn
                     .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
                     .and_then(|mut s| {

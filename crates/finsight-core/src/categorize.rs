@@ -210,7 +210,6 @@ const TRANSFER_KEYWORDS: &[&str] = &[
     "internet withdrawal to",  // Tangerine internal transfer out
     "e-transfer",              // INTERAC e-Transfer to/from self or a friend
     "e transfer",
-    "interac",                 // "INTERAC e-Transfer To/From …" (friend transfers)
     "email money transfer",
     "transfer to",
     "transfer from",
@@ -317,13 +316,14 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     let tx = conn.transaction()?;
     let mut count: u32 = 0;
     for (txn_id, merchant, uncategorized) in pending {
-        // Transfer detection runs regardless of category state.
-        if is_transfer(&merchant) {
-            tx.execute(
-                "UPDATE transactions SET is_transfer = 1 WHERE id = ?1",
-                params![txn_id],
-            )?;
-        }
+        // Transfer detection runs regardless of category state, and is written
+        // in BOTH directions so a re-run after the keyword list changes corrects
+        // stale flags (e.g. an "Interac - Purchase" no longer treated as a
+        // transfer once the over-broad 'interac' keyword was removed).
+        tx.execute(
+            "UPDATE transactions SET is_transfer = ?1 WHERE id = ?2",
+            params![is_transfer(&merchant) as i64, txn_id],
+        )?;
         if !uncategorized {
             continue;
         }
@@ -431,6 +431,10 @@ mod tests {
         assert!(!is_transfer("TIM HORTONS #3356 BURNABY"));
         assert!(!is_transfer("WALMART SUPERCENTER BURNABY"));
         assert!(!is_transfer("Interest Paid"));
+        // "Interac" is Canada's debit network — a debit PURCHASE or a fee is not
+        // a transfer (only the e-Transfer product is, caught by 'e-transfer').
+        assert!(!is_transfer("Interac - Purchase - COSTCO WHOLESALE W51"));
+        assert!(!is_transfer("Interac Network Usage Charge"));
     }
 
     #[test]
