@@ -88,6 +88,9 @@ impl CompletionProvider for OpenAiCompatProvider {
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
             "model": self.model,
+            // Give the model room to finish; without this some OpenRouter routes
+            // default to a small completion budget and truncate the response.
+            "max_tokens": 2048,
             "messages": [
                 {"role": "system", "content": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text.")},
                 {"role": "user",   "content": user},
@@ -156,6 +159,7 @@ impl CompletionProvider for OpenAiCompatProvider {
 
         let body = json!({
             "model": self.model,
+            "max_tokens": 2048,
             "messages": oai_messages,
             "tools": oai_tools,
         });
