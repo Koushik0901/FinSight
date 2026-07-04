@@ -67,6 +67,13 @@ pub async fn import_csv(
         let cat_db = (*state.db).clone();
         let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
     }
+    // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now that
+    // both sides may exist. Runs after the keyword pass, which supplies the
+    // flagged anchors. Best-effort — must not fail the import.
+    {
+        let pair_db = (*state.db).clone();
+        let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
+    }
     // Recompute statistical anomaly flags from the (now larger) history.
     // Best-effort — must not fail the import.
     {

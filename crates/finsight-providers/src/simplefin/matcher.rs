@@ -223,7 +223,8 @@ fn find_by_imported_id(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -279,7 +280,8 @@ fn find_fuzzy_candidates(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -329,7 +331,8 @@ fn find_pending_provider_match(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -448,6 +451,8 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
         is_reimbursable: r.get::<_, i64>(18)? != 0,
         is_split: r.get::<_, i64>(19)? != 0,
         is_transfer: r.get::<_, i64>(26)? != 0,
+        transfer_peer_id: r.get(27)?,
+        transfer_peer_account_name: r.get(28)?,
         imported_id: r.get(20)?,
         source: r.get(21)?,
         raw_synced_data: r.get(22)?,
@@ -486,6 +491,8 @@ mod fuzzy_tests {
             is_reimbursable: false,
             is_split: false,
             is_transfer: false,
+            transfer_peer_id: None,
+            transfer_peer_account_name: None,
             imported_id: None,
             source: None,
             raw_synced_data: None,

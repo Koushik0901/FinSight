@@ -219,7 +219,7 @@ export default function AccountTransactions() {
                         </div>
                       </td>
                       <td><div className="row row-sm">{transaction.is_transfer ? (
-                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">Transfer</span></>
+                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">{transaction.transfer_peer_account_name ? `Transfer ${transaction.amount_cents < 0 ? "→" : "←"} ${transaction.transfer_peer_account_name}` : "Transfer"}</span></>
                       ) : (
                         <><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></>
                       )}</div></td>

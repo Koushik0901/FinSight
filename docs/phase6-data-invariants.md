@@ -33,6 +33,15 @@ or an empty chart.
 - `is_transfer = 1` marks internal transfers / card payments / e‑transfers.
   Transfers are **excluded** from spending charts, income, category totals,
   recurring/subscription detection, and insights.
+- `transfer_peer_id` links the two legs of one cross-account transfer
+  (withdrawal ↔ matching deposit), written reciprocally by
+  `categorize::pair_transfers` (runs after import and on startup). Pairing is
+  conservative: exact opposite amounts, different accounts, ≤ 4-day window,
+  and either both legs keyword-flagged (rule A) or a Credit-account card
+  payment matched to a bill-payment-hinted bank leg (rule B — this can flag a
+  leg keywords missed). Paired legs are transfers by construction: the builtin
+  keyword re-run must never un-flag or categorize them. A leg pairs at most
+  once; e-transfers to other people stay unpaired (`transfer_peer_id IS NULL`).
 - Every transaction belongs to exactly one account; `category_id` may be NULL
   (uncategorized) — NULL is a valid, first-class state, not an error.
 
