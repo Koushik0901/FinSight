@@ -7,7 +7,6 @@ import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
-import { CopilotQuickAsk } from "../components/CopilotQuickAsk";
 import { money } from "../utils/format";
 
 type SortKey = "group" | "stress" | "size" | "activity";
@@ -303,7 +302,6 @@ export default function Budget() {
 
       {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents, { currency: "USD" })}</span></td>)}</tr>)}</tbody></table></div></section>}
 
-      <CopilotQuickAsk prompt="Looking at my current budget, what should I rebalance first to improve my financial health?" label="Ask Copilot about budget" />
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
     </div>
   );

@@ -13,7 +13,6 @@ import { useUncelebratedMilestones } from "../api/hooks/assets";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import NetWorthChart from "../components/NetWorthChart";
 import { CopilotNudge } from "../components/CopilotNudge";
-import { CopilotQuickAsk } from "../components/CopilotQuickAsk";
 import { money } from "../utils/format";
 import { accountTypeColor } from "../utils/accountColor";
 import * as I from "../components/Icons";
@@ -276,7 +275,6 @@ export default function Today() {
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>{recurringSoon.length > 0 ? "Due in the next two weeks" : "Recurring commitments"}</div>{upcomingRecurring.length === 0 ? <div className="muted">No recurring subscriptions or bills detected yet.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>{recurringSoon.length > 0 ? "Due" : "Cadence"}</th><th className="right">Amount</th></tr></thead><tbody>{upcomingRecurring.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected) ?? item.cadence}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
       </section>
 
-      <CopilotQuickAsk prompt="Based on my spending this month, what adjustments should I make?" label="Ask Copilot about today" />
     </div>
   );
 }
