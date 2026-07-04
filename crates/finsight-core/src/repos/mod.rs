@@ -10,6 +10,7 @@ pub mod copilot_actions;
 pub mod copilot_sessions;
 pub mod goals;
 pub mod holdings;
+pub mod household;
 pub mod import_candidates;
 pub mod imports;
 pub mod institutions;

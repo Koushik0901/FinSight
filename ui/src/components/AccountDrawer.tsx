@@ -5,7 +5,20 @@ import { z } from "zod";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useCreateAccount, useUpdateAccount, useArchiveAccount } from "../api/hooks/accounts";
+import {
+  useAccountOwners,
+  useCreateHouseholdMember,
+  useHouseholdMembers,
+  useSetAccountOwners,
+} from "../api/hooks/household";
 import type { Account } from "../api/bindings";
+
+/** The fields the drawer actually edits — both the full `Account` and the
+ *  list-page `AccountSummary` satisfy this, so either can open the editor. */
+export type EditableAccount = Pick<
+  Account,
+  "id" | "bank" | "name" | "type" | "currency" | "color" | "owner" | "apy_pct" | "nickname"
+> & { last4?: string | null };
 import { userErrorMessage } from "../utils/runtime";
 import { accountTypeColor } from "../utils/accountColor";
 
@@ -17,20 +30,21 @@ const schema = z.object({
   last4: z.string().max(4).optional(),
   currency: z.enum(["USD", "EUR", "GBP", "CAD", "AUD"]),
   opening_dollars: z.coerce.number(),
-  owner: z.string().min(1, "Required"),
   apy_pct: z.preprocess(
     (v) => (v === "" || v === undefined || v === null ? undefined : v),
     z.coerce.number().nonnegative().optional()
   ),
 });
 
+/// Avatar colors cycled for newly created household members.
+const MEMBER_COLORS = ["#38BDF8", "#F472B6", "#4ADE80", "#FBBF24", "#C084FC", "#F87171"];
+
 type FormValues = z.infer<typeof schema>;
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  account?: Account;
-  defaultOwner?: string;
+  account?: EditableAccount;
   /** Called after a successful create with the new account's id (so callers can
    *  auto-select it, e.g. the CSV import dialog). Not fired on edit. */
   onCreated?: (accountId: string) => void;
@@ -38,19 +52,27 @@ interface Props {
   elevated?: boolean;
 }
 
-export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated, elevated }: Props) {
+export default function AccountDrawer({ open, onClose, account, onCreated, elevated }: Props) {
   const isEdit = !!account;
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
   const archiveAccount = useArchiveAccount();
   const [archiveConfirm, setArchiveConfirm] = useState(false);
 
+  // Household ownership: pick zero or more members. 2+ selected = joint
+  // account; none = shared household account.
+  const { data: members = [] } = useHouseholdMembers();
+  const { data: allOwners = [] } = useAccountOwners();
+  const createMember = useCreateHouseholdMember();
+  const setAccountOwners = useSetAccountOwners();
+  const [selectedOwnerIds, setSelectedOwnerIds] = useState<string[]>([]);
+  const [newPersonName, setNewPersonName] = useState("");
+
   const { register, handleSubmit, watch, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       type: "Checking",
       currency: "USD",
-      owner: defaultOwner,
       opening_dollars: 0,
       apy_pct: undefined,
       nickname: undefined,
@@ -65,16 +87,44 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
         type: account.type,
         last4: account.last4 ?? undefined,
         currency: account.currency as "USD" | "EUR" | "GBP" | "CAD" | "AUD",
-        owner: account.owner,
         opening_dollars: 0,
         apy_pct: account.apy_pct ?? undefined,
         nickname: account.nickname ?? undefined,
       });
+      setSelectedOwnerIds(allOwners.filter((o) => o.accountId === account.id).map((o) => o.memberId));
     } else {
-      reset({ type: "Checking", currency: "USD", owner: defaultOwner, opening_dollars: 0, nickname: undefined });
+      reset({ type: "Checking", currency: "USD", opening_dollars: 0, nickname: undefined });
+      setSelectedOwnerIds([]);
     }
+    setNewPersonName("");
     setArchiveConfirm(false);
   }, [account?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleOwner = (memberId: string) => {
+    setSelectedOwnerIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const handleAddPerson = async () => {
+    const name = newPersonName.trim();
+    if (!name) return;
+    try {
+      const member = await createMember.mutateAsync({
+        name,
+        color: MEMBER_COLORS[members.length % MEMBER_COLORS.length],
+      });
+      setSelectedOwnerIds((prev) => [...prev, member.id]);
+      setNewPersonName("");
+    } catch (err) {
+      toast.error(userErrorMessage(err, "Could not add this person."));
+    }
+  };
+
+  const ownerDisplay = (ids: string[]) => {
+    const names = members.filter((m) => ids.includes(m.id)).map((m) => m.name);
+    return names.length === 0 ? "Household" : names.join(" & ");
+  };
 
   async function onSubmit(values: FormValues) {
     try {
@@ -99,6 +149,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             import_pending: null,
           },
         });
+        await setAccountOwners.mutateAsync({ accountId: account.id, memberIds: selectedOwnerIds });
       } else {
         const created = await createAccount.mutateAsync({
           bank: values.bank,
@@ -110,7 +161,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           // shows the account inherits the type scheme automatically.
           color: accountTypeColor(values.type),
           opening_balance_cents: Math.round(values.opening_dollars * 100),
-          owner: values.owner,
+          owner: ownerDisplay(selectedOwnerIds),
           source: "manual",
           liquidity_type: "liquid",
           emergency_fund_eligible: true,
@@ -131,6 +182,9 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           raw_json: null,
           import_pending: false,
         });
+        if (selectedOwnerIds.length > 0) {
+          await setAccountOwners.mutateAsync({ accountId: created.id, memberIds: selectedOwnerIds });
+        }
         reset();
         onCreated?.(created.id);
         onClose();
@@ -198,11 +252,50 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
             <input type="number" step="0.01" {...register("opening_dollars")} />
           </label>
         )}
-        {!isEdit && (
-          <label> Owner
-            <input {...register("owner")} aria-invalid={!!errors.owner} />
-          </label>
-        )}
+        <fieldset>
+          <legend>
+            Owners
+            <span className="muted" style={{ fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+              {selectedOwnerIds.length >= 2 ? "Joint account" : selectedOwnerIds.length === 1 ? "Sole account" : "Shared household account"}
+            </span>
+          </legend>
+          {members.map((member) => (
+            <label key={member.id}>
+              <input
+                type="checkbox"
+                checked={selectedOwnerIds.includes(member.id)}
+                onChange={() => toggleOwner(member.id)}
+                aria-label={`Owner ${member.name}`}
+              />{" "}
+              <span className="cswatch" style={{ background: member.color || "var(--ink-faint)", width: 8, height: 8 }} /> {member.name}
+            </label>
+          ))}
+          <div className="row row-sm" style={{ marginTop: 8 }}>
+            <input
+              placeholder="Add a person (e.g. Swathi)"
+              value={newPersonName}
+              onChange={(e) => setNewPersonName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleAddPerson();
+                }
+              }}
+              aria-label="New household member name"
+            />
+            <button
+              type="button"
+              className="btn sm"
+              disabled={!newPersonName.trim() || createMember.isPending}
+              onClick={() => void handleAddPerson()}
+            >
+              Add person
+            </button>
+          </div>
+          <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+            Pick everyone who owns this account — two or more makes it a joint account.
+          </div>
+        </fieldset>
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={isSubmitting} className="primary">

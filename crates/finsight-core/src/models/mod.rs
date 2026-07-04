@@ -6,6 +6,7 @@ mod category;
 mod connection;
 mod copilot;
 mod holding;
+mod household;
 mod import_candidate;
 mod institution;
 mod liability;
@@ -34,6 +35,7 @@ pub use copilot::{
     ConversationSummary,
 };
 pub use holding::Holding;
+pub use household::{AccountOwner, HouseholdMember};
 pub use import_candidate::{
     ImportCandidate, ImportCandidateMatch, ImportCandidateWithMatches, NewImportCandidate,
     NewImportCandidateMatch,

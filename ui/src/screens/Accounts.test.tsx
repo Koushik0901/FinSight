@@ -31,6 +31,21 @@ vi.mock("../api/hooks/simplefin", () => ({
   useSyncAllSimpleFinAccounts: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
+vi.mock("../api/hooks/household", () => ({
+  useHouseholdMembers: vi.fn(() => ({ data: [
+    { id: "m1", name: "Koushik", color: "#38BDF8", createdAt: "2026-01-01T00:00:00Z" },
+    { id: "m2", name: "Swathi", color: "#F472B6", createdAt: "2026-01-02T00:00:00Z" },
+  ] })),
+  useAccountOwners: vi.fn(() => ({ data: [
+    // Ally Savings is JOINT (both members); Chase Checking is unassigned.
+    { accountId: "acc-2", memberId: "m1" },
+    { accountId: "acc-2", memberId: "m2" },
+  ] })),
+  useCreateHouseholdMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useDeleteHouseholdMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useSetAccountOwners: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
+
 vi.mock("../api/hooks/assets", () => ({
   useManualAssets: vi.fn(() => ({ data: [
     { id: "a1", name: "House", assetType: "property", valueCents: 50000000, currency: "USD", notes: null, createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z" },
@@ -57,6 +72,49 @@ describe("Accounts — navigation", () => {
     const listRow = rows.map((el) => el.closest("button")).find((btn) => btn !== null)!;
     fireEvent.click(listRow);
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
+  });
+
+  it("shows a Joint badge with owner names and per-owner attribution with equal splits", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+
+    // Ally Savings (2 owners) gets the Joint badge and both names.
+    expect(screen.getByText("Joint")).toBeInTheDocument();
+    expect(screen.getByText(/Koushik & Swathi/)).toBeInTheDocument();
+
+    // Attribution: Chase Checking $100,000 is unassigned → Household (shared);
+    // Ally Savings $250,000 joint → $125,000 each.
+    expect(screen.getByText(/By owner/)).toBeInTheDocument();
+    expect(screen.getByText("Household (shared)")).toBeInTheDocument();
+    expect(screen.getAllByText("$125,000")).toHaveLength(2);
+    expect(screen.getByText("$100,000")).toBeInTheDocument();
+  });
+
+  it("opens the account editor with the owner picker from a row's Edit button", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Chase Checking" }));
+
+    // The edit drawer opens with the household owner picker.
+    expect(screen.getByRole("heading", { name: "Edit Account" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Owner Koushik" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Owner Swathi" })).toBeInTheDocument();
+    expect(screen.getByLabelText("New household member name")).toBeInTheDocument();
+  });
+
+  it("opens the unified Add chooser and routes each choice to its drawer", async () => {
+    render(<Accounts />, { wrapper: createWrapper() });
+
+    // One unified button — the old separate ones are gone.
+    expect(screen.queryByRole("button", { name: "+ Add account" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add manual asset" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add account, asset, or liability" }));
+    expect(screen.getByText("What do you want to add?")).toBeInTheDocument();
+
+    // Picking "Bank account" closes the chooser and opens the account drawer.
+    fireEvent.click(screen.getByRole("button", { name: /Bank account/ }));
+    expect(screen.queryByText("What do you want to add?")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Add account" })).toBeInTheDocument();
   });
 
   it("navigates to the correct account after clicking a different row", async () => {

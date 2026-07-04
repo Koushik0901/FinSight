@@ -5,6 +5,7 @@ pub mod budget;
 pub mod categories;
 pub mod copilot;
 pub mod copilot_chat;
+pub mod household;
 pub mod import;
 pub mod inbox;
 pub mod insights;

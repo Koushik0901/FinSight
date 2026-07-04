@@ -619,6 +619,46 @@ async getUncelebratedMilestones() : Promise<Result<number[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listHouseholdMembers() : Promise<Result<HouseholdMember[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_household_members") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createHouseholdMember(name: string, color: string | null) : Promise<Result<HouseholdMember, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_household_member", { name, color }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteHouseholdMember(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_household_member", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAccountOwners() : Promise<Result<AccountOwner[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_account_owners") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setAccountOwners(accountId: string, memberIds: string[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_account_owners", { accountId, memberIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAgentMemory() : Promise<Result<AgentMemory[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_agent_memory") };
@@ -1314,6 +1354,11 @@ async deleteConversationMessagesAfter(conversationId: string, messageId: string)
 
 export type Account = { id: string; owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; archived_at: string | null; liquidity_type: string; emergency_fund_eligible: boolean; goal_earmark: string | null; apy_pct: number | null; created_at: string; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean }
 export type AccountBalancePoint = { date: string; balanceCents: number }
+/**
+ * One (account, member) ownership pair. The full list lets the UI derive
+ * sole/joint badges and per-member net-worth attribution in one query.
+ */
+export type AccountOwner = { accountId: string; memberId: string }
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null }
 export type AccountSparkline = { accountId: string; points: AccountBalancePoint[] }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; 
@@ -1469,6 +1514,11 @@ export type ExecutionSummary = { bundleId: string; succeeded: number; failed: nu
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; liabilityId: string | null; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
 export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: number; debtRatioPts: number; goalProgressPts: number; budgetAdherencePts: number; savingsRatePct: number; emergencyFundMonths: number; debtToIncomePct: number; avgGoalPct: number; budgetAdherencePct: number }
+/**
+ * A person in the household (single user, partner, family member, roommate).
+ * Accounts are owned by zero or more members; 2+ owners = a joint account.
+ */
+export type HouseholdMember = { id: string; name: string; color: string | null; createdAt: string }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
 export type ImportCandidate = { id: string; source: string; importId: string | null; syncRunId: string | null; accountId: string; candidateJson: string; rawPayloadJson: string | null; importedId: string | null; externalTxId: string | null; externalAccountId: string | null; postedAt: string; amountCents: number; merchantRaw: string; confidence: number; reason: string; status: string; resolution: string | null; resolvedTransactionId: string | null; createdAt: string; resolvedAt: string | null }
 export type ImportCandidateMatch = { id: string; candidateId: string; transactionId: string; matchKind: string; score: number; isRecommended: boolean; explanationJson: string | null; createdAt: string }
