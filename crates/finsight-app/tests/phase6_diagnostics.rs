@@ -158,6 +158,69 @@ fn diagnose_recurring() {
 }
 
 #[test]
+#[ignore = "reads the live dev DB"]
+fn diagnose_conversations() {
+    let db = open();
+    let conn = db.get().unwrap();
+    dump_rows(
+        &conn,
+        "CONVERSATIONS (id, title, msg_count)",
+        "SELECT c.id, COALESCE(c.title,'(untitled)'), \
+            (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = c.id) \
+         FROM conversations c ORDER BY c.updated_at DESC LIMIT 20",
+    );
+    dump_rows(
+        &conn,
+        "MESSAGES sample (conversation_id, role, substr(content))",
+        "SELECT conversation_id, role, substr(COALESCE(content,''),1,50) \
+         FROM conversation_messages ORDER BY created_at DESC LIMIT 15",
+    );
+}
+
+#[test]
+#[ignore = "reads the live dev DB"]
+fn diagnose_transfer_pairing_and_palette() {
+    let db = open();
+    let conn = db.get().unwrap();
+    dump_rows(
+        &conn,
+        "PAIRED TRANSFERS (date, account, merchant, cents, peer_account)",
+        "SELECT substr(t.posted_at,1,10), a.name, substr(t.merchant_raw,1,40), t.amount_cents, pa.name \
+         FROM transactions t \
+         JOIN accounts a ON a.id = t.account_id \
+         JOIN transactions pt ON pt.id = t.transfer_peer_id \
+         JOIN accounts pa ON pa.id = pt.account_id \
+         ORDER BY t.posted_at DESC LIMIT 30",
+    );
+    dump_rows(
+        &conn,
+        "UNPAIRED TRANSFERS (date, account, merchant, cents)",
+        "SELECT substr(posted_at,1,10), account_id, substr(merchant_raw,1,45), amount_cents \
+         FROM transactions WHERE is_transfer = 1 AND transfer_peer_id IS NULL \
+         ORDER BY posted_at DESC LIMIT 20",
+    );
+    dump_rows(
+        &conn,
+        "CATEGORY COLORS (id, color)",
+        "SELECT id, color FROM categories WHERE archived_at IS NULL ORDER BY id",
+    );
+    // For every unpaired CC payment: does ANY opposite-amount row exist within
+    // ±4 days in another account (i.e. did pairing miss a real counterpart)?
+    dump_rows(
+        &conn,
+        "CC-PAYMENT COUNTERPART CANDIDATES (payment date, cents, candidate merchant, candidate date)",
+        "SELECT substr(p.posted_at,1,10), p.amount_cents, substr(c.merchant_raw,1,45), substr(c.posted_at,1,10) \
+         FROM transactions p \
+         LEFT JOIN transactions c ON c.amount_cents = -p.amount_cents \
+              AND c.account_id != p.account_id \
+              AND ABS(julianday(date(c.posted_at)) - julianday(date(p.posted_at))) <= 4 \
+         WHERE p.is_transfer = 1 AND p.transfer_peer_id IS NULL \
+           AND lower(p.merchant_raw) LIKE '%payment%thank you%' \
+         ORDER BY p.posted_at DESC",
+    );
+}
+
+#[test]
 #[ignore = "reads/writes the live dev DB"]
 fn diagnose_anomalies() {
     let db = open();
