@@ -298,7 +298,7 @@ pub async fn get_uncelebrated_milestones(state: tauri::State<'_, AppState>) -> A
         let total_accounts: i64 = conn
             .query_row(
                 "SELECT COALESCE(SUM(COALESCE(
-                    (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY b.as_of_date DESC LIMIT 1),
+                    (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),
                     0
                  )), 0)
                  FROM accounts a

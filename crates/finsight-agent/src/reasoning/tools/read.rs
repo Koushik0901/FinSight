@@ -18,7 +18,7 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
         }
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
             let mut stmt = ctx.conn.prepare(
-                "SELECT a.name, COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance \
+                "SELECT a.name, COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance \
                  FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name"
             )?;
             let rows: Vec<Value> = stmt.query_map([], |r| {

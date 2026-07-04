@@ -1775,7 +1775,7 @@ fn expected_monthly_income_cents(snapshot: &FinancialSnapshot) -> i64 {
 fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, a.name, a.type,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
                 a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL

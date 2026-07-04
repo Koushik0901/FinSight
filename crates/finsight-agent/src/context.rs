@@ -416,7 +416,7 @@ fn latest_total_balance(conn: &mut Connection) -> i64 {
              (SELECT balance_cents
               FROM account_balances b
               WHERE b.account_id = a.id
-              ORDER BY b.as_of_date DESC
+              ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
               LIMIT 1),
              0
          )), 0)
@@ -769,7 +769,7 @@ fn wellness_context(
         .query_row(
             "SELECT COALESCE(SUM(COALESCE(
                  (SELECT balance_cents FROM account_balances b
-                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC LIMIT 1), 0
+                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
              )), 0) FROM accounts a WHERE a.archived_at IS NULL",
             [],
             |r| r.get(0),
@@ -865,7 +865,7 @@ fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
     let mut out = Vec::new();
     let mut stmt = match conn.prepare(
         "SELECT a.name,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
                 a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Savings'",
@@ -1153,7 +1153,9 @@ mod tests {
 
         let ctx = build_context(&mut conn);
 
-        assert_eq!(ctx.cashflow.total_balance_cents, 1_000_000);
+        // Derive model: opening $10,000 + net activity (+$6,000) = $16,000, and
+        // the Copilot context now reads the derived balance (not the stale seed).
+        assert_eq!(ctx.cashflow.total_balance_cents, 1_600_000);
         assert_eq!(ctx.cashflow.avg_monthly_income_cents, 300_000);
         assert_eq!(ctx.cashflow.avg_monthly_expense_cents, 100_000);
         assert_eq!(ctx.cashflow.net_monthly_cents, 200_000);
