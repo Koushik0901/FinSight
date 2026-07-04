@@ -73,6 +73,16 @@ pub async fn import_csv(
         let anom_db = (*state.db).clone();
         let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
     }
+    // Refresh the derived balance + net-worth trend from the new activity so the
+    // Today/Accounts numbers and the net-worth chart populate immediately.
+    {
+        let nw_db = (*state.db).clone();
+        let _ = run(&nw_db, |conn| {
+            finsight_core::repos::net_worth::record_today(conn)?;
+            finsight_core::repos::net_worth::backfill_history_from_transactions(conn)
+        })
+        .await;
+    }
 
     // Auto-categorize with the configured AI provider when the setting is on
     // (default). The deterministic builtin pass above only covers well-known

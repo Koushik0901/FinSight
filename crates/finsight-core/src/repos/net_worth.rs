@@ -2,7 +2,7 @@ use crate::error::CoreResult;
 use crate::models::NetWorthPoint;
 use crate::repos::{accounts, liabilities, manual_assets};
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -77,6 +77,93 @@ pub fn record_snapshot(conn: &mut Connection, total_cents: i64) -> CoreResult<()
          ON CONFLICT(date) DO UPDATE SET total_cents = excluded.total_cents",
         params![id, today, total_cents, now],
     )?;
+    Ok(())
+}
+
+fn record_snapshot_dated(conn: &mut Connection, date: &str, total_cents: i64) -> CoreResult<()> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO net_worth_snapshots(id, date, total_cents, created_at) \
+         VALUES(?1, ?2, ?3, ?4) \
+         ON CONFLICT(date) DO UPDATE SET total_cents = excluded.total_cents",
+        params![id, date, total_cents, now],
+    )?;
+    Ok(())
+}
+
+/// Reconstruct monthly net-worth snapshots from transaction history so the trend
+/// chart is populated right after an import instead of only building forward from
+/// today. For each month-end from the earliest activity to today, net worth =
+/// current net worth − activity dated after that month-end (each known-balance
+/// account's derived balance already folds in all of its activity). Manual assets
+/// and liabilities are held at today's value (their history isn't tracked), so
+/// the reconstructed trend reflects account-balance movement.
+pub fn backfill_history_from_transactions(conn: &mut Connection) -> CoreResult<()> {
+    use chrono::{Datelike, NaiveDate};
+
+    let known_ids: Vec<String> = accounts::list_summaries(conn)?
+        .into_iter()
+        .filter(|a| a.balance_known)
+        .map(|a| a.id)
+        .collect();
+    if known_ids.is_empty() {
+        return Ok(());
+    }
+    let current_nw = breakdown(conn)?.net_worth_cents;
+    let placeholders = std::iter::repeat("?")
+        .take(known_ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let earliest: Option<NaiveDate> = conn
+        .query_row(
+            &format!(
+                "SELECT MIN(date(posted_at)) FROM transactions \
+                 WHERE pending = 0 AND account_id IN ({placeholders})"
+            ),
+            rusqlite::params_from_iter(known_ids.iter()),
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten()
+        .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let Some(earliest) = earliest else {
+        return Ok(());
+    };
+
+    let today = Utc::now().date_naive();
+    let (mut year, mut month) = (earliest.year(), earliest.month());
+    while let Some(first_of_month) = NaiveDate::from_ymd_opt(year, month, 1) {
+        if first_of_month > today {
+            break;
+        }
+        let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+        let month_end = NaiveDate::from_ymd_opt(ny, nm, 1)
+            .and_then(|d| d.pred_opt())
+            .unwrap_or(first_of_month)
+            .min(today);
+        let snap = month_end.format("%Y-%m-%d").to_string();
+
+        let activity_after: i64 = conn.query_row(
+            &format!(
+                "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
+                 WHERE pending = 0 AND date(posted_at) > ?1 AND account_id IN ({placeholders})"
+            ),
+            rusqlite::params_from_iter(
+                std::iter::once(snap.clone()).chain(known_ids.iter().cloned()),
+            ),
+            |r| r.get(0),
+        )?;
+        record_snapshot_dated(conn, &snap, current_nw - activity_after)?;
+
+        if month == 12 {
+            year += 1;
+            month = 1;
+        } else {
+            month += 1;
+        }
+    }
     Ok(())
 }
 
@@ -228,6 +315,49 @@ mod tests {
         assert_eq!(hist.len(), 1);
         // 10,000,000 accounts + 50,000,000 assets − 30,000,000 liabilities
         assert_eq!(hist[0].total_cents, 30_000_000);
+    }
+
+    #[test]
+    fn backfill_reconstructs_monthly_history_ending_at_current() {
+        use crate::models::{NewTransaction, TransactionStatus};
+        use crate::repos::{accounts, transactions};
+
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = accounts::insert(&mut conn, base_account("Card", 0, "seed")).unwrap();
+
+        let mk = |amt: i64, date: &str| NewTransaction {
+            account_id: acc.id.clone(),
+            posted_at: chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap()
+                .and_utc(),
+            amount_cents: amt,
+            merchant_raw: "M".into(),
+            category_id: None,
+            notes: None,
+            status: TransactionStatus::Cleared,
+            imported_id: None,
+            source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
+        };
+        // Two months of activity in the past; current derived balance = −150.
+        transactions::insert(&mut conn, mk(-100_00, "2024-01-10")).unwrap();
+        transactions::insert(&mut conn, mk(-50_00, "2024-02-10")).unwrap();
+
+        backfill_history_from_transactions(&mut conn).unwrap();
+
+        let hist = list_history(&mut conn, 36500).unwrap();
+        assert!(hist.len() >= 2, "expected a monthly trend, got {}", hist.len());
+        // Latest snapshot equals the current net worth (all activity folded in).
+        assert_eq!(hist.last().unwrap().total_cents, -150_00);
+        // The Jan-end snapshot only reflects the −100 charge (the −50 is later).
+        let jan = hist.iter().find(|p| p.date.starts_with("2024-01")).unwrap();
+        assert_eq!(jan.total_cents, -100_00);
     }
 
     #[test]

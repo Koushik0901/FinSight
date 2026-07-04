@@ -457,6 +457,7 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                     }
                 }
                 let _ = finsight_core::repos::net_worth::record_today(&mut conn);
+                let _ = finsight_core::repos::net_worth::backfill_history_from_transactions(&mut conn);
                 let _ = finsight_core::anomaly::recompute_anomalies(&mut conn);
             }
 
