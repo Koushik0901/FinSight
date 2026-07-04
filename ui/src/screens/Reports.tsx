@@ -43,7 +43,9 @@ function useReportData(scope: Scope) {
 const SCOPE_DAYS: Record<Scope, number> = { month: 30, quarter: 90, year: 365, all: 36500 };
 
 export default function Reports() {
-  const [scope, setScope] = useState<Scope>("month");
+  // Default to a window that reflects the imported data (which is often
+  // historical) rather than the current calendar month, which may be empty.
+  const [scope, setScope] = useState<Scope>("year");
   const [tab, setTab] = useState<Tab>("overview");
   const { data, isLoading, error } = useReportData(scope);
   const { data: totals } = useMonthTotals();
@@ -63,12 +65,23 @@ export default function Reports() {
   const topCategoriesByAmount = useMemo(() => [...(data?.topCategories ?? [])].sort((a, b) => b.totalCents - a.totalCents), [data]);
   const maxCategoryAmount = Math.max(1, ...topCategoriesByAmount.map((category) => category.totalCents));
 
+  // True when the selected window actually contains transaction activity, so we
+  // can distinguish a real empty period from a query still loading / errored.
+  const hasActivity = monthly.some((m) => m.incomeCents !== 0 || m.expenseCents !== 0);
+
   const scopeLabel = useMemo(() => {
     if (scope === "quarter") return "Quarter";
     if (scope === "year") return "Year";
     if (scope === "all") return "All-time";
-    return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  }, [scope]);
+    // "Month" now reflects the most recent month WITH activity (data-anchored),
+    // not the current calendar month.
+    const anchor = monthly[monthly.length - 1]?.month;
+    if (anchor) {
+      const [y, m] = anchor.split("-");
+      return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+    return "Month";
+  }, [scope, monthly]);
 
   const handleExport = () => {
     if (!data) return;
@@ -133,17 +146,23 @@ export default function Reports() {
             </div>
           </div>
           <div style={{ padding: "0 22px 22px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, alignItems: "end", minHeight: 220 }}>
-              {chartValues.map((month) => (
-                <div key={month.month} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: "100%", minHeight: 160, display: "flex", alignItems: "end", justifyContent: "center", gap: 8 }}>
-                    <span style={{ width: 28, height: `${(month.incomeCents / Math.max(maxExpense, month.incomeCents, 1)) * 160}px`, borderRadius: 10, background: "var(--positive)" }} />
-                    <span style={{ width: 28, height: `${(month.expenseCents / maxExpense) * 160}px`, borderRadius: 10, background: "var(--negative)" }} />
+            {!hasActivity ? (
+              <div className="muted" style={{ padding: "40px 0", textAlign: "center" }}>
+                No transactions in this period. Try a wider range (Year / All time) or import statements that cover it.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, alignItems: "end", minHeight: 220 }}>
+                {chartValues.map((month) => (
+                  <div key={month.month} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: "100%", minHeight: 160, display: "flex", alignItems: "end", justifyContent: "center", gap: 8 }}>
+                      <span style={{ width: 28, height: `${(month.incomeCents / Math.max(maxExpense, month.incomeCents, 1)) * 160}px`, borderRadius: 10, background: "var(--positive)" }} />
+                      <span style={{ width: 28, height: `${(month.expenseCents / maxExpense) * 160}px`, borderRadius: 10, background: "var(--negative)" }} />
+                    </div>
+                    <span className="mono muted">{month.label}</span>
                   </div>
-                  <span className="mono muted">{month.label}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

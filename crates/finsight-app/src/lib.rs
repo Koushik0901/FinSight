@@ -239,6 +239,10 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::accounts::archive_account,
         commands::accounts::set_account_balance,
         commands::categories::update_category_color,
+        commands::categories::create_category,
+        commands::categories::rename_category,
+        commands::categories::archive_category,
+        commands::categories::set_category_guidance,
         commands::transactions::list_transactions,
         commands::transactions::create_transaction,
         commands::transactions::update_transaction,
@@ -256,6 +260,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::meta::app_ready,
         commands::import::preview_csv_columns,
         commands::import::import_csv,
+        commands::import::get_saved_csv_mapping,
         commands::import::list_unfinished_imports,
         commands::import::discard_unfinished_import,
         commands::agent::set_completion_provider,
@@ -265,6 +270,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::test_completion_provider,
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
+        commands::agent::recompute_anomalies,
         commands::agent::trigger_recategorize_low_confidence,
         commands::agent::get_agent_status,
         commands::agent::ask_agent,
@@ -434,9 +440,31 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 Err(e) => tracing::warn!("OpenRouter .env bootstrap skipped: {e}"),
             }
 
-            // Best-effort: record today's net-worth snapshot on startup.
+            // Best-effort: derive balances for existing imported accounts (so the
+            // "$0 after import" state resolves without a re-import), record today's
+            // net-worth snapshot, and recompute statistical anomaly flags so
+            // existing imported data populates without waiting for a re-import.
             if let Ok(mut conn) = db.get() {
+                // Re-run the deterministic builtin pass so transfer flags reflect
+                // the current keyword list (idempotent; fixes stale is_transfer),
+                // then pair cross-account transfer legs so existing imports gain
+                // pairing without a re-import.
+                let _ = finsight_core::categorize::apply_builtin_categorization(&mut conn);
+                let _ = finsight_core::categorize::pair_transfers(&mut conn);
+                if let Ok(ids) = conn
+                    .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
+                    .and_then(|mut s| {
+                        s.query_map([], |r| r.get::<_, String>(0))
+                            .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+                    })
+                {
+                    for id in ids {
+                        let _ = finsight_core::repos::accounts::recompute_balance_if_linked(&mut conn, &id);
+                    }
+                }
                 let _ = finsight_core::repos::net_worth::record_today(&mut conn);
+                let _ = finsight_core::repos::net_worth::backfill_history_from_transactions(&mut conn);
+                let _ = finsight_core::anomaly::recompute_anomalies(&mut conn);
             }
 
             let window = app.get_webview_window("main").expect("main window");
@@ -466,6 +494,37 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 let _ = check_agent
                     .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
                     .await;
+            });
+
+            // Resume auto-categorization if a previous run was interrupted — e.g.
+            // the app was imported into and then closed before the LLM pass
+            // finished, which otherwise leaves those rows uncategorized forever.
+            // Best-effort: gated on the setting and on there being real work.
+            let cat_agent = app.state::<AppState>().agent.tx.clone();
+            let cat_db = db.clone();
+            tauri::async_runtime::spawn(async move {
+                let should = finsight_core::repos::run(&cat_db, |conn| {
+                    let auto: Option<bool> = finsight_core::settings::get(
+                        conn,
+                        crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY,
+                    )?;
+                    if !auto.unwrap_or(true) {
+                        return Ok(false);
+                    }
+                    let pending: i64 = conn.query_row(
+                        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND is_transfer = 0",
+                        [],
+                        |r| r.get(0),
+                    )?;
+                    Ok(pending > 0)
+                })
+                .await
+                .unwrap_or(false);
+                if should {
+                    let _ = cat_agent
+                        .send(finsight_agent::agent::AgentJob::CategorizeAll)
+                        .await;
+                }
             });
 
             let notify_app = app.handle().clone();

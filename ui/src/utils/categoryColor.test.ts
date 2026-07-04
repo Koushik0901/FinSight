@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Box, Bulb, Car, Cart, Fork, Gift, Heart, House, Plane, Tag } from "../components/Icons";
-import { DEFAULT_CATEGORY_COLOR, iconFor, paletteFor } from "./categoryColor";
+import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconFor, nextCategoryColor, paletteFor } from "./categoryColor";
 
 describe("paletteFor", () => {
   it("returns the canonical color for known starter ids", () => {
@@ -31,6 +31,35 @@ describe("paletteFor", () => {
     for (const id of ids) {
       expect(paletteFor(id)).toMatch(/^#[0-9A-F]{6}$/);
     }
+  });
+});
+
+describe("nextCategoryColor", () => {
+  it("picks the first palette color when nothing is in use", () => {
+    expect(nextCategoryColor([])).toBe(CATEGORY_COLOR_CHOICES[0]);
+  });
+
+  it("picks the least-used color, in palette order on ties", () => {
+    // First two choices taken once each → third choice is next.
+    expect(nextCategoryColor([CATEGORY_COLOR_CHOICES[0]!, CATEGORY_COLOR_CHOICES[1]!]))
+      .toBe(CATEGORY_COLOR_CHOICES[2]);
+  });
+
+  it("cycles back to the least-used color when the whole palette is taken", () => {
+    const oneOfEach = [...CATEGORY_COLOR_CHOICES];
+    // All used once, first one used twice → second choice wins.
+    expect(nextCategoryColor([...oneOfEach, CATEGORY_COLOR_CHOICES[0]!]))
+      .toBe(CATEGORY_COLOR_CHOICES[1]);
+  });
+
+  it("ignores nulls, unknown colors, and is case-insensitive", () => {
+    expect(nextCategoryColor([null, undefined, "#123456", CATEGORY_COLOR_CHOICES[0]!.toLowerCase()]))
+      .toBe(CATEGORY_COLOR_CHOICES[1]);
+  });
+
+  it("never returns the default grey", () => {
+    expect(nextCategoryColor([])).not.toBe(DEFAULT_CATEGORY_COLOR);
+    expect(CATEGORY_COLOR_CHOICES).not.toContain(DEFAULT_CATEGORY_COLOR);
   });
 });
 

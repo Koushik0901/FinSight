@@ -4,7 +4,7 @@ use finsight_core::{repos::run, settings};
 use tauri_plugin_dialog::DialogExt;
 
 const CURRENCY_KEY: &str = "display_currency";
-const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
+pub(crate) const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
 
 #[tauri::command]
 #[specta::specta]

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { commands } from "../../api/client";
 import { userErrorMessage } from "../../utils/runtime";
-import { DEFAULT_CATEGORY_COLOR, paletteFor } from "../../utils/categoryColor";
+import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, nextCategoryColor, paletteFor } from "../../utils/categoryColor";
 import Button from "../../components/Button";
 import Input from "../../components/Input";
 import Select from "../../components/Select";
@@ -11,11 +11,7 @@ interface Props { onNext: () => void; }
 
 interface Row { id: string; label: string; group_id: string; color: string; }
 
-const COLOR_CHOICES = [
-  "#A78BFA", "#34D399", "#FB923C", "#60A5FA", "#FACC15",
-  "#F472B6", "#2DD4BF", "#FCA5A5", "#818CF8", "#FDE68A",
-  DEFAULT_CATEGORY_COLOR,
-];
+const COLOR_CHOICES = [...CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR];
 
 const STARTERS: Row[] = [
   { id: "housing",       label: "Housing",       group_id: "fixed",     color: paletteFor("housing") },
@@ -43,7 +39,8 @@ export default function StepCategories({ onNext }: Props) {
   function add() {
     setRows((r) => [
       ...r,
-      { id: crypto.randomUUID(), label: "", group_id: "daily", color: DEFAULT_CATEGORY_COLOR },
+      // Least-used palette color keeps every added category distinct.
+      { id: crypto.randomUUID(), label: "", group_id: "daily", color: nextCategoryColor(r.map((row) => row.color)) },
     ]);
   }
   function remove(i: number) {

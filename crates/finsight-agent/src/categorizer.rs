@@ -63,7 +63,7 @@ pub async fn run_job(
 
     // Build a set of valid category IDs for LLM output validation.
     let valid_category_ids: HashSet<String> =
-        categories.iter().map(|(id, _, _)| id.clone()).collect();
+        categories.iter().map(|(id, _, _, _)| id.clone()).collect();
 
     let total = uncategorized.len() as u32;
     let mut remaining: Vec<(String, String, i64)> = Vec::new(); // (txn_id, merchant_raw, amount_cents)
@@ -145,6 +145,12 @@ pub async fn run_job(
             }
         };
 
+        // The txn_ids actually sent in this chunk. The LLM sometimes echoes a
+        // garbled or hallucinated id; writing it would violate the
+        // categorizations.txn_id foreign key and abort the whole job.
+        let chunk_txn_ids: std::collections::HashSet<&str> =
+            chunk.iter().map(|(id, _, _)| id.as_str()).collect();
+
         for r in &results {
             // Validate the category_id returned by the LLM exists in our category set.
             // Skip results with hallucinated or stale IDs to avoid writing dangling FKs.
@@ -155,6 +161,15 @@ pub async fn run_job(
                 );
                 continue;
             }
+            // Validate the txn_id was actually in this batch (guards the
+            // transactions FK against LLM-hallucinated ids).
+            if !chunk_txn_ids.contains(r.txn_id.as_str()) {
+                eprintln!(
+                    "[categorizer] LLM returned unknown txn_id '{}', skipping",
+                    r.txn_id
+                );
+                continue;
+            }
 
             let txn_id = r.txn_id.clone();
             let cat_id = r.category_id.clone();
@@ -162,7 +177,7 @@ pub async fn run_job(
             let rationale = r.rationale.clone();
             let model = provider.model_id().to_string();
             let db = db.clone();
-            tokio::task::spawn_blocking(move || {
+            let write = tokio::task::spawn_blocking(move || {
                 let mut conn = db.get()?;
                 categorizations::insert(&mut conn, NewCategorization {
                     txn_id: txn_id.clone(),
@@ -176,8 +191,15 @@ pub async fn run_job(
                     params![cat_id, confidence, rationale, txn_id],
                 )?;
                 Ok::<_, anyhow::Error>(())
-            }).await??;
-            categorized += 1;
+            })
+            .await;
+            // Defense in depth: a single row's write failure must not abort the
+            // whole categorization job — log it and keep going.
+            match write {
+                Ok(Ok(())) => categorized += 1,
+                Ok(Err(e)) => eprintln!("[categorizer] write failed for one transaction, skipping: {e}"),
+                Err(e) => eprintln!("[categorizer] write task join error, skipping: {e}"),
+            }
         }
         on_event(AgentEvent::CategorizationProgress {
             import_id: import_id.clone(),
@@ -228,9 +250,14 @@ fn load_uncategorized(
     conn: &mut rusqlite::Connection,
     _import_id: Option<&str>,
 ) -> Result<Vec<(String, String, i64)>> {
+    // Exclude transfers / credit-card payments: the builtin pass already flags
+    // them (is_transfer = 1) and they are not spending or income, so they must
+    // not be handed to the LLM — otherwise it invents a bogus spending category
+    // (e.g. a "PAYMENT RECEIVED - THANK YOU" card payment tagged "Shopping")
+    // and burns a low-confidence "Needs review" slot on something already known.
     let mut stmt = conn.prepare(
         "SELECT id, merchant_raw, amount_cents FROM transactions \
-         WHERE category_id IS NULL ORDER BY posted_at DESC",
+         WHERE category_id IS NULL AND is_transfer = 0 ORDER BY posted_at DESC",
     )?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
@@ -260,14 +287,16 @@ fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, S
     Ok(out)
 }
 
-fn load_categories(conn: &mut rusqlite::Connection) -> Result<Vec<(String, String, String)>> {
-    // (id, label, group_label)
+type CategoryRow = (String, String, String, Option<String>);
+
+fn load_categories(conn: &mut rusqlite::Connection) -> Result<Vec<CategoryRow>> {
+    // (id, label, group_label, guidance)
     let mut stmt = conn.prepare(
-        "SELECT c.id, c.label, COALESCE(g.label, '') \
+        "SELECT c.id, c.label, COALESCE(g.label, ''), c.guidance \
          FROM categories c LEFT JOIN category_groups g ON g.id = c.group_id \
          WHERE c.archived_at IS NULL ORDER BY g.sort_order, c.sort_order",
     )?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     let mut out = Vec::new();
     for r in rows {
         out.push(r?);
@@ -294,12 +323,19 @@ fn load_recent_examples(conn: &mut rusqlite::Connection) -> Result<Vec<(String, 
 }
 
 fn build_system_prompt(
-    categories: &[(String, String, String)],
+    categories: &[CategoryRow],
     recent_examples: &[(String, String)],
 ) -> String {
     let cats_json = json!(categories
         .iter()
-        .map(|(id, label, group)| { json!({"id": id, "label": label, "group_label": group}) })
+        .map(|(id, label, group, guidance)| {
+            let mut obj = json!({"id": id, "label": label, "group_label": group});
+            // User-authored guidance tells the model when this category applies.
+            if let Some(g) = guidance.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                obj["guidance"] = json!(g);
+            }
+            obj
+        })
         .collect::<Vec<_>>());
     let examples_json = json!(recent_examples
         .iter()
@@ -307,8 +343,10 @@ fn build_system_prompt(
         .collect::<Vec<_>>());
     format!(
         "You are a personal finance transaction categorizer. Classify each transaction into \
-         exactly one of the provided categories. Respond with a valid JSON array only — \
-         no markdown, no explanation outside the array.\n\nCategories:\n{}\n\nRecent examples from this user (for calibration):\n{}",
+         exactly one of the provided categories. When a category includes a \"guidance\" note, \
+         follow it — it is the user's own instruction for when that category applies (merchant \
+         hints, exclusions, intent). Respond with a valid JSON array only — no markdown, no \
+         explanation outside the array.\n\nCategories:\n{}\n\nRecent examples from this user (for calibration):\n{}",
         cats_json, examples_json
     )
 }
@@ -429,6 +467,92 @@ mod tests {
             .unwrap();
         assert_eq!(cat_id.as_deref(), Some("cat1"));
         assert!((confidence.unwrap() - 0.87).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn transfers_are_not_sent_to_the_llm_and_stay_uncategorized() {
+        // Phase 4 finding: credit-card payments / internal transfers are flagged
+        // is_transfer=1 by the builtin pass but left uncategorized. They must NOT
+        // be handed to the LLM — otherwise it tags a "PAYMENT RECEIVED" card
+        // payment as "Shopping" and floods Needs Review. Even if the model
+        // volunteers a category for one, the batch guard drops it.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE (not a transfer) + cat1 + account
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+                 VALUES('t2','a1','2024-02-01T00:00:00Z',298614,'PAYMENT RECEIVED - THANK YOU','cleared',0,1,'2024-02-01T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // Model tries to categorize BOTH; t2 must be rejected as out-of-batch.
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"},
+                {"txn_id": "t2", "category_id": "cat1", "confidence": 0.8, "rationale": "guessed"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        let (cat, conf): (Option<String>, Option<f64>) = conn
+            .query_row(
+                "SELECT category_id, ai_confidence FROM transactions WHERE id='t2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cat, None, "a transfer must stay uncategorized");
+        assert_eq!(conf, None, "a transfer must not get an LLM confidence");
+        // The real spending txn was still categorized.
+        let t1: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t1.as_deref(), Some("cat1"));
+    }
+
+    #[tokio::test]
+    async fn hallucinated_txn_id_is_skipped_and_does_not_abort_the_job() {
+        // Regression: on real data Gemma occasionally echoes a garbled txn_id.
+        // Writing it violated the categorizations.txn_id FK and aborted the
+        // whole job. It must now be skipped without failing run_job.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 + cat1 + account
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // A hallucinated txn_id plus the real one.
+            response: json!([
+                {"txn_id": "ghost-txn-999", "category_id": "cat1", "confidence": 0.9, "rationale": "bogus"},
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.85, "rationale": "Fast food"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+
+        // Must not error despite the bad id.
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        // The real txn was categorized; the ghost wrote nothing.
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("cat1"));
+        let ghost: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categorizations WHERE txn_id='ghost-txn-999'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ghost, 0, "hallucinated txn_id must not be written");
     }
 
     #[tokio::test]

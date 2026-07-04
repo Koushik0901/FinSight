@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
@@ -20,6 +20,36 @@ export function useTransactions(filter: TxnFilterInput = DEFAULT_FILTER) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
+    enabled: isTauriRuntime(),
+  });
+}
+
+/** Page size for the paginated transactions list. */
+export const TXN_PAGE_SIZE = 50;
+
+/**
+ * Paginated transactions via infinite query. Filters/sort/search all flow
+ * through `filter`; changing any of them starts a fresh paged query (the filter
+ * is part of the query key), so older transactions stay reachable via
+ * `fetchNextPage` without ever loading thousands of rows at once.
+ */
+export function useInfiniteTransactions(
+  filter: Omit<TxnFilterInput, "limit" | "offset">,
+) {
+  return useInfiniteQuery({
+    queryKey: ["transactions-infinite", filter],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const result = await commands.listTransactions({
+        ...filter,
+        limit: TXN_PAGE_SIZE,
+        offset: pageParam * TXN_PAGE_SIZE,
+      } as TxnFilterInput);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < TXN_PAGE_SIZE ? undefined : allPages.length,
     enabled: isTauriRuntime(),
   });
 }
@@ -62,6 +92,9 @@ export function useImportCsv() {
       qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
       qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
       qc.invalidateQueries({ queryKey: ["journey-status"] });
+      // The import just persisted this account's mapping — drop the cached
+      // lookup so a repeat import reflects the freshly-saved settings.
+      qc.invalidateQueries({ queryKey: ["csv-saved-mapping"] });
     },
   });
 }
@@ -159,6 +192,65 @@ export function useSetCategorySpendingType() {
       qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
       qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
     },
+  });
+}
+
+const invalidateCategoryQueries = (qc: ReturnType<typeof useQueryClient>) => {
+  qc.invalidateQueries({ queryKey: ["categories"] });
+  qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
+  qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+  qc.invalidateQueries({ queryKey: ["transactions"] });
+};
+
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ label, groupId, color }: { label: string; groupId: string | null; color: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.createCategory(label, groupId, color);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
+  });
+}
+
+export function useRenameCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, label }: { id: string; label: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.renameCategory(id, label);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
+  });
+}
+
+export function useArchiveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.archiveCategory(id);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      invalidateCategoryQueries(qc);
+      qc.invalidateQueries({ queryKey: ["rules"] });
+    },
+  });
+}
+
+export function useSetCategoryGuidance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, guidance }: { id: string; guidance: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setCategoryGuidance(id, guidance);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
   });
 }
 

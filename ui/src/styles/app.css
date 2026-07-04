@@ -1468,6 +1468,12 @@
   pointer-events: none;
 }
 
+/* When opened over an already-open dialog (e.g. inline account creation from the
+   CSV import dialog), stack above the dialog backdrop (z-index 95/96). */
+.drawer-root.drawer-root-elevated {
+  z-index: 120;
+}
+
 .drawer-backdrop {
   position: absolute;
   inset: 0;
@@ -2273,11 +2279,19 @@ body::-webkit-scrollbar-track,
   color: var(--accent);
 }
 
-.import-convention input[type="radio"] {
+.import-convention input[type="radio"],
+.import-convention input[type="checkbox"] {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
   flex-shrink: 0;
+}
+
+.import-convention-hint,
+.import-saved-hint {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .import-preview-wrap {

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAccounts } from "../api/hooks/accounts";
-import { useTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
+import { useInfiniteTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useNeedsReviewCount, useAgentStatus } from "../api/hooks/agent";
 import { useSyncSimpleFinAccount } from "../api/hooks/simplefin";
 import { commands } from "../api/client";
@@ -13,6 +13,7 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import ImportMappingDialog from "../components/ImportMappingDialog";
 import SetBalanceDialog from "../components/SetBalanceDialog";
 import { getAccountDisplayName } from "../utils/accounts";
+import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
 
@@ -69,7 +70,15 @@ export default function AccountTransactions() {
     [id, search, preset, startDate, endDate]
   );
 
-  const { data: transactions = [], isLoading, error } = useTransactions(filterValue);
+  const {
+    data: txnPages,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteTransactions(filterValue);
+  const transactions = useMemo(() => txnPages?.pages.flat() ?? [], [txnPages]);
 
   const categoryById = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
@@ -112,7 +121,7 @@ export default function AccountTransactions() {
       <div className="day-hdr">
         <div>
           <button className="btn ghost sm" type="button" onClick={() => navigate("/accounts")}>← Back to accounts</button>
-          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" />{account.bank} · {account.type}</div>
+          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" style={{ background: accountTypeColor(account.type) }} />{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -210,7 +219,11 @@ export default function AccountTransactions() {
                           </div>
                         </div>
                       </td>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></div></td>
+                      <td><div className="row row-sm">{transaction.is_transfer ? (
+                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">{transaction.transfer_peer_account_name ? `Transfer ${transaction.amount_cents < 0 ? "→" : "←"} ${transaction.transfer_peer_account_name}` : "Transfer"}</span></>
+                      ) : (
+                        <><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></>
+                      )}</div></td>
                       <td className="right"><span className={`figure money ${transaction.amount_cents > 0 ? "pos" : ""}`} style={{ fontSize: 16 }}>{money(transaction.amount_cents, { currency: account.currency || "USD", decimals: 2 })}</span></td>
                     </tr>
                   );
@@ -218,6 +231,23 @@ export default function AccountTransactions() {
               )}
             </tbody>
           </table>
+          {(hasNextPage || isFetchingNextPage) && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+              <button
+                className="btn outline sm"
+                type="button"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+              >
+                {isFetchingNextPage ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          )}
+          {!hasNextPage && transactions.length > 0 && (
+            <div className="muted" style={{ textAlign: "center", padding: "12px 0", fontSize: 12 }}>
+              {transactions.length} transaction{transactions.length === 1 ? "" : "s"} · end of list
+            </div>
+          )}
         </div>
       </div>
 

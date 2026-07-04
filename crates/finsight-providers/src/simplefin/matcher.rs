@@ -103,6 +103,38 @@ pub fn reconcile_excluding(
     window_days: i64,
     excluded_fuzzy_ids: &HashSet<String>,
 ) -> ProviderResult<ReconciliationDecision> {
+    reconcile_excluding_batch(
+        conn,
+        account_id,
+        candidate,
+        imported_id,
+        window_days,
+        excluded_fuzzy_ids,
+        &HashSet::new(),
+    )
+}
+
+/// Like [`reconcile_excluding`], but additionally takes `self_import_ids`: the
+/// set of transaction ids inserted *earlier in this same import batch*.
+///
+/// A single authoritative statement (one CSV export) lists every posted
+/// transaction exactly once — two identical lines are two real charges (e.g. a
+/// handful of same-day pay-as-you-go API top-ups of the same amount), not an
+/// accidental double. So rows created by the current import must never be
+/// treated as duplicate *targets* for later rows in the same file: they are
+/// fully excluded from candidacy here. `excluded_fuzzy_ids` (pre-existing rows
+/// already consumed by an auto-match) keeps its distinct "collides with another
+/// row in this batch → review" semantics, which is correct for *re-importing*
+/// an overlapping statement against transactions that existed beforehand.
+pub fn reconcile_excluding_batch(
+    conn: &Connection,
+    account_id: &str,
+    candidate: &NewTransaction,
+    imported_id: Option<&str>,
+    window_days: i64,
+    excluded_fuzzy_ids: &HashSet<String>,
+    self_import_ids: &HashSet<String>,
+) -> ProviderResult<ReconciliationDecision> {
     if let Some(id) = imported_id {
         if let Some(txn) = find_by_imported_id(conn, account_id, id).map_err(ProviderError::Core)? {
             return Ok(ReconciliationDecision::AutoMatch(txn));
@@ -132,6 +164,9 @@ pub fn reconcile_excluding(
         window_days,
     )
     .map_err(ProviderError::Core)?;
+
+    // Rows inserted earlier in this same import are not duplicate targets.
+    matches.retain(|m| !self_import_ids.contains(&m.transaction.id));
 
     if matches.is_empty() {
         return Ok(ReconciliationDecision::None);
@@ -188,7 +223,8 @@ fn find_by_imported_id(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -244,7 +280,8 @@ fn find_fuzzy_candidates(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -294,7 +331,8 @@ fn find_pending_provider_match(
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
-                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id \
+                t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
+                t.transfer_peer_id, NULL \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -326,21 +364,43 @@ fn fuzzy_score_amount(
     let days_diff = (txn.posted_at - posted_at).num_days().abs();
     score += (7 - days_diff.min(7)) * 7;
 
-    // Merchant similarity.
+    // Merchant similarity. A genuine duplicate is the SAME transaction, so it
+    // shares a merchant. If the merchants share nothing (different vendors),
+    // the pair is NOT a duplicate no matter how close the amount/date — a
+    // coincidental Uber Eats and Walmart charge of the same amount must never
+    // be flagged. Comparing on the normalized merchant also groups statement
+    // padding / location / store-number variants of the same vendor.
     let txn_merchant = txn.merchant_raw.to_lowercase();
-    if txn_merchant == merchant_lower {
-        score += 35;
+    let merchant_score: i64 = if txn_merchant == merchant_lower {
+        35
     } else if txn_merchant.contains(merchant_lower) || merchant_lower.contains(&txn_merchant) {
-        score += 25;
+        25
+    } else if finsight_core::merchant::normalize_merchant(&txn.merchant_raw)
+        == finsight_core::merchant::normalize_merchant(merchant_lower)
+    {
+        30
     } else {
-        // Jaccard-ish word overlap.
-        let words1: std::collections::HashSet<&str> = merchant_lower.split_whitespace().collect();
-        let words2: std::collections::HashSet<&str> = txn_merchant.split_whitespace().collect();
-        if !words1.is_empty() {
-            let overlap = words1.intersection(&words2).count();
-            score += (overlap * 8) as i64;
+        // The vendor name leads the descriptor; the location/store trail it. Two
+        // different vendors that merely share a city ("WALMART … VICTORIA" vs
+        // "TIM HORTONS … VICTORIA") must NOT look similar, so a partial match
+        // requires the leading normalized token (the vendor identifier) to agree.
+        let norm_a = finsight_core::merchant::normalize_merchant(merchant_lower);
+        let norm_b = finsight_core::merchant::normalize_merchant(&txn.merchant_raw);
+        let first_a = norm_a.split_whitespace().next();
+        let first_b = norm_b.split_whitespace().next();
+        if first_a.is_none() || first_a != first_b {
+            0
+        } else {
+            let words1: std::collections::HashSet<&str> = norm_a.split_whitespace().collect();
+            let words2: std::collections::HashSet<&str> = norm_b.split_whitespace().collect();
+            (words1.intersection(&words2).count() * 8).max(15) as i64
         }
+    };
+    if merchant_score == 0 {
+        // No merchant agreement → not a duplicate candidate.
+        return 0;
     }
+    score += merchant_score;
 
     // Prefer matching transactions that are not already reconciled/locked.
     if txn.status != TransactionStatus::Manual {
@@ -390,6 +450,9 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
             .with_timezone(&Utc),
         is_reimbursable: r.get::<_, i64>(18)? != 0,
         is_split: r.get::<_, i64>(19)? != 0,
+        is_transfer: r.get::<_, i64>(26)? != 0,
+        transfer_peer_id: r.get(27)?,
+        transfer_peer_account_name: r.get(28)?,
         imported_id: r.get(20)?,
         source: r.get(21)?,
         raw_synced_data: r.get(22)?,
@@ -397,4 +460,97 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
         external_tx_id: r.get(24)?,
         external_account_id: r.get(25)?,
     })
+}
+
+#[cfg(test)]
+mod fuzzy_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn txn(merchant: &str, amount_cents: i64, day: u32) -> Transaction {
+        let posted = Utc.with_ymd_and_hms(2026, 1, day, 12, 0, 0).unwrap();
+        Transaction {
+            id: format!("t-{merchant}-{day}"),
+            account_id: "a".into(),
+            posted_at: posted,
+            amount_cents,
+            merchant_raw: merchant.into(),
+            merchant_id: None,
+            merchant_label: None,
+            merchant_color: None,
+            merchant_initials: None,
+            category_id: None,
+            category_label: None,
+            category_color: None,
+            status: TransactionStatus::Cleared,
+            notes: None,
+            ai_confidence: None,
+            ai_explanation: None,
+            is_anomaly: false,
+            created_at: posted,
+            is_reimbursable: false,
+            is_split: false,
+            is_transfer: false,
+            transfer_peer_id: None,
+            transfer_peer_account_name: None,
+            imported_id: None,
+            source: None,
+            raw_synced_data: None,
+            pending: false,
+            external_tx_id: None,
+            external_account_id: None,
+        }
+    }
+
+    #[test]
+    fn different_merchants_with_same_amount_are_not_duplicates() {
+        // The Phase 4 bug: Uber Eats and Walmart of the same amount/date got
+        // queued as possible duplicates. They must now score 0 (no match).
+        let existing = txn("WALMART 1214 1214 VICTORIA", -1377, 12);
+        let score = fuzzy_score_amount(
+            &existing,
+            -1377,
+            Utc.with_ymd_and_hms(2026, 1, 12, 12, 0, 0).unwrap(),
+            "uber eats https://help.ub",
+        );
+        assert_eq!(score, 0, "different merchants must not be a duplicate candidate");
+    }
+
+    #[test]
+    fn different_vendors_sharing_only_a_city_are_not_duplicates() {
+        // WALMART … VICTORIA vs TIM HORTONS … VICTORIA share only the city.
+        let existing = txn("WALMART 1214 1214 VICTORIA", -289, 21);
+        let score = fuzzy_score_amount(
+            &existing,
+            -314,
+            Utc.with_ymd_and_hms(2026, 1, 22, 12, 0, 0).unwrap(),
+            "tim hortons #2619 victoria",
+        );
+        assert_eq!(score, 0, "sharing only a city must not be a duplicate");
+    }
+
+    #[test]
+    fn same_merchant_same_amount_same_day_is_a_strong_duplicate() {
+        let existing = txn("SPOTIFY  STOCKHOLM", -1099, 5);
+        let score = fuzzy_score_amount(
+            &existing,
+            -1099,
+            Utc.with_ymd_and_hms(2026, 1, 5, 12, 0, 0).unwrap(),
+            "spotify  stockholm",
+        );
+        assert!(score >= AUTO_MATCH_SCORE, "true duplicate should auto-match, got {score}");
+    }
+
+    #[test]
+    fn normalized_vendor_variants_still_match() {
+        // Same vendor, different statement descriptor (padding/location).
+        let existing = txn("UBER EATS               TORONTO", -2500, 8);
+        let score = fuzzy_score_amount(
+            &existing,
+            -2500,
+            Utc.with_ymd_and_hms(2026, 1, 8, 12, 0, 0).unwrap(),
+            "uber eats               https://help.ub",
+        );
+        assert!(score >= REVIEW_MATCH_SCORE, "same vendor variants should be a candidate, got {score}");
+    }
 }

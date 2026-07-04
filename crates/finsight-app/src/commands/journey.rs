@@ -59,7 +59,7 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
         let liquid_balance_cents: i64 = conn.query_row(
             "SELECT COALESCE(SUM(COALESCE(
                  (SELECT balance_cents FROM account_balances b
-                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC LIMIT 1), 0
+                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
              )), 0) FROM accounts a WHERE a.archived_at IS NULL",
             [],
             |r| r.get(0),
@@ -127,7 +127,7 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
                 COALESCE((
                     SELECT SUM(COALESCE(
                         (SELECT balance_cents FROM account_balances b
-                         WHERE b.account_id = a.id ORDER BY b.as_of_date DESC LIMIT 1), 0
+                         WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
                     ))
                     FROM accounts a
                     WHERE a.archived_at IS NULL

@@ -60,6 +60,38 @@ async updateCategoryColor(id: string, color: string) : Promise<Result<null, AppE
     else return { status: "error", error: e  as any };
 }
 },
+async createCategory(label: string, groupId: string | null, color: string) : Promise<Result<Category, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_category", { label, groupId, color }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameCategory(id: string, label: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_category", { id, label }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async archiveCategory(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_category", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCategoryGuidance(id: string, guidance: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_category_guidance", { id, guidance }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -196,6 +228,20 @@ async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Pr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The CSV import mapping (columns, date format, amount handling) last used for
+ * this account, so a recurring import from the same bank can pre-fill and the
+ * user never re-picks the same settings. `None` when the account has never been
+ * imported into.
+ */
+async getSavedCsvMapping(accountId: string) : Promise<Result<CsvImportMapping | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_saved_csv_mapping", { accountId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listUnfinishedImports() : Promise<Result<Import[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_unfinished_imports") };
@@ -263,6 +309,18 @@ async getNeedsReviewCount() : Promise<Result<number, AppError>> {
 async triggerCategorize() : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trigger_categorize") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Recompute statistical anomaly flags deterministically from transaction
+ * patterns. Returns the number of transactions now flagged.
+ */
+async recomputeAnomalies() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("recompute_anomalies") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1333,6 +1391,12 @@ budgetCents: number;
  * Actual outflow this month (positive = spent)
  */
 spentCents: number; txnCount: number }
+export type Category = { id: string; group_id: string; label: string; color: string; icon: string | null; spending_type: string | null; 
+/**
+ * Free-text guidance the user attaches so the categorizer/Copilot know when
+ * to use this category (merchant hints, exclusions, intent).
+ */
+guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
@@ -1359,7 +1423,11 @@ txnCount: number; yearTotalCents: number;
 /**
  * Number of transactions categorised here so far this calendar year
  */
-yearTxnCount: number; budgetCents: number }
+yearTxnCount: number; budgetCents: number; 
+/**
+ * Free-text categorizer/Copilot guidance the user attached.
+ */
+guidance: string | null }
 /**
  * A single prior turn from the conversation history for multi-turn awareness.
  */
@@ -1472,35 +1540,23 @@ export type ProjectedValue = { years: number; valueCents: number; annualRate: nu
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
 /**
- * A recurring transaction detected from transaction history.
+ * A recurring transaction detected from transaction history (Phase 6 redesign).
  */
 export type RecurringItem = { merchantRaw: string; categoryLabel: string; categoryColor: string; 
 /**
- * Most recent amount (negative = expense, positive = income)
+ * "subscription" | "bill" | "income" — genuine recurring commitments only.
  */
-lastAmountCents: number; minAmountCents: number; maxAmountCents: number; 
+kind: string; 
 /**
- * Average gap between occurrences in days
+ * 0..1 confidence this is a genuine recurring item.
  */
-avgGapDays: number; 
+confidence: number; 
 /**
- * How many times this has appeared
+ * Human-readable evidence for the classification.
  */
-occurrences: number; 
+reasons: string[]; lastAmountCents: number; minAmountCents: number; maxAmountCents: number; avgGapDays: number; occurrences: number; lastSeen: string; nextExpected: string; cadence: string; 
 /**
- * Most recent posted_at date (ISO)
- */
-lastSeen: string; 
-/**
- * Estimated next date (ISO), based on last_seen + avg_gap
- */
-nextExpected: string; 
-/**
- * "monthly" | "weekly" | "biweekly" | "annual" | "irregular"
- */
-cadence: string; 
-/**
- * Whether this looks like a subscription (small, regular negative charge)
+ * True only for genuine subscriptions (not repeat purchases).
  */
 isSubscription: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
@@ -1526,7 +1582,16 @@ export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; 
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string; color: string }
 export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }
-export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
+export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; is_transfer: boolean; 
+/**
+ * Id of the matching leg in another account when this transaction is one
+ * half of a paired cross-account transfer (see `categorize::pair_transfers`).
+ */
+transfer_peer_id: string | null; 
+/**
+ * Display name of the peer leg's account ("Transfer → Tangerine Savings").
+ */
+transfer_peer_account_name: string | null; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TransferSuggestionInfo = { id: string; confidence: string; detectedAt: string; fromTransactionId: string; fromAccountName: string; fromMerchant: string; fromAmountCents: number; fromPostedAt: string; toTransactionId: string; toAccountName: string; toMerchant: string; toAmountCents: number; toPostedAt: string }

@@ -416,7 +416,7 @@ fn latest_total_balance(conn: &mut Connection) -> i64 {
              (SELECT balance_cents
               FROM account_balances b
               WHERE b.account_id = a.id
-              ORDER BY b.as_of_date DESC
+              ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
               LIMIT 1),
              0
          )), 0)
@@ -568,7 +568,7 @@ fn transaction_context(conn: &mut Connection, month_start: &str) -> TransactionC
         .query_row(
             "SELECT
                 COUNT(*),
-                COALESCE(SUM(CASE WHEN category_id IS NULL THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
              FROM transactions",
@@ -769,7 +769,7 @@ fn wellness_context(
         .query_row(
             "SELECT COALESCE(SUM(COALESCE(
                  (SELECT balance_cents FROM account_balances b
-                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC LIMIT 1), 0
+                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
              )), 0) FROM accounts a WHERE a.archived_at IS NULL",
             [],
             |r| r.get(0),
@@ -865,7 +865,7 @@ fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
     let mut out = Vec::new();
     let mut stmt = match conn.prepare(
         "SELECT a.name,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
                 a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Savings'",
@@ -1016,6 +1016,34 @@ mod tests {
     }
 
     #[test]
+    fn uncategorized_count_excludes_transfers() {
+        // Regression: transfers are deliberately never categorized, so the
+        // Copilot context's uncategorized_count must exclude them — otherwise it
+        // reports "N uncategorized" that can never clear.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = seed_account(&mut conn, 0);
+        // One genuine uncategorized expense + one uncategorized transfer.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1',?1,'2026-01-05T00:00:00Z',-1200,'CORNER STORE','cleared',0,0,'2026-01-05T00:00:00Z')",
+            [&acct],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+             VALUES('t1',?1,'2026-01-06T00:00:00Z',-50000,'Internet Withdrawal to Savings','cleared',0,1,'2026-01-06T00:00:00Z')",
+            [&acct],
+        ).unwrap();
+
+        let ctx = build_context(&mut conn);
+        assert_eq!(ctx.transactions.total_count, 2);
+        assert_eq!(
+            ctx.transactions.uncategorized_count, 1,
+            "the transfer must not be counted as uncategorized"
+        );
+    }
+
+    #[test]
     fn test_wellness_includes_savings_apys_and_loan_history() {
         let (_dir, db) = fresh_db();
         let mut conn = db.get().unwrap();
@@ -1125,7 +1153,9 @@ mod tests {
 
         let ctx = build_context(&mut conn);
 
-        assert_eq!(ctx.cashflow.total_balance_cents, 1_000_000);
+        // Derive model: opening $10,000 + net activity (+$6,000) = $16,000, and
+        // the Copilot context now reads the derived balance (not the stale seed).
+        assert_eq!(ctx.cashflow.total_balance_cents, 1_600_000);
         assert_eq!(ctx.cashflow.avg_monthly_income_cents, 300_000);
         assert_eq!(ctx.cashflow.avg_monthly_expense_cents, 100_000);
         assert_eq!(ctx.cashflow.net_monthly_cents, 200_000);

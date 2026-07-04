@@ -6,9 +6,11 @@ import type { PlannedTransaction } from "../api/client";
 import { money } from "../utils/format";
 import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
 
-function recurringGroup(item: { isSubscription: boolean; lastAmountCents: number; categoryLabel: string }) {
-  if (item.lastAmountCents > 0) return "Income";
-  if (item.isSubscription) return "Subscriptions";
+function recurringGroup(item: { kind: string; lastAmountCents: number }) {
+  // Group by the deterministically-classified kind (Phase 6). Falls back to
+  // amount sign for older/edge cases.
+  if (item.kind === "income" || item.lastAmountCents > 0) return "Income";
+  if (item.kind === "subscription") return "Subscriptions";
   return "Bills";
 }
 
@@ -108,8 +110,8 @@ export default function Recurring() {
                     <td colSpan={4} style={{ paddingTop: 18, paddingBottom: 10, fontSize: 12, color: "var(--ink-faint)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{group.label}</td>
                   </tr>,
                   ...group.items.map((item) => (
-                    <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`}>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{item.merchantRaw}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label}</div></div></div></td>
+                    <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`} title={(item.reasons ?? []).join(" · ")}>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{item.merchantRaw}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence</div></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
                       <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
                       <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { currency: "USD", decimals: 2 })}</span></td>

@@ -67,6 +67,52 @@ pub async fn import_csv(
         let cat_db = (*state.db).clone();
         let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
     }
+    // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now that
+    // both sides may exist. Runs after the keyword pass, which supplies the
+    // flagged anchors. Best-effort — must not fail the import.
+    {
+        let pair_db = (*state.db).clone();
+        let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
+    }
+    // Recompute statistical anomaly flags from the (now larger) history.
+    // Best-effort — must not fail the import.
+    {
+        let anom_db = (*state.db).clone();
+        let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
+    }
+    // Refresh the derived balance + net-worth trend from the new activity so the
+    // Today/Accounts numbers and the net-worth chart populate immediately.
+    {
+        let nw_db = (*state.db).clone();
+        let _ = run(&nw_db, |conn| {
+            finsight_core::repos::net_worth::record_today(conn)?;
+            finsight_core::repos::net_worth::backfill_history_from_transactions(conn)
+        })
+        .await;
+    }
+
+    // Auto-categorize with the configured AI provider when the setting is on
+    // (default). The deterministic builtin pass above only covers well-known
+    // merchants; this enqueues the LLM categorizer for the long tail so import
+    // actually honours the "categorize after each import" promise. Best-effort:
+    // a missing provider or full queue must not fail the import (the user can
+    // still re-run the scan manually from Settings / Insights).
+    {
+        let cfg_db = (*state.db).clone();
+        let auto = run(&cfg_db, |conn| {
+            let v: Option<bool> =
+                finsight_core::settings::get(conn, crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY)?;
+            Ok(v.unwrap_or(true))
+        })
+        .await
+        .unwrap_or(true);
+        if auto {
+            let _ = state
+                .agent
+                .tx
+                .try_send(finsight_agent::agent::AgentJob::CategorizeAll);
+        }
+    }
 
     app.emit("import-complete", &summary).ok();
 
@@ -77,6 +123,25 @@ pub async fn import_csv(
     });
 
     Ok(summary)
+}
+
+/// The CSV import mapping (columns, date format, amount handling) last used for
+/// this account, so a recurring import from the same bank can pre-fill and the
+/// user never re-picks the same settings. `None` when the account has never been
+/// imported into.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_saved_csv_mapping(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> AppResult<Option<CsvImportMapping>> {
+    let db = (*state.db).clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.get().map_err(AppError::from)?;
+        finsight_providers::csv::mapping::load(&conn, &account_id).map_err(AppError::from)
+    })
+    .await
+    .map_err(|e| AppError::new("internal", format!("join: {e}")))?
 }
 
 #[tauri::command]

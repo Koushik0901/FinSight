@@ -90,7 +90,7 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
                 COALESCE((SELECT balance_cents FROM account_balances b \
                           WHERE b.account_id = a.id \
                           ORDER BY b.as_of_date DESC, \
-                            CASE b.source WHEN 'simplefin' THEN 0 WHEN 'seed' THEN 2 ELSE 1 END \
+                            CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END \
                           LIMIT 1), 0) AS balance, \
                 a.source, a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct, \
                 a.simplefin_account_id, a.last_synced_at, a.nickname, \
@@ -334,9 +334,19 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         return Ok(());
     }
 
+    // Respect an explicit balance the user set themselves — never overwrite it
+    // with a derived estimate. (Seed and our own 'derived' snapshots don't count.)
+    let user_set_balance: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM account_balances \
+         WHERE account_id = ?1 AND source NOT IN ('seed', 'derived'))",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    if user_set_balance {
+        return Ok(());
+    }
+
     // The earliest balance snapshot is the "opening" baseline for this account.
-    // We then add only transactions that occurred *after* that snapshot date so
-    // we don't double-count activity already reflected in the baseline.
     let (opening_balance, opening_date, opening_source): (i64, String, Option<String>) = conn
         .query_row(
             "SELECT COALESCE(balance_cents, 0), as_of_date, source FROM account_balances \
@@ -346,32 +356,39 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         )
         .unwrap_or((0, "1970-01-01".to_string(), None));
 
-    // If the only baseline is the untouched account-creation seed *and* there are
-    // transactions dated on or before it, those historical transactions are not
-    // reflected in the baseline and we cannot compute a trustworthy current
-    // balance from the data alone. Writing anything here would fabricate a
-    // misleading figure (typically $0 for a CSV import whose seed is dated at
-    // account-creation time, after all its historical rows). Leave the balance
-    // genuinely unknown so the UI can prompt the user to set it.
-    let only_seed_baseline = opening_source.as_deref() == Some("seed");
-    if only_seed_baseline {
-        let unaccounted: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transactions \
-             WHERE account_id = ?1 AND pending = 0 AND date(posted_at) <= ?2",
-            params![account_id, opening_date],
-            |r| r.get(0),
-        )?;
-        if unaccounted > 0 {
-            return Ok(());
-        }
-    }
-
-    let txn_sum: i64 = conn.query_row(
-        "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
-         WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
-        params![account_id, opening_date],
+    // With no activity, the seed value is itself the balance — leave it alone.
+    let txn_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM transactions WHERE account_id = ?1 AND pending = 0",
+        params![account_id],
         |r| r.get(0),
     )?;
+    if txn_count == 0 {
+        return Ok(());
+    }
+
+    // Derive the current balance (YNAB/Actual model): the entered opening balance
+    // is the anchor *before* the account's history. When the only baseline is the
+    // account-creation seed (dated at creation, typically *after* an imported
+    // back-history), treat the opening as pre-history and fold in ALL activity.
+    // When there's a real prior baseline, only add activity dated after it so we
+    // don't double-count. Written as a distinct 'derived' snapshot so it reads as
+    // known but a later user-set balance still wins.
+    let only_seed_baseline = opening_source.as_deref() == Some("seed");
+    let txn_sum: i64 = if only_seed_baseline {
+        conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
+             WHERE account_id = ?1 AND pending = 0",
+            params![account_id],
+            |r| r.get(0),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
+             WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
+            params![account_id, opening_date],
+            |r| r.get(0),
+        )?
+    };
 
     let today = Utc::now().date_naive().to_string();
     upsert_balance_snapshot(
@@ -380,7 +397,7 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         &today,
         opening_balance + txn_sum,
         None,
-        Some("manual"),
+        Some("derived"),
     )?;
     Ok(())
 }
@@ -592,7 +609,7 @@ pub fn list_balance_history(
     let mut stmt = conn.prepare(
         "SELECT as_of_date, balance_cents, source FROM account_balances \
          WHERE account_id = ?1 AND as_of_date >= date('now', ?2) \
-         ORDER BY as_of_date ASC, CASE source WHEN 'simplefin' THEN 0 ELSE 1 END",
+         ORDER BY as_of_date ASC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END",
     )?;
     let rows = stmt.query_map(params![account_id, cutoff], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
@@ -900,35 +917,63 @@ mod tests {
     }
 
     #[test]
-    fn recompute_leaves_balance_unknown_for_csv_style_historical_import() {
-        // Reproduces the "$0.00 after CSV import" defect: an account whose only
-        // baseline is the same-day auto-seed, with all transactions dated in the
-        // past. recompute must NOT fabricate a (sourced) balance here.
+    fn recompute_derives_balance_from_opening_plus_history_after_csv_import() {
+        // The user chose the YNAB/Actual model: the entered opening balance is
+        // the anchor before the imported history, so current = opening + all
+        // activity. An account whose only baseline is the same-day creation seed
+        // ($0), with all transactions in the past, derives a real balance.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acc = sample_account(&mut conn); // seed: $0 @ today, source NULL
+        let acc = sample_account(&mut conn); // seed: $0 @ today
         insert_txn(&conn, &acc.id, -8_432, "2023-06-01");
         insert_txn(&conn, &acc.id, 500_000, "2023-06-15");
 
         recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
 
-        // Only the 'seed' baseline remains — no fabricated computed snapshot.
-        let non_seed: i64 = conn
+        // A 'derived' snapshot is written: 0 + (-8_432 + 500_000).
+        let derived: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM account_balances WHERE account_id = ?1 AND source <> 'seed'",
+                "SELECT balance_cents FROM account_balances WHERE account_id = ?1 AND source = 'derived'",
                 params![acc.id],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(non_seed, 0, "recompute must not fabricate a computed balance");
+        assert_eq!(derived, 491_568);
 
-        // ...and the summary reports the balance as not known.
+        // ...and the summary reports the derived balance as known.
         let summary = list_summaries(&mut conn)
             .unwrap()
             .into_iter()
             .find(|a| a.id == acc.id)
             .unwrap();
-        assert!(!summary.balance_known, "CSV-imported account balance must be unknown");
+        assert!(summary.balance_known, "derived balance must read as known");
+        assert_eq!(summary.balance_cents, 491_568);
+    }
+
+    #[test]
+    fn user_set_balance_wins_over_derived_and_survives_reimport() {
+        // A balance the user set explicitly must never be clobbered by a later
+        // re-derivation on import.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, -8_432, "2023-06-01");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap(); // derived
+
+        let today = Utc::now().date_naive().to_string();
+        upsert_balance_snapshot(&mut conn, &acc.id, &today, 999_99, None, Some("manual")).unwrap();
+
+        // Simulate a later import re-running recompute — must not overwrite.
+        insert_txn(&conn, &acc.id, -1_000, "2024-01-01");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert!(summary.balance_known);
+        assert_eq!(summary.balance_cents, 999_99, "user-set balance must win");
     }
 
     #[test]

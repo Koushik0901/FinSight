@@ -161,6 +161,77 @@ fn amex_all_time_statement_imports_with_space_month_date() {
 }
 
 #[test]
+fn repeated_identical_rows_in_one_statement_all_import() {
+    // A single authoritative statement lists every posted charge once, so
+    // identical lines are distinct real transactions (e.g. several same-day
+    // pay-as-you-go API top-ups of the same amount). None of them may be
+    // auto-skipped or queued as a "duplicate" of an earlier row in the SAME file.
+    let (dir, db, acct) = fresh_db();
+    let csv_path = dir.path().join("repeats.csv");
+    std::fs::write(
+        &csv_path,
+        "date,merchant,amount\n\
+         2026-04-18,OPENROUTER INC,-5.33\n\
+         2026-04-18,OPENROUTER INC,-5.33\n\
+         2026-04-18,OPENROUTER INC,-5.33\n\
+         2026-04-18,OPENROUTER INC,-5.33\n\
+         2026-04-19,OPENROUTER INC,-5.35\n\
+         2026-04-20,OPENROUTER INC,-5.33\n",
+    )
+    .unwrap();
+    let mapping = CsvImportMapping {
+        skip_header_rows: 1,
+        columns: vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+        date_format: "%Y-%m-%d".to_string(),
+        amount_convention: AmountConvention::NegativeIsOutflow,
+        decimal_separator: '.',
+        delimiter: Some(','),
+    };
+    let s = CsvProvider::import(
+        &csv_path,
+        &acct,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(s.rows_imported, 6, "every real charge must land");
+    assert_eq!(s.rows_skipped_duplicates, 0, "no intra-file auto-skip");
+    assert_eq!(s.rows_queued_for_review, 0, "no intra-file review noise");
+    let count: i64 = db
+        .get()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = ?1",
+            [&acct],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 6);
+
+    // Cross-import dedup must still fire: re-importing the same file inserts
+    // nothing new — every row is caught as a duplicate of a prior-import row
+    // (either auto-skipped or, when several identical priors tie, queued for
+    // review), never blindly re-inserted.
+    let s2 = CsvProvider::import(
+        &csv_path,
+        &acct,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(s2.rows_imported, 0, "re-import must not blindly duplicate");
+    assert_eq!(
+        s2.rows_skipped_duplicates + s2.rows_queued_for_review,
+        6,
+        "re-import must reconcile every row against the prior import"
+    );
+}
+
+#[test]
 fn csv_import_skips_matching_simplefin_transaction() {
     let (dir, db, acct) = fresh_db();
     let posted_at = chrono::NaiveDate::from_ymd_opt(2026, 5, 19)

@@ -53,6 +53,57 @@ pub struct ReportData {
     pub top_merchants: Vec<MerchantTotal>,
 }
 
+/// Normalize a (year, zero-based-month-index) pair where the index may be
+/// negative or ≥12, returning (year, 1-based-month) with year carry.
+fn normalize_month(year: i32, mut m0: i32) -> (i32, u32) {
+    let mut y = year;
+    while m0 < 0 {
+        m0 += 12;
+        y -= 1;
+    }
+    while m0 >= 12 {
+        m0 -= 12;
+        y += 1;
+    }
+    (y, (m0 as u32) + 1)
+}
+
+/// Build the list of `YYYY-MM` months for a report scope, anchored on the data's
+/// most recent activity (`anchor_y`/`anchor_m`) rather than wall-clock now, so
+/// historical imports still produce populated charts. `oldest_ym` bounds the
+/// "all" scope. Returned oldest→newest.
+pub(crate) fn scope_month_list(
+    scope: &str,
+    anchor_y: i32,
+    anchor_m: i32,
+    oldest_ym: Option<&str>,
+) -> Vec<String> {
+    let ending = |count: i32| -> Vec<String> {
+        (0..count.max(1))
+            .map(|i| {
+                let (yr, mo) = normalize_month(anchor_y, (anchor_m - 1) - i);
+                format!("{yr}-{mo:02}")
+            })
+            .rev()
+            .collect()
+    };
+    match scope {
+        "month" => vec![format!("{anchor_y}-{anchor_m:02}")],
+        "quarter" => ending(3),
+        "all" => {
+            let count = oldest_ym
+                .and_then(|s| {
+                    let oy: i32 = s.get(0..4)?.parse().ok()?;
+                    let om: i32 = s.get(5..7)?.parse().ok()?;
+                    Some((anchor_y - oy) * 12 + (anchor_m - om) + 1)
+                })
+                .unwrap_or(1);
+            ending(count.clamp(1, 24))
+        }
+        _ => ending(12), // "year"
+    }
+}
+
 fn month_short_label(ym: &str) -> String {
     // ym = "YYYY-MM"
     let month_num: u32 = ym[5..7].parse().unwrap_or(1);
@@ -73,68 +124,37 @@ pub async fn get_report_data(
     run(&db, move |conn| {
         let now = chrono::Utc::now();
 
-        // Build the list of YYYY-MM strings for this scope
-        let months: Vec<String> = match scope.as_str() {
-            "month" => {
-                vec![now.format("%Y-%m").to_string()]
-            }
-            "quarter" => (0..3i32)
-                .map(|i| {
-                    let m0 = now.month0() as i32 - i;
-                    let (yr, mo) = if m0 < 0 {
-                        (now.year() - 1, (m0 + 12) as u32 + 1)
-                    } else {
-                        (now.year(), m0 as u32 + 1)
-                    };
-                    format!("{yr}-{mo:02}")
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect(),
-            "all" => {
-                let oldest: Option<String> = conn
-                    .query_row(
-                        "SELECT strftime('%Y-%m', MIN(posted_at)) FROM transactions",
-                        [],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(None);
-                if let Some(oldest_str) = oldest {
-                    let oldest_y: i32 = oldest_str[..4].parse().unwrap_or(now.year());
-                    let oldest_m: i32 = oldest_str[5..7].parse().unwrap_or(1);
-                    let cur_y = now.year();
-                    let cur_m = now.month() as i32;
-                    let total_months = (cur_y - oldest_y) * 12 + (cur_m - oldest_m) + 1;
-                    let n = total_months.clamp(1, 24) as usize;
-                    (0..n)
-                        .map(|i| {
-                            let months_back = i as i32;
-                            let m0 = cur_m - 1 - months_back;
-                            let (yr, mo) = if m0 < 0 {
-                                let back = (-m0 - 1) / 12 + 1;
-                                (cur_y - back, ((m0 + back * 12) as u32) + 1)
-                            } else {
-                                (cur_y, m0 as u32 + 1)
-                            };
-                            format!("{yr}-{mo:02}")
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect()
-                } else {
-                    vec![now.format("%Y-%m").to_string()]
-                }
-            }
-            _ => {
-                // "year" default: Jan through current month of this year
-                let cur_m = now.month() as usize;
-                (1..=cur_m)
-                    .map(|m| format!("{}-{:02}", now.year(), m))
-                    .collect()
-            }
-        };
+        // Anchor the report windows on the most recent MONTH WITH ACTIVITY, not
+        // wall-clock now. Imported statements are often historical, so anchoring
+        // on "now" makes the default month/quarter/year charts empty even though
+        // the data is there. Anchoring on the data makes every scope populate.
+        let anchor_ym: Option<String> = conn
+            .query_row(
+                "SELECT strftime('%Y-%m', MAX(posted_at)) FROM transactions",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(None);
+        let (anchor_y, anchor_m): (i32, i32) = anchor_ym
+            .as_deref()
+            .and_then(|s| {
+                let y = s.get(0..4)?.parse().ok()?;
+                let m = s.get(5..7)?.parse().ok()?;
+                Some((y, m))
+            })
+            .unwrap_or((now.year(), now.month() as i32));
+
+        let oldest: Option<String> = conn
+            .query_row(
+                "SELECT strftime('%Y-%m', MIN(posted_at)) FROM transactions",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(None);
+
+        // Build the list of YYYY-MM strings for this scope, anchored on the data.
+        let months: Vec<String> =
+            scope_month_list(scope.as_str(), anchor_y, anchor_m, oldest.as_deref());
 
         // Build monthly_last_year: same months offset back by 12
         let months_ly: Vec<String> = months
@@ -592,4 +612,46 @@ pub async fn list_monthly_reviews(
     })
     .await
     .map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_month, scope_month_list};
+
+    #[test]
+    fn normalize_month_carries_across_year_boundaries() {
+        assert_eq!(normalize_month(2026, 0), (2026, 1)); // Jan
+        assert_eq!(normalize_month(2026, -1), (2025, 12)); // back into prev year
+        assert_eq!(normalize_month(2026, -13), (2024, 12));
+        assert_eq!(normalize_month(2026, 12), (2027, 1)); // forward carry
+    }
+
+    #[test]
+    fn month_scope_anchors_on_data_not_now() {
+        // Data's most recent activity is 2026-07 even though "now" is irrelevant.
+        assert_eq!(scope_month_list("month", 2026, 7, Some("2023-12")), vec!["2026-07"]);
+    }
+
+    #[test]
+    fn year_scope_returns_12_months_ending_at_anchor() {
+        let months = scope_month_list("year", 2026, 7, Some("2023-12"));
+        assert_eq!(months.len(), 12);
+        assert_eq!(months.first().unwrap(), "2025-08"); // 12 months back
+        assert_eq!(months.last().unwrap(), "2026-07"); // anchor
+    }
+
+    #[test]
+    fn quarter_scope_returns_3_months_ending_at_anchor_with_year_wrap() {
+        // Anchor Feb 2026 → Dec 2025, Jan 2026, Feb 2026.
+        let months = scope_month_list("quarter", 2026, 2, None);
+        assert_eq!(months, vec!["2025-12", "2026-01", "2026-02"]);
+    }
+
+    #[test]
+    fn all_scope_spans_oldest_to_anchor_clamped_to_24() {
+        let months = scope_month_list("all", 2026, 7, Some("2023-12"));
+        // 2023-12 .. 2026-07 is 32 months, clamped to 24.
+        assert_eq!(months.len(), 24);
+        assert_eq!(months.last().unwrap(), "2026-07");
+    }
 }

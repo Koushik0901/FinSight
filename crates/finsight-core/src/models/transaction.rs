@@ -51,6 +51,12 @@ pub struct Transaction {
     pub created_at: DateTime<Utc>,
     pub is_reimbursable: bool,
     pub is_split: bool,
+    pub is_transfer: bool,
+    /// Id of the matching leg in another account when this transaction is one
+    /// half of a paired cross-account transfer (see `categorize::pair_transfers`).
+    pub transfer_peer_id: Option<String>,
+    /// Display name of the peer leg's account ("Transfer → Tangerine Savings").
+    pub transfer_peer_account_name: Option<String>,
     pub imported_id: Option<String>,
     pub source: Option<String>,
     pub raw_synced_data: Option<String>,

@@ -187,6 +187,8 @@ pub struct CategoryWithSpending {
     /// Number of transactions categorised here so far this calendar year
     pub year_txn_count: i64,
     pub budget_cents: i64,
+    /// Free-text categorizer/Copilot guidance the user attached.
+    pub guidance: Option<String>,
 }
 
 #[tauri::command]
@@ -230,13 +232,14 @@ pub async fn list_categories_with_spending(
                COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
                COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
                COUNT(CASE WHEN s.posted_at >= ?3 THEN 1 END),
-               COALESCE(MAX(b.amount_cents), 0)
+               COALESCE(MAX(b.amount_cents), 0),
+               c.guidance
              FROM categories c
              LEFT JOIN category_groups g ON g.id = c.group_id
              LEFT JOIN spending s ON s.category_id = c.id
              LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
              WHERE c.archived_at IS NULL
-             GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type
+             GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type, c.guidance
              ORDER BY 7 DESC, g.sort_order, c.sort_order",
         )?;
         let rows = stmt.query_map(
@@ -255,6 +258,7 @@ pub async fn list_categories_with_spending(
                     year_total_cents: r.get(9)?,
                     year_txn_count: r.get(10)?,
                     budget_cents: r.get(11)?,
+                    guidance: r.get(12)?,
                 })
             },
         )?;

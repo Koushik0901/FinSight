@@ -18,6 +18,9 @@ pub struct Category {
     pub color: String,
     pub icon: Option<String>,
     pub spending_type: Option<String>,
+    /// Free-text guidance the user attaches so the categorizer/Copilot know when
+    /// to use this category (merchant hints, exclusions, intent).
+    pub guidance: Option<String>,
     pub sort_order: i32,
     pub archived_at: Option<DateTime<Utc>>,
 }

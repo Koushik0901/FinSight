@@ -7,6 +7,7 @@ import Drawer from "./Drawer";
 import { useCreateAccount, useUpdateAccount, useArchiveAccount } from "../api/hooks/accounts";
 import type { Account } from "../api/bindings";
 import { userErrorMessage } from "../utils/runtime";
+import { accountTypeColor } from "../utils/accountColor";
 
 const schema = z.object({
   bank: z.string().min(1, "Required"),
@@ -30,10 +31,14 @@ interface Props {
   onClose: () => void;
   account?: Account;
   defaultOwner?: string;
-  onCreated?: () => void;
+  /** Called after a successful create with the new account's id (so callers can
+   *  auto-select it, e.g. the CSV import dialog). Not fired on edit. */
+  onCreated?: (accountId: string) => void;
+  /** Stack above an already-open dialog (inline creation from the import dialog). */
+  elevated?: boolean;
 }
 
-export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated }: Props) {
+export default function AccountDrawer({ open, onClose, account, defaultOwner = "joint", onCreated, elevated }: Props) {
   const isEdit = !!account;
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
@@ -95,13 +100,15 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           },
         });
       } else {
-        await createAccount.mutateAsync({
+        const created = await createAccount.mutateAsync({
           bank: values.bank,
           name: values.name,
           type: values.type,
           last4: values.last4 || null,
           currency: values.currency,
-          color: "#3B82F6",
+          // Account color = its type's canonical color, so every surface that
+          // shows the account inherits the type scheme automatically.
+          color: accountTypeColor(values.type),
           opening_balance_cents: Math.round(values.opening_dollars * 100),
           owner: values.owner,
           source: "manual",
@@ -124,9 +131,12 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           raw_json: null,
           import_pending: false,
         });
+        reset();
+        onCreated?.(created.id);
+        onClose();
+        return;
       }
       reset();
-      onCreated?.();
       onClose();
     } catch (err) {
       toast.error(userErrorMessage(err, "Could not save this account. Try again."));
@@ -146,7 +156,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
   }
 
   return (
-    <Drawer open={open} onClose={onClose} title={isEdit ? "Edit Account" : "Add account"}>
+    <Drawer open={open} onClose={onClose} elevated={elevated} title={isEdit ? "Edit Account" : "Add account"}>
       <form onSubmit={handleSubmit(onSubmit)} className="drawer-form">
         <label> Bank
           <input {...register("bank")} aria-invalid={!!errors.bank} />
@@ -163,7 +173,7 @@ export default function AccountDrawer({ open, onClose, account, defaultOwner = "
           <fieldset>
             <legend>Type</legend>
             {(["Checking","Savings","Credit","Investment","Cash","Loan","Other"] as const).map(t => (
-              <label key={t}><input type="radio" value={t} {...register("type")} /> {t}</label>
+              <label key={t}><input type="radio" value={t} {...register("type")} /> <span className="cswatch" style={{ background: accountTypeColor(t), width: 8, height: 8 }} /> {t}</label>
             ))}
           </fieldset>
         )}

@@ -9,6 +9,7 @@ import type { Account, Liability, ManualAsset } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
 import { getAccountDisplayName } from "../utils/accounts";
+import { accountTypeColor } from "../utils/accountColor";
 import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
 import LiabilityDrawer from "../components/LiabilityDrawer";
@@ -71,25 +72,24 @@ export default function Accounts() {
           <h1 className="h1" style={{ marginTop: 6 }}>Everything in one place.</h1>
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
-          <button
-            className="btn outline sm"
-            type="button"
-            onClick={async () => {
-              if (hasSimpleFin) {
+          <button className="btn primary sm" type="button" onClick={() => setAddOpen(true)}>+ Add account</button>
+          {hasSimpleFin && (
+            <button
+              className="btn outline sm"
+              type="button"
+              onClick={async () => {
                 try {
                   await syncAll.mutateAsync();
                   toast.success("Synced all SimpleFin accounts");
                 } catch (syncError) {
                   toast.error("Sync failed", { description: userErrorMessage(syncError, "Check your bank connection and try again.") });
                 }
-              } else {
-                setAddOpen(true);
-              }
-            }}
-          >
-            Connect bank
-          </button>
-          <button className="btn primary sm" type="button" onClick={() => setAssetAddOpen(true)}>Add manual asset</button>
+              }}
+            >
+              Sync banks
+            </button>
+          )}
+          <button className="btn outline sm" type="button" onClick={() => setAssetAddOpen(true)}>Add manual asset</button>
         </div>
       </header>
 
@@ -133,10 +133,10 @@ export default function Accounts() {
                     cursor: "pointer",
                   }}
                 >
-                  <span className="cswatch" style={{ background: !account.balance_known ? "var(--ink-faint)" : account.balance_cents >= 0 ? "var(--positive)" : "var(--negative)" }} />
+                  <span className="cswatch" style={{ background: accountTypeColor(account.type) }} />
                   <div>
                     <div>{getAccountDisplayName(account)}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>{account.bank} · {account.type}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
                   </div>
                   {account.balance_known ? (
                     <div className="figure money" style={{ fontSize: 16, textAlign: "right", color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>

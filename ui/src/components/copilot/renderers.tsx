@@ -17,6 +17,7 @@ import {
   useExecuteActionBundle,
 } from "../../api/hooks/copilot";
 import { parseFinanceArtifactEnvelope } from "./agUi/artifacts";
+import { colorForCategoryLabel } from "../../utils/categoryColor";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -289,13 +290,18 @@ function ChartBlock(block: Extract<CopilotResponseBlock, { kind: "barChart" | "l
   return (
     <div className="copilot-gen-chart">
       {block.title && <p className="copilot-gen-title">{block.title}</p>}
-      {block.data.map((point) => (
-        <div key={point.label} className="copilot-gen-bar-row">
-          <span>{point.label}</span>
-          <div><i style={{ inlineSize: `${Math.max(4, (point.value / max) * 100)}%` }} /></div>
-          <strong>{point.value.toLocaleString()}</strong>
-        </div>
-      ))}
+      {block.data.map((point) => {
+        // Bars labelled with a known category reuse its canonical color so
+        // Copilot charts match Reports/Budget/Categories; others keep accent.
+        const categoryColor = colorForCategoryLabel(point.label);
+        return (
+          <div key={point.label} className="copilot-gen-bar-row">
+            <span>{point.label}</span>
+            <div><i style={{ inlineSize: `${Math.max(4, (point.value / max) * 100)}%`, ...(categoryColor ? { background: categoryColor } : {}) }} /></div>
+            <strong>{point.value.toLocaleString()}</strong>
+          </div>
+        );
+      })}
     </div>
   );
 }

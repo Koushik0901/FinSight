@@ -540,7 +540,7 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
     let recurring_bills = recurring_bills(conn)?;
     let planned_transactions = planned_transactions(conn)?;
     let uncategorized_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1504,7 +1504,7 @@ pub fn run_purchase_affordability(
 pub fn get_data_quality_report(conn: &mut Connection) -> rusqlite::Result<DataQualityReport> {
     let snapshot = build_snapshot(conn)?;
     let uncategorized_expense_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
         [],
         |r| r.get(0),
     )?;
@@ -1775,7 +1775,7 @@ fn expected_monthly_income_cents(snapshot: &FinancialSnapshot) -> i64 {
 fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, a.name, a.type,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
                 a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL

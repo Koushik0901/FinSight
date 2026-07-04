@@ -206,6 +206,58 @@ mod tests {
     }
 
     #[test]
+    fn delete_then_reseed_resets_and_recomputes_derived_surfaces() {
+        // Validation-cycle invariant (Phase 6): after Delete All Data, every
+        // derived surface is empty; after re-import, they all recompute.
+        use crate::{anomaly, recurring};
+
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let seed = |conn: &mut Connection| {
+            conn.execute("INSERT OR IGNORE INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('a','me','B','Credit','Card','USD','#fff',datetime('now'))", []).unwrap();
+            // A subscription (Spotify, 6 stable monthly charges).
+            for i in 0..6 {
+                let d = format!("2025-{:02}-05", i + 1);
+                conn.execute(
+                    "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                     VALUES(hex(randomblob(16)),'a',?1,-1099,'SPOTIFY  STOCKHOLM','cleared',datetime('now'))",
+                    params![format!("{d}T00:00:00Z")],
+                ).unwrap();
+            }
+            // A merchant with history + one big outlier (anomaly).
+            for i in 0..8 {
+                let d = format!("2025-{:02}-10", i + 1);
+                conn.execute(
+                    "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                     VALUES(hex(randomblob(16)),'a',?1,-500,'CORNER STORE  BURNABY','cleared',datetime('now'))",
+                    params![format!("{d}T00:00:00Z")],
+                ).unwrap();
+            }
+            conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a','2025-09-10T00:00:00Z',-25000,'CORNER STORE  BURNABY','cleared',datetime('now'))", []).unwrap();
+        };
+
+        seed(&mut conn);
+        assert!(recurring::detect_recurring(&conn, 400).unwrap().iter().any(|i| i.merchant_key.contains("spotify")));
+        assert!(anomaly::recompute_anomalies(&mut conn).unwrap() >= 1);
+        assert!(super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+
+        // Delete All Data → every derived surface resets.
+        delete_all_data(&mut conn).unwrap();
+        assert!(recurring::detect_recurring(&conn, 400).unwrap().is_empty());
+        assert_eq!(anomaly::recompute_anomalies(&mut conn).unwrap(), 0);
+        assert!(!super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+        let txns: i64 = conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0)).unwrap();
+        assert_eq!(txns, 0);
+
+        // Re-import → everything recomputes.
+        seed(&mut conn);
+        assert!(recurring::detect_recurring(&conn, 400).unwrap().iter().any(|i| i.merchant_key.contains("spotify")));
+        assert!(anomaly::recompute_anomalies(&mut conn).unwrap() >= 1);
+        assert!(super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+    }
+
+    #[test]
     fn is_safe_to_run_on_an_already_empty_database() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();

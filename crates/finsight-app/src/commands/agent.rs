@@ -204,6 +204,17 @@ pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppRes
     .map_err(AppError::from)
 }
 
+/// Recompute statistical anomaly flags deterministically from transaction
+/// patterns. Returns the number of transactions now flagged.
+#[tauri::command]
+#[specta::specta]
+pub async fn recompute_anomalies(state: tauri::State<'_, AppState>) -> AppResult<u32> {
+    let db = (*state.db).clone();
+    run(&db, |conn| finsight_core::anomaly::recompute_anomalies(conn))
+        .await
+        .map_err(AppError::from)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<()> {
@@ -342,8 +353,11 @@ pub async fn get_agent_status(state: tauri::State<'_, AppState>) -> AppResult<Ag
         let this_month = chrono::Utc::now().format("%Y-%m").to_string();
         let this_month_start = chrono::Utc::now().format("%Y-%m-01").to_string();
 
+        // Exclude transfers: the categorizer never assigns them a category, so
+        // counting them here would leave the status perpetually "N uncategorized"
+        // that the user can never clear (they are already identified as transfers).
         let uncategorized_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL",
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND is_transfer = 0",
             [],
             |r| r.get(0),
         )?;
