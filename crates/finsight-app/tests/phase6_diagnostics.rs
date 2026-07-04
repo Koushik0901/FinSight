@@ -201,8 +201,17 @@ fn diagnose_transfer_pairing_and_palette() {
     );
     dump_rows(
         &conn,
-        "CATEGORY COLORS (id, color)",
-        "SELECT id, color FROM categories WHERE archived_at IS NULL ORDER BY id",
+        "CATEGORY COLORS + SPENDING TYPE (id, color, spending_type)",
+        "SELECT id, color, COALESCE(spending_type,'<untagged>') FROM categories WHERE archived_at IS NULL ORDER BY id",
+    );
+    dump_rows(
+        &conn,
+        "HOUSEHOLD (member, accounts owned)",
+        "SELECT m.name, COALESCE(GROUP_CONCAT(a.name, ', '),'—') \
+         FROM household_members m \
+         LEFT JOIN account_owners ao ON ao.member_id = m.id \
+         LEFT JOIN accounts a ON a.id = ao.account_id \
+         GROUP BY m.id ORDER BY m.created_at",
     );
     // For every unpaired CC payment: does ANY opposite-amount row exist within
     // ±4 days in another account (i.e. did pairing miss a real counterpart)?
