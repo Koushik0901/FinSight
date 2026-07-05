@@ -8,7 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
+import { useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "sonner";
+import { markRouteStart, markRouteContent } from "./utils/perf";
 import { Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -133,6 +135,21 @@ function PageLoader() {
   );
 }
 
+/** Records nav-intent→content-painted per route when perf instrumentation is on. */
+function RouteTimer() {
+  const { pathname } = useLocation();
+  const isFetching = useIsFetching();
+  useEffect(() => {
+    markRouteStart(pathname);
+  }, [pathname]);
+  useEffect(() => {
+    // The route's queries have settled (or it painted instantly from a warm
+    // prefetch cache, isFetching already 0) → content is ready.
+    if (isFetching === 0) markRouteContent(pathname);
+  }, [isFetching, pathname]);
+  return null;
+}
+
 export function App() {
   const location = useLocation();
   const { data: onboarding } = useOnboardingState();
@@ -160,6 +177,7 @@ export function App() {
 
   return (
     <ThemeProvider>
+      <RouteTimer />
       <a href="#main" className="skip-link">
         Skip to main content
       </a>

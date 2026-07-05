@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { instrumentQueryCache } from "./utils/perf";
 import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
@@ -22,6 +23,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Opt-in perf instrumentation (localStorage.finsightPerf="1" or ?perf=1) for
+// real-desktop before/after measurement. Zero overhead when off.
+instrumentQueryCache(queryClient.getQueryCache());
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
