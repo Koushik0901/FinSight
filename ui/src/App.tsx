@@ -3,6 +3,7 @@ import {
   Suspense,
   lazy,
   useEffect,
+  useRef,
   useState,
   type ErrorInfo,
   type ReactNode,
@@ -135,18 +136,54 @@ function PageLoader() {
   );
 }
 
-/** Records nav-intent→content-painted per route when perf instrumentation is on. */
-function RouteTimer() {
+/**
+ * Records nav-intent→content-painted per route when perf instrumentation is
+ * on.
+ *
+ * CORRECTNESS NOTE (found via a real driven measurement pass, not assumed):
+ * on a route change, React commits the pathname-change effect and re-renders
+ * `useIsFetching()` in the SAME pass, but the destination route's OWN queries
+ * haven't mounted/started fetching yet — so the very first read of
+ * `isFetching` after navigating is the previous route's already-settled value
+ * (0), not a signal that the new route is done. Closing on that first `0`
+ * made every route report ~0ms regardless of real cost. The fix: only close
+ * on a transition to `0` that was preceded by an observed `>0` for THIS
+ * route, with a short grace fallback for routes that are genuinely served
+ * entirely from a warm (prefetched) cache and never fetch at all.
+ */
+export function RouteTimer() {
   const { pathname } = useLocation();
   const isFetching = useIsFetching();
+  const sawFetchingRef = useRef(false);
+  const armedForRef = useRef<string | null>(null);
+
   useEffect(() => {
     markRouteStart(pathname);
+    sawFetchingRef.current = false;
+    armedForRef.current = pathname;
+    // Grace fallback: if this route never triggers a real fetch (fully
+    // served from cache, e.g. prefetch-warmed), close it after one short
+    // window rather than leaving it unmeasured or misreading a stale value.
+    const t = setTimeout(() => {
+      if (armedForRef.current === pathname && !sawFetchingRef.current) {
+        markRouteContent(pathname);
+        armedForRef.current = null;
+      }
+    }, 32);
+    return () => clearTimeout(t);
   }, [pathname]);
+
   useEffect(() => {
-    // The route's queries have settled (or it painted instantly from a warm
-    // prefetch cache, isFetching already 0) → content is ready.
-    if (isFetching === 0) markRouteContent(pathname);
+    if (armedForRef.current !== pathname) return;
+    if (isFetching > 0) {
+      sawFetchingRef.current = true;
+    } else if (sawFetchingRef.current) {
+      // A real transition: this route fetched, and has now settled.
+      markRouteContent(pathname);
+      armedForRef.current = null;
+    }
   }, [isFetching, pathname]);
+
   return null;
 }
 
