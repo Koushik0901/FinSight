@@ -95,6 +95,8 @@ export function useImportCsv() {
       // The import just persisted this account's mapping — drop the cached
       // lookup so a repeat import reflects the freshly-saved settings.
       qc.invalidateQueries({ queryKey: ["csv-saved-mapping"] });
+      // The ledger changed — any cached speculative preview is now stale.
+      qc.invalidateQueries({ queryKey: ["csv-prepare"] });
     },
   });
 }

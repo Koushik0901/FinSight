@@ -52,6 +52,17 @@ vi.mock("../api/client", () => ({
     }),
     getSavedCsvMapping: vi.fn().mockResolvedValue({ status: "ok", data: null }),
     createAccount: vi.fn().mockResolvedValue({ status: "ok", data: { id: "new1" } }),
+    prepareCsvImport: vi.fn().mockResolvedValue({
+      status: "ok",
+      data: {
+        signature: "sig",
+        rowsTotal: 0,
+        rowsImported: 0,
+        rowsSkippedDuplicates: 0,
+        rowsQueuedForReview: 0,
+        errors: [],
+      },
+    }),
   },
 }));
 
@@ -256,5 +267,47 @@ describe("ImportMappingDialog", () => {
     fireEvent.click(btn);
 
     await waitFor(() => expect(screen.getByTestId("review-screen")).toBeInTheDocument());
+  });
+
+  it("shows the live prepared outcome in the footer once mapping is complete", async () => {
+    const { commands } = await import("../api/client");
+    (commands.prepareCsvImport as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "ok",
+      data: {
+        signature: "sig",
+        rowsTotal: 3,
+        rowsImported: 2,
+        rowsSkippedDuplicates: 1,
+        rowsQueuedForReview: 0,
+        errors: [],
+      },
+    });
+
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "a1" },
+    });
+
+    const headers = screen.getAllByRole("columnheader");
+    const [dd0, dd1, dd2] = headers.map((h) => h.querySelector("select")!);
+    fireEvent.change(dd0!, { target: { value: "Date" } });
+    fireEvent.change(dd1!, { target: { value: "Merchant" } });
+    fireEvent.change(dd2!, { target: { value: "Amount" } });
+
+    const btn = screen.getByRole("button", { name: /^import$/i });
+    await waitFor(() => expect(btn).not.toBeDisabled());
+
+    await waitFor(
+      () => expect(screen.getByText(/2 new/)).toBeInTheDocument(),
+      { timeout: 2000 },
+    );
+    expect(screen.getByText(/1 duplicate/)).toBeInTheDocument();
+    expect(commands.prepareCsvImport).toHaveBeenCalledWith(
+      "/tmp/x.csv",
+      "a1",
+      expect.objectContaining({ columns: expect.arrayContaining(["Date", "Merchant", "Amount"]) }),
+    );
   });
 });

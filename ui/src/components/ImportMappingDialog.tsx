@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import FocusLock from "react-focus-lock";
 import { toast } from "sonner";
-import { usePreviewCsvColumns, useSavedCsvMapping } from "../api/hooks/csv";
+import { usePreviewCsvColumns, useSavedCsvMapping, usePrepareImport } from "../api/hooks/csv";
 import { useImportCsv } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { CsvImportMapping, ImportSummary, ColumnRole } from "../api/client";
@@ -40,6 +41,7 @@ interface Props {
 
 export default function ImportMappingDialog({ path, onClose, onImported, defaultAccountId }: Props) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [skipHeaderRows, setSkipHeaderRows] = useState(1);
   const { data: preview, isPending: previewLoading } = usePreviewCsvColumns(path, skipHeaderRows);
   const { data: accounts = [] } = useAccounts();
@@ -170,8 +172,29 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
     finalDateFormat.length > 0 &&
     requiredMet;
 
+  const previewMapping = useMemo<CsvImportMapping | null>(() => {
+    if (!canSubmit) return null;
+    return {
+      skip_header_rows: skipHeaderRows,
+      columns: columns as CsvImportMapping["columns"],
+      date_format: finalDateFormat,
+      amount_convention: amountConvention,
+      decimal_separator: ".",
+      delimiter: null,
+    };
+  }, [canSubmit, skipHeaderRows, columns, finalDateFormat, amountConvention]);
+
+  // Debounce so rapid column/format edits don't spam the backend with a
+  // speculative parse+reconcile on every keystroke.
+  const [debouncedMapping, setDebouncedMapping] = useState<CsvImportMapping | null>(null);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedMapping(previewMapping), 300);
+    return () => clearTimeout(t);
+  }, [previewMapping]);
+  const prep = usePrepareImport(path, accountId || null, debouncedMapping);
+
   async function submit() {
-    const mapping: CsvImportMapping = {
+    const mapping: CsvImportMapping = previewMapping ?? {
       skip_header_rows: skipHeaderRows,
       columns: columns as CsvImportMapping["columns"],
       date_format: finalDateFormat,
@@ -220,6 +243,13 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   );
   const accountLabel = selectedAccount ? `${selectedAccount.bank} · ${selectedAccount.name}` : null;
 
+  // Closing the dialog should drop any cached speculative preview — it's
+  // advisory UI scoped to this session and shouldn't linger stale in cache.
+  const handleClose = () => {
+    qc.invalidateQueries({ queryKey: ["csv-prepare"] });
+    onClose();
+  };
+
   const requiredItems = [
     { key: "date", label: "Date", ready: mappedCount.date },
     { key: "merchant", label: "Merchant", ready: mappedCount.merchant },
@@ -234,13 +264,13 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
 
   return (
     <FocusLock returnFocus>
-      <div className="dialog-backdrop" onClick={onClose} aria-hidden="true" />
+      <div className="dialog-backdrop" onClick={handleClose} aria-hidden="true" />
       <div
         className="dialog-overlay import-mapping-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="map-title"
-        onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+        onKeyDown={(e) => { if (e.key === "Escape") handleClose(); }}
       >
         <header>
           <div className="import-header">
@@ -510,14 +540,18 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
               </span>
             ) : (
               <span className="import-summary">
-                {requiredMet
-                  ? "Ready to import"
-                  : `Map ${requiredItems.filter((i) => !i.ready).length} more required field${requiredItems.filter((i) => !i.ready).length === 1 ? "" : "s"}`}
+                {!requiredMet
+                  ? `Map ${requiredItems.filter((i) => !i.ready).length} more required field${requiredItems.filter((i) => !i.ready).length === 1 ? "" : "s"}`
+                  : prep.isFetching && !prep.data
+                    ? "Checking…"
+                    : prep.data
+                      ? `${prep.data.rowsImported} new · ${prep.data.rowsSkippedDuplicates} duplicates · ${prep.data.rowsQueuedForReview} to review${prep.data.errors.length ? ` · ${prep.data.errors.length} errors` : ""}`
+                      : "Ready to import"}
               </span>
             )}
           </div>
           <div className="import-footer-actions">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="ghost" onClick={handleClose}>Cancel</Button>
             <Button
               variant="primary"
               onClick={submit}
