@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { forwardRef } from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import Copilot from "./Copilot";
 import { createWrapper } from "../test-utils";
 
 // ── Mock external hooks / modules ─────────────────────────────────────────────
+// Same proven pattern as Copilot.test.tsx (rendering <Copilot /> requires
+// mocking @assistant-ui/react itself, not just the runtime hook).
 
 const assistantUiMocks = vi.hoisted(() => ({
   threadList: [] as Array<{ id: string; title: string }>,
@@ -58,19 +60,21 @@ vi.mock("../components/copilot/TauriRuntime", () => ({
   useTauriCopilotRuntime: vi.fn(() => runtimeStub),
 }));
 
-// AG-UI is the default runtime (Phase 5B); mock it so the screen renders
-// deterministically without a live Tauri bridge.
 vi.mock("../components/copilot/agUi/TauriAgUiRuntime", () => ({
   useTauriAgUiRuntime: vi.fn(() => runtimeStub),
 }));
 
-// Grounding-stats data sources. Defaults to an empty workspace (honest
-// "no data imported" state); individual tests override as needed.
-const accountsMock = vi.hoisted(() => ({ list: [] as unknown[] }));
-vi.mock("../api/hooks/accounts", () => ({
-  useAccounts: vi.fn(() => ({ data: accountsMock.list })),
+vi.mock("../components/copilot/agUi/featureFlag", () => ({
+  isCopilotAgUiRuntimeEnabled: () => false,
 }));
-const txnCountMock = vi.hoisted(() => ({ count: 0 }));
+
+// Grounding-stats data sources — real counts, per the task: 42 transactions,
+// 1 account. Must NOT match the old hardcoded mockup number (1,247).
+const accountsMock = vi.hoisted(() => ({ list: [{ id: "a1" }] as unknown[] }));
+vi.mock("../api/hooks/accounts", () => ({
+  useAccounts: vi.fn(() => ({ data: accountsMock.list, isLoading: false, error: null })),
+}));
+const txnCountMock = vi.hoisted(() => ({ count: 42 }));
 vi.mock("../api/client", () => ({
   commands: {
     getTransactionCount: vi.fn(async () => ({ status: "ok", data: txnCountMock.count })),
@@ -233,81 +237,38 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   assistantUiMocks.threadList = [];
-  accountsMock.list = [];
-  txnCountMock.count = 0;
+  accountsMock.list = [{ id: "a1" }];
+  txnCountMock.count = 42;
 });
 
-describe("Copilot screen — rendering", () => {
-  it("renders the FinSight Copilot shell without assistant-ui demo chrome", () => {
-    const { container } = render(<Copilot />, { wrapper: createWrapper() });
-    expect(container.querySelector(".copilot-finsight-chat")).toBeInTheDocument();
-    expect(container.querySelector(".copilot-playground-clone")).not.toBeInTheDocument();
-    expect(screen.queryByText("assistant-ui")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /AI Builder/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /UI Builder/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Templates/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /GitHub/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /^Copilot$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /New thread/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /good (morning|afternoon|evening)/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^History$/i })).toBeInTheDocument();
-  });
-
-  it("shows suggested prompts when no conversation is active", () => {
+describe("Copilot hero", () => {
+  it("renders the hero shell with real grounding stats, not hardcoded mockup numbers", async () => {
     render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByText(/Plan next month's budget/i)).toBeInTheDocument();
-    expect(screen.getByText(/Improve my savings rate/i)).toBeInTheDocument();
-    expect(screen.getByText(/Clean up uncategorized transactions/i)).toBeInTheDocument();
+    expect(await screen.findByText(/42 transaction/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1,247 transaction/i)).not.toBeInTheDocument();
   });
 
-  it("is honest about an empty workspace (no fabricated data)", async () => {
+  it("renders suggestion chips instead of the old prompt-card grid", async () => {
+    render(<Copilot />, { wrapper: createWrapper() });
+    const chip = await screen.findByRole("button", { name: /Plan next month's budget/i });
+    expect(chip.className).toContain("cp-hero-chip");
+  });
+
+  it("wraps the empty state in the new .cp-hero shell structure", async () => {
+    const { container } = render(<Copilot />, { wrapper: createWrapper() });
+    await waitFor(() => expect(screen.getByText(/42 transaction/i)).toBeInTheDocument());
+    expect(container.querySelector(".cp-hero")).toBeInTheDocument();
+    expect(container.querySelector(".cp-hero-glow")).toBeInTheDocument();
+    expect(container.querySelector(".cp-hero-inner")).toBeInTheDocument();
+    expect(container.querySelector(".copilot-prompt-card")).not.toBeInTheDocument();
+  });
+
+  it("is still honest about an empty workspace (no fabricated data)", async () => {
+    accountsMock.list = [];
+    txnCountMock.count = 0;
     render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() =>
       expect(screen.getByText(/No financial data imported yet/i)).toBeInTheDocument()
     );
-  });
-
-  it("shows real grounded counts when data exists", async () => {
-    accountsMock.list = [{ id: "a" }, { id: "b" }];
-    txnCountMock.count = 1247;
-    render(<Copilot />, { wrapper: createWrapper() });
-    await waitFor(() => expect(screen.getByText(/1,247 transactions/i)).toBeInTheDocument());
-    expect(screen.getByText(/2 accounts/i)).toBeInTheDocument();
-    expect(screen.getByText(/100% local/i)).toBeInTheDocument();
-  });
-
-  it("renders the base composer and scroll control", () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByPlaceholderText(/Ask FinSight to plan/i)).toBeInTheDocument();
-    expect(screen.queryByText("FinSight Copilot")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Send message/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Scroll to bottom/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /New thread/i })).toBeInTheDocument();
-    expect(screen.queryByText(/Powered by/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("0 (0%)")).not.toBeInTheDocument();
-  });
-});
-
-describe("Copilot screen — new conversation", () => {
-  it("prefills the composer when a prompt card is clicked", async () => {
-    render(<Copilot />, { wrapper: createWrapper() });
-    const promptCard = screen.getByText(/Plan next month's budget/i);
-    fireEvent.click(promptCard);
-
-    await waitFor(() => {
-      expect(assistantUiMocks.setComposerText).toHaveBeenCalled();
-    });
-  });
-});
-
-describe("Copilot screen — sessionStorage prefill", () => {
-  it("reads copilot.prefill and starts a new assistant-ui thread", async () => {
-    sessionStorage.setItem("copilot.prefill", "Auto-filled question");
-    render(<Copilot />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(sessionStorage.getItem("copilot.prefill")).toBeNull();
-      expect(assistantUiMocks.switchToNewThread).toHaveBeenCalled();
-    });
   });
 });

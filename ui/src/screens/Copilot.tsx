@@ -560,30 +560,42 @@ function EmptyThreadState({
   onPrompt: (text: string) => void;
   children: ReactNode;
 }) {
+  const h = new Date().getHours();
+  const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+
   return (
-    <div className="copilot-empty">
-      <p className="copilot-empty-kicker">Private financial assistant</p>
-      <h2 className="copilot-empty-title">What should we work through?</h2>
-      <p className="copilot-empty-sub">
-        Ask for a plan, explanation, cleanup pass, or tradeoff analysis. FinSight can use
-        your local accounts, budgets, goals, and transactions when a tool is needed.
-      </p>
-      <CopilotGroundingStats />
-      {children}
-      <div className="copilot-prompts-grid">
-        {SUGGESTED_PROMPTS.map((p) => (
-          <button
-            key={p.label}
-            className="copilot-prompt-card"
-            onClick={() => onPrompt(p.label)}
-          >
-            <span className="copilot-prompt-mark" aria-hidden="true" />
-            <span className="copilot-prompt-copy">
-              <strong>{p.label}</strong>
-              <small>{p.detail}</small>
-            </span>
-          </button>
-        ))}
+    <div className="cp-hero">
+      <div className="cp-hero-glow" aria-hidden="true">
+        <div className="cp-glow-orb cp-glow-1" />
+        <div className="cp-glow-orb cp-glow-2" />
+      </div>
+      <div className="cp-hero-inner">
+        <div className="cp-hero-avatar">
+          <span className="cp-avatar-ring">
+            <span className="cp-avatar-core" />
+          </span>
+        </div>
+        <h1 className="cp-hero-h1">{greeting}.</h1>
+        <p className="cp-hero-sub">
+          Ask for a plan, explanation, cleanup pass, or tradeoff analysis. FinSight can use
+          your local accounts, budgets, goals, and transactions when a tool is needed.
+        </p>
+        {children}
+        <div className="cp-hero-chips">
+          {SUGGESTED_PROMPTS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              className="cp-hero-chip"
+              onClick={() => onPrompt(p.label)}
+              title={p.detail}
+            >
+              <I.Sparkle width={12} height={12} className="cp-chip-ico" />
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </div>
+        <CopilotGroundingStats />
       </div>
     </div>
   );
