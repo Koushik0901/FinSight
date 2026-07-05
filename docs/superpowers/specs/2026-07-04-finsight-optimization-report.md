@@ -122,7 +122,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 6. Tests / green bar
 
 - New tests: `useDebouncedValue` (3), categorizer reset-cancellation (1), anomaly scoped-vs-full equivalence (1).
-- `cargo test --workspace`: **337 passed, 0 failed, 9 ignored** (was 335; +1 categorizer reset-cancellation, +1 anomaly equivalence). `finsight-app` suite (incl. import command) green after the cascade guard + scoped anomaly wiring.
+- `cargo test --workspace`: **341 passed, 0 failed, 9 ignored** (was 335; +3 `ResetBarrier` ordering, +1 end-to-end reset-drain, +1 categorizer reset-during-LLM, +1 anomaly equivalence — the earlier interim reset test was replaced, not added). `finsight-app` suite (incl. import command) green after the drain-barrier wiring.
 - `ui` vitest: **298 passed** (was 295; +3 debounce).
 - `tsc --noEmit`: **0 errors**.
 - No Tauri command signatures changed → **no bindings regeneration required** (only internal fn signatures changed).
@@ -132,6 +132,6 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 7. Remaining risks / deferred work
 
 - **Post-commit cascade scoping (Task 7 / D4) — done for anomalies, retired for net-worth.** `recompute_anomalies` is now account-scoped on import (§3.5), equivalence-tested and benchmark-neutral on single-account with multi-account upside. `net_worth::backfill_history_from_transactions` was investigated and found **already index-optimal** — the single-query rewrite regressed it (§4), so it is *not* a fruitful scoping target and is intentionally left as-is. This closes the D4 scoping item.
-- **Reset race residual:** a categorization chunk (or a single cascade step / the import write itself) already *past* its epoch check when the wipe lands can complete that one unit of work. The window is one batch/step; FK + `UPDATE`-0-rows behavior makes it self-healing. A fully preemptive cancel would require aborting the in-flight LLM future / `spawn_blocking` task, which is out of scope.
+- **Reset boundary — now airtight (was a residual).** The earlier best-effort epoch had a one-batch TOCTOU window; the `ResetBarrier` drain (§3.3) closes it for both straddling writers (import pipeline, categorizer): the wipe drains outstanding leases and holds the exclusive gate across itself, so no operation started against the previous epoch can commit after Delete-All returns success. Remaining boundary note: single-statement synchronous user mutations (manual add/edit/delete) are not leased — atomic and not concurrently initiable with Delete-All by one user — but the barrier API is available to wrap them if that ever changes.
 - **No-op-write claim verified:** skipping unchanged `is_transfer` writes (§3.1) is exactly a no-op because a `grep` of all migrations confirms **no triggers exist on `transactions`** (or any table) — so a value-unchanged UPDATE had no observable side effect to lose.
 - **Search `LIKE '%…%'`** remains a scan (un-indexable prefix wildcard); fine at current dataset sizes with pagination + debounce. FTS would be the move only if datasets grow large.
