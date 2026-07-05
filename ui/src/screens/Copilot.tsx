@@ -38,6 +38,7 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
+import "../styles/copilot-shell.css";
 import * as I from "../components/Icons";
 import Badge from "../components/Badge";
 import Button from "../components/Button";

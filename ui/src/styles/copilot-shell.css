@@ -1,0 +1,100 @@
+/* ui/src/styles/copilot-shell.css
+   New visual layer for the redesigned Copilot message shell, ported from
+   the Claude Design "Plutus" mockup (project fdbc4798-c6d0-41df-9499-e6ca4294d142,
+   copilot.css). Namespaced `.cp-*` to avoid colliding with the existing
+   ~400 `.copilot-*` rules in app.css, which still cover parts of the
+   screen this redesign doesn't touch (history popover, screen chrome). */
+
+/* ── Hero / empty state ─────────────────────────────────────────────── */
+.cp-hero { position: relative; width: 100%; overflow: hidden; min-height: calc(100vh - 200px); display: grid; place-items: center; }
+.cp-hero-glow { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cp-glow-orb { position: absolute; border-radius: 999px; filter: blur(80px); opacity: 0.55; }
+.cp-glow-1 { width: 640px; height: 480px; background: radial-gradient(ellipse, oklch(80% 0.22 135 / 0.18) 0%, transparent 70%); top: -120px; left: 50%; transform: translateX(-50%); animation: cp-drift 12s ease-in-out infinite; }
+.cp-glow-2 { width: 360px; height: 300px; background: radial-gradient(ellipse, oklch(60% 0.15 280 / 0.10) 0%, transparent 70%); bottom: 80px; right: 5%; animation: cp-drift2 16s ease-in-out infinite reverse; }
+@keyframes cp-drift { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-24px); } }
+@keyframes cp-drift2 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(16px); } }
+.cp-hero-inner { position: relative; z-index: 1; max-width: 680px; width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.cp-hero-avatar { width: 52px; height: 52px; border-radius: 16px; background: var(--accent-2); border: 1px solid var(--accent-3); display: grid; place-items: center; margin-bottom: 28px; box-shadow: 0 0 40px var(--accent-2), inset 0 1px 0 rgba(255,255,255,0.08); }
+.cp-avatar-ring { width: 26px; height: 26px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; box-shadow: 0 0 16px var(--accent); }
+.cp-avatar-core { width: 10px; height: 10px; border-radius: 4px; background: var(--accent-ink); }
+.cp-hero-h1 { font-family: var(--sans); font-size: 48px; font-weight: 600; letter-spacing: -0.04em; line-height: 1.04; color: var(--ink); margin: 0 0 14px; text-wrap: balance; }
+.cp-hero-sub { font-size: 17px; line-height: 1.5; color: var(--ink-mute); margin: 0 0 36px; max-width: 48ch; text-wrap: pretty; }
+.cp-hero-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 28px; }
+.cp-hero-chip { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); font-size: 13.5px; cursor: pointer; transition: color .13s, border-color .13s, background .13s, transform .13s, box-shadow .13s; }
+.cp-hero-chip:hover { color: var(--ink); border-color: var(--accent-3); background: color-mix(in oklab, var(--accent-2) 60%, var(--surface)); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+.cp-chip-ico { color: var(--accent); flex-shrink: 0; }
+.cp-hero-ground { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top: 28px; }
+.cp-hero-ground span { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.cp-hero-ground svg { opacity: 0.6; }
+
+/* ── Turn header ────────────────────────────────────────────────────── */
+.cp-turn-hd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.cp-agent-mark { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; background: var(--accent-2); border: 1px solid var(--accent-3); display: grid; place-items: center; }
+.cp-agent-core { width: 10px; height: 10px; border-radius: 3.5px; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.cp-agent-mark.is-thinking .cp-agent-core { animation: cp-think-pulse 1.2s ease-in-out infinite; }
+@keyframes cp-think-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.65); border-radius: 999px; } }
+.cp-turn-name { font-size: 14px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.cp-turn-model { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.cp-src-rail { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
+.cp-src { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--hairline); transition: color .25s, border-color .25s, background .25s; }
+.cp-src.is-on { color: var(--accent); border-color: var(--accent-3); background: var(--accent-2); }
+
+/* ── Thinking block ─────────────────────────────────────────────────── */
+.cp-think { border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); overflow: hidden; margin-bottom: 12px; }
+.cp-think.is-running { border-color: var(--accent-3); }
+.cp-think-hd { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 16px; text-align: left; cursor: pointer; background: none; border: none; }
+.cp-think-hd:hover { background: var(--surface); }
+.cp-think-ico { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; flex-shrink: 0; color: var(--accent); }
+.cp-think.is-done .cp-think-ico { background: var(--accent-2); border-color: var(--accent-3); }
+.cp-think-dots { display: inline-flex; align-items: center; gap: 3px; }
+.cp-think-dots i { display: block; width: 4px; height: 4px; border-radius: 999px; background: var(--accent); animation: cp-dot 1.4s ease-in-out infinite; }
+.cp-think-dots i:nth-child(2) { animation-delay: .16s; }
+.cp-think-dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes cp-dot { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.75); } 40% { opacity: 1; transform: scale(1); } }
+.cp-think-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+.cp-think-chev { width: 14px; height: 14px; color: var(--ink-faint); margin-left: auto; transition: transform .18s; }
+.cp-think-chev.open { transform: rotate(180deg); }
+.cp-think-body { border-top: 1px solid var(--hairline); padding: 4px 18px 18px; display: flex; flex-direction: column; }
+.cp-think-sec { padding-top: 16px; }
+.cp-think-sec-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+.cp-think-plan { display: flex; flex-direction: column; gap: 7px; }
+.cp-plan-item { display: flex; align-items: flex-start; gap: 10px; }
+.cp-plan-n { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-mute); font-family: var(--mono); font-size: 10px; font-weight: 600; display: grid; place-items: center; }
+.cp-plan-txt { font-size: 13px; color: var(--ink-2); line-height: 1.5; padding-top: 1px; }
+.cp-think-tools { display: flex; flex-direction: column; gap: 5px; }
+.cp-tool { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.cp-tool-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: none; border: none; cursor: pointer; }
+.cp-tool-row:hover { background: var(--surface-2); }
+.cp-tool-dot { width: 18px; height: 18px; border-radius: 999px; flex-shrink: 0; display: grid; place-items: center; background: var(--accent-2); color: var(--accent); }
+.cp-tool-sig { font-size: 12px; min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-tool-fn { color: var(--ink); font-weight: 600; }
+.cp-tool-args { color: var(--ink-faint); }
+.cp-tool-result { margin-left: auto; flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--accent); background: var(--accent-2); padding: 2px 9px; border-radius: 999px; }
+.cp-tool-result.is-error { color: var(--negative); background: var(--negative-2); }
+.cp-tool-chev { width: 13px; height: 13px; color: var(--ink-faint); flex-shrink: 0; transition: transform .17s; }
+.cp-tool-chev.open { transform: rotate(180deg); }
+.cp-tool-detail { padding: 0 12px 12px 40px; }
+.cp-tool-pre { font-family: var(--mono); font-size: 11.5px; line-height: 1.7; color: var(--ink-2); background: var(--bg-2); border: 1px solid var(--hairline); border-radius: 7px; padding: 10px 13px; margin: 0; white-space: pre-wrap; }
+.cp-think-reason { display: flex; flex-direction: column; gap: 12px; }
+.cp-reason-item { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; position: relative; }
+.cp-reason-item:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 22px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, var(--accent-3), transparent); }
+.cp-reason-n { width: 21px; height: 21px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 10px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; z-index: 1; }
+.cp-reason-txt { font-size: 13px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; padding-top: 1px; margin: 0; }
+
+/* ── Composer ───────────────────────────────────────────────────────── */
+.cp-composer-model { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+.cp-model-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: cp-pulse-dot 2.4s ease-in-out infinite; }
+@keyframes cp-pulse-dot { 50% { opacity: 0.4; box-shadow: none; } }
+
+/* ── Turn footer + follow-ups (restyle of existing real elements) ────── */
+.cp-turn-ft { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 10px; }
+.cp-turn-ft svg { opacity: 0.6; }
+.cp-followups { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; margin-top: 14px; }
+.cp-followups-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); }
+.cp-followups-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.cp-fu-chip { font-size: 13px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: color .12s, border-color .12s, background .12s, transform .12s; }
+.cp-fu-chip:hover { color: var(--ink); border-color: var(--accent-3); background: var(--accent-2); transform: translateY(-1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-glow-orb, .cp-agent-mark.is-thinking .cp-agent-core, .cp-think-dots i, .cp-model-dot { animation: none; }
+}
