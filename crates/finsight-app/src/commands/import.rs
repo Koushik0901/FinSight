@@ -15,6 +15,64 @@ pub struct ProgressPayload {
     pub rows_total: u32,
 }
 
+/// A lightweight, bounded preview of what an import WOULD do — counts + a
+/// capped error list + a staleness signature — so the UI can show
+/// "N new · D duplicates · R to review" before the user commits to importing.
+/// Deliberately excludes per-row decisions: those can number in the
+/// thousands and must never cross the Tauri IPC boundary wholesale.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedImportPreview {
+    pub signature: String,
+    pub rows_total: u32,
+    pub rows_imported: u32,
+    pub rows_skipped_duplicates: u32,
+    pub rows_queued_for_review: u32,
+    pub errors: Vec<finsight_providers::csv::RowError>,
+}
+
+/// Build a bounded preview of the import outcome. Testable without a Tauri
+/// handle; the `prepare_csv_import` command below is a thin async wrapper.
+pub fn build_preview(
+    db: &finsight_core::Db,
+    path: &std::path::Path,
+    account_id: &str,
+    mapping: &CsvImportMapping,
+) -> AppResult<PreparedImportPreview> {
+    let conn = db.get().map_err(AppError::from)?;
+    let p = finsight_providers::csv::CsvProvider::prepare(path, account_id, mapping, &conn)
+        .map_err(AppError::from)?;
+    // rows_total must reflect the TRUE data-row count (decisions + all errors),
+    // computed before truncating the error payload for IPC.
+    let total_errors = p.errors.len() as u32;
+    let rows_total = p.rows.len() as u32 + total_errors;
+    let mut errors = p.errors;
+    errors.truncate(50); // never ship an unbounded per-row payload over IPC
+    Ok(PreparedImportPreview {
+        signature: p.signature,
+        rows_total,
+        rows_imported: p.rows_imported,
+        rows_skipped_duplicates: p.rows_skipped_duplicates,
+        rows_queued_for_review: p.rows_queued_for_review,
+        errors,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn prepare_csv_import(
+    state: tauri::State<'_, AppState>,
+    path: String,
+    account_id: String,
+    mapping: CsvImportMapping,
+) -> AppResult<PreparedImportPreview> {
+    let db = (*state.db).clone();
+    let path = PathBuf::from(path);
+    tokio::task::spawn_blocking(move || build_preview(&db, &path, &account_id, &mapping))
+        .await
+        .map_err(|e| AppError::new("internal", format!("join: {e}")))?
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResult<CsvPreview> {

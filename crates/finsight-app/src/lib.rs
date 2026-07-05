@@ -259,6 +259,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::onboarding::save_llm_provider,
         commands::meta::app_ready,
         commands::import::preview_csv_columns,
+        commands::import::prepare_csv_import,
         commands::import::import_csv,
         commands::import::get_saved_csv_mapping,
         commands::import::list_unfinished_imports,

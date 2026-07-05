@@ -220,6 +220,14 @@ async previewCsvColumns(path: string, skipHeaderRows: number) : Promise<Result<C
     else return { status: "error", error: e  as any };
 }
 },
+async prepareCsvImport(path: string, accountId: string, mapping: CsvImportMapping) : Promise<Result<PreparedImportPreview, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_csv_import", { path, accountId, mapping }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Promise<Result<ImportSummary, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("import_csv", { path, accountId, mapping }) };
@@ -1559,6 +1567,14 @@ export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goa
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
 export type PlannedTxnFilter = { status: string | null; dueBefore: string | null }
+/**
+ * A lightweight, bounded preview of what an import WOULD do — counts + a
+ * capped error list + a staleness signature — so the UI can show
+ * "N new · D duplicates · R to review" before the user commits to importing.
+ * Deliberately excludes per-row decisions: those can number in the
+ * thousands and must never cross the Tauri IPC boundary wholesale.
+ */
+export type PreparedImportPreview = { signature: string; rowsTotal: number; rowsImported: number; rowsSkippedDuplicates: number; rowsQueuedForReview: number; errors: RowError[] }
 export type ProjectedValue = { years: number; valueCents: number; annualRate: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
