@@ -394,6 +394,11 @@ function ThinkingBlock({ reasoningText, toolCalls }: { reasoningText: string; to
 function ToolFallbackCard({ part }: { part: { toolName: string; args?: unknown; result?: unknown; isError?: boolean; status?: { type: string } } }) {
   const [open, setOpen] = useState(false);
   const done = part.status?.type !== "running";
+  // Collapse the detail panel the moment a tool finishes, so a row that was
+  // expanded while still "running" doesn't carry that open state into "done".
+  useEffect(() => {
+    if (done) setOpen(false);
+  }, [done]);
   const argsText = part.args && Object.keys(part.args as object).length > 0 ? JSON.stringify(part.args) : "";
   const resultSummary = (() => {
     const r = part.result as { summary?: string } | undefined;
