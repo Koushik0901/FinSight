@@ -76,7 +76,24 @@ Either way **nothing an operation started against the previous epoch can survive
 - Barrier unit tests: a reset blocks until an in-flight lease drains; a lease taken after a reset sees the new epoch; a current-epoch lease is not superseded.
 - End-to-end DB test (`reset.rs`): a writer that leased a category (a non-self-healing write, like `ensure_default_categories`) before a concurrent Delete-All — the wipe blocks on the lease, the writer sees `superseded()` and skips, and after completion **no pre-reset state survives**.
 - Categorizer test: a custom provider triggers `begin_reset()` *during* the LLM call; the categorizer takes its write lease, sees the advanced epoch, and writes nothing — while the normal path still categorizes.
-- **Boundary note:** single-statement synchronous user mutations (manual add/edit/delete) are not leased; they are atomic and cannot be concurrently initiated with Delete-All by one user, and the barrier API is available to wrap them if that ever changes.
+
+**Background-writer audit (so "no operation" is enumerated, not assumed).** Every writer that can be in flight when Delete-All is invoked — the scheduled/network/LLM-straddling ones especially — was reviewed and classified:
+
+| Writer | Straddle | Inserts survive a wipe? | Handling |
+|---|---|---|---|
+| CSV import + post-commit cascade | file parse (100s ms) | categories/net-worth: **yes** | **leased** across import + cascade |
+| Agent categorizer (rule + LLM) | LLM (s–min) | FK-guarded, mostly self-healing | **leased** per commit unit |
+| SimpleFin sync — manual (`sync_local_account`) | network fetch (s) | transactions/accounts: **yes** | **leased** across commit |
+| SimpleFin sync — **scheduled/batch** (`sync_scheduler`) | network fetch (s) | transactions: **yes** | **leased** across commit |
+| SimpleFin account import | network fetch (s) | accounts: **yes** | **leased** across account-create loop |
+| Recipe runner — background (`CheckDueRecipes`) | LLM (s) | action bundle: **yes** | **leased** across plan commit |
+| Recipe command — manual (`trigger_recipe`) | LLM (s) | action bundle: **yes** | **leased** across plan commit |
+| Copilot chat turn (`stream_copilot_message`) | reasoning LLM loop (s–min) | action bundle: **yes** | **leased** across bundle commit |
+| Action executor (approved bundles) | user-gated | `UPDATE … WHERE id` (0 rows post-wipe) + FK-guarded `categorizations` | self-healing; not leased |
+| `detect_anomalies` writes | LLM (s) | `UPDATE … WHERE id` only | self-healing; prompt-skip on `superseded()` |
+| Single-statement user mutations (add/edit/delete, category ops) | none (atomic) | n/a | atomic + user-serialized; barrier API available if ever needed |
+
+The scheduled SimpleFin sync was the one genuinely-concurrent writer with a long straddle and *unguarded top-level inserts* — the sharpest case the boundary must cover — and is now leased on both its manual and batch paths.
 
 ### 3.4 Disable `refetchOnWindowFocus` — `perf(query)`
 

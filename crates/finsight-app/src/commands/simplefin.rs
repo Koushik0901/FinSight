@@ -434,8 +434,24 @@ pub async fn import_simplefin_accounts(
 ) -> AppResult<Vec<String>> {
     let db = state.db.clone();
 
+    // Snapshot the ledger epoch before the network fetch: importing accounts
+    // inserts top-level account rows (no FK guard) that would survive a wipe.
+    let start_epoch = db.reset_barrier().epoch();
+
     // Pull all active accounts from every connection so we can match selected ids.
     let remote_accounts = list_simplefin_accounts(state.clone()).await?;
+
+    // Hold a reset lease across the account-creation loop and skip if a
+    // Delete-All landed while we fetched. Released before the initial-sync loop
+    // below (each `sync_local_account` takes its own lease — holding one across
+    // that call would nest read leases and can deadlock a pending reset).
+    let create_lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if create_lease.superseded() {
+        return Err(AppError::new(
+            "reset",
+            "Import cancelled: all data was cleared during the import.",
+        ));
+    }
 
     let mut created_ids: Vec<String> = Vec::new();
     for req in &accounts {
@@ -508,6 +524,8 @@ pub async fn import_simplefin_accounts(
         .map_err(AppError::from)?;
         created_ids.push(local_id.id);
     }
+    // Release before the initial-sync loop (each sync takes its own lease).
+    drop(create_lease);
 
     // Initial sync for each imported account.
     for (req, local_id) in accounts.iter().zip(created_ids.iter()) {
@@ -554,6 +572,14 @@ async fn sync_local_account(
     connection_id: String,
     import_pending: bool,
 ) -> AppResult<SimpleFinImportSummaryWrapper> {
+    // Snapshot the ledger epoch before the (seconds-long, network) fetch. A
+    // SimpleFin sync inserts top-level transaction/account rows with no FK to
+    // guard them, so — unlike a categorization UPDATE that hits zero rows after
+    // a wipe — a post-wipe sync commit would SURVIVE. We hold a reset lease
+    // across the commit below and skip it if a Delete-All has landed, so a sync
+    // in flight when Delete-All reports success can never commit afterward.
+    let start_epoch = db.reset_barrier().epoch();
+
     let account = run(db, {
         let account_id = account_id.to_string();
         move |conn| accounts::get_by_id(conn, &account_id)
@@ -601,6 +627,16 @@ async fn sync_local_account(
         }
     };
 
+    // Hold a reset lease across the commit and skip if a Delete-All landed while
+    // we fetched. The wipe drains this lease before running, so the fetched rows
+    // either commit before the wipe (and are wiped) or are never written.
+    let commit_lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if commit_lease.superseded() {
+        return Err(AppError::new(
+            "reset",
+            "Sync cancelled: all data was cleared during the sync.",
+        ));
+    }
     let summary = match run(db, move |conn| {
         commit_simplefin_import(pending, conn)
             .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
@@ -614,6 +650,7 @@ async fn sync_local_account(
             return Err(app_error);
         }
     };
+    drop(commit_lease);
 
     // Clear any error status on success.
     let _ = run(db, {

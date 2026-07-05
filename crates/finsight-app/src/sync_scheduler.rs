@@ -354,6 +354,12 @@ async fn sync_one_account(
 
     let import_pending = account.import_pending;
 
+    // Snapshot the ledger epoch before the network fetch so we can refuse to
+    // commit fetched rows if a Delete-All lands while this (scheduled or manual
+    // "sync all") sync is in flight. Sync inserts top-level rows with no FK
+    // guard, so a post-wipe commit would survive without this.
+    let start_epoch = db.reset_barrier().epoch();
+
     let pending = match fetch_with_retry(
         access_url,
         &simplefin_id,
@@ -385,6 +391,21 @@ async fn sync_one_account(
     let acc_id = account.id.clone();
     let is_investment = account.r#type == finsight_core::models::AccountType::Investment;
     let sync_run_id_owned = sync_run_id.map(str::to_string);
+
+    // Hold a reset lease across the commit; skip it if a Delete-All landed while
+    // we fetched. Delete-All drains this lease before wiping, so fetched rows
+    // either commit before the wipe (and are wiped) or are never written.
+    let commit_lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if commit_lease.superseded() {
+        return AccountSyncResult {
+            account_id: account.id.clone(),
+            added: 0,
+            updated: 0,
+            skipped: 0,
+            queued_for_review: 0,
+            error: Some("sync cancelled: data was cleared during the sync".to_string()),
+        };
+    }
 
     let summary = match run(db, {
         let pending = pending;
@@ -441,6 +462,9 @@ async fn sync_one_account(
             };
         }
     };
+    // Commit is done (and was wiped-or-safe under the lease); release it. The
+    // connection-status update below writes only self-healing metadata.
+    drop(commit_lease);
 
     if let Some(connection_id) = connection_id {
         let _ = mark_connection_success(db, connection_id).await;

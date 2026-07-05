@@ -122,6 +122,10 @@ pub async fn trigger_recipe(state: State<'_, AppState>, id: String) -> AppResult
         ));
     };
 
+    // Snapshot the ledger epoch before build_context + the LLM call so we can
+    // refuse to persist the bundle if a Delete-All lands during the run.
+    let start_epoch = db.reset_barrier().epoch();
+
     let recipe_id_for_run = recipe.id.clone();
     let recipe_run = run(&db, move |conn| {
         recipes::start_run(conn, &recipe_id_for_run)
@@ -152,6 +156,21 @@ pub async fn trigger_recipe(state: State<'_, AppState>, id: String) -> AppResult
             return Err(AppError::new("recipe.llm", err.to_string()));
         }
     };
+
+    // Hold a reset lease across the bundle commit; skip if a Delete-All landed
+    // during the LLM call so no proposed bundle survives the wipe.
+    let plan_lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if plan_lease.superseded() {
+        let run_id = recipe_run.id.clone();
+        let _ = run(&db, move |conn| {
+            recipes::fail_run(conn, &run_id, "cancelled: data was cleared during the run")
+        })
+        .await;
+        return Err(AppError::new(
+            "reset",
+            "Recipe cancelled: all data was cleared during the run.",
+        ));
+    }
 
     let run_id = recipe_run.id.clone();
     let prompt_for_persist = prompt.clone();

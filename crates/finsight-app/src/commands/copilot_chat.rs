@@ -210,6 +210,13 @@ pub async fn stream_copilot_message(
     let db = (*state.db).clone();
     let conv_id = conversation_id.clone();
 
+    // Snapshot the ledger epoch at the start of the turn. The reasoning engine
+    // reads the ledger and may end by persisting a proposed action bundle
+    // (observable approval/Inbox state) after a long LLM loop — we hold a reset
+    // lease across that commit and skip it if a Delete-All lands mid-turn, so a
+    // turn in flight when Delete-All succeeds can't leave a bundle behind.
+    let start_epoch = db.reset_barrier().epoch();
+
     // 1. Ensure conversation exists
     {
         let cid = conv_id.clone();
@@ -405,7 +412,14 @@ pub async fn stream_copilot_message(
             };
             let provider_id = provider.provider_id().to_string();
             let model_id = provider.model_id().to_string();
-            let bundle_id = run(&db, move |conn| {
+            // Hold a reset lease across the bundle commit; skip persisting if a
+            // Delete-All landed during the turn. The wipe drains this lease
+            // before running, so the bundle can't survive a completed Delete-All.
+            let bundle_lease = db.reset_barrier().writer_lease(start_epoch).await;
+            let bundle_id = if bundle_lease.superseded() {
+                None
+            } else {
+                Some(run(&db, move |conn| {
                 let mut bundle = finsight_core::repos::copilot_actions::insert_bundle(
                     conn,
                     None,
@@ -429,11 +443,13 @@ pub async fn stream_copilot_message(
                     bundle.items.push(item);
                 }
                 Ok::<_, finsight_core::CoreError>(bundle.id)
-            })
-            .await
-            .map_err(AppError::from)?;
+                })
+                .await
+                .map_err(AppError::from)?)
+            };
+            drop(bundle_lease);
 
-            let mut answer = reasoning_result_to_agent_answer(result, Some(bundle_id));
+            let mut answer = reasoning_result_to_agent_answer(result, bundle_id);
             validate_finance_answer(&enriched_question, &mut answer);
             enrich_agent_answer(&mut answer);
             answer
