@@ -7,18 +7,14 @@ pub mod prepare;
 
 use crate::csv::encoding::{decode_layered, DetectedEncoding};
 use crate::csv::mapping::CsvImportMapping;
-use crate::csv::parse::{into_new_transaction, parse_row};
 use crate::error::{ProviderError, ProviderResult};
-use crate::simplefin::matcher::{reconcile_excluding_batch, ReconciliationDecision};
 use chrono::Utc;
 use finsight_core::models::{NewImportCandidate, NewImportCandidateMatch};
 use finsight_core::repos::{accounts, import_candidates};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashSet;
 use std::path::Path;
-use uuid::Uuid;
 
 const MAX_BYTES: u64 = 50 * 1024 * 1024;
 const PREVIEW_ROWS: usize = 10;
@@ -118,31 +114,6 @@ impl CsvProvider {
         db: &finsight_core::Db,
         mut on_progress: impl FnMut(BatchProgress),
     ) -> ProviderResult<ImportSummary> {
-        let bytes = read_capped(path)?;
-        if bytes.is_empty() {
-            return Err(ProviderError::EmptyFile);
-        }
-        let (text, _) = decode_layered(&bytes)?;
-        let delimiter = mapping.delimiter.unwrap_or_else(|| detect_delimiter(&text));
-
-        // First pass: count rows for progress.
-        let total = {
-            let mut r = csv::ReaderBuilder::new()
-                .has_headers(false)
-                .delimiter(delimiter as u8)
-                .flexible(true)
-                .from_reader(text.as_bytes());
-            let mut n: u32 = 0;
-            for (idx, rec) in r.records().enumerate() {
-                rec?;
-                if idx >= mapping.skip_header_rows as usize {
-                    n = n.saturating_add(1);
-                }
-            }
-            n
-        };
-        let emit_every = std::cmp::max(1, total / 20) as usize;
-
         let mut conn = db.get().map_err(ProviderError::Core)?;
         let filename = path.file_name().map(|s| s.to_string_lossy().into_owned());
         conn.execute(
@@ -152,22 +123,16 @@ impl CsvProvider {
         )
         .map_err(|e| ProviderError::Internal(format!("imports insert: {e}")))?;
 
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(delimiter as u8)
-            .flexible(true)
-            .from_reader(text.as_bytes());
+        // Single read+parse+reconcile pass, producing an ordered decision plan.
+        let prepared = Self::prepare(path, account_id, mapping, &conn)?;
+
+        let total = (prepared.rows.len() + prepared.errors.len()) as u32;
+        let emit_every = std::cmp::max(1, total / 20) as usize;
 
         let mut rows_imported: u32 = 0;
         let mut rows_skipped: u32 = 0;
         let mut rows_queued: u32 = 0;
-        let mut errors: Vec<RowError> = Vec::new();
         let mut processed: u32 = 0;
-        let mut matched_existing_ids: HashSet<String> = HashSet::new();
-        // Ids of rows this import itself inserted. A single statement lists each
-        // posted transaction once, so identical lines are distinct real charges;
-        // these must never be dedup targets for later rows in the same file.
-        let mut self_import_ids: HashSet<String> = HashSet::new();
         // in_batch tracks rows in the current open transaction so we can
         // commit every BATCH_SIZE rows without the monotonic `processed` check.
         let mut in_batch: usize = 0;
@@ -176,49 +141,13 @@ impl CsvProvider {
             .transaction()
             .map_err(|e| ProviderError::Internal(format!("begin: {e}")))?;
 
-        for (idx, rec) in reader.records().enumerate() {
-            let row_number = (idx + 1) as u32;
-            let rec = match rec {
-                Ok(r) => r,
-                Err(e) => {
-                    errors.push(RowError {
-                        row_number,
-                        reason: e.to_string(),
-                    });
-                    continue;
-                }
-            };
-            if idx < mapping.skip_header_rows as usize {
-                continue;
-            }
-
-            let fields: Vec<&str> = rec.iter().collect();
-            let parsed = match parse_row(&fields, mapping) {
-                Ok(p) => p,
-                Err(e) => {
-                    errors.push(RowError {
-                        row_number,
-                        reason: e.to_string(),
-                    });
-                    continue;
-                }
-            };
-            let new_tx = into_new_transaction(parsed, account_id.to_string());
-
-            match reconcile_excluding_batch(
-                &tx,
-                account_id,
-                &new_tx,
-                None,
-                7,
-                &matched_existing_ids,
-                &self_import_ids,
-            )? {
-                ReconciliationDecision::AutoMatch(existing) => {
-                    matched_existing_ids.insert(existing.id);
+        for row in prepared.rows {
+            match row.decision {
+                PreparedDecision::Duplicate { .. } => {
                     rows_skipped += 1;
                 }
-                ReconciliationDecision::NeedsReview {
+                PreparedDecision::Review {
+                    candidate,
                     matches,
                     confidence,
                     reason,
@@ -230,16 +159,16 @@ impl CsvProvider {
                             import_id: Some(import_id.to_string()),
                             sync_run_id: None,
                             account_id: account_id.to_string(),
-                            candidate_json: serde_json::to_string(&new_tx).map_err(|e| {
+                            candidate_json: serde_json::to_string(&candidate).map_err(|e| {
                                 ProviderError::Internal(format!("serialize candidate: {e}"))
                             })?,
                             raw_payload_json: None,
-                            imported_id: new_tx.imported_id.clone(),
-                            external_tx_id: new_tx.external_tx_id.clone(),
-                            external_account_id: new_tx.external_account_id.clone(),
-                            posted_at: new_tx.posted_at,
-                            amount_cents: new_tx.amount_cents,
-                            merchant_raw: new_tx.merchant_raw.clone(),
+                            imported_id: candidate.imported_id.clone(),
+                            external_tx_id: candidate.external_tx_id.clone(),
+                            external_account_id: candidate.external_account_id.clone(),
+                            posted_at: candidate.posted_at,
+                            amount_cents: candidate.amount_cents,
+                            merchant_raw: candidate.merchant_raw.clone(),
                             confidence,
                             reason,
                         },
@@ -257,8 +186,7 @@ impl CsvProvider {
                     .map_err(ProviderError::Core)?;
                     rows_queued += 1;
                 }
-                ReconciliationDecision::None => {
-                    let new_id = Uuid::new_v4().to_string();
+                PreparedDecision::Insert { new_id, tx: new_tx } => {
                     tx.execute(
                         "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
                                                   category_id, status, notes, created_at, imported_id, source, \
@@ -283,7 +211,6 @@ impl CsvProvider {
                         ],
                     )
                     .map_err(|e| ProviderError::Internal(format!("insert: {e}")))?;
-                    self_import_ids.insert(new_id);
                     rows_imported += 1;
                 }
             }
@@ -305,6 +232,10 @@ impl CsvProvider {
                 in_batch = 0;
             }
         }
+
+        debug_assert_eq!(rows_imported, prepared.rows_imported);
+        debug_assert_eq!(rows_skipped, prepared.rows_skipped_duplicates);
+        debug_assert_eq!(rows_queued, prepared.rows_queued_for_review);
 
         // Persist mapping + finalize imports row.
         mapping::save(&tx, account_id, mapping)?;
@@ -334,7 +265,7 @@ impl CsvProvider {
             rows_imported,
             rows_skipped_duplicates: rows_skipped,
             rows_queued_for_review: rows_queued,
-            errors,
+            errors: prepared.errors,
         })
     }
 }
