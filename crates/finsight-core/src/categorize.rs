@@ -490,9 +490,11 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // evaluation) plus every currently transfer-flagged one (so a re-run after
     // the keyword list changes can *un-flag* a stale transfer even if it also
     // carries a category, e.g. an "Interac - Purchase" once tagged a transfer).
-    let pending: Vec<(String, String, bool, bool)> = {
+    // Also select the current `is_transfer` so the hot loop can skip a write
+    // when the flag is unchanged (the common case: a non-transfer stays 0).
+    let pending: Vec<(String, String, bool, bool, bool)> = {
         let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL \
+            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL, is_transfer \
              FROM transactions \
              WHERE category_id IS NULL OR is_transfer = 1",
         )?;
@@ -502,6 +504,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
                 r.get::<_, String>(1)?,
                 r.get::<_, i64>(2)? != 0,
                 r.get::<_, i64>(3)? != 0,
+                r.get::<_, i64>(4)? != 0,
             ))
         })?;
         let mut out = Vec::new();
@@ -514,46 +517,61 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     let now = chrono::Utc::now().to_rfc3339();
     let tx = conn.transaction()?;
     let mut count: u32 = 0;
-    for (txn_id, merchant, uncategorized, paired) in pending {
-        // Transfer detection runs regardless of category state, and is written
-        // in BOTH directions so a re-run after the keyword list changes corrects
-        // stale flags (e.g. an "Interac - Purchase" no longer treated as a
-        // transfer once the over-broad 'interac' keyword was removed).
-        // EXCEPT: a leg paired to a peer transaction (`pair_transfers`) is a
-        // transfer by construction — rule B pairs legs whose merchants carry no
-        // transfer keyword, and un-flagging them here would undo the pairing.
-        if !paired {
-            tx.execute(
-                "UPDATE transactions SET is_transfer = ?1 WHERE id = ?2",
-                params![is_transfer(&merchant) as i64, txn_id],
-            )?;
-        }
-        if !uncategorized {
-            continue;
-        }
-        // Invariant: transfers are never categorized (see docs + memory). In
-        // practice transfer keywords and the category keyword map are disjoint,
-        // but make it structural for paired legs, whose merchants CAN look like
-        // ordinary bill payments.
-        if paired || is_transfer(&merchant) {
-            continue;
-        }
-        let Some(cat) = builtin_category(&merchant) else {
-            continue;
-        };
-        if !existing.contains(cat) {
-            continue;
-        }
-        tx.execute(
+    // Prepare the hot-loop statements once and reuse the cached handles for
+    // every row. `execute` re-parses the SQL on each call; with thousands of
+    // rows per import that per-row recompilation dominates — caching the
+    // statements removes it (the same class of win that sped CSV import up).
+    {
+        let mut set_transfer = tx
+            .prepare_cached("UPDATE transactions SET is_transfer = ?1 WHERE id = ?2")?;
+        let mut set_category = tx.prepare_cached(
             "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
-            params![cat, txn_id],
         )?;
-        tx.execute(
+        let mut record_categorization = tx.prepare_cached(
             "INSERT INTO categorizations(id, txn_id, category_id, source, confidence, model, at) \
              VALUES(?1, ?2, ?3, 'builtin', 1.0, NULL, ?4)",
-            params![Uuid::new_v4().to_string(), txn_id, cat, now],
         )?;
-        count += 1;
+        for (txn_id, merchant, uncategorized, paired, currently_transfer) in pending {
+            // Transfer detection runs regardless of category state, and is written
+            // in BOTH directions so a re-run after the keyword list changes corrects
+            // stale flags (e.g. an "Interac - Purchase" no longer treated as a
+            // transfer once the over-broad 'interac' keyword was removed).
+            // EXCEPT: a leg paired to a peer transaction (`pair_transfers`) is a
+            // transfer by construction — rule B pairs legs whose merchants carry no
+            // transfer keyword, and un-flagging them here would undo the pairing.
+            if !paired {
+                let want = is_transfer(&merchant);
+                // Only write when the flag actually flips — the overwhelming
+                // majority of rows are non-transfers that already read 0.
+                if want != currently_transfer {
+                    set_transfer.execute(params![want as i64, txn_id])?;
+                }
+            }
+            if !uncategorized {
+                continue;
+            }
+            // Invariant: transfers are never categorized (see docs + memory). In
+            // practice transfer keywords and the category keyword map are disjoint,
+            // but make it structural for paired legs, whose merchants CAN look like
+            // ordinary bill payments.
+            if paired || is_transfer(&merchant) {
+                continue;
+            }
+            let Some(cat) = builtin_category(&merchant) else {
+                continue;
+            };
+            if !existing.contains(cat) {
+                continue;
+            }
+            set_category.execute(params![cat, txn_id])?;
+            record_categorization.execute(params![
+                Uuid::new_v4().to_string(),
+                txn_id,
+                cat,
+                now
+            ])?;
+            count += 1;
+        }
     }
     tx.commit()?;
     Ok(count)
