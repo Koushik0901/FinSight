@@ -1,6 +1,5 @@
 use crate::CompletionProvider;
 use finsight_core::Db;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 
@@ -42,16 +41,15 @@ pub type EventCallback = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 pub struct AgentHandle {
     pub tx: mpsc::Sender<AgentJob>,
     provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
-    /// Monotonic reset generation. A running categorization job snapshots this
-    /// at start and aborts at its next batch boundary if it changes — so work
-    /// that began before a Delete-All / factory reset can never write
-    /// categorizations against the freshly-wiped ledger.
-    reset_epoch: Arc<AtomicU64>,
 }
 
 impl AgentHandle {
     /// Spawn the agent background task and return a handle to enqueue jobs.
     /// `on_event` is called on the spawning thread's runtime for each event emitted.
+    ///
+    /// Reset coordination lives on the `Db`'s [`finsight_core::ResetBarrier`]
+    /// (shared with every writer), not here — the categorizer reads it via the
+    /// `db` it already holds.
     pub fn spawn(
         db: Db,
         provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
@@ -59,8 +57,6 @@ impl AgentHandle {
     ) -> Self {
         let (tx, rx) = mpsc::channel::<AgentJob>(64);
         let provider_clone = Arc::clone(&provider);
-        let reset_epoch = Arc::new(AtomicU64::new(0));
-        let reset_epoch_loop = Arc::clone(&reset_epoch);
         // Spawn a dedicated OS thread with its own Tokio runtime so this
         // works whether or not a runtime is already active on the calling
         // thread (e.g. Tauri's synchronous `.setup()` callback).
@@ -71,34 +67,15 @@ impl AgentHandle {
                     .enable_all()
                     .build()
                     .expect("agent tokio runtime");
-                rt.block_on(run_loop(db, rx, provider_clone, on_event, reset_epoch_loop));
+                rt.block_on(run_loop(db, rx, provider_clone, on_event));
             })
             .expect("spawn agent thread");
-        Self {
-            tx,
-            provider,
-            reset_epoch,
-        }
+        Self { tx, provider }
     }
 
     /// Replace the active provider at runtime. No task restart needed.
     pub fn set_provider(&self, p: Arc<dyn CompletionProvider>) {
         *self.provider.write().unwrap() = Some(p);
-    }
-
-    /// Signal that persisted data was wiped (Delete-All / factory reset). A
-    /// categorization job already in flight will stop at its next batch
-    /// boundary instead of writing against the reset ledger. Cheap and safe to
-    /// call even when no job is running.
-    pub fn cancel_running_work(&self) {
-        self.reset_epoch.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Current reset generation. Other post-wipe-sensitive writers (e.g. the
-    /// import post-commit cascade) can snapshot this and skip work if it
-    /// changes under them — the same guard the categorizer uses internally.
-    pub fn reset_generation(&self) -> u64 {
-        self.reset_epoch.load(Ordering::SeqCst)
     }
 }
 
@@ -107,7 +84,6 @@ async fn run_loop(
     mut rx: mpsc::Receiver<AgentJob>,
     provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
     on_event: EventCallback,
-    reset_epoch: Arc<AtomicU64>,
 ) {
     while let Some(job) = rx.recv().await {
         match job {
@@ -147,14 +123,8 @@ async fn run_loop(
                         });
                     }
                     Some(p) => {
-                        let result = crate::categorizer::run_job(
-                            &db,
-                            job,
-                            p,
-                            Arc::clone(&on_event),
-                            Arc::clone(&reset_epoch),
-                        )
-                        .await;
+                        let result =
+                            crate::categorizer::run_job(&db, job, p, Arc::clone(&on_event)).await;
                         if let Err(e) = result {
                             on_event(AgentEvent::Error {
                                 message: e.to_string(),

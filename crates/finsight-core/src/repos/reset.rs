@@ -271,4 +271,64 @@ mod tests {
         delete_all_data(&mut conn).unwrap();
         delete_all_data(&mut conn).unwrap();
     }
+
+    /// End-to-end drain-barrier proof: a background writer that took a lease
+    /// against the previous epoch (as the import cascade / categorizer do)
+    /// cannot leave state behind once Delete-All reports success. The wipe
+    /// blocks until the writer's lease drains, and the writer observes it was
+    /// superseded and skips its write.
+    #[tokio::test]
+    async fn a_reset_drains_a_leased_writer_and_leaves_nothing_behind() {
+        use std::time::Duration;
+
+        let (_d, db) = fresh_db();
+        // Seed a non-self-healing derived write (a category, like the cascade's
+        // ensure_default_categories) that must not survive the wipe.
+        {
+            let conn = db.get().unwrap();
+            conn.execute(
+                "INSERT INTO category_groups(id,label,sort_order) VALUES('g','G',0)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('c','g','C','#fff',0)",
+                [],
+            )
+            .unwrap();
+        }
+
+        // A writer begins against the current epoch and takes its commit lease.
+        let start = db.reset_barrier().epoch();
+        let lease = db.reset_barrier().writer_lease(start).await;
+
+        // Delete-All runs concurrently: begin_reset() must block on our lease.
+        let db2 = db.clone();
+        let reset = tokio::spawn(async move {
+            let _guard = db2.reset_barrier().begin_reset().await; // drains the lease first
+            let mut conn = db2.get().unwrap();
+            delete_all_data(&mut conn).unwrap();
+        });
+
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert!(!reset.is_finished(), "the wipe must wait for the lease to drain");
+        assert!(
+            lease.superseded(),
+            "the leased writer must see it was superseded and skip its commit"
+        );
+
+        // Writer drains (it skipped its write). The reset now completes.
+        drop(lease);
+        tokio::time::timeout(Duration::from_secs(2), reset)
+            .await
+            .expect("reset completes once the lease drains")
+            .unwrap();
+
+        // Nothing the previous epoch had survives.
+        let conn = db.get().unwrap();
+        let cats: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cats, 0, "no pre-reset state may survive a completed Delete-All");
+    }
 }

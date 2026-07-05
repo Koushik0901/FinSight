@@ -95,13 +95,21 @@ pub async fn import_csv(
     let db = (*state.db).clone();
     let path = PathBuf::from(path);
     let app_emit = app.clone();
-    // Snapshot the reset generation before we touch the ledger. If a Delete-All
-    // lands while this import runs, the post-commit derived-state cascade below
-    // is skipped — otherwise `ensure_default_categories` (inside the builtin
-    // categorization step) would re-seed categories, and net-worth/anomaly
-    // recompute would repopulate derived state, into a ledger the user just
-    // wiped.
-    let reset_epoch_at_start = state.agent.reset_generation();
+    // Coordinate with Delete-All. Snapshot the ledger epoch and hold a writer
+    // lease across the entire import + derived-state cascade. A concurrent
+    // Delete-All cannot complete its wipe until this lease drains, and if a
+    // reset already happened (or lands mid-import) `superseded()` reports it —
+    // so nothing this import writes can survive a Delete-All that reports
+    // success: either our writes commit before the wipe (and it removes them),
+    // or we observe the advanced epoch and stop.
+    let start_epoch = db.reset_barrier().epoch();
+    let reset_lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if reset_lease.superseded() {
+        return Err(AppError::new(
+            "reset",
+            "Import cancelled: all data was cleared as this import began.",
+        ));
+    }
     // Keep the target account id for the post-commit cascade (the original is
     // moved into the blocking import closure below).
     let cascade_account_id = account_id.clone();
@@ -109,8 +117,9 @@ pub async fn import_csv(
     let import_id = Uuid::new_v4().to_string();
     let import_id_for_progress = import_id.clone();
 
+    let import_db = db.clone();
     let summary = tokio::task::spawn_blocking(move || {
-        CsvProvider::import(&path, &account_id, &import_id, &mapping, &db, |p| {
+        CsvProvider::import(&path, &account_id, &import_id, &mapping, &import_db, |p| {
             let _ = app_emit.emit(
                 "import-progress",
                 ProgressPayload {
@@ -127,11 +136,13 @@ pub async fn import_csv(
 
     let summary = summary?;
 
-    // Post-commit derived-state cascade. Skip the whole thing if a Delete-All
-    // landed during the import — re-seeding categories / recomputing net worth
-    // into a freshly-wiped ledger is exactly the stale-write the reset must
-    // prevent. Each step re-checks so a wipe mid-cascade stops the remainder.
-    let wiped = || state.agent.reset_generation() != reset_epoch_at_start;
+    // Post-commit derived-state cascade. Skip it if a Delete-All has landed
+    // while we held the lease — re-seeding categories / recomputing net worth
+    // into a ledger the user just wiped is exactly the stale write the reset
+    // must prevent. `superseded()` also lets us drop the doomed work promptly so
+    // the pending reset drains faster; the lease guarantees correctness even if
+    // this raced.
+    let wiped = || reset_lease.superseded();
     if !wiped() {
         // Deterministic, provider-free baseline categorization. Runs on every
         // import so common merchants get a stable category even with no LLM
@@ -174,6 +185,10 @@ pub async fn import_csv(
             .await;
         }
     }
+    // Release the lease now that all import + cascade writes are done. The AI
+    // categorizer enqueued below takes its own lease when it runs, so it stays
+    // coordinated with Delete-All without us holding this one across the queue.
+    drop(reset_lease);
 
     // Auto-categorize with the configured AI provider when the setting is on
     // (default). The deterministic builtin pass above only covers well-known

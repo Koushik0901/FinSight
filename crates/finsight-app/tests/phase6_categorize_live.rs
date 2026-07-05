@@ -50,15 +50,9 @@ async fn categorize_real_uncategorized_with_gemma() {
             // progress noise suppressed
         }
     });
-    categorizer::run_job(
-        &db,
-        AgentJob::CategorizeAll,
-        provider,
-        cb,
-        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-    )
-    .await
-    .expect("categorize job");
+    categorizer::run_job(&db, AgentJob::CategorizeAll, provider, cb)
+        .await
+        .expect("categorize job");
 
     let after = uncategorized_count(&db);
     println!("uncategorized after:  {after}");

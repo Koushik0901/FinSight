@@ -34,7 +34,6 @@ pub async fn run_job(
     job: AgentJob,
     provider: Arc<dyn CompletionProvider>,
     on_event: EventCallback,
-    reset_epoch: Arc<std::sync::atomic::AtomicU64>,
 ) -> Result<()> {
     let (import_id, rerun_mode) = match &job {
         AgentJob::CategorizeImport { import_id } => (Some(import_id.clone()), false),
@@ -43,12 +42,15 @@ pub async fn run_job(
         _ => return Ok(()),
     };
 
-    // Snapshot the reset generation. If a Delete-All / factory reset bumps it
-    // while we run, `cancelled()` flips true and we stop at the next batch
-    // boundary — never writing categorizations against a wiped ledger.
-    let start_epoch = reset_epoch.load(std::sync::atomic::Ordering::SeqCst);
-    let cancelled =
-        || reset_epoch.load(std::sync::atomic::Ordering::SeqCst) != start_epoch;
+    // Snapshot the ledger epoch from the reset barrier. Two layers keep this job
+    // from writing against a wiped ledger:
+    //  - `superseded()` (cheap epoch compare) lets us bail promptly at batch
+    //    boundaries once a Delete-All begins.
+    //  - a `writer_lease` held across every commit makes it *impossible* for a
+    //    write to land after the wipe: Delete-All drains outstanding leases
+    //    before wiping, and a lease taken after the wipe sees the new epoch.
+    let start_epoch = db.reset_barrier().epoch();
+    let superseded = || db.reset_barrier().epoch() != start_epoch;
 
     // Load data needed for categorization on a blocking thread
     let (uncategorized, active_rules, categories, recent_examples) = {
@@ -79,9 +81,9 @@ pub async fn run_job(
 
     // Step 1: Rule pass
     for (txn_id, merchant_raw, amount_cents) in &uncategorized {
-        // Bail immediately if the ledger was wiped under us — don't write a
-        // rule categorization for a transaction that no longer exists.
-        if cancelled() {
+        // Bail promptly if a Delete-All has begun — don't keep scanning rules
+        // for transactions that no longer exist.
+        if superseded() {
             return Ok(());
         }
         let matched = active_rules.iter().find(|r| {
@@ -100,11 +102,19 @@ pub async fn run_job(
         });
 
         if let Some(rule) = matched {
+            // Hold a reset lease across the commit and re-check the epoch under
+            // it: if a Delete-All has landed, skip the write entirely; otherwise
+            // the reset can't wipe until this lease drops, so this categorization
+            // can only land before the wipe (never orphaned after it).
+            let lease = db.reset_barrier().writer_lease(start_epoch).await;
+            if lease.superseded() {
+                return Ok(());
+            }
             let cat_id = rule.category_id.clone();
             let txn_id = txn_id.clone();
-            let db = db.clone();
+            let wdb = db.clone();
             tokio::task::spawn_blocking(move || {
-                let mut conn = db.get()?;
+                let mut conn = wdb.get()?;
                 categorizations::insert(&mut conn, NewCategorization {
                     txn_id: txn_id.clone(),
                     category_id: Some(cat_id.clone()),
@@ -118,6 +128,7 @@ pub async fn run_job(
                 )?;
                 Ok::<_, anyhow::Error>(())
             }).await??;
+            drop(lease);
             categorized += 1;
         } else {
             remaining.push((txn_id.clone(), merchant_raw.clone(), *amount_cents));
@@ -136,7 +147,9 @@ pub async fn run_job(
     for chunk in remaining.chunks(LLM_BATCH_SIZE) {
         // A Delete-All / factory reset between batches aborts the rest of the
         // run: the following LLM call + writes would target a wiped ledger.
-        if cancelled() {
+        // (Cheap bail before we spend an LLM round-trip; the lease below is the
+        // bulletproof guard around the actual writes.)
+        if superseded() {
             return Ok(());
         }
         // Per-chunk error recovery: a bad LLM response (timeout, parse error, hallucinated
@@ -169,6 +182,14 @@ pub async fn run_job(
         let chunk_txn_ids: std::collections::HashSet<&str> =
             chunk.iter().map(|(id, _, _)| id.as_str()).collect();
 
+        // Hold one reset lease across this chunk's writes. A Delete-All draining
+        // the barrier waits for it, so these categorizations can only land
+        // before the wipe; and if a reset already committed, `superseded()` is
+        // true and we stop before writing into the wiped ledger.
+        let lease = db.reset_barrier().writer_lease(start_epoch).await;
+        if lease.superseded() {
+            return Ok(());
+        }
         for r in &results {
             // Validate the category_id returned by the LLM exists in our category set.
             // Skip results with hallucinated or stale IDs to avoid writing dangling FKs.
@@ -219,11 +240,21 @@ pub async fn run_job(
                 Err(e) => eprintln!("[categorizer] write task join error, skipping: {e}"),
             }
         }
+        drop(lease);
         on_event(AgentEvent::CategorizationProgress {
             import_id: import_id.clone(),
             done: categorized,
             total,
         });
+    }
+
+    // If a Delete-All has begun, stop here. The remaining post-run steps are
+    // all self-healing against a wipe (rule proposals derive from now-wiped
+    // corrections and are FK-guarded; anomaly detection UPDATEs transactions by
+    // id, hitting zero rows once wiped), but there's no point doing the work —
+    // and this keeps us from racing a wipe that lands mid-step.
+    if superseded() {
+        return Ok(());
     }
 
     // Post-run: surface rule proposals for merchants the user keeps re-categorizing.
@@ -442,7 +473,6 @@ mod tests {
             Arc::new(move |e| {
                 events_clone.lock().unwrap().push(e);
             }),
-            Arc::new(std::sync::atomic::AtomicU64::new(0)),
         )
         .await
         .unwrap();
@@ -472,7 +502,7 @@ mod tests {
             response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.87, "rationale": "Fast food"}]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -515,7 +545,7 @@ mod tests {
             ]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -558,7 +588,7 @@ mod tests {
         });
 
         // Must not error despite the bad id.
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -610,7 +640,7 @@ mod tests {
             response: json!([]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -637,7 +667,7 @@ mod tests {
             response: json!([{"txn_id": "t1", "category_id": "ghost-category", "confidence": 0.9, "rationale": "Hallucinated"}]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -672,41 +702,57 @@ mod tests {
             response: serde_json::Value::String("not valid array".into()),
             tool_turns: Mutex::new(vec![]),
         });
-        let result = run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0))).await;
+        let result = run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {})).await;
         assert!(
             result.is_ok(),
             "job must not fail when a chunk errors: {result:?}"
         );
     }
 
+    /// A provider that simulates a Delete-All landing exactly when the LLM is
+    /// answering: it advances the reset barrier (like `delete_all_data` does)
+    /// on the first `complete_json`, then returns a response that WOULD
+    /// categorize the transaction if the reset guard failed.
+    struct ResetDuringLlmProvider {
+        barrier: finsight_core::ResetBarrier,
+        response: serde_json::Value,
+    }
+
+    #[async_trait::async_trait]
+    impl CompletionProvider for ResetDuringLlmProvider {
+        fn provider_id(&self) -> &str {
+            "reset-during-llm"
+        }
+        fn model_id(&self) -> &str {
+            "test"
+        }
+        async fn complete_json(&self, _system: &str, _user: &str) -> Result<serde_json::Value> {
+            // Advance the epoch (dropping the guard immediately — the epoch stays
+            // advanced; only the drain gate is released). This is the state the
+            // categorizer will observe when it takes its write lease next.
+            drop(self.barrier.begin_reset().await);
+            Ok(self.response.clone())
+        }
+    }
+
     #[tokio::test]
-    async fn reset_between_steps_aborts_before_the_llm_writes() {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        // A Delete-All / factory reset that lands after the rule pass but before
-        // the LLM pass must abort the run so no categorization is written for a
-        // transaction the wipe is removing. We simulate the reset landing
-        // exactly there by bumping the epoch from the first progress event
-        // (fired between Step 1 and the Step 2 chunk loop).
+    async fn reset_during_the_llm_pass_writes_no_categorization() {
+        // A Delete-All that lands while the LLM is answering must leave the
+        // transaction uncategorized: the categorizer takes a write lease and
+        // re-checks the epoch before committing, sees it advanced, and skips.
         let (_d, db) = fresh_db();
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut conn); // t1 CHIPOTLE (no rule) + cat1 + account
         }
-        let epoch = Arc::new(AtomicU64::new(0));
-        let epoch_cb = Arc::clone(&epoch);
-        let on_event: EventCallback = Arc::new(move |_e| {
-            epoch_cb.fetch_add(1, Ordering::SeqCst);
-        });
-        // If the guard did NOT fire, this response would categorize t1 -> cat1.
-        let provider = Arc::new(MockCompletionProvider {
-            provider_id: "mock".into(),
-            model_id: "test".into(),
+        let provider = Arc::new(ResetDuringLlmProvider {
+            barrier: db.reset_barrier().clone(),
+            // If the guard did NOT fire, this response would categorize t1 -> cat1.
             response: json!([
                 {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"}
             ]),
-            tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, on_event, epoch)
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
             .await
             .unwrap();
 
@@ -716,7 +762,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             cat, None,
-            "the LLM pass must be skipped once the ledger is reset mid-run"
+            "the LLM write must be skipped once the reset barrier advanced mid-run"
         );
     }
 }

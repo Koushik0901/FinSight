@@ -53,18 +53,30 @@ The CSV import pipeline was already made anticipatory (parse+reconcile moved off
 **Result:** a keystroke burst now issues **1 query instead of N**. Stale in-flight queries are superseded automatically by the query-key change (React Query drops the orphaned result — it can't overwrite newer state).
 **Correctness:** 3 new `useDebouncedValue` unit tests (immediate initial value, deferred update, burst-collapse); existing `AccountTransactions` tests unchanged.
 
-### 3.3 Delete-All cancels in-flight categorization — `fix(reset)`
+### 3.3 Delete-All has an airtight success boundary — `fix(reset)`
 
-**Bottleneck / correctness gap (evidence):** the background agent had **no cancellation**. A `CategorizeAll` job already running (or queued) when the user hit *Delete All Data* would keep writing categorizations — and orphan `categorizations` rows — against the freshly-wiped ledger. The plan explicitly requires "Delete must cancel work … never reuse deleted/stale data."
+**Bottleneck / correctness gap (evidence):** the background agent had **no cancellation** at all, and a first best-effort fix (a monotonic epoch each writer checked between batches) still had a TOCTOU gap: a writer that had already passed its epoch check could commit *one more* batch/step **after** Delete-All returned success. The requirement is stronger: *once Delete-All reports success, no operation started against the previous ledger epoch may commit any observable user or derived state.*
 
-**Fix (version/epoch pattern the plan calls for):**
-- `AgentHandle` now holds a monotonic `reset_epoch: Arc<AtomicU64>`.
-- `delete_all_data` calls `agent.cancel_running_work()` (bumps the epoch) **before** wiping the DB.
-- **Writer 1 — the agent categorizer:** `categorizer::run_job` snapshots the epoch at start and checks it at every batch boundary — per-row in the rule pass, per-chunk in the LLM pass — aborting early (before the next write) if it changed.
-- **Writer 2 — the import post-commit cascade:** `import_csv` snapshots the epoch before touching the ledger and re-checks before each cascade step (`apply_builtin_categorization`/`ensure_default_categories`, `pair_transfers`, `recompute_anomalies`, `net_worth`). A Delete-All landing during an import therefore can't re-seed default categories or repopulate derived state into the wiped ledger.
+**Fix — a drain barrier (`ResetBarrier`, in `finsight_core`, held on `Db`):**
+- A monotonic **epoch** plus a shared/exclusive **gate**.
+- A background writer snapshots the epoch when it starts and holds a shared `WriterLease` across the critical section that spans *both* its epoch re-check and its commit. `superseded()` (a cheap epoch compare) lets it bail promptly.
+- `delete_all_data` calls `begin_reset()`, which advances the epoch and takes the **exclusive** guard. That guard **cannot be granted until every outstanding lease drains**, and it is held across the wipe.
 
-**Result:** both background writers that could mutate state after a reset are now cancelled. Combined with the frontend's existing `queryClient.clear()` on Delete-All (which drops *all* cached queries incl. `csv-prepare`, transactions, and every derived/report/chart cache), the client cache and both backend writers are invalidated/cancelled by a wipe.
-**Correctness:** new test simulates a reset landing between the rule and LLM passes and asserts no categorization is written; the normal (non-cancelled) path still categorizes.
+Because shared and exclusive access are mutually exclusive, a writer's `(re-check → commit)` can never interleave with a reset's `(bump → wipe)`:
+- If the writer holds the lease first, the reset blocks until the writer commits and drops it; the wipe then removes whatever was committed.
+- If the reset holds the exclusive guard first, the writer's lease blocks until the wipe completes; the writer then re-checks the epoch, sees it advanced, and skips its commit.
+
+Either way **nothing an operation started against the previous epoch can survive past the moment Delete-All reports success.** Applied to both real straddling writers:
+- **Import pipeline** (`import_csv`): one lease held across the whole import + post-commit cascade (categorization/`ensure_default_categories`, transfer pairing, anomaly recompute, net-worth). A concurrent Delete-All drains it before wiping; if a reset already happened the import aborts up front.
+- **Agent categorizer** (`run_job`): a lease around each commit unit (per rule-pass row, per LLM chunk), with the slow LLM call kept *outside* the lease so the drain stays fast (≤ one write).
+
+`AgentHandle`'s ad-hoc `reset_epoch` was removed — the barrier on `Db` is the single source of truth, reachable by every writer via the `db` it already holds. Frontend `queryClient.clear()` on Delete-All still drops all cached/prepared/derived query state.
+
+**Correctness / tests:**
+- Barrier unit tests: a reset blocks until an in-flight lease drains; a lease taken after a reset sees the new epoch; a current-epoch lease is not superseded.
+- End-to-end DB test (`reset.rs`): a writer that leased a category (a non-self-healing write, like `ensure_default_categories`) before a concurrent Delete-All — the wipe blocks on the lease, the writer sees `superseded()` and skips, and after completion **no pre-reset state survives**.
+- Categorizer test: a custom provider triggers `begin_reset()` *during* the LLM call; the categorizer takes its write lease, sees the advanced epoch, and writes nothing — while the normal path still categorizes.
+- **Boundary note:** single-statement synchronous user mutations (manual add/edit/delete) are not leased; they are atomic and cannot be concurrently initiated with Delete-All by one user, and the barrier API is available to wrap them if that ever changes.
 
 ### 3.4 Disable `refetchOnWindowFocus` — `perf(query)`
 
@@ -101,7 +113,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 5. Concurrency, cancellation & staleness guarantees
 
 - **Stale results can't overwrite newer state:** transaction search relies on TanStack Query's query-key versioning — a superseded query's result is dropped, not written back. The import prepare preview is keyed on `(path, accountId, mapping)` and re-keys on any edit.
-- **Delete-All cancels + invalidates:** frontend `queryClient.clear()` (all caches, prepared plans, derived state) + backend reset-epoch cancels **both** post-wipe writers — the agent categorizer and the import post-commit cascade.
+- **Delete-All has an airtight boundary:** the `ResetBarrier` drain (§3.3) guarantees no operation started against the previous epoch commits after Delete-All returns success — the wipe drains outstanding writer leases and holds the exclusive gate across itself; late writers observe the advanced epoch and skip. Frontend `queryClient.clear()` drops all cached/prepared/derived query state.
 - **No early mutation:** the categorization guard aborts *before* the next write, never mid-write; SQLite serializes any single in-flight statement, so no torn writes.
 - **Deterministic output preserved:** the categorize change only removed provably-redundant writes (skipped flag writes were no-ops; cached statements are byte-identical SQL).
 

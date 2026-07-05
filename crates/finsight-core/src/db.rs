@@ -1,4 +1,5 @@
 use crate::error::{CoreError, CoreResult};
+use crate::reset_barrier::ResetBarrier;
 use r2d2::{Pool, PooledConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use refinery::embed_migrations;
@@ -11,6 +12,10 @@ embed_migrations!("./migrations");
 #[derive(Clone)]
 pub struct Db {
     pool: Pool<SqliteConnectionManager>,
+    /// Coordinates Delete-All against in-flight background writers. Shared
+    /// across all clones of this `Db` so every writer and the reset path see
+    /// one barrier.
+    barrier: ResetBarrier,
 }
 
 impl Db {
@@ -71,11 +76,23 @@ impl Db {
 
         // Touch a connection once now to surface key/file errors immediately.
         let _ = pool.get()?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            barrier: ResetBarrier::new(),
+        })
     }
 
     pub fn get(&self) -> CoreResult<PooledConnection<SqliteConnectionManager>> {
         Ok(self.pool.get()?)
+    }
+
+    /// The reset barrier coordinating Delete-All with in-flight background
+    /// writers (import cascade, agent categorizer). Writers snapshot
+    /// `reset_barrier().epoch()` when they start and take a
+    /// `writer_lease(start_epoch)` across their commit; the reset path takes
+    /// `begin_reset()`, which drains outstanding leases before the wipe.
+    pub fn reset_barrier(&self) -> &ResetBarrier {
+        &self.barrier
     }
 
     /// Runs SQLite's integrity check. Returns "ok" when the database is clean.
