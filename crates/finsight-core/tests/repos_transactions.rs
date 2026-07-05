@@ -47,6 +47,12 @@ fn insert_and_list_returns_descending_by_posted_at() {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         },
     )
     .unwrap();
@@ -130,6 +136,12 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         },
     )
     .unwrap();
@@ -163,6 +175,12 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         },
     )
     .unwrap();
@@ -252,6 +270,12 @@ fn list_respects_limit() {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         },
     )
     .unwrap();

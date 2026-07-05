@@ -9,7 +9,6 @@ mod holding;
 mod household;
 mod import_candidate;
 mod institution;
-mod liability;
 mod manual_asset;
 mod net_worth;
 pub mod planned_transaction;
@@ -41,7 +40,6 @@ pub use import_candidate::{
     NewImportCandidateMatch,
 };
 pub use institution::{Institution, NewInstitution};
-pub use liability::{Liability, LiabilityPatch, NewLiability};
 pub use manual_asset::{ManualAsset, ManualAssetPatch, NewManualAsset};
 pub use net_worth::NetWorthPoint;
 pub use planned_transaction::{

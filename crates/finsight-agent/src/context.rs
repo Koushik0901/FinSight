@@ -896,11 +896,19 @@ fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
 
 fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
     let mut out = Vec::new();
+    // Debt used to live in a separate `liabilities` table (loan_type IN
+    // ('loan','mortgage'), balance stored as a positive amount owed); it's
+    // now a Loan-type Account with a negative balance. Credit cards
+    // (AccountType::Credit) are deliberately excluded here — a mortgage/loan
+    // has a fixed original balance you pay down over time, which "% paid
+    // down" measures; revolving credit-card debt doesn't have that shape.
     let mut stmt = match conn.prepare(
-        "SELECT name, balance_cents, original_balance_cents, apr_pct, started_at
-         FROM liabilities
-         WHERE liability_type IN ('loan', 'mortgage')
-         ORDER BY balance_cents DESC",
+        "SELECT a.name,
+                -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                a.original_balance_cents, a.apr_pct, a.started_at
+         FROM accounts a
+         WHERE a.archived_at IS NULL AND a.type = 'Loan'
+         ORDER BY balance DESC",
     ) {
         Ok(stmt) => stmt,
         Err(_) => return out,
@@ -985,6 +993,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap()
@@ -1078,25 +1092,52 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();
 
-        use finsight_core::models::NewLiability;
-        use finsight_core::repos::liabilities;
-        liabilities::create(
+        accounts::insert(
             &mut conn,
-            NewLiability {
+            NewAccount {
+                owner: "Household".into(),
+                bank: "Manual".into(),
+                r#type: AccountType::Loan,
                 name: "Car Loan".into(),
-                liability_type: "loan".into(),
-                balance_cents: 12_000_00,
-                limit_cents: None,
+                last4: None,
+                currency: "USD".into(),
+                color: "#F87171".into(),
+                opening_balance_cents: -12_000_00,
+                source: "manual".into(),
+                liquidity_type: "restricted".into(),
+                emergency_fund_eligible: false,
+                goal_earmark: None,
+                apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "debt".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
                 apr_pct: Some(5.9),
                 min_payment_cents: None,
                 payoff_date: None,
+                limit_cents: None,
                 original_balance_cents: Some(20_000_00),
                 started_at: Some("2021-06".into()),
-                currency: "USD".into(),
             },
         )
         .unwrap();

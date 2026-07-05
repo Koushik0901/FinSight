@@ -2,10 +2,9 @@ use crate::error::{AppError, AppResult};
 use crate::AppState;
 use chrono::{Duration, Utc};
 use finsight_core::models::{
-    Liability, LiabilityPatch, ManualAsset, ManualAssetPatch, NetWorthPoint, NewLiability,
-    NewManualAsset,
+    AccountType, ManualAsset, ManualAssetPatch, NetWorthPoint, NewManualAsset,
 };
-use finsight_core::repos::{liabilities, manual_assets, net_worth, run};
+use finsight_core::repos::{accounts, manual_assets, net_worth, run};
 use serde::Serialize;
 use specta::Type;
 
@@ -52,47 +51,6 @@ pub async fn delete_manual_asset(state: tauri::State<'_, AppState>, id: String) 
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_liabilities(state: tauri::State<'_, AppState>) -> AppResult<Vec<Liability>> {
-    let db = (*state.db).clone();
-    run(&db, liabilities::list).await.map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn create_liability(
-    state: tauri::State<'_, AppState>,
-    input: NewLiability,
-) -> AppResult<Liability> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::create(conn, input))
-        .await
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn update_liability(
-    state: tauri::State<'_, AppState>,
-    id: String,
-    patch: LiabilityPatch,
-) -> AppResult<Liability> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::update(conn, &id, patch))
-        .await
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_liability(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| liabilities::delete(conn, &id))
-        .await
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn record_net_worth_snapshot(state: tauri::State<'_, AppState>) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, net_worth::record_today)
@@ -128,8 +86,8 @@ pub struct DebtPayoffMonth {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DebtPayoffSummary {
-    pub liability_id: String,
-    pub liability_name: String,
+    pub account_id: String,
+    pub account_name: String,
     pub initial_balance_cents: i64,
     pub total_interest_cents: i64,
     pub payoff_month_label: String,
@@ -155,10 +113,17 @@ pub async fn compute_debt_payoff(
 ) -> AppResult<Vec<DebtPayoffResult>> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        let liabilities = liabilities::list(conn)?;
-        let debts: Vec<_> = liabilities
+        // Debt is a Credit/Loan-type Account with a negative balance — not a
+        // separate liabilities-table row. "Amount owed" is the positive
+        // magnitude of that negative balance.
+        let debts: Vec<(String, String, i64, Option<f64>, Option<i64>)> = accounts::list_summaries(conn)?
             .into_iter()
-            .filter(|l| l.balance_cents > 0)
+            .filter(|a| {
+                a.balance_known
+                    && matches!(a.r#type, AccountType::Credit | AccountType::Loan)
+                    && a.balance_cents < 0
+            })
+            .map(|a| (a.id, a.name, -a.balance_cents, a.apr_pct, a.min_payment_cents))
             .collect();
         if debts.is_empty() {
             return Ok(vec![]);
@@ -167,7 +132,7 @@ pub async fn compute_debt_payoff(
         let now = Utc::now();
         let base_payment_budget: i64 = debts
             .iter()
-            .map(|l| l.min_payment_cents.unwrap_or(0).max(1_000))
+            .map(|(_, _, _, _, min_payment_cents)| min_payment_cents.unwrap_or(0).max(1_000))
             .sum::<i64>()
             + extra_monthly_cents.max(0);
 
@@ -175,13 +140,13 @@ pub async fn compute_debt_payoff(
         for strategy in ["snowball", "avalanche"] {
             let mut debt_states: Vec<(String, String, i64, f64, i64)> = debts
                 .iter()
-                .map(|l| {
+                .map(|(id, name, amount_owed, apr_pct, min_payment_cents)| {
                     (
-                        l.id.clone(),
-                        l.name.clone(),
-                        l.balance_cents,
-                        l.apr_pct.unwrap_or(0.0),
-                        l.min_payment_cents.unwrap_or(0).max(1_000),
+                        id.clone(),
+                        name.clone(),
+                        *amount_owed,
+                        apr_pct.unwrap_or(0.0),
+                        min_payment_cents.unwrap_or(0).max(1_000),
                     )
                 })
                 .collect();
@@ -202,8 +167,8 @@ pub async fn compute_debt_payoff(
             let mut summaries: Vec<DebtPayoffSummary> = debt_states
                 .iter()
                 .map(|(id, name, balance, _, _)| DebtPayoffSummary {
-                    liability_id: id.clone(),
-                    liability_name: name.clone(),
+                    account_id: id.clone(),
+                    account_name: name.clone(),
                     initial_balance_cents: *balance,
                     total_interest_cents: 0,
                     payoff_month_label: String::new(),
@@ -310,10 +275,9 @@ pub async fn get_uncelebrated_milestones(state: tauri::State<'_, AppState>) -> A
         let manual_assets_total: i64 = conn
             .query_row("SELECT COALESCE(SUM(value_cents), 0) FROM manual_assets", [], |r| r.get(0))
             .unwrap_or(0);
-        let liabilities_total: i64 = conn
-            .query_row("SELECT COALESCE(SUM(balance_cents), 0) FROM liabilities", [], |r| r.get(0))
-            .unwrap_or(0);
-        let net_worth = total_accounts + manual_assets_total - liabilities_total;
+        // Debt is already folded into total_accounts as negative Credit/Loan
+        // balances — no separate liabilities subtraction needed anymore.
+        let net_worth = total_accounts + manual_assets_total;
 
         let mut new_milestones = Vec::new();
         for threshold in milestones {

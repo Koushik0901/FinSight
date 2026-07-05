@@ -8,6 +8,7 @@ use rusqlite::Connection;
 /// (never in SQLite), so neither needs to be touched here.
 const TABLES_TO_WIPE: &[&str] = &[
     "account_balances",
+    "account_owners",
     "accounts",
     "agent_action_bundles",
     "agent_action_items",
@@ -27,11 +28,11 @@ const TABLES_TO_WIPE: &[&str] = &[
     "csv_import_mappings",
     "goals",
     "holdings",
+    "household_members",
     "import_candidate_matches",
     "import_candidates",
     "imports",
     "institutions",
-    "liabilities",
     "manual_assets",
     "merchants",
     "monthly_reviews",
@@ -122,6 +123,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();

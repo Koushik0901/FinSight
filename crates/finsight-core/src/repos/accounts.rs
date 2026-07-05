@@ -14,8 +14,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     conn.execute(
-        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, nickname) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, nickname, apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         params![
             &id,
             &input.owner,
@@ -33,6 +33,12 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
             now.to_rfc3339(),
             &input.simplefin_account_id,
             &input.nickname,
+            &input.apr_pct,
+            &input.min_payment_cents,
+            &input.payoff_date,
+            &input.limit_cents,
+            &input.original_balance_cents,
+            &input.started_at,
         ],
     )?;
 
@@ -81,6 +87,12 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
         extra_json: input.extra_json,
         raw_json: input.raw_json,
         import_pending: input.import_pending,
+        apr_pct: input.apr_pct,
+        min_payment_cents: input.min_payment_cents,
+        payoff_date: input.payoff_date,
+        limit_cents: input.limit_cents,
+        original_balance_cents: input.original_balance_cents,
+        started_at: input.started_at,
     })
 }
 
@@ -102,7 +114,9 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
                                WHERE b.account_id = a.id AND b.source <> 'seed') THEN 1 \
                   WHEN NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id) THEN 1 \
                   ELSE 0 \
-                END AS balance_known \
+                END AS balance_known, \
+                a.apr_pct, a.min_payment_cents, a.payoff_date, a.limit_cents, \
+                a.original_balance_cents, a.started_at \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
@@ -148,6 +162,12 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             extra_json: r.get(25)?,
             raw_json: r.get(26)?,
             import_pending: r.get::<_, i64>(27)? != 0,
+            apr_pct: r.get(29)?,
+            min_payment_cents: r.get(30)?,
+            payoff_date: r.get(31)?,
+            limit_cents: r.get(32)?,
+            original_balance_cents: r.get(33)?,
+            started_at: r.get(34)?,
         })
     })?;
     let mut out = Vec::new();
@@ -224,6 +244,42 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
             params![nickname, id],
         )?;
     }
+    if let Some(apr_pct) = &patch.apr_pct {
+        conn.execute(
+            "UPDATE accounts SET apr_pct = ?1 WHERE id = ?2",
+            params![apr_pct, id],
+        )?;
+    }
+    if let Some(min_payment_cents) = &patch.min_payment_cents {
+        conn.execute(
+            "UPDATE accounts SET min_payment_cents = ?1 WHERE id = ?2",
+            params![min_payment_cents, id],
+        )?;
+    }
+    if let Some(payoff_date) = &patch.payoff_date {
+        conn.execute(
+            "UPDATE accounts SET payoff_date = ?1 WHERE id = ?2",
+            params![payoff_date, id],
+        )?;
+    }
+    if let Some(limit_cents) = &patch.limit_cents {
+        conn.execute(
+            "UPDATE accounts SET limit_cents = ?1 WHERE id = ?2",
+            params![limit_cents, id],
+        )?;
+    }
+    if let Some(original_balance_cents) = &patch.original_balance_cents {
+        conn.execute(
+            "UPDATE accounts SET original_balance_cents = ?1 WHERE id = ?2",
+            params![original_balance_cents, id],
+        )?;
+    }
+    if let Some(started_at) = &patch.started_at {
+        conn.execute(
+            "UPDATE accounts SET started_at = ?1 WHERE id = ?2",
+            params![started_at, id],
+        )?;
+    }
     get_by_id(conn, id)
 }
 
@@ -233,7 +289,8 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
                 liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at, \
                 simplefin_account_id, last_synced_at, nickname, connection_id, institution_id, \
                 external_account_id, official_name, mask, subtype, account_group, \
-                available_balance_cents, balance_date, extra_json, raw_json, import_pending \
+                available_balance_cents, balance_date, extra_json, raw_json, import_pending, \
+                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at \
          FROM accounts WHERE id = ?1",
         params![id],
         |r| {
@@ -285,6 +342,12 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
                 extra_json: r.get(26)?,
                 raw_json: r.get(27)?,
                 import_pending: r.get::<_, i64>(28)? != 0,
+                apr_pct: r.get(29)?,
+                min_payment_cents: r.get(30)?,
+                payoff_date: r.get(31)?,
+                limit_cents: r.get(32)?,
+                original_balance_cents: r.get(33)?,
+                started_at: r.get(34)?,
             })
         },
     )
@@ -411,7 +474,8 @@ pub fn list_by_connection_id(
                 emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, \
                 last_synced_at, nickname, connection_id, institution_id, external_account_id, \
                 official_name, mask, subtype, account_group, available_balance_cents, balance_date, \
-                extra_json, raw_json, import_pending \
+                extra_json, raw_json, import_pending, \
+                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at \
          FROM accounts WHERE connection_id = ?1 AND archived_at IS NULL",
     )?;
     let rows = stmt.query_map(params![connection_id], |r| {
@@ -463,6 +527,12 @@ pub fn list_by_connection_id(
             extra_json: r.get(26)?,
             raw_json: r.get(27)?,
             import_pending: r.get::<_, i64>(28)? != 0,
+            apr_pct: r.get(29)?,
+            min_payment_cents: r.get(30)?,
+            payoff_date: r.get(31)?,
+            limit_cents: r.get(32)?,
+            original_balance_cents: r.get(33)?,
+            started_at: r.get(34)?,
         })
     })?;
     let mut out = Vec::new();
@@ -497,6 +567,10 @@ pub fn upsert_simplefin_account(conn: &mut Connection, input: NewAccount) -> Cor
             subtype: Some(input.subtype),
             account_group: Some(input.account_group),
             import_pending: Some(input.import_pending),
+            // Debt fields (apr_pct, min_payment_cents, ...) are user-managed,
+            // never synced from SimpleFin — leaving them None here means
+            // "don't touch," preserving whatever the user already entered.
+            ..Default::default()
         };
         update(conn, &existing.id, patch)
     } else {
@@ -565,6 +639,12 @@ pub fn get_by_simplefin_id(
             extra_json: r.get(26)?,
             raw_json: r.get(27)?,
             import_pending: r.get::<_, i64>(28)? != 0,
+            apr_pct: r.get(29)?,
+            min_payment_cents: r.get(30)?,
+            payoff_date: r.get(31)?,
+            limit_cents: r.get(32)?,
+            original_balance_cents: r.get(33)?,
+            started_at: r.get(34)?,
         })
     })?;
     Ok(rows.next().transpose()?)
@@ -741,6 +821,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap()
@@ -802,6 +888,59 @@ mod tests {
         assert_eq!(updated.apy_pct, Some(4.5));
         let summaries = list_summaries(&mut conn).unwrap();
         assert_eq!(summaries[0].apy_pct, Some(4.5));
+    }
+
+    #[test]
+    fn update_account_debt_fields_round_trip() {
+        // Mirrors update_account_apy_round_trip: the debt fields that used to
+        // live only on the retired `liabilities` table are now optional,
+        // patchable fields on any Credit/Loan account.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        let updated = update(
+            &mut conn,
+            &acc.id,
+            AccountPatch {
+                apr_pct: Some(Some(24.9)),
+                min_payment_cents: Some(Some(5_000)),
+                payoff_date: Some(Some("2027-01-01".into())),
+                limit_cents: Some(Some(500_000)),
+                original_balance_cents: Some(Some(200_000)),
+                started_at: Some(Some("2023-05-01".into())),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.apr_pct, Some(24.9));
+        assert_eq!(updated.min_payment_cents, Some(5_000));
+        assert_eq!(updated.payoff_date.as_deref(), Some("2027-01-01"));
+        assert_eq!(updated.limit_cents, Some(500_000));
+        assert_eq!(updated.original_balance_cents, Some(200_000));
+        assert_eq!(updated.started_at.as_deref(), Some("2023-05-01"));
+
+        let summaries = list_summaries(&mut conn).unwrap();
+        let summary = summaries.iter().find(|a| a.id == acc.id).unwrap();
+        assert_eq!(summary.apr_pct, Some(24.9));
+        assert_eq!(summary.min_payment_cents, Some(5_000));
+        assert_eq!(summary.payoff_date.as_deref(), Some("2027-01-01"));
+        assert_eq!(summary.limit_cents, Some(500_000));
+        assert_eq!(summary.original_balance_cents, Some(200_000));
+        assert_eq!(summary.started_at.as_deref(), Some("2023-05-01"));
+
+        // Clearing a field back to None must work too (Some(None), not the
+        // outer None that means "leave untouched").
+        let cleared = update(
+            &mut conn,
+            &acc.id,
+            AccountPatch {
+                payoff_date: Some(None),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(cleared.payoff_date, None);
+        assert_eq!(cleared.apr_pct, Some(24.9), "unrelated debt fields untouched");
     }
 
     #[test]
@@ -882,6 +1021,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();

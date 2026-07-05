@@ -19,6 +19,8 @@ const existingAccount = {
   connection_id: null, institution_id: null, external_account_id: null, official_name: null,
   mask: null, subtype: null, account_group: "cash", available_balance_cents: null,
   balance_date: null, extra_json: null, raw_json: null, import_pending: false,
+  apr_pct: null, min_payment_cents: null, payoff_date: null, limit_cents: null,
+  original_balance_cents: null, started_at: null,
 };
 
 describe("AccountDrawer — create mode", () => {

@@ -1,42 +1,49 @@
 use crate::error::CoreResult;
-use crate::models::NetWorthPoint;
-use crate::repos::{accounts, liabilities, manual_assets};
+use crate::models::{AccountType, NetWorthPoint};
+use crate::repos::{accounts, manual_assets};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Deterministic net-worth breakdown: assets (known-balance accounts + manual
-/// assets) minus liabilities. Accounts whose balance is not confirmed
-/// (`balance_known == false`, e.g. CSV history with no balance field) are
-/// EXCLUDED from the totals and surfaced separately so the Copilot can mark
-/// them clearly rather than counting a phantom $0. Mirrors `record_today` and
-/// the frontend `useNetWorth()`.
+/// Deterministic net-worth breakdown: assets (known-balance accounts, which
+/// already include debt as negative balances on Credit/Loan accounts) plus
+/// manual assets. Accounts whose balance is not confirmed (`balance_known ==
+/// false`, e.g. CSV history with no balance field) are EXCLUDED from the
+/// totals and surfaced separately so the Copilot can mark them clearly rather
+/// than counting a phantom $0. Mirrors `record_today` and the frontend
+/// `useNetWorth()`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NetWorthBreakdown {
     pub net_worth_cents: i64,
     pub total_assets_cents: i64,
     pub known_account_balance_cents: i64,
     pub manual_asset_cents: i64,
+    /// Informational total debt (sum of the amount owed on known-balance
+    /// Credit/Loan accounts, always >= 0). This is NOT subtracted again —
+    /// it's already reflected as negative numbers inside
+    /// `known_account_balance_cents`. Debt used to live in a separate
+    /// `liabilities` table that was summed independently, which let the same
+    /// card be counted twice if also tracked as an Account; folding debt into
+    /// Account removed the second ledger entirely.
     pub liability_cents: i64,
     pub accounts_with_known_balance: i64,
     pub accounts_with_unknown_balance: i64,
     /// Names of accounts excluded from the total because their balance is not
     /// confirmed. The Copilot should mention these as unknown, not as $0.
     pub unknown_balance_accounts: Vec<String>,
-    /// True when there is at least one account, manual asset, or liability to
-    /// compute from. When false, net worth is not meaningful (no data).
+    /// True when there is at least one account or manual asset to compute
+    /// from. When false, net worth is not meaningful (no data).
     pub has_data: bool,
 }
 
-/// Compute the current net-worth breakdown from live account, manual-asset, and
-/// liability data. Uses the exact same inclusion rules as [`record_today`].
+/// Compute the current net-worth breakdown from live account and manual-asset
+/// data. Uses the exact same inclusion rules as [`record_today`].
 pub fn breakdown(conn: &mut Connection) -> CoreResult<NetWorthBreakdown> {
     let accounts = accounts::list_summaries(conn)?;
     let assets = manual_assets::list(conn)?;
-    let liabilities = liabilities::list(conn)?;
 
-    let has_data = !(accounts.is_empty() && assets.is_empty() && liabilities.is_empty());
+    let has_data = !(accounts.is_empty() && assets.is_empty());
 
     let known_account_balance_cents: i64 = accounts
         .iter()
@@ -51,11 +58,19 @@ pub fn breakdown(conn: &mut Connection) -> CoreResult<NetWorthBreakdown> {
         .collect();
     let accounts_with_unknown_balance = unknown_balance_accounts.len() as i64;
     let manual_asset_cents: i64 = assets.iter().map(|a| a.value_cents).sum();
-    let liability_cents: i64 = liabilities.iter().map(|l| l.balance_cents).sum();
+    let liability_cents: i64 = accounts
+        .iter()
+        .filter(|a| {
+            a.balance_known
+                && matches!(a.r#type, AccountType::Credit | AccountType::Loan)
+                && a.balance_cents < 0
+        })
+        .map(|a| -a.balance_cents)
+        .sum();
     let total_assets_cents = known_account_balance_cents + manual_asset_cents;
 
     Ok(NetWorthBreakdown {
-        net_worth_cents: total_assets_cents - liability_cents,
+        net_worth_cents: total_assets_cents,
         total_assets_cents,
         known_account_balance_cents,
         manual_asset_cents,
@@ -167,18 +182,18 @@ pub fn backfill_history_from_transactions(conn: &mut Connection) -> CoreResult<(
     Ok(())
 }
 
-/// Sum account balances + manual assets − liabilities, then upsert today's
-/// snapshot. Keeps the recorded net worth consistent with the headline shown
-/// on the Today/Accounts screens.
+/// Sum account balances (debt already included as negative Credit/Loan
+/// balances) + manual assets, then upsert today's snapshot. Keeps the
+/// recorded net worth consistent with the headline shown on the
+/// Today/Accounts screens.
 pub fn record_today(conn: &mut Connection) -> CoreResult<()> {
     let accounts = accounts::list_summaries(conn)?;
     let assets = manual_assets::list(conn)?;
-    let liabilities = liabilities::list(conn)?;
 
-    // If the user has removed every account, asset, and liability, there is
-    // nothing meaningful to trend. Wipe stale snapshots so the homepage chart
-    // does not keep showing a phantom net-worth history.
-    if accounts.is_empty() && assets.is_empty() && liabilities.is_empty() {
+    // If the user has removed every account and asset, there is nothing
+    // meaningful to trend. Wipe stale snapshots so the homepage chart does
+    // not keep showing a phantom net-worth history.
+    if accounts.is_empty() && assets.is_empty() {
         conn.execute("DELETE FROM net_worth_snapshots", [])?;
         return Ok(());
     }
@@ -192,8 +207,7 @@ pub fn record_today(conn: &mut Connection) -> CoreResult<()> {
         .map(|a| a.balance_cents)
         .sum();
     let assets_sum: i64 = assets.iter().map(|a| a.value_cents).sum();
-    let liabilities_sum: i64 = liabilities.iter().map(|l| l.balance_cents).sum();
-    record_snapshot(conn, accounts_sum + assets_sum - liabilities_sum)
+    record_snapshot(conn, accounts_sum + assets_sum)
 }
 
 pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorthPoint>> {
@@ -241,9 +255,9 @@ mod tests {
     }
 
     #[test]
-    fn record_today_folds_assets_and_liabilities() {
-        use crate::models::{AccountType, NewAccount, NewLiability, NewManualAsset};
-        use crate::repos::{accounts, liabilities, manual_assets};
+    fn record_today_folds_assets_and_debt_accounts() {
+        use crate::models::{AccountType, NewAccount, NewManualAsset};
+        use crate::repos::{accounts, manual_assets};
 
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
@@ -278,6 +292,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();
@@ -292,19 +312,44 @@ mod tests {
             },
         )
         .unwrap();
-        liabilities::create(
+        // Debt is now just an Account with a negative balance, not a
+        // separate liabilities-table row.
+        accounts::insert(
             &mut conn,
-            NewLiability {
+            NewAccount {
+                owner: "me".into(),
+                bank: "Manual".into(),
+                r#type: AccountType::Loan,
                 name: "Mortgage".into(),
-                liability_type: "mortgage".into(),
-                balance_cents: 30_000_000,
-                limit_cents: Some(35_000_000),
+                last4: None,
+                currency: "USD".into(),
+                color: "#F87171".into(),
+                source: "manual".into(),
+                liquidity_type: "restricted".into(),
+                emergency_fund_eligible: false,
+                goal_earmark: None,
+                apy_pct: None,
+                opening_balance_cents: -30_000_000,
+                simplefin_account_id: None,
+                nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "debt".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
                 apr_pct: Some(5.5),
                 min_payment_cents: Some(180_000),
                 payoff_date: None,
+                limit_cents: Some(35_000_000),
                 original_balance_cents: None,
                 started_at: None,
-                currency: "USD".into(),
             },
         )
         .unwrap();
@@ -313,7 +358,7 @@ mod tests {
 
         let hist = list_history(&mut conn, 30).unwrap();
         assert_eq!(hist.len(), 1);
-        // 10,000,000 accounts + 50,000,000 assets − 30,000,000 liabilities
+        // 10,000,000 checking + 50,000,000 house + (−30,000,000) mortgage
         assert_eq!(hist[0].total_cents, 30_000_000);
     }
 
@@ -362,8 +407,8 @@ mod tests {
 
     #[test]
     fn breakdown_includes_derived_balances_after_import() {
-        use crate::models::{NewLiability, NewTransaction, TransactionStatus};
-        use crate::repos::{accounts, liabilities, transactions};
+        use crate::models::{AccountType, NewAccount, NewTransaction, TransactionStatus};
+        use crate::repos::{accounts, transactions};
         use chrono::Duration;
 
         let (_d, db) = fresh_db();
@@ -396,32 +441,33 @@ mod tests {
         )
         .unwrap();
 
-        liabilities::create(
+        // Debt is now a Credit-type Account with a negative manual balance,
+        // not a separate liabilities-table row.
+        accounts::insert(
             &mut conn,
-            NewLiability {
-                name: "Card".into(),
-                liability_type: "credit-card".into(),
-                balance_cents: 120_000,
-                limit_cents: Some(500_000),
+            NewAccount {
+                r#type: AccountType::Credit,
+                opening_balance_cents: -120_000,
+                account_group: "debt".into(),
+                liquidity_type: "restricted".into(),
+                emergency_fund_eligible: false,
                 apr_pct: Some(19.9),
                 min_payment_cents: Some(3_000),
-                payoff_date: None,
-                original_balance_cents: None,
-                started_at: None,
-                currency: "USD".into(),
+                limit_cents: Some(500_000),
+                ..base_account("Card", 0, "manual")
             },
         )
         .unwrap();
 
         let b = breakdown(&mut conn).unwrap();
         assert!(b.has_data);
-        // Both accounts now have known balances: 500,000 + (0 − 4,200) = 495,800.
-        assert_eq!(b.known_account_balance_cents, 495_800);
-        assert_eq!(b.accounts_with_known_balance, 2);
+        // Checking 500,000 + imported card (0 − 4,200) + credit card (−120,000)
+        assert_eq!(b.known_account_balance_cents, 375_800);
+        assert_eq!(b.accounts_with_known_balance, 3);
         assert_eq!(b.accounts_with_unknown_balance, 0);
         assert!(b.unknown_balance_accounts.is_empty());
-        assert_eq!(b.liability_cents, 120_000);
-        // 495,800 known assets − 120,000 liabilities = 375,800
+        assert_eq!(b.liability_cents, 120_000, "informational debt total, not subtracted again");
+        // 375,800 — the debt is already folded into known_account_balance_cents.
         assert_eq!(b.net_worth_cents, 375_800);
     }
 
@@ -468,6 +514,12 @@ mod tests {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         }
     }
 
@@ -509,6 +561,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();

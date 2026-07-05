@@ -106,7 +106,7 @@ struct RecategorizeAssignment {
 struct DebtPayoffPlanPayload {
     method: String,
     extra_monthly_cents: i64,
-    liability_ids: Option<Vec<String>>,
+    account_ids: Option<Vec<String>>,
 }
 
 pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<BundleExecutionResult> {
@@ -414,7 +414,7 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
         "debt_payoff_plan" => {
             let payload: DebtPayoffPlanPayload = parse_payload(&item.payload_json)?;
             let tracked = payload
-                .liability_ids
+                .account_ids
                 .as_ref()
                 .map(|ids| ids.len())
                 .unwrap_or(0);
@@ -515,6 +515,12 @@ mod tests {
                 extra_json: None,
                 raw_json: None,
                 import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap();
@@ -529,7 +535,6 @@ mod tests {
                 color: "#abcdef".into(),
                 notes: None,
                 purpose: None,
-                liability_id: None,
                 account_id: None,
             },
         )
@@ -762,6 +767,12 @@ mod tests {
             extra_json: None,
             raw_json: None,
             import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
         }
     }
 

@@ -1761,8 +1761,12 @@ mod tests {
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1','2026-06-01',500000)", []).unwrap();
         conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('car','Car','save-by-date',2000000,500000,50000,'#fff',0,datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('cc','Credit Card','credit-card',250000,500000,24.9,5000,'USD',datetime('now'),datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('loan','Loan','loan',1800000,NULL,5.0,30000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+        // Debt is now a Credit/Loan-type Account with a negative balance, not
+        // a separate liabilities-table row.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Household','Manual','Credit','Credit Card','USD','#F97316','manual','restricted',0,'debt',24.9,5000,500000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc',date('now'),-250000,'manual')", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('loan','Household','Manual','Loan','Loan','USD','#F87171','manual','restricted',0,'debt',5.0,30000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('loan',date('now'),-1800000,'manual')", []).unwrap();
         for days in [10, 40, 70] {
             conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),300000,'Payroll','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
         }
@@ -1785,7 +1789,7 @@ mod tests {
                 "starter" => {
                     conn.execute("UPDATE account_balances SET balance_cents = 150000 WHERE account_id = 'a1'", []).unwrap();
                     conn.execute(
-                        "UPDATE liabilities SET balance_cents = 0 WHERE id IN ('cc', 'loan')",
+                        "UPDATE account_balances SET balance_cents = 0 WHERE account_id IN ('cc', 'loan')",
                         [],
                     )
                     .unwrap();
@@ -2038,7 +2042,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed(&mut conn);
         conn.execute(
-            "UPDATE liabilities SET apr_pct = NULL, min_payment_cents = NULL WHERE id = 'loan'",
+            "UPDATE accounts SET apr_pct = NULL, min_payment_cents = NULL WHERE id = 'loan'",
             [],
         )
         .unwrap();
@@ -2185,7 +2189,7 @@ mod tests {
         seed(&mut conn);
         let target_date = (Utc::now().date_naive() + chrono::Duration::days(90)).to_string();
         conn.execute(
-            "UPDATE liabilities SET apr_pct = 3.0 WHERE id IN ('cc', 'loan')",
+            "UPDATE accounts SET apr_pct = 3.0 WHERE id IN ('cc', 'loan')",
             [],
         )
         .unwrap();

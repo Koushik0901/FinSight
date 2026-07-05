@@ -511,14 +511,20 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
 
     let accounts = accounts(conn)?;
     let total_account_balance_cents: i64 = accounts.iter().map(|a| a.balance_cents).sum();
+    // Debt (Credit/Loan accounts) is never a liquid asset or emergency-fund
+    // balance, regardless of its liquidity_type tag — these used to live in a
+    // separate liabilities table that this sum never saw; now that debt is an
+    // Account too, it must be excluded explicitly rather than relying on
+    // liquidity_type alone.
+    let is_debt = |a: &&SnapshotAccount| a.account_type == "Credit" || a.account_type == "Loan";
     let liquid_balance_cents: i64 = accounts
         .iter()
-        .filter(|a| a.liquidity_type != "illiquid")
+        .filter(|a| a.liquidity_type != "illiquid" && !is_debt(a))
         .map(|a| a.balance_cents)
         .sum();
     let emergency_fund_balance_cents: i64 = accounts
         .iter()
-        .filter(|a| a.emergency_fund_eligible && a.liquidity_type != "illiquid")
+        .filter(|a| a.emergency_fund_eligible && a.liquidity_type != "illiquid" && !is_debt(a))
         .map(|a| a.balance_cents)
         .sum();
     let (income90, expense90) = income_expense_since(conn, &cut90)?;
@@ -1863,13 +1869,29 @@ fn goal_by_id(conn: &mut Connection, goal_id: &str) -> rusqlite::Result<Option<S
     goals(conn).map(|goals| goals.into_iter().find(|g| g.id == goal_id))
 }
 
+/// Debt used to live in a separate `liabilities` table (positive
+/// `balance_cents` = amount owed); it's now a Credit/Loan-type Account with a
+/// negative balance. This reads the latest known balance per debt account and
+/// negates it back to the old "amount owed" convention `SnapshotLiability`
+/// (and everything downstream that reasons about debt) already expects — the
+/// planning/reasoning logic itself is unchanged, only its data source moved.
 fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>> {
-    let mut stmt = conn.prepare("SELECT id, name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at FROM liabilities ORDER BY balance_cents DESC")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, type, balance, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at FROM (
+             SELECT a.id, a.name, a.type,
+                    -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                    a.limit_cents, a.apr_pct, a.min_payment_cents, a.payoff_date, a.original_balance_cents, a.started_at
+             FROM accounts a
+             WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
+         ) WHERE balance > 0
+         ORDER BY balance DESC",
+    )?;
     let rows = stmt.query_map([], |r| {
+        let account_type: String = r.get(2)?;
         Ok(SnapshotLiability {
             id: r.get(0)?,
             name: r.get(1)?,
-            liability_type: r.get(2)?,
+            liability_type: if account_type == "Credit" { "credit-card".into() } else { "loan".into() },
             balance_cents: r.get(3)?,
             limit_cents: r.get(4)?,
             apr_pct: r.get(5)?,
@@ -1955,8 +1977,12 @@ mod tests {
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1','2026-06-01',500000)", []).unwrap();
         conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('car','Car','save-by-date',2000000,500000,0,'#fff',0,datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('cc','Credit Card','credit-card',250000,500000,24.9,5000,'USD',datetime('now'),datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('loan','Loan','loan',1800000,NULL,5.0,30000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+        // Debt is now a Credit/Loan-type Account with a negative balance, not
+        // a separate liabilities-table row.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Household','Manual','Credit','Credit Card','USD','#F97316','manual','restricted',0,'debt',24.9,5000,500000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc',date('now'),-250000,'manual')", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('loan','Household','Manual','Loan','Loan','USD','#F87171','manual','restricted',0,'debt',5.0,30000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('loan',date('now'),-1800000,'manual')", []).unwrap();
         for days in [10, 40, 70] {
             conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),300000,'Payroll','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
         }
@@ -2235,7 +2261,7 @@ mod tests {
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
         seed(&mut conn);
-        conn.execute("UPDATE liabilities SET apr_pct = 5.0 WHERE id = 'cc'", [])
+        conn.execute("UPDATE accounts SET apr_pct = 5.0 WHERE id = 'cc'", [])
             .unwrap();
 
         let scenario = run_purchase_affordability(&mut conn, 450_000).unwrap();
@@ -2270,7 +2296,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed(&mut conn);
         conn.execute(
-            "UPDATE liabilities SET apr_pct = NULL, min_payment_cents = NULL WHERE id = 'loan'",
+            "UPDATE accounts SET apr_pct = NULL, min_payment_cents = NULL WHERE id = 'loan'",
             [],
         )
         .unwrap();

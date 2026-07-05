@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
-import { useLiabilities } from "../api/hooks/assets";
 import { useUpdateGoalMonthly, useUpdateGoalPurpose } from "../api/hooks/budget";
 import type { GoalDto } from "../api/client";
 import { money } from "../utils/format";
@@ -17,7 +16,6 @@ interface Props {
 export default function GoalDrawer({ open, onClose, goal }: Props) {
   const updateMonthly = useUpdateGoalMonthly();
   const updatePurpose = useUpdateGoalPurpose();
-  const { data: liabilities = [] } = useLiabilities();
   const { data: accounts = [] } = useAccounts();
   const [monthly, setMonthly] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -32,10 +30,6 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
     setPurpose(goal.purpose ?? "");
   }, [goal?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const linkedLiability = useMemo(
-    () => liabilities.find((liability) => liability.id === goal?.liabilityId) ?? null,
-    [goal?.liabilityId, liabilities]
-  );
   const linkedAccount = useMemo(
     () => accounts.find((account) => account.id === goal?.accountId) ?? null,
     [accounts, goal?.accountId]
@@ -81,7 +75,6 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
             </div>
             <div className="muted">{goal.targetCents > 0 ? `Goal size ${money(goal.targetCents, { currency: "USD" })}` : "No target amount"}</div>
             <div className="muted" style={{ marginTop: 4 }}>{goal.currentCents > 0 ? `Current balance ${money(goal.currentCents, { currency: "USD" })}` : "No current balance recorded"}</div>
-            {linkedLiability && <div className="muted" style={{ marginTop: 4 }}>Linked liability: {linkedLiability.name}</div>}
             {linkedAccount && <div className="muted" style={{ marginTop: 4 }}>Linked account: {getAccountDisplayName(linkedAccount)}</div>}
           </div>
 

@@ -32,6 +32,12 @@ function makeAccount(overrides: Partial<AccountSummary> = {}): AccountSummary {
     extra_json: null,
     raw_json: null,
     import_pending: false,
+    apr_pct: null,
+    min_payment_cents: null,
+    payoff_date: null,
+    limit_cents: null,
+    original_balance_cents: null,
+    started_at: null,
     ...overrides,
   };
 }

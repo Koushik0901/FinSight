@@ -25,14 +25,19 @@ export function money(cents: number, opts: MoneyOpts = {}): string {
 
 /**
  * Compact currency for chart callouts: "$137.5K", "-CA$1.2M", "$482".
- * Same currency resolution as `money`.
+ * Same currency resolution as `money`. Below $1,000 there's nothing to
+ * abbreviate, so this drops to the same 0-decimal precision as `money()` —
+ * otherwise a headline stat and a chart callout for the exact same value
+ * can disagree (e.g. "-$69" vs "-$68.6") purely from rounding, which reads
+ * as a data bug even when the numbers are identical.
  */
 export function compactMoney(cents: number, opts: Pick<MoneyOpts, "currency"> = {}): string {
   const currency = opts.currency ?? useTweaks.getState().currency ?? "USD";
+  const abs = Math.abs(cents / 100);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
     notation: "compact",
-    maximumFractionDigits: 1,
+    maximumFractionDigits: abs >= 1000 ? 1 : 0,
   }).format(cents / 100);
 }

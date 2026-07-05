@@ -17,10 +17,16 @@ import type { Account } from "../api/bindings";
  *  list-page `AccountSummary` satisfy this, so either can open the editor. */
 export type EditableAccount = Pick<
   Account,
-  "id" | "bank" | "name" | "type" | "currency" | "color" | "owner" | "apy_pct" | "nickname"
+  | "id" | "bank" | "name" | "type" | "currency" | "color" | "owner" | "apy_pct" | "nickname"
+  | "apr_pct" | "min_payment_cents" | "payoff_date" | "limit_cents" | "original_balance_cents" | "started_at"
 > & { last4?: string | null };
 import { userErrorMessage } from "../utils/runtime";
 import { accountTypeColor } from "../utils/accountColor";
+
+const optionalNumber = z.preprocess(
+  (v) => (v === "" || v === undefined || v === null ? undefined : v),
+  z.coerce.number().nonnegative().optional()
+);
 
 const schema = z.object({
   bank: z.string().min(1, "Required"),
@@ -30,10 +36,14 @@ const schema = z.object({
   last4: z.string().max(4).optional(),
   currency: z.enum(["USD", "EUR", "GBP", "CAD", "AUD"]),
   opening_dollars: z.coerce.number(),
-  apy_pct: z.preprocess(
-    (v) => (v === "" || v === undefined || v === null ? undefined : v),
-    z.coerce.number().nonnegative().optional()
-  ),
+  apy_pct: optionalNumber,
+  // Debt fields — only meaningful for Credit/Loan accounts (shown conditionally).
+  apr_pct: optionalNumber,
+  min_payment_dollars: optionalNumber,
+  limit_dollars: optionalNumber,
+  original_balance_dollars: optionalNumber,
+  payoff_date: z.string().optional(),
+  started_at: z.string().optional(),
 });
 
 /// Avatar colors cycled for newly created household members.
@@ -76,6 +86,12 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
       opening_dollars: 0,
       apy_pct: undefined,
       nickname: undefined,
+      apr_pct: undefined,
+      min_payment_dollars: undefined,
+      limit_dollars: undefined,
+      original_balance_dollars: undefined,
+      payoff_date: undefined,
+      started_at: undefined,
     },
   });
 
@@ -90,10 +106,27 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         opening_dollars: 0,
         apy_pct: account.apy_pct ?? undefined,
         nickname: account.nickname ?? undefined,
+        apr_pct: account.apr_pct ?? undefined,
+        min_payment_dollars: account.min_payment_cents != null ? account.min_payment_cents / 100 : undefined,
+        limit_dollars: account.limit_cents != null ? account.limit_cents / 100 : undefined,
+        original_balance_dollars: account.original_balance_cents != null ? account.original_balance_cents / 100 : undefined,
+        payoff_date: account.payoff_date ?? undefined,
+        started_at: account.started_at ?? undefined,
       });
       setSelectedOwnerIds(allOwners.filter((o) => o.accountId === account.id).map((o) => o.memberId));
     } else {
-      reset({ type: "Checking", currency: "USD", opening_dollars: 0, nickname: undefined });
+      reset({
+        type: "Checking",
+        currency: "USD",
+        opening_dollars: 0,
+        nickname: undefined,
+        apr_pct: undefined,
+        min_payment_dollars: undefined,
+        limit_dollars: undefined,
+        original_balance_dollars: undefined,
+        payoff_date: undefined,
+        started_at: undefined,
+      });
       setSelectedOwnerIds([]);
     }
     setNewPersonName("");
@@ -126,6 +159,32 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
     return names.length === 0 ? "Household" : names.join(" & ");
   };
 
+  const isDebtType = (type: FormValues["type"]) => type === "Credit" || type === "Loan";
+
+  /** apr_pct/min_payment_cents/payoff_date/limit_cents/original_balance_cents/
+   *  started_at — only meaningful for Credit/Loan accounts. Cleared to null
+   *  if the type isn't debt, even if stale values linger in the form. */
+  function debtFieldsFromValues(values: FormValues, type: FormValues["type"]) {
+    if (!isDebtType(type)) {
+      return {
+        apr_pct: null,
+        min_payment_cents: null,
+        payoff_date: null,
+        limit_cents: null,
+        original_balance_cents: null,
+        started_at: null,
+      };
+    }
+    return {
+      apr_pct: values.apr_pct != null && !Number.isNaN(values.apr_pct) ? values.apr_pct : null,
+      min_payment_cents: values.min_payment_dollars != null && !Number.isNaN(values.min_payment_dollars) ? Math.round(values.min_payment_dollars * 100) : null,
+      payoff_date: values.payoff_date ? values.payoff_date : null,
+      limit_cents: values.limit_dollars != null && !Number.isNaN(values.limit_dollars) ? Math.round(values.limit_dollars * 100) : null,
+      original_balance_cents: values.original_balance_dollars != null && !Number.isNaN(values.original_balance_dollars) ? Math.round(values.original_balance_dollars * 100) : null,
+      started_at: values.started_at ? values.started_at : null,
+    };
+  }
+
   async function onSubmit(values: FormValues) {
     try {
       if (isEdit && account) {
@@ -147,6 +206,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             subtype: null,
             account_group: null,
             import_pending: null,
+            ...debtFieldsFromValues(values, account.type),
           },
         });
         await setAccountOwners.mutateAsync({ accountId: account.id, memberIds: selectedOwnerIds });
@@ -163,8 +223,10 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           opening_balance_cents: Math.round(values.opening_dollars * 100),
           owner: ownerDisplay(selectedOwnerIds),
           source: "manual",
-          liquidity_type: "liquid",
-          emergency_fund_eligible: true,
+          // Debt (Credit/Loan) is never liquid or emergency-fund eligible,
+          // regardless of the account-level liquidity_type tag.
+          liquidity_type: isDebtType(values.type) ? "restricted" : "liquid",
+          emergency_fund_eligible: !isDebtType(values.type),
           goal_earmark: null,
           apy_pct: values.apy_pct != null && !Number.isNaN(values.apy_pct) ? values.apy_pct : null,
           simplefin_account_id: null,
@@ -175,8 +237,9 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           official_name: null,
           mask: null,
           subtype: null,
-          account_group: "cash",
+          account_group: isDebtType(values.type) ? "debt" : "cash",
           available_balance_cents: null,
+          ...debtFieldsFromValues(values, values.type),
           balance_date: null,
           extra_json: null,
           raw_json: null,
@@ -251,6 +314,34 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           <label> Opening balance ($)
             <input type="number" step="0.01" {...register("opening_dollars")} />
           </label>
+        )}
+        {isDebtType(watch("type")) && (
+          <fieldset>
+            <legend>Debt details <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>(optional)</span></legend>
+            <label> APR (%)
+              <input type="number" step="0.01" {...register("apr_pct")} />
+            </label>
+            <label> Minimum payment ($/mo)
+              <input type="number" step="0.01" {...register("min_payment_dollars")} />
+            </label>
+            {watch("type") === "Credit" && (
+              <label> Credit limit ($)
+                <input type="number" step="0.01" {...register("limit_dollars")} />
+              </label>
+            )}
+            <label> Original balance ($)
+              <input type="number" step="0.01" {...register("original_balance_dollars")} />
+            </label>
+            <label> Started
+              <input type="month" {...register("started_at")} />
+            </label>
+            <label> Payoff target date
+              <input type="date" {...register("payoff_date")} />
+            </label>
+            <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+              Powers the debt payoff projector on Goals and Copilot debt questions.
+            </div>
+          </fieldset>
         )}
         <fieldset>
           <legend>

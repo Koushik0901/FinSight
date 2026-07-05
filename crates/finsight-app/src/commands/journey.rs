@@ -122,6 +122,9 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
             0
         };
 
+        // Debt (Credit/Loan accounts) is already included as a negative
+        // balance in the accounts sum below — no separate liabilities
+        // subtraction needed.
         let current_net_worth_cents: i64 = conn.query_row(
             "SELECT
                 COALESCE((
@@ -132,8 +135,7 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
                     FROM accounts a
                     WHERE a.archived_at IS NULL
                 ), 0)
-                + COALESCE((SELECT SUM(value_cents) FROM manual_assets), 0)
-                - COALESCE((SELECT SUM(balance_cents) FROM liabilities), 0)",
+                + COALESCE((SELECT SUM(value_cents) FROM manual_assets), 0)",
             [],
             |r| r.get(0),
         )?;

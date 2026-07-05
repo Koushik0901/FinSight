@@ -109,7 +109,6 @@ pub struct GoalDto {
     pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
-    pub liability_id: Option<String>,
     pub account_id: Option<String>,
 }
 
@@ -170,7 +169,6 @@ pub struct NewGoalInput {
     pub color: String,
     pub notes: Option<String>,
     pub purpose: Option<String>,
-    pub liability_id: Option<String>,
     pub account_id: Option<String>,
 }
 
@@ -188,7 +186,6 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
         purpose: g.purpose,
         sort_order: g.sort_order,
         created_at: g.created_at,
-        liability_id: g.liability_id,
         account_id: g.account_id,
     }
 }
@@ -223,7 +220,6 @@ pub async fn create_goal(
                 color: input.color,
                 notes: input.notes,
                 purpose: input.purpose,
-                liability_id: input.liability_id,
                 account_id: input.account_id,
             },
         )

@@ -3,17 +3,16 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useAccounts } from "../api/hooks/accounts";
 import { useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
-import { useManualAssets, useLiabilities } from "../api/hooks/assets";
+import { useManualAssets } from "../api/hooks/assets";
 import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
 import { useNetWorth } from "../api/hooks/networth";
-import type { AccountSummary, Liability, ManualAsset } from "../api/client";
+import type { AccountSummary, ManualAsset } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
 import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
-import LiabilityDrawer from "../components/LiabilityDrawer";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -28,12 +27,9 @@ export default function Accounts() {
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
   const [assetAddOpen, setAssetAddOpen] = useState(false);
   const [editAsset, setEditAsset] = useState<ManualAsset | null>(null);
-  const [liabAddOpen, setLiabAddOpen] = useState(false);
-  const [editLiab, setEditLiab] = useState<Liability | null>(null);
 
   const { data: accounts = [], isLoading, error } = useAccounts();
   const { data: assets = [] } = useManualAssets();
-  const { data: liabilities = [] } = useLiabilities();
   const { data: members = [] } = useHouseholdMembers();
   const { data: accountOwners = [] } = useAccountOwners();
 
@@ -73,29 +69,32 @@ export default function Accounts() {
 
   const knownAccounts = accounts.filter((account) => account.balance_known);
   const unknownBalanceCount = accounts.length - knownAccounts.length;
+  // Debt (Credit/Loan accounts) is just an Account with a negative balance —
+  // no separate liabilities table anymore.
   const connectedAssets = knownAccounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
   const connectedLiabilities = knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
   const manualAssetsTotal = assets.reduce((sum, asset) => sum + asset.valueCents, 0);
-  const liabilitiesTotal = liabilities.reduce((sum, liability) => sum + liability.balanceCents, 0);
   const lastSyncLabel = accounts.map((account) => account.last_synced_at).filter(Boolean).sort().slice(-1)[0] ?? null;
   const hasSimpleFin = accounts.some((account) => account.simplefin_account_id);
 
-  const focusedLiability = useMemo(() => {
-    const focus = searchParams.get("focusLiability");
+  // Deep-link support: ?focusAccount=<id-or-name> opens that account's editor
+  // directly (e.g. from a Copilot recommendation about a specific debt).
+  const focusedAccount = useMemo(() => {
+    const focus = searchParams.get("focusAccount");
     if (!focus) return null;
-    return liabilities.find((liability) =>
-      liability.id === focus || liability.name.toLowerCase() === focus.toLowerCase()
+    return accounts.find((account) =>
+      account.id === focus || account.name.toLowerCase() === focus.toLowerCase()
     ) ?? null;
-  }, [liabilities, searchParams]);
-  const activeEditLiab = editLiab ?? focusedLiability;
+  }, [accounts, searchParams]);
+  const activeEditAccount = editAccount ?? focusedAccount;
 
   useEffect(() => {
-    if (!focusedLiability || editLiab) return;
-    setEditLiab(focusedLiability);
+    if (!focusedAccount || editAccount) return;
+    setEditAccount(focusedAccount);
     const next = new URLSearchParams(searchParams);
-    next.delete("focusLiability");
+    next.delete("focusAccount");
     setSearchParams(next, { replace: true });
-  }, [editLiab, focusedLiability, searchParams, setSearchParams]);
+  }, [editAccount, focusedAccount, searchParams, setSearchParams]);
 
   if (isLoading) return <div className="stub">Loading accounts…</div>;
   if (error) return <div className="stub" role="alert">{userErrorMessage(error, "Could not load accounts.")}</div>;
@@ -131,7 +130,7 @@ export default function Accounts() {
       <div className="stat-row">
         <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: "USD" })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
         <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: "USD" })}</div><div className="sub">{assets.length} tracked manually</div></div>
-        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(liabilitiesTotal || connectedLiabilities, { currency: "USD" })}</div><div className="sub">Debt and payoff accounts</div></div>
+        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities, { currency: "USD" })}</div><div className="sub">Debt and payoff accounts</div></div>
         <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: "USD" })}</div><div className="sub">Across every balance</div></div>
       </div>
       {unknownBalanceCount > 0 && (
@@ -241,20 +240,6 @@ export default function Accounts() {
           </div>
         </div>
 
-        <div>
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h2 className="h3">Liabilities</h2>
-            <button className="btn ghost sm" type="button" onClick={() => setLiabAddOpen(true)}>+ Add</button>
-          </div>
-          <div className="card flush">
-            {liabilities.length === 0 ? <div className="muted" style={{ padding: 18 }}>No liabilities yet.</div> : liabilities.map((liability) => (
-              <button key={liability.id} type="button" onClick={() => setEditLiab(liability)} style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--hairline)" }}>
-                <div><div>{liability.name}</div><div className="muted" style={{ fontSize: 12 }}>{liability.liabilityType}{liability.aprPct != null ? ` · ${liability.aprPct}% APR` : ""}</div></div>
-                <span className="money">{money(liability.balanceCents, { currency: liability.currency || "USD" })}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       {chooserOpen && (
@@ -263,17 +248,14 @@ export default function Accounts() {
           onPick={(kind) => {
             setChooserOpen(false);
             if (kind === "account") setAddOpen(true);
-            else if (kind === "asset") setAssetAddOpen(true);
-            else setLiabAddOpen(true);
+            else setAssetAddOpen(true);
           }}
         />
       )}
       <AccountDrawer open={addOpen} onClose={() => setAddOpen(false)} />
-      <AccountDrawer open={editAccount !== null} onClose={() => setEditAccount(null)} account={editAccount ?? undefined} />
+      <AccountDrawer open={activeEditAccount !== null} onClose={() => setEditAccount(null)} account={activeEditAccount ?? undefined} />
       <AssetDrawer open={assetAddOpen} onClose={() => setAssetAddOpen(false)} />
       <AssetDrawer open={editAsset !== null} onClose={() => setEditAsset(null)} asset={editAsset ?? undefined} />
-      <LiabilityDrawer open={liabAddOpen} onClose={() => setLiabAddOpen(false)} />
-      <LiabilityDrawer open={activeEditLiab !== null} onClose={() => setEditLiab(null)} liability={activeEditLiab ?? undefined} />
     </div>
   );
 }
@@ -283,23 +265,18 @@ function AddChooserDialog({
   onPick,
 }: {
   onClose: () => void;
-  onPick: (kind: "account" | "asset" | "liability") => void;
+  onPick: (kind: "account" | "asset") => void;
 }) {
   const options = [
     {
       kind: "account" as const,
       title: "Bank account",
-      description: "Chequing, savings, credit card, or investment — tracks transactions and a balance.",
+      description: "Chequing, savings, credit card, loan, or investment — tracks a balance and optional transactions.",
     },
     {
       kind: "asset" as const,
       title: "Manual asset",
       description: "Something you own — a car, home, or valuables. Tracks a value, no transactions.",
-    },
-    {
-      kind: "liability" as const,
-      title: "Liability",
-      description: "Something you owe — a loan or other debt. Counts against your net worth.",
     },
   ];
   return (

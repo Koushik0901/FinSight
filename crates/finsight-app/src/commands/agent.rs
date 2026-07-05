@@ -1640,8 +1640,12 @@ mod tests {
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1','2026-06-01',500000)", []).unwrap();
         conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('car','Car','save-by-date',2000000,500000,50000,'#fff',0,datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('cc','Credit Card','credit-card',250000,500000,24.9,5000,'USD',datetime('now'),datetime('now'))", []).unwrap();
-        conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('loan','Loan','loan',1800000,NULL,5.0,30000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+        // Debt is now a Credit/Loan-type Account with a negative balance, not
+        // a separate liabilities-table row.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Household','Manual','Credit','Credit Card','USD','#F97316','manual','restricted',0,'debt',24.9,5000,500000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc',date('now'),-250000,'manual')", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('loan','Household','Manual','Loan','Loan','USD','#F87171','manual','restricted',0,'debt',5.0,30000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('loan',date('now'),-1800000,'manual')", []).unwrap();
     }
 
     #[test]

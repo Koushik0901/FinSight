@@ -12,14 +12,14 @@ vi.mock("../api/hooks/budget", () => ({
         id: "g1", name: "Italy Fund", goalType: "save-by-date",
         targetCents: 500000, currentCents: 100000, monthlyCents: 20000,
         targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
-        sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        sortOrder: 0, createdAt: "2026-01-01", accountId: null,
       },
       {
         id: "g2", name: "Car repair", goalType: "save-by-date",
         targetCents: 200000, currentCents: 50000, monthlyCents: 10000,
         targetDate: new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10),
         color: "#34D399", notes: null, purpose: null, sortOrder: 1,
-        createdAt: "2026-01-01", liabilityId: null, accountId: null,
+        createdAt: "2026-01-01", accountId: null,
       },
     ],
     isLoading: false,
@@ -31,10 +31,6 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalMonthly: vi.fn(() => ({ mutateAsync: mockUpdateMonthly, isPending: false })),
   useUpdateGoalPurpose: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useProjectGoalGrowth: vi.fn(() => ({ data: null })),
-}));
-
-vi.mock("../api/hooks/assets", () => ({
-  useLiabilities: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("../api/hooks/accounts", () => ({
@@ -58,7 +54,7 @@ function future(monthsFromNow: number): string {
 describe("Goals — buildHorizonRows", () => {
   const baseGoal = {
     id: "x", name: "X", color: "#C9F950", notes: null, purpose: null,
-    sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null, targetDate: null,
+    sortOrder: 0, createdAt: "2026-01-01", accountId: null, targetDate: null,
   };
 
   it("excludes spending-cap goals even when they would have a finite ETA", () => {
@@ -151,7 +147,7 @@ describe("Goals — pause/resume", () => {
           id: "g4", name: "Dining cap", goalType: "spending-cap",
           targetCents: 40000, currentCents: 10000, monthlyCents: 0,
           targetDate: null, color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,
@@ -169,7 +165,7 @@ describe("Goals — pause/resume", () => {
           id: "g5", name: "Never funded", goalType: "save-by-date",
           targetCents: 500000, currentCents: 0, monthlyCents: 0,
           targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,
@@ -256,13 +252,13 @@ describe("Goals — what-if scenario", () => {
           id: "g1", name: "Italy Fund", goalType: "save-by-date",
           targetCents: 500000, currentCents: 100000, monthlyCents: 20000,
           targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
         {
           id: "g4", name: "Dining cap", goalType: "spending-cap",
           targetCents: 40000, currentCents: 10000, monthlyCents: 0,
           targetDate: null, color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 2, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 2, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,
@@ -284,7 +280,7 @@ describe("Goals — what-if scenario", () => {
           id: "g5", name: "Stalled fund", goalType: "save-by-date",
           targetCents: 500000, currentCents: 100000, monthlyCents: 0,
           targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,
@@ -300,22 +296,22 @@ describe("Goals — what-if scenario", () => {
   });
 });
 
-describe("Goals — linked liability", () => {
-  it("renders linked liability details and disables manual balance edit", async () => {
+describe("Goals — linked account", () => {
+  it("renders linked account details and disables manual balance edit", async () => {
     const budget = await import("../api/hooks/budget");
-    const assets = await import("../api/hooks/assets");
+    const accounts = await import("../api/hooks/accounts");
     (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       data: [{
         id: "g3", name: "Car payoff", goalType: "debt-payoff",
         targetCents: 2000000, currentCents: 1500000, monthlyCents: 50000,
         targetDate: null, color: "#C9F950", notes: null, purpose: null,
-        sortOrder: 0, createdAt: "2026-01-01", liabilityId: "l1", accountId: null,
+        sortOrder: 0, createdAt: "2026-01-01", accountId: "a1",
       }],
       isLoading: false,
       error: null,
     });
-    (assets.useLiabilities as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-      data: [{ id: "l1", name: "Car loan", balanceCents: 1500000, aprPct: 4.5 }],
+    (accounts.useAccounts as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{ id: "a1", name: "Car loan", nickname: null, official_name: null }],
     });
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getAllByText("Car payoff").length).toBeGreaterThanOrEqual(1);
@@ -323,21 +319,21 @@ describe("Goals — linked liability", () => {
     expect(screen.queryByRole("button", { name: /edit balance/i })).not.toBeInTheDocument();
   });
 
-  it("shows the real liability name, not a hardcoded 'Car loan' string", async () => {
+  it("shows the real account name, not a hardcoded 'Car loan' string", async () => {
     const budget = await import("../api/hooks/budget");
-    const assets = await import("../api/hooks/assets");
+    const accounts = await import("../api/hooks/accounts");
     (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       data: [{
         id: "g6", name: "Mortgage payoff", goalType: "debt-payoff",
         targetCents: 30000000, currentCents: 5000000, monthlyCents: 200000,
         targetDate: null, color: "#C9F950", notes: null, purpose: null,
-        sortOrder: 0, createdAt: "2026-01-01", liabilityId: "l2", accountId: null,
+        sortOrder: 0, createdAt: "2026-01-01", accountId: "a2",
       }],
       isLoading: false,
       error: null,
     });
-    (assets.useLiabilities as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-      data: [{ id: "l2", name: "Home Mortgage", balanceCents: 25000000, aprPct: 3.2 }],
+    (accounts.useAccounts as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{ id: "a2", name: "Home Mortgage", nickname: null, official_name: null }],
     });
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText(/Linked to Home Mortgage/)).toBeInTheDocument();
@@ -348,19 +344,15 @@ describe("Goals — linked liability", () => {
 describe("Goals — focus editor", () => {
   it("opens the goal drawer when focusGoal is present", async () => {
     const budget = await import("../api/hooks/budget");
-    const assets = await import("../api/hooks/assets");
     (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       data: [{
         id: "g3", name: "Car payoff", goalType: "debt-payoff",
         targetCents: 2000000, currentCents: 1500000, monthlyCents: 50000,
         targetDate: null, color: "#C9F950", notes: null, purpose: null,
-        sortOrder: 0, createdAt: "2026-01-01", liabilityId: "l1", accountId: null,
+        sortOrder: 0, createdAt: "2026-01-01", accountId: null,
       }],
       isLoading: false,
       error: null,
-    });
-    (assets.useLiabilities as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-      data: [{ id: "l1", name: "Car loan", balanceCents: 1500000, aprPct: 4.5 }],
     });
     render(<Goals />, { wrapper: createWrapperWithEntries(["/goals?focusGoal=g3"]) });
     expect(await screen.findByText("Edit goal · Car payoff")).toBeInTheDocument();
@@ -387,7 +379,7 @@ describe("Goals — Horizon timeline", () => {
           id: "sc1", name: "Dining cap", goalType: "spending-cap",
           targetCents: 40000, currentCents: 10000, monthlyCents: 0,
           targetDate: null, color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,
@@ -407,7 +399,7 @@ describe("Goals — Horizon timeline", () => {
           // 20 months to complete, but target date is only 5 months away -> behind schedule
           targetDate: (() => { const d = new Date(); d.setMonth(d.getMonth() + 5); return d.toISOString().slice(0, 10); })(),
           color: "#C9F950", notes: null, purpose: null,
-          sortOrder: 0, createdAt: "2026-01-01", liabilityId: null, accountId: null,
+          sortOrder: 0, createdAt: "2026-01-01", accountId: null,
         },
       ],
       isLoading: false,

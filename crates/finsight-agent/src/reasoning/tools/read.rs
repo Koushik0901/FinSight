@@ -337,11 +337,23 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
             json!({"type": "object", "properties": {}})
         }
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
+            // Debt is a Credit/Loan-type Account with a negative balance, not
+            // a separate liabilities-table row; "balance_cents" here is the
+            // amount owed (positive), matching the old liabilities convention.
             let mut stmt = ctx.conn.prepare(
-                "SELECT id, name, liability_type, balance_cents, apr_pct, limit_cents, min_payment_cents, payoff_date FROM liabilities ORDER BY balance_cents DESC"
+                "SELECT id, name, type, balance, apr_pct, limit_cents, min_payment_cents, payoff_date FROM (
+                     SELECT a.id, a.name, a.type,
+                            -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                            a.apr_pct, a.limit_cents, a.min_payment_cents, a.payoff_date
+                     FROM accounts a
+                     WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
+                 ) WHERE balance > 0
+                 ORDER BY balance DESC"
             )?;
             let rows: Vec<Value> = stmt.query_map([], |r| {
-                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "liability_type": r.get::<_, String>(2)?, "balance_cents": r.get::<_, i64>(3)?, "apr_pct": r.get::<_, Option<f64>>(4)?, "limit_cents": r.get::<_, Option<i64>>(5)?, "min_payment_cents": r.get::<_, Option<i64>>(6)?, "payoff_date": r.get::<_, Option<String>>(7)?}))
+                let account_type: String = r.get(2)?;
+                let liability_type = if account_type == "Credit" { "credit-card" } else { "loan" };
+                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "liability_type": liability_type, "balance_cents": r.get::<_, i64>(3)?, "apr_pct": r.get::<_, Option<f64>>(4)?, "limit_cents": r.get::<_, Option<i64>>(5)?, "min_payment_cents": r.get::<_, Option<i64>>(6)?, "payoff_date": r.get::<_, Option<String>>(7)?}))
             })?.filter_map(|r| r.ok()).collect();
             let total: i64 = rows
                 .iter()

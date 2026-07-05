@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   commands,
   type ManualAsset, type NewManualAsset, type ManualAssetPatch,
-  type Liability, type NewLiability, type LiabilityPatch, type DebtPayoffResult,
+  type DebtPayoffResult,
 } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
@@ -59,56 +59,6 @@ export function useDeleteManualAsset() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["manual-assets"] });
     },
-  });
-}
-
-export function useLiabilities() {
-  return useQuery<Liability[]>({
-    queryKey: ["liabilities"],
-    queryFn: async () => {
-      const result = await commands.listLiabilities();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
-    },
-    enabled: isTauriRuntime(),
-  });
-}
-
-export function useCreateLiability() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: NewLiability) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
-      const result = await commands.createLiability(input);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["liabilities"] }); },
-  });
-}
-
-export function useUpdateLiability() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: LiabilityPatch }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
-      const result = await commands.updateLiability(id, patch);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["liabilities"] }); },
-  });
-}
-
-export function useDeleteLiability() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
-      const result = await commands.deleteLiability(id);
-      if (result.status === "error") throw new Error(result.error.message);
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["liabilities"] }); },
   });
 }
 

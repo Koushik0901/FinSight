@@ -251,6 +251,14 @@ pub async fn save_simplefin_setup_token(
                     extra_json: account.extra.as_ref().map(|v| v.to_string()),
                     raw_json: serde_json::to_string(&account).ok(),
                     import_pending: existing.import_pending,
+                    // Debt fields are user-managed; preserve whatever the
+                    // user already entered rather than wiping them on refresh.
+                    apr_pct: existing.apr_pct,
+                    min_payment_cents: existing.min_payment_cents,
+                    payoff_date: existing.payoff_date,
+                    limit_cents: existing.limit_cents,
+                    original_balance_cents: existing.original_balance_cents,
+                    started_at: existing.started_at,
                 };
                 let _ = accounts::upsert_simplefin_account(conn, refreshed)?;
             }
@@ -486,6 +494,12 @@ pub async fn import_simplefin_accounts(
                     extra_json: None,
                     raw_json: None,
                     import_pending: false,
+                    apr_pct: None,
+                    min_payment_cents: None,
+                    payoff_date: None,
+                    limit_cents: None,
+                    original_balance_cents: None,
+                    started_at: None,
                 };
                 accounts::upsert_simplefin_account(conn, account)
             }

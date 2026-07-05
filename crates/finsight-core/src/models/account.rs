@@ -71,6 +71,17 @@ pub struct Account {
     pub extra_json: Option<String>,
     pub raw_json: Option<String>,
     pub import_pending: bool,
+    /// Debt fields, meaningful only for Credit/Loan-type accounts (shown
+    /// conditionally in the UI, mirroring `apy_pct` for Savings). Together
+    /// these let a Credit/Loan account fully replace the standalone
+    /// liability-tracking model: a debt is just an account with a negative
+    /// balance and these optional details, not a separate entity.
+    pub apr_pct: Option<f64>,
+    pub min_payment_cents: Option<i64>,
+    pub payoff_date: Option<String>,
+    pub limit_cents: Option<i64>,
+    pub original_balance_cents: Option<i64>,
+    pub started_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -111,6 +122,12 @@ pub struct AccountSummary {
     pub extra_json: Option<String>,
     pub raw_json: Option<String>,
     pub import_pending: bool,
+    pub apr_pct: Option<f64>,
+    pub min_payment_cents: Option<i64>,
+    pub payoff_date: Option<String>,
+    pub limit_cents: Option<i64>,
+    pub original_balance_cents: Option<i64>,
+    pub started_at: Option<String>,
 }
 
 fn default_source() -> String {
@@ -168,6 +185,12 @@ pub struct AccountPatch {
     pub subtype: Option<Option<String>>,
     pub account_group: Option<String>,
     pub import_pending: Option<bool>,
+    pub apr_pct: Option<Option<f64>>,
+    pub min_payment_cents: Option<Option<i64>>,
+    pub payoff_date: Option<Option<String>>,
+    pub limit_cents: Option<Option<i64>>,
+    pub original_balance_cents: Option<Option<i64>>,
+    pub started_at: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -204,4 +227,10 @@ pub struct NewAccount {
     pub raw_json: Option<String>,
     #[serde(default = "default_import_pending")]
     pub import_pending: bool,
+    pub apr_pct: Option<f64>,
+    pub min_payment_cents: Option<i64>,
+    pub payoff_date: Option<String>,
+    pub limit_cents: Option<i64>,
+    pub original_balance_cents: Option<i64>,
+    pub started_at: Option<String>,
 }

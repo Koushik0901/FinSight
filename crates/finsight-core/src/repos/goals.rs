@@ -17,7 +17,6 @@ pub struct Goal {
     pub purpose: Option<String>,
     pub sort_order: i64,
     pub created_at: String,
-    pub liability_id: Option<String>,
     pub account_id: Option<String>,
 }
 
@@ -31,7 +30,6 @@ pub struct NewGoal {
     pub color: String,
     pub notes: Option<String>,
     pub purpose: Option<String>,
-    pub liability_id: Option<String>,
     pub account_id: Option<String>,
 }
 
@@ -45,7 +43,6 @@ pub struct GoalPatch {
     pub color: Option<String>,
     pub notes: Option<String>,
     pub purpose: Option<Option<String>>,
-    pub liability_id: Option<Option<String>>,
     pub account_id: Option<Option<String>>,
 }
 
@@ -53,7 +50,7 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                liability_id, account_id \
+                account_id \
          FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -70,8 +67,7 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
             purpose: r.get(9)?,
             sort_order: r.get(10)?,
             created_at: r.get(11)?,
-            liability_id: r.get(12)?,
-            account_id: r.get(13)?,
+            account_id: r.get(12)?,
         })
     })?;
     let mut out = Vec::new();
@@ -85,7 +81,7 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                liability_id, account_id \
+                account_id \
          FROM goals WHERE id = ?1 AND archived_at IS NULL",
     )?;
     let mut rows = stmt.query_map(params![id], |r| {
@@ -102,8 +98,7 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
             purpose: r.get(9)?,
             sort_order: r.get(10)?,
             created_at: r.get(11)?,
-            liability_id: r.get(12)?,
-            account_id: r.get(13)?,
+            account_id: r.get(12)?,
         })
     })?;
     rows.next()
@@ -117,8 +112,8 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
     conn.execute(
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
                            target_date, color, notes, purpose, sort_order, created_at, \
-                           liability_id, account_id)
-         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12)",
+                           account_id)
+         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
         params![
             id,
             g.name,
@@ -130,7 +125,6 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
             g.notes,
             g.purpose,
             now,
-            g.liability_id,
             g.account_id
         ],
     )?;
@@ -147,19 +141,27 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         purpose: g.purpose,
         sort_order: 0,
         created_at: now,
-        liability_id: g.liability_id,
         account_id: g.account_id,
     })
 }
 
-/// Sync `current_cents` of every goal linked to the given liability with the
-/// liability's current `balance_cents`.
-pub fn sync_linked_liabilities(conn: &mut Connection, liability_id: &str) -> CoreResult<()> {
+/// Sync `current_cents` of every goal linked to the given account with the
+/// account's current debt magnitude (the amount owed — i.e. the absolute
+/// value of its latest negative balance; 0 if the account isn't in debt).
+/// Replaces the old `sync_linked_liabilities`, called from `set_account_balance`
+/// now that debt lives on Account instead of a separate `liabilities` table.
+pub fn sync_linked_accounts(conn: &mut Connection, account_id: &str) -> CoreResult<()> {
     conn.execute(
         "UPDATE goals
-         SET current_cents = COALESCE((SELECT balance_cents FROM liabilities WHERE id = ?1), 0)
-         WHERE liability_id = ?1",
-        params![liability_id],
+         SET current_cents = MAX(0, -COALESCE((
+             SELECT balance_cents FROM account_balances b
+             WHERE b.account_id = ?1
+             ORDER BY b.as_of_date DESC,
+                 CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+             LIMIT 1
+         ), 0))
+         WHERE account_id = ?1",
+        params![account_id],
     )?;
     Ok(())
 }
@@ -226,7 +228,6 @@ mod tests {
                 color: "#C9F950".into(),
                 notes: None,
                 purpose: None,
-                liability_id: None,
                 account_id: None,
             },
         )
@@ -240,72 +241,56 @@ mod tests {
         assert_eq!(updated.monthly_cents, 25_000);
     }
 
-    #[test]
-    fn insert_goal_with_links_round_trip() {
-        use crate::models::NewLiability;
-        use crate::repos::liabilities;
-        let (_d, db) = fresh_db();
-        let mut conn = db.get().unwrap();
-        let l = liabilities::create(
-            &mut conn,
-            NewLiability {
-                name: "Loan".into(),
-                liability_type: "loan".into(),
-                balance_cents: 5_000_00,
-                limit_cents: None,
+    fn insert_debt_account(conn: &mut Connection, name: &str) -> String {
+        use crate::models::{AccountType, NewAccount};
+        use crate::repos::accounts;
+        accounts::insert(
+            conn,
+            NewAccount {
+                owner: "Household".into(),
+                bank: "Manual".into(),
+                r#type: AccountType::Loan,
+                name: name.into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#F87171".into(),
+                opening_balance_cents: -5_000_00,
+                source: "manual".into(),
+                liquidity_type: "restricted".into(),
+                emergency_fund_eligible: false,
+                goal_earmark: None,
+                apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "debt".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
                 apr_pct: None,
                 min_payment_cents: None,
                 payoff_date: None,
+                limit_cents: None,
                 original_balance_cents: None,
                 started_at: None,
-                currency: "USD".into(),
             },
         )
-        .unwrap();
-        let goal = insert(
-            &mut conn,
-            NewGoal {
-                name: "Payoff".into(),
-                goal_type: "debt-payoff".into(),
-                target_cents: 5_000_00,
-                monthly_cents: 100_00,
-                target_date: None,
-                color: "#C9F950".into(),
-                notes: None,
-                purpose: None,
-                liability_id: Some(l.id.clone()),
-                account_id: None,
-            },
-        )
-        .unwrap();
-        assert_eq!(goal.liability_id, Some(l.id.clone()));
-        let fetched = get_by_id(&mut conn, &goal.id).unwrap();
-        assert_eq!(fetched.liability_id, Some(l.id));
+        .unwrap()
+        .id
     }
 
     #[test]
-    fn deleting_liability_clears_goal_link() {
-        use crate::models::NewLiability;
-        use crate::repos::liabilities;
+    fn insert_goal_with_account_link_round_trip() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let l = liabilities::create(
-            &mut conn,
-            NewLiability {
-                name: "Loan".into(),
-                liability_type: "loan".into(),
-                balance_cents: 5_000_00,
-                limit_cents: None,
-                apr_pct: None,
-                min_payment_cents: None,
-                payoff_date: None,
-                original_balance_cents: None,
-                started_at: None,
-                currency: "USD".into(),
-            },
-        )
-        .unwrap();
-        let lid = l.id.clone();
+        let account_id = insert_debt_account(&mut conn, "Loan");
         let goal = insert(
             &mut conn,
             NewGoal {
@@ -317,13 +302,76 @@ mod tests {
                 color: "#C9F950".into(),
                 notes: None,
                 purpose: None,
-                liability_id: Some(lid),
-                account_id: None,
+                account_id: Some(account_id.clone()),
             },
         )
         .unwrap();
-        liabilities::delete(&mut conn, &l.id).unwrap();
+        assert_eq!(goal.account_id, Some(account_id.clone()));
         let fetched = get_by_id(&mut conn, &goal.id).unwrap();
-        assert!(fetched.liability_id.is_none());
+        assert_eq!(fetched.account_id, Some(account_id));
+    }
+
+    #[test]
+    fn deleting_account_clears_goal_link() {
+        use crate::repos::accounts;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let account_id = insert_debt_account(&mut conn, "Loan");
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Payoff".into(),
+                goal_type: "debt-payoff".into(),
+                target_cents: 5_000_00,
+                monthly_cents: 100_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                account_id: Some(account_id.clone()),
+            },
+        )
+        .unwrap();
+        accounts::archive(&mut conn, &account_id).unwrap();
+        conn.execute("DELETE FROM accounts WHERE id = ?1", params![account_id])
+            .unwrap();
+        let fetched = get_by_id(&mut conn, &goal.id).unwrap();
+        assert!(fetched.account_id.is_none());
+    }
+
+    #[test]
+    fn sync_linked_accounts_reflects_the_amount_owed() {
+        use crate::repos::accounts;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // insert_debt_account seeds an opening balance of -$5,000.00.
+        let account_id = insert_debt_account(&mut conn, "Car loan");
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Pay off car".into(),
+                goal_type: "debt-payoff".into(),
+                target_cents: 5_000_00,
+                monthly_cents: 500_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                account_id: Some(account_id.clone()),
+            },
+        )
+        .unwrap();
+        assert_eq!(goal.current_cents, 0);
+
+        sync_linked_accounts(&mut conn, &account_id).unwrap();
+        let synced = get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(synced.current_cents, 5_000_00, "amount owed is the positive magnitude of the negative balance");
+
+        // Paying the debt down to $0 must sync the goal to 0, not go negative.
+        let today = chrono::Utc::now().date_naive().to_string();
+        accounts::upsert_balance_snapshot(&mut conn, &account_id, &today, 0, None, Some("manual")).unwrap();
+        sync_linked_accounts(&mut conn, &account_id).unwrap();
+        let paid_off = get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(paid_off.current_cents, 0);
     }
 }

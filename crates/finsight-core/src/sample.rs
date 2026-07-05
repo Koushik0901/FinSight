@@ -653,7 +653,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// - 6 accounts matching the original design prototype
 /// - 6 months of recurring transaction history (for recurring-detection algorithm)
 /// - 18 hand-crafted recent transactions anchored to today's date
-/// - 5 goals, 5 manual assets, 4 liabilities, 5-category budgets, 6 net-worth snapshots
+/// - 5 goals, 5 manual assets, 4 debt accounts, 5-category budgets, 6 net-worth snapshots
 ///
 /// **Dev-only. Not shipped to end users.**
 /// The data uses `source='sample'` so `clear_sample_data` can remove it.
@@ -672,7 +672,6 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     // Tables without a source column: clear all rows (dev fixture only).
     sql_tx.execute("DELETE FROM goals", [])?;
     sql_tx.execute("DELETE FROM manual_assets", [])?;
-    sql_tx.execute("DELETE FROM liabilities", [])?;
     sql_tx.execute("DELETE FROM budgets", [])?;
     sql_tx.execute("DELETE FROM net_worth_snapshots", [])?;
     // ON DELETE CASCADE propagates to account_balances + transactions.
@@ -864,10 +863,14 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         )?;
     }
 
-    // ── 7. Liabilities ─────────────────────────────────────────────────────
-    // (name, liability_type, balance_cents, limit_cents, apr_pct, min_payment_cents, payoff_date)
+    // ── 7. Debt (Credit/Loan accounts with a negative balance) ──────────────
+    // Debt used to live in a separate `liabilities` table; it's now just an
+    // Account, so these seed as ordinary sample accounts with the debt fields
+    // (apr_pct/min_payment_cents/payoff_date/limit_cents) set.
+    // (name, account_type, color, amount_owed_cents, limit_cents, apr_pct, min_payment_cents, payoff_date)
     #[allow(clippy::type_complexity)]
-    let liabilities: &[(
+    let debts: &[(
+        &str,
         &str,
         &str,
         i64,
@@ -878,7 +881,8 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
     )] = &[
         (
             "First Federal · 30-yr fixed",
-            "Mortgage",
+            "Loan",
+            "#F87171",
             38_842_000,
             None,
             Some(6.125),
@@ -887,7 +891,8 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         ),
         (
             "Subaru Finance",
-            "Auto loan",
+            "Loan",
+            "#F87171",
             1_248_000,
             None,
             Some(4.9),
@@ -896,7 +901,8 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         ),
         (
             "Mira · Federal Direct",
-            "Student loan",
+            "Loan",
+            "#F87171",
             1_824_000,
             None,
             Some(5.5),
@@ -905,7 +911,8 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
         ),
         (
             "Amex Gold",
-            "Credit card",
+            "Credit",
+            "#F97316",
             241_800,
             Some(2_000_000),
             Some(24.9),
@@ -913,22 +920,30 @@ pub fn seed_dev_demo(db: &Db) -> CoreResult<SeedSummary> {
             None,
         ),
     ];
-    for &(name, typ, balance, limit, apr, min_payment, payoff) in liabilities {
+    for &(name, account_type, color, amount_owed, limit, apr, min_payment, payoff) in debts {
+        let id = Uuid::new_v4().to_string();
         sql_tx.execute(
-            "INSERT INTO liabilities(id, name, liability_type, balance_cents, limit_cents, \
-             apr_pct, min_payment_cents, payoff_date, currency, created_at, updated_at) \
-             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'USD', ?9, ?9)",
+            "INSERT INTO accounts(id, owner, bank, type, name, currency, color, source, \
+             liquidity_type, emergency_fund_eligible, account_group, \
+             apr_pct, min_payment_cents, payoff_date, limit_cents, created_at) \
+             VALUES(?1, 'Household', 'Manual', ?2, ?3, 'USD', ?4, 'sample', \
+             'restricted', 0, 'debt', ?5, ?6, ?7, ?8, ?9)",
             params![
-                Uuid::new_v4().to_string(),
+                &id,
+                account_type,
                 name,
-                typ,
-                balance,
-                limit,
+                color,
                 apr,
                 min_payment,
                 payoff,
+                limit,
                 now.to_rfc3339(),
             ],
+        )?;
+        sql_tx.execute(
+            "INSERT INTO account_balances(account_id, as_of_date, balance_cents, source) \
+             VALUES(?1, ?2, ?3, 'manual')",
+            params![&id, today.to_string(), -amount_owed],
         )?;
     }
 
@@ -1064,10 +1079,14 @@ mod tests {
             .unwrap();
         assert_eq!(asset_count, 5, "5 manual assets");
 
-        let liability_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM liabilities", [], |r| r.get(0))
+        let debt_account_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE source = 'sample' AND account_group = 'debt'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(liability_count, 4, "4 liabilities");
+        assert_eq!(debt_account_count, 4, "4 debt accounts (mortgage, auto loan, student loan, credit card)");
 
         // Net-worth history (6 past months + today = 7 rows).
         let nw_count: i64 = conn

@@ -381,17 +381,17 @@ pub fn create_debt_payoff_plan() -> Arc<dyn Tool> {
             "draft_debt_payoff_plan"
         }
         fn description(&self) -> &str {
-            "Draft a debt payoff plan item for approval and tracking; does not mutate liabilities"
+            "Draft a debt payoff plan item for approval and tracking; does not change any account balance"
         }
         fn parameters(&self) -> Value {
-            json!({"type":"object","properties":{"method":{"type":"string"},"extra_monthly_cents":{"type":"integer"},"liability_ids":{"type":"array","items":{"type":"string"}},"rationale":{"type":"string"}},"required":["method"]})
+            json!({"type":"object","properties":{"method":{"type":"string"},"extra_monthly_cents":{"type":"integer"},"account_ids":{"type":"array","items":{"type":"string"}},"rationale":{"type":"string"}},"required":["method"]})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
             let method = args["method"].as_str().unwrap_or("avalanche").to_string();
             let payload = json!({
                 "method": method,
                 "extraMonthlyCents": args["extra_monthly_cents"].as_i64().unwrap_or(0),
-                "liabilityIds": args["liability_ids"].clone(),
+                "accountIds": args["account_ids"].clone(),
             });
             ctx.draft_actions.push(AgentDraftAction {
                 action_kind: "debt_payoff_plan".to_string(),

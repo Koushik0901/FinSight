@@ -3,9 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
-import { useLiabilities } from "../api/hooks/assets";
 import { useGoals, useCreateGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
-import type { GoalDto, Liability, NewGoalInput } from "../api/client";
+import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
@@ -26,7 +25,7 @@ function paceLabel(goal: GoalDto) {
   return { label: "On track", className: "chip accent" };
 }
 
-function GoalCard({ goal, onEdit, liabilityName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; liabilityName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
+function GoalCard({ goal, onEdit, linkedAccountName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; linkedAccountName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
   const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
   const pace = paceLabel(goal);
   const canPause = goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff";
@@ -50,7 +49,7 @@ function GoalCard({ goal, onEdit, liabilityName, onTogglePause, pausePending, pa
                 : `Auto-moves ${money(goal.monthlyCents, { currency: "USD" })}/month`}
             {goal.targetDate && ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
           </div>
-          {goal.liabilityId && liabilityName && <div className="muted" style={{ marginTop: 8 }}>Linked to {liabilityName}</div>}
+          {goal.accountId && linkedAccountName && <div className="muted" style={{ marginTop: 8 }}>Linked to {linkedAccountName}</div>}
         </div>
 
         <div>
@@ -343,7 +342,6 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
 function NewGoalForm({ onClose }: { onClose: () => void }) {
   const createGoal = useCreateGoal();
   const { data: totals } = useMonthTotals();
-  const { data: liabilities = [] } = useLiabilities();
   const { data: accounts = [] } = useAccounts();
   const [name, setName] = useState("");
   const [goalType, setGoalType] = useState<GoalFilter>("save-by-date");
@@ -351,7 +349,6 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
   const [monthly, setMonthly] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [liabilityId, setLiabilityId] = useState("");
   const [accountId, setAccountId] = useState("");
 
   const submit = async () => {
@@ -369,7 +366,6 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
       color: "var(--accent)",
       notes: null,
       purpose: purpose.trim() || null,
-      liabilityId: liabilityId || null,
       accountId: accountId || null,
     };
 
@@ -397,8 +393,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
         <label className="stack stack-xs"><span className="muted">Target ($)</span><input className="control" type="number" value={target} onChange={(e) => setTarget(e.target.value)} /></label>
         <label className="stack stack-xs"><span className="muted">Monthly contribution ($)</span><input className="control" type="number" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></label>
         <label className="stack stack-xs"><span className="muted">Target date</span><input className="control" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></label>
-        <label className="stack stack-xs"><span className="muted">Linked liability</span><select className="control" value={liabilityId} onChange={(e) => setLiabilityId(e.target.value)}><option value="">None</option>{liabilities.map((liability) => <option key={liability.id} value={liability.id}>{liability.name}</option>)}</select></label>
-        <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Linked savings account</span><select className="control" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">None</option>{accounts.map((account) => <option key={account.id} value={account.id}>{getAccountDisplayName(account)}</option>)}</select></label>
+        <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Linked account</span><select className="control" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">None</option>{accounts.map((account) => <option key={account.id} value={account.id}>{getAccountDisplayName(account)}</option>)}</select></label>
         <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Why this goal?</span><textarea className="control" rows={3} value={purpose} onChange={(e) => setPurpose(e.target.value)} /></label>
       </div>
       <div className="row row-sm" style={{ marginTop: 18 }}><button className="btn primary" type="button" onClick={() => void submit()}>Create goal</button><button className="btn ghost" type="button" onClick={onClose}>Cancel</button></div>
@@ -408,7 +403,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
 
 export default function Goals() {
   const { data: goals = [], isLoading, error } = useGoals();
-  const { data: liabilities = [] } = useLiabilities();
+  const { data: accounts = [] } = useAccounts();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<GoalFilter>("all");
   const [creating, setCreating] = useState(false);
@@ -416,7 +411,7 @@ export default function Goals() {
   const [pausedPrevious, setPausedPrevious] = useState<Record<string, number>>({});
   const updateGoalMonthly = useUpdateGoalMonthly();
 
-  const liabilityNameById = useMemo(() => new Map(liabilities.map((liability: Liability) => [liability.id, liability.name])), [liabilities]);
+  const accountNameById = useMemo(() => new Map(accounts.map((account) => [account.id, getAccountDisplayName(account)])), [accounts]);
 
   const handleTogglePause = async (goal: GoalDto) => {
     try {
@@ -492,7 +487,7 @@ export default function Goals() {
             key={goal.id}
             goal={goal}
             onEdit={setEditingGoal}
-            liabilityName={goal.liabilityId ? liabilityNameById.get(goal.liabilityId) ?? null : null}
+            linkedAccountName={goal.accountId ? accountNameById.get(goal.accountId) ?? null : null}
             onTogglePause={(g) => void handleTogglePause(g)}
             pausePending={updateGoalMonthly.isPending}
             pausedByUser={goal.id in pausedPrevious}

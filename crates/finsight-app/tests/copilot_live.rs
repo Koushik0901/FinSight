@@ -48,8 +48,10 @@ fn seed(conn: &mut Connection) {
     conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents, source) VALUES('chk','2026-06-30',200000,'manual')", []).unwrap();
     conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, source, created_at) VALUES('sav','Test','Bank','Savings','Emergency Savings','USD','#10B981','manual',datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents, source) VALUES('sav','2026-06-30',300000,'manual')", []).unwrap();
-    // A credit-card liability.
-    conn.execute("INSERT INTO liabilities(id,name,liability_type,balance_cents,limit_cents,apr_pct,min_payment_cents,currency,created_at,updated_at) VALUES('cc','Visa','credit-card',120000,500000,19.9,3000,'USD',datetime('now'),datetime('now'))", []).unwrap();
+    // A credit card — debt is a Credit-type Account with a negative balance,
+    // not a separate liabilities-table row.
+    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Test','Bank','Credit','Visa','USD','#F97316','manual','restricted',0,'debt',19.9,3000,500000,datetime('now'))", []).unwrap();
+    conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc','2026-06-30',-120000,'manual')", []).unwrap();
     // Categories (some transactions will be uncategorized on purpose).
     conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)", []).unwrap();
     for (id, label) in [("groceries", "Groceries"), ("dining", "Dining"), ("transport", "Transport"), ("shopping", "Shopping")] {
