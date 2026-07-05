@@ -255,8 +255,12 @@ impl CsvProvider {
         accounts::recompute_balance_if_linked(&mut conn, account_id)
             .map_err(ProviderError::Core)?;
 
+        // Final emit fires after the commit + balance recompute, so import is
+        // fully done: report rows_done == total so the bar always reaches 100%,
+        // even when some rows errored (errors are counted in `total` but never
+        // in `processed`, which would otherwise leave the bar short of 100%).
         on_progress(BatchProgress {
-            rows_done: processed,
+            rows_done: total,
             rows_total: total,
         });
 
