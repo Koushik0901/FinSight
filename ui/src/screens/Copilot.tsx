@@ -569,7 +569,7 @@ function AssistantMessage({
         </MessagePrimitive.Error>
 
         {!isRunning && !isError && (
-          <div className="copilot-msg-meta">
+          <div className="cp-turn-ft">
             <span className="copilot-grounded" title="Answers are computed from your local FinSight data only.">
               <I.Lock width={10} height={10} />
               Grounded on your data
@@ -589,17 +589,14 @@ function AssistantMessage({
 
         {/* Follow-up suggestions */}
         {!isRunning && !isError && meta?.followUpQuestions && meta.followUpQuestions.length > 0 && (
-          <div style={{ marginTop: 14 }}>
-            <p className="eyebrow" style={{ marginBottom: 8, fontSize: 10.5 }}>
-              Follow-up suggestions
-            </p>
-            <div className="row-sm wrap">
+          <div className="cp-followups">
+            <span className="cp-followups-lbl">Ask next</span>
+            <div className="cp-followups-row">
               {meta.followUpQuestions.map((q, i) => (
                 <button
                   key={i}
-                  className="chip"
+                  className="cp-fu-chip"
                   onClick={() => onFollowUp(q)}
-                  style={{ cursor: "pointer", fontSize: 11.5 }}
                 >
                   <I.ArrowRight width={10} height={10} />
                   {q}
@@ -847,6 +844,10 @@ function CopilotComposerBox({
       >
         <I.Plus width={16} height={16} />
       </button>
+      <div className="cp-composer-model">
+        <span className="cp-model-dot" />
+        <span>Local · FinSight Copilot</span>
+      </div>
       <ComposerPrimitive.Input
         ref={composerRef}
         placeholder='Ask FinSight to plan, explain, or clean up your finances...'
