@@ -9,7 +9,18 @@ import "./styles/app.css";
 import "./styles/onboarding.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 5_000 } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 5_000,
+      // FinSight is a local-first desktop app: the SQLite ledger only changes
+      // via in-app actions (mutations, imports, sync), and each of those
+      // already invalidates precisely. Refetching every active query whenever
+      // the window regains focus would just replay that whole query set as an
+      // IPC + SQL storm for no new data — so turn it off.
+      refetchOnWindowFocus: false,
+    },
+  },
 });
 
 createRoot(document.getElementById("root")!).render(
