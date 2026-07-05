@@ -210,7 +210,9 @@ export function App() {
       // Perf-measurement hotkeys (see utils/perf.ts). Runtime-toggleable so a
       // driven measurement pass works on a release build with no devtools and
       // no reload: Ctrl+Alt+P flips instrumentation on/off, Ctrl+Alt+S copies
-      // the current summary() to the clipboard as JSON.
+      // summary() (aggregated stats), Ctrl+Alt+E copies export() (every raw
+      // sample) — summary() for a quick read, export() for a full before/after
+      // diff.
       if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
         const on = perf.toggle();
@@ -221,6 +223,13 @@ export function App() {
         void perf.copySummaryToClipboard().then(
           () => toast("Perf summary copied to clipboard"),
           () => toast.error("Could not copy perf summary")
+        );
+      }
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        void perf.copyExportToClipboard().then(
+          () => toast("Perf raw samples copied to clipboard"),
+          () => toast.error("Could not copy perf raw samples")
         );
       }
     };

@@ -13,9 +13,22 @@ import type { QueryCache } from "@tanstack/react-query";
  * Turn on by setting `localStorage.finsightPerf = "1"` (or `?perf=1`) before
  * reload, OR at runtime with `Ctrl+Alt+P` (no reload, no devtools needed —
  * release builds ship without devtools). `Ctrl+Alt+S` copies `summary()` to
- * the clipboard as JSON so a driven measurement pass can read it out without a
- * console. Both are wired in `App.tsx`'s global keydown handler and confirm
- * via a toast. Off by default so there is zero overhead in normal use.
+ * the clipboard as JSON; `Ctrl+Alt+E` copies the raw `export()` (one JSON
+ * object per line, in recording order) so a driven measurement pass can read
+ * either out without a console. All three are wired in `App.tsx`'s global
+ * keydown handler and confirm via a toast. Off by default so there is zero
+ * overhead in normal use.
+ *
+ * `summary()` is built for small desktop measurement runs, where a label often
+ * has only 1-2 samples (e.g. "visit this route once cold, once warm"): it
+ * reports `min`/`max`/`first`/`last` unconditionally (each is a single real
+ * sample, always meaningful), `p50` as the median, and `p95` ONLY when there
+ * are enough samples for a 95th-percentile estimate to mean anything —
+ * otherwise it's `null` rather than a number that silently degenerates to
+ * `max` (see `MIN_SAMPLES_FOR_P95`). `first`/`last` are chronological (not
+ * sorted), so a cold-vs-warm or before-vs-after run can be compared directly
+ * without the percentile math obscuring which sample was which. `export()`
+ * preserves every raw sample for a fuller side-by-side diff.
  */
 
 export interface PerfEntry {
@@ -28,6 +41,17 @@ export interface PerfEntry {
 
 const RING = 500;
 
+/**
+ * Minimum sample count before a p95 estimate is reported as a number. Below
+ * this, `summary()` reports `p95: null` — with e.g. 2 samples, "the 95th
+ * percentile" is indistinguishable from `max` (see the index-based percentile
+ * formula below) and asserting a precise-looking number would misrepresent a
+ * single data point as a distribution. 20 is the common rule-of-thumb floor
+ * for a percentile this high to mean anything at all (it's about behavior in
+ * the top 5%, which needs a meaningful few samples above the p50 to exist).
+ */
+const MIN_SAMPLES_FOR_P95 = 20;
+
 function perfEnabled(): boolean {
   try {
     if (typeof window === "undefined") return false;
@@ -38,15 +62,33 @@ function perfEnabled(): boolean {
   }
 }
 
+/**
+ * Per-label stats. `p95` is `null` when `count < MIN_SAMPLES_FOR_P95` — never
+ * a number standing in for "not enough data." `first`/`last` are the
+ * chronologically first/most-recent sample still in the ring buffer (NOT
+ * sorted), so a cold-then-warm or before-then-after run can be read directly
+ * off two fields instead of reverse-engineered from a collapsed percentile.
+ */
+export interface PerfStat {
+  count: number;
+  min: number;
+  p50: number;
+  p95: number | null;
+  max: number;
+  first: number;
+  last: number;
+}
+
 interface PerfSink {
   enabled: boolean;
   entries: PerfEntry[];
   record(e: PerfEntry): void;
   clear(): void;
   export(): string;
-  summary(): Record<string, { count: number; p50: number; p95: number; max: number }>;
+  summary(): Record<string, PerfStat>;
   toggle(): boolean;
   copySummaryToClipboard(): Promise<void>;
+  copyExportToClipboard(): Promise<void>;
 }
 
 function makeSink(): PerfSink {
@@ -73,18 +115,23 @@ function makeSink(): PerfSink {
       return entries.map((e) => JSON.stringify(e)).join("\n");
     },
     summary() {
+      // Group in recording order — `chrono` is never sorted, so `first`/`last`
+      // stay meaningful for a cold-vs-warm or before-vs-after comparison.
       const byLabel = new Map<string, number[]>();
       for (const e of entries) {
         const k = `${e.kind}:${e.label}`;
         (byLabel.get(k) ?? byLabel.set(k, []).get(k)!).push(e.ms);
       }
-      const out: Record<string, { count: number; p50: number; p95: number; max: number }> = {};
-      for (const [k, xs] of byLabel) {
+      const out: Record<string, PerfStat> = {};
+      for (const [k, chrono] of byLabel) {
         out[k] = {
-          count: xs.length,
-          p50: Math.round(percentile(xs, 50)),
-          p95: Math.round(percentile(xs, 95)),
-          max: Math.round(Math.max(...xs)),
+          count: chrono.length,
+          min: Math.round(Math.min(...chrono)),
+          p50: Math.round(percentile(chrono, 50)),
+          p95: chrono.length >= MIN_SAMPLES_FOR_P95 ? Math.round(percentile(chrono, 95)) : null,
+          max: Math.round(Math.max(...chrono)),
+          first: Math.round(chrono[0]!),
+          last: Math.round(chrono[chrono.length - 1]!),
         };
       }
       return out;
@@ -96,6 +143,9 @@ function makeSink(): PerfSink {
     async copySummaryToClipboard() {
       const payload = JSON.stringify(sink.summary(), null, 2);
       await navigator.clipboard.writeText(payload);
+    },
+    async copyExportToClipboard() {
+      await navigator.clipboard.writeText(sink.export());
     },
   };
   return sink;
