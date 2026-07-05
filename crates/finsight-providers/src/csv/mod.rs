@@ -3,6 +3,7 @@
 pub mod encoding;
 pub mod mapping;
 pub mod parse;
+pub mod prepare;
 
 use crate::csv::encoding::{decode_layered, DetectedEncoding};
 use crate::csv::mapping::CsvImportMapping;
@@ -338,7 +339,7 @@ impl CsvProvider {
     }
 }
 
-fn detect_delimiter(text: &str) -> char {
+pub(crate) fn detect_delimiter(text: &str) -> char {
     let first_line = text.lines().next().unwrap_or("");
     let commas = first_line.matches(',').count();
     let semis = first_line.matches(';').count();
@@ -352,7 +353,7 @@ fn detect_delimiter(text: &str) -> char {
     }
 }
 
-fn read_capped(path: &Path) -> ProviderResult<Vec<u8>> {
+pub(crate) fn read_capped(path: &Path) -> ProviderResult<Vec<u8>> {
     let meta = std::fs::metadata(path)?;
     if meta.len() > MAX_BYTES {
         return Err(ProviderError::FileTooLarge {
@@ -367,3 +368,4 @@ fn read_capped(path: &Path) -> ProviderResult<Vec<u8>> {
 }
 
 pub use mapping::{AmountConvention, ColumnRole};
+pub use prepare::{PreparedDecision, PreparedImport, PreparedRow};
