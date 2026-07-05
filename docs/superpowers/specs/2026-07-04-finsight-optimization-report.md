@@ -66,6 +66,13 @@ The CSV import pipeline was already made anticipatory (parse+reconcile moved off
 **Result:** both background writers that could mutate state after a reset are now cancelled. Combined with the frontend's existing `queryClient.clear()` on Delete-All (which drops *all* cached queries incl. `csv-prepare`, transactions, and every derived/report/chart cache), the client cache and both backend writers are invalidated/cancelled by a wipe.
 **Correctness:** new test simulates a reset landing between the rule and LLM passes and asserts no categorization is written; the normal (non-cancelled) path still categorizes.
 
+### 3.4 Disable `refetchOnWindowFocus` — `perf(query)`
+
+**Bottleneck (evidence):** the `QueryClient` set `staleTime`/`retry` but left `refetchOnWindowFocus` at its default (**true**). FinSight is a local-first desktop app; every time the user tabbed away and back, *every* mounted query older than `staleTime` refetched — a burst of Tauri IPC calls + SQL across the whole active query set — for data that only changes via in-app actions (which already invalidate precisely).
+
+**Fix:** `refetchOnWindowFocus: false` in the default query options.
+**Result:** window focus no longer replays the active query set. No staleness introduced — the SQLite ledger has no external writer; imports/mutations/sync all invalidate on success. 298 FE tests still pass.
+
 ---
 
 ## 4. Areas profiled and found already-healthy (no change needed)
@@ -76,6 +83,8 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 - **Copilot context (`context.rs::build_context`)** — already context-packs **summaries/aggregates** (SUM/GROUP BY over merchants, categories, budgets) rather than shipping raw transaction payloads over IPC, satisfying the plan's "avoid excessive raw transaction payloads / context-pack backend summaries." Queries share one connection and are inherently sequential; parallelizing would add SQLite read contention for little gain.
 - **Reports/dashboard hooks** — aggregation is done backend-side (`getMonthTotals`, `getSavingsRateHistory`) with 60 s `staleTime`; no client-side full-table recompute or refetch storm.
 - **Post-commit cascade concurrency** — deliberately left sequential. SQLite is single-writer; running the cascade steps concurrently would contend on the write lock (risking `SQLITE_BUSY`), not speed up. `pair_transfers` is ordering-dependent on the keyword pass and cannot move regardless. The lever here is doing *less* work (scoping), which is deferred (see §7).
+
+- **`net_worth::backfill_history_from_transactions` — measured, left as-is.** It looked like an O(months) N-query recompute (one `SUM(... WHERE date > month_end)` per month), so I prototyped a single grouped `strftime('%Y-%m', …) GROUP BY` scan + in-memory prefix sums, guarded by a reference-equivalence test (gap month + future-dated rows) that passed byte-for-byte. **But the bench regressed 36.5 ms → 88.7 ms (+142%).** `strftime`/`GROUP BY` on `posted_at` can't use the `(account_id, posted_at)` index and pays a per-row function cost, whereas the per-month queries are cheap indexed range scans. Reverted — a clean reminder that the plan's "profile first" is not optional: the assumed bottleneck was already index-optimal.
 
 ---
 
@@ -100,7 +109,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 
 ## 7. Remaining risks / deferred work
 
-- **Post-commit cascade scoping (Task 7 / D4, deferred):** `recompute_anomalies` and `net_worth::backfill_history_from_transactions` still recompute over full history on every import. Scoping them to the affected account/date window is the natural next win but requires equivalence tests (anomaly stats shift per touched merchant's whole group; net-worth backfill must carry the running balance from before the window). Deferred as a scoping decision, not because it's negligible (~100 ms combined).
+- **Post-commit cascade scoping (Task 7 / D4, partially retired):** `net_worth::backfill_history_from_transactions` was investigated and found to be **already index-optimal** — the single-query rewrite regressed it (see §4), so it is *not* a fruitful scoping target. That leaves `recompute_anomalies` (~20 ms, full-history merchant grouping): a scoped variant would need the imported merchant set and must recompute each touched merchant's *whole* group (one new row shifts that merchant's median/MAD) while leaving untouched merchants' flags intact — with an equivalence test as the gate. At ~20 ms it is low priority; deferred.
 - **Reset race residual:** a categorization chunk (or a single cascade step / the import write itself) already *past* its epoch check when the wipe lands can complete that one unit of work. The window is one batch/step; FK + `UPDATE`-0-rows behavior makes it self-healing. A fully preemptive cancel would require aborting the in-flight LLM future / `spawn_blocking` task, which is out of scope.
 - **No-op-write claim verified:** skipping unchanged `is_transfer` writes (§3.1) is exactly a no-op because a `grep` of all migrations confirms **no triggers exist on `transactions`** (or any table) — so a value-unchanged UPDATE had no observable side effect to lose.
 - **Search `LIKE '%…%'`** remains a scan (un-indexable prefix wildcard); fine at current dataset sizes with pagination + debounce. FTS would be the move only if datasets grow large.
