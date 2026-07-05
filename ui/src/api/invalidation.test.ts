@@ -21,7 +21,7 @@ describe("invalidateDomains", () => {
       ["transactions"],
       ["month-totals"],
       ["budget-envelopes"],
-      ["net-worth"],
+      ["networth-history"], // the real net-worth chart key (not dead "net-worth")
       ["journey-status"],
       ["needs-review-count"],
     ]) {
@@ -38,10 +38,10 @@ describe("invalidateDomains", () => {
 
   it("dedupes overlapping roots across composed domains", async () => {
     const { qc, calls } = spyClient();
-    // simplefin = transactions + accounts + import; the shared net-worth/account
+    // simplefin = transactions + accounts + import; the shared networth/account
     // roots must be invalidated exactly once, not per-domain.
     await invalidateDomains(qc, "simplefin");
-    const netWorth = calls.filter((c) => c === JSON.stringify(["net-worth"]));
+    const netWorth = calls.filter((c) => c === JSON.stringify(["networth-history"]));
     expect(netWorth).toHaveLength(1);
     const accounts = calls.filter((c) => c === JSON.stringify(["accounts"]));
     expect(accounts).toHaveLength(1);
@@ -65,7 +65,7 @@ describe("invalidateDomains", () => {
     const { qc, calls } = spyClient();
     await invalidateDomains(qc, "categories");
     // A category rename can't change net worth; it must not be dropped.
-    expect(calls).not.toContain(JSON.stringify(["net-worth"]));
+    expect(calls).not.toContain(JSON.stringify(["networth-history"]));
     expect(calls).not.toContain(JSON.stringify(["accounts"]));
   });
 });

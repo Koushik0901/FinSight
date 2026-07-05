@@ -37,8 +37,11 @@ const TRANSACTIONS: Root[] = [
   ["journey-status"],
   ["needs-review-count"],
   ["recurring"],
-  ["net-worth"],
-  ["net-worth-history"],
+  // The net-worth HEADLINE (`useNetWorth`) is computed from accounts +
+  // manual-assets, so it refreshes via those; the net-worth CHART is the only
+  // net-worth *query* and its key is `["networth-history", days]` (one word).
+  // The old hand-lists invalidated `["net-worth-history"]` (hyphenated) — a
+  // dead key that matched nothing, so the chart went stale after imports/sync.
   ["networth-history"],
   ["account-balance-history"],
   ["account-balance-sparklines"],
@@ -50,9 +53,7 @@ const TRANSACTIONS: Root[] = [
 const ACCOUNTS: Root[] = [
   ["accounts"],
   ["account-owners"],
-  ["net-worth"],
-  ["net-worth-history"],
-  ["networth-history"],
+  ["networth-history"], // the net-worth chart; headline recomputes from ["accounts"]
   ["account-balance-history"],
   ["account-balance-sparklines"],
   ["budget-envelopes"], // envelopes can be account-scoped
@@ -79,7 +80,6 @@ const GOALS: Root[] = [
   ["goals"],
   ["goal-projection"],
   ["journey-status"],
-  ["net-worth"], // goal earmarks feed net worth
   ["plan-next-month"],
 ];
 
