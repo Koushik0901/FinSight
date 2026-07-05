@@ -112,3 +112,39 @@ Comparing the two additive stages of the full user-visible operation (import, th
 - Combined: 2025.0 ms → import is **~83%** of total, cascade is **~17%**
 
 **Verdict: the post-commit cascade does NOT dominate.** Reconcile+insert inside `CsvProvider::import` is the larger share by a wide margin (~1671 ms vs ~352 ms, roughly 4.8x). This points D2 (anticipatory prepare, moving parse+reconcile off the commit-time critical path) as the higher-leverage target over D4 (cascade scoping). D4 still has some value (352 ms is not nothing, and `pair_transfers`/`recompute_anomalies` numbers here are likely underestimates of production cost since this DB has only a single account with only the amex import in it — e.g. `pair_transfers` has no second account to pair against, so its 30 ms is mostly scan overhead rather than real transfer-pairing work), but it is not the D1 gate for prioritizing D2 first.
+
+## Results (after)
+
+Re-measured with the same harness (`cargo bench -p finsight-providers --bench import_phases`, criterion `sample_size(20)`, plotters backend) after Tasks 2 (`prepare_cached`) + 4 (single-pass fold) landed, plus the new read-only `prepare()` entry point (Task 5/6) that finally makes reconcile isolatable. The new `prepare_amex` bench runs `CsvProvider::prepare` (read + decode + parse + reconcile, **no writes**) against a freshly-seeded empty-ledger account per iteration — the exact work the anticipatory pipeline moves off the Import click.
+
+| Phase | Before (median) | After (median) | What it measures |
+|---|---|---|---|
+| `read_decode` | 39.924 µs | 38.117 µs | File read + layered decode; unchanged (noise) |
+| `parse_only` | 1.2854 ms | 1.3133 ms | Parse every data row into `ParsedRow`; unchanged (noise) |
+| `prepare_amex` | — (not isolatable before) | **22.391 ms** | Read + decode + parse + reconcile via the new read-only `prepare()`, empty ledger, no writes |
+| `import_amex_full` | **1.6734 s** | **197.930 ms** | End-to-end `CsvProvider::import` (read + decode + parse + reconcile + insert + batched commits), fresh seeded DB per iteration |
+| `categorize_builtin` | 245.54 ms | 229.900 ms | `apply_builtin_categorization`, post-import DB; untouched this slice (delta is noise) |
+| `pair_transfers` | 30.211 ms | 30.114 ms | `pair_transfers`, same setup; untouched |
+| `recompute_anomalies` | 21.414 ms | 20.076 ms | `recompute_anomalies`, same setup; untouched |
+| `net_worth_backfill` | 37.736 ms | 36.452 ms | `backfill_history_from_transactions`, same setup; untouched |
+| `net_worth_record_today` | 16.736 ms | 16.551 ms | `record_today`, same setup; untouched |
+
+### Attribution
+
+`import_amex_full` dropped from **1.6734 s → 197.930 ms**, an **~8.45x** speedup. Two changes combined to produce it:
+
+- **Task 2 — `prepare_cached` (the dominant win).** `find_fuzzy_candidates` was calling `conn.prepare(...)` once per row, recompiling the same SQL ~2000 times over the amex file. Switching to `prepare_cached` compiles it once and reuses the cached statement, eliminating the N+1 statement-recompilation cost that was the true dominant term in the old ~1671 ms reconcile+insert figure.
+- **Task 4 — single-pass fold.** The old path re-read + re-decoded the file and did a separate full count-pass for progress before the parse/reconcile pass. The anticipatory fold (`prepare()`) reads + decodes + parses + reconciles in one pass, and `import()` now reuses that plan, so the double file read and the count-pass are gone.
+
+The Task 1 baseline (1.6734 s) predates Task 2, so the measured 8.45x delta reflects **both** changes together, not either in isolation.
+
+**Insert-vs-reconcile split (from the new `prepare_amex` datapoint).** `prepare_amex` and `import_amex_full` both reconcile against a fresh empty ledger, so their difference is a genuine apples-to-apples measure of the write half:
+
+- Reconcile (read + decode + parse + reconcile, no writes) — `prepare_amex`: **22.391 ms** (~11.3% of the import step)
+- Insert/commit (INSERTs + batched commits + mapping save + `imports` row + balance recompute) — `import_amex_full − prepare_amex`: **≈175.5 ms** (~88.7% of the import step)
+
+So after the fix, reconcile is now cheap; the residual import cost is overwhelmingly the write/commit work, which is inherently on the critical path at Import time and cannot be moved off it (only the ~22 ms reconcile can be pre-staged and reused via signature match).
+
+### Task 7 (cascade scoping) remains DEFERRED
+
+Task 7 (scoping `recompute_anomalies` / `net_worth backfill` to the affected account/date-range, D4) stays deferred to a later slice — but the *reason* has shifted and should not be misread as "the cascade is cheap." When D1 was measured, the cascade was ~352 ms of a ~2025 ms combined operation (~17%), which is why D2 was correctly prioritized first. Now that import is ~8.5x faster (198 ms), the cascade sum (**≈333 ms**, essentially flat — it was not touched this slice) is actually the *larger* remaining post-click cost: import 198 ms vs cascade 333 ms (~37% / ~63% of the ~531 ms combined). The reconcile portion (~22 ms) can move off-click via prepare, leaving ~509 ms of unavoidable on-click work, of which the cascade is the bigger half. The data now points to Task 7 as the natural next optimization target; it is deferred as a scoping decision for a separate slice, not because it is negligible.

@@ -4,12 +4,13 @@
 //!
 //!   1. read_decode      — file read + layered decode (BOM sniff/UTF-8/1252)
 //!   2. parse_only       — parse every data row into a ParsedRow (pure, no I/O)
-//!   3. reconcile_only   — best-effort; NOT cleanly isolatable yet because
-//!                         `CsvProvider::import` interleaves reconcile with
-//!                         insert/commit inside one loop and there's no public
-//!                         `prepare()` step that stops right after reconcile.
-//!                         Deferred: needs a public prepare() (see the phase 7
-//!                         design doc). Skipped here — see doc note.
+//!   3. prepare_amex     — read + decode + parse + reconcile via the public,
+//!                         read-only `CsvProvider::prepare()`, NO writes, over
+//!                         a freshly seeded (empty-ledger) account per
+//!                         iteration. This is the work the anticipatory
+//!                         pipeline moves OFF the Import click. The gap
+//!                         between this and import_amex_full is insert/commit
+//!                         cost.
 //!   4. import_amex_full — end-to-end `CsvProvider::import` (read, decode,
 //!                         parse, reconcile, insert, commit) against a fresh
 //!                         seeded DB per iteration.
@@ -174,13 +175,29 @@ fn bench_parse_only(c: &mut Criterion) {
     });
 }
 
-// reconcile_only: deferred — CsvProvider::import interleaves reconcile with
-// insert/commit in a single loop over one open rusqlite::Transaction, and
-// there is no public API that stops right after reconciliation without also
-// inserting. Isolating this phase would require a new read-only `prepare()`
-// entry point (planned for a later phase-7 task), which this task must not
-// add (no product `pub` changes here). See the design doc's Baselines
-// section for this note.
+/// prepare = read + decode + parse + reconcile, NO writes. Against an empty
+/// ledger (fresh account). The gap between this and import_amex_full is the
+/// insert/commit cost; this is the work the anticipatory pipeline moves OFF
+/// the Import click.
+fn bench_prepare_amex(c: &mut Criterion) {
+    c.bench_function("prepare_amex", |b| {
+        b.iter_batched(
+            || {
+                let (db, dir) = fresh_db();
+                let id = seed_amex_account(&db);
+                (db, dir, id)
+            },
+            |(db, _dir, account_id)| {
+                let conn = db.get().unwrap();
+                let path = repo_sample("amex-all-time-statement.csv");
+                let mapping = amex_mapping();
+                let p = CsvProvider::prepare(&path, &account_id, &mapping, &conn).unwrap();
+                criterion::black_box(p);
+            },
+            BatchSize::LargeInput,
+        );
+    });
+}
 
 fn bench_import_amex_full(c: &mut Criterion) {
     c.bench_function("import_amex_full", |b| {
@@ -286,6 +303,7 @@ criterion_group!(
     targets =
         bench_read_decode,
         bench_parse_only,
+        bench_prepare_amex,
         bench_import_amex_full,
         bench_categorize_builtin,
         bench_pair_transfers,
