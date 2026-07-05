@@ -95,6 +95,13 @@ pub async fn import_csv(
     let db = (*state.db).clone();
     let path = PathBuf::from(path);
     let app_emit = app.clone();
+    // Snapshot the reset generation before we touch the ledger. If a Delete-All
+    // lands while this import runs, the post-commit derived-state cascade below
+    // is skipped — otherwise `ensure_default_categories` (inside the builtin
+    // categorization step) would re-seed categories, and net-worth/anomaly
+    // recompute would repopulate derived state, into a ledger the user just
+    // wiped.
+    let reset_epoch_at_start = state.agent.reset_generation();
     // Pre-generate the import_id so progress events carry it before the summary is returned.
     let import_id = Uuid::new_v4().to_string();
     let import_id_for_progress = import_id.clone();
@@ -117,36 +124,45 @@ pub async fn import_csv(
 
     let summary = summary?;
 
-    // Deterministic, provider-free baseline categorization. Runs on every import
-    // so common merchants get a stable category even with no LLM provider
-    // configured; the AI categorizer (if a provider is set) still refines the
-    // rest. Best-effort — a failure here must not fail the import itself.
-    {
-        let cat_db = (*state.db).clone();
-        let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
-    }
-    // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now that
-    // both sides may exist. Runs after the keyword pass, which supplies the
-    // flagged anchors. Best-effort — must not fail the import.
-    {
-        let pair_db = (*state.db).clone();
-        let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
-    }
-    // Recompute statistical anomaly flags from the (now larger) history.
-    // Best-effort — must not fail the import.
-    {
-        let anom_db = (*state.db).clone();
-        let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
-    }
-    // Refresh the derived balance + net-worth trend from the new activity so the
-    // Today/Accounts numbers and the net-worth chart populate immediately.
-    {
-        let nw_db = (*state.db).clone();
-        let _ = run(&nw_db, |conn| {
-            finsight_core::repos::net_worth::record_today(conn)?;
-            finsight_core::repos::net_worth::backfill_history_from_transactions(conn)
-        })
-        .await;
+    // Post-commit derived-state cascade. Skip the whole thing if a Delete-All
+    // landed during the import — re-seeding categories / recomputing net worth
+    // into a freshly-wiped ledger is exactly the stale-write the reset must
+    // prevent. Each step re-checks so a wipe mid-cascade stops the remainder.
+    let wiped = || state.agent.reset_generation() != reset_epoch_at_start;
+    if !wiped() {
+        // Deterministic, provider-free baseline categorization. Runs on every
+        // import so common merchants get a stable category even with no LLM
+        // provider configured; the AI categorizer (if a provider is set) still
+        // refines the rest. Best-effort — a failure here must not fail the
+        // import itself.
+        {
+            let cat_db = (*state.db).clone();
+            let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
+        }
+        // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now
+        // that both sides may exist. Runs after the keyword pass, which supplies
+        // the flagged anchors. Best-effort — must not fail the import.
+        if !wiped() {
+            let pair_db = (*state.db).clone();
+            let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
+        }
+        // Recompute statistical anomaly flags from the (now larger) history.
+        // Best-effort — must not fail the import.
+        if !wiped() {
+            let anom_db = (*state.db).clone();
+            let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
+        }
+        // Refresh the derived balance + net-worth trend from the new activity so
+        // the Today/Accounts numbers and the net-worth chart populate
+        // immediately.
+        if !wiped() {
+            let nw_db = (*state.db).clone();
+            let _ = run(&nw_db, |conn| {
+                finsight_core::repos::net_worth::record_today(conn)?;
+                finsight_core::repos::net_worth::backfill_history_from_transactions(conn)
+            })
+            .await;
+        }
     }
 
     // Auto-categorize with the configured AI provider when the setting is on

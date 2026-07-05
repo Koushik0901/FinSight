@@ -60,9 +60,10 @@ The CSV import pipeline was already made anticipatory (parse+reconcile moved off
 **Fix (version/epoch pattern the plan calls for):**
 - `AgentHandle` now holds a monotonic `reset_epoch: Arc<AtomicU64>`.
 - `delete_all_data` calls `agent.cancel_running_work()` (bumps the epoch) **before** wiping the DB.
-- `categorizer::run_job` snapshots the epoch at start and checks it at every batch boundary — per-row in the rule pass, per-chunk in the LLM pass — aborting early (before the next write) if it changed.
+- **Writer 1 — the agent categorizer:** `categorizer::run_job` snapshots the epoch at start and checks it at every batch boundary — per-row in the rule pass, per-chunk in the LLM pass — aborting early (before the next write) if it changed.
+- **Writer 2 — the import post-commit cascade:** `import_csv` snapshots the epoch before touching the ledger and re-checks before each cascade step (`apply_builtin_categorization`/`ensure_default_categories`, `pair_transfers`, `recompute_anomalies`, `net_worth`). A Delete-All landing during an import therefore can't re-seed default categories or repopulate derived state into the wiped ledger.
 
-**Result:** speculative/stale categorization work can no longer mutate state after a reset. Combined with the frontend's existing `queryClient.clear()` on Delete-All (which drops *all* cached queries incl. `csv-prepare`, transactions, and every derived/report/chart cache), both the client cache and the backend writer are now invalidated/cancelled by a wipe.
+**Result:** both background writers that could mutate state after a reset are now cancelled. Combined with the frontend's existing `queryClient.clear()` on Delete-All (which drops *all* cached queries incl. `csv-prepare`, transactions, and every derived/report/chart cache), the client cache and both backend writers are invalidated/cancelled by a wipe.
 **Correctness:** new test simulates a reset landing between the rule and LLM passes and asserts no categorization is written; the normal (non-cancelled) path still categorizes.
 
 ---
@@ -81,7 +82,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 5. Concurrency, cancellation & staleness guarantees
 
 - **Stale results can't overwrite newer state:** transaction search relies on TanStack Query's query-key versioning — a superseded query's result is dropped, not written back. The import prepare preview is keyed on `(path, accountId, mapping)` and re-keys on any edit.
-- **Delete-All cancels + invalidates:** frontend `queryClient.clear()` (all caches, prepared plans, derived state) + backend reset-epoch cancels the one background writer that could mutate post-wipe.
+- **Delete-All cancels + invalidates:** frontend `queryClient.clear()` (all caches, prepared plans, derived state) + backend reset-epoch cancels **both** post-wipe writers — the agent categorizer and the import post-commit cascade.
 - **No early mutation:** the categorization guard aborts *before* the next write, never mid-write; SQLite serializes any single in-flight statement, so no torn writes.
 - **Deterministic output preserved:** the categorize change only removed provably-redundant writes (skipped flag writes were no-ops; cached statements are byte-identical SQL).
 
@@ -90,7 +91,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 6. Tests / green bar
 
 - New tests: `useDebouncedValue` (3), categorizer reset-cancellation (1).
-- `cargo test --workspace`: **336 passed, 0 failed, 9 ignored** (was 335; +1 categorizer reset-cancellation test).
+- `cargo test --workspace`: **336 passed, 0 failed, 9 ignored** (was 335; +1 categorizer reset-cancellation test). `finsight-app` suite (incl. import command) green after the cascade guard.
 - `ui` vitest: **298 passed** (was 295; +3 debounce).
 - `tsc --noEmit`: **0 errors**.
 - No Tauri command signatures changed → **no bindings regeneration required** (only internal fn signatures changed).
@@ -100,5 +101,6 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 ## 7. Remaining risks / deferred work
 
 - **Post-commit cascade scoping (Task 7 / D4, deferred):** `recompute_anomalies` and `net_worth::backfill_history_from_transactions` still recompute over full history on every import. Scoping them to the affected account/date window is the natural next win but requires equivalence tests (anomaly stats shift per touched merchant's whole group; net-worth backfill must carry the running balance from before the window). Deferred as a scoping decision, not because it's negligible (~100 ms combined).
-- **Reset race residual:** a categorization chunk already *past* its epoch check when the wipe lands can complete one more write batch. The window is one batch and the FK/`UPDATE`-0-rows behavior makes it self-healing; a fully preemptive cancel would require aborting the in-flight LLM future.
+- **Reset race residual:** a categorization chunk (or a single cascade step / the import write itself) already *past* its epoch check when the wipe lands can complete that one unit of work. The window is one batch/step; FK + `UPDATE`-0-rows behavior makes it self-healing. A fully preemptive cancel would require aborting the in-flight LLM future / `spawn_blocking` task, which is out of scope.
+- **No-op-write claim verified:** skipping unchanged `is_transfer` writes (§3.1) is exactly a no-op because a `grep` of all migrations confirms **no triggers exist on `transactions`** (or any table) — so a value-unchanged UPDATE had no observable side effect to lose.
 - **Search `LIKE '%…%'`** remains a scan (un-indexable prefix wildcard); fine at current dataset sizes with pagination + debounce. FTS would be the move only if datasets grow large.

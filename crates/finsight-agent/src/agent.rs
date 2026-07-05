@@ -93,6 +93,13 @@ impl AgentHandle {
     pub fn cancel_running_work(&self) {
         self.reset_epoch.fetch_add(1, Ordering::SeqCst);
     }
+
+    /// Current reset generation. Other post-wipe-sensitive writers (e.g. the
+    /// import post-commit cascade) can snapshot this and skip work if it
+    /// changes under them — the same guard the categorizer uses internally.
+    pub fn reset_generation(&self) -> u64 {
+        self.reset_epoch.load(Ordering::SeqCst)
+    }
 }
 
 async fn run_loop(
