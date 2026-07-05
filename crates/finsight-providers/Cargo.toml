@@ -27,3 +27,8 @@ tempfile.workspace = true
 uuid.workspace = true
 finsight-core = { path = "../finsight-core" }
 wiremock = "0.6"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "import_phases"
+harness = false

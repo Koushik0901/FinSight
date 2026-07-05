@@ -80,3 +80,35 @@ Criterion bench over real `samples/` CSVs attributing time to each phase separat
 
 ## Open question resolved by D1
 Whether the primary win is the anticipatory prepare (D2) or the post-commit cascade scoping (D4). Both are specified; D1's numbers set priority. D3 ships regardless.
+
+## Baselines (before)
+
+Measured with `cargo bench -p finsight-providers --bench import_phases` (criterion 0.5.1, `sample_size(20)`, plotters backend — Gnuplot not installed) over `samples/amex-all-time-statement.csv` (~1988 rows, 1976 imported after the sanity check `rows_imported > 1000` passed on every setup run). Bench source: `crates/finsight-providers/benches/import_phases.rs`.
+
+Final mapping used (had to be worked out from the raw file, not assumed): `skip_header_rows: 1`, columns `[Date, Skip, Merchant, Amount]` (column 2, "Date Processed", is unused), `date_format: "%d %b %Y"`, `amount_convention: PositiveIsOutflow` (charges are positive/outflow, payments/credits negative — the inverse of the common US-bank convention), `decimal_separator: '.'`, `delimiter: None`. This mapping was validated end-to-end; no parse errors on the file, comfortably over 1000 rows imported.
+
+| Phase | Median | What it measures |
+|---|---|---|
+| `read_decode` | 39.924 µs | File read + layered decode (BOM sniff → UTF-8 → Windows-1252 fallback), no parsing |
+| `parse_only` | 1.2854 ms | Parsing every data row into `ParsedRow` via the real `parse_row`, no I/O, no DB |
+| `import_amex_full` | 1.6734 s | End-to-end `CsvProvider::import`: read + decode + parse + reconcile + insert + batched commits, against a fresh seeded DB per iteration |
+| `categorize_builtin` | 245.54 ms | `categorize::apply_builtin_categorization`, run once against a DB that already has the amex import committed |
+| `pair_transfers` | 30.211 ms | `categorize::pair_transfers`, same setup |
+| `recompute_anomalies` | 21.414 ms | `anomaly::recompute_anomalies`, same setup |
+| `net_worth_backfill` | 37.736 ms | `repos::net_worth::backfill_history_from_transactions`, same setup |
+| `net_worth_record_today` | 16.736 ms | `repos::net_worth::record_today`, same setup |
+
+Not isolated: **`reconcile_only`**. `CsvProvider::import` interleaves reconcile with insert/commit inside a single loop over one open `rusqlite::Transaction`, and there is no public entry point that stops right after reconciliation without also inserting. Isolating this cleanly requires the read-only `prepare()` from D2, which this benchmarking task must not add (no product `pub` visibility changes allowed here). Per-phase math below substitutes for a direct measurement.
+
+### Verdict
+
+**Important correctness note on the arithmetic:** `CsvProvider::import` (the `import_amex_full` bench) does **not** call the post-commit cascade steps — `apply_builtin_categorization`, `pair_transfers`, `recompute_anomalies`, and the two `net_worth` functions all run *after* `import()` returns, from `import_csv` in `finsight-app`, each on its own connection. So `import_amex_full` already *is* read+decode+parse+reconcile+insert in full; the cascade is a separate, additive cost on top of it, not a component to subtract out of it.
+
+Since `read_decode` (0.04 ms) and `parse_only` (1.29 ms) are both negligible next to the 1673 ms end-to-end number, essentially the entire `import_amex_full` time — **≈1671 ms** — is attributable to reconcile+insert (per-row `reconcile_excluding_batch` against the DB, plus batched writes). That is the dominant cost inside the import step itself.
+
+Comparing the two additive stages of the full user-visible operation (import, then cascade):
+- Import (read+decode+parse+reconcile+insert): **1673.4 ms**
+- Post-commit cascade (sum of the 5 steps above): **351.6 ms** (245.54 + 30.211 + 21.414 + 37.736 + 16.736)
+- Combined: 2025.0 ms → import is **~83%** of total, cascade is **~17%**
+
+**Verdict: the post-commit cascade does NOT dominate.** Reconcile+insert inside `CsvProvider::import` is the larger share by a wide margin (~1671 ms vs ~352 ms, roughly 4.8x). This points D2 (anticipatory prepare, moving parse+reconcile off the commit-time critical path) as the higher-leverage target over D4 (cascade scoping). D4 still has some value (352 ms is not nothing, and `pair_transfers`/`recompute_anomalies` numbers here are likely underestimates of production cost since this DB has only a single account with only the amex import in it — e.g. `pair_transfers` has no second account to pair against, so its 30 ms is mostly scan overhead rather than real transfer-pairing work), but it is not the D1 gate for prioritizing D2 first.
