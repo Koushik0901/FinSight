@@ -11,6 +11,7 @@ import {
   type TransferSuggestionInfo,
   type ImportCandidateWithMatches,
 } from "../client";
+import { invalidateDomains } from "../invalidation";
 
 const simplefinKeys = {
   status: ["simplefin", "status"] as const,
@@ -80,8 +81,9 @@ export function useImportSimpleFinAccounts() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      // A committed SimpleFin import touches the whole ledger + accounts +
+      // import state (previously under-invalidated month-totals/net-worth).
+      invalidateDomains(qc, "simplefin");
       qc.invalidateQueries({ queryKey: simplefinKeys.accounts });
     },
   });
@@ -96,8 +98,8 @@ export function useSyncSimpleFinAccount() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      // Sync adds/updates rows: full ledger fan-out, not just the two roots.
+      invalidateDomains(qc, "simplefin");
     },
   });
 }
@@ -113,7 +115,7 @@ export function useDisconnectSimpleFin() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.status });
       qc.invalidateQueries({ queryKey: simplefinKeys.connections });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomains(qc, "accounts", "transactions");
     },
   });
 }
@@ -133,8 +135,7 @@ export function usePurgeSimpleFinData() {
       qc.invalidateQueries({ queryKey: simplefinKeys.alerts });
       qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      invalidateDomains(qc, "simplefin");
       qc.invalidateQueries({ queryKey: ["onboarding"] });
     },
   });
@@ -151,7 +152,7 @@ export function useDeleteSimpleFinConnection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.connections });
       qc.invalidateQueries({ queryKey: simplefinKeys.status });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomains(qc, "accounts", "transactions");
     },
   });
 }
@@ -165,8 +166,7 @@ export function useSyncAllSimpleFinAccounts() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      invalidateDomains(qc, "simplefin");
       qc.invalidateQueries({ queryKey: simplefinKeys.connections });
       qc.invalidateQueries({ queryKey: simplefinKeys.alerts });
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
@@ -245,7 +245,7 @@ export function useConfirmSimpleFinTransfer() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      invalidateDomains(qc, "transactions");
     },
   });
 }
@@ -285,8 +285,7 @@ export function useAcceptImportCandidateMatch() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomains(qc, "simplefin");
     },
   });
 }
@@ -301,8 +300,7 @@ export function useCreateImportCandidateTransaction() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomains(qc, "simplefin");
     },
   });
 }

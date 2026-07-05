@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type CompletionProviderConfig, type AgentStatus } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
+import { invalidateDomains } from "../invalidation";
 
 export function useNeedsReviewCount() {
   return useQuery<number>({
@@ -117,8 +118,10 @@ export function useTriggerCategorize() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      // Refresh agent status after a scan completes
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["agent-status"] }), 2000);
+      // The categorize job runs in the background; refresh once it has had a
+      // moment to assign categories. Categorization changes transaction
+      // categories, so the whole ledger fan-out is affected — not just status.
+      setTimeout(() => invalidateDomains(qc, "transactions"), 2000);
     },
   });
 }
@@ -132,10 +135,12 @@ export function useTriggerRecategorizeLowConfidence() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
+      // Recategorization reassigns transaction categories in the background;
+      // refresh the ledger fan-out (this previously only refreshed the review
+      // count, leaving spending/budget stale) plus the review action items.
       setTimeout(() => {
-        void qc.invalidateQueries({ queryKey: ["needs-review-count"] });
+        void invalidateDomains(qc, "transactions");
         void qc.invalidateQueries({ queryKey: ["action-items"] });
-        void qc.invalidateQueries({ queryKey: ["agent-status"] });
       }, 2000);
     },
   });

@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type ExecutionSummary,
 } from "../client";
+import { invalidateDomains } from "../invalidation";
 
 export function useAgentSessions() {
   return useQuery<AgentSession[]>({
@@ -89,8 +90,7 @@ export function useApproveActionItem() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      qc.invalidateQueries({ queryKey: ["action-bundle"] });
+      invalidateDomains(qc, "agentActions");
     },
   });
 }
@@ -103,8 +103,7 @@ export function useRejectActionItem() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      qc.invalidateQueries({ queryKey: ["action-bundle"] });
+      invalidateDomains(qc, "agentActions");
     },
   });
 }
@@ -129,13 +128,9 @@ export function useExecuteActionBundle() {
       return await invoke<ExecutionSummary>("execute_action_bundle", { bundleId });
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      void qc.invalidateQueries({ queryKey: ["action-bundle"] });
-      void qc.invalidateQueries({ queryKey: ["execution-log"] });
-      void qc.invalidateQueries({ queryKey: ["transactions"] });
-      void qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      void qc.invalidateQueries({ queryKey: ["goals"] });
-      void qc.invalidateQueries({ queryKey: ["recurring"] });
+      // Applying a bundle mutates the ledger (agentApply = agentActions +
+      // transactions fan-out) and may fund goals; plus agent memory.
+      void invalidateDomains(qc, "agentApply", "goals");
       void qc.invalidateQueries({ queryKey: ["agent-memory"] });
     },
   });

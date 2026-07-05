@@ -8,6 +8,7 @@ import {
   type AccountSparkline,
 } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
+import { invalidateDomains } from "../invalidation";
 
 export function useAccounts() {
   return useQuery<AccountSummary[]>({
@@ -33,10 +34,10 @@ export function useCreateAccount() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomains(qc, "accounts");
+      // Creating the first account advances onboarding; not part of the
+      // accounts data domain.
       qc.invalidateQueries({ queryKey: ["onboarding-state"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }
@@ -53,9 +54,7 @@ export function useUpdateAccount() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "accounts");
     },
   });
 }
@@ -96,9 +95,10 @@ export function useArchiveAccount() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      // Archiving an account removes its transactions from the ledger view
+      // (totals, reports, review queue), so invalidate the transaction domain
+      // too — not just the account list.
+      invalidateDomains(qc, "accounts", "transactions");
     },
   });
 }
@@ -114,12 +114,7 @@ export function useSetAccountBalance() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["net-worth"] });
-      qc.invalidateQueries({ queryKey: ["net-worth-history"] });
-      qc.invalidateQueries({ queryKey: ["account-balance-history"] });
-      qc.invalidateQueries({ queryKey: ["account-balance-sparklines"] });
+      invalidateDomains(qc, "accounts");
     },
   });
 }

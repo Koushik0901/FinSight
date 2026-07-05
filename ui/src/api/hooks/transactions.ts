@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
+import { invalidateDomains } from "../invalidation";
 
 const DEFAULT_FILTER: TxnFilterInput = {
   accountId: null,
@@ -64,12 +65,7 @@ export function useCreateTransaction() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "transactions");
     },
   });
 }
@@ -84,19 +80,9 @@ export function useImportCsv() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["unfinished-imports"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
-      // The import just persisted this account's mapping — drop the cached
-      // lookup so a repeat import reflects the freshly-saved settings.
-      qc.invalidateQueries({ queryKey: ["csv-saved-mapping"] });
-      // The ledger changed — any cached speculative preview is now stale.
-      qc.invalidateQueries({ queryKey: ["csv-prepare"] });
+      // A CSV commit touches the ledger, account balances, and import state
+      // (mapping + any cached speculative preview).
+      invalidateDomains(qc, "importCommit");
     },
   });
 }
@@ -111,13 +97,7 @@ export function useUpdateTransaction() {
       return result.data as UpdateTxnResult;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "transactions");
     },
   });
 }
@@ -131,13 +111,7 @@ export function useDeleteTransaction() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "transactions");
     },
   });
 }
@@ -152,7 +126,7 @@ export function useCreateRule() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["rules"] });
+      invalidateDomains(qc, "rules");
     },
   });
 }
@@ -190,19 +164,13 @@ export function useSetCategorySpendingType() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
+      invalidateDomains(qc, "categories");
     },
   });
 }
 
-const invalidateCategoryQueries = (qc: ReturnType<typeof useQueryClient>) => {
-  qc.invalidateQueries({ queryKey: ["categories"] });
-  qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-  qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-  qc.invalidateQueries({ queryKey: ["transactions"] });
-};
+const invalidateCategoryQueries = (qc: ReturnType<typeof useQueryClient>) =>
+  invalidateDomains(qc, "categories");
 
 export function useCreateCategory() {
   const qc = useQueryClient();
@@ -238,8 +206,9 @@ export function useArchiveCategory() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
+      // The categories domain already includes rules (archiving a category can
+      // disable its rules).
       invalidateCategoryQueries(qc);
-      qc.invalidateQueries({ queryKey: ["rules"] });
     },
   });
 }
@@ -265,12 +234,7 @@ export function useUpdateCategoryColor() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["recurring"] });
-      qc.invalidateQueries({ queryKey: ["rules"] });
+      invalidateDomains(qc, "categories");
     },
   });
 }
@@ -296,7 +260,7 @@ export function useToggleRule() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["rules"] });
+      invalidateDomains(qc, "rules");
     },
   });
 }
@@ -311,10 +275,7 @@ export function useSetTransactionFlags() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["needs-review-count"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "transactions");
     },
   });
 }
@@ -347,14 +308,10 @@ export function useSetTransactionSplits() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
+      // A split reassigns amounts across categories, so it touches both the
+      // ledger and category spending; plus this txn's own split rows.
+      invalidateDomains(qc, "transactions", "categories");
       qc.invalidateQueries({ queryKey: ["splits", vars.txnId] });
-      qc.invalidateQueries({ queryKey: ["categories"] });
-      qc.invalidateQueries({ queryKey: ["categories-with-spending"] });
-      qc.invalidateQueries({ queryKey: ["month-totals"] });
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["spending-breakdown"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
     },
   });
 }

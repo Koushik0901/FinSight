@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
+import { invalidateDomains } from "../invalidation";
 
 // ── Budget ────────────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ export function useSetBudget() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
+      invalidateDomains(qc, "budgetEnvelopes");
     },
   });
 }
@@ -67,8 +68,7 @@ export function useCreateGoal() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "goals");
     },
   });
 }
@@ -82,8 +82,7 @@ export function useUpdateGoalBalance() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "goals");
     },
   });
 }
@@ -97,8 +96,7 @@ export function useArchiveGoal() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
-      qc.invalidateQueries({ queryKey: ["journey-status"] });
+      invalidateDomains(qc, "goals");
     },
   });
 }
@@ -112,7 +110,7 @@ export function useUpdateGoalMonthly() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
+      invalidateDomains(qc, "goals");
     },
   });
 }
@@ -139,7 +137,7 @@ export function useUpdateGoalPurpose() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
+      invalidateDomains(qc, "goals");
     },
   });
 }
@@ -169,8 +167,7 @@ export function useApplyNextMonthPlan() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["budget-envelopes"] });
-      qc.invalidateQueries({ queryKey: ["plan-next-month"] });
+      invalidateDomains(qc, "budgetEnvelopes");
     },
   });
 }
