@@ -54,6 +54,7 @@ import {
 import { useAccounts } from "../api/hooks/accounts";
 import { commands } from "../api/client";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
+import { sourcesFromToolTrace } from "../components/copilot/toolSources";
 import { useTauriAgUiRuntime } from "../components/copilot/agUi/TauriAgUiRuntime";
 import { isCopilotAgUiRuntimeEnabled } from "../components/copilot/agUi/featureFlag";
 import {
@@ -402,6 +403,18 @@ function AssistantMessage({
             </blockquote>
           )}
         </MessagePrimitive.Quote>
+        <div className="cp-turn-hd">
+          <div className={`cp-agent-mark ${isRunning ? "is-thinking" : ""}`}>
+            <span className="cp-agent-core" />
+          </div>
+          <span className="cp-turn-name">Copilot</span>
+          {meta?.modelId && <span className="cp-turn-model">{meta.providerId} · {meta.modelId}</span>}
+          <div className="cp-src-rail">
+            {sourcesFromToolTrace(meta?.toolTrace).map((label) => (
+              <span key={label} className="cp-src is-on">{label}</span>
+            ))}
+          </div>
+        </div>
         <div className="copilot-bubble-asst">
           {isRunning && !hasReadableContent && (
             <div className="copilot-progress">Analyzing your local financial data…</div>
