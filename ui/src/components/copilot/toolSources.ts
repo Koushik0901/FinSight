@@ -1,4 +1,10 @@
-/** Maps a tool name prefix/substring to the mockup's source-rail label. */
+/**
+ * Maps a tool name prefix/substring to the mockup's source-rail label.
+ * Matching is first-wins: if a tool name matches multiple patterns, the
+ * first match in array order is used. Known cases where this matters:
+ *   - "compare_debt_vs_goal" → Liabilities (not Goals)
+ *   - "list_uncategorized_transactions" → Transactions (not Categories)
+ */
 const TOOL_TO_SOURCE: Array<[match: RegExp, label: string]> = [
   [/transaction/i, "Transactions"],
   [/account|liquid|balance/i, "Accounts"],
