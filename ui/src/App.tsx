@@ -9,8 +9,8 @@ import {
 } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { useIsFetching } from "@tanstack/react-query";
-import { Toaster } from "sonner";
-import { markRouteStart, markRouteContent } from "./utils/perf";
+import { Toaster, toast } from "sonner";
+import { markRouteStart, markRouteContent, perf } from "./utils/perf";
 import { Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -169,6 +169,22 @@ export function App() {
       if (meta && e.key === ".") {
         e.preventDefault();
         setPrivacy(!privacy);
+      }
+      // Perf-measurement hotkeys (see utils/perf.ts). Runtime-toggleable so a
+      // driven measurement pass works on a release build with no devtools and
+      // no reload: Ctrl+Alt+P flips instrumentation on/off, Ctrl+Alt+S copies
+      // the current summary() to the clipboard as JSON.
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        const on = perf.toggle();
+        toast(on ? "Perf instrumentation ON" : "Perf instrumentation OFF");
+      }
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void perf.copySummaryToClipboard().then(
+          () => toast("Perf summary copied to clipboard"),
+          () => toast.error("Could not copy perf summary")
+        );
       }
     };
     window.addEventListener("keydown", onKey);

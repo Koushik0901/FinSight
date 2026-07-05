@@ -10,8 +10,12 @@ import type { QueryCache } from "@tanstack/react-query";
  * Tauri app, or an automated computer-use pass) can read/export it: the app
  * self-instruments, so no external profiler is needed.
  *
- * Turn on by setting `localStorage.finsightPerf = "1"` (or `?perf=1`); off by
- * default so there is zero overhead in normal use. Enable BEFORE reload.
+ * Turn on by setting `localStorage.finsightPerf = "1"` (or `?perf=1`) before
+ * reload, OR at runtime with `Ctrl+Alt+P` (no reload, no devtools needed —
+ * release builds ship without devtools). `Ctrl+Alt+S` copies `summary()` to
+ * the clipboard as JSON so a driven measurement pass can read it out without a
+ * console. Both are wired in `App.tsx`'s global keydown handler and confirm
+ * via a toast. Off by default so there is zero overhead in normal use.
  */
 
 export interface PerfEntry {
@@ -41,6 +45,8 @@ interface PerfSink {
   clear(): void;
   export(): string;
   summary(): Record<string, { count: number; p50: number; p95: number; max: number }>;
+  toggle(): boolean;
+  copySummaryToClipboard(): Promise<void>;
 }
 
 function makeSink(): PerfSink {
@@ -50,7 +56,7 @@ function makeSink(): PerfSink {
     const s = [...xs].sort((a, b) => a - b);
     return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))] ?? 0;
   };
-  return {
+  const sink: PerfSink = {
     enabled: perfEnabled(),
     entries,
     record(e) {
@@ -83,7 +89,16 @@ function makeSink(): PerfSink {
       }
       return out;
     },
+    toggle() {
+      sink.enabled = !sink.enabled;
+      return sink.enabled;
+    },
+    async copySummaryToClipboard() {
+      const payload = JSON.stringify(sink.summary(), null, 2);
+      await navigator.clipboard.writeText(payload);
+    },
   };
+  return sink;
 }
 
 export const perf: PerfSink = makeSink();
@@ -98,9 +113,12 @@ if (typeof window !== "undefined") {
  * a prefetch hit). Call once at app startup with the app's QueryClient's cache.
  */
 export function instrumentQueryCache(cache: QueryCache): void {
-  if (!perf.enabled) return;
+  // Subscribe unconditionally (cheap: a Map + a type check per cache event)
+  // and gate recording per-event on the CURRENT value of `perf.enabled`, so
+  // toggling at runtime (Ctrl+Alt+P) takes effect immediately with no reload.
   const startedAt = new Map<string, number>();
   cache.subscribe((event) => {
+    if (!perf.enabled) return;
     const query = event.query;
     const hash = query.queryHash;
     const root = Array.isArray(query.queryKey) ? String(query.queryKey[0]) : String(query.queryKey);
