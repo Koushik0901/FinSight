@@ -38,6 +38,10 @@ pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_all_data(state: tauri::State<'_, AppState>) -> AppResult<()> {
+    // Signal the agent BEFORE the wipe so any in-flight or queued categorization
+    // aborts at its next batch boundary instead of writing categorizations
+    // against the freshly-emptied ledger (stale-data leak / orphan rows).
+    state.agent.cancel_running_work();
     let db = (*state.db).clone();
     run(&db, finsight_core::repos::reset::delete_all_data)
         .await

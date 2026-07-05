@@ -34,6 +34,7 @@ pub async fn run_job(
     job: AgentJob,
     provider: Arc<dyn CompletionProvider>,
     on_event: EventCallback,
+    reset_epoch: Arc<std::sync::atomic::AtomicU64>,
 ) -> Result<()> {
     let (import_id, rerun_mode) = match &job {
         AgentJob::CategorizeImport { import_id } => (Some(import_id.clone()), false),
@@ -41,6 +42,13 @@ pub async fn run_job(
         AgentJob::RecategorizeLowConfidence => (None, true),
         _ => return Ok(()),
     };
+
+    // Snapshot the reset generation. If a Delete-All / factory reset bumps it
+    // while we run, `cancelled()` flips true and we stop at the next batch
+    // boundary — never writing categorizations against a wiped ledger.
+    let start_epoch = reset_epoch.load(std::sync::atomic::Ordering::SeqCst);
+    let cancelled =
+        || reset_epoch.load(std::sync::atomic::Ordering::SeqCst) != start_epoch;
 
     // Load data needed for categorization on a blocking thread
     let (uncategorized, active_rules, categories, recent_examples) = {
@@ -71,6 +79,11 @@ pub async fn run_job(
 
     // Step 1: Rule pass
     for (txn_id, merchant_raw, amount_cents) in &uncategorized {
+        // Bail immediately if the ledger was wiped under us — don't write a
+        // rule categorization for a transaction that no longer exists.
+        if cancelled() {
+            return Ok(());
+        }
         let matched = active_rules.iter().find(|r| {
             let pat = r.pattern.to_lowercase();
             let merch = merchant_raw.to_lowercase();
@@ -121,6 +134,11 @@ pub async fn run_job(
     let system_prompt = build_system_prompt(&categories, &recent_examples);
 
     for chunk in remaining.chunks(LLM_BATCH_SIZE) {
+        // A Delete-All / factory reset between batches aborts the rest of the
+        // run: the following LLM call + writes would target a wiped ledger.
+        if cancelled() {
+            return Ok(());
+        }
         // Per-chunk error recovery: a bad LLM response (timeout, parse error, hallucinated
         // JSON) skips this chunk and continues rather than aborting the entire job.
         let chunk_result = async {
@@ -424,6 +442,7 @@ mod tests {
             Arc::new(move |e| {
                 events_clone.lock().unwrap().push(e);
             }),
+            Arc::new(std::sync::atomic::AtomicU64::new(0)),
         )
         .await
         .unwrap();
@@ -453,7 +472,7 @@ mod tests {
             response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.87, "rationale": "Fast food"}]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
             .await
             .unwrap();
 
@@ -496,7 +515,7 @@ mod tests {
             ]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
             .await
             .unwrap();
 
@@ -539,7 +558,7 @@ mod tests {
         });
 
         // Must not error despite the bad id.
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
             .await
             .unwrap();
 
@@ -591,7 +610,7 @@ mod tests {
             response: json!([]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
             .await
             .unwrap();
 
@@ -618,7 +637,7 @@ mod tests {
             response: json!([{"txn_id": "t1", "category_id": "ghost-category", "confidence": 0.9, "rationale": "Hallucinated"}]),
             tool_turns: Mutex::new(vec![]),
         });
-        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0)))
             .await
             .unwrap();
 
@@ -653,10 +672,51 @@ mod tests {
             response: serde_json::Value::String("not valid array".into()),
             tool_turns: Mutex::new(vec![]),
         });
-        let result = run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {})).await;
+        let result = run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}), Arc::new(std::sync::atomic::AtomicU64::new(0))).await;
         assert!(
             result.is_ok(),
             "job must not fail when a chunk errors: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_between_steps_aborts_before_the_llm_writes() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        // A Delete-All / factory reset that lands after the rule pass but before
+        // the LLM pass must abort the run so no categorization is written for a
+        // transaction the wipe is removing. We simulate the reset landing
+        // exactly there by bumping the epoch from the first progress event
+        // (fired between Step 1 and the Step 2 chunk loop).
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE (no rule) + cat1 + account
+        }
+        let epoch = Arc::new(AtomicU64::new(0));
+        let epoch_cb = Arc::clone(&epoch);
+        let on_event: EventCallback = Arc::new(move |_e| {
+            epoch_cb.fetch_add(1, Ordering::SeqCst);
+        });
+        // If the guard did NOT fire, this response would categorize t1 -> cat1.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, on_event, epoch)
+            .await
+            .unwrap();
+
+        let conn = db.get().unwrap();
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            cat, None,
+            "the LLM pass must be skipped once the ledger is reset mid-run"
         );
     }
 }
