@@ -460,6 +460,10 @@ function AssistantMessage({
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
     .join("\n");
+  const reasoningText = message.content
+    .filter((p): p is { type: "reasoning"; text: string } => p.type === "reasoning")
+    .map((p) => p.text)
+    .join("\n");
   const hasReadableContent = message.content.some((part) => {
     if (part.type === "text" || part.type === "reasoning") {
       return Boolean(part.text.trim());
@@ -510,14 +514,17 @@ function AssistantMessage({
             >
               {({ part, children }) => {
                 switch (part.type) {
-                  case "group-thought": {
-                    const reasoningText = plainText;
+                  case "group-thought":
                     return <ThinkingBlock reasoningText={reasoningText} toolCalls={children} />;
-                  }
                   case "group-sources":
                     return <div className="copilot-sources">{children}</div>;
                   case "reasoning":
-                    return <p className="copilot-reasoning-text">{part.text}</p>;
+                    // Reasoning content is rendered via ThinkingBlock's own
+                    // "Reasoning" section (sourced from reasoningText above),
+                    // so it isn't also rendered inline here — that would show
+                    // it twice, once as a stray paragraph mixed into the
+                    // "Tool calls" children and once as numbered steps.
+                    return null;
                   case "tool-call":
                     return part.toolUI ?? <ToolFallbackCard part={part} />;
                   case "source":
