@@ -16,6 +16,7 @@ import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
+import { useDebouncedValue } from "../utils/useDebouncedValue";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -57,17 +58,23 @@ export default function AccountTransactions() {
 
   const account = accounts.find((a) => a.id === id);
 
+  // Debounce the free-text search so each keystroke doesn't fire its own
+  // backend query + IPC round-trip; the input below stays bound to the raw
+  // `search` so typing is still instant. Date/preset changes are discrete and
+  // don't need debouncing.
+  const debouncedSearch = useDebouncedValue(search, 250);
+
   const filterValue: TxnFilterInput = useMemo(
     () => ({
       accountId: id ?? null,
       limit: null,
       offset: null,
-      search: search || null,
+      search: debouncedSearch || null,
       filterPreset: preset === "all" ? null : preset,
       startDate,
       endDate,
     }),
-    [id, search, preset, startDate, endDate]
+    [id, debouncedSearch, preset, startDate, endDate]
   );
 
   const {
@@ -173,7 +180,7 @@ export default function AccountTransactions() {
 
       <div style={{ marginTop: 14 }}>
         <TransactionFilter
-          value={filterValue}
+          value={{ ...filterValue, search: search || null }}
           onChange={handleFilterChange}
           counts={{ review: needsReviewCount, anomalies: agentStatus?.anomalyCount ?? 0 }}
         />
