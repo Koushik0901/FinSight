@@ -95,6 +95,11 @@ Either way **nothing an operation started against the previous epoch can survive
 
 The scheduled SimpleFin sync was the one genuinely-concurrent writer with a long straddle and *unguarded top-level inserts* — the sharpest case the boundary must cover — and is now leased on both its manual and batch paths.
 
+**Closure rule (why the audit is finite, not whack-a-mole).** The *only* write that can survive a completed wipe is an **`INSERT` into a wiped table from an operation that `await`ed network / LLM / file before the insert**. `UPDATE … WHERE id` hits zero rows post-wipe, and an `INSERT` whose FK points at a wiped parent is rejected (`PRAGMA foreign_keys=true`) — both self-healing. So the audit = grep every straddling entry point (`complete_json`, `fetch_simplefin_data`, CSV read) for its post-`await` writes and classify them. That exhaustive sweep is done:
+- **Leased:** CSV import, categorizer, SimpleFin sync (manual + batch), account import, recipe runner + `trigger_recipe`, Copilot action-bundle persist.
+- **Self-healing (verified, not assumed):** Copilot conversation/assistant messages (`conversation_messages.conversation_id REFERENCES conversations ON DELETE CASCADE`; `touch_conversation` is UPDATE-only, so nothing re-creates the parent post-wipe); conversation title-gen (`UPDATE conversations`); `detect_anomalies` (`UPDATE … WHERE id`); sync-error alert (`simplefin_alerts.account_id REFERENCES accounts ON DELETE CASCADE`).
+- **Non-persisting:** `run_scenario` (run-then-`save_scenario`, the save being an atomic user insert), `ask_agent`/`router_classify`/`test_completion_provider` (read-only + LLM), `planner::plan` (test-only caller).
+
 ### 3.4 Disable `refetchOnWindowFocus` — `perf(query)`
 
 **Bottleneck (evidence):** the `QueryClient` set `staleTime`/`retry` but left `refetchOnWindowFocus` at its default (**true**). FinSight is a local-first desktop app; every time the user tabbed away and back, *every* mounted query older than `staleTime` refetched — a burst of Tauri IPC calls + SQL across the whole active query set — for data that only changes via in-app actions (which already invalidate precisely).
