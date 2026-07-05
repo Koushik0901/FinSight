@@ -2,7 +2,7 @@
 
 Goal: generalize the CSV-import prepare/commit principle across FinSight — start safe backend work at the earliest signal, reuse prepared results, make final actions feel instant — with **generic** infrastructure, dependency-aware invalidation, and real measurement. Correctness, deterministic finance, approval safety, and cache integrity preserved.
 
-Branch: `phase7b-anticipatory`. Green bar: **312 frontend tests, 0 TS errors** (+ backend suites unchanged from Phase 7's 341/0/9).
+Branch: `phase7b-anticipatory`. Green bar: **317 frontend tests, 0 TS errors** (`tsc -b` clean) (+ backend suites unchanged from Phase 7's 341/0/9).
 
 ---
 
@@ -65,14 +65,39 @@ Encoded in `invalidation.ts`; see the audit doc's table. Summary of the dependen
 
 ## 5. Measurement
 
-**Method chosen (per user):** drive the real packaged Tauri desktop app while the app self-instruments (§2c) and a background reader captures the perf marks — real desktop, not proxies.
+**Method (per user):** `tauri build` → install the real NSIS package → drive it with computer-use (mouse/keyboard on the actual installed app, real SQLCipher DB with real sample data: 3 accounts, ~2000 transactions, 249 needing review, 64 anomalies) → the app self-instruments (§2c) → `Ctrl+Alt+S` exports `perf.summary()` to the clipboard → `read_clipboard` captures it. Real desktop, not proxies.
 
-**Automated evidence captured in this environment (labeled proxies, not desktop timings):**
-- **Prefetch cache-hit is real, not aspirational:** `prefetch.test.tsx` proves the warmed key is the one the screen reads (command called exactly once across prefetch + hook). A cold Today route mounts **9 summary queries**; on warm (hover-then-click) those are cache hits → route-to-content collapses toward render-only cost. The instrumentation's `RouteTimer` will report this as `route:/` p50 dropping on the warm run.
-- **Invalidation correctness, measurable as fewer stale surfaces:** the sync/recategorize under-invalidation and the dead net-worth-chart key were bugs (stale UI), not just perf — now fixed.
+**A measurement bug was found and fixed by this process, not assumed away.** The first driven pass returned every `route:*` entry at ~0ms — including genuinely cold first visits to `/insights`, `/budget`, `/categories` that the same capture's `query:*` entries proved did real 10–100ms+ backend work. Root cause: `RouteTimer`'s `isFetching`-effect fired in the same commit as the route-change effect, so its first read was the *previous* route's already-settled value, not a signal the new route had started fetching. Fixed (commit `f926651`) to only close a route on a `0` that was preceded by an observed `>0` for that route, with a bounded 32ms grace fallback for routes served entirely from a warm cache. Re-ran the identical driven sequence after the fix — this is that corrected data.
+
+**Captured `perf.summary()` (installed release build, real ledger, this session):**
+
+| Label | count | p50 | p95 | max | Note |
+|---|---|---|---|---|---|
+| `route:/` (Today, revisit) | 1 | 14ms | 14ms | 14ms | already warm from launch |
+| `route:/recurring` (cold) | 1 | 26ms | 26ms | 26ms | ≈ `query:recurring` p50 27ms — dominant query matches route time |
+| `route:/budget` (hover-then-click) | 1 | 31ms | 31ms | 31ms | ≈ `query:budget-envelopes` 11ms + `query:budget-history` 14ms |
+| `route:/accounts` (hover-then-click) | 1 | 35ms | 35ms | 35ms | accounts/owners/household queries, partly pre-warmed by hover |
+| `route:/categories` (hover-then-click) | 1 | 41ms | 41ms | 41ms | ≈ `query:categories-with-spending` (31–102ms range) |
+| `route:/insights` (cold) | 1 | 81ms | 81ms | 81ms | ≈ `query:financial-health-score` 90ms |
+| `route:/accounts/…/transactions` (hover-then-click) | 1 | 57ms | 57ms | 57ms | account-row hover prefetch + `query:transactions-infinite` 10ms |
+| `route:/reports` (cold + revisit) | 2 | 132ms | 132ms | 132ms | see caveat below |
+| `query:report-data` | 2 | 122ms | 122ms | 122ms | Reports' own dominant query |
+| `query:categories-with-spending` | 7 | 31ms | 102ms | 102ms | widest spread — read across many screens |
+| `query:financial-health-score` | 2 | 90ms | 90ms | 90ms | |
+| `query:savings-rate-history` | 3 | 31ms | 90ms | 90ms | |
+| `query:accounts` | 8 | 18ms | 27ms | 27ms | |
+| `query:transactions-infinite` | 4 | 10ms | 16ms | 16ms | search + account-open combined |
+
+Full raw capture (all ~25 labels) is in the session transcript; the table above is the representative subset per flow.
+
+**Reading it:** every `route:*` value is now non-zero and tracks its screen's real dominant query cost (`recurring` 26↔27ms, `insights` 81↔90ms, `categories` 41ms↔31–102ms range) — the fix produced believable, internally-consistent numbers instead of the flat 0 the bug produced. The **cold** group (Reports/Insights/Recurring, direct click, no hover) and the **hover-then-click** group (Accounts, account-row, Budget, Categories) can't be cleanly diffed pairwise (different screens have different backend cost), but the mechanism they exercise — prefetch firing on hover before the click lands — is separately proven exact-cache-hit-or-miss by `prefetch.test.tsx`, so real-desktop numbers here corroborate rather than re-prove that.
+
+**Caveat on `route:/reports` (132ms, n=2):** the `summary()` percentile formula (`floor(p/100 * n)` index into the sorted array) collapses p50/p95/max to the same value whenever n=2 — it cannot distinguish which of the two visits (cold vs. the later revisit) was faster from this view alone. 132ms is a valid upper bound consistent with `query:report-data`'s own 122ms p95, but whether the revisit was actually faster than the cold visit is not resolvable from `summary()` with only 2 samples; a future refinement would keep min/last alongside p50/p95/max. Flagging this rather than asserting a specific revisit speedup I can't prove from the data.
+
+**Automated evidence (frontend suite, not desktop timings, unchanged from before the driven pass):**
+- **Prefetch cache-hit is real, not aspirational:** `prefetch.test.tsx` proves the warmed key is the one the screen reads (command called exactly once across prefetch + hook).
+- **Invalidation correctness, measurable as fewer stale surfaces:** the sync/recategorize under-invalidation and the dead net-worth-chart key were real bugs (stale UI), not just perf — now fixed and covered by `invalidation.test.ts`.
 - **Rapid-hover dedup:** proven — 10 hovers → 1 fetch (`anticipatory.concurrency.test.tsx`).
-
-**Real-desktop before/after (pending a driven run):** the instrumentation is in place and off-by-default; a computer-use pass over the packaged app (nav Today/Accounts/Reports cold vs hover-warm, filter/search latency, account open, with `finsightPerf` on) will produce the `perf.summary()` table. This is the one acceptance item that requires the packaged app + a driving session; it is enabled and ready, not yet executed here.
 
 ---
 
