@@ -274,7 +274,7 @@ fn find_fuzzy_candidates(
     let min_amount = amount_cents - AMOUNT_TOLERANCE_CENTS;
     let max_amount = amount_cents + AMOUNT_TOLERANCE_CENTS;
 
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT t.id, t.account_id, t.posted_at, t.amount_cents, t.merchant_raw, \
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
