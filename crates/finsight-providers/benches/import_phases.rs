@@ -263,6 +263,27 @@ fn bench_recompute_anomalies(c: &mut Criterion) {
     });
 }
 
+fn bench_recompute_anomalies_scoped(c: &mut Criterion) {
+    // Worst case for scoping: a single-account ledger, so the scoped pass
+    // touches every merchant anyway. This must not regress vs. the full pass;
+    // the real win is on multi-account ledgers (not modelled by the amex sample).
+    c.bench_function("recompute_anomalies_scoped", |b| {
+        b.iter_batched(
+            db_with_amex_imported,
+            |(db, _dir, account_id)| {
+                let mut conn = db.get().unwrap();
+                let n = finsight_core::anomaly::recompute_anomalies_for_account(
+                    &mut conn,
+                    &account_id,
+                )
+                .unwrap();
+                criterion::black_box(n);
+            },
+            BatchSize::LargeInput,
+        );
+    });
+}
+
 fn bench_net_worth_backfill(c: &mut Criterion) {
     c.bench_function("net_worth_backfill", |b| {
         b.iter_batched(
@@ -308,6 +329,7 @@ criterion_group!(
         bench_categorize_builtin,
         bench_pair_transfers,
         bench_recompute_anomalies,
+        bench_recompute_anomalies_scoped,
         bench_net_worth_backfill,
         bench_net_worth_record_today,
 );

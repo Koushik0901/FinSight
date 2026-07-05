@@ -73,6 +73,16 @@ The CSV import pipeline was already made anticipatory (parse+reconcile moved off
 **Fix:** `refetchOnWindowFocus: false` in the default query options.
 **Result:** window focus no longer replays the active query set. No staleness introduced — the SQLite ledger has no external writer; imports/mutations/sync all invalidate on success. 298 FE tests still pass.
 
+### 3.5 Account-scoped anomaly recompute — `perf(anomaly)`
+
+**Bottleneck (evidence):** `recompute_anomalies` cleared *every* flag and re-ran the full median/MAD grouping over the *entire* ledger on each import, even though an import into one account can only shift the merchant groups present in that account.
+
+**Fix (correctness-gated scoping):** `recompute_anomalies_for_account(account_id)` recomputes only the groups with a member in the imported account and clears flags only on those groups' rows, leaving every other merchant's flags untouched. The in-scope key set is built inline during the single load pass (no extra query, merchants normalized once), and the scoped clear is proportional to the small set of *currently-flagged* rows in those groups. The import cascade now calls this variant. The authoritative full `recompute_anomalies` is unchanged and still used by the manual "recompute anomalies" command.
+
+**Correctness (the gate):** a two-DB equivalence test builds byte-identical ledgers (two accounts, a shared cross-account merchant, an untouched B-only merchant with a pre-existing flag) and diverges only at the final call — full vs scoped — asserting the resulting `is_anomaly`/`ai_explanation` match **row-for-row**, and that the untouched merchant's flag survives the scoped pass.
+
+**Result (measured, single-account amex = worst case for scoping):** full **43.4 ms** vs scoped **43.8 ms** — statistically identical (an initial scoped prototype regressed +19% from a redundant `DISTINCT` query + double normalization; eliminating those made it neutral). On multi-account ledgers the scoped pass skips every untouched group, so it is strictly cheaper as account count grows. Net: no regression on the common case, real upside on the multi-account case the plan's "scope to the affected window" targets.
+
 ---
 
 ## 4. Areas profiled and found already-healthy (no change needed)
@@ -99,8 +109,8 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 
 ## 6. Tests / green bar
 
-- New tests: `useDebouncedValue` (3), categorizer reset-cancellation (1).
-- `cargo test --workspace`: **336 passed, 0 failed, 9 ignored** (was 335; +1 categorizer reset-cancellation test). `finsight-app` suite (incl. import command) green after the cascade guard.
+- New tests: `useDebouncedValue` (3), categorizer reset-cancellation (1), anomaly scoped-vs-full equivalence (1).
+- `cargo test --workspace`: **337 passed, 0 failed, 9 ignored** (was 335; +1 categorizer reset-cancellation, +1 anomaly equivalence). `finsight-app` suite (incl. import command) green after the cascade guard + scoped anomaly wiring.
 - `ui` vitest: **298 passed** (was 295; +3 debounce).
 - `tsc --noEmit`: **0 errors**.
 - No Tauri command signatures changed → **no bindings regeneration required** (only internal fn signatures changed).
@@ -109,7 +119,7 @@ Evidence-based decisions **not** to change things (avoiding speculative churn):
 
 ## 7. Remaining risks / deferred work
 
-- **Post-commit cascade scoping (Task 7 / D4, partially retired):** `net_worth::backfill_history_from_transactions` was investigated and found to be **already index-optimal** — the single-query rewrite regressed it (see §4), so it is *not* a fruitful scoping target. That leaves `recompute_anomalies` (~20 ms, full-history merchant grouping): a scoped variant would need the imported merchant set and must recompute each touched merchant's *whole* group (one new row shifts that merchant's median/MAD) while leaving untouched merchants' flags intact — with an equivalence test as the gate. At ~20 ms it is low priority; deferred.
+- **Post-commit cascade scoping (Task 7 / D4) — done for anomalies, retired for net-worth.** `recompute_anomalies` is now account-scoped on import (§3.5), equivalence-tested and benchmark-neutral on single-account with multi-account upside. `net_worth::backfill_history_from_transactions` was investigated and found **already index-optimal** — the single-query rewrite regressed it (§4), so it is *not* a fruitful scoping target and is intentionally left as-is. This closes the D4 scoping item.
 - **Reset race residual:** a categorization chunk (or a single cascade step / the import write itself) already *past* its epoch check when the wipe lands can complete that one unit of work. The window is one batch/step; FK + `UPDATE`-0-rows behavior makes it self-healing. A fully preemptive cancel would require aborting the in-flight LLM future / `spawn_blocking` task, which is out of scope.
 - **No-op-write claim verified:** skipping unchanged `is_transfer` writes (§3.1) is exactly a no-op because a `grep` of all migrations confirms **no triggers exist on `transactions`** (or any table) — so a value-unchanged UPDATE had no observable side effect to lose.
 - **Search `LIKE '%…%'`** remains a scan (un-indexable prefix wildcard); fine at current dataset sizes with pagination + debounce. FTS would be the move only if datasets grow large.

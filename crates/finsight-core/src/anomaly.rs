@@ -29,18 +29,44 @@ struct Row {
     id: String,
     abs_cents: f64,
     merchant_key: String,
+    was_flagged: bool,
 }
 
 /// Recompute `is_anomaly` for every expense transaction from live data.
 /// Returns the number of transactions now flagged as anomalous.
 pub fn recompute_anomalies(conn: &mut Connection) -> CoreResult<u32> {
-    // 1. Clear all prior flags so nothing stale survives.
-    conn.execute("UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1", [])?;
+    recompute(conn, None)
+}
 
-    // 2. Load expenses (exclude transfers — a large transfer is not an anomaly).
+/// Account-scoped recompute for the import cascade. Only merchants that appear
+/// in `account_id` can have been affected by importing into it (an outlier is
+/// judged against that merchant's *whole* cross-account history, so a merchant
+/// absent from this account is untouched by this import). Recomputing only
+/// those groups — and clearing only their flags — is provably equivalent to a
+/// full recompute for the affected rows while leaving every other merchant's
+/// flags exactly as they were, so it avoids re-sorting/re-flagging the entire
+/// ledger on each import. Returns the number of transactions flagged within the
+/// recomputed groups.
+pub fn recompute_anomalies_for_account(conn: &mut Connection, account_id: &str) -> CoreResult<u32> {
+    recompute(conn, Some(account_id))
+}
+
+/// Shared core. When `scope_account` is `None`, recompute every merchant group
+/// and clear every prior flag (the authoritative full pass). When it is `Some`,
+/// touch only groups that have a member in that account: clear flags on their
+/// rows and re-flag just them, leaving all other transactions' `is_anomaly`
+/// untouched. The in-scope key set is built inline during the single load pass
+/// (no extra query, merchants normalized once) so the scoped path is no slower
+/// than the full one on a single-account ledger.
+fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u32> {
+    // Load expenses (exclude transfers — a large transfer is not an anomaly).
+    // A group's outlier judgement needs its *full* cross-account membership, so
+    // even the scoped pass loads all expenses and filters which groups to act
+    // on; it just does far less sorting/writing.
+    let mut touched: std::collections::HashSet<String> = std::collections::HashSet::new();
     let rows: Vec<Row> = {
         let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, amount_cents FROM transactions \
+            "SELECT id, merchant_raw, amount_cents, is_anomaly, account_id FROM transactions \
              WHERE amount_cents < 0 AND is_transfer = 0",
         )?;
         let mapped = stmt.query_map([], |r| {
@@ -48,32 +74,47 @@ pub fn recompute_anomalies(conn: &mut Connection) -> CoreResult<u32> {
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)? != 0,
+                r.get::<_, String>(4)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in mapped {
-            let (id, raw, amount) = row?;
+            let (id, raw, amount, was_flagged, account_id) = row?;
+            let merchant_key = normalize_merchant(&raw);
+            // Build the in-scope key set for free: any group with a member in
+            // the target account could have been shifted by importing into it.
+            if let Some(aid) = scope_account {
+                if account_id == aid && !merchant_key.is_empty() {
+                    touched.insert(merchant_key.clone());
+                }
+            }
             out.push(Row {
                 id,
                 abs_cents: amount.unsigned_abs() as f64,
-                merchant_key: normalize_merchant(&raw),
+                merchant_key,
+                was_flagged,
             });
         }
         out
     };
+    let scoped = scope_account.is_some();
 
-    // 3. Group by normalized merchant.
+    // Group by normalized merchant, keeping only the groups in scope.
     let mut groups: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
     for (i, row) in rows.iter().enumerate() {
         if row.merchant_key.is_empty() {
             continue;
         }
+        if scoped && !touched.contains(&row.merchant_key) {
+            continue;
+        }
         groups.entry(row.merchant_key.clone()).or_default().push(i);
     }
 
-    // 4. Flag robust outliers within each group.
+    // Flag robust outliers within each in-scope group.
     let mut flagged: Vec<(String, String)> = Vec::new(); // (txn_id, reason)
-    for (_key, idxs) in groups {
+    for (_key, idxs) in &groups {
         if idxs.len() < MIN_HISTORY {
             continue;
         }
@@ -87,7 +128,7 @@ pub fn recompute_anomalies(conn: &mut Connection) -> CoreResult<u32> {
         let robust_sigma = (MAD_TO_SIGMA * mad).max(med * 0.10); // floor: 10% of median
         let threshold = med + K_SIGMA * robust_sigma;
 
-        for &i in &idxs {
+        for &i in idxs {
             let a = rows[i].abs_cents;
             if a > threshold && a >= MIN_MULTIPLE * med && (a - med) >= MIN_ABS_DELTA_CENTS {
                 let reason = format!(
@@ -101,13 +142,34 @@ pub fn recompute_anomalies(conn: &mut Connection) -> CoreResult<u32> {
         }
     }
 
-    // 5. Persist flags + a deterministic explanation.
     let tx = conn.transaction()?;
-    for (id, reason) in &flagged {
-        tx.execute(
+    // Clear prior flags. Full pass: clear everything stale in one statement.
+    // Scoped pass: clear only rows belonging to the in-scope groups, so other
+    // merchants' flags survive untouched.
+    if scoped {
+        // Only rows that are CURRENTLY flagged need clearing, and only within
+        // touched groups — proportional to the (small) set of existing
+        // anomalies in those groups, not every touched row.
+        let mut clear =
+            tx.prepare_cached("UPDATE transactions SET is_anomaly = 0 WHERE id = ?1")?;
+        for idxs in groups.values() {
+            for &i in idxs {
+                if rows[i].was_flagged {
+                    clear.execute([&rows[i].id])?;
+                }
+            }
+        }
+    } else {
+        tx.execute("UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1", [])?;
+    }
+    // Persist fresh flags + a deterministic explanation.
+    {
+        let mut set_flag = tx.prepare_cached(
             "UPDATE transactions SET is_anomaly = 1, ai_explanation = ?1 WHERE id = ?2",
-            rusqlite::params![reason, id],
         )?;
+        for (id, reason) in &flagged {
+            set_flag.execute(rusqlite::params![reason, id])?;
+        }
     }
     tx.commit()?;
 
@@ -153,6 +215,17 @@ mod tests {
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
              VALUES(hex(randomblob(16)),'a','2026-01-01T00:00:00Z',?1,?2,?3,'cleared',datetime('now'))",
             rusqlite::params![cents, merchant, is_transfer],
+        )
+        .unwrap();
+    }
+
+    /// Insert with an explicit id + account so two ledgers can be built
+    /// byte-identically and compared row-for-row.
+    fn ins(conn: &Connection, id: &str, account: &str, merchant: &str, cents: i64) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
+             VALUES(?1,?2,'2026-01-01T00:00:00Z',?3,?4,0,'cleared',datetime('now'))",
+            rusqlite::params![id, account, cents, merchant],
         )
         .unwrap();
     }
@@ -221,5 +294,79 @@ mod tests {
         conn.execute("UPDATE transactions SET is_anomaly = 1 WHERE amount_cents = -1000", []).unwrap();
         let n = recompute_anomalies(&mut conn).unwrap();
         assert_eq!(n, 1, "recompute must clear stale flags and reflect only current outliers");
+    }
+
+    #[test]
+    fn scoped_recompute_matches_full_and_preserves_untouched_flags() {
+        // Build two byte-identical ledgers that diverge only at the FINAL
+        // recompute: one runs the authoritative full pass, the other the
+        // account-scoped pass the import cascade uses. Their resulting
+        // is_anomaly / ai_explanation state must match row-for-row.
+        fn build() -> (TempDir, Db) {
+            let (dir, db) = fresh(); // seeds account 'a'
+            {
+                let conn = db.get().unwrap();
+                conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('b','me','B','Credit','CardB','USD','#fff',datetime('now'))", []).unwrap();
+            }
+            let mut conn = db.get().unwrap();
+            // GYM_B lives ONLY in account b, with a pre-existing outlier.
+            for i in 0..6 {
+                ins(&conn, &format!("gymb{i}"), "b", "GYM MEMBERSHIP B", -2000);
+            }
+            ins(&conn, "gymb_out", "b", "GYM MEMBERSHIP B", -20000);
+            // SHARED lives in BOTH accounts (group spans a+b), normal so far.
+            for i in 0..3 {
+                ins(&conn, &format!("sha{i}"), "a", "SHARED STORE", -3000);
+            }
+            for i in 0..3 {
+                ins(&conn, &format!("shb{i}"), "b", "SHARED STORE", -3000);
+            }
+            // Baseline: flags the GYM_B outlier so it is already correct.
+            recompute_anomalies(&mut conn).unwrap();
+            // "Import into account a": A-only COFFEE with an outlier, plus a
+            // SHARED outlier that shifts the cross-account shared group.
+            for i in 0..8 {
+                ins(&conn, &format!("cof{i}"), "a", "COFFEE HUT", -1000);
+            }
+            ins(&conn, "cof_out", "a", "COFFEE HUT", -50000);
+            ins(&conn, "sha_out", "a", "SHARED STORE", -40000);
+            (dir, db)
+        }
+
+        let (_d1, db1) = build();
+        let (_d2, db2) = build();
+        {
+            let mut c = db1.get().unwrap();
+            recompute_anomalies(&mut c).unwrap();
+        }
+        {
+            let mut c = db2.get().unwrap();
+            recompute_anomalies_for_account(&mut c, "a").unwrap();
+        }
+
+        let flags = |db: &Db| -> Vec<(String, i64, Option<String>)> {
+            let conn = db.get().unwrap();
+            let mut stmt = conn
+                .prepare("SELECT id, is_anomaly, ai_explanation FROM transactions ORDER BY id")
+                .unwrap();
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .unwrap();
+            rows.map(|r| r.unwrap()).collect()
+        };
+        let full = flags(&db1);
+        let scoped = flags(&db2);
+        assert_eq!(
+            full, scoped,
+            "account-scoped recompute must match the full recompute row-for-row"
+        );
+
+        // Sanity: both outliers introduced by the import are flagged, and the
+        // untouched GYM_B outlier (only in account b) stays flagged under the
+        // scoped pass — it was never cleared.
+        let is_flagged = |id: &str| full.iter().find(|(i, _, _)| i == id).unwrap().1 == 1;
+        assert!(is_flagged("cof_out"), "A-only import outlier must flag");
+        assert!(is_flagged("sha_out"), "shared-group import outlier must flag");
+        assert!(is_flagged("gymb_out"), "untouched merchant's flag must survive");
     }
 }

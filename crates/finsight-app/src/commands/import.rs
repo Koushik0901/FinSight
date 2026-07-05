@@ -102,6 +102,9 @@ pub async fn import_csv(
     // recompute would repopulate derived state, into a ledger the user just
     // wiped.
     let reset_epoch_at_start = state.agent.reset_generation();
+    // Keep the target account id for the post-commit cascade (the original is
+    // moved into the blocking import closure below).
+    let cascade_account_id = account_id.clone();
     // Pre-generate the import_id so progress events carry it before the summary is returned.
     let import_id = Uuid::new_v4().to_string();
     let import_id_for_progress = import_id.clone();
@@ -147,10 +150,17 @@ pub async fn import_csv(
             let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
         }
         // Recompute statistical anomaly flags from the (now larger) history.
+        // Scoped to the imported account's merchants: only those groups can
+        // have shifted, and this leaves every other merchant's flags untouched
+        // (proven equivalent to the full recompute in anomaly.rs tests).
         // Best-effort — must not fail the import.
         if !wiped() {
             let anom_db = (*state.db).clone();
-            let _ = run(&anom_db, finsight_core::anomaly::recompute_anomalies).await;
+            let acct = cascade_account_id.clone();
+            let _ = run(&anom_db, move |conn| {
+                finsight_core::anomaly::recompute_anomalies_for_account(conn, &acct)
+            })
+            .await;
         }
         // Refresh the derived balance + net-worth trend from the new activity so
         // the Today/Accounts numbers and the net-worth chart populate
