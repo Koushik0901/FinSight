@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { prefetchRoute } from "../api/prefetch";
 import * as I from "./Icons";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { useResetOnboarding } from "../api/hooks/onboarding";
@@ -46,6 +47,11 @@ export function Sidebar({ onOpenCmd }: Props) {
   const navigate = useNavigate();
   const resetOnboarding = useResetOnboarding();
   const canUseDesktopApi = isTauriRuntime();
+  const qc = useQueryClient();
+  // Warm a route's summary queries the moment the user signals intent (hover /
+  // keyboard focus), so the click paints from a warm cache. Idempotent + reads
+  // only — safe to fire on every hover.
+  const warm = (path: string) => prefetchRoute(qc, path);
 
   const { data: pendingBundles = [] } = useQuery({
     queryKey: ["action-bundles", "pending", null],
@@ -124,6 +130,8 @@ export function Sidebar({ onOpenCmd }: Props) {
             key={n.id}
             to={n.path}
             end={n.path === "/"}
+            onMouseEnter={() => warm(n.path)}
+            onFocus={() => warm(n.path)}
             className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
           >
             <n.Icon className="ico" aria-hidden="true" />
@@ -141,6 +149,8 @@ export function Sidebar({ onOpenCmd }: Props) {
             key={n.id}
             to={n.path}
             end
+            onMouseEnter={() => warm(n.path)}
+            onFocus={() => warm(n.path)}
             className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
           >
             <n.Icon className="ico" aria-hidden="true" />

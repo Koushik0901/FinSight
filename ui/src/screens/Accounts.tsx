@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { prefetchAccountTransactions } from "../api/prefetch";
 import { useAccounts } from "../api/hooks/accounts";
 import { useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets } from "../api/hooks/assets";
@@ -21,6 +23,7 @@ function formatStamp(value: string | null | undefined) {
 
 export default function Accounts() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [chooserOpen, setChooserOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -179,6 +182,8 @@ export default function Accounts() {
                   <button
                     type="button"
                     onClick={() => navigate(`/accounts/${account.id}/transactions`)}
+                    onMouseEnter={() => prefetchAccountTransactions(qc, account.id)}
+                    onFocus={() => prefetchAccountTransactions(qc, account.id)}
                     style={{
                       width: "100%",
                       textAlign: "left",
