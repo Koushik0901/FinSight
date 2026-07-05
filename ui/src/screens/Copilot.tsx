@@ -112,6 +112,21 @@ function actionKindLabel(kind: string): string {
   return labels[kind] ?? kind;
 }
 
+/**
+ * Presentation-only transform: the backend's `reasoning` field is one joined
+ * string (see ReasoningResult.reasoning in engine/mod.rs), not a structured
+ * list. Splitting it into sentence-shaped steps lets the thinking block show
+ * a numbered, connected list like the mockup without any backend change.
+ */
+export function splitReasoningIntoSteps(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  return trimmed
+    .split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 // ── ActionBundlePanel ─────────────────────────────────────────────────────────
 
 function ActionBundlePanel({ bundleId }: { bundleId: string }) {
@@ -322,26 +337,89 @@ function MessageActions({ align = "start" }: { align?: "start" | "end" }) {
   );
 }
 
-function ReasoningGroup({ children }: { children: ReactNode }) {
+/**
+ * Collapsible "thinking" block shown above an assistant reply: a header with
+ * running/done state, and a body with a "Tool calls" section and a
+ * "Reasoning" section (reasoning rendered as numbered, connected steps). A
+ * later task adds a third "Plan" section sourced from a new backend field —
+ * keep each subsection as its own `.cp-think-sec` so that addition doesn't
+ * require restructuring this component.
+ */
+function ThinkingBlock({ reasoningText, toolCalls }: { reasoningText: string; toolCalls: ReactNode }) {
   const message = useMessage();
   const isRunning = message.status?.type === "running";
+  const [open, setOpen] = useState(isRunning);
+  const steps = splitReasoningIntoSteps(reasoningText);
 
   return (
-    <details className="copilot-reasoning" open={isRunning}>
-      <summary>Analysis path</summary>
-      <div>{children}</div>
-    </details>
+    <div className={`cp-think ${isRunning ? "is-running" : "is-done"}`}>
+      <button type="button" className="cp-think-hd" onClick={() => setOpen((o) => !o)}>
+        <span className="cp-think-ico">
+          {isRunning ? (
+            <span className="cp-think-dots"><i /><i /><i /></span>
+          ) : (
+            <I.Check width={12} height={12} />
+          )}
+        </span>
+        <span className="cp-think-title">
+          {isRunning ? "Reasoning through your data…" : "Reasoned through your data"}
+        </span>
+        <I.Down className={`cp-think-chev ${open ? "open" : ""}`} width={14} height={14} />
+      </button>
+      {open && (
+        <div className="cp-think-body">
+          <div className="cp-think-sec">
+            <p className="cp-think-sec-lbl">Tool calls</p>
+            <div className="cp-think-tools">{toolCalls}</div>
+          </div>
+          {steps.length > 0 && (
+            <div className="cp-think-sec">
+              <p className="cp-think-sec-lbl">Reasoning</p>
+              <div className="cp-think-reason">
+                {steps.map((step, i) => (
+                  <div key={i} className="cp-reason-item">
+                    <span className="cp-reason-n">{i + 1}</span>
+                    <p className="cp-reason-txt">{step}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
 function ToolFallbackCard({ part }: { part: { toolName: string; args?: unknown; result?: unknown; isError?: boolean; status?: { type: string } } }) {
+  const [open, setOpen] = useState(false);
+  const done = part.status?.type !== "running";
+  const argsText = part.args && Object.keys(part.args as object).length > 0 ? JSON.stringify(part.args) : "";
+  const resultSummary = (() => {
+    const r = part.result as { summary?: string } | undefined;
+    if (part.isError) return "error";
+    if (r && typeof r.summary === "string") return r.summary;
+    return done ? "done" : "running…";
+  })();
+
   return (
-    <div className="copilot-tool-card" data-error={part.isError ? "true" : "false"}>
-      <div className="copilot-tool-head">
-        <span>{part.toolName.replaceAll("_", " ")}</span>
-        <span className="copilot-tool-status">{part.status?.type ?? "complete"}</span>
-      </div>
-      <pre>{JSON.stringify(part.result ?? part.args ?? {}, null, 2)}</pre>
+    <div className={`cp-tool ${done ? "is-done" : "is-running"}`}>
+      <button type="button" className="cp-tool-row" onClick={() => done && setOpen((o) => !o)}>
+        <span className={`cp-tool-dot ${part.isError ? "is-error" : ""}`}>
+          {done ? <I.Check width={10} height={10} /> : <span className="copilot-cursor" aria-hidden="true" />}
+        </span>
+        <span className="cp-tool-sig">
+          <span className="cp-tool-fn">{part.toolName.replaceAll("_", " ")}</span>
+          {argsText && <span className="cp-tool-args"> ({argsText})</span>}
+        </span>
+        <span className={`cp-tool-result ${part.isError ? "is-error" : ""}`}>{resultSummary}</span>
+        {done && <I.Down className={`cp-tool-chev ${open ? "open" : ""}`} width={13} height={13} />}
+      </button>
+      {done && open && (
+        <div className="cp-tool-detail">
+          <pre className="cp-tool-pre">{JSON.stringify(part.result ?? part.args ?? {}, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,8 +510,10 @@ function AssistantMessage({
             >
               {({ part, children }) => {
                 switch (part.type) {
-                  case "group-thought":
-                    return <ReasoningGroup>{children}</ReasoningGroup>;
+                  case "group-thought": {
+                    const reasoningText = plainText;
+                    return <ThinkingBlock reasoningText={reasoningText} toolCalls={children} />;
+                  }
                   case "group-sources":
                     return <div className="copilot-sources">{children}</div>;
                   case "reasoning":
