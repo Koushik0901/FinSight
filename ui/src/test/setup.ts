@@ -27,3 +27,14 @@ class MockIntersectionObserver implements IntersectionObserver {
   takeRecords = vi.fn(() => []);
 }
 vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
+// jsdom does not implement ResizeObserver; stub it so Recharts'
+// <ResponsiveContainer> (used by copilot/charts/FinSightChart) doesn't throw
+// on mount. It renders at width:0 either way — tests assert on labeled text,
+// not on measured pixel geometry.
+class MockResizeObserver implements ResizeObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+vi.stubGlobal("ResizeObserver", MockResizeObserver);

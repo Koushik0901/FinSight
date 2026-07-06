@@ -98,3 +98,7 @@
 @media (prefers-reduced-motion: reduce) {
   .cp-glow-orb, .cp-agent-mark.is-thinking .cp-agent-core, .cp-think-dots i, .cp-model-dot { animation: none; }
 }
+
+/* ── Result cards (chart-shaped visuals, Phase B) ─────────────────────── */
+.cp-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 20px 22px; }
+.cp-card-title { font-size: 14px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
