@@ -41,14 +41,20 @@ describe("CopilotToolCard isRunning derivation", () => {
 
     render(
       <CopilotToolCard
+        type="tool-call"
+        toolCallId="call-0"
         toolName="render_finance_artifact"
         args={{}}
+        argsText="{}"
         result={JSON.stringify(envelope)}
         isError={false}
         // The tool-call part itself is "complete" — its result already
         // arrived — even though the overall message (mocked above) is still
         // "running". This is the exact real-world state during streaming.
         status={{ type: "complete" }}
+        addResult={() => {}}
+        resume={() => {}}
+        respondToApproval={() => {}}
       />
     );
 
