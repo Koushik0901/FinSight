@@ -556,6 +556,22 @@ pub struct AgentCategoryBreakdownBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAllocationSegment {
+    pub label: String,
+    pub amount_cents: i64,
+    pub rationale: String,
+    pub category_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAllocationSplitBlock {
+    pub total_cents: i64,
+    pub segments: Vec<AgentAllocationSegment>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -575,6 +591,7 @@ pub enum AgentResponseBlock {
     TransactionTable(AgentTransactionTableBlock),
     AffordabilityVerdict(AgentAffordabilityVerdictBlock),
     CategoryBreakdown(AgentCategoryBreakdownBlock),
+    AllocationSplit(AgentAllocationSplitBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -673,6 +690,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.rows.is_empty()
                 && b.rows.len() <= 30
                 && b.rows.iter().all(|r| !r.category_key.trim().is_empty())
+        }
+        AgentResponseBlock::AllocationSplit(b) => {
+            b.total_cents > 0
+                && !b.segments.is_empty()
+                && b.segments.len() <= 12
+                && b.segments.iter().all(|s| !s.label.trim().is_empty())
         }
     }
 }
@@ -1874,6 +1897,27 @@ mod tests {
             period_label: "May".to_string(),
             rows: vec![],
         });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn allocation_split_round_trips_and_validates() {
+        let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock {
+            total_cents: 520_000,
+            segments: vec![
+                AgentAllocationSegment { label: "Pay off Amex".to_string(), amount_cents: 241_800, rationale: "24.9% APR".to_string(), category_key: "debt".to_string() },
+                AgentAllocationSegment { label: "Emergency fund".to_string(), amount_cents: 180_000, rationale: "76% to target".to_string(), category_key: "savings".to_string() },
+            ],
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "allocationSplit");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn allocation_split_with_zero_total_is_invalid() {
+        let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock { total_cents: 0, segments: vec![] });
         assert!(!valid_response_block(&block));
     }
 }

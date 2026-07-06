@@ -91,6 +91,14 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       .min(1)
       .max(30),
   }),
+  z.object({
+    kind: z.literal("allocationSplit"),
+    totalCents: z.number().int().positive(),
+    segments: z
+      .array(z.object({ label: shortString, amountCents: z.number().int(), rationale: shortString, categoryKey: shortString }))
+      .min(1)
+      .max(12),
+  }),
 ]);
 
 /// Strict per-component prop schemas. A component is only allowlisted if it has a

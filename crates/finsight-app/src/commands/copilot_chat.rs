@@ -1101,6 +1101,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::TransactionTable(_) => true,
         AgentResponseBlock::AffordabilityVerdict(_) => true,
         AgentResponseBlock::CategoryBreakdown(_) => true,
+        AgentResponseBlock::AllocationSplit(_) => true,
     }
 }
 
@@ -1177,6 +1178,10 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             label_ok(&b.period_label)
                 && b.rows.len() <= 30
                 && b.rows.iter().all(|r| label_ok(&r.category_key))
+        }
+        AgentResponseBlock::AllocationSplit(b) => {
+            b.segments.len() <= 12
+                && b.segments.iter().all(|s| label_ok(&s.label) && label_ok(&s.rationale) && label_ok(&s.category_key))
         }
     }
 }
