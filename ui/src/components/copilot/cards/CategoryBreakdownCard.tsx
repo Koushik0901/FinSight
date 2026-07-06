@@ -10,12 +10,12 @@ export function CategoryBreakdownCard({ block }: { block: Block }) {
     <div className="cp-card">
       <div className="cp-card-title">Spending by category · {block.periodLabel}</div>
       <div className="muted" style={{ fontSize: 11.5, fontFamily: "var(--mono)", marginTop: 4, marginBottom: 12 }}>
-        ● fixed cost · ◆ the lever
+        "fixed" cost · "lever" you control
       </div>
       <div className="cp-bars">
-        {block.rows.map((r) => (
+        {block.rows.map((r, i) => (
           <SegmentBar
-            key={r.categoryKey}
+            key={`${r.categoryKey}-${i}`}
             label={r.categoryKey}
             amountCents={r.amountCents}
             maxCents={max}
