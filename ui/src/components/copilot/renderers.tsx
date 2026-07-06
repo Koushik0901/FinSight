@@ -2,6 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   defineToolkit,
+  useMessage,
   type GenerativeUIComponentRegistry,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
@@ -82,13 +83,23 @@ export function CopilotToolCard({
   isError,
   status,
 }: ToolCallMessagePartProps<Record<string, unknown>, unknown>) {
+  // The response-block artifact's own tool-call part completes as soon as its
+  // result arrives, which happens BEFORE prose streaming even starts (the
+  // backend emits response blocks, then streams text word-by-word) — so
+  // `status.type` here is "complete" for nearly the entire streaming window,
+  // not a useful signal for "is the message still streaming." Read the real
+  // message-level running state instead, since that's what ComparisonBars
+  // actually needs to know before it's safe to mount a Recharts chart.
+  const message = useMessage();
+  const messageIsRunning = message.status?.type === "running";
+
   if (toolName === "render_finance_artifact" && typeof result === "string") {
     const artifact = parseFinanceArtifactEnvelope(result);
     const block = artifact?.component === "FinSightResponseBlock"
       ? (artifact.props.block as CopilotResponseBlock | undefined)
       : undefined;
     if (block) {
-      return <FinSightResponseBlock block={block} isRunning={status.type === "running"} />;
+      return <FinSightResponseBlock block={block} isRunning={messageIsRunning} />;
     }
   }
 
