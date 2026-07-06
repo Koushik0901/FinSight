@@ -1100,6 +1100,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         | AgentResponseBlock::MetricGrid { .. } => true,
         AgentResponseBlock::TransactionTable(_) => true,
         AgentResponseBlock::AffordabilityVerdict(_) => true,
+        AgentResponseBlock::CategoryBreakdown(_) => true,
     }
 }
 
@@ -1171,6 +1172,11 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                 && v.funding_source
                     .as_ref()
                     .map_or(true, |f| label_ok(&f.label) && label_ok(&f.detail))
+        }
+        AgentResponseBlock::CategoryBreakdown(b) => {
+            label_ok(&b.period_label)
+                && b.rows.len() <= 30
+                && b.rows.iter().all(|r| label_ok(&r.category_key))
         }
     }
 }

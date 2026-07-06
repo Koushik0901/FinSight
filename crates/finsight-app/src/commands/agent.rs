@@ -540,6 +540,22 @@ pub struct AgentAffordabilityVerdictBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCategoryRow {
+    pub category_key: String,
+    pub amount_cents: i64,
+    pub is_fixed: bool,
+    pub is_lever: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCategoryBreakdownBlock {
+    pub period_label: String,
+    pub rows: Vec<AgentCategoryRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -558,6 +574,7 @@ pub enum AgentResponseBlock {
     },
     TransactionTable(AgentTransactionTableBlock),
     AffordabilityVerdict(AgentAffordabilityVerdictBlock),
+    CategoryBreakdown(AgentCategoryBreakdownBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -650,6 +667,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::AffordabilityVerdict(v) => {
             !v.headline.trim().is_empty() && !v.sub.trim().is_empty()
+        }
+        AgentResponseBlock::CategoryBreakdown(b) => {
+            !b.period_label.trim().is_empty()
+                && !b.rows.is_empty()
+                && b.rows.len() <= 30
+                && b.rows.iter().all(|r| !r.category_key.trim().is_empty())
         }
     }
 }
@@ -1816,6 +1839,40 @@ mod tests {
             sub: "".to_string(),
             caveat: None,
             funding_source: None,
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn category_breakdown_round_trips_and_validates() {
+        let block = AgentResponseBlock::CategoryBreakdown(AgentCategoryBreakdownBlock {
+            period_label: "May".to_string(),
+            rows: vec![
+                AgentCategoryRow {
+                    category_key: "Housing".to_string(),
+                    amount_cents: 185_000,
+                    is_fixed: true,
+                    is_lever: false,
+                },
+                AgentCategoryRow {
+                    category_key: "Dining".to_string(),
+                    amount_cents: 41_200,
+                    is_fixed: false,
+                    is_lever: true,
+                },
+            ],
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "categoryBreakdown");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn category_breakdown_with_no_rows_is_invalid() {
+        let block = AgentResponseBlock::CategoryBreakdown(AgentCategoryBreakdownBlock {
+            period_label: "May".to_string(),
+            rows: vec![],
         });
         assert!(!valid_response_block(&block));
     }
