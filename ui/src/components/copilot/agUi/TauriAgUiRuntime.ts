@@ -164,6 +164,11 @@ export function useTauriAgUiRuntime(initialConversationId?: string | null): {
       void queryClient.invalidateQueries({ queryKey: ["action-bundles"] });
     },
     onPlan(payload) {
+      // Keyed by the client-generated assistantMessageId (not onDone's persisted
+      // DB messageId): the plan frame arrives before `done`, and in the live path
+      // AssistantMessageWithMeta looks meta up by `message.id`, which equals this
+      // assistantMessageId (it's the TEXT_MESSAGE_START messageId). Merge into any
+      // existing meta rather than replacing so we don't clobber sibling fields.
       setMetaByMessageId((prev) => ({
         ...prev,
         [payload.assistantMessageId]: { ...prev[payload.assistantMessageId], plan: payload.steps },
