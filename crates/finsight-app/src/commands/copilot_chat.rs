@@ -1099,6 +1099,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         | AgentResponseBlock::LineChart(_)
         | AgentResponseBlock::MetricGrid { .. } => true,
         AgentResponseBlock::TransactionTable(_) => true,
+        AgentResponseBlock::AffordabilityVerdict(_) => true,
     }
 }
 
@@ -1162,6 +1163,14 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                         && opt_label_ok(&r.flag)
                         && r.date.len() <= ARTIFACT_MAX_LABEL
                 })
+        }
+        AgentResponseBlock::AffordabilityVerdict(v) => {
+            label_ok(&v.headline)
+                && label_ok(&v.sub)
+                && opt_label_ok(&v.caveat)
+                && v.funding_source
+                    .as_ref()
+                    .map_or(true, |f| label_ok(&f.label) && label_ok(&f.detail))
         }
     }
 }

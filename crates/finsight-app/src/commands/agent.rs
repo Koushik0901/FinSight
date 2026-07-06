@@ -523,6 +523,23 @@ pub struct AgentTransactionTableBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentFundingSource {
+    pub label: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAffordabilityVerdictBlock {
+    pub can_afford: bool,
+    pub headline: String,
+    pub sub: String,
+    pub caveat: Option<String>,
+    pub funding_source: Option<AgentFundingSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -540,6 +557,7 @@ pub enum AgentResponseBlock {
         body: String,
     },
     TransactionTable(AgentTransactionTableBlock),
+    AffordabilityVerdict(AgentAffordabilityVerdictBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -629,6 +647,9 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !t.rows.is_empty()
                 && t.rows.len() <= 200
                 && t.rows.iter().all(|r| !r.merchant.trim().is_empty() && !r.category_key.trim().is_empty())
+        }
+        AgentResponseBlock::AffordabilityVerdict(v) => {
+            !v.headline.trim().is_empty() && !v.sub.trim().is_empty()
         }
     }
 }
@@ -1765,6 +1786,36 @@ mod tests {
             total_cents: 0,
             rows: vec![],
             more: 0,
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn affordability_verdict_round_trips_and_validates() {
+        let block = AgentResponseBlock::AffordabilityVerdict(AgentAffordabilityVerdictBlock {
+            can_afford: true,
+            headline: "Yes".to_string(),
+            sub: "$540 · about 1% of liquid cash".to_string(),
+            caveat: Some("Exceeds your May Shopping envelope by $426.".to_string()),
+            funding_source: Some(AgentFundingSource {
+                label: "Cover it from Travel".to_string(),
+                detail: "$500 budgeted · $0 spent".to_string(),
+            }),
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "affordabilityVerdict");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn affordability_verdict_with_empty_headline_is_invalid() {
+        let block = AgentResponseBlock::AffordabilityVerdict(AgentAffordabilityVerdictBlock {
+            can_afford: false,
+            headline: "".to_string(),
+            sub: "".to_string(),
+            caveat: None,
+            funding_source: None,
         });
         assert!(!valid_response_block(&block));
     }

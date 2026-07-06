@@ -19,6 +19,7 @@ import {
 import { parseFinanceArtifactEnvelope } from "./agUi/artifacts";
 import { colorForCategoryLabel } from "../../utils/categoryColor";
 import { TransactionTableCard } from "./cards/TransactionTableCard";
+import { AffordabilityVerdictCard } from "./cards/AffordabilityVerdictCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -335,6 +336,8 @@ export function FinSightResponseBlock({ block }: { block: CopilotResponseBlock }
       return <CalloutBlock {...block} />;
     case "transactionTable":
       return <TransactionTableCard block={block} />;
+    case "affordabilityVerdict":
+      return <AffordabilityVerdictCard block={block} />;
     default:
       return null;
   }
