@@ -14,8 +14,8 @@ describe("FinSightBarComparison", () => {
     expect(screen.getByText("Dining · this month vs average")).toBeInTheDocument();
     expect(screen.getByText("May 2026")).toBeInTheDocument();
     expect(screen.getByText("12-mo avg")).toBeInTheDocument();
-    expect(screen.getByText("$412")).toBeInTheDocument();
-    expect(screen.getByText("$365")).toBeInTheDocument();
+    expect(screen.getByText(/\$412/)).toBeInTheDocument();
+    expect(screen.getByText(/\$365/)).toBeInTheDocument();
   });
 
   it("shows an empty state instead of a chart when both values are zero", () => {

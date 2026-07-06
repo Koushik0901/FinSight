@@ -68,11 +68,11 @@ export function FinSightBarComparison({
         </ResponsiveContainer>
       </div>
       <div className="row-sm" style={{ justifyContent: "space-between", marginTop: 4 }}>
-        <span style={{ fontSize: 12, color: "var(--ink-mute)" }}>
-          <span>{prior.label}</span>: <span>{money(prior.amountCents)}</span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink-mute)" }}>
+          <span>{prior.label}</span>: <span className="money">{money(prior.amountCents)}</span>
         </span>
-        <span style={{ fontSize: 12, color: "var(--ink)" }}>
-          <span>{current.label}</span>: <span>{money(current.amountCents)}</span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--ink)" }}>
+          <span>{current.label}</span>: <span className="money">{money(current.amountCents)}</span>
         </span>
       </div>
     </div>
