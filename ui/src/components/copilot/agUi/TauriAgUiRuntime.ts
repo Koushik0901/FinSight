@@ -163,6 +163,12 @@ export function useTauriAgUiRuntime(initialConversationId?: string | null): {
       void queryClient.invalidateQueries({ queryKey: ["conversation-messages", payload.conversationId] });
       void queryClient.invalidateQueries({ queryKey: ["action-bundles"] });
     },
+    onPlan(payload) {
+      setMetaByMessageId((prev) => ({
+        ...prev,
+        [payload.assistantMessageId]: { ...prev[payload.assistantMessageId], plan: payload.steps },
+      }));
+    },
   }), [initialConversationId, queryClient]);
 
   const loadConversation = useCallback(async (conversationId: string | null) => {

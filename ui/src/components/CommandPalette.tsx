@@ -136,6 +136,7 @@ export function CommandPalette({ open, onClose }: Props) {
                 ? "No AI provider configured. Set one up in Settings → Agent to use this feature."
                 : userErrorMessage(err, "Copilot could not answer right now. Try again from the desktop app."),
               reasoning: "",
+              plan: [],
               trace: [],
               changes: [],
               actionLabel: isNoProvider ? "Open Settings →" : null,

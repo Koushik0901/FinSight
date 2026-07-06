@@ -108,6 +108,36 @@ describe("TauriAgUiAgent", () => {
     expect(events.some((event) => event.type === "TEXT_MESSAGE_CONTENT" && "delta" in event && event.delta === "stale")).toBe(false);
   });
 
+  it("maps a plan stream frame into a PLAN custom event and invokes onPlan with the steps", async () => {
+    const onPlan = vi.fn();
+    const agent = new TauriAgUiAgent({ onPlan });
+    const events: BaseEvent[] = [];
+    const done = new Promise<void>((resolve, reject) => {
+      agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
+    });
+
+    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    emitCopilotFrame({
+      type: "plan",
+      conversationId: "conv-1",
+      runId: "run-1",
+      sequenceNumber: 0,
+      steps: ["Find the income that just landed", "Rank every debt by interest rate"],
+    });
+    emitCopilotFrame({ type: "done", conversationId: "conv-1", runId: "run-1", sequenceNumber: 1, messageId: "asst-1", bundleId: null, toolTrace: [], followUpQuestions: [], actionLabel: null, actionPath: null, providerId: "test", modelId: "test", elapsedMs: 10, toolCount: 0 });
+
+    await done;
+
+    const planEvent = events.find((event) => event.type === "CUSTOM" && "name" in event && event.name === "finsight.plan");
+    expect(planEvent).toMatchObject({
+      value: { steps: ["Find the income that just landed", "Rank every debt by interest rate"] },
+    });
+    expect(onPlan).toHaveBeenCalledWith({
+      assistantMessageId: expect.stringMatching(/^agui-assistant-/),
+      steps: ["Find the income that just landed", "Rank every debt by interest rate"],
+    });
+  });
+
   it("fails safely on out-of-order sequence gaps", async () => {
     const agent = new TauriAgUiAgent();
     const events: BaseEvent[] = [];

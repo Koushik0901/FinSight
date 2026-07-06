@@ -95,6 +95,15 @@ pub enum CopilotStreamFrame {
         source_id: String,
         title: String,
     },
+    Plan {
+        conversation_id: String,
+        run_id: String,
+        thread_id: String,
+        assistant_message_id: String,
+        parent_message_id: Option<String>,
+        sequence_number: u64,
+        steps: Vec<String>,
+    },
     Usage {
         conversation_id: String,
         run_id: String,
@@ -342,9 +351,20 @@ pub async fn stream_copilot_message(
                     provider_clone,
                     10,
                     move |event| match event {
-                        // PlanReady is not yet forwarded to the frontend; a follow-up
-                        // task threads this through as a dedicated stream frame.
-                        ReasoningEngineEvent::PlanReady { .. } => {}
+                        ReasoningEngineEvent::PlanReady { steps } => {
+                            emit_copilot_frame(
+                                &app_for_events,
+                                CopilotStreamFrame::Plan {
+                                    conversation_id: event_conversation_id.clone(),
+                                    run_id: event_run_id.clone(),
+                                    thread_id: event_conversation_id.clone(),
+                                    assistant_message_id: event_assistant_message_id.clone(),
+                                    parent_message_id: event_parent_message_id.clone(),
+                                    sequence_number: event_sequence.fetch_add(1, Ordering::Relaxed),
+                                    steps,
+                                },
+                            );
+                        }
                         ReasoningEngineEvent::ToolCallStart { call } => {
                             emitted_tool_frames.store(true, Ordering::Relaxed);
                             emit_copilot_frame(
@@ -742,6 +762,7 @@ pub async fn stream_copilot_message(
         "toolCount": tool_names.len(),
         "bundleId": answer.bundle_id.clone(),
         "toolTrace": answer.trace.clone(),
+        "plan": answer.plan.clone(),
         "followUpQuestions": answer.follow_up_questions.clone(),
         "actionLabel": answer.action_label.clone(),
         "actionPath": answer.action_path.clone(),
@@ -1227,6 +1248,7 @@ fn deterministic_copilot_fallback(
         return Ok(Some(AgentAnswer {
             prose: "I could not find cleared spending transactions for the current month. If this looks wrong, check the transaction dates, account sync status, and whether expenses are imported as negative amounts.".to_string(),
             reasoning: "The deterministic fallback queried current-month negative transactions grouped by category and found no rows.".to_string(),
+            plan: Vec::new(),
             trace: vec!["Called tool: get_top_spending_categories".to_string()],
             changes: Vec::new(),
             action_label: None,
@@ -1321,6 +1343,7 @@ fn deterministic_copilot_fallback(
     Ok(Some(AgentAnswer {
         prose,
         reasoning: "Deterministic fallback queried current-month negative transactions, grouped them by category, and ranked categories by total spend.".to_string(),
+        plan: Vec::new(),
         trace: vec!["Called tool: get_top_spending_categories".to_string()],
         changes: Vec::new(),
         action_label: None,

@@ -64,6 +64,7 @@ function normalizeFrameType(type: unknown): CopilotStreamFrame["type"] | null {
     responseBlock: "responseBlock",
     response_block: "responseBlock",
     source: "source",
+    plan: "plan",
     usage: "usage",
     done: "done",
     error: "error",
@@ -132,6 +133,12 @@ export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | nu
         sourceId: pick<string>(raw, "sourceId", "source_id"),
         title: pick<string>(raw, "title", "title") ?? "FinSight source",
       };
+    case "plan":
+      return {
+        ...base,
+        type,
+        steps: (pick(raw, "steps", "steps") ?? []) as string[],
+      };
     case "usage":
       return {
         ...base,
@@ -169,11 +176,13 @@ export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | nu
 type AgentOptions = {
   conversationId?: string | null;
   onDone?: (payload: Extract<CopilotStreamFrame, { type: "done" }>) => void;
+  onPlan?: (payload: { assistantMessageId: string; steps: string[] }) => void;
 };
 
 export class TauriAgUiAgent extends AbstractAgent {
   private conversationId: string | null;
   private onDone?: (payload: Extract<CopilotStreamFrame, { type: "done" }>) => void;
+  private onPlan?: (payload: { assistantMessageId: string; steps: string[] }) => void;
 
   constructor(options: AgentOptions = {}) {
     super({
@@ -183,6 +192,7 @@ export class TauriAgUiAgent extends AbstractAgent {
     });
     this.conversationId = options.conversationId ?? null;
     this.onDone = options.onDone;
+    this.onPlan = options.onPlan;
   }
 
   getConversationId() {
@@ -330,6 +340,15 @@ export class TauriAgUiAgent extends AbstractAgent {
               type: "CUSTOM",
               name: "finsight.source",
               value: { id: frame.sourceId, title: frame.title },
+            } as BaseEvent);
+            break;
+          }
+          case "plan": {
+            this.onPlan?.({ assistantMessageId, steps: frame.steps });
+            emit({
+              type: "CUSTOM",
+              name: "finsight.plan",
+              value: { steps: frame.steps },
             } as BaseEvent);
             break;
           }

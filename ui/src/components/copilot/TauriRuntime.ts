@@ -33,6 +33,7 @@ import type {
 export interface MessageMeta {
   bundleId?: string;
   toolTrace?: string[];
+  plan?: string[];
   followUpQuestions?: string[];
   actionLabel?: string;
   actionPath?: string;
@@ -245,6 +246,12 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
         code: pickFrameValue<string>(raw, "code", "code") ?? "copilot.error",
         message: pickFrameValue<string>(raw, "message", "message") ?? "Copilot request failed.",
       };
+    case "plan":
+      // The legacy (non-AG-UI) runtime never surfaces the Plan section — it
+      // reads MessageMeta.plan back from persisted agUiMetadataJson on reload
+      // instead (see TauriRuntime's history-load path), so live Plan frames
+      // are intentionally dropped here rather than converted to an event.
+      return null;
   }
 }
 
@@ -576,6 +583,9 @@ export function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMe
           if (typeof parsed.bundleId === "string") meta.bundleId = parsed.bundleId;
           if (Array.isArray(parsed.toolTrace)) {
             meta.toolTrace = parsed.toolTrace.filter((item): item is string => typeof item === "string");
+          }
+          if (Array.isArray(parsed.plan)) {
+            meta.plan = parsed.plan.filter((item): item is string => typeof item === "string");
           }
           if (Array.isArray(parsed.followUpQuestions)) {
             meta.followUpQuestions = parsed.followUpQuestions.filter((item): item is string => typeof item === "string");

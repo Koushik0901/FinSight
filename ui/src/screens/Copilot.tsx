@@ -339,13 +339,10 @@ function MessageActions({ align = "start" }: { align?: "start" | "end" }) {
 
 /**
  * Collapsible "thinking" block shown above an assistant reply: a header with
- * running/done state, and a body with a "Tool calls" section and a
- * "Reasoning" section (reasoning rendered as numbered, connected steps). A
- * later task adds a third "Plan" section sourced from a new backend field —
- * keep each subsection as its own `.cp-think-sec` so that addition doesn't
- * require restructuring this component.
+ * running/done state, and a body with a "Plan", "Tool calls", and "Reasoning"
+ * section — each its own `.cp-think-sec`.
  */
-function ThinkingBlock({ reasoningText, toolCalls }: { reasoningText: string; toolCalls: ReactNode }) {
+export function ThinkingBlock({ reasoningText, toolCalls, plan }: { reasoningText: string; toolCalls: ReactNode; plan?: string[] }) {
   const message = useMessage();
   const isRunning = message.status?.type === "running";
   const [open, setOpen] = useState(isRunning);
@@ -368,6 +365,19 @@ function ThinkingBlock({ reasoningText, toolCalls }: { reasoningText: string; to
       </button>
       {open && (
         <div className="cp-think-body">
+          {plan && plan.length > 0 && (
+            <div className="cp-think-sec">
+              <p className="cp-think-sec-lbl">Plan</p>
+              <div className="cp-think-plan">
+                {plan.map((step, i) => (
+                  <div key={i} className="cp-plan-item">
+                    <span className="cp-plan-n">{i + 1}</span>
+                    <span className="cp-plan-txt">{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="cp-think-sec">
             <p className="cp-think-sec-lbl">Tool calls</p>
             <div className="cp-think-tools">{toolCalls}</div>
@@ -520,7 +530,7 @@ function AssistantMessage({
               {({ part, children }) => {
                 switch (part.type) {
                   case "group-thought":
-                    return <ThinkingBlock reasoningText={reasoningText} toolCalls={children} />;
+                    return <ThinkingBlock reasoningText={reasoningText} toolCalls={children} plan={meta?.plan} />;
                   case "group-sources":
                     return <div className="copilot-sources">{children}</div>;
                   case "reasoning":

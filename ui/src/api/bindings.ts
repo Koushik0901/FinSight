@@ -491,6 +491,22 @@ async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getFinancialMetrics() : Promise<Result<FinancialMetrics, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_financial_metrics") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setFinancialAssumptions(input: FinancialAssumptionsInput) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_financial_assumptions", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async runScenario(description: string, months: number, params: ScenarioParamsInput | null) : Promise<Result<ScenarioResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("run_scenario", { description, months, params }) };
@@ -1389,7 +1405,7 @@ export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentAffordabilityVerdictBlock = { canAfford: boolean; headline: string; sub: string; caveat: string | null; fundingSource: AgentFundingSource | null }
 export type AgentAllocationSegment = { label: string; amountCents: number; rationale: string; categoryKey: string }
 export type AgentAllocationSplitBlock = { totalCents: number; segments: AgentAllocationSegment[] }
-export type AgentAnswer = { prose: string; reasoning: string; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
+export type AgentAnswer = { prose: string; reasoning: string; plan: string[]; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
 export type AgentCategoryBreakdownBlock = { periodLabel: string; rows: AgentCategoryRow[] }
 export type AgentCategoryRow = { categoryKey: string; amountCents: number; isFixed: boolean; isLever: boolean }
 export type AgentChange = { kind: string; description: string }
@@ -1507,6 +1523,8 @@ export type DebtPayoffSummary = { accountId: string; accountName: string; initia
 export type EditConversationMessageInput = { conversationId: string; messageId: string; content: string }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
+export type FinancialAssumptionsInput = { targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
+export type FinancialMetrics = { liquidCents: number; investedCents: number; debtCents: number; emergencyFundCents: number; netWorthCents: number; accountsWithUnknownBalance: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; netMonthlyCents: number; rollingSavingsRatePct: number; thisMonthIncomeCents: number; thisMonthExpenseCents: number; thisMonthNetCents: number; thisMonthSavingsRatePct: number; emergencyFundMonths: number; runwayDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
 export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: number; debtRatioPts: number; goalProgressPts: number; budgetAdherencePts: number; savingsRatePct: number; emergencyFundMonths: number; debtToIncomePct: number; avgGoalPct: number; budgetAdherencePct: number }

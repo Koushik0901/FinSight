@@ -61,6 +61,7 @@ export type CopilotStreamFrame =
       block: CopilotResponseBlock;
     } & CopilotStreamFrameMeta)
   | ({ type: "source"; conversationId: string; runId: string; sourceId: string; title: string } & CopilotStreamFrameMeta)
+  | ({ type: "plan"; conversationId: string; runId: string; steps: string[] } & CopilotStreamFrameMeta)
   | ({
       type: "usage";
       conversationId: string;

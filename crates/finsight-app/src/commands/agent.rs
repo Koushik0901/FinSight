@@ -210,9 +210,11 @@ pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppRes
 #[specta::specta]
 pub async fn recompute_anomalies(state: tauri::State<'_, AppState>) -> AppResult<u32> {
     let db = (*state.db).clone();
-    run(&db, |conn| finsight_core::anomaly::recompute_anomalies(conn))
-        .await
-        .map_err(AppError::from)
+    run(&db, |conn| {
+        finsight_core::anomaly::recompute_anomalies(conn)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -632,6 +634,7 @@ pub enum AgentResponseBlock {
 pub struct AgentAnswer {
     pub prose: String,
     pub reasoning: String,
+    pub plan: Vec<String>,
     pub trace: Vec<String>,
     pub changes: Vec<AgentChange>,
     pub action_label: Option<String>,
@@ -713,7 +716,9 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
             t.count >= 0
                 && !t.rows.is_empty()
                 && t.rows.len() <= 200
-                && t.rows.iter().all(|r| !r.merchant.trim().is_empty() && !r.category_key.trim().is_empty())
+                && t.rows
+                    .iter()
+                    .all(|r| !r.merchant.trim().is_empty() && !r.category_key.trim().is_empty())
         }
         AgentResponseBlock::AffordabilityVerdict(v) => {
             !v.headline.trim().is_empty() && !v.sub.trim().is_empty()
@@ -728,13 +733,18 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
             b.total_cents > 0
                 && !b.segments.is_empty()
                 && b.segments.len() <= 12
-                && b.segments.iter().all(|s| !s.label.trim().is_empty() && s.amount_cents >= 0)
+                && b.segments
+                    .iter()
+                    .all(|s| !s.label.trim().is_empty() && s.amount_cents >= 0)
         }
         AgentResponseBlock::RankedOptions(b) => {
             !b.title.trim().is_empty()
                 && !b.options.is_empty()
                 && b.options.len() <= 10
-                && b.options.iter().all(|o| !o.label.trim().is_empty() && matches!(o.rank_tone.as_str(), "primary" | "neutral" | "muted"))
+                && b.options.iter().all(|o| {
+                    !o.label.trim().is_empty()
+                        && matches!(o.rank_tone.as_str(), "primary" | "neutral" | "muted")
+                })
         }
         AgentResponseBlock::ComparisonBars(b) => {
             !b.title.trim().is_empty()
@@ -1005,6 +1015,7 @@ pub(crate) fn planner_answer_to_agent_answer(
             .filter(|part| !part.trim().is_empty())
             .collect::<Vec<_>>()
             .join(" "),
+        plan: Vec::new(),
         trace: answer.trace,
         changes: Vec::new(),
         action_label: None,
@@ -1041,6 +1052,7 @@ pub(crate) fn reasoning_result_to_agent_answer(
     AgentAnswer {
         prose: result.content,
         reasoning: result.reasoning,
+        plan: result.plan,
         trace: result.trace,
         changes: result
             .changes
@@ -1085,6 +1097,7 @@ fn direct_finance_answer(
                     return Ok(Some(AgentAnswer {
                         prose: "I need the amount before I can split it across debt, savings, and goals.".to_string(),
                         reasoning: "The question is missing the cash inflow amount.".to_string(),
+                        plan: Vec::new(),
                         trace,
                         changes: Vec::new(),
                         action_label: None,
@@ -1131,6 +1144,7 @@ fn direct_finance_answer(
             Some(AgentAnswer {
                 prose: prose_lines.join(" "),
                 reasoning,
+                plan: Vec::new(),
                 trace,
                 changes: Vec::new(),
                 action_label: None,
@@ -1154,6 +1168,7 @@ fn direct_finance_answer(
                         prose: "I need your contribution amount to estimate the goal timeline."
                             .to_string(),
                         reasoning: "The question is missing the contribution amount.".to_string(),
+                        plan: Vec::new(),
                         trace,
                         changes: Vec::new(),
                         action_label: None,
@@ -1187,6 +1202,7 @@ fn direct_finance_answer(
                     prose: "I need the specific goal before I can estimate when you will reach it."
                         .to_string(),
                     reasoning: "No goal match was confident enough to calculate ETA.".to_string(),
+                    plan: Vec::new(),
                     trace,
                     changes: Vec::new(),
                     action_label: None,
@@ -1230,6 +1246,7 @@ fn direct_finance_answer(
                     format_cents(eta.monthly_equivalent_cents)
                 ),
                 reasoning,
+                plan: Vec::new(),
                 trace,
                 changes: Vec::new(),
                 action_label: None,
@@ -1251,6 +1268,7 @@ fn direct_finance_answer(
                     prose: "I need the goal name before I can compare it against your debt."
                         .to_string(),
                     reasoning: "The goal could not be identified confidently.".to_string(),
+                    plan: Vec::new(),
                     trace,
                     changes: Vec::new(),
                     action_label: None,
@@ -1332,6 +1350,7 @@ fn direct_finance_answer(
             Some(AgentAnswer {
                 prose: prose.join(" "),
                 reasoning: comparison.rationale.join(" "),
+                plan: Vec::new(),
                 trace,
                 changes: Vec::new(),
                 action_label: None,
@@ -1383,6 +1402,7 @@ fn direct_finance_answer(
                 } else {
                     format!("{} debts ranked with {}.", ordered.len(), ranking.method)
                 },
+                plan: Vec::new(),
                 trace,
                 changes: Vec::new(),
                 action_label: None,
@@ -1413,6 +1433,7 @@ fn direct_finance_answer(
             Some(AgentAnswer {
                 prose: prose.join(" "),
                 reasoning: "Snapshot built from local accounts, goals, debts, recurring bills, and planned transactions.".to_string(),
+                plan: Vec::new(),
                 trace,
                 changes: Vec::new(),
                 action_label: None,
@@ -1743,6 +1764,7 @@ pub async fn ask_agent(
         let mut answer = AgentAnswer {
             prose,
             reasoning: String::new(),
+            plan: Vec::new(),
             trace: Vec::new(),
             changes: Vec::new(),
             action_label,
@@ -1951,8 +1973,18 @@ mod tests {
         let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock {
             total_cents: 520_000,
             segments: vec![
-                AgentAllocationSegment { label: "Pay off Amex".to_string(), amount_cents: 241_800, rationale: "24.9% APR".to_string(), category_key: "debt".to_string() },
-                AgentAllocationSegment { label: "Emergency fund".to_string(), amount_cents: 180_000, rationale: "76% to target".to_string(), category_key: "savings".to_string() },
+                AgentAllocationSegment {
+                    label: "Pay off Amex".to_string(),
+                    amount_cents: 241_800,
+                    rationale: "24.9% APR".to_string(),
+                    category_key: "debt".to_string(),
+                },
+                AgentAllocationSegment {
+                    label: "Emergency fund".to_string(),
+                    amount_cents: 180_000,
+                    rationale: "76% to target".to_string(),
+                    category_key: "savings".to_string(),
+                },
             ],
         });
         let json = serde_json::to_value(&block).unwrap();
@@ -1963,7 +1995,10 @@ mod tests {
 
     #[test]
     fn allocation_split_with_zero_total_is_invalid() {
-        let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock { total_cents: 0, segments: vec![] });
+        let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock {
+            total_cents: 0,
+            segments: vec![],
+        });
         assert!(!valid_response_block(&block));
     }
 
@@ -1971,9 +2006,12 @@ mod tests {
     fn ranked_options_round_trips_and_validates() {
         let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
             title: "The three routes you asked about".to_string(),
-            options: vec![
-                AgentRankedOption { rank_tone: "primary".to_string(), label: "Pay off the loan".to_string(), detail: "$2,418 → Amex Gold".to_string(), rationale: "Highest-interest debt at 24.9%.".to_string() },
-            ],
+            options: vec![AgentRankedOption {
+                rank_tone: "primary".to_string(),
+                label: "Pay off the loan".to_string(),
+                detail: "$2,418 → Amex Gold".to_string(),
+                rationale: "Highest-interest debt at 24.9%.".to_string(),
+            }],
         });
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json["kind"], "rankedOptions");
@@ -1983,7 +2021,10 @@ mod tests {
 
     #[test]
     fn ranked_options_with_no_options_is_invalid() {
-        let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock { title: "Empty".to_string(), options: vec![] });
+        let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
+            title: "Empty".to_string(),
+            options: vec![],
+        });
         assert!(!valid_response_block(&block));
     }
 
@@ -1991,7 +2032,12 @@ mod tests {
     fn ranked_options_with_invalid_rank_tone_is_invalid() {
         let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
             title: "Bad tone".to_string(),
-            options: vec![AgentRankedOption { rank_tone: "urgent".to_string(), label: "X".to_string(), detail: "Y".to_string(), rationale: "Z".to_string() }],
+            options: vec![AgentRankedOption {
+                rank_tone: "urgent".to_string(),
+                label: "X".to_string(),
+                detail: "Y".to_string(),
+                rationale: "Z".to_string(),
+            }],
         });
         assert!(!valid_response_block(&block));
     }
@@ -2000,8 +2046,14 @@ mod tests {
     fn comparison_bars_round_trips_and_validates() {
         let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
             title: "Dining · this month vs average".to_string(),
-            current: AgentMoneyPoint { label: "May 2026".to_string(), amount_cents: 41_200 },
-            prior: AgentMoneyPoint { label: "12-mo avg".to_string(), amount_cents: 36_500 },
+            current: AgentMoneyPoint {
+                label: "May 2026".to_string(),
+                amount_cents: 41_200,
+            },
+            prior: AgentMoneyPoint {
+                label: "12-mo avg".to_string(),
+                amount_cents: 36_500,
+            },
         });
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json["kind"], "comparisonBars");
@@ -2013,8 +2065,14 @@ mod tests {
     fn comparison_bars_with_empty_title_is_invalid() {
         let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
             title: "".to_string(),
-            current: AgentMoneyPoint { label: "May".to_string(), amount_cents: 100 },
-            prior: AgentMoneyPoint { label: "Apr".to_string(), amount_cents: 80 },
+            current: AgentMoneyPoint {
+                label: "May".to_string(),
+                amount_cents: 100,
+            },
+            prior: AgentMoneyPoint {
+                label: "Apr".to_string(),
+                amount_cents: 80,
+            },
         });
         assert!(!valid_response_block(&block));
     }
@@ -2023,8 +2081,14 @@ mod tests {
     fn comparison_bars_with_negative_amount_is_invalid() {
         let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
             title: "Bad amount".to_string(),
-            current: AgentMoneyPoint { label: "May".to_string(), amount_cents: -100 },
-            prior: AgentMoneyPoint { label: "Apr".to_string(), amount_cents: 80 },
+            current: AgentMoneyPoint {
+                label: "May".to_string(),
+                amount_cents: -100,
+            },
+            prior: AgentMoneyPoint {
+                label: "Apr".to_string(),
+                amount_cents: 80,
+            },
         });
         assert!(!valid_response_block(&block));
     }

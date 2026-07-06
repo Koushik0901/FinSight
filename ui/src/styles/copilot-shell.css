@@ -81,6 +81,12 @@
 .cp-reason-n { width: 21px; height: 21px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 10px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; z-index: 1; }
 .cp-reason-txt { font-size: 13px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; padding-top: 1px; margin: 0; }
 
+.cp-think-plan { display: flex; flex-direction: column; gap: 12px; }
+.cp-plan-item { display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; position: relative; }
+.cp-plan-item:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 22px; bottom: -12px; width: 1px; background: linear-gradient(to bottom, var(--accent-3), transparent); }
+.cp-plan-n { width: 21px; height: 21px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 10px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; z-index: 1; }
+.cp-plan-txt { font-size: 13px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; padding-top: 1px; }
+
 /* ── Composer ───────────────────────────────────────────────────────── */
 .cp-composer-model { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .cp-model-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: cp-pulse-dot 2.4s ease-in-out infinite; }
