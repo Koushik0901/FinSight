@@ -24,7 +24,7 @@ export function AllocationSplitCard({ block }: { block: Block }) {
               width: `${(s.amountCents / block.totalCents) * 100}%`,
               background: colorForCategoryLabel(s.categoryKey) ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
             }}
-            title={`${s.label} · ${money(s.amountCents)}`}
+            title={s.label}
           />
         ))}
       </div>
