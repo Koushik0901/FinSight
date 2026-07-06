@@ -57,23 +57,31 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     title: shortString.nullable(),
     body: z.string().max(MAX_TEXT),
   }),
+  z.object({
+    kind: z.literal("transactionTable"),
+    count: z.number().int().nonnegative(),
+    totalCents: z.number().int(),
+    rows: z
+      .array(
+        z.object({
+          date: shortString,
+          merchant: shortString,
+          categoryKey: shortString,
+          amountCents: z.number().int(),
+          flag: shortString.nullable(),
+        }),
+      )
+      .min(1)
+      .max(MAX_TABLE_ROWS),
+    more: z.number().int().nonnegative(),
+  }),
 ]);
-
-/// Read-only, bounded stub for a query-backed transaction table. The backend
-/// does not emit this yet; the schema exists so that if/when it does, the payload
-/// is strictly validated and can only ever render a plain, non-interactive table.
-export const TransactionTablePropsSchema = z.object({
-  title: shortString.optional(),
-  columns: z.array(shortString).max(MAX_TABLE_COLS).optional(),
-  rows: z.array(z.array(shortString).max(MAX_TABLE_COLS)).max(MAX_TABLE_ROWS),
-});
 
 /// Strict per-component prop schemas. A component is only allowlisted if it has a
 /// schema here; anything else is rejected as an unknown component. Keep this in
 /// lockstep with what `renderers.tsx` can actually render.
 export const COMPONENT_PROP_SCHEMAS = {
   FinSightResponseBlock: z.object({ block: CopilotResponseBlockSchema }),
-  TransactionTable: TransactionTablePropsSchema,
 } as const;
 
 export type FinanceArtifactComponent = keyof typeof COMPONENT_PROP_SCHEMAS;

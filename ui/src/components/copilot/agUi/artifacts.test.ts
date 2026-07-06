@@ -76,14 +76,45 @@ describe("finance artifact envelope validation", () => {
     expect(parseFinanceArtifactEnvelope(payload)).toBeNull();
   });
 
-  it("validates a bounded TransactionTable stub payload", () => {
+  it("validates a bounded transactionTable block payload", () => {
     const envelope: FinanceArtifactEnvelope = {
       ...validEnvelope,
-      component: "TransactionTable",
-      props: { title: "Recent", rows: [["Jul 1", "Tim Hortons", "-$9.43"]] },
+      props: {
+        block: {
+          kind: "transactionTable",
+          count: 42,
+          totalCents: 1_193_000,
+          rows: [
+            {
+              date: "2026-05-03",
+              merchant: "Bay Property · Rent",
+              categoryKey: "Housing",
+              amountCents: 185_000,
+              flag: null,
+            },
+          ],
+          more: 32,
+        },
+      },
     };
     const payload = serializeFinanceArtifactEnvelope(envelope);
     expect(payload).toBeTypeOf("string");
     expect(parseFinanceArtifactEnvelope(payload ?? "")).toEqual(envelope);
+  });
+
+  it("rejects a transactionTable block with zero rows", () => {
+    const payload = JSON.stringify({
+      ...validEnvelope,
+      props: {
+        block: {
+          kind: "transactionTable",
+          count: 0,
+          totalCents: 0,
+          rows: [],
+          more: 0,
+        },
+      },
+    });
+    expect(parseFinanceArtifactEnvelope(payload)).toBeNull();
   });
 });

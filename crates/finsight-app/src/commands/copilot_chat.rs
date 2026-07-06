@@ -1098,6 +1098,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         | AgentResponseBlock::BarChart(_)
         | AgentResponseBlock::LineChart(_)
         | AgentResponseBlock::MetricGrid { .. } => true,
+        AgentResponseBlock::TransactionTable(_) => true,
     }
 }
 
@@ -1151,6 +1152,15 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                         && label_ok(&m.value)
                         && opt_label_ok(&m.detail)
                         && opt_label_ok(&m.tone)
+                })
+        }
+        AgentResponseBlock::TransactionTable(t) => {
+            t.rows.len() <= ARTIFACT_MAX_TABLE_ROWS
+                && t.rows.iter().all(|r| {
+                    label_ok(&r.merchant)
+                        && label_ok(&r.category_key)
+                        && opt_label_ok(&r.flag)
+                        && r.date.len() <= ARTIFACT_MAX_LABEL
                 })
         }
     }

@@ -18,6 +18,7 @@ import {
 } from "../../api/hooks/copilot";
 import { parseFinanceArtifactEnvelope } from "./agUi/artifacts";
 import { colorForCategoryLabel } from "../../utils/categoryColor";
+import { TransactionTableCard } from "./cards/TransactionTableCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -332,6 +333,8 @@ export function FinSightResponseBlock({ block }: { block: CopilotResponseBlock }
       return <ChartBlock {...block} />;
     case "callout":
       return <CalloutBlock {...block} />;
+    case "transactionTable":
+      return <TransactionTableCard block={block} />;
     default:
       return null;
   }

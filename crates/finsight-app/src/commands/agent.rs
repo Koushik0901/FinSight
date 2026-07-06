@@ -504,6 +504,25 @@ pub struct AgentMetricBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTxRow {
+    pub date: String,
+    pub merchant: String,
+    pub category_key: String,
+    pub amount_cents: i64,
+    pub flag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTransactionTableBlock {
+    pub count: i64,
+    pub total_cents: i64,
+    pub rows: Vec<AgentTxRow>,
+    pub more: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -520,6 +539,7 @@ pub enum AgentResponseBlock {
         title: Option<String>,
         body: String,
     },
+    TransactionTable(AgentTransactionTableBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -604,6 +624,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::MetricGrid { metrics } => !metrics.is_empty() && metrics.len() <= 12,
         AgentResponseBlock::Callout { body, .. } => !body.trim().is_empty(),
+        AgentResponseBlock::TransactionTable(t) => {
+            t.count >= 0
+                && !t.rows.is_empty()
+                && t.rows.len() <= 200
+                && t.rows.iter().all(|r| !r.merchant.trim().is_empty() && !r.category_key.trim().is_empty())
+        }
     }
 }
 
@@ -1710,5 +1736,36 @@ mod tests {
             .any(|alt| alt.summary.contains("estimated interest")));
         assert!(answer.reasoning.contains("Highest compared APR"));
         assert!(!answer.data_sources.is_empty());
+    }
+
+    #[test]
+    fn transaction_table_block_round_trips_through_json() {
+        let block = AgentResponseBlock::TransactionTable(AgentTransactionTableBlock {
+            count: 42,
+            total_cents: 1_193_000,
+            rows: vec![AgentTxRow {
+                date: "2026-05-03".to_string(),
+                merchant: "Bay Property · Rent".to_string(),
+                category_key: "Housing".to_string(),
+                amount_cents: 185_000,
+                flag: None,
+            }],
+            more: 32,
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "transactionTable");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn transaction_table_block_with_zero_rows_is_invalid() {
+        let block = AgentResponseBlock::TransactionTable(AgentTransactionTableBlock {
+            count: 0,
+            total_cents: 0,
+            rows: vec![],
+            more: 0,
+        });
+        assert!(!valid_response_block(&block));
     }
 }
