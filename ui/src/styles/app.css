@@ -5406,7 +5406,7 @@ body::-webkit-scrollbar-track,
    theme-scoped rule above so it wins by source order regardless of which
    theme container is active. Text-level rules keyed off these class names
    (span/strong/small/p color+size) are untouched and keep working. */
-.cp-card > .copilot-gen-metric,
+.cp-card > .copilot-gen-grid > .copilot-gen-metric,
 .cp-card.copilot-gen-callout,
 .cp-card > .copilot-gen-chart {
   background: transparent;
