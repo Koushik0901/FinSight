@@ -5398,6 +5398,29 @@ body::-webkit-scrollbar-track,
   color: #fff;
 }
 
+/* Task C7: MetricGrid/ChartBlock now nest their gen-classed element inside
+   the new `.cp-card` frame, and CalloutBlock applies `.cp-card` directly
+   alongside `.copilot-gen-callout` on the same node. `.cp-card` supplies the
+   single outer box in all themes (base/finsight-chat/base-clone/playground-
+   clone), so reset the gen classes' own box/spacing here — placed after every
+   theme-scoped rule above so it wins by source order regardless of which
+   theme container is active. Text-level rules keyed off these class names
+   (span/strong/small/p color+size) are untouched and keep working. */
+.cp-card > .copilot-gen-metric,
+.cp-card.copilot-gen-callout,
+.cp-card > .copilot-gen-chart {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+}
+
+.cp-card > .copilot-gen-grid {
+  margin: 0;
+}
+
 .copilot-playground-clone .copilot-source-pill {
   background: transparent;
   border: 0;

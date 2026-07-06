@@ -270,30 +270,42 @@ function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
 
 function MetricGrid({ metrics }: Extract<CopilotResponseBlock, { kind: "metricGrid" }>) {
   return (
-    <div className="copilot-gen-grid">
-      {metrics.map((metric) => (
-        <div key={`${metric.label}-${metric.value}`} className="copilot-gen-metric" data-tone={metric.tone ?? "neutral"}>
-          <span>{metric.label}</span>
-          <strong>{metric.value}</strong>
-          {metric.detail && <small>{metric.detail}</small>}
-        </div>
-      ))}
+    <div className="cp-card">
+      <div className="copilot-gen-grid">
+        {metrics.map((metric) => (
+          <div key={`${metric.label}-${metric.value}`} className="copilot-gen-metric" data-tone={metric.tone ?? "neutral"}>
+            <span>{metric.label}</span>
+            <strong>{metric.value}</strong>
+            {metric.detail && <small>{metric.detail}</small>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 function TableBlock({ title, columns, rows }: Extract<CopilotResponseBlock, { kind: "table" }>) {
+  const categoryColIndex = columns.findIndex((c) => c.toLowerCase() === "category");
   return (
-    <div className="copilot-gen-table-wrap">
-      {title && <p className="copilot-gen-title">{title}</p>}
-      <table className="copilot-gen-table">
+    <div className="cp-card">
+      {title && <div className="cp-card-title" style={{ marginBottom: 12 }}>{title}</div>}
+      <table className="tbl">
         <thead>
           <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={index}>
-              {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex}>
+                  {cellIndex === categoryColIndex ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span className="cp-dot" style={{ background: colorForCategoryLabel(cell) ?? "var(--ink-faint)" }} />
+                      {cell}
+                    </span>
+                  ) : cell}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -305,27 +317,29 @@ function TableBlock({ title, columns, rows }: Extract<CopilotResponseBlock, { ki
 function ChartBlock(block: Extract<CopilotResponseBlock, { kind: "barChart" | "lineChart" }>) {
   const max = Math.max(...block.data.map((point) => point.value), 1);
   return (
-    <div className="copilot-gen-chart">
-      {block.title && <p className="copilot-gen-title">{block.title}</p>}
-      {block.data.map((point) => {
-        // Bars labelled with a known category reuse its canonical color so
-        // Copilot charts match Reports/Budget/Categories; others keep accent.
-        const categoryColor = colorForCategoryLabel(point.label);
-        return (
-          <div key={point.label} className="copilot-gen-bar-row">
-            <span>{point.label}</span>
-            <div><i style={{ inlineSize: `${Math.max(4, (point.value / max) * 100)}%`, ...(categoryColor ? { background: categoryColor } : {}) }} /></div>
-            <strong>{point.value.toLocaleString()}</strong>
-          </div>
-        );
-      })}
+    <div className="cp-card">
+      {block.title && <p className="cp-card-title" style={{ marginBottom: 12 }}>{block.title}</p>}
+      <div className="copilot-gen-chart">
+        {block.data.map((point) => {
+          // Bars labelled with a known category reuse its canonical color so
+          // Copilot charts match Reports/Budget/Categories; others keep accent.
+          const categoryColor = colorForCategoryLabel(point.label);
+          return (
+            <div key={point.label} className="copilot-gen-bar-row">
+              <span>{point.label}</span>
+              <div><i style={{ inlineSize: `${Math.max(4, (point.value / max) * 100)}%`, ...(categoryColor ? { background: categoryColor } : {}) }} /></div>
+              <strong>{point.value.toLocaleString()}</strong>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 function CalloutBlock({ tone, title, body }: Extract<CopilotResponseBlock, { kind: "callout" }>) {
   return (
-    <div className="copilot-gen-callout" data-tone={tone}>
+    <div className="cp-card copilot-gen-callout" data-tone={tone}>
       {title && <strong>{title}</strong>}
       <p>{body}</p>
     </div>
