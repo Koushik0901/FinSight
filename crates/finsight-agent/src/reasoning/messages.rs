@@ -74,6 +74,14 @@ pub struct ReasoningResult {
     pub response_blocks: Vec<Value>,
 }
 
+/// Upper bounds applied to a parsed plan, since the raw text this is parsed
+/// from is untrusted LLM output (this app talks to cloud model providers) —
+/// caps here at the trust boundary keep an adversarial or malfunctioning
+/// model response from ballooning into an unbounded `Vec<String>` that later
+/// gets persisted as JSON.
+const MAX_PLAN_STEPS: usize = 10;
+const MAX_PLAN_STEP_CHARS: usize = 500;
+
 /// Extracts a best-effort `PLAN:` preamble from a model's raw tool-turn text
 /// content, per the system-prompt contract in `build_system_prompt`.
 ///
@@ -88,6 +96,9 @@ pub fn parse_plan_preamble(raw: &str) -> Option<Vec<String>> {
 
     let mut steps = Vec::new();
     for line in lines.iter().skip(plan_line_idx + 1) {
+        if steps.len() >= MAX_PLAN_STEPS {
+            break;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() {
             break;
@@ -99,9 +110,16 @@ pub fn parse_plan_preamble(raw: &str) -> Option<Vec<String>> {
         if number.trim().parse::<u32>().is_err() {
             break;
         }
-        let step_text = step_text.trim();
+        let mut step_text = step_text.trim();
         if step_text.is_empty() {
             break;
+        }
+        if step_text.len() > MAX_PLAN_STEP_CHARS {
+            let mut end = MAX_PLAN_STEP_CHARS;
+            while !step_text.is_char_boundary(end) {
+                end -= 1;
+            }
+            step_text = &step_text[..end];
         }
         steps.push(step_text.to_string());
     }
@@ -153,5 +171,35 @@ mod tests {
         let raw = "PLAN:\n1. First\n2. Second\n\n3. Should not be included\n";
         let steps = parse_plan_preamble(raw).unwrap();
         assert_eq!(steps, vec!["First".to_string(), "Second".to_string()]);
+    }
+
+    #[test]
+    fn caps_step_count_at_max_plan_steps() {
+        let mut raw = String::from("PLAN:\n");
+        for i in 1..=(MAX_PLAN_STEPS + 5) {
+            raw.push_str(&format!("{i}. Step number {i}\n"));
+        }
+        let steps = parse_plan_preamble(&raw).unwrap();
+        assert_eq!(steps.len(), MAX_PLAN_STEPS);
+        assert_eq!(steps[0], "Step number 1");
+    }
+
+    #[test]
+    fn caps_step_length_at_max_plan_step_chars() {
+        let long_step = "x".repeat(MAX_PLAN_STEP_CHARS + 200);
+        let raw = format!("PLAN:\n1. {long_step}\n");
+        let steps = parse_plan_preamble(&raw).unwrap();
+        assert_eq!(steps[0].len(), MAX_PLAN_STEP_CHARS);
+    }
+
+    #[test]
+    fn truncates_multibyte_step_text_on_a_char_boundary() {
+        // Each "é" is 2 bytes in UTF-8, so a naive byte-index slice at
+        // MAX_PLAN_STEP_CHARS could land mid-character and panic.
+        let long_step = "é".repeat(MAX_PLAN_STEP_CHARS);
+        let raw = format!("PLAN:\n1. {long_step}\n");
+        let steps = parse_plan_preamble(&raw).unwrap();
+        assert!(steps[0].len() <= MAX_PLAN_STEP_CHARS);
+        assert!(steps[0].chars().all(|c| c == 'é'));
     }
 }

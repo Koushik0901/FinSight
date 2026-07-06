@@ -407,3 +407,68 @@ async fn run_with_events_emits_plan_ready_before_any_tool_call() {
         panic!("expected PlanReady event with steps");
     }
 }
+
+#[tokio::test]
+async fn run_with_events_ignores_a_plan_offered_on_a_later_turn() {
+    // The system prompt tells the model to only emit a PLAN: preamble once,
+    // on its first turn — but the engine must not trust that blindly. If a
+    // later turn's AssistantTurn::ToolCalls also carries Some(plan) (e.g. a
+    // model that ignores the instruction and repeats it), the engine must
+    // still only ever fire one PlanReady, from the first turn.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(MockCompletionProvider {
+        provider_id: "mock".into(),
+        model_id: "test".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call-1".to_string(),
+                    name: "get_account_balances".to_string(),
+                    arguments: json!({}),
+                }],
+                plan: Some(vec!["First-turn step".to_string()]),
+            },
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call-2".to_string(),
+                    name: "get_account_balances".to_string(),
+                    arguments: json!({}),
+                }],
+                plan: Some(vec!["Second-turn step that should be ignored".to_string()]),
+            },
+            AssistantTurn::FinalAnswer {
+                content: r#"{"answer":"Done.","reasoning":"","assumptions":[],"data_sources":[],"missing_data":[],"follow_up_questions":[],"response_blocks":[]}"#.to_string(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let tools = build_toolset();
+
+    let mut events = Vec::new();
+    let result = ReasoningEngine::run_with_events(
+        &mut conn,
+        "What's my net worth?",
+        &tools,
+        provider,
+        5,
+        |event| events.push(event),
+    )
+    .await
+    .unwrap();
+
+    let plan_ready_events: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, ReasoningEngineEvent::PlanReady { .. }))
+        .collect();
+    assert_eq!(
+        plan_ready_events.len(),
+        1,
+        "expected exactly one PlanReady event, even though two turns offered a plan"
+    );
+    if let ReasoningEngineEvent::PlanReady { steps } = plan_ready_events[0] {
+        assert_eq!(steps, &vec!["First-turn step".to_string()]);
+    }
+    assert_eq!(result.plan, vec!["First-turn step".to_string()]);
+}
