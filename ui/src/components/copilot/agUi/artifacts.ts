@@ -95,7 +95,7 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     kind: z.literal("allocationSplit"),
     totalCents: z.number().int().positive(),
     segments: z
-      .array(z.object({ label: shortString, amountCents: z.number().int(), rationale: shortString, categoryKey: shortString }))
+      .array(z.object({ label: shortString, amountCents: z.number().int().nonnegative(), rationale: shortString, categoryKey: shortString }))
       .min(1)
       .max(12),
   }),

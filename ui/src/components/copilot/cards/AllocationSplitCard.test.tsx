@@ -21,5 +21,9 @@ describe("AllocationSplitCard", () => {
     expect(screen.getByText("Pay off Amex")).toBeInTheDocument();
     expect(screen.getByText("$2,418")).toBeInTheDocument();
     expect(screen.getByText("24.9% APR — guaranteed return")).toBeInTheDocument();
+
+    const segments = screen.getAllByTestId("allocation-seg-fill");
+    expect(segments).toHaveLength(2);
+    expect(segments[0]!.style.width).toBe("46.5%");
   });
 });

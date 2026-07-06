@@ -19,6 +19,7 @@ export function AllocationSplitCard({ block }: { block: Block }) {
         {block.segments.map((s, i) => (
           <div
             key={`${s.label}-${i}`}
+            data-testid="allocation-seg-fill"
             className="cp-alloc-seg"
             style={{
               width: `${(s.amountCents / block.totalCents) * 100}%`,

@@ -695,7 +695,7 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
             b.total_cents > 0
                 && !b.segments.is_empty()
                 && b.segments.len() <= 12
-                && b.segments.iter().all(|s| !s.label.trim().is_empty())
+                && b.segments.iter().all(|s| !s.label.trim().is_empty() && s.amount_cents >= 0)
         }
     }
 }
