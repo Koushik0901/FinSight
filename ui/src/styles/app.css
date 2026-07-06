@@ -3916,31 +3916,6 @@ body::-webkit-scrollbar-track,
   color: var(--ink-mute);
 }
 
-.copilot-msg-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-  color: var(--ink-faint);
-  font-size: 11px;
-}
-
-.copilot-msg-meta span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 3px 7px;
-  background: var(--surface-2);
-}
-
-/* Grounding trust chip — signals every answer is computed from local data. */
-.copilot-msg-meta span.copilot-grounded {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface-2));
-}
 
 /* Grounded empty-state stats (real counts, or an honest "no data" line). */
 .copilot-empty-ground {

@@ -790,7 +790,7 @@ function CopilotThread({
           <AuiIf condition={(s) => s.thread.isEmpty}>
             <EmptyThreadState onPrompt={handlePrompt}>
               <div className="copilot-empty-composer">
-                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} />
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} />
               </div>
             </EmptyThreadState>
           </AuiIf>
@@ -817,7 +817,7 @@ function CopilotThread({
           <AuiIf condition={(s) => !s.thread.isEmpty}>
             <ThreadPrimitive.ViewportFooter className="copilot-viewport-footer">
               <div className="copilot-composer-wrap">
-                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} />
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} />
               </div>
             </ThreadPrimitive.ViewportFooter>
           </AuiIf>
@@ -830,9 +830,11 @@ function CopilotThread({
 function CopilotComposerBox({
   composerRef,
   isRunning,
+  latestMeta,
 }: {
   composerRef: React.RefObject<HTMLTextAreaElement>;
   isRunning: boolean;
+  latestMeta: MessageMeta | null;
 }) {
   return (
     <ComposerPrimitive.Root className="copilot-composer">
@@ -846,7 +848,7 @@ function CopilotComposerBox({
       </button>
       <div className="cp-composer-model">
         <span className="cp-model-dot" />
-        <span>Local · FinSight Copilot</span>
+        <span>{latestMeta?.modelId ? `${latestMeta.providerId} · ${latestMeta.modelId}` : "Copilot ready"}</span>
       </div>
       <ComposerPrimitive.Input
         ref={composerRef}
