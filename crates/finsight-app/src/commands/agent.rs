@@ -572,6 +572,22 @@ pub struct AgentAllocationSplitBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRankedOption {
+    pub rank_tone: String,
+    pub label: String,
+    pub detail: String,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRankedOptionsBlock {
+    pub title: String,
+    pub options: Vec<AgentRankedOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -592,6 +608,7 @@ pub enum AgentResponseBlock {
     AffordabilityVerdict(AgentAffordabilityVerdictBlock),
     CategoryBreakdown(AgentCategoryBreakdownBlock),
     AllocationSplit(AgentAllocationSplitBlock),
+    RankedOptions(AgentRankedOptionsBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -696,6 +713,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.segments.is_empty()
                 && b.segments.len() <= 12
                 && b.segments.iter().all(|s| !s.label.trim().is_empty() && s.amount_cents >= 0)
+        }
+        AgentResponseBlock::RankedOptions(b) => {
+            !b.title.trim().is_empty()
+                && !b.options.is_empty()
+                && b.options.len() <= 10
+                && b.options.iter().all(|o| !o.label.trim().is_empty() && matches!(o.rank_tone.as_str(), "primary" | "neutral" | "muted"))
         }
     }
 }
@@ -1918,6 +1941,35 @@ mod tests {
     #[test]
     fn allocation_split_with_zero_total_is_invalid() {
         let block = AgentResponseBlock::AllocationSplit(AgentAllocationSplitBlock { total_cents: 0, segments: vec![] });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn ranked_options_round_trips_and_validates() {
+        let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
+            title: "The three routes you asked about".to_string(),
+            options: vec![
+                AgentRankedOption { rank_tone: "primary".to_string(), label: "Pay off the loan".to_string(), detail: "$2,418 → Amex Gold".to_string(), rationale: "Highest-interest debt at 24.9%.".to_string() },
+            ],
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "rankedOptions");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn ranked_options_with_no_options_is_invalid() {
+        let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock { title: "Empty".to_string(), options: vec![] });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn ranked_options_with_invalid_rank_tone_is_invalid() {
+        let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
+            title: "Bad tone".to_string(),
+            options: vec![AgentRankedOption { rank_tone: "urgent".to_string(), label: "X".to_string(), detail: "Y".to_string(), rationale: "Z".to_string() }],
+        });
         assert!(!valid_response_block(&block));
     }
 }

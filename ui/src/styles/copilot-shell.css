@@ -148,3 +148,15 @@
 .cp-alloc-label { font-size: 14px; font-weight: 500; color: var(--ink); }
 .cp-alloc-why { font-size: 12px; color: var(--ink-mute); }
 .cp-alloc-amt { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; font-family: var(--mono); }
+
+.cp-options { display: flex; flex-direction: column; gap: 8px; }
+.cp-option { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); padding: 14px 16px; }
+.cp-option.is-primary { border-color: var(--accent-3); background: linear-gradient(135deg, var(--accent-2), transparent 70%); }
+.cp-option-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.cp-verdict { font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; }
+.cp-verdict-primary { background: var(--accent); color: var(--accent-ink); }
+.cp-verdict-neutral { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+.cp-verdict-muted { background: transparent; color: var(--ink-faint); border: 1px solid var(--line); }
+.cp-option-detail { margin-left: auto; font-size: 12px; color: var(--ink-mute); font-family: var(--mono); }
+.cp-option-label { font-size: 15px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.cp-option-why { font-size: 13px; color: var(--ink-mute); margin-top: 4px; line-height: 1.5; }

@@ -22,6 +22,7 @@ import { TransactionTableCard } from "./cards/TransactionTableCard";
 import { AffordabilityVerdictCard } from "./cards/AffordabilityVerdictCard";
 import { CategoryBreakdownCard } from "./cards/CategoryBreakdownCard";
 import { AllocationSplitCard } from "./cards/AllocationSplitCard";
+import { RankedOptionsCard } from "./cards/RankedOptionsCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -344,6 +345,8 @@ export function FinSightResponseBlock({ block }: { block: CopilotResponseBlock }
       return <CategoryBreakdownCard block={block} />;
     case "allocationSplit":
       return <AllocationSplitCard block={block} />;
+    case "rankedOptions":
+      return <RankedOptionsCard block={block} />;
     default:
       return null;
   }
