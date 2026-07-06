@@ -23,6 +23,7 @@ import { AffordabilityVerdictCard } from "./cards/AffordabilityVerdictCard";
 import { CategoryBreakdownCard } from "./cards/CategoryBreakdownCard";
 import { AllocationSplitCard } from "./cards/AllocationSplitCard";
 import { RankedOptionsCard } from "./cards/RankedOptionsCard";
+import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -87,7 +88,7 @@ export function CopilotToolCard({
       ? (artifact.props.block as CopilotResponseBlock | undefined)
       : undefined;
     if (block) {
-      return <FinSightResponseBlock block={block} />;
+      return <FinSightResponseBlock block={block} isRunning={status.type === "running"} />;
     }
   }
 
@@ -320,7 +321,13 @@ function CalloutBlock({ tone, title, body }: Extract<CopilotResponseBlock, { kin
   );
 }
 
-export function FinSightResponseBlock({ block }: { block: CopilotResponseBlock }) {
+export function FinSightResponseBlock({
+  block,
+  isRunning,
+}: {
+  block: CopilotResponseBlock;
+  isRunning: boolean;
+}) {
   switch (block.kind) {
     case "markdown":
       return (
@@ -347,6 +354,8 @@ export function FinSightResponseBlock({ block }: { block: CopilotResponseBlock }
       return <AllocationSplitCard block={block} />;
     case "rankedOptions":
       return <RankedOptionsCard block={block} />;
+    case "comparisonBars":
+      return <ComparisonBarsCard block={block} isRunning={isRunning} />;
     default:
       return null;
   }

@@ -588,6 +588,21 @@ pub struct AgentRankedOptionsBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMoneyPoint {
+    pub label: String,
+    pub amount_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentComparisonBarsBlock {
+    pub title: String,
+    pub current: AgentMoneyPoint,
+    pub prior: AgentMoneyPoint,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -609,6 +624,7 @@ pub enum AgentResponseBlock {
     CategoryBreakdown(AgentCategoryBreakdownBlock),
     AllocationSplit(AgentAllocationSplitBlock),
     RankedOptions(AgentRankedOptionsBlock),
+    ComparisonBars(AgentComparisonBarsBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -719,6 +735,13 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.options.is_empty()
                 && b.options.len() <= 10
                 && b.options.iter().all(|o| !o.label.trim().is_empty() && matches!(o.rank_tone.as_str(), "primary" | "neutral" | "muted"))
+        }
+        AgentResponseBlock::ComparisonBars(b) => {
+            !b.title.trim().is_empty()
+                && !b.current.label.trim().is_empty()
+                && !b.prior.label.trim().is_empty()
+                && b.current.amount_cents >= 0
+                && b.prior.amount_cents >= 0
         }
     }
 }
@@ -1969,6 +1992,39 @@ mod tests {
         let block = AgentResponseBlock::RankedOptions(AgentRankedOptionsBlock {
             title: "Bad tone".to_string(),
             options: vec![AgentRankedOption { rank_tone: "urgent".to_string(), label: "X".to_string(), detail: "Y".to_string(), rationale: "Z".to_string() }],
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn comparison_bars_round_trips_and_validates() {
+        let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
+            title: "Dining · this month vs average".to_string(),
+            current: AgentMoneyPoint { label: "May 2026".to_string(), amount_cents: 41_200 },
+            prior: AgentMoneyPoint { label: "12-mo avg".to_string(), amount_cents: 36_500 },
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "comparisonBars");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn comparison_bars_with_empty_title_is_invalid() {
+        let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
+            title: "".to_string(),
+            current: AgentMoneyPoint { label: "May".to_string(), amount_cents: 100 },
+            prior: AgentMoneyPoint { label: "Apr".to_string(), amount_cents: 80 },
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn comparison_bars_with_negative_amount_is_invalid() {
+        let block = AgentResponseBlock::ComparisonBars(AgentComparisonBarsBlock {
+            title: "Bad amount".to_string(),
+            current: AgentMoneyPoint { label: "May".to_string(), amount_cents: -100 },
+            prior: AgentMoneyPoint { label: "Apr".to_string(), amount_cents: 80 },
         });
         assert!(!valid_response_block(&block));
     }

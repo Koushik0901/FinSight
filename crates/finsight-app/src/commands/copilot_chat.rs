@@ -1103,6 +1103,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::CategoryBreakdown(_) => true,
         AgentResponseBlock::AllocationSplit(_) => true,
         AgentResponseBlock::RankedOptions(_) => true,
+        AgentResponseBlock::ComparisonBars(_) => true,
     }
 }
 
@@ -1188,6 +1189,9 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             label_ok(&b.title)
                 && b.options.len() <= 10
                 && b.options.iter().all(|o| label_ok(&o.label) && label_ok(&o.detail) && label_ok(&o.rationale))
+        }
+        AgentResponseBlock::ComparisonBars(b) => {
+            label_ok(&b.title) && label_ok(&b.current.label) && label_ok(&b.prior.label)
         }
     }
 }
