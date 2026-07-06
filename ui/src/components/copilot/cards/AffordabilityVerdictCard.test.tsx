@@ -30,5 +30,6 @@ describe("AffordabilityVerdictCard", () => {
     );
     expect(screen.getByText("No")).toBeInTheDocument();
     expect(screen.queryByText(/Cover it from/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Exceeds/)).not.toBeInTheDocument();
   });
 });
