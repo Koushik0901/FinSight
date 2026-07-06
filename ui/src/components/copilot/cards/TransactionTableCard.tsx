@@ -8,6 +8,9 @@ export function TransactionTableCard({ block }: { block: Block }) {
   return (
     <div className="cp-card">
       <div className="cp-card-title">{block.count} transactions</div>
+      <div className="muted" style={{ fontSize: 11.5, fontFamily: "var(--mono)", marginTop: 4, marginBottom: 12 }}>
+        <span className="money">{money(block.totalCents)}</span> total · top {block.rows.length} by size
+      </div>
       <div className="cp-tx">
         {block.rows.map((r, i) => (
           <div key={i} className="cp-tx-row">
@@ -23,7 +26,7 @@ export function TransactionTableCard({ block }: { block: Block }) {
         ))}
         {block.more > 0 && (
           <div className="cp-tx-more">
-            + {block.more} more · <span className="money">{money(block.totalCents)}</span> total
+            + {block.more} more · <span className="mono money">{money(block.totalCents)}</span> total
           </div>
         )}
       </div>
