@@ -1,4 +1,4 @@
-use super::ReasoningEngine;
+use super::{ReasoningEngine, ReasoningEngineEvent};
 use crate::providers::mock::MockCompletionProvider;
 use crate::reasoning::messages::{AssistantTurn, ToolCall};
 use crate::reasoning::tools::{act, read, ToolSet};
@@ -103,11 +103,14 @@ async fn multi_turn_with_tool_calls() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_1".into(),
-                name: "get_account_balances".into(),
-                arguments: json!({}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
             AssistantTurn::FinalAnswer {
                 content: "You have $5000 across all accounts".to_string(),
                 reasoning: "Summed account balances".to_string(),
@@ -138,16 +141,22 @@ async fn max_iterations_returns_partial() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_1".into(),
-                name: "get_account_balances".into(),
-                arguments: json!({}),
-            }]),
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_2".into(),
-                name: "get_month_totals".into(),
-                arguments: json!({}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_2".into(),
+                    name: "get_month_totals".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
         ]),
     });
     let tools = build_toolset();
@@ -172,11 +181,14 @@ async fn action_tool_records_change() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_1".into(),
-                name: "draft_update_goal_monthly".into(),
-                arguments: json!({"goal_id": "g1", "monthly_delta_cents": 15000}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_1".into(),
+                    name: "draft_update_goal_monthly".into(),
+                    arguments: json!({"goal_id": "g1", "monthly_delta_cents": 15000}),
+                }],
+                plan: None,
+            },
             AssistantTurn::FinalAnswer {
                 content: "Updated your invest goal".to_string(),
                 reasoning: "Increased contribution".to_string(),
@@ -212,11 +224,14 @@ async fn budget_action_tool_drafts_without_mutating_budget() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_budget".into(),
-                name: "draft_set_budget".into(),
-                arguments: json!({"category_id":"cat1","month":"2026-06","amount_cents":65000,"rationale":"Groceries are trending higher."}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_budget".into(),
+                    name: "draft_set_budget".into(),
+                    arguments: json!({"category_id":"cat1","month":"2026-06","amount_cents":65000,"rationale":"Groceries are trending higher."}),
+                }],
+                plan: None,
+            },
             AssistantTurn::FinalAnswer {
                 content: "Drafted a grocery budget change for approval.".to_string(),
                 reasoning: "Budget action is a draft only.".to_string(),
@@ -247,16 +262,22 @@ async fn invalid_tool_call_returns_recoverable_error_then_recovers() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_bad".into(),
-                name: "get_top_spending_categories".into(),
-                arguments: json!({"limit": "five"}),
-            }]),
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_good".into(),
-                name: "get_top_spending_categories".into(),
-                arguments: json!({"limit": 5}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_bad".into(),
+                    name: "get_top_spending_categories".into(),
+                    arguments: json!({"limit": "five"}),
+                }],
+                plan: None,
+            },
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_good".into(),
+                    name: "get_top_spending_categories".into(),
+                    arguments: json!({"limit": 5}),
+                }],
+                plan: None,
+            },
             AssistantTurn::FinalAnswer {
                 content: "Recovered after correcting the limit argument.".to_string(),
                 reasoning: "The first tool result returned a recoverable argument error."
@@ -291,11 +312,14 @@ async fn unknown_tool_call_returns_recoverable_error() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![
-            AssistantTurn::ToolCalls(vec![ToolCall {
-                id: "call_unknown".into(),
-                name: "not_a_real_tool".into(),
-                arguments: json!({}),
-            }]),
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call_unknown".into(),
+                    name: "not_a_real_tool".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
             AssistantTurn::FinalAnswer {
                 content: "I retried with an available tool.".to_string(),
                 reasoning: "The unknown tool error was recoverable.".to_string(),
@@ -313,4 +337,73 @@ async fn unknown_tool_call_returns_recoverable_error() {
         .trace
         .iter()
         .any(|t| t == "Tool error: not_a_real_tool"));
+}
+
+#[tokio::test]
+async fn run_with_events_emits_plan_ready_before_any_tool_call() {
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(MockCompletionProvider {
+        provider_id: "mock".into(),
+        model_id: "test".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "call-1".to_string(),
+                    name: "get_account_balances".to_string(),
+                    arguments: json!({}),
+                }],
+                plan: Some(vec![
+                    "Find the income that just landed".to_string(),
+                    "Rank every debt by interest rate".to_string(),
+                ]),
+            },
+            AssistantTurn::FinalAnswer {
+                content: r#"{"answer":"Done.","reasoning":"","assumptions":[],"data_sources":[],"missing_data":[],"follow_up_questions":[],"response_blocks":[]}"#.to_string(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let tools = build_toolset();
+
+    let mut events = Vec::new();
+    let _ = ReasoningEngine::run_with_events(
+        &mut conn,
+        "What's my net worth?",
+        &tools,
+        provider,
+        5,
+        |event| events.push(event),
+    )
+    .await
+    .unwrap();
+
+    let plan_index = events
+        .iter()
+        .position(|e| matches!(e, ReasoningEngineEvent::PlanReady { .. }));
+    let tool_start_index = events
+        .iter()
+        .position(|e| matches!(e, ReasoningEngineEvent::ToolCallStart { .. }));
+    assert!(plan_index.is_some(), "expected a PlanReady event");
+    assert!(tool_start_index.is_some(), "expected a ToolCallStart event");
+    assert!(
+        plan_index.unwrap() < tool_start_index.unwrap(),
+        "plan must be emitted before the first tool call"
+    );
+
+    if let Some(ReasoningEngineEvent::PlanReady { steps }) = events
+        .into_iter()
+        .find(|e| matches!(e, ReasoningEngineEvent::PlanReady { .. }))
+    {
+        assert_eq!(
+            steps,
+            vec![
+                "Find the income that just landed".to_string(),
+                "Rank every debt by interest rate".to_string(),
+            ]
+        );
+    } else {
+        panic!("expected PlanReady event with steps");
+    }
 }

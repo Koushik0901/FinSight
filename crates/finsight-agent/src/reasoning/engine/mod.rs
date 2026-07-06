@@ -12,6 +12,9 @@ pub struct ReasoningEngine;
 
 #[derive(Debug, Clone)]
 pub enum ReasoningEngineEvent {
+    PlanReady {
+        steps: Vec<String>,
+    },
     ToolCallStart {
         call: ToolCall,
     },
@@ -53,14 +56,30 @@ impl ReasoningEngine {
         let mut trace: Vec<String> = Vec::new();
         let mut changes: Vec<AgentChange> = Vec::new();
         let mut draft_actions = Vec::new();
+        let mut plan: Vec<String> = Vec::new();
 
-        for _ in 0..max_iterations {
+        for iteration in 0..max_iterations {
             let turn = provider
                 .complete_tool_turn(&messages, &tools.definitions())
                 .await?;
 
             match turn {
-                AssistantTurn::ToolCalls(calls) => {
+                AssistantTurn::ToolCalls {
+                    calls,
+                    plan: turn_plan,
+                } => {
+                    // The system-prompt contract only asks the model for a plan on
+                    // its very first response; be defensive and ignore any plan
+                    // supplied on later turns even if a provider surfaces one.
+                    if iteration == 0 {
+                        if let Some(steps) = turn_plan {
+                            if !steps.is_empty() {
+                                plan = steps.clone();
+                                on_event(ReasoningEngineEvent::PlanReady { steps });
+                            }
+                        }
+                    }
+
                     let mut tool_result_msgs = Vec::new();
                     for call in &calls {
                         trace.push(format!("Called tool: {}", call.name));
@@ -98,6 +117,7 @@ impl ReasoningEngine {
                     return Ok(Self::parse_final_answer(
                         content,
                         reasoning,
+                        plan,
                         trace,
                         changes,
                         draft_actions,
@@ -109,6 +129,7 @@ impl ReasoningEngine {
         Ok(ReasoningResult {
             content: "I analyzed your finances but ran out of reasoning steps. Here's what I found so far.".to_string(),
             reasoning: "The question was too complex for the iteration limit.".to_string(),
+            plan,
             trace,
             changes,
             draft_actions,
@@ -123,6 +144,7 @@ impl ReasoningEngine {
     fn parse_final_answer(
         content: String,
         reasoning: String,
+        plan: Vec<String>,
         trace: Vec<String>,
         changes: Vec<AgentChange>,
         draft_actions: Vec<crate::reasoning::messages::AgentDraftAction>,
@@ -131,6 +153,7 @@ impl ReasoningEngine {
             return ReasoningResult {
                 content,
                 reasoning,
+                plan,
                 trace,
                 changes,
                 draft_actions,
@@ -153,6 +176,7 @@ impl ReasoningEngine {
         ReasoningResult {
             content: parsed.answer,
             reasoning: reasoning_parts.join(" "),
+            plan,
             trace,
             changes,
             draft_actions,
@@ -182,6 +206,12 @@ impl ReasoningEngine {
              You have access to the following tools:\n{}\n\n\
              You are a general-purpose financial assistant: handle any personal-finance question the user asks — facts, balances, net worth, affordability, savings/emergency-fund timelines, spending and category/merchant analysis, income and cash flow, transaction search and date-range analysis, unusual/anomalous charges, recurring payments and subscriptions, budgeting and overspending prevention, and open-ended 'what should I do next' planning. The tools below are reusable capabilities; choose whichever ones fit the user's intent. These instructions are guidance for common intents, not an exhaustive script — generalize to new phrasings and new questions.\n\
              Always use tools before answering financial questions that depend on the user's data. Start with get_financial_snapshot for broad/open-ended questions unless a narrower deterministic tool clearly fits.\n\
+             PLANNING: before your first tool call (or before your first answer, if no tools are needed), output a short plan as plain lines prefixed `PLAN:` followed by 3-5 numbered one-sentence steps, then a blank line, before anything else. Example:\n\
+             PLAN:\n\
+             1. Find the income that just landed\n\
+             2. Rank every debt by interest rate\n\
+             3. Recommend where each dollar should go\n\n\
+             Do this only once, on your very first response in this conversation turn — never repeat it on later tool-calling turns within the same question.\n\
              GROUNDING RULE: never invent, estimate, or guess a dollar figure, date, count, or percentage. Every number in your answer must come from a tool result or the provided context. If you do not have a number, say so and offer to look it up rather than fabricating one.\n\
              CLARIFY WHEN AMBIGUOUS: if the request is missing a detail you need (e.g. an amount for an affordability question, which goal/account/category, or which time range) or could reasonably mean different things, ask ONE concise clarifying question in follow_up_questions and give a brief answer explaining what you need — do not guess a specific number or pick arbitrarily and then compute on it. If a sensible default exists (e.g. 'this month', 'all accounts'), you may proceed but state the assumption.\n\
              FAIL GRACEFULLY: if a question needs data the user has not provided or a capability this local app does not have (e.g. live market prices, tax filing, external bank actions), say plainly what is missing or unsupported and suggest the closest thing you can do — do not fabricate an answer.\n\

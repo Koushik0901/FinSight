@@ -1,4 +1,6 @@
-use crate::reasoning::messages::{AssistantTurn, ChatMessage, ToolCall, ToolDefinition};
+use crate::reasoning::messages::{
+    parse_plan_preamble, AssistantTurn, ChatMessage, ToolCall, ToolDefinition,
+};
 use crate::CompletionProvider;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -195,7 +197,11 @@ impl CompletionProvider for AnthropicProvider {
         }
 
         if !tool_calls.is_empty() {
-            Ok(AssistantTurn::ToolCalls(tool_calls))
+            let plan = parse_plan_preamble(&text_parts.join("\n"));
+            Ok(AssistantTurn::ToolCalls {
+                calls: tool_calls,
+                plan,
+            })
         } else {
             Ok(AssistantTurn::FinalAnswer {
                 content: text_parts.join("\n"),

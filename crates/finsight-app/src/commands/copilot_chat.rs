@@ -342,6 +342,9 @@ pub async fn stream_copilot_message(
                     provider_clone,
                     10,
                     move |event| match event {
+                        // PlanReady is not yet forwarded to the frontend; a follow-up
+                        // task threads this through as a dedicated stream frame.
+                        ReasoningEngineEvent::PlanReady { .. } => {}
                         ReasoningEngineEvent::ToolCallStart { call } => {
                             emitted_tool_frames.store(true, Ordering::Relaxed);
                             emit_copilot_frame(
@@ -419,33 +422,35 @@ pub async fn stream_copilot_message(
             let bundle_id = if bundle_lease.superseded() {
                 None
             } else {
-                Some(run(&db, move |conn| {
-                let mut bundle = finsight_core::repos::copilot_actions::insert_bundle(
-                    conn,
-                    None,
-                    &question_for_db,
-                    &content_for_db,
-                    &reasoning_for_db,
-                    0.9,
-                    Some(&provider_id),
-                    Some(&model_id),
-                )?;
-                for (i, draft) in draft_actions.iter().enumerate() {
-                    let item = finsight_core::repos::copilot_actions::insert_item(
-                        conn,
-                        &bundle.id,
-                        &draft.action_kind,
-                        &draft.payload_json,
-                        &draft.rationale,
-                        draft.confidence,
-                        i as i64,
-                    )?;
-                    bundle.items.push(item);
-                }
-                Ok::<_, finsight_core::CoreError>(bundle.id)
-                })
-                .await
-                .map_err(AppError::from)?)
+                Some(
+                    run(&db, move |conn| {
+                        let mut bundle = finsight_core::repos::copilot_actions::insert_bundle(
+                            conn,
+                            None,
+                            &question_for_db,
+                            &content_for_db,
+                            &reasoning_for_db,
+                            0.9,
+                            Some(&provider_id),
+                            Some(&model_id),
+                        )?;
+                        for (i, draft) in draft_actions.iter().enumerate() {
+                            let item = finsight_core::repos::copilot_actions::insert_item(
+                                conn,
+                                &bundle.id,
+                                &draft.action_kind,
+                                &draft.payload_json,
+                                &draft.rationale,
+                                draft.confidence,
+                                i as i64,
+                            )?;
+                            bundle.items.push(item);
+                        }
+                        Ok::<_, finsight_core::CoreError>(bundle.id)
+                    })
+                    .await
+                    .map_err(AppError::from)?,
+                )
             };
             drop(bundle_lease);
 
@@ -1148,7 +1153,9 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             opt_label_ok(&c.title)
                 && opt_label_ok(&c.series_label)
                 && c.data.len() <= ARTIFACT_MAX_CHART_POINTS
-                && c.data.iter().all(|p| label_ok(&p.label) && p.value.is_finite())
+                && c.data
+                    .iter()
+                    .all(|p| label_ok(&p.label) && p.value.is_finite())
         }
         AgentResponseBlock::MetricGrid { metrics } => {
             metrics.len() <= ARTIFACT_MAX_METRICS
@@ -1183,12 +1190,16 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::AllocationSplit(b) => {
             b.segments.len() <= 12
-                && b.segments.iter().all(|s| label_ok(&s.label) && label_ok(&s.rationale) && label_ok(&s.category_key))
+                && b.segments.iter().all(|s| {
+                    label_ok(&s.label) && label_ok(&s.rationale) && label_ok(&s.category_key)
+                })
         }
         AgentResponseBlock::RankedOptions(b) => {
             label_ok(&b.title)
                 && b.options.len() <= 10
-                && b.options.iter().all(|o| label_ok(&o.label) && label_ok(&o.detail) && label_ok(&o.rationale))
+                && b.options
+                    .iter()
+                    .all(|o| label_ok(&o.label) && label_ok(&o.detail) && label_ok(&o.rationale))
         }
         AgentResponseBlock::ComparisonBars(b) => {
             label_ok(&b.title) && label_ok(&b.current.label) && label_ok(&b.prior.label)

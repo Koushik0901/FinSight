@@ -1,4 +1,6 @@
-use crate::reasoning::messages::{AssistantTurn, ChatMessage, ToolCall, ToolDefinition};
+use crate::reasoning::messages::{
+    parse_plan_preamble, AssistantTurn, ChatMessage, ToolCall, ToolDefinition,
+};
 use crate::CompletionProvider;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -174,6 +176,7 @@ impl CompletionProvider for OllamaProvider {
         let msg = resp.message;
         if let Some(tool_calls) = msg.tool_calls {
             if !tool_calls.is_empty() {
+                let plan = msg.content.as_deref().and_then(parse_plan_preamble);
                 let calls: Vec<ToolCall> = tool_calls
                     .into_iter()
                     .enumerate()
@@ -183,7 +186,7 @@ impl CompletionProvider for OllamaProvider {
                         arguments: tc.function.arguments,
                     })
                     .collect();
-                return Ok(AssistantTurn::ToolCalls(calls));
+                return Ok(AssistantTurn::ToolCalls { calls, plan });
             }
         }
 
