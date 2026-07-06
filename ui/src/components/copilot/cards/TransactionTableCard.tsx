@@ -7,9 +7,9 @@ type Block = Extract<CopilotResponseBlock, { kind: "transactionTable" }>;
 export function TransactionTableCard({ block }: { block: Block }) {
   return (
     <div className="cp-card">
-      <div className="cp-card-title">{block.count} transactions</div>
+      <div className="cp-card-title">{block.count} transaction{block.count === 1 ? "" : "s"}</div>
       <div className="muted" style={{ fontSize: 11.5, fontFamily: "var(--mono)", marginTop: 4, marginBottom: 12 }}>
-        <span className="money">{money(block.totalCents)}</span> total · top {block.rows.length} by size
+        <span className="mono money">{money(block.totalCents)}</span> total · top {block.rows.length} by size
       </div>
       <div className="cp-tx">
         {block.rows.map((r, i) => (
