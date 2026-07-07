@@ -1059,6 +1059,19 @@ async exportTransactionsCsv(filter: TxnFilterInput) : Promise<Result<string, App
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Re-run the Copilot `search_transactions` query and export the matching
+ * rows as CSV via a native save dialog. Shares `transactions::search` with the
+ * Copilot tool so the exported rows match exactly what the card displayed.
+ */
+async exportSearchTransactionsCsv(query: SearchTxnQueryInput) : Promise<Result<string, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_search_transactions_csv", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async exportAccountCsv(accountId: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_account_csv", { accountId }) };
@@ -1667,6 +1680,7 @@ export type SavedScenario = { id: string; description: string; result: ScenarioR
 export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
+export type SearchTxnQueryInput = { merchant: string | null; account: string | null; startDate: string | null; endDate: string | null; minAmountCents: number | null; direction: string | null }
 export type SimpleFinAccountImportRequest = { simplefinId: string; connectionId: string; nickname: string | null }
 export type SimpleFinAccountInfo = { id: string; name: string; connectionName: string; connectionId: string; currency: string; balance: string; accountType: AccountType; accountGroup: string }
 export type SimpleFinAlert = { id: string; accountId: string; alertType: string; severity: string; message: string; detailsJson: string | null; acknowledgedAt: string | null; createdAt: string }

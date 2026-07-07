@@ -73,7 +73,7 @@ pub fn get_month_totals() -> Arc<dyn Tool> {
             let (income, expense): (i64, i64) = ctx.conn.query_row(
                 "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0), \
                         COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0) \
-                 FROM transactions WHERE posted_at >= ?1",
+                 FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0",
                 rusqlite::params![month_start],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
@@ -109,7 +109,7 @@ pub fn get_top_spending_categories() -> Arc<dyn Tool> {
             let mut stmt = ctx.conn.prepare(
                 "SELECT c.label, SUM(ABS(t.amount_cents)) AS spent \
                  FROM transactions t JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.posted_at >= ?1 \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 \
                  GROUP BY c.id ORDER BY spent DESC LIMIT ?2",
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, limit], |r| {
@@ -225,7 +225,7 @@ pub fn get_budgets() -> Arc<dyn Tool> {
             let mut stmt = ctx.conn.prepare(
                 "SELECT c.label, b.amount_cents, \
                         COALESCE((SELECT SUM(ABS(t.amount_cents)) FROM transactions t \
-                                  WHERE t.category_id = b.category_id AND t.amount_cents < 0 AND t.posted_at >= ?1), 0) AS spent \
+                                  WHERE t.category_id = b.category_id AND t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1), 0) AS spent \
                  FROM budgets b JOIN categories c ON c.id = b.category_id WHERE b.month = ?2"
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, month], |r| {
@@ -279,8 +279,8 @@ pub fn get_recurring_bills() -> Arc<dyn Tool> {
         }
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
             use finsight_core::recurring::{detect_recurring, RecurringKind};
-            let items = detect_recurring(ctx.conn, 395)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let items =
+                detect_recurring(ctx.conn, 395).map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let rows: Vec<Value> = items
                 .into_iter()
                 .filter(|i| {
@@ -386,52 +386,32 @@ pub fn search_transactions() -> Arc<dyn Tool> {
             }})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let mut sql = "SELECT t.merchant_raw, t.amount_cents, t.posted_at, COALESCE(c.label, 'Uncategorized'), COALESCE(a.name, 'Unknown account') \
-                 FROM transactions t \
-                 LEFT JOIN categories c ON c.id = t.category_id \
-                 LEFT JOIN accounts a ON a.id = t.account_id \
-                 WHERE 1=1".to_string();
-            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-            if let Some(m) = args["merchant"].as_str() {
-                sql.push_str(" AND lower(t.merchant_raw) LIKE lower(?)");
-                params.push(Box::new(format!("%{}%", m)));
-            }
-            if let Some(acct) = args["account"].as_str() {
-                sql.push_str(" AND lower(a.name) LIKE lower(?)");
-                params.push(Box::new(format!("%{}%", acct)));
-            }
-            if let Some(s) = args["start_date"].as_str() {
-                sql.push_str(" AND t.posted_at >= ?");
-                params.push(Box::new(s.to_string()));
-            }
-            if let Some(e) = args["end_date"].as_str() {
-                sql.push_str(" AND t.posted_at <= ?");
-                params.push(Box::new(format!("{}T23:59:59", e)));
-            }
-            if let Some(min) = args["min_amount_cents"].as_i64() {
-                sql.push_str(" AND ABS(t.amount_cents) >= ?");
-                params.push(Box::new(min.abs()));
-            }
-            match args["direction"].as_str() {
-                Some("expense") => sql.push_str(" AND t.amount_cents < 0"),
-                Some("income") => sql.push_str(" AND t.amount_cents > 0"),
-                _ => {}
-            }
             // Cap to keep payloads bounded even for large ranges.
             let limit = args["limit"].as_i64().unwrap_or(50).clamp(1, 500);
-            sql.push_str(" ORDER BY t.posted_at DESC LIMIT ?");
-            params.push(Box::new(limit));
-
-            let mut stmt = ctx.conn.prepare(&sql)?;
-            let rows: Vec<Value> = stmt.query_map(rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())), |r| {
-                Ok(json!({
-                    "date": r.get::<_, String>(2)?,
-                    "merchant": r.get::<_, String>(0)?,
-                    "amount_cents": r.get::<_, i64>(1)?,
-                    "account": r.get::<_, String>(4)?,
-                    "category": r.get::<_, String>(3)?
-                }))
-            })?.filter_map(|r| r.ok()).collect();
+            let query = finsight_core::repos::transactions::SearchTxnQuery {
+                merchant: args["merchant"].as_str().map(String::from),
+                account: args["account"].as_str().map(String::from),
+                start_date: args["start_date"].as_str().map(String::from),
+                end_date: args["end_date"].as_str().map(String::from),
+                min_amount_cents: args["min_amount_cents"].as_i64(),
+                direction: args["direction"]
+                    .as_str()
+                    .filter(|d| *d != "any")
+                    .map(String::from),
+            };
+            let rows: Vec<Value> =
+                finsight_core::repos::transactions::search(ctx.conn, &query, limit)?
+                    .into_iter()
+                    .map(|r| {
+                        json!({
+                            "date": r.date,
+                            "merchant": r.merchant,
+                            "amount_cents": r.amount_cents,
+                            "account": r.account,
+                            "category": r.category
+                        })
+                    })
+                    .collect();
             let total_cents: i64 = rows.iter().filter_map(|r| r["amount_cents"].as_i64()).sum();
             let total_abs_cents: i64 = rows
                 .iter()
@@ -537,7 +517,8 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
             let available_categories: Vec<Value> = cat_stmt
                 .query_map([], |r| {
                     let guidance: Option<String> = r.get(2)?;
-                    let mut obj = json!({"id": r.get::<_, String>(0)?, "label": r.get::<_, String>(1)?});
+                    let mut obj =
+                        json!({"id": r.get::<_, String>(0)?, "label": r.get::<_, String>(1)?});
                     // Surface the user's per-category guidance so the model
                     // follows their intent when proposing categories.
                     if let Some(g) = guidance.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -581,7 +562,7 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
             let (income, expense): (i64, i64) = ctx.conn.query_row(
                 "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0), \
                         COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0) \
-                 FROM transactions WHERE posted_at >= ?1",
+                 FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0",
                 rusqlite::params![month_start],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
@@ -937,12 +918,12 @@ mod tests {
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('amex','Me','Amex','Credit','Amex Card','USD','#111',datetime('now'))", []).unwrap();
         // (account, date, amount_cents, merchant)
         let rows = [
-            ("chk", "2026-01-15", -9_999, "Costco"),      // Jan, over $60 expense
+            ("chk", "2026-01-15", -9_999, "Costco"), // Jan, over $60 expense
             ("chk", "2026-02-10", -4_200, "Tim Hortons"), // under $60
-            ("amex", "2026-03-05", -12_050, "Best Buy"),  // over $60
-            ("amex", "2026-06-28", -6_100, "Uber"),       // June, just over $60
-            ("chk", "2026-07-02", -20_000, "Rent"),       // OUT of range (July)
-            ("chk", "2026-03-01", 300_000, "Payroll"),    // income, over $60 but positive
+            ("amex", "2026-03-05", -12_050, "Best Buy"), // over $60
+            ("amex", "2026-06-28", -6_100, "Uber"),  // June, just over $60
+            ("chk", "2026-07-02", -20_000, "Rent"),  // OUT of range (July)
+            ("chk", "2026-03-01", 300_000, "Payroll"), // income, over $60 but positive
         ];
         for (acct, date, amt, merch) in rows {
             conn.execute(
@@ -976,7 +957,10 @@ mod tests {
         // Costco (Jan), Best Buy (Mar), Uber (Jun) — NOT Tim Hortons ($42),
         // NOT Rent (July, out of range), NOT Payroll (income).
         assert_eq!(out["count"].as_i64().unwrap(), 3, "got: {txns:?}");
-        let merchants: Vec<&str> = txns.iter().map(|t| t["merchant"].as_str().unwrap()).collect();
+        let merchants: Vec<&str> = txns
+            .iter()
+            .map(|t| t["merchant"].as_str().unwrap())
+            .collect();
         assert!(merchants.contains(&"Costco"));
         assert!(merchants.contains(&"Best Buy"));
         assert!(merchants.contains(&"Uber"));
@@ -984,8 +968,13 @@ mod tests {
         assert!(!merchants.contains(&"Rent"));
         assert!(!merchants.contains(&"Payroll"));
         // Rows carry account + category; total is grounded.
-        assert!(txns.iter().all(|t| t["account"].is_string() && t["category"].is_string()));
-        assert_eq!(out["total_abs_cents"].as_i64().unwrap(), 9_999 + 12_050 + 6_100);
+        assert!(txns
+            .iter()
+            .all(|t| t["account"].is_string() && t["category"].is_string()));
+        assert_eq!(
+            out["total_abs_cents"].as_i64().unwrap(),
+            9_999 + 12_050 + 6_100
+        );
     }
 
     #[test]
@@ -999,7 +988,9 @@ mod tests {
             json!({"account": "amex", "limit": 500}),
         );
         let txns = out["transactions"].as_array().unwrap();
-        assert!(txns.iter().all(|t| t["account"].as_str().unwrap() == "Amex Card"));
+        assert!(txns
+            .iter()
+            .all(|t| t["account"].as_str().unwrap() == "Amex Card"));
         assert_eq!(out["count"].as_i64().unwrap(), 2);
     }
 

@@ -592,3 +592,70 @@ pub async fn export_transactions_csv(
     std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
     Ok(path_str)
 }
+
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTxnQueryInput {
+    pub merchant: Option<String>,
+    pub account: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub min_amount_cents: Option<i64>,
+    pub direction: Option<String>,
+}
+
+/// Re-run the Copilot `search_transactions` query and export the matching
+/// rows as CSV via a native save dialog. Shares `transactions::search` with the
+/// Copilot tool so the exported rows match exactly what the card displayed.
+#[tauri::command]
+#[specta::specta]
+pub async fn export_search_transactions_csv(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+    query: SearchTxnQueryInput,
+) -> AppResult<String> {
+    let maybe_path = app
+        .dialog()
+        .file()
+        .set_file_name("transactions.csv")
+        .blocking_save_file();
+
+    let Some(file_path) = maybe_path else {
+        return Ok(String::new());
+    };
+    let path = file_path
+        .into_path()
+        .map_err(|e| AppError::new("dialog", e.to_string()))?;
+
+    let db = (*state.db).clone();
+    let csv = run(&db, move |conn| {
+        let rows = finsight_core::repos::transactions::search(
+            conn,
+            &finsight_core::repos::transactions::SearchTxnQuery {
+                merchant: query.merchant,
+                account: query.account,
+                start_date: query.start_date,
+                end_date: query.end_date,
+                min_amount_cents: query.min_amount_cents,
+                direction: query.direction,
+            },
+            i64::MAX,
+        )?;
+        let mut out = String::from("date,merchant,category,amount_dollars,account\n");
+        for r in rows {
+            let date = &r.date[..10.min(r.date.len())];
+            let merchant = csv_escape(&r.merchant);
+            let category = csv_escape(&r.category);
+            let amount = format!("{:.2}", r.amount_cents as f64 / 100.0);
+            let account = csv_escape(&r.account);
+            out.push_str(&format!("{date},{merchant},{category},{amount},{account}\n"));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)?;
+
+    let path_str = path.to_string_lossy().to_string();
+    std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
+    Ok(path_str)
+}

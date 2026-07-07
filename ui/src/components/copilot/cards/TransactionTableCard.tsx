@@ -1,10 +1,47 @@
+import { useState } from "react";
+import { toast } from "sonner";
 import type { CopilotResponseBlock } from "../../../api/client";
+import { commands } from "../../../api/client";
 import { money } from "../../../utils/format";
 import { colorForCategoryLabel } from "../../../utils/categoryColor";
+import Button from "../../Button";
 
 type Block = Extract<CopilotResponseBlock, { kind: "transactionTable" }>;
 
-export function TransactionTableCard({ block }: { block: Block }) {
+export function TransactionTableCard({
+  block,
+  toolArgs,
+}: {
+  block: Block;
+  toolArgs?: Record<string, unknown>;
+}) {
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const result = await commands.exportSearchTransactionsCsv({
+        merchant: (toolArgs?.merchant as string) ?? null,
+        account: (toolArgs?.account as string) ?? null,
+        startDate: (toolArgs?.start_date as string) ?? null,
+        endDate: (toolArgs?.end_date as string) ?? null,
+        minAmountCents: (toolArgs?.min_amount_cents as number) ?? null,
+        direction: (toolArgs?.direction as string) ?? null,
+      });
+      if (result.status === "ok") {
+        if (result.data) {
+          toast.success("Exported CSV", { description: result.data });
+        }
+      } else {
+        toast.error("Export failed", { description: result.error.message });
+      }
+    } catch (e) {
+      toast.error("Export failed", { description: String(e) });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="cp-card">
       <div className="cp-card-title">{block.count} transaction{block.count === 1 ? "" : "s"}</div>
@@ -29,6 +66,17 @@ export function TransactionTableCard({ block }: { block: Block }) {
             + {block.more} more · <span className="mono money">{money(block.totalCents)}</span> total
           </div>
         )}
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <Button
+          variant="primary"
+          size="sm"
+          loading={exporting}
+          disabled={exporting}
+          onClick={() => void handleExport()}
+        >
+          Export {block.count} as CSV
+        </Button>
       </div>
     </div>
   );

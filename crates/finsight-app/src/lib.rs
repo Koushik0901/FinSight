@@ -283,6 +283,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::budget::list_goals,
         commands::budget::create_goal,
         commands::budget::update_goal_balance,
+        commands::budget::contribute_to_goal,
+        commands::budget::list_goal_contributions,
         commands::budget::archive_goal,
         commands::budget::project_goal_growth,
         commands::recurring::list_recurring,
@@ -291,6 +293,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::reports::get_savings_rate_history,
         commands::reports::create_monthly_review,
         commands::reports::list_monthly_reviews,
+        commands::metrics::get_financial_metrics,
+        commands::metrics::set_financial_assumptions,
         commands::scenarios::run_scenario,
         commands::scenarios::save_scenario,
         commands::scenarios::list_scenario_history,
@@ -356,6 +360,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::planned_transactions::update_planned_transaction,
         commands::planned_transactions::delete_planned_transaction,
         commands::transactions::export_transactions_csv,
+        commands::transactions::export_search_transactions_csv,
         commands::accounts::export_account_csv,
         commands::accounts::list_account_balance_history,
         commands::accounts::list_account_balance_sparklines,
@@ -565,7 +570,10 @@ mod env_bootstrap_tests {
     fn returns_none_when_key_absent_or_empty() {
         let root = TempDir::new().unwrap();
         fs::write(root.path().join(".env"), "OPENROUTER_API_KEY=\nFOO=bar\n").unwrap();
-        assert_eq!(read_env_key_from_file(root.path(), "OPENROUTER_API_KEY"), None);
+        assert_eq!(
+            read_env_key_from_file(root.path(), "OPENROUTER_API_KEY"),
+            None
+        );
         assert_eq!(read_env_key_from_file(root.path(), "MISSING"), None);
     }
 }

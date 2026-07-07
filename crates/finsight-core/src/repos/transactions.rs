@@ -214,6 +214,86 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
     Ok(out)
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SearchTxnQuery {
+    pub merchant: Option<String>,
+    pub account: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub min_amount_cents: Option<i64>,
+    pub direction: Option<String>, // "expense" | "income" | None
+}
+
+pub struct SearchTxnRow {
+    pub date: String,
+    pub merchant: String,
+    pub amount_cents: i64,
+    pub account: String,
+    pub category: String,
+}
+
+/// Shared query builder for both the `search_transactions` Copilot tool and
+/// the Copilot "Export as CSV" command — one canonical filter implementation
+/// instead of two SQL strings that could drift apart.
+pub fn search(
+    conn: &Connection,
+    query: &SearchTxnQuery,
+    limit: i64,
+) -> CoreResult<Vec<SearchTxnRow>> {
+    let mut sql = "SELECT t.merchant_raw, t.amount_cents, t.posted_at, COALESCE(c.label, 'Uncategorized'), COALESCE(a.name, 'Unknown account') \
+         FROM transactions t \
+         LEFT JOIN categories c ON c.id = t.category_id \
+         LEFT JOIN accounts a ON a.id = t.account_id \
+         WHERE 1=1".to_string();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(m) = &query.merchant {
+        sql.push_str(" AND lower(t.merchant_raw) LIKE lower(?)");
+        params.push(Box::new(format!("%{}%", m)));
+    }
+    if let Some(acct) = &query.account {
+        sql.push_str(" AND lower(a.name) LIKE lower(?)");
+        params.push(Box::new(format!("%{}%", acct)));
+    }
+    if let Some(s) = &query.start_date {
+        sql.push_str(" AND t.posted_at >= ?");
+        params.push(Box::new(s.clone()));
+    }
+    if let Some(e) = &query.end_date {
+        sql.push_str(" AND t.posted_at <= ?");
+        params.push(Box::new(format!("{}T23:59:59", e)));
+    }
+    if let Some(min) = query.min_amount_cents {
+        sql.push_str(" AND ABS(t.amount_cents) >= ?");
+        params.push(Box::new(min.abs()));
+    }
+    match query.direction.as_deref() {
+        Some("expense") => sql.push_str(" AND t.amount_cents < 0"),
+        Some("income") => sql.push_str(" AND t.amount_cents > 0"),
+        _ => {}
+    }
+    sql.push_str(" ORDER BY t.posted_at DESC LIMIT ?");
+    params.push(Box::new(limit));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(params.iter().map(|b| b.as_ref())),
+        |r| {
+            Ok(SearchTxnRow {
+                merchant: r.get(0)?,
+                amount_cents: r.get(1)?,
+                date: r.get(2)?,
+                category: r.get(3)?,
+                account: r.get(4)?,
+            })
+        },
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 pub fn update(
     conn: &mut Connection,
     id: &str,
