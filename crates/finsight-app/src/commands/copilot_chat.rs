@@ -8,7 +8,8 @@
 use crate::commands::agent::{
     build_toolset, enrich_agent_answer, is_usable_tool_answer, planner_answer_to_agent_answer,
     reasoning_result_to_agent_answer, validate_finance_answer, AgentAnswer, AgentChartBlock,
-    AgentChartPoint, AgentMetricBlock, AgentResponseBlock, AgentTableBlock,
+    AgentChartPoint, AgentMetricBlock, AgentRecatRow, AgentRecategorizationPreviewBlock,
+    AgentResponseBlock, AgentTableBlock,
 };
 use crate::error::{AppError, AppResult};
 use crate::AppState;
@@ -426,6 +427,10 @@ pub async fn stream_copilot_message(
     let mut answer: AgentAnswer = match tool_result {
         Ok(result) if is_usable_tool_answer(&result) => {
             let draft_actions = result.draft_actions.clone();
+            // Kept alive past the bundle-persistence closure (which moves
+            // `draft_actions`) so the recategorization preview can be synthesized
+            // from the same draft data once the bundle id exists.
+            let draft_actions_for_preview = draft_actions.clone();
             let question_for_db = enriched_question.clone();
             let content_for_db = result.content.clone();
             let reasoning_for_db = if result.reasoning.is_empty() {
@@ -477,6 +482,17 @@ pub async fn stream_copilot_message(
             let mut answer = reasoning_result_to_agent_answer(result, bundle_id);
             validate_finance_answer(&enriched_question, &mut answer);
             enrich_agent_answer(&mut answer);
+            // Append the recategorization preview AFTER enrich, so its presence
+            // doesn't suppress the prose/reasoning fallback blocks enrich only
+            // adds when response_blocks is otherwise empty. Uses answer.bundle_id
+            // since `bundle_id` was moved into reasoning_result_to_agent_answer.
+            if let Some(bid) = &answer.bundle_id {
+                if let Some(preview_block) =
+                    synthesize_recategorization_preview(&draft_actions_for_preview, bid)
+                {
+                    answer.response_blocks.push(preview_block);
+                }
+            }
             answer
         }
         Ok(result) => {
@@ -1101,6 +1117,55 @@ fn assistant_parts_json(answer: &AgentAnswer) -> String {
     })
 }
 
+/// Synthesizes a `RecategorizationPreview` block from a turn's draft actions.
+/// This is the ONE artifact kind the model never chooses via response_blocks —
+/// its bundle_id only exists after the action bundle is persisted (see
+/// insert_bundle/insert_item above), which happens after the reasoning loop
+/// returns. Reads the same preview data `draft_recategorization` already
+/// computed (act.rs) straight out of the draft action's payload_json.
+fn synthesize_recategorization_preview(
+    draft_actions: &[finsight_agent::reasoning::messages::AgentDraftAction],
+    bundle_id: &str,
+) -> Option<AgentResponseBlock> {
+    let draft = draft_actions
+        .iter()
+        .find(|d| d.action_kind == "recategorize_bulk")?;
+    let payload: serde_json::Value = serde_json::from_str(&draft.payload_json).ok()?;
+    let assignments = payload.get("assignments")?.as_array()?;
+    if assignments.is_empty() {
+        return None;
+    }
+
+    const PREVIEW_ROWS: usize = 5;
+    let rows: Vec<AgentRecatRow> = assignments
+        .iter()
+        .take(PREVIEW_ROWS)
+        .filter_map(|a| {
+            Some(AgentRecatRow {
+                merchant: a.get("merchant")?.as_str()?.to_string(),
+                category_key: a.get("categoryLabel")?.as_str()?.to_string(),
+                confidence: a
+                    .get("confidence")
+                    .and_then(|c| c.as_f64())
+                    .unwrap_or(0.7)
+                    .clamp(0.0, 1.0),
+            })
+        })
+        .collect();
+    if rows.is_empty() {
+        return None;
+    }
+
+    Some(AgentResponseBlock::RecategorizationPreview(
+        AgentRecategorizationPreviewBlock {
+            count: assignments.len() as i64,
+            more: (assignments.len().saturating_sub(rows.len())) as i64,
+            rows,
+            bundle_id: bundle_id.to_string(),
+        },
+    ))
+}
+
 fn response_block_part(id: String, block: &AgentResponseBlock) -> Value {
     json!({
         "type": "generative-ui",
@@ -1463,6 +1528,44 @@ fn build_question_with_history(text: &str, history: &[ChatHistoryEntry]) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn synthesize_recategorization_preview_builds_a_block_from_recategorize_bulk_draft_actions() {
+        let draft_actions = vec![finsight_agent::reasoning::messages::AgentDraftAction {
+            action_kind: "recategorize_bulk".to_string(),
+            payload_json: serde_json::json!({
+                "assignments": [
+                    { "transactionId": "t1", "categoryId": "c1", "categoryLabel": "Groceries", "merchant": "Trader Joe's", "confidence": 0.99 },
+                    { "transactionId": "t2", "categoryId": "c2", "categoryLabel": "Transport", "merchant": "Shell", "confidence": 0.97 },
+                ]
+            })
+            .to_string(),
+            rationale: "Recategorize 2 uncategorized transactions.".to_string(),
+            confidence: 0.98,
+        }];
+
+        let block = synthesize_recategorization_preview(&draft_actions, "bundle-xyz");
+        assert!(block.is_some());
+        let AgentResponseBlock::RecategorizationPreview(preview) = block.unwrap() else {
+            panic!("expected a RecategorizationPreview block");
+        };
+        assert_eq!(preview.bundle_id, "bundle-xyz");
+        assert_eq!(preview.count, 2);
+        assert_eq!(preview.rows.len(), 2);
+        assert_eq!(preview.rows[0].merchant, "Trader Joe's");
+        assert_eq!(preview.more, 0);
+    }
+
+    #[test]
+    fn synthesize_recategorization_preview_returns_none_without_a_recategorize_bulk_action() {
+        let draft_actions = vec![finsight_agent::reasoning::messages::AgentDraftAction {
+            action_kind: "set_budget".to_string(),
+            payload_json: "{}".to_string(),
+            rationale: "unrelated".to_string(),
+            confidence: 0.9,
+        }];
+        assert!(synthesize_recategorization_preview(&draft_actions, "bundle-xyz").is_none());
+    }
 
     #[test]
     fn small_table_is_within_artifact_bounds() {
