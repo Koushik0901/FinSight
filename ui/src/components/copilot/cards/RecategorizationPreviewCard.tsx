@@ -1,6 +1,6 @@
 import type { CopilotResponseBlock } from "../../../api/client";
 import { colorForCategoryLabel } from "../../../utils/categoryColor";
-import { ActionApprovalToolCard } from "../renderers";
+import { ActionApprovalToolCard } from "./ActionApprovalToolCard";
 import { ConfidenceBadge } from "./shared";
 
 type Block = Extract<CopilotResponseBlock, { kind: "recategorizationPreview" }>;
