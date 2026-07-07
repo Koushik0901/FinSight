@@ -25,6 +25,7 @@ import { CategoryBreakdownCard } from "./cards/CategoryBreakdownCard";
 import { AllocationSplitCard } from "./cards/AllocationSplitCard";
 import { RankedOptionsCard } from "./cards/RankedOptionsCard";
 import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
+import { RecategorizationPreviewCard } from "./cards/RecategorizationPreviewCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -154,7 +155,7 @@ function parseApprovalResult(value: unknown): { bundleId: string } | null {
   return typeof bundleId === "string" && bundleId.trim() ? { bundleId } : null;
 }
 
-function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
+export function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
   const { data: bundle, isLoading } = useActionBundle(bundleId);
   const approve = useApproveActionItem();
   const reject = useRejectActionItem();
@@ -381,6 +382,8 @@ export function FinSightResponseBlock({
       return <RankedOptionsCard block={block} />;
     case "comparisonBars":
       return <ComparisonBarsCard block={block} isRunning={isRunning} />;
+    case "recategorizationPreview":
+      return <RecategorizationPreviewCard block={block} />;
     default:
       return null;
   }

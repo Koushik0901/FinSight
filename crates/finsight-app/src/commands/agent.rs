@@ -605,6 +605,23 @@ pub struct AgentComparisonBarsBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRecatRow {
+    pub merchant: String,
+    pub category_key: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRecategorizationPreviewBlock {
+    pub count: i64,
+    pub rows: Vec<AgentRecatRow>,
+    pub more: i64,
+    pub bundle_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -627,6 +644,7 @@ pub enum AgentResponseBlock {
     AllocationSplit(AgentAllocationSplitBlock),
     RankedOptions(AgentRankedOptionsBlock),
     ComparisonBars(AgentComparisonBarsBlock),
+    RecategorizationPreview(AgentRecategorizationPreviewBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -752,6 +770,9 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.prior.label.trim().is_empty()
                 && b.current.amount_cents >= 0
                 && b.prior.amount_cents >= 0
+        }
+        AgentResponseBlock::RecategorizationPreview(b) => {
+            !b.bundle_id.trim().is_empty() && !b.rows.is_empty() && b.rows.len() <= 20
         }
     }
 }
@@ -2089,6 +2110,39 @@ mod tests {
                 label: "Apr".to_string(),
                 amount_cents: 80,
             },
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn recategorization_preview_round_trips_and_validates() {
+        let block = AgentResponseBlock::RecategorizationPreview(AgentRecategorizationPreviewBlock {
+            count: 23,
+            rows: vec![AgentRecatRow {
+                merchant: "Trader Joe's".to_string(),
+                category_key: "Groceries".to_string(),
+                confidence: 0.99,
+            }],
+            more: 18,
+            bundle_id: "bundle-abc".to_string(),
+        });
+        let json = serde_json::to_value(&block).unwrap();
+        assert_eq!(json["kind"], "recategorizationPreview");
+        let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
+        assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn recategorization_preview_with_empty_bundle_id_is_invalid() {
+        let block = AgentResponseBlock::RecategorizationPreview(AgentRecategorizationPreviewBlock {
+            count: 1,
+            rows: vec![AgentRecatRow {
+                merchant: "X".to_string(),
+                category_key: "Y".to_string(),
+                confidence: 0.9,
+            }],
+            more: 0,
+            bundle_id: "".to_string(),
         });
         assert!(!valid_response_block(&block));
     }

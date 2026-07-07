@@ -419,9 +419,33 @@ async createGoal(input: NewGoalInput) : Promise<Result<GoalDto, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Set a manual goal's balance to an absolute value by appending the *delta* as a
+ * ledger contribution, keeping `current_cents` a derived total. Existing callers
+ * that pass an absolute balance stay correct without double-counting.
+ */
 async updateGoalBalance(id: string, currentCents: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_goal_balance", { id, currentCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Append a contribution (positive) or withdrawal (negative) to a goal's ledger.
+ */
+async contributeToGoal(id: string, amountCents: number, note: string | null, source: string | null) : Promise<Result<GoalContributionDto, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("contribute_to_goal", { id, amountCents, note, source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listGoalContributions(goalId: string) : Promise<Result<GoalContributionDto[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_goal_contributions", { goalId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1419,9 +1443,11 @@ export type AgentMetricBlock = { label: string; value: string; detail: string | 
 export type AgentMoneyPoint = { label: string; amountCents: number }
 export type AgentRankedOption = { rankTone: string; label: string; detail: string; rationale: string }
 export type AgentRankedOptionsBlock = { title: string; options: AgentRankedOption[] }
+export type AgentRecatRow = { merchant: string; categoryKey: string; confidence: number }
+export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock)
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
@@ -1525,6 +1551,7 @@ export type ExecutionItemResult = { itemId: string; actionKind: string; status: 
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
 export type FinancialAssumptionsInput = { targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
 export type FinancialMetrics = { liquidCents: number; investedCents: number; debtCents: number; emergencyFundCents: number; netWorthCents: number; accountsWithUnknownBalance: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; netMonthlyCents: number; rollingSavingsRatePct: number; thisMonthIncomeCents: number; thisMonthExpenseCents: number; thisMonthNetCents: number; thisMonthSavingsRatePct: number; emergencyFundMonths: number; runwayDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
+export type GoalContributionDto = { id: string; goalId: string; amountCents: number; note: string | null; source: string; createdAt: string }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
 export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: number; debtRatioPts: number; goalProgressPts: number; budgetAdherencePts: number; savingsRatePct: number; emergencyFundMonths: number; debtToIncomePct: number; avgGoalPct: number; budgetAdherencePct: number }

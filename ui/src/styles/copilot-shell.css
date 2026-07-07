@@ -134,6 +134,11 @@
 .cp-tx-amt { font-family: var(--mono); font-size: 14px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .cp-tx-more { padding: 12px 0 0; font-size: 12px; color: var(--ink-mute); font-family: var(--mono); }
 
+.cp-recat { display: flex; flex-direction: column; gap: 2px; }
+.cp-recat-row { display: grid; grid-template-columns: 1fr auto 110px; gap: 11px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--hairline); }
+.cp-recat-merchant { font-size: 13.5px; color: var(--ink); }
+.cp-recat-cat { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 999px; border: 1px solid; background: var(--surface-2); }
+
 .cp-verdict-hero { display: flex; align-items: baseline; gap: 16px; padding: 8px 0 18px; }
 .cp-verdict-big { font-size: 64px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; }
 .cp-verdict-big.pos { color: var(--accent); }

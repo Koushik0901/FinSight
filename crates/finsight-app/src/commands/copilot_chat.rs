@@ -1130,6 +1130,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::AllocationSplit(_) => true,
         AgentResponseBlock::RankedOptions(_) => true,
         AgentResponseBlock::ComparisonBars(_) => true,
+        AgentResponseBlock::RecategorizationPreview(_) => true,
     }
 }
 
@@ -1224,6 +1225,11 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::ComparisonBars(b) => {
             label_ok(&b.title) && label_ok(&b.current.label) && label_ok(&b.prior.label)
+        }
+        AgentResponseBlock::RecategorizationPreview(b) => {
+            b.rows.len() <= 20
+                && b.rows.iter().all(|r| label_ok(&r.merchant) && label_ok(&r.category_key))
+                && label_ok(&b.bundle_id)
         }
     }
 }
