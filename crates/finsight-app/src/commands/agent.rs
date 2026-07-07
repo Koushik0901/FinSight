@@ -772,7 +772,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && b.prior.amount_cents >= 0
         }
         AgentResponseBlock::RecategorizationPreview(b) => {
-            !b.bundle_id.trim().is_empty() && !b.rows.is_empty() && b.rows.len() <= 20
+            !b.bundle_id.trim().is_empty()
+                && b.count >= 0
+                && b.more >= 0
+                && !b.rows.is_empty()
+                && b.rows.len() <= 20
+                && b.rows.iter().all(|r| (0.0..=1.0).contains(&r.confidence))
         }
     }
 }
@@ -2143,6 +2148,21 @@ mod tests {
             }],
             more: 0,
             bundle_id: "".to_string(),
+        });
+        assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn recategorization_preview_with_out_of_range_confidence_is_invalid() {
+        let block = AgentResponseBlock::RecategorizationPreview(AgentRecategorizationPreviewBlock {
+            count: 1,
+            rows: vec![AgentRecatRow {
+                merchant: "X".to_string(),
+                category_key: "Y".to_string(),
+                confidence: 1.5,
+            }],
+            more: 0,
+            bundle_id: "bundle-abc".to_string(),
         });
         assert!(!valid_response_block(&block));
     }

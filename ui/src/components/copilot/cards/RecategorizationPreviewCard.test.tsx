@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createWrapper } from "../../../test-utils";
+import { useActionBundle } from "../../../api/hooks/copilot";
 import { RecategorizationPreviewCard } from "./RecategorizationPreviewCard";
 
 vi.mock("../../../api/hooks/copilot", () => ({
@@ -28,5 +29,7 @@ describe("RecategorizationPreviewCard", () => {
     expect(screen.getByText("Groceries")).toBeInTheDocument();
     expect(screen.getByText("99%")).toBeInTheDocument();
     expect(screen.getByText(/\+ 18 more/)).toBeInTheDocument();
+    // The delegated approval flow must be wired to the backend-issued bundle id.
+    expect(useActionBundle).toHaveBeenCalledWith("bundle-abc");
   });
 });
