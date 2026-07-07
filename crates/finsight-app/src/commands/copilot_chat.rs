@@ -1202,6 +1202,12 @@ fn search_query_from_args(args: &Value) -> AgentTxnSearchQuery {
 /// Attaches the turn's captured `search_transactions` filters to every
 /// transactionTable block that doesn't already carry a query, so the card's CSV
 /// export re-runs the exact query that produced the table.
+///
+/// Assumes the common ~1:1 table-to-search relationship the system prompt
+/// encourages: only the last `search_transactions` call's args are captured, so
+/// a turn that produced multiple tables from multiple distinct searches would
+/// attach the last search's filters to all of them. Acceptable given how rare
+/// that shape is; revisit if multi-search turns become common.
 fn attach_search_query_to_transaction_tables(
     answer: &mut AgentAnswer,
     captured_search_args: &Mutex<Option<Value>>,
@@ -1685,6 +1691,25 @@ mod tests {
             panic!();
         };
         assert_eq!(t.query.as_ref().unwrap().direction, None);
+
+        // A block that already carries a query is left untouched.
+        let mut answer = transaction_table_answer(Some(AgentTxnSearchQuery {
+            merchant: Some("Costco".into()),
+            account: None,
+            start_date: None,
+            end_date: None,
+            min_amount_cents: None,
+            direction: None,
+        }));
+        attach_search_query_to_transaction_tables(
+            &mut answer,
+            &Mutex::new(Some(serde_json::json!({ "account": "amex" }))),
+        );
+        let AgentResponseBlock::TransactionTable(t) = &answer.response_blocks[0] else {
+            panic!();
+        };
+        assert_eq!(t.query.as_ref().unwrap().merchant.as_deref(), Some("Costco"));
+        assert_eq!(t.query.as_ref().unwrap().account, None);
     }
 
     #[test]
