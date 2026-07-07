@@ -1557,6 +1557,36 @@ mod tests {
     }
 
     #[test]
+    fn synthesize_recategorization_preview_caps_rows_at_five_and_reports_the_remainder() {
+        let assignments: Vec<serde_json::Value> = (0..7)
+            .map(|i| {
+                serde_json::json!({
+                    "transactionId": format!("t{i}"),
+                    "categoryId": format!("c{i}"),
+                    "categoryLabel": "Groceries",
+                    "merchant": format!("Merchant {i}"),
+                    "confidence": 0.9
+                })
+            })
+            .collect();
+        let draft_actions = vec![finsight_agent::reasoning::messages::AgentDraftAction {
+            action_kind: "recategorize_bulk".to_string(),
+            payload_json: serde_json::json!({ "assignments": assignments }).to_string(),
+            rationale: "Recategorize 7 uncategorized transactions.".to_string(),
+            confidence: 0.9,
+        }];
+
+        let AgentResponseBlock::RecategorizationPreview(preview) =
+            synthesize_recategorization_preview(&draft_actions, "bundle-xyz").unwrap()
+        else {
+            panic!("expected a RecategorizationPreview block");
+        };
+        assert_eq!(preview.count, 7);
+        assert_eq!(preview.rows.len(), 5);
+        assert_eq!(preview.more, 2);
+    }
+
+    #[test]
     fn synthesize_recategorization_preview_returns_none_without_a_recategorize_bulk_action() {
         let draft_actions = vec![finsight_agent::reasoning::messages::AgentDraftAction {
             action_kind: "set_budget".to_string(),
