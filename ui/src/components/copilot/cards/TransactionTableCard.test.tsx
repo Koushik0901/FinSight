@@ -31,6 +31,7 @@ describe("TransactionTableCard", () => {
             { date: "2026-05-10", merchant: "PG&E", categoryKey: "Utilities", amountCents: 22_000, flag: "2.1× avg" },
           ],
           more: 40,
+          query: null,
         }}
       />
     );
@@ -41,7 +42,23 @@ describe("TransactionTableCard", () => {
     expect(screen.getByText(/\+ 40 more/)).toBeInTheDocument();
   });
 
-  it("exports CSV with the original tool-call args mapped to camelCase params", async () => {
+  it("does not offer an export when the block carries no query", () => {
+    render(
+      <TransactionTableCard
+        block={{
+          kind: "transactionTable",
+          count: 3,
+          totalCents: 12_000,
+          rows: [{ date: "2026-05-03", merchant: "Costco", categoryKey: "Groceries", amountCents: 9_999, flag: null }],
+          more: 2,
+          query: null,
+        }}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /Export/ })).not.toBeInTheDocument();
+  });
+
+  it("exports CSV with the block's own captured query, re-running the exact search", async () => {
     render(
       <TransactionTableCard
         block={{
@@ -52,12 +69,14 @@ describe("TransactionTableCard", () => {
             { date: "2026-05-03", merchant: "Costco", categoryKey: "Groceries", amountCents: 9_999, flag: null },
           ],
           more: 2,
-        }}
-        toolArgs={{
-          account: "amex",
-          min_amount_cents: 6000,
-          direction: "expense",
-          start_date: "2026-01-01",
+          query: {
+            merchant: null,
+            account: "amex",
+            startDate: "2026-01-01",
+            endDate: null,
+            minAmountCents: 6000,
+            direction: "expense",
+          },
         }}
       />
     );

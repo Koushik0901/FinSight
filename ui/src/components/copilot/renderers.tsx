@@ -100,7 +100,7 @@ export function CopilotToolCard({
       ? (artifact.props.block as CopilotResponseBlock | undefined)
       : undefined;
     if (block) {
-      return <FinSightResponseBlock block={block} isRunning={messageIsRunning} toolArgs={args} />;
+      return <FinSightResponseBlock block={block} isRunning={messageIsRunning} />;
     }
   }
 
@@ -350,11 +350,9 @@ function CalloutBlock({ tone, title, body }: Extract<CopilotResponseBlock, { kin
 export function FinSightResponseBlock({
   block,
   isRunning,
-  toolArgs,
 }: {
   block: CopilotResponseBlock;
   isRunning: boolean;
-  toolArgs?: Record<string, unknown>;
 }) {
   switch (block.kind) {
     case "markdown":
@@ -373,7 +371,7 @@ export function FinSightResponseBlock({
     case "callout":
       return <CalloutBlock {...block} />;
     case "transactionTable":
-      return <TransactionTableCard block={block} toolArgs={toolArgs} />;
+      return <TransactionTableCard block={block} />;
     case "affordabilityVerdict":
       return <AffordabilityVerdictCard block={block} />;
     case "categoryBreakdown":

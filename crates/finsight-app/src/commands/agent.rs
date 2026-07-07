@@ -515,6 +515,22 @@ pub struct AgentTxRow {
     pub flag: Option<String>,
 }
 
+/// The search filters that produced a transaction table, carried on the block
+/// itself so the "Export as CSV" action can re-run the exact same query. The
+/// model never populates this — it's attached server-side from the turn's
+/// `search_transactions` tool call (see `copilot_chat.rs`), so the block is
+/// self-describing and the export never depends on message structure.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTxnSearchQuery {
+    pub merchant: Option<String>,
+    pub account: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub min_amount_cents: Option<i64>,
+    pub direction: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTransactionTableBlock {
@@ -522,6 +538,11 @@ pub struct AgentTransactionTableBlock {
     pub total_cents: i64,
     pub rows: Vec<AgentTxRow>,
     pub more: i64,
+    /// Present when the table came from a `search_transactions` call whose
+    /// filters were captured server-side; drives the CSV export. `None` for a
+    /// table with no reliably-known originating query (export is not offered).
+    #[serde(default)]
+    pub query: Option<AgentTxnSearchQuery>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -1912,11 +1933,36 @@ mod tests {
                 flag: None,
             }],
             more: 32,
+            query: Some(AgentTxnSearchQuery {
+                merchant: None,
+                account: Some("Amex".to_string()),
+                start_date: Some("2026-05-01".to_string()),
+                end_date: Some("2026-05-31".to_string()),
+                min_amount_cents: Some(6_000),
+                direction: Some("expense".to_string()),
+            }),
         });
         let json = serde_json::to_value(&block).unwrap();
         assert_eq!(json["kind"], "transactionTable");
+        assert_eq!(json["query"]["account"], "Amex");
         let back: AgentResponseBlock = serde_json::from_value(json).unwrap();
         assert!(valid_response_block(&back));
+    }
+
+    #[test]
+    fn transaction_table_block_without_query_deserializes_to_none() {
+        // The model emits transactionTable with no `query` key; serde must
+        // default the field to None rather than failing to parse.
+        let raw = serde_json::json!({
+            "kind": "transactionTable",
+            "count": 3, "totalCents": 9000, "more": 0,
+            "rows": [{ "date": "2026-05-03", "merchant": "M", "categoryKey": "Groceries", "amountCents": 3000, "flag": null }]
+        });
+        let back: AgentResponseBlock = serde_json::from_value(raw).unwrap();
+        let AgentResponseBlock::TransactionTable(t) = back else {
+            panic!("expected a TransactionTable block");
+        };
+        assert!(t.query.is_none());
     }
 
     #[test]
@@ -1926,6 +1972,7 @@ mod tests {
             total_cents: 0,
             rows: vec![],
             more: 0,
+            query: None,
         });
         assert!(!valid_response_block(&block));
     }

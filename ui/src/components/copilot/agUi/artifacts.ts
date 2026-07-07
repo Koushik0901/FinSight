@@ -74,6 +74,16 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       .min(1)
       .max(MAX_TABLE_ROWS),
     more: z.number().int().nonnegative(),
+    query: z
+      .object({
+        merchant: shortString.nullable(),
+        account: shortString.nullable(),
+        startDate: shortString.nullable(),
+        endDate: shortString.nullable(),
+        minAmountCents: z.number().int().nullable(),
+        direction: shortString.nullable(),
+      })
+      .nullish(),
   }),
   z.object({
     kind: z.literal("affordabilityVerdict"),

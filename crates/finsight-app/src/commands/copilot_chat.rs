@@ -9,7 +9,7 @@ use crate::commands::agent::{
     build_toolset, enrich_agent_answer, is_usable_tool_answer, planner_answer_to_agent_answer,
     reasoning_result_to_agent_answer, validate_finance_answer, AgentAnswer, AgentChartBlock,
     AgentChartPoint, AgentMetricBlock, AgentRecatRow, AgentRecategorizationPreviewBlock,
-    AgentResponseBlock, AgentTableBlock,
+    AgentResponseBlock, AgentTableBlock, AgentTxnSearchQuery,
 };
 use crate::error::{AppError, AppResult};
 use crate::AppState;
@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 use specta::Type;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 use tauri::Emitter;
@@ -324,6 +324,12 @@ pub async fn stream_copilot_message(
     let sequence_for_engine = Arc::clone(&sequence);
     let live_tool_frames_for_engine = Arc::clone(&emitted_live_tool_frames);
     let command_run_id = run_id.clone();
+    // Capture the arguments of the turn's `search_transactions` call so a
+    // transactionTable block it produces can carry them (see the enrichment
+    // after the answer is built) — that's what makes "Export as CSV" re-run the
+    // exact same query instead of dumping the whole table.
+    let captured_search_args = Arc::new(Mutex::new(None::<serde_json::Value>));
+    let captured_search_args_for_engine = Arc::clone(&captured_search_args);
     let tool_result = run(&db, move |conn| {
         #[cfg(debug_assertions)]
         {
@@ -342,6 +348,7 @@ pub async fn stream_copilot_message(
         let event_parent_message_id = parent_message_id_for_engine.clone();
         let event_sequence = Arc::clone(&sequence_for_engine);
         let emitted_tool_frames = Arc::clone(&live_tool_frames_for_engine);
+        let captured_search_args_for_events = Arc::clone(&captured_search_args_for_engine);
         rt.block_on(async move {
             tokio::time::timeout(
                 Duration::from_secs(30),
@@ -367,6 +374,11 @@ pub async fn stream_copilot_message(
                             );
                         }
                         ReasoningEngineEvent::ToolCallStart { call } => {
+                            if call.name == "search_transactions" {
+                                if let Ok(mut slot) = captured_search_args_for_events.lock() {
+                                    *slot = Some(call.arguments.clone());
+                                }
+                            }
                             emitted_tool_frames.store(true, Ordering::Relaxed);
                             emit_copilot_frame(
                                 &app_for_events,
@@ -493,6 +505,10 @@ pub async fn stream_copilot_message(
                     answer.response_blocks.push(preview_block);
                 }
             }
+            // Attach the captured search_transactions filters to any
+            // transactionTable block, so its "Export as CSV" re-runs the exact
+            // same query rather than exporting the whole table.
+            attach_search_query_to_transaction_tables(&mut answer, &captured_search_args);
             answer
         }
         Ok(result) => {
@@ -1166,6 +1182,46 @@ fn synthesize_recategorization_preview(
     ))
 }
 
+/// Maps a raw `search_transactions` tool-call arguments object into the typed
+/// query the transactionTable block carries. Mirrors the tool's own argument
+/// reading (see `read.rs`), including dropping a `"any"` direction.
+fn search_query_from_args(args: &Value) -> AgentTxnSearchQuery {
+    AgentTxnSearchQuery {
+        merchant: args["merchant"].as_str().map(String::from),
+        account: args["account"].as_str().map(String::from),
+        start_date: args["start_date"].as_str().map(String::from),
+        end_date: args["end_date"].as_str().map(String::from),
+        min_amount_cents: args["min_amount_cents"].as_i64(),
+        direction: args["direction"]
+            .as_str()
+            .filter(|d| *d != "any")
+            .map(String::from),
+    }
+}
+
+/// Attaches the turn's captured `search_transactions` filters to every
+/// transactionTable block that doesn't already carry a query, so the card's CSV
+/// export re-runs the exact query that produced the table.
+fn attach_search_query_to_transaction_tables(
+    answer: &mut AgentAnswer,
+    captured_search_args: &Mutex<Option<Value>>,
+) {
+    let Ok(slot) = captured_search_args.lock() else {
+        return;
+    };
+    let Some(args) = slot.as_ref() else {
+        return;
+    };
+    let query = search_query_from_args(args);
+    for block in answer.response_blocks.iter_mut() {
+        if let AgentResponseBlock::TransactionTable(t) = block {
+            if t.query.is_none() {
+                t.query = Some(query.clone());
+            }
+        }
+    }
+}
+
 fn response_block_part(id: String, block: &AgentResponseBlock) -> Value {
     json!({
         "type": "generative-ui",
@@ -1554,6 +1610,81 @@ mod tests {
         assert_eq!(preview.rows.len(), 2);
         assert_eq!(preview.rows[0].merchant, "Trader Joe's");
         assert_eq!(preview.more, 0);
+    }
+
+    fn transaction_table_answer(query: Option<AgentTxnSearchQuery>) -> AgentAnswer {
+        let mut answer = AgentAnswer {
+            prose: String::new(),
+            reasoning: String::new(),
+            plan: Vec::new(),
+            trace: Vec::new(),
+            changes: Vec::new(),
+            action_label: None,
+            action_path: None,
+            bundle_id: None,
+            assumptions: Vec::new(),
+            data_sources: Vec::new(),
+            missing_data: Vec::new(),
+            alternatives: Vec::new(),
+            follow_up_questions: Vec::new(),
+            response_blocks: vec![AgentResponseBlock::TransactionTable(
+                crate::commands::agent::AgentTransactionTableBlock {
+                    count: 1,
+                    total_cents: 9000,
+                    rows: vec![crate::commands::agent::AgentTxRow {
+                        date: "2026-05-03".into(),
+                        merchant: "Costco".into(),
+                        category_key: "Groceries".into(),
+                        amount_cents: 9000,
+                        flag: None,
+                    }],
+                    more: 0,
+                    query,
+                },
+            )],
+        };
+        answer.response_blocks.shrink_to_fit();
+        answer
+    }
+
+    #[test]
+    fn attaches_captured_search_query_to_transaction_table_block() {
+        let mut answer = transaction_table_answer(None);
+        let captured = Mutex::new(Some(serde_json::json!({
+            "account": "amex", "min_amount_cents": 6000, "direction": "expense", "start_date": "2026-05-01"
+        })));
+        attach_search_query_to_transaction_tables(&mut answer, &captured);
+        let AgentResponseBlock::TransactionTable(t) = &answer.response_blocks[0] else {
+            panic!("expected a TransactionTable block");
+        };
+        let q = t.query.as_ref().expect("query should be attached");
+        assert_eq!(q.account.as_deref(), Some("amex"));
+        assert_eq!(q.min_amount_cents, Some(6000));
+        assert_eq!(q.direction.as_deref(), Some("expense"));
+        assert_eq!(q.start_date.as_deref(), Some("2026-05-01"));
+        assert_eq!(q.merchant, None);
+    }
+
+    #[test]
+    fn does_not_overwrite_an_existing_transaction_table_query_or_invent_one() {
+        // No captured args → query stays None (no export offered).
+        let mut answer = transaction_table_answer(None);
+        attach_search_query_to_transaction_tables(&mut answer, &Mutex::new(None));
+        let AgentResponseBlock::TransactionTable(t) = &answer.response_blocks[0] else {
+            panic!();
+        };
+        assert!(t.query.is_none());
+
+        // "any" direction is dropped, matching the tool's own arg handling.
+        let mut answer = transaction_table_answer(None);
+        attach_search_query_to_transaction_tables(
+            &mut answer,
+            &Mutex::new(Some(serde_json::json!({ "direction": "any" }))),
+        );
+        let AgentResponseBlock::TransactionTable(t) = &answer.response_blocks[0] else {
+            panic!();
+        };
+        assert_eq!(t.query.as_ref().unwrap().direction, None);
     }
 
     #[test]

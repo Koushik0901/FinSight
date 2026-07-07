@@ -1465,8 +1465,22 @@ export type AgentScenarioAlternative = { name: string; summary: string; tradeoff
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
 export type AgentTableBlock = { title: string | null; columns: string[]; rows: string[][] }
-export type AgentTransactionTableBlock = { count: number; totalCents: number; rows: AgentTxRow[]; more: number }
+export type AgentTransactionTableBlock = { count: number; totalCents: number; rows: AgentTxRow[]; more: number; 
+/**
+ * Present when the table came from a `search_transactions` call whose
+ * filters were captured server-side; drives the CSV export. `None` for a
+ * table with no reliably-known originating query (export is not offered).
+ */
+query?: AgentTxnSearchQuery | null }
 export type AgentTxRow = { date: string; merchant: string; categoryKey: string; amountCents: number; flag: string | null }
+/**
+ * The search filters that produced a transaction table, carried on the block
+ * itself so the "Export as CSV" action can re-run the exact same query. The
+ * model never populates this — it's attached server-side from the turn's
+ * `search_transactions` tool call (see `copilot_chat.rs`), so the block is
+ * self-describing and the export never depends on message structure.
+ */
+export type AgentTxnSearchQuery = { merchant: string | null; account: string | null; startDate: string | null; endDate: string | null; minAmountCents: number | null; direction: string | null }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);

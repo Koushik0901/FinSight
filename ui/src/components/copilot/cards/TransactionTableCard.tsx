@@ -8,25 +8,25 @@ import Button from "../../Button";
 
 type Block = Extract<CopilotResponseBlock, { kind: "transactionTable" }>;
 
-export function TransactionTableCard({
-  block,
-  toolArgs,
-}: {
-  block: Block;
-  toolArgs?: Record<string, unknown>;
-}) {
+export function TransactionTableCard({ block }: { block: Block }) {
   const [exporting, setExporting] = useState(false);
+  // The originating search filters are carried on the block itself (attached
+  // server-side from the search_transactions call), so the export re-runs the
+  // exact same query. Absent when the table has no reliably-known query, in
+  // which case we don't offer an export rather than dumping the whole table.
+  const query = block.query;
 
   async function handleExport() {
+    if (!query) return;
     setExporting(true);
     try {
       const result = await commands.exportSearchTransactionsCsv({
-        merchant: (toolArgs?.merchant as string) ?? null,
-        account: (toolArgs?.account as string) ?? null,
-        startDate: (toolArgs?.start_date as string) ?? null,
-        endDate: (toolArgs?.end_date as string) ?? null,
-        minAmountCents: (toolArgs?.min_amount_cents as number) ?? null,
-        direction: (toolArgs?.direction as string) ?? null,
+        merchant: query.merchant,
+        account: query.account,
+        startDate: query.startDate,
+        endDate: query.endDate,
+        minAmountCents: query.minAmountCents,
+        direction: query.direction,
       });
       if (result.status === "ok") {
         if (result.data) {
@@ -67,17 +67,19 @@ export function TransactionTableCard({
           </div>
         )}
       </div>
-      <div style={{ marginTop: 14 }}>
-        <Button
-          variant="primary"
-          size="sm"
-          loading={exporting}
-          disabled={exporting}
-          onClick={() => void handleExport()}
-        >
-          Export {block.count} as CSV
-        </Button>
-      </div>
+      {query && (
+        <div style={{ marginTop: 14 }}>
+          <Button
+            variant="primary"
+            size="sm"
+            loading={exporting}
+            disabled={exporting}
+            onClick={() => void handleExport()}
+          >
+            Export {block.count} as CSV
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
