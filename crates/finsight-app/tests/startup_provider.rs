@@ -71,102 +71,30 @@ fn load_completion_provider_config_round_trip() {
     }
 }
 
-/// Seeding an OpenRouter provider from a key writes the expected config,
-/// stores the key ONLY in the keychain (never in the settings row), and
-/// returns true.
+/// Guard: no test in this crate may ever reference the PRODUCTION keychain
+/// service ("com.finsight" + ".llm"). Temp DBs isolate SQLite but NOT the OS
+/// keychain — earlier seed tests here wrote "sk-or-test…" garbage into the
+/// real Windows Credential Manager slot on every `cargo test` run, silently
+/// clobbering the user's saved OpenRouter key and making the live app 401.
+/// Tests that need a keychain must use a dedicated test service name (see
+/// finsight-core's keychain tests, which use "com.finsight.test.keychain").
 #[test]
-fn seed_openrouter_provider_writes_config_without_leaking_key() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("seed.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
-    let secret = "sk-or-test-DEADBEEF-should-not-appear-in-settings";
-    let seeded = finsight_app::seed_openrouter_provider_if_unconfigured(&db, secret).unwrap();
-    assert!(seeded, "should seed when unconfigured");
-
-    let conn = db.get().unwrap();
-    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").unwrap().unwrap();
-    assert_eq!(cfg["kind"], "openai_compat");
-    assert_eq!(cfg["preset"], "openrouter");
-    assert_eq!(cfg["base_url"], "https://openrouter.ai/api/v1");
-    assert_eq!(cfg["model"], "google/gemma-4-31b-it");
-
-    // Secret hygiene: the raw key must never be serialized into the settings row.
-    let settings_blob = serde_json::to_string(&cfg).unwrap();
-    assert!(
-        !settings_blob.contains(secret),
-        "API key must not appear in the completion_provider settings row"
-    );
-}
-
-/// Seeding must NOT overwrite a user-configured provider (override contract).
-#[test]
-fn seed_openrouter_provider_preserves_user_override() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("override.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
-    {
-        let conn = db.get().unwrap();
-        settings::set(
-            &conn,
-            "completion_provider",
-            &serde_json::json!({
-                "kind": "ollama",
-                "base_url": "http://localhost:11434",
-                "model": "llama3.2"
-            }),
-        )
-        .unwrap();
+fn no_test_touches_the_production_llm_keychain_service() {
+    // Assembled at runtime so this test's own source doesn't match itself.
+    let forbidden = format!("com.finsight{}", ".llm");
+    let tests_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    for entry in std::fs::read_dir(&tests_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            let contents = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                !contents.contains(&forbidden),
+                "{} references the production LLM keychain service — \
+                 tests must never read or write it",
+                path.display()
+            );
+        }
     }
-
-    let seeded = finsight_app::seed_openrouter_provider_if_unconfigured(&db, "sk-or-ignored").unwrap();
-    assert!(!seeded, "must not seed over an existing provider");
-
-    let conn = db.get().unwrap();
-    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").unwrap().unwrap();
-    assert_eq!(cfg["kind"], "ollama", "user override must be preserved");
-}
-
-/// An explicit `unconfigured` provider row is treated as seedable.
-#[test]
-fn seed_openrouter_provider_seeds_over_unconfigured() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("unconf.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
-    {
-        let conn = db.get().unwrap();
-        settings::set(
-            &conn,
-            "completion_provider",
-            &serde_json::json!({ "kind": "unconfigured" }),
-        )
-        .unwrap();
-    }
-
-    let seeded = finsight_app::seed_openrouter_provider_if_unconfigured(&db, "sk-or-test").unwrap();
-    assert!(seeded, "unconfigured row should be replaced");
-    let conn = db.get().unwrap();
-    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").unwrap().unwrap();
-    assert_eq!(cfg["kind"], "openai_compat");
-}
-
-/// An empty key is a no-op (missing/invalid key handling).
-#[test]
-fn seed_openrouter_provider_ignores_empty_key() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("empty.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
-    let seeded = finsight_app::seed_openrouter_provider_if_unconfigured(&db, "   ").unwrap();
-    assert!(!seeded, "empty key must not seed a provider");
-    let loaded = finsight_app::load_completion_provider_config(&db).unwrap();
-    assert!(matches!(loaded, CompletionProviderConfig::Unconfigured));
 }
 
 /// Verifies that load_completion_provider_config returns Unconfigured when absent.

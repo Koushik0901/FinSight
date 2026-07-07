@@ -63,117 +63,6 @@ pub fn migrate_provider_settings(db: &Db) -> Result<(), finsight_core::CoreError
     Ok(())
 }
 
-/// Default OpenRouter base URL used when seeding a provider from `.env`.
-pub const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
-/// Default model used when seeding a provider from `.env`.
-pub const DEFAULT_OPENROUTER_MODEL: &str = "google/gemma-4-31b-it";
-/// Keychain preset id under which the OpenRouter key is stored.
-pub const OPENROUTER_PRESET: &str = "openrouter";
-
-/// Read a single key from a `.env` file without pulling in a dotenv crate or
-/// polluting the process environment with every entry. Walks up from `start`
-/// looking for `.env`, then returns the value of `wanted` (unquoted, trimmed).
-///
-/// SECURITY: the returned value is a secret. Callers must never log, print, or
-/// serialize it into settings/error output.
-fn read_env_key_from_file(start: &std::path::Path, wanted: &str) -> Option<String> {
-    let mut dir = Some(start);
-    while let Some(d) = dir {
-        let candidate = d.join(".env");
-        if let Ok(contents) = std::fs::read_to_string(&candidate) {
-            for line in contents.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let line = line.strip_prefix("export ").unwrap_or(line);
-                let Some((k, v)) = line.split_once('=') else {
-                    continue;
-                };
-                if k.trim() != wanted {
-                    continue;
-                }
-                let v = v.trim().trim_matches(|c| c == '"' || c == '\'').trim();
-                if v.is_empty() {
-                    return None;
-                }
-                return Some(v.to_string());
-            }
-        }
-        dir = d.parent();
-    }
-    None
-}
-
-/// Resolve the OpenRouter API key from the process environment first, then a
-/// `.env` file discovered by walking up from the current working directory.
-fn resolve_openrouter_key() -> Option<String> {
-    if let Ok(k) = std::env::var("OPENROUTER_API_KEY") {
-        let k = k.trim();
-        if !k.is_empty() {
-            return Some(k.to_string());
-        }
-    }
-    let cwd = std::env::current_dir().ok()?;
-    read_env_key_from_file(&cwd, "OPENROUTER_API_KEY")
-}
-
-/// True when `completion_provider` is present and not `unconfigured`.
-fn provider_already_configured(db: &Db) -> Result<bool, finsight_core::CoreError> {
-    let conn = db.get()?;
-    let existing: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
-    Ok(existing
-        .as_ref()
-        .and_then(|v| v.get("kind"))
-        .and_then(|k| k.as_str())
-        .map(|kind| kind != "unconfigured")
-        .unwrap_or(false))
-}
-
-/// Seed an OpenRouter/Gemma provider using `key`, but only when no provider is
-/// configured yet (preserving any user override). Stores the secret in the OS
-/// keychain and writes an `openai_compat`/`openrouter` config pointing at the
-/// default Gemma model. The key never touches the settings row or logs.
-///
-/// Returns `Ok(true)` when a new provider was seeded.
-pub fn seed_openrouter_provider_if_unconfigured(
-    db: &Db,
-    key: &str,
-) -> Result<bool, finsight_core::CoreError> {
-    if key.trim().is_empty() || provider_already_configured(db)? {
-        return Ok(false);
-    }
-    // Store the secret in the OS keychain (never in the settings row).
-    finsight_core::keychain::set_key("com.finsight.llm", OPENROUTER_PRESET, key.trim())?;
-
-    let cfg = serde_json::json!({
-        "kind": "openai_compat",
-        "preset": OPENROUTER_PRESET,
-        "base_url": OPENROUTER_BASE_URL,
-        "model": DEFAULT_OPENROUTER_MODEL,
-    });
-    let conn = db.get()?;
-    settings::set(&conn, "completion_provider", &cfg)?;
-    Ok(true)
-}
-
-/// Bootstrap an OpenRouter/Gemma provider from `.env` on startup.
-///
-/// Only seeds when `completion_provider` is missing or `unconfigured`. Resolves
-/// the key from the process environment, then a `.env` file discovered by
-/// walking up from the current working directory.
-///
-/// Returns `Ok(true)` when a new provider was seeded.
-pub fn bootstrap_env_provider(db: &Db) -> Result<bool, finsight_core::CoreError> {
-    if provider_already_configured(db)? {
-        return Ok(false);
-    }
-    let Some(key) = resolve_openrouter_key() else {
-        return Ok(false);
-    };
-    seed_openrouter_provider_if_unconfigured(db, &key)
-}
-
 /// Load the saved CompletionProviderConfig from settings and instantiate the provider.
 /// Returns None if unconfigured or key absent.
 pub fn load_provider_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider>> {
@@ -210,9 +99,15 @@ pub(crate) fn build_provider_from_config(
             let base_url = cfg["base_url"].as_str()?.to_string();
             let model = cfg["model"].as_str()?.to_string();
             let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
+            // Trim defensively: a key stored with stray whitespace (e.g. a
+            // paste with a trailing newline) must not corrupt the auth header.
             let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
                 .ok()??
+                .trim()
                 .to_string();
+            if api_key.is_empty() {
+                return None;
+            }
             Some(Arc::new(OpenAiCompatProvider::new(
                 base_url, api_key, model, preset,
             )))
@@ -221,7 +116,11 @@ pub(crate) fn build_provider_from_config(
             let model = cfg["model"].as_str()?.to_string();
             let api_key = finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
                 .ok()??
+                .trim()
                 .to_string();
+            if api_key.is_empty() {
+                return None;
+            }
             Some(Arc::new(AnthropicProvider::new(api_key, model)))
         }
         _ => None,
@@ -437,16 +336,6 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             migrate_provider_settings(&db).map_err(|e| -> Box<dyn std::error::Error> {
                 format!("provider migration: {e}").into()
             })?;
-            // Best-effort: seed an OpenRouter/Gemma provider from `.env` when the
-            // user has not configured one. Never fatal — a missing key just means
-            // the user configures a provider via Settings. Errors are logged
-            // without the key value.
-            match bootstrap_env_provider(&db) {
-                Ok(true) => tracing::info!("Seeded OpenRouter provider from .env (key hidden)"),
-                Ok(false) => {}
-                Err(e) => tracing::warn!("OpenRouter .env bootstrap skipped: {e}"),
-            }
-
             // Best-effort: derive balances for existing imported accounts (so the
             // "$0 after import" state resolves without a re-import), record today's
             // net-worth snapshot, and recompute statistical anomaly flags so
@@ -544,36 +433,3 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
         })
 }
 
-#[cfg(test)]
-mod env_bootstrap_tests {
-    use super::read_env_key_from_file;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn reads_key_from_dotenv_file_walking_up_from_a_subdir() {
-        let root = TempDir::new().unwrap();
-        fs::write(
-            root.path().join(".env"),
-            "# comment\nexport OPENROUTER_API_KEY=\"sk-or-file-value\"\nOTHER=1\n",
-        )
-        .unwrap();
-        let sub = root.path().join("a").join("b");
-        fs::create_dir_all(&sub).unwrap();
-
-        // Walks up from the nested subdir to find the .env at the root.
-        let got = read_env_key_from_file(&sub, "OPENROUTER_API_KEY");
-        assert_eq!(got.as_deref(), Some("sk-or-file-value"));
-    }
-
-    #[test]
-    fn returns_none_when_key_absent_or_empty() {
-        let root = TempDir::new().unwrap();
-        fs::write(root.path().join(".env"), "OPENROUTER_API_KEY=\nFOO=bar\n").unwrap();
-        assert_eq!(
-            read_env_key_from_file(root.path(), "OPENROUTER_API_KEY"),
-            None
-        );
-        assert_eq!(read_env_key_from_file(root.path(), "MISSING"), None);
-    }
-}

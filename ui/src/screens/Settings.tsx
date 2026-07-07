@@ -195,7 +195,10 @@ export default function Settings() {
     const config = buildConfig();
     if (!config) return;
     try {
-      const result = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
+      // An empty field tests the STORED key (the one the runtime actually
+      // uses) — the backend falls back to the keychain — so a green result
+      // with a blank field genuinely reflects the live configuration.
+      const result = await testProvider.mutateAsync({ config, apiKey: apiKey.trim() || undefined });
       setTestResult(result);
     } catch (error) {
       setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(error, "Connection failed.") });
@@ -207,9 +210,10 @@ export default function Settings() {
     if (!config) return;
     setSaveError(null);
     try {
-      if (apiKey && selectedKind && selectedKind !== "ollama") {
+      const trimmedKey = apiKey.trim();
+      if (trimmedKey && selectedKind && selectedKind !== "ollama") {
         const providerId = selectedKind === "anthropic" ? "anthropic" : selectedPreset.preset;
-        await saveKey.mutateAsync({ providerId, key: apiKey });
+        await saveKey.mutateAsync({ providerId, key: trimmedKey });
       }
       await setProvider.mutateAsync(config);
       setProviderPanelOpen(false);

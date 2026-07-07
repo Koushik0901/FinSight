@@ -90,11 +90,23 @@ pub async fn get_completion_provider(
 #[tauri::command]
 #[specta::specta]
 pub async fn save_provider_api_key(
-    _state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, AppState>,
     provider_id: String,
     key: String,
 ) -> AppResult<()> {
-    finsight_core::keychain::set_key("com.finsight.llm", &provider_id, &key).map_err(AppError::from)
+    // Trim defensively: a pasted key with a trailing newline/space must not be
+    // stored verbatim and later corrupt the Authorization header.
+    finsight_core::keychain::set_key("com.finsight.llm", &provider_id, key.trim())
+        .map_err(AppError::from)?;
+    // Rebuild the live provider so a key-only change takes effect immediately —
+    // the runtime reads the key from the keychain at provider-construction time,
+    // not per request, so without this the agent keeps using the old key until
+    // the provider config is re-saved or the app restarts.
+    let db = (*state.db).clone();
+    if let Some(provider) = crate::load_provider_from_settings(&db) {
+        state.agent.set_provider(provider);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -132,10 +144,15 @@ pub async fn test_completion_provider(
             model,
         } => {
             let key = api_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(String::from)
                 .or_else(|| {
                     finsight_core::keychain::get_key("com.finsight.llm", preset)
                         .ok()
                         .flatten()
+                        .map(|k| k.trim().to_string())
                 })
                 .unwrap_or_default();
             Arc::new(OpenAiCompatProvider::new(
@@ -147,10 +164,15 @@ pub async fn test_completion_provider(
         }
         CompletionProviderConfig::Anthropic { model } => {
             let key = api_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(String::from)
                 .or_else(|| {
                     finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
                         .ok()
                         .flatten()
+                        .map(|k| k.trim().to_string())
                 })
                 .unwrap_or_default();
             Arc::new(AnthropicProvider::new(key, model.clone()))
