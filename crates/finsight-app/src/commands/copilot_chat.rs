@@ -350,8 +350,14 @@ pub async fn stream_copilot_message(
         let emitted_tool_frames = Arc::clone(&live_tool_frames_for_engine);
         let captured_search_args_for_events = Arc::clone(&captured_search_args_for_engine);
         rt.block_on(async move {
+            // Ceiling for the WHOLE multi-turn tool loop. 30s (tuned for small
+            // fast models) silently discarded slow-but-successful runs from
+            // reasoning models like Claude — a PLAN preamble plus a few tool
+            // roundtrips plus a long final JSON easily exceeds it — replacing
+            // the real answer with the canned planner fallback. Tool progress
+            // streams live to the UI, so a longer ceiling stays visible.
             tokio::time::timeout(
-                Duration::from_secs(30),
+                Duration::from_secs(180),
                 ReasoningEngine::run_with_events(
                     conn,
                     &question_for_engine,
@@ -421,7 +427,7 @@ pub async fn stream_copilot_message(
                 ),
             )
             .await
-            .map_err(|_| anyhow::anyhow!("Reasoning engine timed out after 30 seconds"))?
+            .map_err(|_| anyhow::anyhow!("Reasoning engine timed out after 180 seconds"))?
         })
         .map_err(|e| finsight_core::CoreError::InvalidState(format!("Reasoning engine error: {e}")))
     })

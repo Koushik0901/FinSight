@@ -966,9 +966,10 @@ pub(crate) fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) 
             answer.assumptions.push(guardrail.to_string());
         }
         if !answer.prose.to_lowercase().contains("specific tickers") {
-            answer.prose.push(' ');
+            // Own paragraph, not glued onto the model's last sentence — prose
+            // renders as markdown and the guardrail is a policy aside.
             answer.prose.push_str(
-                "I would keep investing advice principles-only here rather than naming specific tickers or ETFs.",
+                "\n\nI would keep investing advice principles-only here rather than naming specific tickers or ETFs.",
             );
         }
     }
@@ -1021,6 +1022,10 @@ fn debt_goal_alternatives_to_agent(
 pub(crate) fn planner_answer_to_agent_answer(
     answer: planning::StructuredFinanceAnswer,
 ) -> AgentAnswer {
+    // Assemble readable Markdown (the UI renders prose as markdown) rather
+    // than one run-on paragraph: paragraphs for the recommendation/summary,
+    // a bullet list for alternatives, and a short section for what would
+    // change the recommendation.
     let mut prose_parts = Vec::new();
     if !answer.recommendation.trim().is_empty() {
         prose_parts.push(answer.recommendation.clone());
@@ -1032,14 +1037,14 @@ pub(crate) fn planner_answer_to_agent_answer(
         let alternatives = answer
             .alternatives
             .iter()
-            .map(|alt| format!("{}: {} {}", alt.name, alt.summary, alt.tradeoff))
+            .map(|alt| format!("- **{}** — {} {}", alt.name, alt.summary, alt.tradeoff))
             .collect::<Vec<_>>()
-            .join(" ");
-        prose_parts.push(format!("Alternatives compared: {alternatives}"));
+            .join("\n");
+        prose_parts.push(format!("**Alternatives compared:**\n{alternatives}"));
     }
     if !answer.what_would_change_recommendation.is_empty() {
         prose_parts.push(format!(
-            "What would change this recommendation: {}",
+            "**What would change this recommendation:** {}",
             answer.what_would_change_recommendation.join(" ")
         ));
     }
@@ -1062,6 +1067,10 @@ pub(crate) fn planner_answer_to_agent_answer(
     assumptions.sort();
     assumptions.dedup();
 
+    // Verifier status goes in the TRACE (diagnostic context), not `reasoning`:
+    // reasoning gets rendered as numbered "thinking" steps in the UI, and a
+    // "Verifier: Blocked; confidence 0%" line chopped into fake steps read as
+    // random noise rather than reasoning.
     let verifier_note = if answer.verification.findings.is_empty() {
         format!(
             "Verifier: {:?}; confidence {:.0}%.",
@@ -1076,16 +1085,14 @@ pub(crate) fn planner_answer_to_agent_answer(
             answer.verification.findings.join("; ")
         )
     };
+    let mut trace = answer.trace;
+    trace.push(verifier_note);
 
     AgentAnswer {
-        prose: prose_parts.join(" "),
-        reasoning: [answer.reasoning, verifier_note]
-            .into_iter()
-            .filter(|part| !part.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join(" "),
+        prose: prose_parts.join("\n\n"),
+        reasoning: answer.reasoning,
         plan: Vec::new(),
-        trace: answer.trace,
+        trace,
         changes: Vec::new(),
         action_label: None,
         action_path: None,
@@ -1099,11 +1106,16 @@ pub(crate) fn planner_answer_to_agent_answer(
     }
 }
 pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
+    // Deliberately does NOT require data_sources: the model sometimes leaves
+    // that array empty on an otherwise-good answer, and
+    // reasoning_result_to_agent_answer backfills sensible defaults for exactly
+    // that case — discarding the whole answer here (and substituting the
+    // canned planner fallback) threw away real LLM answers.
     let used_tool = result
         .trace
         .iter()
         .any(|entry| entry.starts_with("Called tool:"));
-    used_tool && !result.content.trim().is_empty() && !result.data_sources.is_empty()
+    used_tool && !result.content.trim().is_empty()
 }
 
 pub(crate) fn reasoning_result_to_agent_answer(
@@ -1940,6 +1952,88 @@ mod tests {
             .any(|alt| alt.summary.contains("estimated interest")));
         assert!(answer.reasoning.contains("Highest compared APR"));
         assert!(!answer.data_sources.is_empty());
+    }
+
+    #[test]
+    fn tool_answer_with_empty_data_sources_is_still_usable() {
+        // The model sometimes leaves data_sources empty on an otherwise-good
+        // answer, and reasoning_result_to_agent_answer backfills defaults for
+        // exactly that case — the gate must not discard the answer (and
+        // silently substitute the canned planner fallback) over it.
+        let result = finsight_agent::reasoning::messages::ReasoningResult {
+            content: "Your net worth is $12,340 across 3 accounts.".to_string(),
+            reasoning: String::new(),
+            plan: Vec::new(),
+            trace: vec!["Called tool: get_net_worth".to_string()],
+            changes: Vec::new(),
+            draft_actions: Vec::new(),
+            assumptions: Vec::new(),
+            data_sources: Vec::new(),
+            missing_data: Vec::new(),
+            follow_up_questions: Vec::new(),
+            response_blocks: Vec::new(),
+        };
+        assert!(is_usable_tool_answer(&result));
+
+        // But an answer that never used a tool, or has no content, is not.
+        let no_tool = finsight_agent::reasoning::messages::ReasoningResult {
+            trace: vec!["planned".to_string()],
+            ..result.clone()
+        };
+        assert!(!is_usable_tool_answer(&no_tool));
+        let empty_content = finsight_agent::reasoning::messages::ReasoningResult {
+            content: "   ".to_string(),
+            ..result
+        };
+        assert!(!is_usable_tool_answer(&empty_content));
+    }
+
+    #[test]
+    fn planner_fallback_prose_is_readable_markdown_with_verifier_in_trace() {
+        let answer = planning::StructuredFinanceAnswer {
+            recommendation: "Pay the Amex first.".to_string(),
+            summary: "It carries the highest APR.".to_string(),
+            alternatives: vec![
+                planning::FinanceAlternative {
+                    name: "Keep savings".to_string(),
+                    summary: "Minimum payments only.".to_string(),
+                    tradeoff: "Costs more interest.".to_string(),
+                    numbers_used: Vec::new(),
+                },
+                planning::FinanceAlternative {
+                    name: "Split".to_string(),
+                    summary: "Half to debt, half to savings.".to_string(),
+                    tradeoff: "Slower on both fronts.".to_string(),
+                    numbers_used: Vec::new(),
+                },
+            ],
+            numbers_used: Vec::new(),
+            data_sources: Vec::new(),
+            assumptions: Vec::new(),
+            missing_data: Vec::new(),
+            risks: Vec::new(),
+            next_actions: Vec::new(),
+            what_would_change_recommendation: Vec::new(),
+            confidence: 0.8,
+            reasoning: "APR comparison across debts.".to_string(),
+            trace: Vec::new(),
+            follow_up_questions: Vec::new(),
+            verification: planning::VerificationReport {
+                passed: true,
+                severity: planning::VerificationSeverity::Ok,
+                findings: Vec::new(),
+                confidence_adjustment: 0.0,
+                required_follow_up_questions: Vec::new(),
+            },
+        };
+        let mapped = planner_answer_to_agent_answer(answer);
+
+        // Paragraph breaks and a bullet list, not one run-on paragraph.
+        assert!(mapped.prose.contains("\n\n"));
+        assert!(mapped.prose.contains("**Alternatives compared:**\n- **Keep savings**"));
+        // Verifier status is diagnostic context (trace), not fake reasoning steps.
+        assert!(!mapped.reasoning.contains("Verifier:"));
+        assert!(mapped.trace.iter().any(|t| t.starts_with("Verifier:")));
     }
 
     #[test]

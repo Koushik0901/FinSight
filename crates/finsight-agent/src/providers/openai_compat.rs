@@ -92,7 +92,11 @@ impl CompletionProvider for OpenAiCompatProvider {
             "model": self.model,
             // Give the model room to finish; without this some OpenRouter routes
             // default to a small completion budget and truncate the response.
-            "max_tokens": 2048,
+            // 2048 was sized for small fast models — reasoning models (Claude,
+            // o-series) spend part of the budget on thinking tokens, and the
+            // final structured-JSON answer is large, so a small cap truncates
+            // the JSON mid-object and the parse fails downstream.
+            "max_tokens": 8192,
             "messages": [
                 {"role": "system", "content": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text.")},
                 {"role": "user",   "content": user},
@@ -161,7 +165,9 @@ impl CompletionProvider for OpenAiCompatProvider {
 
         let body = json!({
             "model": self.model,
-            "max_tokens": 2048,
+            // See complete_json: reasoning models need headroom for thinking
+            // tokens plus the large final structured-JSON answer.
+            "max_tokens": 8192,
             "messages": oai_messages,
             "tools": oai_tools,
         });

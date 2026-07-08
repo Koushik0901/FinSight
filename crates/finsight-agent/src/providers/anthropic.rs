@@ -61,7 +61,7 @@ impl CompletionProvider for AnthropicProvider {
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text."),
             "messages": [{"role": "user", "content": user}]
         });
@@ -157,7 +157,7 @@ impl CompletionProvider for AnthropicProvider {
 
         let body = json!({
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": system_msg,
             "messages": api_messages,
             "tools": api_tools,
