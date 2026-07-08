@@ -68,7 +68,10 @@ pub fn seed(conn: &mut Connection) {
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('loan','You','Bank','Credit','Auto Loan','USD','#EF4444','manual','restricted',0,'debt',6.5,25000,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('loan',date('now'),-800000,'manual')", []).unwrap();
 
-    // Brokerage: NO account_balances row → balance is UNKNOWN (not $0).
+    // Brokerage: has activity but NO confirmed balance snapshot, so the app
+    // reports it as UNKNOWN (not $0) and excludes it from net worth. The
+    // "unknown" flag requires a transaction to exist WITHOUT a non-seed balance
+    // row (see accounts::list_summaries), hence the dividend below.
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('inv','You','Broker','Investment','Brokerage','USD','#8B5CF6','manual','invested',0,'investments',datetime('now'))", []).unwrap();
 
     // ── Categories ───────────────────────────────────────────────────────────
@@ -90,10 +93,15 @@ pub fn seed(conn: &mut Connection) {
         .unwrap();
     }
 
-    // ── Six most-recent COMPLETE months of income + recurring + variable ─────
+    // ── Twelve most-recent COMPLETE months of income + recurring + variable ──
+    // A full 12 months so the tools' trailing-12-month income/expense AVERAGES
+    // equal the intended $4,000 / $1,837 per-month figures. With only 6 months
+    // seeded, those averages divide by 12 and halve to $2,000 / $163 surplus,
+    // which is a real Copilot behavior (fixed 12-month divisor understates a
+    // <12-month history) but made the benchmark facts unreachable.
     let anchor = Utc::now().date_naive();
     let most_recent_complete = first_of_month_back(anchor, 1); // last month's 1st
-    for back in 0..6u32 {
+    for back in 0..12u32 {
         let m = first_of_month_back(most_recent_complete, back);
 
         // Income: $4,000 payroll on the 1st (NULL category — an inflow).
@@ -125,6 +133,13 @@ pub fn seed(conn: &mut Connection) {
     )
     .unwrap();
 
+    // Brokerage activity, before the 12-month analysis window. Positive (a
+    // dividend inflow, like payroll) so it is NOT an uncategorized expense and
+    // doesn't disturb the spending / uncategorized-count facts. Its only job is
+    // to make the brokerage's balance genuinely "unknown".
+    let old = first_of_month_back(most_recent_complete, 13);
+    insert_txn(conn, "inv", day_in(old, 15), 10000, "Vanguard Dividend", None);
+
     // ── Goals ────────────────────────────────────────────────────────────────
     conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('ef','Emergency Fund','save',1100000,500000,50000,'#10B981',0,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('vac','Vacation','save-by-date',300000,60000,10000,'#3B82F6',1,datetime('now'))", []).unwrap();
@@ -154,36 +169,41 @@ mod tests {
         let (_d, db) = seeded();
         let conn = db.get().unwrap();
 
-        let net_worth: i64 = conn
-            .query_row("SELECT COALESCE(SUM(balance_cents),0) FROM account_balances", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(net_worth, -220_000, "known net worth = -$2,200");
+        // Use the app's real net-worth computation so the reference facts match
+        // exactly what the Copilot's tools return (not a hand-rolled SQL notion).
+        let mut wconn = db.get().unwrap();
+        let bd = finsight_core::repos::net_worth::breakdown(&mut wconn).unwrap();
+        assert_eq!(bd.net_worth_cents, -220_000, "known net worth = -$2,200");
+        assert_eq!(
+            bd.accounts_with_unknown_balance, 1,
+            "brokerage must read as UNKNOWN (has a txn, no confirmed balance)"
+        );
+        assert!(
+            bd.unknown_balance_accounts.iter().any(|n| n == "Brokerage"),
+            "the unknown account is the Brokerage"
+        );
 
         let accounts: i64 = conn.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
         assert_eq!(accounts, 5);
-        let unknown: i64 = conn
+
+        let income: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM accounts a WHERE NOT EXISTS (SELECT 1 FROM account_balances b WHERE b.account_id = a.id)",
+                "SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw = 'Acme Payroll'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(unknown, 1, "brokerage has no balance snapshot");
-
-        let income: i64 = conn
-            .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE amount_cents > 0", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(income, 2_400_000, "6 × $4,000 payroll");
+        assert_eq!(income, 4_800_000, "12 × $4,000 payroll (the brokerage dividend is separate)");
 
         let housing: i64 = conn
             .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='housing'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(housing, 720_000, "6 × $1,200 rent → biggest category");
+        assert_eq!(housing, 1_440_000, "12 × $1,200 rent → biggest category");
 
         let groceries: i64 = conn
             .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='groceries'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(groceries, 240_000, "6 × $400 → second category");
+        assert_eq!(groceries, 480_000, "12 × $400 → second category");
 
         let uncategorized: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))

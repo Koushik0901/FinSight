@@ -192,18 +192,35 @@ async fn main() -> Result<()> {
             seed::seed(&mut conn);
         }
 
-        let provider: Arc<dyn CompletionProvider> = Arc::new(OpenAiCompatProvider::new(
-            args.base_url.as_str(),
-            key.clone(),
-            args.model.as_str(),
-            "openrouter",
-        ));
         let tools = standard_toolset();
 
+        // Retry transient provider errors (rate-limit blips / decode failures
+        // during a rapid batch) so a hiccup doesn't score as a real failure.
+        // Timeouts are NOT retried — a slow question would just time out again.
         let started = Instant::now();
         let mut conn = db.get()?;
-        let run = ReasoningEngine::run(&mut conn, &q.question, &tools, provider, args.max_iterations);
-        let outcome = tokio::time::timeout(Duration::from_secs(args.timeout_secs), run).await;
+        let mut attempt = 0;
+        let outcome = loop {
+            attempt += 1;
+            let provider_try: Arc<dyn CompletionProvider> = Arc::new(OpenAiCompatProvider::new(
+                args.base_url.as_str(),
+                key.clone(),
+                args.model.as_str(),
+                "openrouter",
+            ));
+            let run =
+                ReasoningEngine::run(&mut conn, &q.question, &tools, provider_try, args.max_iterations);
+            let outcome = tokio::time::timeout(Duration::from_secs(args.timeout_secs), run).await;
+            match &outcome {
+                Ok(Err(_)) if attempt <= 3 => {
+                    eprint!("(retry {attempt}) ");
+                    let _ = std::io::stderr().flush();
+                    tokio::time::sleep(Duration::from_secs(3 * attempt as u64)).await;
+                    continue;
+                }
+                _ => break outcome,
+            }
+        };
         let latency_ms = started.elapsed().as_millis();
 
         let record = match outcome {
