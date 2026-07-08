@@ -129,6 +129,47 @@ impl ToolSet {
     }
 }
 
+/// The canonical set of tools the Copilot runs with. Single source of truth so
+/// the shipped app (`finsight-app::commands::agent::build_toolset`) and the
+/// offline evaluation harness (`finsight-eval`) exercise exactly the same
+/// capabilities — otherwise the benchmark would grade a different agent than
+/// users get.
+pub fn standard_toolset() -> ToolSet {
+    let mut tools = ToolSet::new();
+    tools.register(read::get_financial_snapshot());
+    tools.register(read::analyze_cash_inflow());
+    tools.register(read::calculate_goal_eta());
+    tools.register(read::rank_debt_payoff());
+    tools.register(read::compare_debt_vs_goal());
+    tools.register(read::get_account_balances());
+    tools.register(read::get_net_worth());
+    tools.register(read::get_month_totals());
+    tools.register(read::get_top_spending_categories());
+    tools.register(read::get_spending_breakdown());
+    tools.register(read::get_budgets());
+    tools.register(read::get_goals());
+    tools.register(read::get_recurring_bills());
+    tools.register(read::get_liabilities());
+    tools.register(read::search_transactions());
+    tools.register(read::find_anomalies());
+    tools.register(read::list_uncategorized_transactions());
+    tools.register(read::run_cashflow_projection());
+    tools.register(read::run_debt_payoff_scenarios());
+    tools.register(read::run_goal_allocation_scenarios());
+    tools.register(read::run_goal_conflict_scenario());
+    tools.register(read::run_emergency_fund_scenarios());
+    tools.register(read::run_cashflow_timeline());
+    tools.register(read::run_purchase_affordability());
+    tools.register(read::get_data_quality_report());
+    tools.register(act::set_budget());
+    tools.register(act::update_goal_monthly());
+    tools.register(act::create_planned_transaction());
+    tools.register(act::save_scenario());
+    tools.register(act::create_debt_payoff_plan());
+    tools.register(act::draft_recategorization());
+    tools
+}
+
 fn validate_tool_arguments(
     tool_name: &str,
     schema: &Value,

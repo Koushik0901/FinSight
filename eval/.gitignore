@@ -1,0 +1,12 @@
+# Secrets — the eval reads the OpenRouter key from here (never commit it).
+.env
+# Per-run outputs, judged results, reports.
+runs/
+# Local MLflow backend + artifact store.
+mlruns/
+mlflow.db
+mlartifacts/
+# Python env + caches.
+.venv/
+__pycache__/
+*.pyc

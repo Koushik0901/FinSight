@@ -5,6 +5,7 @@ members = [
   "crates/finsight-providers",
   "crates/finsight-agent",
   "crates/finsight-app",
+  "crates/finsight-eval",
   "src-tauri",
 ]
 default-members = ["src-tauri"]

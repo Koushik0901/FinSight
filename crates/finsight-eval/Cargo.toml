@@ -1,0 +1,25 @@
+[package]
+name = "finsight-eval"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Headless evaluation harness for the FinSight Copilot. NOT part of the shipped
+# app — a dev/CI tool that drives the real ReasoningEngine + tool loop over a
+# deterministic synthetic household so answer quality can be graded offline.
+
+[[bin]]
+name = "finsight-eval"
+path = "src/main.rs"
+
+[dependencies]
+finsight-core = { path = "../finsight-core" }
+finsight-agent = { path = "../finsight-agent" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true
+chrono = { workspace = true }
+clap = { version = "4", features = ["derive"] }
