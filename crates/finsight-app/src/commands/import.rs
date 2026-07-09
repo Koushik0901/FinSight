@@ -151,7 +151,11 @@ pub async fn import_csv(
         // import itself.
         {
             let cat_db = (*state.db).clone();
-            let _ = run(&cat_db, finsight_core::categorize::apply_builtin_categorization).await;
+            let _ = run(
+                &cat_db,
+                finsight_core::categorize::apply_builtin_categorization,
+            )
+            .await;
         }
         // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now
         // that both sides may exist. Runs after the keyword pass, which supplies
@@ -199,8 +203,10 @@ pub async fn import_csv(
     {
         let cfg_db = (*state.db).clone();
         let auto = run(&cfg_db, |conn| {
-            let v: Option<bool> =
-                finsight_core::settings::get(conn, crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY)?;
+            let v: Option<bool> = finsight_core::settings::get(
+                conn,
+                crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY,
+            )?;
             Ok(v.unwrap_or(true))
         })
         .await

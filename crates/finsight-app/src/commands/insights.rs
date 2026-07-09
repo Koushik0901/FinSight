@@ -54,19 +54,26 @@ pub async fn get_financial_health_score(
     let db = (*state.db).clone();
     run(&db, |conn| {
         let ctx = build_context(conn);
+        // Score against the user's configured targets, not hardcoded numbers, so
+        // the scorecard reflects the goals set in Settings → Financial targets.
+        let assumptions = finsight_core::metrics::assumptions(conn);
+        let savings_target = assumptions.target_savings_rate_pct;
+        let ef_target = assumptions.emergency_fund_target_months;
+
         let sr = ctx.cashflow.savings_rate_pct;
-        let savings_rate_pts = if sr >= 10 {
+        // Full credit at the target, half credit at halfway to it.
+        let savings_rate_pts: u8 = if sr >= savings_target {
             25
-        } else if sr >= 5 {
+        } else if sr >= savings_target / 2 {
             15
         } else {
             0
         };
 
         let ef = ctx.wellness.emergency_fund_months;
-        let emergency_fund_pts = if ef >= 6.0 {
+        let emergency_fund_pts: u8 = if ef >= ef_target {
             25
-        } else if ef >= 3.0 {
+        } else if ef >= ef_target / 2.0 {
             15
         } else if ef >= 1.0 {
             8
@@ -138,12 +145,15 @@ pub async fn get_financial_health_score(
 
         let mut tips = Vec::new();
         if savings_rate_pts < 25 {
-            tips.push(format!("Increase savings rate to ≥10% (currently {}%)", sr));
+            tips.push(format!(
+                "Increase savings rate to ≥{}% (currently {}%)",
+                savings_target, sr
+            ));
         }
         if emergency_fund_pts < 25 {
             tips.push(format!(
-                "Build emergency fund to 6+ months (currently {:.1} months)",
-                ef
+                "Build emergency fund to {:.0}+ months (currently {:.1} months)",
+                ef_target, ef
             ));
         }
         if debt_ratio_pts < 20 && ctx.wellness.total_debt_cents > 0 {

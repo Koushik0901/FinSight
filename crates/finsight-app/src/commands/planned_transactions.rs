@@ -49,9 +49,11 @@ pub async fn update_planned_transaction(
     patch: PlannedTransactionPatch,
 ) -> AppResult<PlannedTransaction> {
     let db = (*state.db).clone();
-    run(&db, move |conn| planned_transactions::update(conn, &id, patch))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        planned_transactions::update(conn, &id, patch)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[tauri::command]

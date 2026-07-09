@@ -472,3 +472,54 @@ async fn run_with_events_ignores_a_plan_offered_on_a_later_turn() {
     }
     assert_eq!(result.plan, vec!["First-turn step".to_string()]);
 }
+
+#[tokio::test]
+async fn plan_only_turn_is_not_accepted_as_final_answer() {
+    // The model emits ONLY its PLAN preamble on the first turn (no tools, no
+    // JSON). The engine must NOT ship that as the answer — it should nudge the
+    // model to continue and use the real answer it produces next.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(MockCompletionProvider {
+        provider_id: "mock".into(),
+        model_id: "test".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![
+            AssistantTurn::FinalAnswer {
+                content: "PLAN:\n1. Fetch net worth\n2. Report it".to_string(),
+                reasoning: String::new(),
+            },
+            AssistantTurn::FinalAnswer {
+                content: "Your net worth is -$2,200.".to_string(),
+                reasoning: "Computed from accounts.".to_string(),
+            },
+        ]),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5)
+        .await
+        .unwrap();
+    assert!(
+        result.content.contains("-$2,200"),
+        "expected the real second-turn answer, got: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("PLAN:"),
+        "the raw plan preamble must not leak into the answer"
+    );
+    // The plan itself is still captured for the UI.
+    assert_eq!(result.plan, vec!["Fetch net worth".to_string(), "Report it".to_string()]);
+}
+
+#[test]
+fn content_after_plan_detects_plan_only_vs_real_answer() {
+    use super::content_after_plan;
+    assert_eq!(content_after_plan("PLAN:\n1. a\n2. b"), "");
+    assert_eq!(content_after_plan("PLAN:\n1. a\n\n"), "");
+    assert_eq!(
+        content_after_plan("PLAN:\n1. a\n2. b\n\nThe answer is 42."),
+        "The answer is 42."
+    );
+    assert_eq!(content_after_plan("Just a plain answer."), "Just a plain answer.");
+}

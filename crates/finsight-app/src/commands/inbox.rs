@@ -469,7 +469,7 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
                     "SELECT COALESCE(SUM(current_cents), 0)
                      FROM goals
                      WHERE archived_at IS NULL
-                       AND (LOWER(name) LIKE '%emergency%' OR goal_type = 'build-balance')",
+                       AND (LOWER(name) LIKE '%emergency%' OR type = 'build-balance')",
                     [],
                     |r| r.get(0),
                 )

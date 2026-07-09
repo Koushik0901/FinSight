@@ -166,12 +166,94 @@ pub fn sync_linked_accounts(conn: &mut Connection, account_id: &str) -> CoreResu
     Ok(())
 }
 
+/// Directly set `current_cents`. Reserved for the account-linked sync path
+/// ([`sync_linked_accounts`]), whose source of truth is the account balance.
+/// For manual goals, use [`add_contribution`] instead — a direct set would
+/// desync the contribution ledger.
 pub fn set_current_cents(conn: &mut Connection, id: &str, current_cents: i64) -> CoreResult<()> {
     conn.execute(
         "UPDATE goals SET current_cents = ?1 WHERE id = ?2",
         params![current_cents, id],
     )?;
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct GoalContribution {
+    pub id: String,
+    pub goal_id: String,
+    pub amount_cents: i64,
+    pub note: Option<String>,
+    pub source: String,
+    pub created_at: String,
+}
+
+/// Append a contribution (positive) or withdrawal (negative) to a goal's ledger
+/// and re-derive its `current_cents` as the sum of all its contributions. This
+/// is the correct way to change a manual goal's balance: the ledger is the
+/// source of truth, so parking twice appends two auditable rows instead of
+/// double-counting, and nothing silently overwrites it. Account-linked goals
+/// must NOT use this (their balance comes from the account) — callers guard it.
+pub fn add_contribution(
+    conn: &mut Connection,
+    goal_id: &str,
+    amount_cents: i64,
+    note: Option<&str>,
+    source: &str,
+) -> CoreResult<GoalContribution> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO goal_contributions(id, goal_id, amount_cents, note, source, created_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, goal_id, amount_cents, note, source, now],
+    )?;
+    recompute_current_cents(conn, goal_id)?;
+    Ok(GoalContribution {
+        id,
+        goal_id: goal_id.to_string(),
+        amount_cents,
+        note: note.map(str::to_string),
+        source: source.to_string(),
+        created_at: now,
+    })
+}
+
+/// Re-derive `goals.current_cents` from the contribution ledger (the materialized
+/// cache all read paths use).
+pub fn recompute_current_cents(conn: &mut Connection, goal_id: &str) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET current_cents = (
+             SELECT COALESCE(SUM(amount_cents), 0) FROM goal_contributions WHERE goal_id = ?1
+         ) WHERE id = ?1",
+        params![goal_id],
+    )?;
+    Ok(())
+}
+
+pub fn list_contributions(
+    conn: &mut Connection,
+    goal_id: &str,
+) -> CoreResult<Vec<GoalContribution>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, goal_id, amount_cents, note, source, created_at
+         FROM goal_contributions WHERE goal_id = ?1 ORDER BY created_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map(params![goal_id], |r| {
+        Ok(GoalContribution {
+            id: r.get(0)?,
+            goal_id: r.get(1)?,
+            amount_cents: r.get(2)?,
+            note: r.get(3)?,
+            source: r.get(4)?,
+            created_at: r.get(5)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
 }
 
 pub fn archive(conn: &mut Connection, id: &str) -> CoreResult<()> {
@@ -239,6 +321,43 @@ mod tests {
             .find(|g| g.id == goal.id)
             .unwrap();
         assert_eq!(updated.monthly_cents, 25_000);
+    }
+
+    #[test]
+    fn contributions_derive_current_balance_and_are_auditable() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                name: "Emergency".into(),
+                goal_type: "build-balance".into(),
+                target_cents: 1_000_000,
+                monthly_cents: 0,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                account_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(goal.current_cents, 0);
+
+        // Two parks append two rows; the balance is their sum (no double-count).
+        add_contribution(&mut conn, &goal.id, 50_000, Some("Parked surplus"), "sweep").unwrap();
+        add_contribution(&mut conn, &goal.id, 30_000, None, "manual").unwrap();
+        let after_deposits = get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(after_deposits.current_cents, 80_000);
+
+        // A withdrawal is a negative row; the derived balance reflects it.
+        add_contribution(&mut conn, &goal.id, -20_000, Some("Pulled out"), "manual").unwrap();
+        let after_withdraw = get_by_id(&mut conn, &goal.id).unwrap();
+        assert_eq!(after_withdraw.current_cents, 60_000);
+
+        let ledger = list_contributions(&mut conn, &goal.id).unwrap();
+        assert_eq!(ledger.len(), 3, "every movement is an auditable row");
+        assert_eq!(ledger.iter().map(|c| c.amount_cents).sum::<i64>(), 60_000);
     }
 
     fn insert_debt_account(conn: &mut Connection, name: &str) -> String {

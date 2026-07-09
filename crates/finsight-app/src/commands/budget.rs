@@ -248,22 +248,40 @@ pub async fn project_goal_growth(
     run(&db, move |conn| {
         use finsight_core::repos::accounts;
         let goal = goals::get_by_id(conn, &goal_id)?;
+        // Default long-run return comes from the shared, user-tunable assumption
+        // (7% unless changed); a linked account's own APY overrides it.
+        let default_rate =
+            finsight_core::metrics::assumptions(conn).expected_annual_return_pct / 100.0;
         let annual_rate = if let Some(account_id) = &goal.account_id {
             accounts::get_by_id(conn, account_id)
                 .ok()
                 .and_then(|a| a.apy_pct)
-                .unwrap_or(0.07)
-                / 100.0
+                .map(|apy| apy / 100.0)
+                .unwrap_or(default_rate)
         } else {
-            0.07
+            default_rate
         };
-        let value_cents = if goal.monthly_cents <= 0 || years <= 0 {
-            0
+        let value_cents = if years <= 0 {
+            goal.current_cents.max(0)
         } else {
             let r = annual_rate / 12.0;
-            let n = (years * 12) as i64;
-            let fv = goal.monthly_cents as f64 * ((f64::powi(1.0 + r, n as i32) - 1.0) / r);
-            fv.round() as i64
+            let n = (years * 12) as i32;
+            let growth = f64::powi(1.0 + r, n);
+            // The current balance compounds too — the old formula projected only
+            // the contribution stream and dropped the starting principal.
+            let fv_present = goal.current_cents.max(0) as f64 * growth;
+            // Future value of the monthly-contribution annuity. Guard r == 0
+            // (e.g. a 0% APY account) which would otherwise divide by zero.
+            let fv_contrib = if goal.monthly_cents > 0 {
+                if r.abs() < f64::EPSILON {
+                    goal.monthly_cents as f64 * n as f64
+                } else {
+                    goal.monthly_cents as f64 * ((growth - 1.0) / r)
+                }
+            } else {
+                0.0
+            };
+            (fv_present + fv_contrib).round() as i64
         };
         Ok(ProjectedValue {
             years,
@@ -275,6 +293,45 @@ pub async fn project_goal_growth(
     .map_err(AppError::from)
 }
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalContributionDto {
+    pub id: String,
+    pub goal_id: String,
+    pub amount_cents: i64,
+    pub note: Option<String>,
+    pub source: String,
+    pub created_at: String,
+}
+
+fn contribution_to_dto(c: goals::GoalContribution) -> GoalContributionDto {
+    GoalContributionDto {
+        id: c.id,
+        goal_id: c.goal_id,
+        amount_cents: c.amount_cents,
+        note: c.note,
+        source: c.source,
+        created_at: c.created_at,
+    }
+}
+
+/// Reject contributions to account-linked goals — their balance is derived from
+/// the linked account, so a manual contribution would be overwritten on the next
+/// balance sync (the double-count bug this whole ledger exists to prevent).
+fn ensure_manual_goal(conn: &mut rusqlite::Connection, id: &str) -> finsight_core::CoreResult<()> {
+    let goal = goals::get_by_id(conn, id)?;
+    if goal.account_id.is_some() {
+        return Err(finsight_core::CoreError::InvalidState(
+            "This goal tracks a linked account's balance — adjust the account, not the goal."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Set a manual goal's balance to an absolute value by appending the *delta* as a
+/// ledger contribution, keeping `current_cents` a derived total. Existing callers
+/// that pass an absolute balance stay correct without double-counting.
 #[tauri::command]
 #[specta::specta]
 pub async fn update_goal_balance(
@@ -284,7 +341,54 @@ pub async fn update_goal_balance(
 ) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        goals::set_current_cents(conn, &id, current_cents)
+        ensure_manual_goal(conn, &id)?;
+        let goal = goals::get_by_id(conn, &id)?;
+        let delta = current_cents - goal.current_cents;
+        if delta != 0 {
+            goals::add_contribution(conn, &id, delta, Some("Balance adjustment"), "manual")?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Append a contribution (positive) or withdrawal (negative) to a goal's ledger.
+#[tauri::command]
+#[specta::specta]
+pub async fn contribute_to_goal(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    amount_cents: i64,
+    note: Option<String>,
+    source: Option<String>,
+) -> AppResult<GoalContributionDto> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        ensure_manual_goal(conn, &id)?;
+        goals::add_contribution(
+            conn,
+            &id,
+            amount_cents,
+            note.as_deref(),
+            source.as_deref().unwrap_or("manual"),
+        )
+        .map(contribution_to_dto)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_goal_contributions(
+    state: tauri::State<'_, AppState>,
+    goal_id: String,
+) -> AppResult<Vec<GoalContributionDto>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        goals::list_contributions(conn, &goal_id)
+            .map(|list| list.into_iter().map(contribution_to_dto).collect())
     })
     .await
     .map_err(AppError::from)
@@ -359,6 +463,7 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
              FROM (SELECT SUM(amount_cents) AS mi
                    FROM transactions
                    WHERE amount_cents > 0
+                     AND is_transfer = 0
                      AND strftime('%Y-%m', posted_at) IN (?1, ?2, ?3)
                    GROUP BY strftime('%Y-%m', posted_at))",
             rusqlite::params![m0, m1, m2],
@@ -429,7 +534,7 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
                           PARTITION BY merchant_raw ORDER BY posted_at
                         )) AS gap,
                       amount_cents
-               FROM transactions WHERE posted_at >= ?1
+               FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0
              ),
              agg AS (
                SELECT merchant_raw, AVG(gap) AS avg_gap, MAX(amount_cents) AS last_amount

@@ -269,9 +269,11 @@ mod tests {
     #[tokio::test]
     async fn auto_categorize_enabled_round_trips() {
         let (_dir, db) = fresh_db();
-        run(&db, |conn| settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &false))
-            .await
-            .unwrap();
+        run(&db, |conn| {
+            settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &false)
+        })
+        .await
+        .unwrap();
         let val: bool = run(&db, |conn| {
             let v: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
             Ok(v.unwrap_or(true))

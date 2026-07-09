@@ -9,7 +9,9 @@ pub async fn list_household_members(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<HouseholdMember>> {
     let db = (*state.db).clone();
-    run(&db, household::list_members).await.map_err(AppError::from)
+    run(&db, household::list_members)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 use chrono::{Datelike, Duration, NaiveDate, Utc};
-use finsight_core::{forecast, repos::goals};
+use finsight_core::{metrics, repos::goals};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -24,8 +24,11 @@ pub struct WellnessContext {
     pub debt_snowball: Vec<DebtSnowballItem>,
     /// Savings rate direction vs. 30 days prior: "improving" | "stable" | "declining"
     pub savings_rate_trend: String,
-    /// Whether savings rate meets Babylon's 10% minimum
+    /// Whether savings rate meets the user's target (Settings → Financial targets)
     pub meets_pay_yourself_first: bool,
+    /// The user's configured pay-yourself-first / savings-rate target (percent)
+    #[serde(default)]
+    pub pay_yourself_first_target_pct: i64,
     /// Savings accounts and their APY for cash-efficiency advice
     pub savings_accounts: Vec<SavingsAccountItem>,
     /// Detailed loan records for payoff progress and history-aware advice
@@ -284,11 +287,15 @@ impl FinancialContext {
                 self.wellness.savings_rate_trend
             ),
             format!(
-                "   - Meets 'pay yourself first' (≥10% savings): {}",
+                "   - Meets 'pay yourself first' (≥{}% savings target): {}",
+                self.wellness.pay_yourself_first_target_pct,
                 if self.wellness.meets_pay_yourself_first {
-                    "YES"
+                    "YES".to_string()
                 } else {
-                    "NO — savings rate is below 10%"
+                    format!(
+                        "NO — savings rate is below {}%",
+                        self.wellness.pay_yourself_first_target_pct
+                    )
                 }
             ),
         ]);
@@ -353,30 +360,28 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
     let now = Utc::now();
     let month = now.format("%Y-%m").to_string();
     let month_start = now.format("%Y-%m-01").to_string();
-    let rolling_cutoff = (now - Duration::days(90)).to_rfc3339();
 
+    // All cashflow/balance numbers come from the shared metrics layer so the
+    // Copilot tells the same story as every screen (single savings-rate and
+    // runway definition, transfers excluded, runway measured against liquid).
     let total_balance_cents = latest_total_balance(conn);
-    let (rolling_income_total, rolling_expense_total) =
-        income_and_expense_since(conn, &rolling_cutoff);
-    let avg_monthly_income_cents = rolling_income_total / 3;
-    let avg_monthly_expense_cents = rolling_expense_total / 3;
-    let net_monthly_cents = avg_monthly_income_cents - avg_monthly_expense_cents;
-    let savings_rate_pct = if avg_monthly_income_cents > 0 {
-        ((net_monthly_cents.max(0) * 100) / avg_monthly_income_cents).clamp(0, 100)
-    } else {
-        0
-    };
-    let runway_days =
-        forecast::runway_days(total_balance_cents, avg_monthly_expense_cents.max(0), 30);
-    let (this_month_income_cents, this_month_expense_cents) =
-        income_and_expense_since(conn, &month_start);
+    let balances = metrics::balance_breakdown(conn).unwrap_or_default();
+    let rolling = metrics::rolling_averages(conn, 90).unwrap_or_default();
+    let avg_monthly_income_cents = rolling.avg_monthly_income_cents;
+    let avg_monthly_expense_cents = rolling.avg_monthly_expense_cents;
+    let net_monthly_cents = rolling.net_monthly_cents;
+    let savings_rate_pct = rolling.savings_rate_pct;
+    let runway_days = metrics::runway_days(balances.liquid_cents, avg_monthly_expense_cents);
+    let this_month = metrics::cashflow_since(conn, &month_start).unwrap_or_default();
+    let this_month_income_cents = this_month.income_cents;
+    let this_month_expense_cents = this_month.expense_cents;
 
     let (total_budget_cents, overages, near_limit) = budget_details(conn, &month, &month_start);
     let total_spent_cents: i64 = conn
         .query_row(
             "SELECT COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
              FROM transactions
-             WHERE posted_at >= ?1",
+             WHERE posted_at >= ?1 AND is_transfer = 0",
             params![month_start],
             |r| r.get(0),
         )
@@ -428,19 +433,6 @@ fn latest_total_balance(conn: &mut Connection) -> i64 {
     .unwrap_or(0)
 }
 
-fn income_and_expense_since(conn: &mut Connection, cutoff: &str) -> (i64, i64) {
-    conn.query_row(
-        "SELECT
-            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-         FROM transactions
-         WHERE posted_at >= ?1",
-        params![cutoff],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .unwrap_or((0, 0))
-}
-
 fn budget_details(
     conn: &mut Connection,
     month: &str,
@@ -461,7 +453,7 @@ fn budget_details(
             SELECT category_id,
                    COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS spent_cents
             FROM transactions
-            WHERE posted_at >= ?2
+            WHERE posted_at >= ?2 AND is_transfer = 0
             GROUP BY category_id
          )
          SELECT c.label,
@@ -588,7 +580,7 @@ fn transaction_context(conn: &mut Connection, month_start: &str) -> TransactionC
     if let Ok(mut stmt) = conn.prepare(
         "SELECT merchant_raw, COALESCE(SUM(ABS(amount_cents)), 0) AS total_abs_cents
          FROM transactions
-         WHERE posted_at >= ?1
+         WHERE posted_at >= ?1 AND is_transfer = 0
          GROUP BY merchant_raw
          ORDER BY total_abs_cents DESC, merchant_raw ASC
          LIMIT 5",
@@ -672,7 +664,7 @@ fn upcoming_bills(conn: &mut Connection) -> Vec<UpcomingBill> {
                     ORDER BY t.posted_at
                   ) AS prev_d
            FROM transactions t
-           WHERE t.posted_at >= ?1
+           WHERE t.posted_at >= ?1 AND t.is_transfer = 0
          ),
          gaps AS (
            SELECT merchant_raw, d, amount_cents,
@@ -681,15 +673,21 @@ fn upcoming_bills(conn: &mut Connection) -> Vec<UpcomingBill> {
            WHERE prev_d IS NOT NULL
          ),
          agg AS (
+           -- `last_amount` is a bare column paired with a single MAX() aggregate,
+           -- so SQLite draws it from the row holding MAX(d) — i.e. the amount of
+           -- the most recent occurrence, not MAX(amount_cents) which for negative
+           -- expenses would return the smallest charge. The HAVING guard requires
+           -- every occurrence to be an outflow (no non-negative amounts).
            SELECT merchant_raw,
                   AVG(gap) AS avg_gap,
                   COUNT(*) AS occurrences,
                   MAX(d) AS last_seen,
-                  MAX(amount_cents) AS last_amount
+                  amount_cents AS last_amount
            FROM gaps
            WHERE gap BETWEEN 5 AND 400
            GROUP BY merchant_raw
-           HAVING occurrences >= 2 AND AVG(gap) < 400 AND MAX(amount_cents) < 0
+           HAVING occurrences >= 2 AND AVG(gap) < 400
+              AND SUM(CASE WHEN amount_cents >= 0 THEN 1 ELSE 0 END) = 0
          )
          SELECT merchant_raw, avg_gap, last_seen, last_amount
          FROM agg
@@ -764,22 +762,14 @@ fn wellness_context(
     avg_monthly_expense_cents: i64,
     savings_rate_pct: i64,
 ) -> WellnessContext {
-    // Emergency fund months: total liquid balance / avg monthly expenses
-    let total_balance: i64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(COALESCE(
-                 (SELECT balance_cents FROM account_balances b
-                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
-             )), 0) FROM accounts a WHERE a.archived_at IS NULL",
-            [],
-            |r| r.get(0),
-        )
+    // Emergency-fund coverage from the shared metrics layer: liquid,
+    // emergency-fund-eligible, non-debt balance over average monthly expense.
+    let emergency_fund_balance = metrics::balance_breakdown(conn)
+        .map(|b| b.emergency_fund_cents)
         .unwrap_or(0);
-    let emergency_fund_months = if avg_monthly_expense_cents > 0 {
-        (total_balance.max(0) as f64 / avg_monthly_expense_cents as f64).min(24.0)
-    } else {
-        0.0
-    };
+    let emergency_fund_months =
+        metrics::emergency_fund_months(emergency_fund_balance, avg_monthly_expense_cents);
+    let target_savings_rate_pct = metrics::assumptions(conn).target_savings_rate_pct;
 
     // Debt snowball: active debt-payoff goals ordered by remaining balance ascending
     let mut debt_snowball: Vec<DebtSnowballItem> = Vec::new();
@@ -787,7 +777,7 @@ fn wellness_context(
     if let Ok(mut stmt) = conn.prepare(
         "SELECT name, target_cents, current_cents, monthly_cents
          FROM goals
-         WHERE goal_type = 'debt-payoff'
+         WHERE type = 'debt-payoff'
            AND archived_at IS NULL
            AND (target_cents - current_cents) > 0
          ORDER BY (target_cents - current_cents) ASC",
@@ -819,22 +809,9 @@ fn wellness_context(
     let cut60 = (now - Duration::days(60)).to_rfc3339();
 
     let rate_for = |cutoff_start: &str, cutoff_end: &str| -> i64 {
-        let (inc, exp): (i64, i64) = conn
-            .query_row(
-                "SELECT
-                   COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                   COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-                 FROM transactions
-                 WHERE posted_at >= ?1 AND posted_at < ?2",
-                params![cutoff_start, cutoff_end],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap_or((0, 0));
-        if inc > 0 {
-            (((inc - exp).max(0) * 100) / inc).clamp(0, 100)
-        } else {
-            0
-        }
+        metrics::cashflow_between(conn, cutoff_start, cutoff_end)
+            .map(|c| c.savings_rate_pct)
+            .unwrap_or(0)
     };
 
     let rate_recent = rate_for(&cut30, &now.to_rfc3339());
@@ -855,7 +832,8 @@ fn wellness_context(
         total_debt_cents,
         debt_snowball,
         savings_rate_trend,
-        meets_pay_yourself_first: savings_rate_pct >= 10,
+        meets_pay_yourself_first: savings_rate_pct >= target_savings_rate_pct,
+        pay_yourself_first_target_pct: target_savings_rate_pct,
         savings_accounts,
         loans,
     }

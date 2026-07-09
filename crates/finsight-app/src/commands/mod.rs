@@ -11,6 +11,7 @@ pub mod inbox;
 pub mod insights;
 pub mod journey;
 pub mod meta;
+pub mod metrics;
 pub mod onboarding;
 pub mod planned_transactions;
 pub mod recipes;

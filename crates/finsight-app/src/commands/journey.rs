@@ -45,7 +45,6 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
     run(&db, move |conn| {
         let now = Utc::now();
         let month = now.format("%Y-%m").to_string();
-        let rolling_cutoff = (now - Duration::days(90)).to_rfc3339();
         let past_30_date = (now - Duration::days(30)).format("%Y-%m-%d").to_string();
 
         let accounts_count: i64 = conn.query_row(
@@ -56,14 +55,12 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
         let transactions_count: i64 =
             conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))?;
 
-        let liquid_balance_cents: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(COALESCE(
-                 (SELECT balance_cents FROM account_balances b
-                  WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
-             )), 0) FROM accounts a WHERE a.archived_at IS NULL",
-            [],
-            |r| r.get(0),
-        )?;
+        // Balances from the shared metrics layer. Emergency-fund / starter-fund
+        // stages measure the *liquid, emergency-fund-eligible* pool (not total
+        // net worth), so a mortgage can't make the $1,000 starter fund
+        // unreachable and brokerage/retirement don't fake a full fund.
+        let balances = finsight_core::metrics::balance_breakdown(conn)?;
+        let liquid_balance_cents = balances.emergency_fund_cents;
 
         let active_debt_goal_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM goals
@@ -102,43 +99,14 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
 
-        let (rolling_income_total, rolling_expense_total): (i64, i64) = conn.query_row(
-            "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-             FROM transactions
-             WHERE posted_at >= ?1",
-            params![rolling_cutoff],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+        let rolling = finsight_core::metrics::rolling_averages(conn, 90)?;
+        let avg_monthly_expense_cents = rolling.avg_monthly_expense_cents;
+        let avg_monthly_income_cents = rolling.avg_monthly_income_cents;
+        let avg_savings_rate_pct = rolling.savings_rate_pct;
 
-        let avg_monthly_expense_cents = rolling_expense_total / 3;
-        let avg_monthly_income_cents = rolling_income_total / 3;
-        let avg_savings_rate_pct = if avg_monthly_income_cents > 0 {
-            (((avg_monthly_income_cents - avg_monthly_expense_cents).max(0) * 100)
-                / avg_monthly_income_cents)
-                .clamp(0, 100)
-        } else {
-            0
-        };
-
-        // Debt (Credit/Loan accounts) is already included as a negative
-        // balance in the accounts sum below — no separate liabilities
-        // subtraction needed.
-        let current_net_worth_cents: i64 = conn.query_row(
-            "SELECT
-                COALESCE((
-                    SELECT SUM(COALESCE(
-                        (SELECT balance_cents FROM account_balances b
-                         WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0
-                    ))
-                    FROM accounts a
-                    WHERE a.archived_at IS NULL
-                ), 0)
-                + COALESCE((SELECT SUM(value_cents) FROM manual_assets), 0)",
-            [],
-            |r| r.get(0),
-        )?;
+        // Net worth from the shared metrics layer (known account balances with
+        // debt folded in as negatives, plus manual assets).
+        let current_net_worth_cents = balances.net_worth_cents;
 
         let snapshot_30_days_ago: Option<i64> = conn
             .query_row(
@@ -151,6 +119,12 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
                 |r| r.get(0),
             )
             .ok();
+
+        // User-configured targets (Settings → Financial targets) drive the
+        // emergency-fund and savings-rate milestones instead of hardcoded values.
+        let assumptions = finsight_core::metrics::assumptions(conn);
+        let savings_target = assumptions.target_savings_rate_pct;
+        let ef_target_months = assumptions.emergency_fund_target_months;
 
         let stage1_completed = accounts_count >= 1 && transactions_count >= 30;
         let stage1_progress = clamp_pct(
@@ -223,7 +197,8 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
             "No active debt payoff goals remain".to_string()
         };
 
-        let full_emergency_target_cents = avg_monthly_expense_cents.saturating_mul(3);
+        let full_emergency_target_cents =
+            (avg_monthly_expense_cents as f64 * ef_target_months).round() as i64;
         let stage5_completed =
             full_emergency_target_cents > 0 && liquid_balance_cents >= full_emergency_target_cents;
         let stage5_progress = if full_emergency_target_cents > 0 {
@@ -245,9 +220,12 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
             "Need at least 90 days of expense history to size your full emergency fund".to_string()
         };
 
-        let stage6_completed = avg_monthly_income_cents > 0 && avg_savings_rate_pct >= 15;
-        let stage6_progress = if avg_monthly_income_cents > 0 {
-            clamp_pct((avg_savings_rate_pct.min(15) as f64 / 15.0) * 100.0)
+        let stage6_completed =
+            avg_monthly_income_cents > 0 && avg_savings_rate_pct >= savings_target;
+        let stage6_progress = if avg_monthly_income_cents > 0 && savings_target > 0 {
+            clamp_pct((avg_savings_rate_pct.min(savings_target) as f64 / savings_target as f64) * 100.0)
+        } else if avg_monthly_income_cents > 0 {
+            100
         } else {
             0
         };
@@ -337,20 +315,30 @@ pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<
             (
                 5u8,
                 "Full Emergency Fund".to_string(),
-                "Grow your cash reserve to cover at least three months of essential expenses.".to_string(),
+                format!(
+                    "Grow your cash reserve to cover at least {:.0} months of essential expenses.",
+                    ef_target_months
+                ),
                 stage5_completed,
                 stage5_progress,
                 stage5_detail,
-                "Help me build a full emergency fund worth three months of expenses and figure out how much to save each month.".to_string(),
+                format!(
+                    "Help me build a full emergency fund worth {:.0} months of expenses and figure out how much to save each month.",
+                    ef_target_months
+                ),
             ),
             (
                 6u8,
-                "Saving 15%+".to_string(),
-                "Move from occasional saving to consistently keeping 15% or more of your income.".to_string(),
+                format!("Saving {savings_target}%+"),
+                format!(
+                    "Move from occasional saving to consistently keeping {savings_target}% or more of your income."
+                ),
                 stage6_completed,
                 stage6_progress,
                 stage6_detail,
-                "My goal is to save at least 15% of my income. Help me find room in my plan and automate the habit.".to_string(),
+                format!(
+                    "My goal is to save at least {savings_target}% of my income. Help me find room in my plan and automate the habit."
+                ),
             ),
             (
                 7u8,

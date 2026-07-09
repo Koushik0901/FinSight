@@ -82,7 +82,7 @@ pub fn get_month_totals() -> Arc<dyn Tool> {
             "get_month_totals"
         }
         fn description(&self) -> &str {
-            "Get this month's income, expenses, and savings rate"
+            "Get this month's income, expenses, and savings rate. Use for monthly income and cash-flow questions; for forward month-by-month projections use run_cashflow_timeline instead."
         }
         fn parameters(&self) -> Value {
             json!({"type": "object", "properties": {}})
@@ -625,7 +625,7 @@ pub fn get_financial_snapshot() -> Arc<dyn Tool> {
             "get_financial_snapshot"
         }
         fn description(&self) -> &str {
-            "Get the full local finance snapshot for planning: liquid balances, cashflow, goals, debts, recurring bills, planned transactions, and data warnings"
+            "Get the full local finance snapshot for planning: liquid balances, cashflow, goals, debts, recurring bills, planned transactions, and data warnings. Any account with balance_known=false has an UNKNOWN balance (its balance_cents is a placeholder 0) — report it as unknown, never as $0, and exclude it from totals."
         }
         fn parameters(&self) -> Value {
             json!({"type":"object","properties":{}})
@@ -825,7 +825,7 @@ pub fn run_emergency_fund_scenarios() -> Arc<dyn Tool> {
             "run_emergency_fund_scenarios"
         }
         fn description(&self) -> &str {
-            "Model one-, three-, and six-month emergency fund targets, gaps, runway, and time to target for a monthly contribution"
+            "Model one-, three-, and six-month emergency fund targets, gaps, liquidity runway, and time-to-target. Defaults the monthly savings rate to the current monthly surplus and returns an estimated completion date per target. Use for emergency-fund questions, 'when will my emergency fund be full', how-long-could-I-get-by-if-I-lost-my-income, and liquidity-runway questions. Report the target, current saved amount, the monthly contribution used, and the completion date."
         }
         fn parameters(&self) -> Value {
             json!({"type":"object","properties":{"monthly_contribution_cents":{"type":"integer","default":0}}})
@@ -869,7 +869,7 @@ pub fn run_purchase_affordability() -> Arc<dyn Tool> {
             "run_purchase_affordability"
         }
         fn description(&self) -> &str {
-            "Model whether a one-time purchase is affordable using emergency cash, monthly surplus, high-interest debt, and wait/save alternatives"
+            "Model whether a one-time purchase is affordable. Pass the purchase amount in cents (amount_cents). Weighs emergency cash, monthly surplus, obligations, and high-interest debt, and suggests wait/save alternatives. Be cautious: do not approve a purchase that would drop the user below their emergency floor or lean on high-APR debt. Use for 'can I afford X for $N' questions."
         }
         fn parameters(&self) -> Value {
             json!({"type":"object","properties":{"purchase_amount_cents":{"type":"integer"}},"required":["purchase_amount_cents"]})

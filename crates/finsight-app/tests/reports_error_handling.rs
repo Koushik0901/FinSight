@@ -20,7 +20,9 @@ fn fresh_db() -> (TempDir, Db) {
 }
 
 /// Mirrors fetch_monthly's row-collection step in crates/finsight-app/src/commands/reports.rs.
-fn fetch_monthly_sums(conn: &rusqlite::Connection) -> Result<Vec<(String, i64, i64)>, rusqlite::Error> {
+fn fetch_monthly_sums(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<(String, i64, i64)>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT strftime('%Y-%m', posted_at) AS mo,
                 SUM(CASE WHEN amount_cents > 0 THEN amount_cents  ELSE 0 END),
@@ -47,7 +49,10 @@ fn empty_transactions_table_is_a_clean_no_data_result_not_an_error() {
     let conn = db.get().unwrap();
 
     let rows = fetch_monthly_sums(&conn).expect("empty table must not be treated as a failure");
-    assert!(rows.is_empty(), "no transactions means no monthly rows, not an error");
+    assert!(
+        rows.is_empty(),
+        "no transactions means no monthly rows, not an error"
+    );
 }
 
 /// Mirrors get_month_totals' income/expense sums, which now exclude transfers.
@@ -76,7 +81,10 @@ fn top_categories(conn: &rusqlite::Connection) -> Result<Vec<(String, i64)>, rus
     )?;
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get::<_, i64>(1)?))
+            Ok((
+                r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                r.get::<_, i64>(1)?,
+            ))
         })?
         .collect();
     rows
@@ -118,7 +126,11 @@ fn top_categories_tolerates_uncategorized_spending_null_id() {
     .unwrap();
 
     let rows = top_categories(&conn).expect("uncategorized NULL id must not fail the report");
-    assert_eq!(rows.len(), 2, "one categorized group + one uncategorized group");
+    assert_eq!(
+        rows.len(),
+        2,
+        "one categorized group + one uncategorized group"
+    );
 }
 
 #[test]

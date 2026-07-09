@@ -116,15 +116,24 @@ pub async fn compute_debt_payoff(
         // Debt is a Credit/Loan-type Account with a negative balance — not a
         // separate liabilities-table row. "Amount owed" is the positive
         // magnitude of that negative balance.
-        let debts: Vec<(String, String, i64, Option<f64>, Option<i64>)> = accounts::list_summaries(conn)?
-            .into_iter()
-            .filter(|a| {
-                a.balance_known
-                    && matches!(a.r#type, AccountType::Credit | AccountType::Loan)
-                    && a.balance_cents < 0
-            })
-            .map(|a| (a.id, a.name, -a.balance_cents, a.apr_pct, a.min_payment_cents))
-            .collect();
+        let debts: Vec<(String, String, i64, Option<f64>, Option<i64>)> =
+            accounts::list_summaries(conn)?
+                .into_iter()
+                .filter(|a| {
+                    a.balance_known
+                        && matches!(a.r#type, AccountType::Credit | AccountType::Loan)
+                        && a.balance_cents < 0
+                })
+                .map(|a| {
+                    (
+                        a.id,
+                        a.name,
+                        -a.balance_cents,
+                        a.apr_pct,
+                        a.min_payment_cents,
+                    )
+                })
+                .collect();
         if debts.is_empty() {
             return Ok(vec![]);
         }

@@ -236,7 +236,9 @@ pub async fn run_job(
             // whole categorization job — log it and keep going.
             match write {
                 Ok(Ok(())) => categorized += 1,
-                Ok(Err(e)) => eprintln!("[categorizer] write failed for one transaction, skipping: {e}"),
+                Ok(Err(e)) => {
+                    eprintln!("[categorizer] write failed for one transaction, skipping: {e}")
+                }
                 Err(e) => eprintln!("[categorizer] write task join error, skipping: {e}"),
             }
         }
@@ -371,10 +373,7 @@ fn load_recent_examples(conn: &mut rusqlite::Connection) -> Result<Vec<(String, 
     Ok(out)
 }
 
-fn build_system_prompt(
-    categories: &[CategoryRow],
-    recent_examples: &[(String, String)],
-) -> String {
+fn build_system_prompt(categories: &[CategoryRow], recent_examples: &[(String, String)]) -> String {
     let cats_json = json!(categories
         .iter()
         .map(|(id, label, group, guidance)| {
@@ -561,7 +560,11 @@ mod tests {
         assert_eq!(conf, None, "a transfer must not get an LLM confidence");
         // The real spending txn was still categorized.
         let t1: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(t1.as_deref(), Some("cat1"));
     }
@@ -595,11 +598,19 @@ mod tests {
         let conn = db.get().unwrap();
         // The real txn was categorized; the ghost wrote nothing.
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat.as_deref(), Some("cat1"));
         let ghost: i64 = conn
-            .query_row("SELECT COUNT(*) FROM categorizations WHERE txn_id='ghost-txn-999'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM categorizations WHERE txn_id='ghost-txn-999'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(ghost, 0, "hallucinated txn_id must not be written");
     }
@@ -758,7 +769,11 @@ mod tests {
 
         let conn = db.get().unwrap();
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(
             cat, None,

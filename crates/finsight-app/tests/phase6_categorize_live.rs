@@ -75,6 +75,9 @@ async fn categorize_real_uncategorized_with_gemma() {
     println!("llm categorizations: {llm_count}, needs-review (low-confidence): {needs_review}");
 
     // The LLM should have categorized a meaningful chunk of the local merchants.
-    assert!(after < before, "categorization should reduce the uncategorized count");
+    assert!(
+        after < before,
+        "categorization should reduce the uncategorized count"
+    );
     assert!(llm_count > 0, "LLM categorizations should now exist");
 }

@@ -1,7 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 use chrono::{DateTime, Utc};
-use finsight_core::{keychain, settings};
 use finsight_core::models::{
     AccountType, ImportCandidateWithMatches, Institution as InstitutionModel, NewAccount,
     NewInstitution, NewSimpleFinConnection, SimpleFinAlert, SimpleFinConnection as DbConnection,
@@ -10,6 +9,7 @@ use finsight_core::models::{
 use finsight_core::repos::{
     accounts, alerts, connections, import_candidates, institutions, run, transfers,
 };
+use finsight_core::{keychain, settings};
 use finsight_providers::simplefin::models::SimpleFinConnection as ProviderConnection;
 use finsight_providers::simplefin::{
     classify_account, commit_simplefin_import, fetch_simplefin_data, SimpleFinClient,
@@ -757,18 +757,14 @@ pub async fn purge_simplefin_data(
                OR source IN ('simplefin', 'sample');
             ",
         )?;
-        let accounts_deleted: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM purge_accounts",
-            [],
-            |r| r.get(0),
-        )?;
-        let transactions_deleted: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM purge_transactions",
-            [],
-            |r| r.get(0),
-        )?;
+        let accounts_deleted: i64 =
+            tx.query_row("SELECT COUNT(*) FROM purge_accounts", [], |r| r.get(0))?;
+        let transactions_deleted: i64 =
+            tx.query_row("SELECT COUNT(*) FROM purge_transactions", [], |r| r.get(0))?;
         let connections_deleted: i64 =
-            tx.query_row("SELECT COUNT(*) FROM simplefin_connections", [], |r| r.get(0))?;
+            tx.query_row("SELECT COUNT(*) FROM simplefin_connections", [], |r| {
+                r.get(0)
+            })?;
 
         tx.execute_batch(
             "

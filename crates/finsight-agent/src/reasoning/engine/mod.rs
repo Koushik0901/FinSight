@@ -1,5 +1,5 @@
 use crate::reasoning::messages::{
-    AgentChange, AssistantTurn, ChatMessage, ReasoningResult, ToolCall,
+    parse_plan_preamble, AgentChange, AssistantTurn, ChatMessage, ReasoningResult, ToolCall,
 };
 use crate::reasoning::tools::{ToolContext, ToolSet};
 use crate::CompletionProvider;
@@ -114,6 +114,38 @@ impl ReasoningEngine {
                     }
                 }
                 AssistantTurn::FinalAnswer { content, reasoning } => {
+                    // The model may emit its `PLAN:` preamble as free text on the
+                    // first turn (the contract asks for it before anything else).
+                    // Capture it so the plan feature still works even when the
+                    // plan arrives on a text turn rather than a tool-call turn.
+                    if iteration == 0 && plan.is_empty() {
+                        if let Some(steps) = parse_plan_preamble(&content) {
+                            plan = steps.clone();
+                            on_event(ReasoningEngineEvent::PlanReady { steps });
+                        }
+                    }
+
+                    // A robust agent loop never accepts a non-answer as final.
+                    // glm-class models sometimes end a turn having emitted ONLY
+                    // the plan (or empty content) with no tool calls — the
+                    // provider surfaces that as a FinalAnswer, and returning it
+                    // verbatim ships the raw plan (or nothing) to the user. If we
+                    // still have iterations left, nudge the model to actually do
+                    // the work instead of finalizing a non-answer.
+                    let has_real_answer = parse_structured_final_answer(&content).is_some()
+                        || !content_after_plan(&content).is_empty();
+                    if !has_real_answer && iteration + 1 < max_iterations {
+                        trace.push("Non-answer turn (plan-only/empty) — asked model to continue".to_string());
+                        messages.push(ChatMessage::Assistant {
+                            content: Some(content),
+                            tool_calls: Vec::new(),
+                        });
+                        messages.push(ChatMessage::User {
+                            content: CONTINUE_AFTER_NON_ANSWER.to_string(),
+                        });
+                        continue;
+                    }
+
                     return Ok(Self::parse_final_answer(
                         content,
                         reasoning,
@@ -265,6 +297,39 @@ struct StructuredFinalAnswer {
     follow_up_questions: Vec<String>,
     #[serde(default)]
     response_blocks: Vec<Value>,
+}
+
+/// Nudge sent when the model finalizes a turn without actually answering
+/// (only a `PLAN:` preamble, or empty content, and no tool calls). Keeps the
+/// loop from shipping a non-answer while gently reinforcing grounding.
+const CONTINUE_AFTER_NON_ANSWER: &str = "You outlined a plan but have not answered yet. \
+Now carry it out: call the tools you need to fetch the actual numbers from the user's data, \
+then reply with ONLY the final JSON answer object. Do not restate the plan, do not leave the \
+answer empty, and do not state any number you have not obtained from a tool result.";
+
+/// Returns the substantive content that follows any leading `PLAN:` preamble.
+/// If the model emitted only a plan (or nothing at all), this is empty — the
+/// signal that the turn is a non-answer that should not be finalized.
+fn content_after_plan(raw: &str) -> String {
+    let lines: Vec<&str> = raw.lines().collect();
+    let Some(plan_idx) = lines.iter().position(|l| l.trim() == "PLAN:") else {
+        return raw.trim().to_string();
+    };
+    // Skip the contiguous run of numbered plan steps (and any blank separators)
+    // that follow the `PLAN:` line; whatever remains is the real answer body.
+    let mut i = plan_idx + 1;
+    while i < lines.len() {
+        let t = lines[i].trim();
+        if t.is_empty() {
+            i += 1;
+            continue;
+        }
+        match t.split_once(". ") {
+            Some((num, _)) if num.trim().parse::<u32>().is_ok() => i += 1,
+            _ => break,
+        }
+    }
+    lines[i..].join("\n").trim().to_string()
 }
 
 fn parse_structured_final_answer(content: &str) -> Option<StructuredFinalAnswer> {

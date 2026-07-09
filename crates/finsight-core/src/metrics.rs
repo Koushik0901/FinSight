@@ -1,0 +1,484 @@
+//! Single source of truth for derived financial numbers.
+//!
+//! Every screen and the Copilot must agree on what "savings rate", "runway",
+//! "liquid", "emergency fund", and "average monthly income/expense" mean. Before
+//! this module those definitions were hand-rolled in a dozen places — savings
+//! rate had five variants, runway three, and the transfer-exclusion rule was
+//! forgotten in six queries. Route every consumer through here so a definition
+//! change (or a bug fix) happens exactly once.
+//!
+//! Convention decisions made here, deliberately:
+//! - **Transfers are never income or expense.** Every aggregate below filters
+//!   `is_transfer = 0`; callers cannot forget it because they never write the SQL.
+//! - **Savings rate is signed and honest.** A deficit month yields a *negative*
+//!   rate; it is not clamped to zero. Callers that want a progress bar can clamp
+//!   at the display edge, but the metric itself never hides a deficit.
+//! - **Runway is liquid ÷ average burn.** Not net worth (which includes illiquid
+//!   assets and debts), not month-to-date spend (which lurches with pay cycles).
+//! - **Balances classify by account TYPE, not balance sign.** An overdrawn
+//!   checking account is still liquid; a credit card is debt whatever its sign.
+
+use crate::error::CoreResult;
+use crate::forecast;
+use crate::models::AccountType;
+use crate::repos::{accounts, net_worth};
+use rusqlite::{params, Connection};
+
+/// Period used to turn an average monthly outflow into a daily burn for runway.
+pub const RUNWAY_PERIOD_DAYS: i64 = 30;
+
+/// Emergency-fund coverage is capped so an outsized cash balance doesn't render
+/// an absurd "hundreds of months" figure.
+pub const EMERGENCY_FUND_MONTHS_CAP: f64 = 24.0;
+
+// ── Account classification ──────────────────────────────────────────────────
+
+/// Credit cards and loans — debt, regardless of the current balance sign.
+pub fn is_debt_type(t: AccountType) -> bool {
+    matches!(t, AccountType::Credit | AccountType::Loan)
+}
+
+/// Brokerage / retirement holdings — assets, but not spendable liquidity.
+pub fn is_investment_type(t: AccountType) -> bool {
+    matches!(t, AccountType::Investment)
+}
+
+/// Cash and near-cash: everything that isn't debt or an investment. This is the
+/// pool runway and emergency-fund coverage are measured against.
+pub fn is_liquid_type(t: AccountType) -> bool {
+    !is_debt_type(t) && !is_investment_type(t)
+}
+
+// ── The one savings-rate formula ────────────────────────────────────────────
+
+/// Savings rate as a signed percentage: `(income - expense) / income * 100`.
+/// Returns 0 when there is no income to divide by. NOT clamped — a deficit
+/// shows as negative, on every surface.
+pub fn savings_rate_pct(income_cents: i64, expense_cents: i64) -> i64 {
+    if income_cents <= 0 {
+        0
+    } else {
+        ((income_cents - expense_cents) * 100) / income_cents
+    }
+}
+
+/// Months of expenses the given emergency-fund balance covers, capped. Returns
+/// 0.0 when average expense is unknown (can't divide).
+pub fn emergency_fund_months(emergency_fund_cents: i64, avg_monthly_expense_cents: i64) -> f64 {
+    if avg_monthly_expense_cents > 0 {
+        (emergency_fund_cents.max(0) as f64 / avg_monthly_expense_cents as f64)
+            .min(EMERGENCY_FUND_MONTHS_CAP)
+    } else {
+        0.0
+    }
+}
+
+/// Days a liquid balance lasts at a given average monthly burn — the single
+/// runway definition. Delegates to [`forecast::runway_days`] with a fixed
+/// 30-day period so income cadence doesn't distort the figure.
+pub fn runway_days(liquid_cents: i64, avg_monthly_expense_cents: i64) -> i64 {
+    forecast::runway_days(liquid_cents, avg_monthly_expense_cents, RUNWAY_PERIOD_DAYS)
+}
+
+// ── User-configurable assumptions ───────────────────────────────────────────
+
+/// Targets and rates the user can tune, with defaults drawn from the Financial
+/// Freedom Framework (pay-yourself-first ≥20%, a 6-month full emergency fund,
+/// a 7% long-run return). Stored in the settings KV so the screens, health
+/// score, and compound projector all read the same numbers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Assumptions {
+    pub target_savings_rate_pct: i64,
+    pub emergency_fund_target_months: f64,
+    pub expected_annual_return_pct: f64,
+}
+
+impl Default for Assumptions {
+    fn default() -> Self {
+        Self {
+            target_savings_rate_pct: 20,
+            emergency_fund_target_months: 6.0,
+            expected_annual_return_pct: 7.0,
+        }
+    }
+}
+
+pub const KEY_TARGET_SAVINGS_RATE_PCT: &str = "assumptions.target_savings_rate_pct";
+pub const KEY_EMERGENCY_FUND_TARGET_MONTHS: &str = "assumptions.emergency_fund_target_months";
+pub const KEY_EXPECTED_ANNUAL_RETURN_PCT: &str = "assumptions.expected_annual_return_pct";
+
+/// Read the user's assumptions, falling back to framework defaults for any that
+/// aren't set (or if the settings read fails — assumptions are never critical
+/// enough to fail a whole request over).
+pub fn assumptions(conn: &Connection) -> Assumptions {
+    let d = Assumptions::default();
+    Assumptions {
+        target_savings_rate_pct: crate::settings::get(conn, KEY_TARGET_SAVINGS_RATE_PCT)
+            .ok()
+            .flatten()
+            .unwrap_or(d.target_savings_rate_pct),
+        emergency_fund_target_months: crate::settings::get(conn, KEY_EMERGENCY_FUND_TARGET_MONTHS)
+            .ok()
+            .flatten()
+            .unwrap_or(d.emergency_fund_target_months),
+        expected_annual_return_pct: crate::settings::get(conn, KEY_EXPECTED_ANNUAL_RETURN_PCT)
+            .ok()
+            .flatten()
+            .unwrap_or(d.expected_annual_return_pct),
+    }
+}
+
+/// Persist the user's assumptions.
+pub fn set_assumptions(conn: &Connection, a: &Assumptions) -> CoreResult<()> {
+    crate::settings::set(conn, KEY_TARGET_SAVINGS_RATE_PCT, &a.target_savings_rate_pct)?;
+    crate::settings::set(conn, KEY_EMERGENCY_FUND_TARGET_MONTHS, &a.emergency_fund_target_months)?;
+    crate::settings::set(conn, KEY_EXPECTED_ANNUAL_RETURN_PCT, &a.expected_annual_return_pct)?;
+    Ok(())
+}
+
+// ── Cashflow over a window ──────────────────────────────────────────────────
+
+/// Income and expense (both positive cents) since `start_inclusive`, transfers
+/// excluded.
+pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreResult<(i64, i64)> {
+    conn.query_row(
+        "SELECT
+            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+         FROM transactions
+         WHERE posted_at >= ?1 AND is_transfer = 0",
+        params![start_inclusive],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .map_err(Into::into)
+}
+
+/// Income and expense (both positive cents) over `[start_inclusive, end_exclusive)`,
+/// transfers excluded.
+pub fn income_expense_between(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: &str,
+) -> CoreResult<(i64, i64)> {
+    conn.query_row(
+        "SELECT
+            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+         FROM transactions
+         WHERE posted_at >= ?1 AND posted_at < ?2 AND is_transfer = 0",
+        params![start_inclusive, end_exclusive],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .map_err(Into::into)
+}
+
+/// Income, expense, net, and savings rate for a single window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Cashflow {
+    pub income_cents: i64,
+    pub expense_cents: i64,
+    pub net_cents: i64,
+    pub savings_rate_pct: i64,
+}
+
+impl Cashflow {
+    fn from_income_expense(income: i64, expense: i64) -> Self {
+        Cashflow {
+            income_cents: income,
+            expense_cents: expense,
+            net_cents: income - expense,
+            savings_rate_pct: savings_rate_pct(income, expense),
+        }
+    }
+}
+
+/// Cashflow since `start_inclusive` (e.g. the first of the calendar month).
+pub fn cashflow_since(conn: &Connection, start_inclusive: &str) -> CoreResult<Cashflow> {
+    let (income, expense) = income_expense_since(conn, start_inclusive)?;
+    Ok(Cashflow::from_income_expense(income, expense))
+}
+
+/// Cashflow over `[start_inclusive, end_exclusive)`.
+pub fn cashflow_between(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: &str,
+) -> CoreResult<Cashflow> {
+    let (income, expense) = income_expense_between(conn, start_inclusive, end_exclusive)?;
+    Ok(Cashflow::from_income_expense(income, expense))
+}
+
+// ── Rolling averages ────────────────────────────────────────────────────────
+
+/// Average monthly income/expense over a trailing window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RollingAverages {
+    pub window_days: i64,
+    pub months: i64,
+    pub avg_monthly_income_cents: i64,
+    pub avg_monthly_expense_cents: i64,
+    pub net_monthly_cents: i64,
+    pub savings_rate_pct: i64,
+}
+
+/// Average monthly income and expense over the last `days`, transfers excluded.
+/// The window is divided into whole months (`days / 30`, min 1) — matching the
+/// long-standing 90-day-÷-3 convention, generalized.
+pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAverages> {
+    let months = (days / 30).max(1);
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+    let (income_total, expense_total) = income_expense_since(conn, &cutoff)?;
+    let avg_income = income_total / months;
+    let avg_expense = expense_total / months;
+    Ok(RollingAverages {
+        window_days: days,
+        months,
+        avg_monthly_income_cents: avg_income,
+        avg_monthly_expense_cents: avg_expense,
+        net_monthly_cents: avg_income - avg_expense,
+        savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
+    })
+}
+
+// ── Balance breakdown ───────────────────────────────────────────────────────
+
+/// Liquid / invested / debt / emergency-fund splits plus net worth. Computed
+/// only from accounts with a confirmed balance (`balance_known`); accounts whose
+/// balance is unknown are surfaced via `accounts_with_unknown_balance` rather
+/// than counted as a phantom $0. Net worth is delegated to
+/// [`net_worth::breakdown`] so there is exactly one net-worth definition too.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BalanceBreakdown {
+    /// Cash and near-cash (non-debt, non-investment), summed with sign.
+    pub liquid_cents: i64,
+    /// Investment/brokerage/retirement balances.
+    pub invested_cents: i64,
+    /// Magnitude of debt owed on Credit/Loan accounts (>= 0).
+    pub debt_cents: i64,
+    /// Balance of emergency-fund-eligible, non-debt accounts — the pool
+    /// emergency-fund coverage is measured against.
+    pub emergency_fund_cents: i64,
+    /// Net worth (known account balances with debt as negatives + manual assets).
+    pub net_worth_cents: i64,
+    pub accounts_with_unknown_balance: i64,
+}
+
+pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> {
+    let summaries = accounts::list_summaries(conn)?;
+    let net_worth_cents = net_worth::breakdown(conn)?.net_worth_cents;
+
+    let mut out = BalanceBreakdown {
+        net_worth_cents,
+        ..Default::default()
+    };
+    for a in &summaries {
+        if !a.balance_known {
+            out.accounts_with_unknown_balance += 1;
+            continue;
+        }
+        if is_debt_type(a.r#type) {
+            // Debt is stored as a negative balance; report the magnitude owed.
+            if a.balance_cents < 0 {
+                out.debt_cents += -a.balance_cents;
+            }
+        } else if is_investment_type(a.r#type) {
+            out.invested_cents += a.balance_cents;
+        } else {
+            out.liquid_cents += a.balance_cents;
+        }
+        if a.emergency_fund_eligible && !is_debt_type(a.r#type) {
+            out.emergency_fund_cents += a.balance_cents;
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{db::run_migrations, keychain, models::NewAccount, repos::accounts, Db};
+    use chrono::{Duration, Utc};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("metrics.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn account(name: &str, ty: AccountType, opening: i64, ef_eligible: bool) -> NewAccount {
+        NewAccount {
+            owner: "me".into(),
+            bank: "Bank".into(),
+            r#type: ty,
+            name: name.into(),
+            last4: None,
+            currency: "USD".into(),
+            color: "#3B82F6".into(),
+            opening_balance_cents: opening,
+            source: "manual".into(),
+            liquidity_type: "liquid".into(),
+            emergency_fund_eligible: ef_eligible,
+            goal_earmark: None,
+            apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "cash".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
+        }
+    }
+
+    fn insert_txn(conn: &mut Connection, acct: &str, amount: i64, days_ago: i64, transfer: bool) {
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, status, is_anomaly, is_transfer, created_at) \
+             VALUES(?1, ?2, ?3, ?4, 'M', 'cleared', 0, ?5, ?3)",
+            params![
+                id,
+                acct,
+                (Utc::now() - Duration::days(days_ago)).to_rfc3339(),
+                amount,
+                if transfer { 1 } else { 0 },
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn savings_rate_is_signed_and_guards_zero_income() {
+        assert_eq!(savings_rate_pct(0, 500), 0, "no income → 0, not a divide by zero");
+        assert_eq!(savings_rate_pct(1000, 200), 80);
+        assert_eq!(savings_rate_pct(1000, 1500), -50, "deficit is negative, not clamped");
+    }
+
+    #[test]
+    fn emergency_fund_months_caps_and_guards() {
+        assert_eq!(emergency_fund_months(100_000, 0), 0.0);
+        assert_eq!(emergency_fund_months(300_000, 100_000), 3.0);
+        assert_eq!(emergency_fund_months(100_000_000, 100_000), EMERGENCY_FUND_MONTHS_CAP);
+    }
+
+    #[test]
+    fn type_classifiers_split_correctly() {
+        assert!(is_liquid_type(AccountType::Checking));
+        assert!(is_liquid_type(AccountType::Savings));
+        assert!(is_investment_type(AccountType::Investment));
+        assert!(is_debt_type(AccountType::Credit));
+        assert!(is_debt_type(AccountType::Loan));
+        assert!(!is_liquid_type(AccountType::Loan));
+    }
+
+    #[test]
+    fn income_expense_excludes_transfers() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        insert_txn(&mut conn, &acct, 300_000, 5, false); // income
+        insert_txn(&mut conn, &acct, -100_000, 5, false); // expense
+        insert_txn(&mut conn, &acct, -500_000, 5, true); // transfer out — must be ignored
+        insert_txn(&mut conn, &acct, 500_000, 5, true); // transfer in — must be ignored
+
+        let (income, expense) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
+        assert_eq!(income, 300_000);
+        assert_eq!(expense, 100_000);
+        assert_eq!(savings_rate_pct(income, expense), 66);
+    }
+
+    #[test]
+    fn balance_breakdown_classifies_by_type_not_sign() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // Overdrawn checking (negative but still liquid).
+        accounts::insert(&mut conn, account("Checking", AccountType::Checking, -5_000, true)).unwrap();
+        accounts::insert(&mut conn, account("HISA", AccountType::Savings, 500_000, true)).unwrap();
+        accounts::insert(&mut conn, account("Brokerage", AccountType::Investment, 1_000_000, false)).unwrap();
+        // Credit-card debt (negative) — debt, not "liquid negative".
+        accounts::insert(&mut conn, account("Card", AccountType::Credit, -120_000, false)).unwrap();
+
+        let b = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(b.liquid_cents, 495_000, "overdrawn checking reduces liquid, HISA adds");
+        assert_eq!(b.invested_cents, 1_000_000);
+        assert_eq!(b.debt_cents, 120_000, "credit-card magnitude owed");
+        assert_eq!(
+            b.emergency_fund_cents, 495_000,
+            "only ef-eligible non-debt accounts (checking + HISA)"
+        );
+        // Net worth folds debt in as a negative: -5,000 + 500,000 + 1,000,000 - 120,000.
+        assert_eq!(b.net_worth_cents, 1_375_000);
+    }
+
+    #[test]
+    fn rolling_averages_divide_window_into_months() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // Three months of $3,000 income and $1,000 expense.
+        for m in 0..3 {
+            insert_txn(&mut conn, &acct, 300_000, 10 + m * 30, false);
+            insert_txn(&mut conn, &acct, -100_000, 12 + m * 30, false);
+        }
+        let avg = rolling_averages(&conn, 90).unwrap();
+        assert_eq!(avg.months, 3);
+        assert_eq!(avg.avg_monthly_income_cents, 300_000);
+        assert_eq!(avg.avg_monthly_expense_cents, 100_000);
+        assert_eq!(avg.net_monthly_cents, 200_000);
+        assert!(avg.savings_rate_pct >= 66);
+    }
+
+    #[test]
+    fn assumptions_default_then_round_trip() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+        // Defaults from the Financial Freedom Framework when nothing is stored.
+        let d = assumptions(&conn);
+        assert_eq!(d.target_savings_rate_pct, 20);
+        assert_eq!(d.emergency_fund_target_months, 6.0);
+        assert_eq!(d.expected_annual_return_pct, 7.0);
+
+        set_assumptions(
+            &conn,
+            &Assumptions {
+                target_savings_rate_pct: 15,
+                emergency_fund_target_months: 3.0,
+                expected_annual_return_pct: 5.5,
+            },
+        )
+        .unwrap();
+        let got = assumptions(&conn);
+        assert_eq!(got.target_savings_rate_pct, 15);
+        assert_eq!(got.emergency_fund_target_months, 3.0);
+        assert_eq!(got.expected_annual_return_pct, 5.5);
+    }
+
+    #[test]
+    fn runway_uses_liquid_over_average_burn() {
+        // 300,000 liquid at 100,000/month → ~90 days.
+        assert_eq!(runway_days(300_000, 100_000), 90);
+        // No burn → capped, not infinite.
+        assert_eq!(runway_days(300_000, 0), forecast::RUNWAY_CAP_DAYS);
+        // Empty pocket → 0 regardless of burn.
+        assert_eq!(runway_days(0, 100_000), 0);
+    }
+}

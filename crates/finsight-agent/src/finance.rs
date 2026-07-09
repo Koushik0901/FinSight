@@ -63,10 +63,19 @@ pub struct SnapshotAccount {
     pub name: String,
     pub account_type: String,
     pub balance_cents: i64,
+    /// False when the account has no balance snapshot at all (e.g. an unsynced
+    /// brokerage). In that case `balance_cents` is a placeholder 0 that must
+    /// NOT be reported as a real $0 balance — the balance is genuinely unknown.
+    #[serde(default = "default_true")]
+    pub balance_known: bool,
     pub liquidity_type: String,
     pub emergency_fund_eligible: bool,
     pub goal_earmark: Option<String>,
     pub apy_pct: Option<f64>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -554,6 +563,14 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
     let mut data_warnings = Vec::new();
     if uncategorized_count > 0 {
         data_warnings.push(format!("{uncategorized_count} expense transaction(s) are uncategorized, so spending analysis may be incomplete."));
+    }
+    for a in &accounts {
+        if !a.balance_known {
+            data_warnings.push(format!(
+                "{} has no balance snapshot; its balance is UNKNOWN (not $0) and is excluded from totals.",
+                a.name
+            ));
+        }
     }
     for l in &liabilities {
         if l.apr_pct.is_none() {
@@ -1139,9 +1156,8 @@ pub fn run_emergency_fund_scenarios(
             } else {
                 None
             };
-            let estimated_completion_date = months_to_target.map(|m| {
-                add_months(today, m).format("%Y-%m-%d").to_string()
-            });
+            let estimated_completion_date =
+                months_to_target.map(|m| add_months(today, m).format("%Y-%m-%d").to_string());
             EmergencyFundTarget {
                 target_months,
                 target_cents,
@@ -1199,7 +1215,11 @@ fn add_months(date: chrono::NaiveDate, months: i64) -> chrono::NaiveDate {
 }
 
 fn last_day_of_month(year: i32, month: u32) -> u32 {
-    let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let (ny, nm) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
     let first_next = chrono::NaiveDate::from_ymd_opt(ny, nm, 1).unwrap();
     (first_next - chrono::Duration::days(1)).day0() + 1
 }
@@ -1757,12 +1777,15 @@ fn build_debt_goal_alternatives(
     ]
 }
 
-fn income_expense_since(conn: &mut Connection, cutoff: &str) -> rusqlite::Result<(i64, i64)> {
-    conn.query_row(
-        "SELECT COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0), COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) FROM transactions WHERE posted_at >= ?1",
-        params![cutoff],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
+fn income_expense_since(conn: &Connection, cutoff: &str) -> rusqlite::Result<(i64, i64)> {
+    // Route through the shared metrics layer so the forecast/scenario averages
+    // use the exact same income/expense definition (transfers excluded) as every
+    // screen and the Copilot. Unwrap the DB error back to `rusqlite::Error` to
+    // preserve this function's signature; that's the only failure this can hit.
+    finsight_core::metrics::income_expense_since(conn, cutoff).map_err(|e| match e {
+        finsight_core::CoreError::Database(e) => e,
+        other => rusqlite::Error::ToSqlConversionFailure(Box::new(other)),
+    })
 }
 
 fn expected_monthly_income_cents(snapshot: &FinancialSnapshot) -> i64 {
@@ -1782,7 +1805,8 @@ fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, a.name, a.type,
                 COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
-                a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct
+                a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct,
+                EXISTS(SELECT 1 FROM account_balances b WHERE b.account_id = a.id) AS balance_known
          FROM accounts a
          WHERE a.archived_at IS NULL
          ORDER BY a.bank, a.name",
@@ -1797,6 +1821,7 @@ fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
             emergency_fund_eligible: r.get::<_, i64>(5)? != 0,
             goal_earmark: r.get(6)?,
             apy_pct: r.get(7)?,
+            balance_known: r.get::<_, i64>(8)? != 0,
         })
     })?;
     rows.collect()
@@ -1891,7 +1916,11 @@ fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>
         Ok(SnapshotLiability {
             id: r.get(0)?,
             name: r.get(1)?,
-            liability_type: if account_type == "Credit" { "credit-card".into() } else { "loan".into() },
+            liability_type: if account_type == "Credit" {
+                "credit-card".into()
+            } else {
+                "loan".into()
+            },
             balance_cents: r.get(3)?,
             limit_cents: r.get(4)?,
             apr_pct: r.get(5)?,
@@ -2222,7 +2251,10 @@ mod tests {
             .iter()
             .find(|t| t.target_months == 3)
             .unwrap();
-        assert!(three_month.gap_cents > 0, "3-month target should have a gap");
+        assert!(
+            three_month.gap_cents > 0,
+            "3-month target should have a gap"
+        );
         assert!(
             three_month.months_to_target_at_contribution.is_some(),
             "a completion timeline should be projected from the surplus"

@@ -53,9 +53,22 @@ fn seed(conn: &mut Connection) {
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Test','Bank','Credit','Visa','USD','#F97316','manual','restricted',0,'debt',19.9,3000,500000,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc','2026-06-30',-120000,'manual')", []).unwrap();
     // Categories (some transactions will be uncategorized on purpose).
-    conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)", []).unwrap();
-    for (id, label) in [("groceries", "Groceries"), ("dining", "Dining"), ("transport", "Transport"), ("shopping", "Shopping")] {
-        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES(?1,'g',?2,'#888',0)", rusqlite::params![id, label]).unwrap();
+    conn.execute(
+        "INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)",
+        [],
+    )
+    .unwrap();
+    for (id, label) in [
+        ("groceries", "Groceries"),
+        ("dining", "Dining"),
+        ("transport", "Transport"),
+        ("shopping", "Shopping"),
+    ] {
+        conn.execute(
+            "INSERT INTO categories(id,group_id,label,color,sort_order) VALUES(?1,'g',?2,'#888',0)",
+            rusqlite::params![id, label],
+        )
+        .unwrap();
     }
     // Monthly payroll income Jan–Jun 2026 (categorized as income via positive amount).
     for m in 1..=6 {
@@ -69,16 +82,16 @@ fn seed(conn: &mut Connection) {
     let expenses = [
         ("2026-01-15", -9_999, "Costco", Some("groceries")),
         ("2026-01-20", -4_200, "Tim Hortons", Some("dining")),
-        ("2026-02-10", -15_000, "Best Buy", None),           // uncategorized, over $60
+        ("2026-02-10", -15_000, "Best Buy", None), // uncategorized, over $60
         ("2026-02-14", -6_500, "Uber", Some("transport")),
         ("2026-03-05", -8_800, "Whole Foods", Some("groceries")),
-        ("2026-03-22", -3_100, "Spotify", None),             // uncategorized, under $60
-        ("2026-04-02", -25_000, "Apple Store", None),        // uncategorized, over $60
+        ("2026-03-22", -3_100, "Spotify", None), // uncategorized, under $60
+        ("2026-04-02", -25_000, "Apple Store", None), // uncategorized, over $60
         ("2026-04-18", -7_250, "Shell Gas", Some("transport")),
         ("2026-05-09", -12_000, "Nordstrom", Some("shopping")),
         ("2026-05-30", -5_500, "Chipotle", Some("dining")),
-        ("2026-06-11", -18_400, "Delta Airlines", None),     // uncategorized, over $60
-        ("2026-06-28", -2_000, "Netflix", None),             // uncategorized, under $60
+        ("2026-06-11", -18_400, "Delta Airlines", None), // uncategorized, over $60
+        ("2026-06-28", -2_000, "Netflix", None),         // uncategorized, under $60
     ];
     for (date, amt, merch, cat) in expenses {
         conn.execute(
@@ -89,7 +102,11 @@ fn seed(conn: &mut Connection) {
     }
 }
 
-async fn ask(conn: &mut Connection, provider: Arc<dyn CompletionProvider>, q: &str) -> finsight_agent::ReasoningResult {
+async fn ask(
+    conn: &mut Connection,
+    provider: Arc<dyn CompletionProvider>,
+    q: &str,
+) -> finsight_agent::ReasoningResult {
     let tools = toolset();
     let result = ReasoningEngine::run(conn, q, &tools, provider, 10)
         .await
@@ -126,30 +143,71 @@ async fn six_required_questions_answer_grounded() {
     seed(&mut conn);
 
     // 1. PS5 affordability
-    let a1 = ask(&mut conn, provider.clone(), "Can I afford a PS5 with my current standing? It costs $540.").await;
+    let a1 = ask(
+        &mut conn,
+        provider.clone(),
+        "Can I afford a PS5 with my current standing? It costs $540.",
+    )
+    .await;
     assert!(!a1.content.trim().is_empty());
 
     // 2. Net worth
-    let a2 = ask(&mut conn, provider.clone(), "What's my net worth right now?").await;
+    let a2 = ask(
+        &mut conn,
+        provider.clone(),
+        "What's my net worth right now?",
+    )
+    .await;
     // Assets 200,000 + 300,000 = 500,000; minus 120,000 liability = 380,000 → "3,800".
-    assert!(a2.content.contains("3,800") || a2.content.contains("380"), "net worth grounded: {}", a2.content);
+    assert!(
+        a2.content.contains("3,800") || a2.content.contains("380"),
+        "net worth grounded: {}",
+        a2.content
+    );
 
     // 3. Emergency fund completion
-    ask(&mut conn, provider.clone(), "When will my emergency fund be full?").await;
+    ask(
+        &mut conn,
+        provider.clone(),
+        "When will my emergency fund be full?",
+    )
+    .await;
 
     // 4. Overspending
-    ask(&mut conn, provider.clone(), "Where am I spending the most money, and how do I prevent myself from overspending?").await;
+    ask(
+        &mut conn,
+        provider.clone(),
+        "Where am I spending the most money, and how do I prevent myself from overspending?",
+    )
+    .await;
 
     // 5. Recategorization (must PREVIEW + require approval, not mutate)
-    let a5 = ask(&mut conn, provider.clone(), "Let's recategorize all of my transactions that are still uncategorized.").await;
+    let a5 = ask(
+        &mut conn,
+        provider.clone(),
+        "Let's recategorize all of my transactions that are still uncategorized.",
+    )
+    .await;
     let uncat_after: i64 = conn
-        .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert!(uncat_after > 0, "recategorization must NOT apply without approval; expenses still uncategorized");
+    assert!(
+        uncat_after > 0,
+        "recategorization must NOT apply without approval; expenses still uncategorized"
+    );
     let _ = a5;
 
     // 6. Date-range over $60
-    let a6 = ask(&mut conn, provider.clone(), "Analyze all transactions from Jan 2026 to June 2026 and give me everything over $60.").await;
+    let a6 = ask(
+        &mut conn,
+        provider.clone(),
+        "Analyze all transactions from Jan 2026 to June 2026 and give me everything over $60.",
+    )
+    .await;
     assert!(!a6.content.trim().is_empty());
 }
 
@@ -180,20 +238,63 @@ async fn generic_beyond_the_six_required_questions() {
     ).unwrap();
 
     // Differently-worded paraphrases of required intents.
-    ask(&mut conn, provider.clone(), "How much am I worth after debts?").await; // net worth
-    ask(&mut conn, provider.clone(), "Is picking up a $300 pair of headphones a smart move right now?").await; // affordability
-    ask(&mut conn, provider.clone(), "Which store did I hand the most cash to this year?").await; // merchant breakdown
+    ask(
+        &mut conn,
+        provider.clone(),
+        "How much am I worth after debts?",
+    )
+    .await; // net worth
+    ask(
+        &mut conn,
+        provider.clone(),
+        "Is picking up a $300 pair of headphones a smart move right now?",
+    )
+    .await; // affordability
+    ask(
+        &mut conn,
+        provider.clone(),
+        "Which store did I hand the most cash to this year?",
+    )
+    .await; // merchant breakdown
 
     // New intent families beyond the six.
-    ask(&mut conn, provider.clone(), "Do I have any weird or suspicious charges?").await; // anomalies
-    ask(&mut conn, provider.clone(), "What subscriptions am I paying for?").await; // recurring
-    ask(&mut conn, provider.clone(), "How's my monthly cash flow looking?").await; // income/cash flow
-    ask(&mut conn, provider.clone(), "What should I focus on financially next?").await; // open-ended planning
+    ask(
+        &mut conn,
+        provider.clone(),
+        "Do I have any weird or suspicious charges?",
+    )
+    .await; // anomalies
+    ask(
+        &mut conn,
+        provider.clone(),
+        "What subscriptions am I paying for?",
+    )
+    .await; // recurring
+    ask(
+        &mut conn,
+        provider.clone(),
+        "How's my monthly cash flow looking?",
+    )
+    .await; // income/cash flow
+    ask(
+        &mut conn,
+        provider.clone(),
+        "What should I focus on financially next?",
+    )
+    .await; // open-ended planning
 
     // Ambiguous: no amount, no item — should clarify rather than fabricate.
     let ambiguous = ask(&mut conn, provider.clone(), "Can I afford it?").await;
-    println!("── ambiguous follow_ups: {:?}", ambiguous.follow_up_questions);
+    println!(
+        "── ambiguous follow_ups: {:?}",
+        ambiguous.follow_up_questions
+    );
 
     // Unsupported by a local-first app (no live market data) — should say so.
-    ask(&mut conn, provider.clone(), "What's the live share price of Apple stock right now?").await;
+    ask(
+        &mut conn,
+        provider.clone(),
+        "What's the live share price of Apple stock right now?",
+    )
+    .await;
 }

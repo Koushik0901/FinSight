@@ -81,7 +81,8 @@ async fn build_preview_reports_bounded_outcome_for_amex_sample() {
     };
 
     let mapping = amex_mapping();
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/amex-all-time-statement.csv");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/amex-all-time-statement.csv");
 
     let preview = finsight_app::commands::import::build_preview(&db, &path, &account_id, &mapping)
         .expect("build_preview should succeed");

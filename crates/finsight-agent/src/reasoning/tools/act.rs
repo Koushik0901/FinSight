@@ -284,7 +284,8 @@ pub fn draft_recategorization() -> Arc<dyn Tool> {
                     )
                     .ok();
                 let Some(cat_label) = cat_label else {
-                    dropped.push(json!({"transaction_id": txn_id, "reason": "unknown category_id"}));
+                    dropped
+                        .push(json!({"transaction_id": txn_id, "reason": "unknown category_id"}));
                     continue;
                 };
                 // Transaction must exist AND still be uncategorized.
@@ -429,7 +430,11 @@ mod tests {
     }
 
     fn seed(conn: &mut Connection) -> (String, String) {
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g','Core',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('dining','g','Dining','#f00',0)", []).unwrap();
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a','Me','Bank','Checking','Chk','USD','#fff',datetime('now'))", []).unwrap();
         // one uncategorized, one already categorized
@@ -477,7 +482,11 @@ mod tests {
         assert_eq!(drafts.len(), 1);
         assert_eq!(drafts[0].action_kind, "recategorize_bulk");
         let still_uncat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id = 't_uncat'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id = 't_uncat'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(still_uncat.is_none(), "draft must not write data");
     }

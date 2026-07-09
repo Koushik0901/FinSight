@@ -317,22 +317,19 @@ pub async fn get_month_totals(state: tauri::State<'_, AppState>) -> AppResult<Mo
     let this_month_start = Utc::now().format("%Y-%m-01").to_string();
 
     run(&db, move |conn| {
-        let (income, expense, txn_count): (i64, i64, i64) = conn.query_row(
-            "SELECT \
-               COALESCE(SUM(CASE WHEN amount_cents > 0 AND is_transfer = 0 THEN amount_cents  ELSE 0 END), 0), \
-               COALESCE(SUM(CASE WHEN amount_cents < 0 AND is_transfer = 0 THEN -amount_cents ELSE 0 END), 0), \
-               COUNT(*) \
-             FROM transactions WHERE posted_at >= ?1",
+        // Income/expense/net/savings-rate come from the shared metrics layer so
+        // "this month" reads identically here, on Today, and in the Copilot.
+        let cashflow = finsight_core::metrics::cashflow_since(conn, &this_month_start)?;
+        let txn_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transactions WHERE posted_at >= ?1",
             rusqlite::params![this_month_start],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| r.get(0),
         )?;
-        let net = income - expense;
-        let savings_rate = if income > 0 { (net * 100) / income } else { 0 };
         Ok(MonthTotals {
-            income_cents: income,
-            expense_cents: expense,
-            net_cents: net,
-            savings_rate_pct: savings_rate,
+            income_cents: cashflow.income_cents,
+            expense_cents: cashflow.expense_cents,
+            net_cents: cashflow.net_cents,
+            savings_rate_pct: cashflow.savings_rate_pct,
             txn_count,
         })
     })
@@ -375,12 +372,9 @@ pub async fn get_savings_rate_history(
         let mut out = Vec::new();
         for row in rows.flatten() {
             let (month, income, expense) = row;
-            let net = income - expense;
-            let savings_rate_pct = if income > 0 {
-                (net.max(0) * 100) / income
-            } else {
-                0
-            };
+            // Honest signed rate from the shared formula: a deficit month dips
+            // below zero on the sparkline instead of being flattened to 0%.
+            let savings_rate_pct = finsight_core::metrics::savings_rate_pct(income, expense);
             out.push(SavingsRatePoint {
                 month,
                 savings_rate_pct,
@@ -629,7 +623,10 @@ mod tests {
     #[test]
     fn month_scope_anchors_on_data_not_now() {
         // Data's most recent activity is 2026-07 even though "now" is irrelevant.
-        assert_eq!(scope_month_list("month", 2026, 7, Some("2023-12")), vec!["2026-07"]);
+        assert_eq!(
+            scope_month_list("month", 2026, 7, Some("2023-12")),
+            vec!["2026-07"]
+        );
     }
 
     #[test]

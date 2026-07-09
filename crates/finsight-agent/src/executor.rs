@@ -398,12 +398,10 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                     params![a.category_id, a.category_id, a.transaction_id],
                     |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
                 ) {
-                    let memo = format!("{merchant_raw} → {category_label} (agent recategorization)");
-                    let _ = agent_memory::upsert_correction(
-                        conn,
-                        &merchant_raw.to_lowercase(),
-                        &memo,
-                    );
+                    let memo =
+                        format!("{merchant_raw} → {category_label} (agent recategorization)");
+                    let _ =
+                        agent_memory::upsert_correction(conn, &merchant_raw.to_lowercase(), &memo);
                 }
                 applied += 1;
             }
@@ -687,7 +685,14 @@ mod tests {
         .unwrap();
 
         let bundle = copilot_actions::insert_bundle(
-            &mut conn, None, "Recat", "Summary", "Rationale", 0.8, None, None,
+            &mut conn,
+            None,
+            "Recat",
+            "Summary",
+            "Rationale",
+            0.8,
+            None,
+            None,
         )
         .unwrap();
         let payload = serde_json::json!({
@@ -735,7 +740,11 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(already_cat.as_deref(), Some("cat2"), "manual category preserved");
+        assert_eq!(
+            already_cat.as_deref(),
+            Some("cat2"),
+            "manual category preserved"
+        );
     }
 
     fn base_account() -> NewAccount {
