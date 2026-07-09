@@ -78,10 +78,16 @@ the ONE flagged anomaly (far larger than typical).
 
 GOALS: Emergency Fund $5,000 of $11,000 ($500/mo); Vacation $600 of $3,000 ($100/mo).
 
-DERIVED: emergency fund = $5,000 savings ≈ 2.4 months of expenses (below the 3-6
-month target; only the savings account is emergency-fund-eligible, not checking).
-Liquid cash (checking+savings) = $7,000. Debt priority = Visa first (highest APR
-19.9% AND smallest balance).
+EMERGENCY COVERAGE: the app's emergency-fund scenarios measure runway from total
+LIQUID cash ($7,000 = checking $2,000 + savings $5,000) ÷ ~$2,100/mo expenses ≈
+3.3 months — this MEETS the 3-month floor but is short of the 6-month target. (A
+stricter savings-only view, $5,000, is ~2.4 months.) So ANY figure in ~2.4-3.3
+months is acceptable, and "the 3-month target is met but the 6-month is not" is
+correct. Separately, the Emergency Fund GOAL is $5,000 of an $11,000 target at
+$500/mo → ~12 months to fully fund that goal. Recommended EF size = 3-6 months of
+expenses ≈ $6,300-$12,600.
+
+Debt priority = Visa first (highest APR 19.9% AND smallest balance).
 
 NOT IN THE DATA (inventing any of these IS fabrication): credit score, live
 market/stock prices, tax records, a job offer's exact tax impact, any

@@ -11,24 +11,44 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
             "get_account_balances"
         }
         fn description(&self) -> &str {
-            "Get current balance for every account plus total"
+            "Get the current balance for every account plus the total. Accounts \
+             without a confirmed balance snapshot have balance_known=false and a \
+             null balance — report those as unknown/unconfirmed, never as $0, and \
+             note that the total excludes them."
         }
         fn parameters(&self) -> Value {
             json!({"type": "object", "properties": {}})
         }
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
+            // No COALESCE-to-zero: an account with no balance snapshot must read
+            // as UNKNOWN (null), not $0, so the model doesn't report a fabricated
+            // zero for e.g. an unsynced brokerage.
             let mut stmt = ctx.conn.prepare(
-                "SELECT a.name, COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance \
+                "SELECT a.name, (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1) AS balance \
                  FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name"
             )?;
             let rows: Vec<Value> = stmt.query_map([], |r| {
-                Ok(json!({"name": r.get::<_, String>(0)?, "balance_cents": r.get::<_, i64>(1)?}))
+                let name: String = r.get(0)?;
+                let balance: Option<i64> = r.get(1)?;
+                Ok(match balance {
+                    Some(b) => json!({"name": name, "balance_cents": b, "balance_known": true}),
+                    None => json!({"name": name, "balance_cents": null, "balance_known": false}),
+                })
             })?.filter_map(|r| r.ok()).collect();
             let total: i64 = rows
                 .iter()
                 .filter_map(|r| r["balance_cents"].as_i64())
                 .sum();
-            Ok(json!({"accounts": rows, "total_cents": total}))
+            let unknown_count = rows.iter().filter(|r| r["balance_known"] == json!(false)).count();
+            Ok(json!({
+                "accounts": rows,
+                "total_cents": total,
+                "note": if unknown_count > 0 {
+                    format!("{unknown_count} account(s) have an unknown balance (no confirmed snapshot) and are excluded from total_cents; report them as unknown, not $0.")
+                } else {
+                    String::new()
+                }
+            }))
         }
     }
     Arc::new(T)
