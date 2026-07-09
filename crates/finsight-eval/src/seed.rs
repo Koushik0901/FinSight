@@ -56,7 +56,7 @@ fn insert_txn(conn: &Connection, acct: &str, date: NaiveDate, cents: i64, mercha
 /// Seed the full evaluation household into a fresh, migrated DB connection.
 pub fn seed(conn: &mut Connection) {
     // ── Accounts + confirmed balances (brokerage deliberately has none) ──────
-    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apy_pct,created_at) VALUES('chk','You','Bank','Checking','Everyday Checking','USD','#3B82F6','manual','liquid',1,'cash',NULL,datetime('now'))", []).unwrap();
+    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apy_pct,created_at) VALUES('chk','You','Bank','Checking','Everyday Checking','USD','#3B82F6','manual','liquid',0,'cash',NULL,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('chk',date('now'),200000,'manual')", []).unwrap();
 
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apy_pct,created_at) VALUES('sav','You','Bank','Savings','Emergency Fund','USD','#10B981','manual','liquid',1,'cash',4.0,datetime('now'))", []).unwrap();
@@ -93,16 +93,16 @@ pub fn seed(conn: &mut Connection) {
         .unwrap();
     }
 
-    // ── Twelve most-recent COMPLETE months of income + recurring + variable ──
-    // A full 12 months so the tools' trailing-12-month income/expense AVERAGES
-    // equal the intended $4,000 / $1,837 per-month figures. With only 6 months
-    // seeded, those averages divide by 12 and halve to $2,000 / $163 surplus,
-    // which is a real Copilot behavior (fixed 12-month divisor understates a
-    // <12-month history) but made the benchmark facts unreachable.
+    // ── 13 months of income + recurring + variable, INCLUDING the current ────
+    // month. The tools average income/expense over trailing 90-day and 12-month
+    // windows (finance.rs: income_since / 3 and / 12), so the window must be
+    // densely and evenly filled — including the current month — or the averages
+    // are starved (e.g. only 2 payrolls in 90 days → income reads ~$2,666, not
+    // $4,000). Monthly expenses total $1,897 → surplus ~$2,103.
     let anchor = Utc::now().date_naive();
-    let most_recent_complete = first_of_month_back(anchor, 1); // last month's 1st
-    for back in 0..12u32 {
-        let m = first_of_month_back(most_recent_complete, back);
+    let newest = first_of_month_back(anchor, 0); // current month's 1st
+    for back in 0..13u32 {
+        let m = first_of_month_back(newest, back);
 
         // Income: $4,000 payroll on the 1st (NULL category — an inflow).
         insert_txn(conn, "chk", day_in(m, 1), 400000, "Acme Payroll", None);
@@ -113,20 +113,26 @@ pub fn seed(conn: &mut Connection) {
         insert_txn(conn, "chk", day_in(m, 8), -1100, "Spotify", Some("entertainment"));
         insert_txn(conn, "chk", day_in(m, 6), -4000, "Anytime Fitness", Some("health"));
 
-        // Variable but steady monthly spend.
+        // Variable but steady monthly spend. Food splits three ways so
+        // "groceries vs restaurants vs delivery" is answerable: Groceries
+        // $400 (Costco+TJ), restaurants $50 (Chipotle), delivery $60 (DoorDash).
         insert_txn(conn, "chk", day_in(m, 12), -25000, "Costco", Some("groceries"));
         insert_txn(conn, "chk", day_in(m, 22), -15000, "Trader Joe's", Some("groceries"));
         insert_txn(conn, "chk", day_in(m, 15), -5000, "Chipotle", Some("dining"));
+        insert_txn(conn, "chk", day_in(m, 19), -6000, "DoorDash", Some("dining"));
         insert_txn(conn, "chk", day_in(m, 18), -12000, "Shell", Some("transport"));
     }
 
-    // ── Recent one-off / uncategorized expenses (in the most-recent month) ───
-    let last = most_recent_complete;
-    insert_txn(conn, "cc", day_in(last, 10), -30000, "Best Buy", None); // uncategorized, over $60
-    insert_txn(conn, "cc", day_in(last, 14), -45000, "Delta Airlines", None); // uncategorized, over $60
-    insert_txn(conn, "chk", day_in(last, 24), -1800, "SQ *Blue Bottle", None); // uncategorized, under $60
-    // Large, unusual, uncategorized charge — also the seeded anomaly.
-    insert_txn(conn, "cc", day_in(last, 20), -250000, "Apple Store", None);
+    // ── One-off / uncategorized expenses, placed ~5 months ago so they do NOT
+    // inflate the 90-day expense average (which would crush the computed
+    // surplus) — but stay inside the year for anomaly / largest-purchase /
+    // 6-month-search questions. Still 4 uncategorized; the $2,500 Apple Store
+    // charge is the one flagged anomaly.
+    let midpast = first_of_month_back(newest, 5);
+    insert_txn(conn, "cc", day_in(midpast, 10), -30000, "Best Buy", None);
+    insert_txn(conn, "cc", day_in(midpast, 14), -45000, "Delta Airlines", None);
+    insert_txn(conn, "chk", day_in(midpast, 24), -1800, "SQ *Blue Bottle", None);
+    insert_txn(conn, "cc", day_in(midpast, 20), -250000, "Apple Store", None);
     conn.execute(
         "UPDATE transactions SET is_anomaly = 1, ai_explanation = 'Much larger than this account''s typical charge' WHERE merchant_raw = 'Apple Store'",
         [],
@@ -137,12 +143,42 @@ pub fn seed(conn: &mut Connection) {
     // dividend inflow, like payroll) so it is NOT an uncategorized expense and
     // doesn't disturb the spending / uncategorized-count facts. Its only job is
     // to make the brokerage's balance genuinely "unknown".
-    let old = first_of_month_back(most_recent_complete, 13);
+    let old = first_of_month_back(newest, 13);
     insert_txn(conn, "inv", day_in(old, 15), 10000, "Vanguard Dividend", None);
 
     // ── Goals ────────────────────────────────────────────────────────────────
     conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('ef','Emergency Fund','save',1100000,500000,50000,'#10B981',0,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('vac','Vacation','save-by-date',300000,60000,10000,'#3B82F6',1,datetime('now'))", []).unwrap();
+
+    // ── Current-month budget envelopes. Groceries ($400 actual vs $350) and
+    // Dining ($110 actual vs $80) are consistently OVER; Transport and
+    // Entertainment are under. Supports "where am I overspending vs my targets".
+    // (get_budgets surfaces current-month budgeted-vs-actual.)
+    let month = anchor.format("%Y-%m").to_string();
+    for (cat, amt) in [
+        ("groceries", 35000),
+        ("dining", 8000),
+        ("transport", 15000),
+        ("entertainment", 4000),
+        ("housing", 120000),
+    ] {
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES(hex(randomblob(8)),?1,?2,?3,datetime('now'),datetime('now'))",
+            params![cat, month, amt],
+        )
+        .unwrap();
+    }
+
+    // ── A large annual obligation coming up (~4 months out): $1,200 insurance
+    // premium. Surfaces via the snapshot's planned transactions / upcoming
+    // obligations so liquidity-planning questions can account for it.
+    conn.execute(
+        "INSERT INTO planned_transactions(id,description,amount_cents,account_id,due_date,status,source,created_at) \
+         VALUES('ins','Annual Insurance Premium',-120000,'chk',date('now','+120 days'),'planned','manual',datetime('now'))",
+        [],
+    )
+    .unwrap();
 }
 
 #[cfg(test)]
@@ -160,6 +196,24 @@ mod tests {
             seed(&mut conn);
         }
         (dir, db)
+    }
+
+    /// Diagnostic (ignored): prints the income/expense/surplus the tools compute
+    /// from the seed, so the benchmark's surplus facts can be reconciled with
+    /// what run_purchase_affordability / run_emergency_fund_scenarios actually use.
+    #[test]
+    #[ignore]
+    fn diag_snapshot_income_and_surplus() {
+        let (_d, db) = seeded();
+        let mut conn = db.get().unwrap();
+        let s = finsight_agent::finance::build_snapshot(&mut conn).unwrap();
+        eprintln!("income_90d/mo   = {}", s.avg_monthly_income_90d_cents);
+        eprintln!("income_12m/mo   = {}", s.avg_monthly_income_12m_cents);
+        eprintln!("expense_90d/mo  = {}", s.avg_monthly_expense_90d_cents);
+        eprintln!("expense_12m/mo  = {}", s.avg_monthly_expense_12m_cents);
+        eprintln!("surplus(90d)    = {}", s.avg_monthly_income_90d_cents - s.avg_monthly_expense_90d_cents);
+        eprintln!("liquid          = {}", s.liquid_balance_cents);
+        eprintln!("ef_months       = {}", s.emergency_fund_months);
     }
 
     /// Locks the benchmark's ground-truth reference facts to the actual seed so
@@ -193,17 +247,17 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(income, 4_800_000, "12 × $4,000 payroll (the brokerage dividend is separate)");
+        assert_eq!(income, 5_200_000, "13 × $4,000 payroll (the brokerage dividend is separate)");
 
         let housing: i64 = conn
             .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='housing'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(housing, 1_440_000, "12 × $1,200 rent → biggest category");
+        assert_eq!(housing, 1_560_000, "13 × $1,200 rent → biggest category");
 
         let groceries: i64 = conn
             .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='groceries'", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(groceries, 480_000, "12 × $400 → second category");
+        assert_eq!(groceries, 520_000, "13 × $400 → second category");
 
         let uncategorized: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))

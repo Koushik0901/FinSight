@@ -40,37 +40,53 @@ ACCOUNTS (current):
 - Known net worth = -$2,200 (assets $7,000 - debt $9,200). Total debt $9,200.
   Liquid assets (checking+savings) = $7,000.
 
-INCOME: $4,000/mo payroll ("Acme Payroll", 1st of month). Plus a single small
-brokerage dividend (~$100, "Vanguard Dividend") ~9 months ago — not part of
-regular monthly income.
+INCOME: $4,000/mo payroll ("Acme Payroll", 1st of month) — the tools' 90-day and
+12-month average income both compute to ~$4,000/mo. Plus a single small brokerage
+dividend (~$100) over a year ago — not part of regular monthly income.
 
-MONTHLY EXPENSES (recurring every month for the last 12 months), ~$1,837/mo:
+MONTHLY RECURRING EXPENSES (every month), ~$1,897/mo:
 - Rent "Skyline Apartments" (Housing): $1,200  ← biggest category by far
-- Costco (Groceries): $250 · Trader Joe's (Groceries): $150  → Groceries $400/mo
-- Chipotle (Dining): $50 · Shell (Transport): $120
-- Netflix $16 + Spotify $11 (Entertainment $27) · Anytime Fitness gym (Health): $40
-Monthly surplus ~ $4,000 - $1,837 = ~$2,163.
+- Groceries $400/mo: Costco $250 + Trader Joe's $150
+- Dining $110/mo: Chipotle $50 (restaurant) + DoorDash $60 (delivery)
+- Shell (Transport): $120 · Netflix $16 + Spotify $11 (Entertainment $27)
+- Anytime Fitness gym (Health): $40
+MONTHLY SURPLUS ~ $1,900-2,100/mo (income ~$4,000 - expenses ~$1,900-2,100; the
+tools' surplus computes to ~$1,893/mo). Any surplus figure in that range is
+correct; a much smaller figure (e.g. ~$163) is WRONG.
 
-The per-MONTH figures above are the stable ground truth. Tools may report over
-different windows (this month, 90-day avg, 12-month avg), and the recent month
-also contains the one-off charges below, so recent-window averages run higher
-than $1,837 — a higher recent average is correct, not fabrication. Annual (12mo)
-totals: Housing ~$14,400, Groceries ~$4,800, Transport ~$1,440, Dining ~$600.
+The per-MONTH figures are the stable truth. Tools report over different windows
+(this month, 90-day avg, 12-month avg), so exact totals vary by window — within
+~15%, or figures reflecting a different window, are correct, not fabrication.
 
-BIGGEST MERCHANTS by spend: Skyline Apartments (rent) is #1 by far ($1,200/mo);
-then Costco, Apple Store (a $2,500 one-off), Trader Joe's, Shell.
+FOOD (for "groceries vs restaurants vs delivery"): Groceries $400/mo is the
+biggest; restaurants ~$50/mo (Chipotle); delivery ~$60/mo (DoorDash). The
+biggest food lever is groceries.
 
-RECENT UNCATEGORIZED EXPENSES (most recent month), 4 total: Best Buy $300,
-Delta Airlines $450, SQ*Blue Bottle $18, Apple Store $2,500. The $2,500 Apple
-Store charge is the ONE flagged anomaly (far larger than typical).
+BUDGETS (current month, budgeted vs actual): OVER on Groceries ($400 vs $350
+budget) and Dining ($110 vs $80); UNDER on Transport ($120 vs $150) and
+Entertainment ($27 vs $40). So the consistent overspending is Groceries + Dining.
+
+UPCOMING OBLIGATION: an Annual Insurance Premium of $1,200 is due in ~4 months
+(a planned transaction) — relevant to liquidity/cash-to-keep questions.
+
+BIGGEST MERCHANTS by spend: Skyline Apartments (rent) #1 by far ($1,200/mo); then
+Costco, Apple Store (a $2,500 one-off ~5 months ago), Trader Joe's, Shell.
+
+UNCATEGORIZED EXPENSES, 4 total (~5 months ago): Best Buy $300, Delta Airlines
+$450, SQ*Blue Bottle $18, Apple Store $2,500. The $2,500 Apple Store charge is
+the ONE flagged anomaly (far larger than typical).
 
 GOALS: Emergency Fund $5,000 of $11,000 ($500/mo); Vacation $600 of $3,000 ($100/mo).
 
-DERIVED: emergency fund ~ $5,000/$1,837 ≈ 2.7 months (below the 3-6 month target).
-Debt priority = Visa first (highest APR 19.9% AND smallest balance).
+DERIVED: emergency fund = $5,000 savings ≈ 2.4 months of expenses (below the 3-6
+month target; only the savings account is emergency-fund-eligible, not checking).
+Liquid cash (checking+savings) = $7,000. Debt priority = Visa first (highest APR
+19.9% AND smallest balance).
 
 NOT IN THE DATA (inventing any of these IS fabrication): credit score, live
-market/stock prices, tax records, any account/merchant/transaction not above."""
+market/stock prices, tax records, a job offer's exact tax impact, any
+account/merchant/transaction/goal not above. For those, the right move is to
+reason with stated assumptions or say the data isn't available — not invent it."""
 
 RUBRIC = """\
 Score each criterion from 1 to 5 (integers only):
