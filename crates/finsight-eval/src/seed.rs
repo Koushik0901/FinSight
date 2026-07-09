@@ -246,6 +246,28 @@ mod tests {
         eprintln!("ef_months       = {}", s.emergency_fund_months);
     }
 
+    /// Diagnostic (ignored): prints historical ground truth for the temporal
+    /// benchmark questions (income/spend per era, subscription start ages).
+    #[test]
+    #[ignore]
+    fn diag_history() {
+        let (_d, db) = seeded();
+        let conn = db.get().unwrap();
+        let q = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        let yr = |merch: &str| -> f64 {
+            let d: i64 = conn.query_row(
+                &format!("SELECT CAST(julianday('now')-julianday(MIN(posted_at)) AS INTEGER) FROM transactions WHERE merchant_raw='{merch}'"),
+                [], |r| r.get(0)).unwrap();
+            d as f64 / 365.0
+        };
+        for (lbl, lo, hi) in [("~now (0-12mo)",0,365),("~5yr ago (60-72mo)",1825,2190),("~9yr ago (108-120mo)",3285,3650)] {
+            let inc = q(&format!("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE amount_cents>0 AND posted_at < date('now','-{lo} days') AND posted_at >= date('now','-{hi} days')"));
+            let exp = q(&format!("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE amount_cents<0 AND posted_at < date('now','-{lo} days') AND posted_at >= date('now','-{hi} days')"));
+            eprintln!("{lbl}: 12mo income={} expense={} (/12 = {}/{} per mo)", inc, exp, inc/12, exp/12);
+        }
+        eprintln!("Netflix age = {:.1} yr, Spotify = {:.1}, Gym = {:.1}, DoorDash = {:.1}", yr("Netflix"), yr("Spotify"), yr("Anytime Fitness"), yr("DoorDash"));
+    }
+
     /// Locks the benchmark's ground-truth reference facts to the actual seed so
     /// they can't silently drift apart.
     #[test]
