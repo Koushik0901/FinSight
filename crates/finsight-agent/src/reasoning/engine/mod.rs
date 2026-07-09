@@ -57,6 +57,14 @@ impl ReasoningEngine {
         let mut changes: Vec<AgentChange> = Vec::new();
         let mut draft_actions = Vec::new();
         let mut plan: Vec<String> = Vec::new();
+        // The best non-empty content the model has produced so far. If the model
+        // ends on a non-answer (empty/plan-only) we fall back to this rather than
+        // a canned empty string — a plan the user can read beats nothing.
+        let mut best_effort_content: Option<String> = None;
+        // How many times we've nudged the model to stop stalling. Capped: if one
+        // nudge doesn't get it to act, more won't (observed: it can loop forever).
+        let mut nudges_used: usize = 0;
+        const MAX_NUDGES: usize = 1;
 
         for iteration in 0..max_iterations {
             let turn = provider
@@ -129,21 +137,46 @@ impl ReasoningEngine {
                     // glm-class models sometimes end a turn having emitted ONLY
                     // the plan (or empty content) with no tool calls — the
                     // provider surfaces that as a FinalAnswer, and returning it
-                    // verbatim ships the raw plan (or nothing) to the user. If we
-                    // still have iterations left, nudge the model to actually do
-                    // the work instead of finalizing a non-answer.
+                    // verbatim ships the raw plan (or nothing) to the user. Nudge
+                    // the model to act — but only ONCE, and never at the cost of
+                    // the answer: track the best content seen and, on give-up,
+                    // return that rather than looping to an empty fallback.
                     let has_real_answer = parse_structured_final_answer(&content).is_some()
                         || !content_after_plan(&content).is_empty();
-                    if !has_real_answer && iteration + 1 < max_iterations {
-                        trace.push("Non-answer turn (plan-only/empty) — asked model to continue".to_string());
-                        messages.push(ChatMessage::Assistant {
-                            content: Some(content),
-                            tool_calls: Vec::new(),
-                        });
-                        messages.push(ChatMessage::User {
-                            content: CONTINUE_AFTER_NON_ANSWER.to_string(),
-                        });
-                        continue;
+                    if !has_real_answer {
+                        if !content.trim().is_empty() {
+                            best_effort_content = Some(content.clone());
+                        }
+                        if nudges_used < MAX_NUDGES && iteration + 1 < max_iterations {
+                            nudges_used += 1;
+                            trace.push(
+                                "Non-answer turn (plan-only/empty) — asked model to continue"
+                                    .to_string(),
+                            );
+                            messages.push(ChatMessage::Assistant {
+                                content: Some(content),
+                                tool_calls: Vec::new(),
+                            });
+                            messages.push(ChatMessage::User {
+                                content: CONTINUE_AFTER_NON_ANSWER.to_string(),
+                            });
+                            continue;
+                        }
+                        // Give up nudging: return the best real content we have
+                        // (usually a plan) instead of an empty non-answer.
+                        let fallback = if content.trim().is_empty() {
+                            best_effort_content.clone().unwrap_or(content)
+                        } else {
+                            content
+                        };
+                        return Ok(Self::parse_final_answer(
+                            fallback,
+                            reasoning,
+                            plan,
+                            trace,
+                            changes,
+                            draft_actions,
+                        ));
                     }
 
                     return Ok(Self::parse_final_answer(
@@ -329,7 +362,39 @@ fn content_after_plan(raw: &str) -> String {
             _ => break,
         }
     }
-    lines[i..].join("\n").trim().to_string()
+    let rest = lines[i..].join("\n");
+    // Drop trailing intent-filler like "Let me pull that data now." — the model
+    // announcing it will act is not an answer; treat it as a non-answer so the
+    // loop nudges the model to actually call tools rather than shipping intent.
+    if is_intent_filler(&rest) {
+        return String::new();
+    }
+    rest.trim().to_string()
+}
+
+/// True when text is only a short "I'll go do it now" announcement with no
+/// substantive content — the model stating intent instead of answering.
+fn is_intent_filler(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return true;
+    }
+    // Only treat SHORT trailing text as filler; a real answer is longer.
+    if t.len() > 120 {
+        return false;
+    }
+    let lower = t.to_lowercase();
+    const INTENT_STARTS: [&str; 8] = [
+        "let me",
+        "i'll ",
+        "i will ",
+        "now i",
+        "now let me",
+        "let's ",
+        "pulling ",
+        "fetching ",
+    ];
+    INTENT_STARTS.iter().any(|p| lower.starts_with(p))
 }
 
 fn parse_structured_final_answer(content: &str) -> Option<StructuredFinalAnswer> {
