@@ -13,10 +13,54 @@ judged by `google/gemini-3.1-pro-preview`. Every run is in MLflow
 | v3 | 12-month seed, `is_usable` decoupled from score | 2.91 | 48% | 45% | exposed the real "$163 surplus" bug |
 | v4 | **90-day-window surplus fixed**, +11 planning Q (53 total) | 3.47 | 62% | 26% | affordability 1.0 → 5.0 |
 | v5 | brokerage-unknown fix, EF facts reconciled | 3.34 | 58% | **21%** | net_worth/facts/grounding → 5.0/4.3/5.0 |
+| v6 | 10-year seed, +12 temporal/stress Q (65 total) | 3.0 | 49% | 34% | headline *dropped* — but forensics show most of it is 2 deterministic bugs + judge false-positives, not reasoning |
+| v7 | plan-only re-prompt + brokerage-$0 snapshot fix | _running_ | | | targets the two deterministic bugs below (~9 questions) |
 
 Headline moved from **1.36 → ~3.4/5** and fabrication fell **monotonically 71% →
 29% → 21%**, with roughly half of the gain being *measurement* fixes (a fair,
 reference-grounded judge) and half being *real* Copilot/seed fixes.
+
+## v6 deep-dive: separating three failure buckets (the important lesson)
+
+v6's headline fell to 3.0/49% with 34% fabrication, but reading the **raw
+answers + traces** (not the judge labels) split the 30 critical failures into
+three very different buckets. **This split — not the headline — is the finding.**
+
+**Bucket A — deterministic engine/data bugs (~9 questions, fixed in v7):**
+- *Plan-only / empty final turn.* The model sometimes ended its first turn
+  emitting ONLY the `PLAN:` preamble (or empty content) with no tool calls;
+  the engine shipped that raw plan/nothing as the answer. Fast (1.7–18s, not
+  timeouts). Hit nw-01, nw-26, inc-07, ef-16, spend-12, stress-02. Fix: the
+  loop refuses to finalize a non-answer and nudges the model to continue.
+- *Unknown snapshot balance read as $0.* `build_snapshot` COALESCE'd a missing
+  balance to 0 with no known-flag, so `get_financial_snapshot` fed planning
+  answers a $0 brokerage (new-06/09/11). Same class already fixed in the read
+  tools; `build_snapshot` had its own copy. Fix: `balance_known` flag + warning.
+- *(Deferred) cashflow starting-liquid uses the EF-eligible balance* ($5,000)
+  instead of total liquid ($7,000) — `run_cashflow_timeline` line ~1255. The
+  model faithfully reported the wrong tool number (cash-19).
+
+**Bucket B — judge false-positives on *derived* aggregates (measurement, not a
+Copilot bug):** the judge is grounded only in static `HOUSEHOLD_FACTS`, which
+don't enumerate per-year/per-merchant sums. temp-05 was scored 1 for
+"fabricated dates/counts/total" — but "first DoorDash Jul 2024, 25 txns, $1,500"
+is **exactly** what the seed generates. temp-03's 60-mo Housing total ($65,100)
+is also exact. This is the v1→v2 lesson resurfacing for *derived* numbers.
+Fix belongs in the judge (allow tool-derived aggregates), validated by
+**re-judging stored answers** — no new Copilot run needed.
+
+**Bucket C — genuine model fabrication (real, hardest; v8 grounding work):**
+- Cents mis-conversion: new-01 reported the Vacation goal as "$60 / $300" when
+  `get_goals` returns $600 / $3,000 — a clean ÷1000. Suggests `_cents` integer
+  fields force error-prone mental division; consider returning formatted values.
+- Bad arithmetic: stress-04's $141,013 interest on a $9,200 balance; plan-30.
+- Invented specifics: stress-01 fabricated an insurance date + a "1-month floor";
+  recat-23 invented 121 extra uncategorized transactions.
+
+**Takeaway:** at 30/65 "critical," a large fraction is Bucket A (deterministic,
+now fixed) + Bucket B (measurement). Real Copilot quality is better than 3.0/49%
+implies. Always verify a fabrication flag against the tool result before
+"fixing" the model — otherwise you harden it against a measurement artifact.
 
 The v5 `overall_mean` is slightly below v4 (3.34 vs 3.47) despite a lower
 fabrication rate — this is **variance, not a regression**: categories have only
