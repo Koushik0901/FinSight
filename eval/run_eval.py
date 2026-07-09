@@ -50,7 +50,9 @@ PASS_THRESHOLD = 4  # overall >= 4 counts as a "pass"
 
 
 def resolve_key() -> str:
+    # Look in eval/.env first, then the repo-root .env, then the environment.
     load_dotenv(EVAL_DIR / ".env")
+    load_dotenv(REPO_ROOT / ".env")
     key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     if not key:
         sys.exit(
