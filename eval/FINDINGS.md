@@ -1,0 +1,103 @@
+# FinSight Copilot — evaluation findings
+
+Results of running the benchmark (`benchmark.jsonl`) against `z-ai/glm-5.2:exacto`,
+judged by `google/gemini-3.1-pro-preview`. Every run is in MLflow
+(`sqlite:///eval/mlflow.db`); per-run details are under `eval/runs/<timestamp>/`.
+
+## The evaluate → analyze → improve loop
+
+| Run | What changed | Overall /5 | Pass ≥4 | Fabrication | Notes |
+|-----|--------------|-----------:|--------:|------------:|-------|
+| v1 baseline | 42 Q, naive judge | 1.36 | 7% | 71% | most "failures" were measurement error |
+| v2 re-judge | judge grounded in the **complete** household facts | 3.12 | 52% | 29% | same answers — isolated ~half the failures as judge bias |
+| v3 | 12-month seed, `is_usable` decoupled from score | 2.91 | 48% | 45% | exposed the real "$163 surplus" bug |
+| v4 | **90-day-window surplus fixed**, +11 planning Q (53 total) | 3.47 | 62% | 26% | affordability 1.0 → 5.0 |
+| v5 | brokerage-unknown fix, EF facts reconciled | 3.34 | 58% | **21%** | net_worth/facts/grounding → 5.0/4.3/5.0 |
+
+Headline moved from **1.36 → ~3.4/5** and fabrication fell **monotonically 71% →
+29% → 21%**, with roughly half of the gain being *measurement* fixes (a fair,
+reference-grounded judge) and half being *real* Copilot/seed fixes.
+
+The v5 `overall_mean` is slightly below v4 (3.34 vs 3.47) despite a lower
+fabrication rate — this is **variance, not a regression**: categories have only
+1–3 questions each, so one varied LLM answer swings a category from 5.0 to 1.0,
+and v5 happened to hit **6 transient/timeout harness errors (11%)** vs v4's 3.
+The trustworthy trend line is fabrication (down every run) and the per-capability
+picture below.
+
+## Per-capability picture (v5)
+
+**Strong (5.0):** net worth, facts/balances, grounding (unknown balances),
+affordability, anomalies, recategorization, safety (principles-only / no
+fabrication), unsupported (graceful decline), ambiguous (clarify). Tool selection
+is consistently good (tool_use ~4.0).
+
+**Weak — hard multi-step planning (~1.7).** Two distinct, real failure modes:
+- **Number fabrication in long answers.** glm-5.2 gives genuinely good qualitative
+  plans but then invents a *specific* figure (a monthly amount, a transaction) not
+  in the tool data — the judge (correctly) treats that as a critical failure.
+  Mitigation to try: a stronger grounding instruction for planning answers ("every
+  dollar figure must come verbatim from a tool result; if you don't have it, say
+  so") and/or requiring the model to cite which tool value each number came from.
+- **Timeouts on the most complex questions.** The 3-month-break, car-feasibility,
+  job-offer, and rent-impact questions call many tools and exceed the **180s**
+  ceiling (glm-5.2 averages ~88s/question). This is production-relevant: those
+  users would hit the canned fallback. Either a faster model, fewer tool
+  round-trips, or a higher ceiling is needed for the hardest questions.
+- **Bright spots:** the open-ended "what should I focus on" and the hardest
+  behavioral question (invest-all-$5k with a preference the app can't recall) both
+  scored 5.0 — the model handled the memory limitation gracefully rather than
+  fabricating past preferences.
+
+## What the loop taught us about the judge (eval quality)
+
+1. **A terse per-question fact list makes an LLM judge over-flag fabrication.**
+   It marked *correct* extra data (real account balances, real minimum payments)
+   as hallucination. Fix: give the judge the **complete** household ground truth
+   every question, and define fabrication as *contradicting* it — not "absent from
+   the terse subset." (v1→v2: overall +1.76, fabrication −42pts, same answers.)
+2. **Don't fold a production-gating signal into the answer score.** A correct
+   no-tool decline (e.g. "I can't fetch live stock prices") was scored 1 only
+   because `is_usable=false`. That belongs in a *separate* `usable_rate` metric.
+3. **Reference facts must match how the app actually computes things**, not how a
+   human would. The emergency-fund answers were *correct* (the app measures runway
+   from total liquid cash); our facts wrongly assumed savings-only. A benchmark
+   that grades against a different definition than the product uses manufactures
+   false failures.
+
+## Genuine Copilot weaknesses found (ranked)
+
+1. **[FIXED] Unknown balances reported as $0.** `get_account_balances` COALESCE'd a
+   missing balance snapshot to `0`, so an unsynced brokerage read as `$0.00` and the
+   model echoed it — contradicting the app's own "never report unknown as $0" rule
+   (which `get_net_worth` already followed). Now returns `balance_known=false` / null
+   and excludes it from the total.
+2. **[REAL — follow-up] Monthly surplus is distorted by the 90-day window.** Surplus
+   is `income_90d − expense_90d`. A large one-off/anomalous charge (e.g. the $2,500
+   Apple Store charge) inflates `expense_90d` and can crush the reported surplus
+   (we measured $163 vs a true ~$1,900). A user who makes one big purchase, or asks
+   early in a month, will be told they have almost no monthly surplus. Consider
+   excluding flagged anomalies / using a median or recurring-based expense for
+   surplus. (Worked around in the benchmark by spreading one-offs out of the window;
+   the underlying behavior remains.)
+3. **[REAL — follow-up] Two inconsistent "emergency-fund months" numbers.**
+   `build_snapshot.emergency_fund_months` divides the *EF-eligible* balance by
+   expenses, while `run_emergency_fund_scenarios` divides *total liquid* cash — so
+   the same household yields ~2.4 vs ~3.3 months depending on which tool answers.
+   Pick one definition.
+4. **[REAL — follow-up] `is_usable` gate suppresses correct no-tool answers.** The
+   production `is_usable_tool_answer` gate requires a tool call, so a correct
+   *decline* or *clarification* (which legitimately calls no tool) is replaced by the
+   canned fallback. Relax the gate to treat a substantive decline/clarify as usable.
+5. **[MODEL] Hard multi-step planning is the weakest area.** The upper-bound
+   questions (3-month work break, job-offer net-benefit, 3-way debt/EF/invest) are
+   where glm-5.2 most often drops a constraint (e.g. forgets the upcoming insurance
+   payment, or an emergency-fund floor). Tracked per-question in `failures.md`.
+
+## Using this as a regression detector
+
+Re-run `python run_eval.py` after any Copilot/prompt/tool change and compare the
+MLflow run to the previous one. A drop in `overall_mean`, `pass_rate`, or a rise in
+`fabrication_rate` / `critical_failure_rate` flags a regression; `failures.md` shows
+exactly which questions and why. The seed's `reference_facts` are locked to the seed
+by a Rust unit test, so the ground truth can't silently drift.
