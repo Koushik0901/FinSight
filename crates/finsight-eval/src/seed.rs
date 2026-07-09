@@ -93,34 +93,64 @@ pub fn seed(conn: &mut Connection) {
         .unwrap();
     }
 
-    // ── 13 months of income + recurring + variable, INCLUDING the current ────
-    // month. The tools average income/expense over trailing 90-day and 12-month
-    // windows (finance.rs: income_since / 3 and / 12), so the window must be
-    // densely and evenly filled — including the current month — or the averages
-    // are starved (e.g. only 2 payrolls in 90 days → income reads ~$2,666, not
-    // $4,000). Monthly expenses total $1,897 → surplus ~$2,103.
+    // ── 10 YEARS (120 months) of income + recurring + variable, ending at the
+    // current state. Amounts EVOLVE over the decade (career raises, rent creep,
+    // subscriptions that start at different times, delivery only in recent
+    // years), but the most recent ~13 months exactly reproduce the current-state
+    // facts (income $4,000, rent $1,200, expenses ~$1,900) so the tools' trailing
+    // 90-day / 12-month windows still yield the documented "now" numbers. The
+    // deep history is only visible to search_transactions (any date range) and
+    // get_spending_breakdown (up to 60 months), which is what makes multi-year
+    // trend / "which year" questions answerable without breaking current facts.
     let anchor = Utc::now().date_naive();
     let newest = first_of_month_back(anchor, 0); // current month's 1st
-    for back in 0..13u32 {
-        let m = first_of_month_back(newest, back);
+    for months_ago in 0..120u32 {
+        let m = first_of_month_back(newest, months_ago);
+        // Income tier: ~$2,400/mo a decade ago rising to $4,000/mo now (raises).
+        let income = match months_ago {
+            0..=17 => 400000,
+            18..=41 => 370000,
+            42..=65 => 330000,
+            66..=89 => 290000,
+            _ => 240000,
+        };
+        // Rent creep: $800 → $1,200 over the decade.
+        let rent = match months_ago {
+            0..=17 => 120000,
+            18..=41 => 110000,
+            42..=83 => 95000,
+            _ => 80000,
+        };
+        insert_txn(conn, "chk", day_in(m, 1), income, "Acme Payroll", None);
+        insert_txn(conn, "chk", day_in(m, 2), -rent, "Skyline Apartments", Some("housing"));
 
-        // Income: $4,000 payroll on the 1st (NULL category — an inflow).
-        insert_txn(conn, "chk", day_in(m, 1), 400000, "Acme Payroll", None);
+        // Subscriptions started at different points in the timeline.
+        if months_ago <= 84 {
+            insert_txn(conn, "chk", day_in(m, 5), -1600, "Netflix", Some("entertainment"));
+        }
+        if months_ago <= 60 {
+            insert_txn(conn, "chk", day_in(m, 8), -1100, "Spotify", Some("entertainment"));
+        }
+        if months_ago <= 36 {
+            insert_txn(conn, "chk", day_in(m, 6), -4000, "Anytime Fitness", Some("health"));
+        }
 
-        // Recurring commitments (stable amount + cadence → detectable).
-        insert_txn(conn, "chk", day_in(m, 2), -120000, "Skyline Apartments", Some("housing"));
-        insert_txn(conn, "chk", day_in(m, 5), -1600, "Netflix", Some("entertainment"));
-        insert_txn(conn, "chk", day_in(m, 8), -1100, "Spotify", Some("entertainment"));
-        insert_txn(conn, "chk", day_in(m, 6), -4000, "Anytime Fitness", Some("health"));
-
-        // Variable but steady monthly spend. Food splits three ways so
-        // "groceries vs restaurants vs delivery" is answerable: Groceries
-        // $400 (Costco+TJ), restaurants $50 (Chipotle), delivery $60 (DoorDash).
-        insert_txn(conn, "chk", day_in(m, 12), -25000, "Costco", Some("groceries"));
-        insert_txn(conn, "chk", day_in(m, 22), -15000, "Trader Joe's", Some("groceries"));
+        // Groceries + transport scale gently with income over the years.
+        let (costco, tj, shell) = if months_ago <= 41 {
+            (-25000, -15000, -12000)
+        } else if months_ago <= 89 {
+            (-20000, -12000, -10000)
+        } else {
+            (-16000, -9000, -8000)
+        };
+        insert_txn(conn, "chk", day_in(m, 12), costco, "Costco", Some("groceries"));
+        insert_txn(conn, "chk", day_in(m, 22), tj, "Trader Joe's", Some("groceries"));
         insert_txn(conn, "chk", day_in(m, 15), -5000, "Chipotle", Some("dining"));
-        insert_txn(conn, "chk", day_in(m, 19), -6000, "DoorDash", Some("dining"));
-        insert_txn(conn, "chk", day_in(m, 18), -12000, "Shell", Some("transport"));
+        insert_txn(conn, "chk", day_in(m, 18), shell, "Shell", Some("transport"));
+        // Food delivery only became a habit in the last ~2 years.
+        if months_ago <= 24 {
+            insert_txn(conn, "chk", day_in(m, 19), -6000, "DoorDash", Some("dining"));
+        }
     }
 
     // ── One-off / uncategorized expenses, placed ~5 months ago so they do NOT
@@ -240,24 +270,26 @@ mod tests {
         let accounts: i64 = conn.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
         assert_eq!(accounts, 5);
 
-        let income: i64 = conn
-            .query_row(
-                "SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw = 'Acme Payroll'",
-                [],
-                |r| r.get(0),
-            )
+        // Deep history: ~10 years of monthly transactions.
+        let tx_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(income, 5_200_000, "13 × $4,000 payroll (the brokerage dividend is separate)");
+        assert!(tx_count > 900, "10 years of monthly data → 900+ transactions, got {tx_count}");
+        let oldest_days: i64 = conn
+            .query_row("SELECT CAST(julianday('now') - julianday(MIN(posted_at)) AS INTEGER) FROM transactions", [], |r| r.get(0))
+            .unwrap();
+        assert!(oldest_days > 3200, "oldest transaction ~10 years old, got {oldest_days} days");
 
-        let housing: i64 = conn
-            .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='housing'", [], |r| r.get(0))
+        // Current-state facts live in the trailing 12-month window: payroll at
+        // the current $4,000/mo tier, rent at the $1,200 tier.
+        let income_12m: i64 = conn
+            .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw='Acme Payroll' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(housing, 1_560_000, "13 × $1,200 rent → biggest category");
-
-        let groceries: i64 = conn
-            .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='groceries'", [], |r| r.get(0))
+        assert!((4_600_000..=5_000_000).contains(&income_12m), "recent-year income ≈ 12×$4,000, got {income_12m}");
+        let housing_12m: i64 = conn
+            .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='housing' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(groceries, 520_000, "13 × $400 → second category");
+        assert!((1_300_000..=1_560_000).contains(&housing_12m), "recent-year rent ≈ 12×$1,200, got {housing_12m}");
 
         let uncategorized: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))
