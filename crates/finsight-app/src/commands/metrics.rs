@@ -38,17 +38,23 @@ pub struct FinancialMetrics {
     pub expected_annual_return_pct: f64,
 }
 
+/// `get_financial_metrics`, optionally scoped to one household member. A `None`
+/// member returns the whole-household numbers (unchanged); `Some(id)` weights
+/// every figure by account ownership (joint accounts split equally), so the
+/// per-person view reconciles to the household total plus the unassigned residual.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_financial_metrics(
     state: tauri::State<'_, AppState>,
+    member_id: Option<String>,
 ) -> AppResult<FinancialMetrics> {
     let db = (*state.db).clone();
     let month_start = Utc::now().format("%Y-%m-01").to_string();
     run(&db, move |conn| {
-        let balances = metrics::balance_breakdown(conn)?;
-        let rolling = metrics::rolling_averages(conn, 90)?;
-        let this_month = metrics::cashflow_since(conn, &month_start)?;
+        let member = member_id.as_deref();
+        let balances = metrics::balance_breakdown_for(conn, member)?;
+        let rolling = metrics::rolling_averages_for(conn, 90, member)?;
+        let this_month = metrics::cashflow_since_for(conn, &month_start, member)?;
         let emergency_fund_months = metrics::emergency_fund_months(
             balances.emergency_fund_cents,
             rolling.avg_monthly_expense_cents,

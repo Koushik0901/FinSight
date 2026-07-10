@@ -9,6 +9,7 @@ import { useGoals, useContributeToGoal } from "../api/hooks/budget";
 import { useRecurring } from "../api/hooks/recurring";
 import { useCreateMonthlyReview, useMonthTotals, useSavingsRateHistory } from "../api/hooks";
 import { useFinancialMetrics } from "../api/hooks/metrics";
+import PerPersonCard from "../components/PerPersonCard";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useUncelebratedMilestones } from "../api/hooks/assets";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
@@ -249,6 +250,8 @@ export default function Today() {
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("credit"), width: 8, height: 8, marginRight: 6 }} />Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
         <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">Liquid at avg burn · {metrics ? money(metrics.avgMonthlyExpenseCents, { currency: primaryCurrency }) : "—"}/mo</div></div>
       </section>
+
+      <PerPersonCard currency={primaryCurrency} />
 
       <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(320px, 0.95fr)", gap: 16 }}>
         <div className="card">

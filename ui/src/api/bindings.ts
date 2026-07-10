@@ -516,9 +516,15 @@ async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getFinancialMetrics() : Promise<Result<FinancialMetrics, AppError>> {
+/**
+ * `get_financial_metrics`, optionally scoped to one household member. A `None`
+ * member returns the whole-household numbers (unchanged); `Some(id)` weights
+ * every figure by account ownership (joint accounts split equally), so the
+ * per-person view reconciles to the household total plus the unassigned residual.
+ */
+async getFinancialMetrics(memberId: string | null) : Promise<Result<FinancialMetrics, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_financial_metrics") };
+    return { status: "ok", data: await TAURI_INVOKE("get_financial_metrics", { memberId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

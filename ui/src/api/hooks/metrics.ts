@@ -8,11 +8,13 @@ import { isTauriRuntime } from "../../utils/runtime";
  * targets. Screens read these instead of recomputing, so the UI and the Copilot
  * never disagree.
  */
-export function useFinancialMetrics() {
+export function useFinancialMetrics(memberId?: string | null) {
   return useQuery<FinancialMetrics>({
-    queryKey: ["financial-metrics"],
+    // memberId in the key so switching person refetches; null/undefined = the
+    // whole household (unchanged behaviour).
+    queryKey: ["financial-metrics", memberId ?? null],
     queryFn: async () => {
-      const result = await commands.getFinancialMetrics();
+      const result = await commands.getFinancialMetrics(memberId ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
