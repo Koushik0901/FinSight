@@ -196,6 +196,20 @@ fn audit_import_samples_and_dump_everything() {
         ids.push((acct.id, spec.name));
     }
 
+    // Operator identity (F0): a real user configures their own name, which
+    // TransferContext loads so is_self_transfer can recognize their own
+    // e-transfers ("INTERAC e-Transfer To/From: <me>"). The samples ARE Koushik's
+    // data — seeding this is the realistic setup, and the production code stays
+    // generic (it matches whatever name is configured, not a hard-coded one).
+    {
+        let conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO household_members(id,name,color,created_at) VALUES('self-koushik','Koushik','#6366F1',datetime('now'))",
+            [],
+        )
+        .unwrap();
+    }
+
     // 2. Post-import cascade exactly as the app runs it.
     {
         let mut conn = db.get().unwrap();
@@ -385,6 +399,59 @@ fn audit_import_samples_and_dump_everything() {
     println!("rolling_90: {ra:?}");
     let nw = finsight_core::repos::net_worth::breakdown(&mut conn).unwrap();
     println!("net_worth: {nw:?}");
+
+    // DECOMPOSITION (F0): what actually drives the rolling-90 expense? The top
+    // expense rows in the window, so we can see whether the inflated number is
+    // transfer leakage or REAL one-off spend BEFORE writing transfer-detection
+    // code — otherwise we'd tune matching until the headline number flatters the
+    // user, which is sample-fitting the user's own CSVs (the goal forbids it).
+    println!("\n== TOP 25 EXPENSE ROWS in rolling-90 window (is_transfer=0, amount<0) ==");
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT substr(t.posted_at,1,10), t.amount_cents, a.name, COALESCE(c.label,'(uncat)'), t.merchant_raw \
+                 FROM transactions t JOIN accounts a ON a.id=t.account_id \
+                 LEFT JOIN categories c ON c.id=t.category_id \
+                 WHERE t.is_transfer=0 AND t.amount_cents<0 AND date(t.posted_at) >= date('now','-90 days') \
+                 ORDER BY t.amount_cents ASC LIMIT 25",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })
+            .unwrap();
+        let mut sum = 0i64;
+        for row in rows {
+            let (d, amt, acct, cat, m) = row.unwrap();
+            sum += amt;
+            println!(
+                "{d} {amt:>9}c {:<16} {:<12} {}",
+                acct.chars().take(16).collect::<String>(),
+                cat.chars().take(12).collect::<String>(),
+                m.chars().take(46).collect::<String>()
+            );
+        }
+        println!("(top-25 expense subtotal = {sum}c)");
+        let (counted, excluded): (i64, i64) = conn
+            .query_row(
+                "SELECT COALESCE(SUM(CASE WHEN is_transfer=0 AND amount_cents<0 THEN -amount_cents ELSE 0 END),0), \
+                        COALESCE(SUM(CASE WHEN is_transfer=1 AND amount_cents<0 THEN -amount_cents ELSE 0 END),0) \
+                 FROM transactions WHERE date(posted_at) >= date('now','-90 days')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        println!(
+            "window expense: counted(is_transfer=0)={counted}c  already-excluded(is_transfer=1)={excluded}c"
+        );
+    }
 
     // Month cashflow for the 3 most recent full months present in data.
     println!("\n== MONTHLY CASHFLOW (metrics::cashflow_between) ==");
