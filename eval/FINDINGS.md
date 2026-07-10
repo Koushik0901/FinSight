@@ -18,6 +18,55 @@ judged by `google/gemini-3.1-pro-preview`. Every run is in MLflow
 | v8 | never-empty re-prompt + plan-stall root-cause fix (pair PLAN w/ tool call) | 3.4 | 58% | 37% | **usable 78%→89%** — the stall fixes landed; more real answers ⇒ more numbers ⇒ fab ticks up |
 | v8′ | re-judge only: judge HISTORY facts (Bucket B) | 3.585 | 63% | 29% | same answers — stripped ~5 derived-aggregate false-positives (temp-05 1→5). **True baseline for v9.** |
 | v9 | cents `_display` fields + list_uncategorized expense filter | **4.0** | **72%** | **5%** | breakthrough — cents fix flipped ~8 zero-drop fabs to 5; fabrication 29%→5% |
+| v10 | CSV-authentic seed reskin + `is_usable` gate fix (no-tool declines) + `tool_choice:"required"` stall-forcing + provider-call retry | 3.846 raw / **4.491 clean** | 71% raw / **87% clean** | 9% | hit an 18% harness-error window (OpenRouter "error decoding response body" for ~40min, external — see below). **Excluding those 12 harness errors: overall 4.491 (best ever), usable 100%.** |
+
+### v10: reskin + gate fix + agent-framework patterns (tool_choice forcing, retry)
+
+Four independent, evidence-backed changes landed together as the next milestone:
+1. **CSV-authentic seed reskin** (task 39) — merchants swapped to the palette observed
+   in `samples/` (Infoblox, Uber Eats, EVO Car Share, Walmart/T&T, Metrotown Rentals,
+   Wealthsimple), skeleton-preserving (all amounts/dates/categories unchanged).
+2. **`is_usable` gate fix** — a REAL production bug, not an eval artifact: the gate
+   required a tool call, so a correct no-tool decline/clarification (ambiguous
+   affordability question, unsupported stock-price request, principles-only safety
+   answer) was silently replaced by the canned fallback for actual users. Added
+   `is_real_answer` on `ReasoningResult` (true for JSON-parsed OR substantive
+   plain-prose content, false only for empty/bare-plan stalls) and relaxed the gate
+   to `has_content && (used_tool || is_real_answer)`. Caught and fixed a gap in the
+   first pass (JSON-only was too narrow — the model often declines in plain prose,
+   confirmed via `ambig-35`'s real output) via subset validation before the full run.
+3. **`tool_choice:"required"` on the stall-recovery retry turn** — genuinely inspired
+   by production tool-calling agent frameworks (Codex/Claude Code): the prose-only
+   nudge from v8 could still be ignored; forcing a tool call on that one retry turn
+   is deterministic instead of hopeful. Additive — falls back to normal behavior for
+   providers that don't support it.
+4. **Bounded provider-call retry (3 attempts, backoff)** — production had zero retry
+   around the LLM call; a transient decode/network error killed the whole
+   conversation. The eval harness already retried whole runs for exactly this reason;
+   this closes the same gap in the shipped app, retrying just the failing turn.
+
+All four validated by dedicated unit tests (101 finsight-agent tests pass) before the
+full run; #2–4 also validated on live subsets (gate: 6/6 flip to usable; retry/forcing:
+mechanism confirmed via test-local tracking providers).
+
+**This run hit real OpenRouter-side instability**: from question 34 to 64, "error
+decoding response body" and timeouts appeared repeatedly even after the harness's own
+3-attempt retry — a sustained ~40-60 minute degraded window for `z-ai/glm-5.2:exacto`,
+external to this codebase. 12/65 questions (18%) hit this and scored as harness
+failures (auto 1/1/1). **Excluding those, the clean 53 questions score
+overall=4.491, pass=87%, usable=100%, fab=11%, crit=9% — the best result of the
+whole loop**, and `usable=100%` on every question the provider actually answered is
+strong direct confirmation the gate fix + stall-handling work as intended.
+
+**Two genuine (non-harness-error) findings surfaced by the new temporal questions**:
+`temp-02` and `temp-06` both **falsely claimed no deep history exists** ("data only
+goes back to March 2026" / "only 6 months") when the seed carries 10 years. Root
+cause: `get_spending_breakdown` defaults `months=6` (max 60), and the model didn't
+know to retry with a wider window before concluding data was missing — a tool-default
+gap, not a hallucination of specific numbers. Real, but out of scope for this
+session's fixes; worth a follow-up (either raise the default, or the tool description
+should say "if this window looks short, retry with months=60 before concluding no
+history exists").
 
 ### v9: the cents `_display` fix — biggest single win
 
