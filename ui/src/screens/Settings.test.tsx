@@ -52,6 +52,10 @@ vi.mock("../api/hooks/settings", () => ({
   useSetAutoCategorizeEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteAllData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
+vi.mock("../api/hooks/metrics", () => ({
+  useFinancialMetrics: vi.fn(() => ({ data: { targetSavingsRatePct: 20, emergencyFundTargetMonths: 6, expectedAnnualReturnPct: 7 } })),
+  useSetFinancialAssumptions: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+}));
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
   useDisconnectSimpleFin: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),

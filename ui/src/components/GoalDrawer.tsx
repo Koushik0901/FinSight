@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
-import { useUpdateGoalMonthly, useUpdateGoalPurpose } from "../api/hooks/budget";
+import { useUpdateGoalMonthly, useUpdateGoalPurpose, useGoalContributions, useContributeToGoal } from "../api/hooks/budget";
 import type { GoalDto } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
@@ -19,6 +19,38 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
   const { data: accounts = [] } = useAccounts();
   const [monthly, setMonthly] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [contribAmount, setContribAmount] = useState("");
+  const [contribNote, setContribNote] = useState("");
+
+  // The contribution ledger only applies to manual goals; account-linked goals
+  // derive their balance from the account.
+  const isManual = !!goal && !goal.accountId;
+  const contribute = useContributeToGoal();
+  const { data: contributions = [] } = useGoalContributions(isManual ? goal?.id : undefined);
+
+  const addContribution = async (sign: 1 | -1) => {
+    if (!goal) return;
+    const dollars = Number(contribAmount);
+    if (!Number.isFinite(dollars) || dollars <= 0) {
+      toast.error("Enter an amount to record");
+      return;
+    }
+    try {
+      await contribute.mutateAsync({
+        id: goal.id,
+        amountCents: sign * Math.round(dollars * 100),
+        note: contribNote.trim() || null,
+      });
+      setContribAmount("");
+      setContribNote("");
+      toast.success(sign > 0 ? "Contribution added" : "Withdrawal recorded");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update the balance");
+    }
+  };
+
+  const contributionLabel = (c: { note: string | null; source: string }) =>
+    c.note || (c.source === "opening" ? "Opening balance" : c.source === "sweep" ? "Parked surplus" : "Contribution");
 
   useEffect(() => {
     if (!goal) {
@@ -73,10 +105,43 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
               <span className="chip">{goal.goalType}</span>
               {goal.targetDate && <span className="chip">Target {new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
             </div>
-            <div className="muted">{goal.targetCents > 0 ? `Goal size ${money(goal.targetCents, { currency: "USD" })}` : "No target amount"}</div>
-            <div className="muted" style={{ marginTop: 4 }}>{goal.currentCents > 0 ? `Current balance ${money(goal.currentCents, { currency: "USD" })}` : "No current balance recorded"}</div>
+            <div className="muted">{goal.targetCents > 0 ? `Goal size ${money(goal.targetCents)}` : "No target amount"}</div>
+            <div className="muted" style={{ marginTop: 4 }}>{goal.currentCents > 0 ? `Current balance ${money(goal.currentCents)}` : "No current balance recorded"}</div>
             {linkedAccount && <div className="muted" style={{ marginTop: 4 }}>Linked account: {getAccountDisplayName(linkedAccount)}</div>}
           </div>
+
+          {isManual && (
+            <div className="card tight" style={{ padding: 16 }}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Balance ledger</div>
+              <div className="row row-sm wrap" style={{ alignItems: "flex-end" }}>
+                <label style={{ flex: "1 1 110px", margin: 0 }}>
+                  Amount ($)
+                  <input type="number" min="0" step="0.01" value={contribAmount} onChange={(e) => setContribAmount(e.target.value)} aria-label="Contribution amount" />
+                </label>
+                <label style={{ flex: "2 1 150px", margin: 0 }}>
+                  Note
+                  <input type="text" value={contribNote} onChange={(e) => setContribNote(e.target.value)} placeholder="optional" />
+                </label>
+              </div>
+              <div className="row row-sm" style={{ marginTop: 10 }}>
+                <button type="button" className="primary" disabled={contribute.isPending} onClick={() => void addContribution(1)}>Add funds</button>
+                <button type="button" disabled={contribute.isPending} onClick={() => void addContribution(-1)}>Withdraw</button>
+              </div>
+              {contributions.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  {contributions.map((c) => (
+                    <div key={c.id} className="row" style={{ justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--hairline)" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contributionLabel(c)}</div>
+                        <div className="muted" style={{ fontSize: 11 }}>{new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
+                      </div>
+                      <span className={`money ${c.amountCents >= 0 ? "pos" : "neg"}`}>{c.amountCents >= 0 ? "+" : "−"}{money(Math.abs(c.amountCents))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <label>
             Monthly contribution ($)

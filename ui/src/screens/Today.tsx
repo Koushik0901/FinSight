@@ -5,9 +5,10 @@ import { useAccounts } from "../api/hooks/accounts";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { useHealthScore } from "../api/hooks/insights";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
-import { useGoals, useUpdateGoalBalance } from "../api/hooks/budget";
+import { useGoals, useContributeToGoal } from "../api/hooks/budget";
 import { useRecurring } from "../api/hooks/recurring";
 import { useCreateMonthlyReview, useMonthTotals, useSavingsRateHistory } from "../api/hooks";
+import { useFinancialMetrics } from "../api/hooks/metrics";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import { useUncelebratedMilestones } from "../api/hooks/assets";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
@@ -70,13 +71,17 @@ function SavingsRateSparkline({ points }: { points: Array<{ month: string; savin
 function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: () => void }) {
   const navigate = useNavigate();
   const { data: goals = [] } = useGoals();
-  const updateBalance = useUpdateGoalBalance();
-  const firstGoal = goals[0] ?? null;
+  const contribute = useContributeToGoal();
+  // Only manual (non-account-linked) goals can be parked into: a linked goal's
+  // balance is synced from its account, so a contribution would be rejected.
+  const firstGoal = goals.find((goal) => !goal.accountId) ?? null;
 
   const handlePark = async () => {
     if (!firstGoal) return;
     try {
-      await updateBalance.mutateAsync({ id: firstGoal.id, currentCents: firstGoal.currentCents + netCents });
+      // Append an auditable contribution — parking twice records two rows
+      // instead of double-counting a mutated balance.
+      await contribute.mutateAsync({ id: firstGoal.id, amountCents: netCents, note: "Parked surplus from monthly cash flow", source: "sweep" });
       toast.success(`Parked ${money(netCents)} in ${firstGoal.name}`);
       onDismiss();
     } catch {
@@ -92,7 +97,7 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
         Put surplus cash to work before it disappears into drift. FinSight can park it in your next goal or let you choose where it goes.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-        {firstGoal && <button className="btn primary sm" type="button" disabled={updateBalance.isPending} onClick={() => void handlePark()}>{updateBalance.isPending ? "Parking…" : `Park in ${firstGoal.name}`}</button>}
+        {firstGoal && <button className="btn primary sm" type="button" disabled={contribute.isPending} onClick={() => void handlePark()}>{contribute.isPending ? "Parking…" : `Park in ${firstGoal.name}`}</button>}
         <button className="btn sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal…</button>
         <button className="btn ghost sm" type="button" onClick={onDismiss}>Dismiss</button>
       </div>
@@ -135,6 +140,7 @@ export default function Today() {
   const navigate = useNavigate();
   const { data: accounts = [], isLoading: accLoading } = useAccounts();
   const { data: totals, isLoading: totLoading } = useMonthTotals();
+  const { data: metrics } = useFinancialMetrics();
   const { data: healthScore } = useHealthScore();
   const { data: savingsRateHistory = [] } = useSavingsRateHistory();
   const { data: cats = [] } = useCategoriesWithSpending();
@@ -179,19 +185,18 @@ export default function Today() {
   const totalSpendRaw = activeCats.reduce((s, c) => s + c.thisMonthCents, 0);
   const totalSpend = totalSpendRaw || 1;
   const dayOfMonth = now.getDate();
-  const avgDailyBurn = totals ? totals.expenseCents / Math.max(dayOfMonth, 1) : 0;
   const recurringSoon = recurring.filter((item) => daysUntilLabel(item.nextExpected) !== null).slice(0, 6);
   // When nothing is due in the next two weeks (common with historical imports),
   // still surface the user's recurring commitments so the panel stays useful.
   const upcomingRecurring = recurringSoon.length > 0 ? recurringSoon : recurring.slice(0, 5);
-  // Accounts with no confirmed balance (e.g. CSV-imported history with no
-  // balance field) are excluded rather than silently counted as a real $0.
-  const knownAccounts = accounts.filter((account) => account.balance_known);
-  const unknownBalanceCount = accounts.length - knownAccounts.length;
-  const liquidCents = knownAccounts.filter((account) => account.balance_cents > 0 && !/investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
-  const investedCents = knownAccounts.filter((account) => account.balance_cents > 0 && /investment|brokerage|retirement/i.test(account.type)).reduce((sum, account) => sum + account.balance_cents, 0);
-  const creditCents = Math.abs(knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + account.balance_cents, 0));
-  const runwayDays = avgDailyBurn > 0 ? Math.round(liquidCents / avgDailyBurn) : null;
+  // Balances, runway, and the unknown-balance count all come from the shared
+  // metrics layer (liquid/invested/debt classified by account type, runway =
+  // liquid ÷ average burn), so Today reads the same numbers as the Copilot.
+  const liquidCents = metrics?.liquidCents ?? 0;
+  const investedCents = metrics?.investedCents ?? 0;
+  const creditCents = metrics?.debtCents ?? 0;
+  const unknownBalanceCount = metrics?.accountsWithUnknownBalance ?? 0;
+  const runwayDays = metrics?.runwayDays ?? null;
   const showSweep = !sweepDismissed && !!totals && totals.netCents > 5000;
   const celebrateMilestones = milestones.filter((threshold): threshold is number => typeof threshold === "number").filter((threshold) => !dismissedMilestones.includes(threshold));
   const shouldShowMonthlyReview = dayOfMonth >= 28;
@@ -239,10 +244,10 @@ export default function Today() {
       </section>
 
       <section className="stat-row">
-        <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("checking"), width: 8, height: 8, marginRight: 6 }} />Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency }).replace(/,/g, "") }</div><div className="sub">Cash and near-cash accounts</div></div>
+        <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("checking"), width: 8, height: 8, marginRight: 6 }} />Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency })}</div><div className="sub">Cash and near-cash accounts</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("investment"), width: 8, height: 8, marginRight: 6 }} />Invested</div><div className="value money">{money(investedCents, { currency: primaryCurrency })}</div><div className="sub">Brokerage and retirement balances</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("credit"), width: 8, height: 8, marginRight: 6 }} />Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">At current burn · {totals ? money(totals.expenseCents) : "—"} monthly spend</div></div>
+        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">Liquid at avg burn · {metrics ? money(metrics.avgMonthlyExpenseCents, { currency: primaryCurrency }) : "—"}/mo</div></div>
       </section>
 
       <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(320px, 0.95fr)", gap: 16 }}>

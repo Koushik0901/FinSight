@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData } from "../api/client";
 import { money } from "../utils/format";
-import { useMonthTotals } from "../api/hooks/reports";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
+import { useFinancialMetrics } from "../api/hooks/metrics";
 import NetWorthChart from "../components/NetWorthChart";
 
 type Scope = "month" | "quarter" | "year" | "all";
@@ -48,8 +48,8 @@ export default function Reports() {
   const [scope, setScope] = useState<Scope>("year");
   const [tab, setTab] = useState<Tab>("overview");
   const { data, isLoading, error } = useReportData(scope);
-  const { data: totals } = useMonthTotals();
   const netWorth = useNetWorth();
+  const { data: metrics } = useFinancialMetrics();
   const { data: nwHistory = [] } = useNetWorthHistory(SCOPE_DAYS[scope]);
 
   const monthly = data?.monthly ?? [];
@@ -57,11 +57,23 @@ export default function Reports() {
   const totalIncome = monthly.reduce((sum, month) => sum + month.incomeCents, 0);
   const totalExpense = monthly.reduce((sum, month) => sum + month.expenseCents, 0);
   const totalExpenseLastYear = monthlyLastYear.reduce((sum, month) => sum + month.expenseCents, 0);
-  const yoyDeltaPct = totalExpenseLastYear > 0 ? Math.round(((totalExpense - totalExpenseLastYear) / totalExpenseLastYear) * 100) : null;
+  // Year-over-year is only meaningful when the scope window is ≤12 months; for
+  // "all" the window can span up to 24 months and its "same months last year"
+  // comparison overlaps itself, so suppress it there.
+  const yoyDeltaPct = scope !== "all" && totalExpenseLastYear > 0 ? Math.round(((totalExpense - totalExpenseLastYear) / totalExpenseLastYear) * 100) : null;
   const savingsRate = totalIncome > 0 ? Math.round(((totalIncome - totalExpense) / totalIncome) * 100) : 0;
-  const runwayMonths = totals?.expenseCents ? Math.max(0, Math.round(netWorth / Math.max(totals.expenseCents, 1))) : 0;
-  const chartValues = monthly.slice(-6);
-  const maxExpense = Math.max(1, ...chartValues.map((month) => month.expenseCents));
+  // Average monthly spend over the scope's months that actually had outflow — a
+  // stable figure across scopes, unlike calendar month-to-date which reads $0
+  // for historical imports.
+  const activeExpenseMonths = monthly.filter((m) => m.expenseCents > 0).length || 1;
+  const avgMonthlyExpense = Math.round(totalExpense / activeExpenseMonths);
+  // Runway comes from the shared metrics layer (liquid ÷ trailing-90d burn),
+  // the same definition Today shows — not a scope-specific recomputation.
+  const runwayMonths = metrics ? Math.round(metrics.runwayDays / 30) : 0;
+  const chartValues = monthly;
+  // A single shared max for both series so income and expense bars are directly
+  // comparable across months (per-series maxima made unequal months look equal).
+  const maxBar = Math.max(1, ...chartValues.flatMap((month) => [month.incomeCents, month.expenseCents]));
   const topCategoriesByAmount = useMemo(() => [...(data?.topCategories ?? [])].sort((a, b) => b.totalCents - a.totalCents), [data]);
   const maxCategoryAmount = Math.max(1, ...topCategoriesByAmount.map((category) => category.totalCents));
 
@@ -106,7 +118,7 @@ export default function Reports() {
         <div>
           <div className="eyebrow"><span className="dot" />Reports · {scopeLabel}</div>
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>How money is moving.</h1>
-          <div className="muted" style={{ marginTop: 6 }}>See the shape of your money over time.</div>
+          <div className="muted" style={{ marginTop: 6 }}>See the shape of your money over time.{scope === "all" && monthly.length >= 24 ? " Showing the most recent 24 months." : ""}</div>
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           <div className="toolbar">
@@ -127,9 +139,9 @@ export default function Reports() {
 
       <div className="stat-row">
         <div className="stat"><div className="label">Savings rate</div><div className="value">{savingsRate}%</div><div className="sub">Income vs. spend</div></div>
-        <div className="stat"><div className="label">Net worth</div><div className="value money">{money(netWorth, { currency: "USD" })}</div><div className="sub">Tracked balances</div></div>
-        <div className="stat"><div className="label">Spent this month</div><div className="value money">{money(totals?.expenseCents ?? totalExpense, { currency: "USD" })}</div><div className="sub">Cash outflow</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths}</div><div className="sub">Months at current burn</div></div>
+        <div className="stat"><div className="label">Net worth</div><div className="value money">{money(netWorth)}</div><div className="sub">Tracked balances</div></div>
+        <div className="stat"><div className="label">Avg monthly spend</div><div className="value money">{money(avgMonthlyExpense)}</div><div className="sub">Across this period</div></div>
+        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths}</div><div className="sub">Months liquid covers at avg burn</div></div>
       </div>
 
       {tab === "overview" && (
@@ -140,7 +152,7 @@ export default function Reports() {
               <div className="h3" style={{ marginTop: 6 }}>Income and expenses over time</div>
               {yoyDeltaPct !== null && (
                 <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
-                  {money(totalExpense, { currency: "USD" })} spent this period · {yoyDeltaPct >= 0 ? "up" : "down"} {Math.abs(yoyDeltaPct)}% vs the same months last year ({money(totalExpenseLastYear, { currency: "USD" })})
+                  {money(totalExpense)} spent this period · {yoyDeltaPct >= 0 ? "up" : "down"} {Math.abs(yoyDeltaPct)}% vs the same months last year ({money(totalExpenseLastYear)})
                 </div>
               )}
             </div>
@@ -151,14 +163,14 @@ export default function Reports() {
                 No transactions in this period. Try a wider range (Year / All time) or import statements that cover it.
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12, alignItems: "end", minHeight: 220 }}>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${chartValues.length}, minmax(0, 1fr))`, gap: chartValues.length > 12 ? 5 : 12, alignItems: "end", minHeight: 220 }}>
                 {chartValues.map((month) => (
                   <div key={month.month} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: "100%", minHeight: 160, display: "flex", alignItems: "end", justifyContent: "center", gap: 8 }}>
-                      <span style={{ width: 28, height: `${(month.incomeCents / Math.max(maxExpense, month.incomeCents, 1)) * 160}px`, borderRadius: 10, background: "var(--positive)" }} />
-                      <span style={{ width: 28, height: `${(month.expenseCents / maxExpense) * 160}px`, borderRadius: 10, background: "var(--negative)" }} />
+                    <div style={{ width: "100%", minHeight: 160, display: "flex", alignItems: "end", justifyContent: "center", gap: chartValues.length > 12 ? 3 : 8 }}>
+                      <span style={{ width: chartValues.length > 12 ? 12 : 28, height: `${(month.incomeCents / maxBar) * 160}px`, borderRadius: 10, background: "var(--positive)" }} title={`Income ${money(month.incomeCents)}`} />
+                      <span style={{ width: chartValues.length > 12 ? 12 : 28, height: `${(month.expenseCents / maxBar) * 160}px`, borderRadius: 10, background: "var(--negative)" }} title={`Spent ${money(month.expenseCents)}`} />
                     </div>
-                    <span className="mono muted">{month.label}</span>
+                    <span className="mono muted" style={chartValues.length > 12 ? { fontSize: 9, writingMode: "vertical-rl" } : undefined}>{month.label}</span>
                   </div>
                 ))}
               </div>
@@ -188,7 +200,7 @@ export default function Reports() {
                 <div style={{ height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden" }}>
                   <div style={{ width: `${(category.totalCents / maxCategoryAmount) * 100}%`, height: "100%", background: category.color || "var(--accent)", borderRadius: 999 }} />
                 </div>
-                <span className="money" style={{ fontSize: 13 }}>{money(category.totalCents, { currency: "USD" })}</span>
+                <span className="money" style={{ fontSize: 13 }}>{money(category.totalCents)}</span>
               </div>
             ))}
           </div>
@@ -202,7 +214,7 @@ export default function Reports() {
             <thead><tr><th>Category</th><th className="right">Amount</th><th className="right">Txns</th></tr></thead>
             <tbody>
               {(data?.topCategories ?? []).map((category) => (
-                <tr key={category.categoryId}><td><div className="row row-sm"><span className="cswatch" style={{ background: category.color || "var(--accent)" }} /><span>{category.label}</span></div></td><td className="right"><span className="money">{money(category.totalCents, { currency: "USD" })}</span></td><td className="right">{category.txnCount}</td></tr>
+                <tr key={category.categoryId}><td><div className="row row-sm"><span className="cswatch" style={{ background: category.color || "var(--accent)" }} /><span>{category.label}</span></div></td><td className="right"><span className="money">{money(category.totalCents)}</span></td><td className="right">{category.txnCount}</td></tr>
               ))}
             </tbody>
           </table>
@@ -217,7 +229,7 @@ export default function Reports() {
                 <tr key={merchant.merchantRaw}>
                   <td>{merchant.merchantRaw}</td>
                   <td><span className="row row-sm"><span className="cswatch" style={{ background: merchant.categoryColor || "var(--ink-faint)" }} />{merchant.categoryLabel || "Uncategorized"}</span></td>
-                  <td className="right"><span className="money">{money(merchant.totalCents, { currency: "USD" })}</span></td>
+                  <td className="right"><span className="money">{money(merchant.totalCents)}</span></td>
                   <td className="right">{merchant.txnCount}</td>
                 </tr>
               ))}

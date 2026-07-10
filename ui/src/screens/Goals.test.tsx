@@ -31,6 +31,8 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalMonthly: vi.fn(() => ({ mutateAsync: mockUpdateMonthly, isPending: false })),
   useUpdateGoalPurpose: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useProjectGoalGrowth: vi.fn(() => ({ data: null })),
+  useContributeToGoal: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useGoalContributions: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("../api/hooks/accounts", () => ({

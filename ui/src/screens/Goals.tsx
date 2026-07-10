@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
-import { useGoals, useCreateGoal, useUpdateGoalMonthly } from "../api/hooks/budget";
+import { useGoals, useCreateGoal, useUpdateGoalMonthly, useProjectGoalGrowth } from "../api/hooks/budget";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
@@ -19,9 +19,24 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 function paceLabel(goal: GoalDto) {
-  const pct = goal.targetCents > 0 ? goal.currentCents / goal.targetCents : 0;
-  if (pct > 0.9) return { label: "Ahead", className: "chip positive" };
+  // Spending caps invert the usual direction: a full bar is bad, not "ahead".
+  if (goal.goalType === "spending-cap") {
+    if (goal.targetCents <= 0) return { label: "No cap set", className: "chip warning" };
+    const used = goal.currentCents / goal.targetCents;
+    if (goal.currentCents > goal.targetCents) return { label: "Over cap", className: "chip negative" };
+    if (used > 0.9) return { label: "Near cap", className: "chip warning" };
+    return { label: "Within cap", className: "chip positive" };
+  }
+  const remaining = goal.targetCents - goal.currentCents;
+  if (remaining <= 0) return { label: "Funded", className: "chip positive" };
   if (goal.monthlyCents <= 0) return { label: "Needs attention", className: "chip warning" };
+  // With a target date, "on track" means the projected ETA lands on or before
+  // it — not merely that the bar is nearly full.
+  if (goal.targetDate) {
+    return isBehindSchedule(goal, monthsToGoal(goal))
+      ? { label: "Behind", className: "chip warning" }
+      : { label: "On track", className: "chip accent" };
+  }
   return { label: "On track", className: "chip accent" };
 }
 
@@ -43,10 +58,10 @@ function GoalCard({ goal, onEdit, linkedAccountName, onTogglePause, pausePending
           <h2 className="h1" style={{ fontSize: 24 }}>{goal.name}</h2>
           <div className="muted" style={{ marginTop: 6 }}>
             {goal.goalType === "debt-payoff"
-              ? `Paying ${money(goal.monthlyCents, { currency: "USD" })}/month`
+              ? `Paying ${money(goal.monthlyCents)}/month`
               : goal.goalType === "spending-cap"
-                ? `Cap of ${money(goal.targetCents, { currency: "USD" })} this month`
-                : `Auto-moves ${money(goal.monthlyCents, { currency: "USD" })}/month`}
+                ? `Cap of ${money(goal.targetCents)} this month`
+                : `Auto-moves ${money(goal.monthlyCents)}/month`}
             {goal.targetDate && ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
           </div>
           {goal.accountId && linkedAccountName && <div className="muted" style={{ marginTop: 8 }}>Linked to {linkedAccountName}</div>}
@@ -58,8 +73,8 @@ function GoalCard({ goal, onEdit, linkedAccountName, onTogglePause, pausePending
             <span style={{ width: `${pct}%` }} />
           </div>
           <div className="row" style={{ justifyContent: "space-between", marginTop: 8, fontSize: 13 }}>
-            <span className="money">{money(goal.currentCents, { currency: "USD" })}</span>
-            <span className="money muted">of {money(goal.targetCents, { currency: "USD" })}</span>
+            <span className="money">{money(goal.currentCents)}</span>
+            <span className="money muted">of {money(goal.targetCents)}</span>
           </div>
         </div>
 
@@ -88,6 +103,9 @@ function monthsToGoal(goal: GoalDto, monthlyOverrideCents?: number) {
 function etaLabel(months: number) {
   if (!Number.isFinite(months)) return "—";
   const date = new Date();
+  // Normalize to the 1st before advancing months so month-end dates (e.g. the
+  // 31st) don't skip a month via JS Date's day-overflow.
+  date.setDate(1);
   date.setMonth(date.getMonth() + months);
   return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
@@ -108,6 +126,7 @@ type HorizonRow = {
 function isBehindSchedule(goal: GoalDto, months: number): boolean {
   if (!goal.targetDate) return false;
   const eta = new Date();
+  eta.setDate(1);
   eta.setMonth(eta.getMonth() + months);
   return eta.getTime() > new Date(goal.targetDate).getTime();
 }
@@ -144,6 +163,7 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
   const ticks = Array.from({ length: tickCount }, (_, i) => {
     const monthsOut = Math.round((i / (tickCount - 1)) * windowMonths);
     const date = new Date();
+    date.setDate(1);
     date.setMonth(date.getMonth() + monthsOut);
     return {
       xPercent: (monthsOut / windowMonths) * 100,
@@ -183,7 +203,7 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
                 <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
                 <div style={labelStyle}>
-                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents, { currency: "USD" })}</span>
+                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents)}</span>
                   {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
                 </div>
               </div>
@@ -222,7 +242,7 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
     if (extra === 0) return;
     try {
       await updateGoalMonthly.mutateAsync({ id: selected.id, monthlyCents: selected.monthlyCents + extraCents });
-      toast.success(`Applied +${money(extraCents, { currency: "USD" })}/mo to ${selected.name}`, {
+      toast.success(`Applied +${money(extraCents)}/mo to ${selected.name}`, {
         description: newlyAchievable
           ? `New ETA: ${etaLabel(newMonths)} · now on a path to finish`
           : `New ETA: ${etaLabel(newMonths)} · saves ${monthsSaved} ${monthsSaved === 1 ? "month" : "months"}`,
@@ -276,7 +296,7 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
             <div style={{ marginTop: 22 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <span className="eyebrow">Extra per month</span>
-                <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{money(extraCents, { currency: "USD" })}</span>
+                <span className="figure" style={{ fontSize: 18, color: "var(--accent)" }}>+{money(extraCents)}</span>
               </div>
               <input
                 type="range"
@@ -309,12 +329,12 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
                 <span>You're on track for the original plan. Drag the slider to see what changes.</span>
               ) : newlyAchievable ? (
                 <span>
-                  Adding <strong>{money(extraCents, { currency: "USD" })}/mo</strong> puts <strong>{selected.name}</strong> on a path to finish by{" "}
+                  Adding <strong>{money(extraCents)}/mo</strong> puts <strong>{selected.name}</strong> on a path to finish by{" "}
                   <strong>{etaLabel(newMonths)}</strong> — it wasn't projected to complete before.
                 </span>
               ) : (
                 <span>
-                  Adding <strong>{money(extraCents, { currency: "USD" })}/mo</strong> brings <strong>{selected.name}</strong> in by{" "}
+                  Adding <strong>{money(extraCents)}/mo</strong> brings <strong>{selected.name}</strong> in by{" "}
                   <strong>{monthsSaved} {monthsSaved === 1 ? "month" : "months"}</strong> — moving the ETA from{" "}
                   <strong>{etaLabel(baseMonths)}</strong> to roughly <strong>{etaLabel(newMonths)}</strong>.
                 </span>
@@ -333,6 +353,73 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
               <button className="btn ghost" type="button" onClick={() => setExtra(0)}>Reset</button>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CompoundGrowthProjector({ goals }: { goals: GoalDto[] }) {
+  const eligible = useMemo(
+    () => goals.filter((g) => g.goalType !== "spending-cap" && (g.monthlyCents > 0 || g.currentCents > 0)),
+    [goals],
+  );
+  const [goalId, setGoalId] = useState(eligible[0]?.id ?? "");
+  useEffect(() => {
+    if (!eligible.some((g) => g.id === goalId)) setGoalId(eligible[0]?.id ?? "");
+  }, [eligible, goalId]);
+
+  // 10 / 20 / 30-year horizons for the selected goal (Kiyosaki/Hill compounding).
+  const p10 = useProjectGoalGrowth(goalId || undefined, 10);
+  const p20 = useProjectGoalGrowth(goalId || undefined, 20);
+  const p30 = useProjectGoalGrowth(goalId || undefined, 30);
+
+  const selected = eligible.find((g) => g.id === goalId);
+  if (!selected) return null;
+
+  const ratePct = Math.round((p10.data?.annualRate ?? 0.07) * 1000) / 10;
+  const horizons = [
+    { years: 10, value: p10.data?.valueCents },
+    { years: 20, value: p20.data?.valueCents },
+    { years: 30, value: p30.data?.valueCents },
+  ];
+  const contributed = (yrs: number) => selected.currentCents + selected.monthlyCents * 12 * yrs;
+
+  return (
+    <section className="section">
+      <div className="day-hdr" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="eyebrow"><span className="dot" />Compound growth</div>
+          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>If it kept compounding.</h2>
+        </div>
+        {eligible.length > 1 && (
+          <select className="control" value={goalId} onChange={(e) => setGoalId(e.target.value)} aria-label="Projected goal" style={{ maxWidth: 220 }}>
+            {eligible.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        )}
+      </div>
+      <div className="card" style={{ padding: 26 }}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Projecting <strong>{selected.name}</strong> — {money(selected.currentCents)} now plus {money(selected.monthlyCents)}/month, compounding at {ratePct}% a year.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14, marginTop: 8 }}>
+          {horizons.map((h) => {
+            const growth = h.value != null ? h.value - contributed(h.years) : null;
+            return (
+              <div key={h.years} className="card tight" style={{ padding: 18 }}>
+                <div className="eyebrow">In {h.years} years</div>
+                <div className="figure money" style={{ fontSize: 28, marginTop: 8 }}>{h.value != null ? money(h.value) : "—"}</div>
+                {growth != null && growth > 0 && (
+                  <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                    {money(contributed(h.years))} in · <span style={{ color: "var(--positive)" }}>+{money(growth)} growth</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+          Rate comes from the linked account's APY when set, otherwise a 7% long-run assumption. Estimates, not guarantees.
         </div>
       </div>
     </section>
@@ -427,7 +514,7 @@ export default function Goals() {
         }
         await updateGoalMonthly.mutateAsync({ id: goal.id, monthlyCents: restore });
         setPausedPrevious((prev) => { const next = { ...prev }; delete next[goal.id]; return next; });
-        toast.success(`Resumed ${goal.name} at ${money(restore, { currency: "USD" })}/month`);
+        toast.success(`Resumed ${goal.name} at ${money(restore)}/month`);
       }
     } catch {
       toast.error("Could not update this goal");
@@ -498,6 +585,8 @@ export default function Goals() {
       <GoalsHorizon goals={goals} />
 
       {goals.length > 0 && <WhatIfScenario goals={goals} />}
+
+      {goals.some((g) => g.goalType !== "spending-cap" && (g.monthlyCents > 0 || g.currentCents > 0)) && <CompoundGrowthProjector goals={goals} />}
     </div>
   );
 }

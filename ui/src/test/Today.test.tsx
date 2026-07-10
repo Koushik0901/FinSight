@@ -49,6 +49,8 @@ vi.mock("../api/hooks/budget", () => ({
     ],
   }),
   useUpdateGoalBalance: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+  useContributeToGoal: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+  useGoalContributions: () => ({ data: [] }),
 }));
 
 vi.mock("../api/hooks/insights", () => ({

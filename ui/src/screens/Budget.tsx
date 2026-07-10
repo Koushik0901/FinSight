@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useUpdateGoalBalance } from "../api/hooks/budget";
+import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal } from "../api/hooks/budget";
 import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
@@ -15,7 +15,7 @@ function envelopeStatus(env: BudgetEnvelope) {
   if (env.budgetCents <= 0) return { label: "No budget set", tone: "warning" as const, severity: 2 };
   const pct = (env.spentCents / env.budgetCents) * 100;
   if (env.spentCents > env.budgetCents) {
-    return { label: `Over by ${money(env.spentCents - env.budgetCents, { currency: "USD" })}`, tone: "negative" as const, severity: 3 };
+    return { label: `Over by ${money(env.spentCents - env.budgetCents)}`, tone: "negative" as const, severity: 3 };
   }
   if (pct > 90) return { label: "Tight", tone: "warning" as const, severity: 2 };
   if (pct > 60) return { label: "On pace", tone: "accent" as const, severity: 1 };
@@ -30,7 +30,7 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
     const amountCents = Math.round(Number(value || 0) * 100);
     try {
       await setBudget.mutateAsync({ categoryId: envelope.categoryId, amountCents });
-      toast.success("Budget saved", { description: `${envelope.categoryLabel} · ${money(amountCents, { currency: "USD" })}` });
+      toast.success("Budget saved", { description: `${envelope.categoryLabel} · ${money(amountCents)}` });
       onClose();
     } catch {
       toast.error("Failed to save budget");
@@ -91,7 +91,7 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
             <span className="muted" style={{ fontSize: 12 }}>{env.txnCount} txn{env.txnCount === 1 ? "" : "s"}</span>
           </div>
           <div className="figure money" style={{ fontSize: 34, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--ink)" }}>
-            {money(Math.abs(remaining), { currency: "USD" })}
+            {money(Math.abs(remaining))}
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{remaining < 0 ? "over budget" : "left to spend"}</div>
         </div>
@@ -109,8 +109,8 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
       </div>
 
       <div className="hero-meta" style={{ justifyContent: "space-between", marginTop: 10 }}>
-        <span className="money">{money(env.spentCents, { currency: "USD" })} spent</span>
-        <span className="money">of {money(env.budgetCents, { currency: "USD" })}</span>
+        <span className="money">{money(env.spentCents)} spent</span>
+        <span className="money">of {money(env.budgetCents)}</span>
       </div>
 
       {status.tone === "negative" && (
@@ -124,7 +124,7 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
               return;
             }
             const donorRemaining = donor.budgetCents - donor.spentCents;
-            toast(`${donor.categoryLabel} has ${money(donorRemaining, { currency: "USD" })} unspent — often the best donor.`, {
+            toast(`${donor.categoryLabel} has ${money(donorRemaining)} unspent — often the best donor.`, {
               description: "Adjust each envelope's budget below to move the amount over.",
             });
           }}
@@ -136,7 +136,7 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
       {status.tone === "warning" && remaining > 0 && (
         <div className="card tight" style={{ marginTop: 14, padding: 12, background: "var(--warning-2)", borderColor: "var(--warning)" }}>
           <div className="muted" style={{ fontSize: 12.5 }}>
-            About <span className="money strong">{money(perDay * 100, { currency: "USD" })}</span>/day left to stay under.
+            About <span className="money strong">{money(perDay)}</span>/day left to stay under.
           </div>
         </div>
       )}
@@ -154,7 +154,7 @@ export default function Budget() {
   const { data: history = [] } = useBudgetHistory(5);
   const { data: totals } = useMonthTotals();
   const { data: goals = [] } = useGoals();
-  const updateGoalBalance = useUpdateGoalBalance();
+  const contribute = useContributeToGoal();
   const { data: breakdown } = useQuery<SpendingBreakdown>({
     queryKey: ["spending-breakdown"],
     queryFn: async () => {
@@ -208,10 +208,14 @@ export default function Budget() {
     return candidates.reduce((best, env) => (env.budgetCents - env.spentCents > best.budgetCents - best.spentCents ? env : best));
   };
 
+  // Only manual (non-account-linked) goals can be parked into: a linked goal's
+  // balance is synced from its account, so a manual bump double-counts.
+  const parkableGoal = goals.find((goal) => !goal.accountId) ?? null;
+
   const handleParkInGoal = async () => {
-    const firstGoal = goals[0];
+    const firstGoal = parkableGoal;
     if (!firstGoal) {
-      toast("No goals to park funds in yet — create one on the Goals screen.");
+      toast("No manual goals to park funds in yet — create one on the Goals screen.");
       return;
     }
     if (toBudget <= 0) {
@@ -219,8 +223,8 @@ export default function Budget() {
       return;
     }
     try {
-      await updateGoalBalance.mutateAsync({ id: firstGoal.id, currentCents: firstGoal.currentCents + toBudget });
-      toast.success(`Parked ${money(toBudget, { currency: "USD" })} in ${firstGoal.name}`);
+      await contribute.mutateAsync({ id: firstGoal.id, amountCents: toBudget, note: "Parked unassigned budget", source: "sweep" });
+      toast.success(`Parked ${money(toBudget)} in ${firstGoal.name}`);
     } catch {
       toast.error("Could not park funds");
     }
@@ -246,7 +250,7 @@ export default function Budget() {
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
-              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.max(remaining, 0), { currency: "USD" })}</div>
+              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.max(remaining, 0))}</div>
               <div className="muted">left to spend</div>
             </div>
             <div style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
@@ -260,9 +264,9 @@ export default function Budget() {
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
-            <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget, { currency: "USD" })}</div><div className="sub">Across {sorted.length} envelopes</div></div>
-            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent, { currency: "USD" })}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today), { currency: "USD" }) : money(0, { currency: "USD" })}/day pace</div></div>
-            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom, { currency: "USD" })}</div><div className="sub">{projectedEom > totalBudget ? <span className="npill neg">Over by {money(projectedEom - totalBudget, { currency: "USD" })}</span> : <span className="npill pos">Under by {money(totalBudget - projectedEom, { currency: "USD" })}</span>}</div></div>
+            <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
+            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}/day pace</div></div>
+            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalBudget ? <span className="npill neg">Over by {money(projectedEom - totalBudget)}</span> : <span className="npill pos">Under by {money(totalBudget - projectedEom)}</span>}</div></div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 18, marginBottom: 0, maxWidth: 900 }}>{insight}</p>
@@ -272,11 +276,11 @@ export default function Budget() {
         <div>
           <div className="eyebrow"><span className="dot" />To budget · unassigned</div>
           <div className="row row-sm wrap" style={{ alignItems: "baseline", marginTop: 8 }}>
-            <div className="figure money" style={{ fontSize: 32, color: toBudget >= 0 ? "var(--accent)" : "var(--negative)" }}>{money(Math.abs(toBudget), { currency: "USD" })}</div>
-            <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0, { currency: "USD" })}</span> income · <span className="money">{money(totalBudget, { currency: "USD" })}</span> assigned</div>
+            <div className="figure money" style={{ fontSize: 32, color: toBudget >= 0 ? "var(--accent)" : "var(--negative)" }}>{money(Math.abs(toBudget))}</div>
+            <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0)}</span> income · <span className="money">{money(totalBudget)}</span> assigned</div>
           </div>
         </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={updateGoalBalance.isPending} onClick={() => void handleParkInGoal()}>Park in {goals[0]?.name ?? "a goal"}</button></div>
+        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={contribute.isPending} onClick={() => void handleParkInGoal()}>Park in {parkableGoal?.name ?? "a goal"}</button></div>
       </div>
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
@@ -292,7 +296,7 @@ export default function Budget() {
             <div key={label}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
                 <div className="eyebrow">{label}</div>
-                {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent, { currency: "USD" })} / {money(groupBudget, { currency: "USD" })}</span>}
+                {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
@@ -300,7 +304,7 @@ export default function Budget() {
         })}</div>}
       </section>
 
-      {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents, { currency: "USD" })}</span></td>)}</tr>)}</tbody></table></div></section>}
+      {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents)}</span></td>)}</tr>)}</tbody></table></div></section>}
 
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
     </div>

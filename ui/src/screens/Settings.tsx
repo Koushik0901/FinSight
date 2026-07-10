@@ -11,6 +11,7 @@ import {
   useListProviderModels,
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
+import { useFinancialMetrics, useSetFinancialAssumptions } from "../api/hooks/metrics";
 import {
   useSimpleFinStatus,
   useDisconnectSimpleFin,
@@ -39,6 +40,7 @@ type CompatPreset = (typeof OPENAI_COMPAT_PRESETS)[number];
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"];
 const SECTIONS = [
   ["profile", "Profile"],
+  ["targets", "Financial targets"],
   ["privacy", "Privacy & data"],
   ["agent", "Agent"],
   ["provider", "AI Provider"],
@@ -59,6 +61,58 @@ function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
 
 function Tog({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return <span className={`tog${checked ? " on" : ""}`} role="switch" aria-checked={checked} tabIndex={0} onClick={() => onChange(!checked)} onKeyDown={(e) => e.key === "Enter" && onChange(!checked)} />;
+}
+
+function FinancialTargetsSection() {
+  const { data: metrics } = useFinancialMetrics();
+  const save = useSetFinancialAssumptions();
+  const [savingsRate, setSavingsRate] = useState("");
+  const [efMonths, setEfMonths] = useState("");
+  const [returnPct, setReturnPct] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  // Seed the inputs from the stored assumptions once loaded; don't clobber edits.
+  useEffect(() => {
+    if (metrics && !dirty) {
+      setSavingsRate(String(metrics.targetSavingsRatePct));
+      setEfMonths(String(metrics.emergencyFundTargetMonths));
+      setReturnPct(String(metrics.expectedAnnualReturnPct));
+    }
+  }, [metrics, dirty]);
+
+  const onSave = async () => {
+    try {
+      await save.mutateAsync({
+        targetSavingsRatePct: Math.round(Number(savingsRate) || 0),
+        emergencyFundTargetMonths: Number(efMonths) || 0,
+        expectedAnnualReturnPct: Number(returnPct) || 0,
+      });
+      setDirty(false);
+      toast.success("Financial targets saved");
+    } catch (error) {
+      toast.error("Could not save targets", { description: userErrorMessage(error) });
+    }
+  };
+
+  const field = (label: string, desc: string, value: string, setter: (v: string) => void, suffix: string, step: string) => (
+    <div className="s-row">
+      <div><div className="label">{label}</div><div className="desc">{desc}</div></div>
+      <div className="row row-sm" style={{ alignItems: "center", justifyContent: "flex-end" }}>
+        <input className="control" type="number" min="0" step={step} value={value} onChange={(e) => { setter(e.target.value); setDirty(true); }} aria-label={label} style={{ maxWidth: 100 }} />
+        <span className="muted">{suffix}</span>
+      </div>
+      <div />
+    </div>
+  );
+
+  return (
+    <Section id="targets" title="Financial targets" description="The assumptions behind your scorecard, journey, and projections. Change them here and every screen — and the Copilot — follows the same numbers.">
+      {field("Target savings rate", "Pay-yourself-first floor used by the health score and savings nudges.", savingsRate, setSavingsRate, "%", "1")}
+      {field("Emergency fund target", "Months of expenses a full emergency fund should cover (Ramsey: 3–6).", efMonths, setEfMonths, "months", "0.5")}
+      {field("Expected annual return", "Long-run growth the compound projector assumes when a goal has no linked account APY.", returnPct, setReturnPct, "% / yr", "0.5")}
+      <div className="s-row"><div /><div style={{ textAlign: "right" }}><button className="btn primary sm" type="button" disabled={save.isPending || !dirty} onClick={() => void onSave()}>{save.isPending ? "Applying…" : "Apply targets"}</button></div><div /></div>
+    </Section>
+  );
 }
 
 function Section({ id, title, description, children }: { id: string; title: string; description: string; children: React.ReactNode }) {
@@ -245,6 +299,8 @@ export default function Settings() {
             </div>
             <div className="s-row"><div><div className="label">Account name</div><div className="desc">This desktop app is configured for your local FinSight profile.</div></div><div className="muted">FinSight desktop</div><div /></div>
           </Section>
+
+          <FinancialTargetsSection />
 
           <Section id="privacy" title="Privacy & data" description="Keep control of your data and what appears on-screen.">
             <div className="s-row">

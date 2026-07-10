@@ -4,6 +4,7 @@ import { useRecurring } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 import type { PlannedTransaction } from "../api/client";
 import { money } from "../utils/format";
+import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";
 import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
 
 function recurringGroup(item: { kind: string; lastAmountCents: number }) {
@@ -12,14 +13,6 @@ function recurringGroup(item: { kind: string; lastAmountCents: number }) {
   if (item.kind === "income" || item.lastAmountCents > 0) return "Income";
   if (item.kind === "subscription") return "Subscriptions";
   return "Bills";
-}
-
-function recurringFrequency(item: { cadence: string; avgGapDays: number }) {
-  if (item.cadence) return item.cadence;
-  if (item.avgGapDays <= 8) return "weekly";
-  if (item.avgGapDays <= 16) return "biweekly";
-  if (item.avgGapDays <= 40) return "monthly";
-  return "irregular";
 }
 
 export default function Recurring() {
@@ -38,13 +31,9 @@ export default function Recurring() {
     return ["Bills", "Subscriptions", "Income"].map((label) => ({ label, items: filtered.filter((item) => recurringGroup(item) === label) }));
   }, [items, view]);
 
-  const totalMonthlyCommitted = items.filter((item) => item.lastAmountCents < 0).reduce((sum, item) => {
-    const cadence = recurringFrequency(item);
-    if (cadence === "weekly") return sum + Math.round(Math.abs(item.lastAmountCents) * 4.33);
-    if (cadence === "biweekly") return sum + Math.round(Math.abs(item.lastAmountCents) * 2.16);
-    if (cadence === "annual") return sum + Math.round(Math.abs(item.lastAmountCents) / 12);
-    return sum + Math.abs(item.lastAmountCents);
-  }, 0);
+  const totalMonthlyCommitted = items
+    .filter((item) => item.lastAmountCents < 0)
+    .reduce((sum, item) => sum + monthlyEquivalentCents(item), 0);
   const billsCount = items.filter((item) => recurringGroup(item) === "Bills").length;
   const subscriptionsCount = items.filter((item) => recurringGroup(item) === "Subscriptions").length;
   const incomeCount = items.filter((item) => recurringGroup(item) === "Income").length;
@@ -81,7 +70,7 @@ export default function Recurring() {
 
       <div className="card accent" style={{ padding: 28 }}>
         <div className="eyebrow"><span className="dot" />Monthly committed</div>
-        <div className="figure money" style={{ fontSize: 52, lineHeight: 1, marginTop: 10 }}>{money(totalMonthlyCommitted, { currency: "USD" })}</div>
+        <div className="figure money" style={{ fontSize: 52, lineHeight: 1, marginTop: 10 }}>{money(totalMonthlyCommitted)}</div>
         <div className="muted" style={{ marginTop: 8 }}>per month in fixed commitments</div>
       </div>
 
@@ -114,7 +103,7 @@ export default function Recurring() {
                       <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{item.merchantRaw}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence</div></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
                       <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
-                      <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { currency: "USD", decimals: 2 })}</span></td>
+                      <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { decimals: 2 })}</span></td>
                     </tr>
                   )),
                 ] : null
@@ -159,7 +148,7 @@ export default function Recurring() {
                   </div>
                 </div>
                 <span className="chip">{new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                <span className={`money ${item.amountCents > 0 ? "pos" : ""}`}>{money(item.amountCents, { currency: "USD", decimals: 2 })}</span>
+                <span className={`money ${item.amountCents > 0 ? "pos" : ""}`}>{money(item.amountCents, { decimals: 2 })}</span>
               </button>
             ))
           )}

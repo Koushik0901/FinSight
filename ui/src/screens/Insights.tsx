@@ -15,6 +15,8 @@ import EmptyState from "../components/EmptyState";
 import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 import { useTriggerCategorize, useAgentStatus } from "../api/hooks/agent";
 import { money } from "../utils/format";
+import { monthlyEquivalentCents } from "../utils/recurring";
+import { useFinancialMetrics } from "../api/hooks/metrics";
 import { CopilotNudge } from "../components/CopilotNudge";
 import { getAccountDisplayName } from "../utils/accounts";
 
@@ -168,6 +170,8 @@ export default function Insights() {
   const { data: cats = [] } = useCategoriesWithSpending();
   const { data: envelopes = [] } = useBudgetEnvelopes();
   const { data: goals = [] } = useGoals();
+  const { data: metrics } = useFinancialMetrics();
+  const savingsTarget = metrics?.targetSavingsRatePct ?? 20;
 
   const { data: totals } = useQuery<MonthTotals>({
     queryKey: ["month-totals"],
@@ -232,12 +236,12 @@ export default function Insights() {
 
     if (totals && totals.incomeCents > 0) {
       const rate = totals.savingsRatePct;
-      if (rate >= 20) {
+      if (rate >= savingsTarget) {
         insights.push({
           id: "savings-good",
           kind: "savings",
           headline: `${rate}% savings rate this month`,
-          body: `You're keeping ${money(totals.netCents)} of ${money(totals.incomeCents)} income. That's above the 20% benchmark — well done.`,
+          body: `You're keeping ${money(totals.netCents)} of ${money(totals.incomeCents)} income. That's at or above your ${savingsTarget}% target — well done.`,
           severity: "positive",
         });
       } else if (rate < 0) {
@@ -255,7 +259,7 @@ export default function Insights() {
           id: "savings-low",
           kind: "savings",
           headline: `${rate}% savings rate — room to improve`,
-          body: `You kept ${money(totals.netCents)} of ${money(totals.incomeCents)} this month. Moving toward 20% would add ${money(Math.round(totals.incomeCents * 0.2) - totals.netCents)} to savings.`,
+          body: `You kept ${money(totals.netCents)} of ${money(totals.incomeCents)} this month. Reaching your ${savingsTarget}% target would add ${money(Math.round(totals.incomeCents * savingsTarget / 100) - totals.netCents)} to savings.`,
           action: "Open Budget",
           actionRoute: "/budget",
           severity: "info",
@@ -316,7 +320,9 @@ export default function Insights() {
 
     const subs = recurring.filter((r) => r.isSubscription && r.lastAmountCents < 0);
     if (subs.length > 0) {
-      const monthlySubCost = subs.reduce((s, r) => s + Math.abs(r.lastAmountCents), 0);
+      // Normalize each sub to a monthly figure so annual/weekly plans aren't
+      // mis-annualized (a yearly plan is not 12× its charge).
+      const monthlySubCost = subs.reduce((s, r) => s + monthlyEquivalentCents(r), 0);
       const annualCost = monthlySubCost * 12;
       insights.push({
         id: "subscriptions-cost",
@@ -370,7 +376,7 @@ export default function Insights() {
     }
 
     return insights;
-  }, [totals, cats, envelopes, goals, recurring, accounts]);
+  }, [totals, cats, envelopes, goals, recurring, accounts, savingsTarget]);
 
   const visible = rawInsights.filter((i) => !dismissed.has(i.id));
 

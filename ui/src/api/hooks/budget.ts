@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type CategoryHistory, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
+import { commands, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -84,6 +84,35 @@ export function useUpdateGoalBalance() {
     onSuccess: () => {
       invalidateDomains(qc, "goals");
     },
+  });
+}
+
+export function useContributeToGoal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, amountCents, note, source }: { id: string; amountCents: number; note?: string | null; source?: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.contributeToGoal(id, amountCents, note ?? null, source ?? null);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDomains(qc, "goals");
+      qc.invalidateQueries({ queryKey: ["goal-contributions", vars.id] });
+    },
+  });
+}
+
+export function useGoalContributions(goalId: string | undefined) {
+  return useQuery<GoalContributionDto[]>({
+    queryKey: ["goal-contributions", goalId],
+    queryFn: async () => {
+      if (!goalId) return [];
+      const result = await commands.listGoalContributions(goalId);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime() && !!goalId,
   });
 }
 

@@ -33,6 +33,8 @@ vi.mock("../api/hooks/budget", () => ({
   useApplyNextMonthPlan: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useGoals: vi.fn(() => ({ data: [], isLoading: false, error: null })),
   useUpdateGoalBalance: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useContributeToGoal: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useGoalContributions: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("../api/client", () => ({
