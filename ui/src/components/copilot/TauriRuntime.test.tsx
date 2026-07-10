@@ -257,4 +257,46 @@ describe("buildMetaFromMessages — cache-usage reload survival", () => {
     ]);
     expect(meta["a1"]).toMatchObject({ cachedTokens: 800, promptTokens: 1000, toolCount: 2 });
   });
+
+  it("recovers a full deep-answer meta footer (model + timing + cache, no bundle)", () => {
+    // spawn_deep_answer now persists agUiMetadataJson in exactly this shape, so a
+    // background "deep answer" gets the same meta footer — including the cache
+    // chip — on reload, instead of a bare bubble with no model/timing/tokens.
+    const meta = buildMetaFromMessages([
+      {
+        id: "a1",
+        conversationId: "conv-1",
+        role: "assistant",
+        content: "Deeper analysis.",
+        toolTrace: null,
+        actionBundleId: null,
+        branchParentId: null,
+        partsJson: null,
+        runStatus: "completed",
+        agUiMetadataJson: JSON.stringify({
+          schemaVersion: 1,
+          runtime: "ag-ui",
+          runStatus: "completed",
+          providerId: "openrouter",
+          modelId: "google/gemini-2.5-flash",
+          elapsedMs: 9000,
+          toolCount: 5,
+          cachedTokens: 1200,
+          promptTokens: 3000,
+          toolTrace: ["Called tool: get_liabilities"],
+          plan: ["Assess debt", "Compare options"],
+          followUpQuestions: ["Want a payoff plan?"],
+        }),
+        createdAt: "2026-07-01T00:00:00Z",
+      } as ConversationMessage,
+    ]);
+    expect(meta["a1"]).toMatchObject({
+      providerId: "openrouter",
+      modelId: "google/gemini-2.5-flash",
+      elapsedMs: 9000,
+      toolCount: 5,
+      cachedTokens: 1200,
+      promptTokens: 3000,
+    });
+  });
 });

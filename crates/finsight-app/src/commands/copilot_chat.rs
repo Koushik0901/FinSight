@@ -1159,6 +1159,11 @@ fn spawn_deep_answer(
     question: String,
 ) {
     tauri::async_runtime::spawn(async move {
+        // Captured before `provider` is moved into the run closure, so the
+        // persisted metadata can name the model and report the cache usage.
+        let started = Instant::now();
+        let provider_id = provider.provider_id().to_string();
+        let model_id = provider.model_id().to_string();
         let tools = build_toolset();
         let q = question.clone();
         let deep = run(&db, move |conn| {
@@ -1193,16 +1198,47 @@ fn spawn_deep_answer(
         // blocks (tables/charts/verdicts), which reasoning_result_to_agent_answer
         // now maps. The deep answer persists no applyable action bundle, so drop
         // any drafted change entries (they'd have no bundle to apply against).
+        // Captured before `result` is moved into the answer mapping.
+        let deep_usage = result.usage;
         let mut answer = reasoning_result_to_agent_answer(result, None);
         answer.changes = Vec::new();
         validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
+
+        // Persist the same meta the synchronous turn writes, so the deep answer
+        // shows its model/timing/tool-count — and the prompt-cache chip — on
+        // reload (buildMetaFromMessages reads these back from agUiMetadataJson).
+        let tool_count = tool_names_from_trace(&answer.trace).len();
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let ag_ui_metadata_json = serde_json::to_string(&json!({
+            "schemaVersion": 1,
+            "runtime": "ag-ui",
+            "threadId": conversation_id.clone(),
+            "runStatus": "completed",
+            "providerId": provider_id,
+            "modelId": model_id,
+            "elapsedMs": elapsed_ms,
+            "toolCount": tool_count,
+            "cachedTokens": deep_usage.cached_tokens,
+            "promptTokens": deep_usage.prompt_tokens,
+            "toolTrace": answer.trace.clone(),
+            "plan": answer.plan.clone(),
+            "followUpQuestions": answer.follow_up_questions.clone(),
+        }))
+        .unwrap_or_default();
+
         let parts = assistant_parts_json(&answer);
         let prose = answer.prose.clone();
         let cid = conversation_id.clone();
         let persisted = run(&db, move |conn| {
             let msg = conversations::insert_message(
                 conn, &cid, "assistant", &prose, None, None, None, Some(&parts),
+            )?;
+            conversations::update_message_run_status(
+                conn,
+                &msg.id,
+                "completed",
+                Some(&ag_ui_metadata_json),
             )?;
             Ok::<_, finsight_core::CoreError>(msg.id)
         })
