@@ -636,3 +636,76 @@ async fn stall_recovery_forces_a_tool_call_on_the_retry_turn() {
         "expected exactly one forced tool-call turn, right after the stall"
     );
 }
+
+/// Test-only provider that fails the first N calls to `complete_tool_turn`
+/// with a transient-looking error, then succeeds — simulating a network blip
+/// or decode hiccup on an otherwise-healthy conversation.
+struct FlakyProvider {
+    fails_remaining: std::sync::atomic::AtomicUsize,
+    tool_turns: Mutex<Vec<AssistantTurn>>,
+}
+
+#[async_trait::async_trait]
+impl crate::CompletionProvider for FlakyProvider {
+    fn provider_id(&self) -> &str {
+        "flaky"
+    }
+    fn model_id(&self) -> &str {
+        "test"
+    }
+    async fn complete_json(&self, _system: &str, _user: &str) -> anyhow::Result<serde_json::Value> {
+        Ok(json!({}))
+    }
+    async fn complete_tool_turn(
+        &self,
+        _messages: &[crate::reasoning::messages::ChatMessage],
+        _tools: &[crate::reasoning::messages::ToolDefinition],
+    ) -> anyhow::Result<AssistantTurn> {
+        if self.fails_remaining.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            self.fails_remaining.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            return Err(anyhow::anyhow!("simulated transient decode error"));
+        }
+        let mut turns = self.tool_turns.lock().unwrap();
+        if turns.is_empty() {
+            Ok(AssistantTurn::FinalAnswer {
+                content: "No more turns scripted".to_string(),
+                reasoning: String::new(),
+            })
+        } else {
+            Ok(turns.remove(0))
+        }
+    }
+}
+
+#[tokio::test]
+async fn transient_provider_error_is_retried_and_recovers() {
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(FlakyProvider {
+        fails_remaining: std::sync::atomic::AtomicUsize::new(2),
+        tool_turns: Mutex::new(vec![AssistantTurn::FinalAnswer {
+            content: "Your net worth is -$2,200.".to_string(),
+            reasoning: String::new(),
+        }]),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5)
+        .await
+        .expect("2 transient failures should be retried within the 3-attempt budget");
+    assert!(result.content.contains("-$2,200"));
+}
+
+#[tokio::test]
+async fn provider_error_still_propagates_once_retries_are_exhausted() {
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    // Always fails: more failures than the retry budget covers, so the run
+    // must still surface an error rather than retry forever.
+    let provider = Arc::new(FlakyProvider {
+        fails_remaining: std::sync::atomic::AtomicUsize::new(100),
+        tool_turns: Mutex::new(vec![]),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5).await;
+    assert!(result.is_err(), "a persistently failing provider must still surface an error");
+}

@@ -7,8 +7,42 @@ use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct ReasoningEngine;
+
+/// Bounded retry around a single provider turn. A cloud LLM call is an
+/// unreliable I/O boundary — rate-limit blips and response-decode hiccups are
+/// common enough that the eval harness already retries a whole run over them;
+/// production had no equivalent and a transient error mid-conversation just
+/// failed the request outright, discarding every tool call already made this
+/// turn. Retries the SAME turn (not the whole run) with a short backoff, so a
+/// hiccup recovers without re-doing prior work; a genuinely broken call
+/// (bad auth, malformed request) just fails 3x fast and surfaces the same
+/// error a few hundred ms later.
+async fn call_provider_with_retry(
+    provider: &Arc<dyn CompletionProvider>,
+    messages: &[ChatMessage],
+    tool_defs: &[crate::reasoning::messages::ToolDefinition],
+    forced: bool,
+) -> Result<AssistantTurn> {
+    const MAX_ATTEMPTS: u32 = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let result = if forced {
+            provider.complete_tool_turn_forced(messages, tool_defs).await
+        } else {
+            provider.complete_tool_turn(messages, tool_defs).await
+        };
+        match result {
+            Ok(turn) => return Ok(turn),
+            Err(_) if attempt < MAX_ATTEMPTS => {
+                tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("loop always returns on the final attempt")
+}
 
 #[derive(Debug, Clone)]
 pub enum ReasoningEngineEvent {
@@ -72,16 +106,11 @@ impl ReasoningEngine {
         let mut force_next_tool_call = false;
 
         for iteration in 0..max_iterations {
-            let turn = if force_next_tool_call {
-                force_next_tool_call = false;
-                provider
-                    .complete_tool_turn_forced(&messages, &tools.definitions())
-                    .await?
-            } else {
-                provider
-                    .complete_tool_turn(&messages, &tools.definitions())
-                    .await?
-            };
+            let forced = force_next_tool_call;
+            force_next_tool_call = false;
+            let turn =
+                call_provider_with_retry(&provider, &messages, &tools.definitions(), forced)
+                    .await?;
 
             match turn {
                 AssistantTurn::ToolCalls {
