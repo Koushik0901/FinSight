@@ -85,9 +85,25 @@ struct OaiChoiceWithTools {
     message: OaiMessageWithTools,
 }
 
+#[derive(Deserialize, Default)]
+struct PromptTokensDetails {
+    #[serde(default)]
+    cached_tokens: u32,
+}
+
+#[derive(Deserialize, Default)]
+struct OaiUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    prompt_tokens_details: Option<PromptTokensDetails>,
+}
+
 #[derive(Deserialize)]
 struct OaiRespWithTools {
     choices: Vec<OaiChoiceWithTools>,
+    #[serde(default)]
+    usage: Option<OaiUsage>,
 }
 
 #[async_trait]
@@ -213,6 +229,14 @@ impl OpenAiCompatProvider {
             // instance overrides this down (with_max_tokens) since its turns only
             // emit a short tool call.
             "max_tokens": self.max_tokens,
+            // Prompt caching: the large system prefix + tool schemas are re-sent
+            // every turn, so caching the stable prefix cuts per-turn latency and
+            // cost dramatically. Automatic on OpenAI/Gemini 2.5/DeepSeek/Grok
+            // (this flag is a harmless no-op there); explicit for Anthropic/Qwen,
+            // which honour the ephemeral breakpoint. GLM does not cache — pick a
+            // caching-capable model (e.g. google/gemini-2.5-flash, deepseek) to
+            // realise the win. See openrouter.ai/docs/.../prompt-caching.
+            "cache_control": {"type": "ephemeral"},
             "messages": oai_messages,
             "tools": oai_tools,
         });
@@ -230,6 +254,20 @@ impl OpenAiCompatProvider {
             .error_for_status()?
             .json()
             .await?;
+
+        // Surface cache hits (visible in the eval harness + debug builds). Full
+        // UI telemetry (a cached-tokens usage chip) is a bounded follow-up.
+        #[cfg(debug_assertions)]
+        if let Some(cached) = resp
+            .usage
+            .as_ref()
+            .and_then(|u| u.prompt_tokens_details.as_ref())
+            .map(|d| d.cached_tokens)
+            .filter(|c| *c > 0)
+        {
+            let prompt = resp.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0);
+            eprintln!("copilot cache: {cached}/{prompt} prompt tokens cached ({})", self.model);
+        }
 
         let choice = resp
             .choices
@@ -290,6 +328,30 @@ fn parse_json_response(content: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_cached_tokens_from_openrouter_usage() {
+        // The prompt-caching telemetry: cache hits arrive under
+        // usage.prompt_tokens_details.cached_tokens.
+        let resp: OaiRespWithTools = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":"hi"}}],
+                "usage":{"prompt_tokens":5000,"prompt_tokens_details":{"cached_tokens":4800}}}"#,
+        )
+        .unwrap();
+        let cached = resp
+            .usage
+            .and_then(|u| u.prompt_tokens_details)
+            .map(|d| d.cached_tokens)
+            .unwrap_or(0);
+        assert_eq!(cached, 4800);
+    }
+
+    #[test]
+    fn tolerates_a_response_with_no_usage() {
+        let resp: OaiRespWithTools =
+            serde_json::from_str(r#"{"choices":[{"message":{"content":"hi"}}]}"#).unwrap();
+        assert!(resp.usage.is_none());
+    }
 
     #[test]
     fn parses_json_array_response() {
