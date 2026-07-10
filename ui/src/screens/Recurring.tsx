@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import EmptyState from "../components/EmptyState";
 import { useRecurring } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 import type { PlannedTransaction } from "../api/client";
@@ -16,6 +17,7 @@ function recurringGroup(item: { kind: string; lastAmountCents: number }) {
 }
 
 export default function Recurring() {
+  const navigate = useNavigate();
   const { data: items = [], isLoading, error } = useRecurring();
   const { data: plannedTransactions = [] } = usePlannedTransactions();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -53,6 +55,18 @@ export default function Recurring() {
 
   if (isLoading) return <div className="stub">Loading recurring items…</div>;
   if (error) return <div className="stub" role="alert">Error loading recurring items.</div>;
+
+  if (items.length === 0 && activePlanned.length === 0) {
+    return (
+      <div className="screen screen-recurring">
+        <EmptyState
+          title="No recurring items yet"
+          description="Import a few months of statements and FinSight detects your subscriptions, bills, and recurring income automatically."
+          actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Import transactions</button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="screen screen-recurring">

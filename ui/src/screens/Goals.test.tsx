@@ -47,6 +47,16 @@ describe("Goals — eyebrow casing", () => {
   });
 });
 
+describe("Goals — empty state", () => {
+  it("renders an intentional empty state with a New goal CTA when there are no goals", async () => {
+    const budget = await import("../api/hooks/budget");
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({ data: [], isLoading: false, error: null });
+    render(<Goals />, { wrapper: createWrapper() });
+    expect(screen.getByText("No goals yet")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /New goal/i }).length).toBeGreaterThan(0);
+  });
+});
+
 function future(monthsFromNow: number): string {
   const d = new Date();
   d.setMonth(d.getMonth() + monthsFromNow);

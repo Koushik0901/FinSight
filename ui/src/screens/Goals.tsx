@@ -8,6 +8,7 @@ import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
+import EmptyState from "../components/EmptyState";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap";
 
@@ -569,17 +570,30 @@ export default function Goals() {
       <GoalDrawer open={activeEditingGoal !== null} onClose={() => setEditingGoal(null)} goal={activeEditingGoal} />
 
       <div className="section" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {visible.map((goal) => (
-          <GoalCard
-            key={goal.id}
-            goal={goal}
-            onEdit={setEditingGoal}
-            linkedAccountName={goal.accountId ? accountNameById.get(goal.accountId) ?? null : null}
-            onTogglePause={(g) => void handleTogglePause(g)}
-            pausePending={updateGoalMonthly.isPending}
-            pausedByUser={goal.id in pausedPrevious}
+        {visible.length === 0 ? (
+          <EmptyState
+            compact
+            title={goals.length === 0 ? "No goals yet" : "No goals in this filter"}
+            description={
+              goals.length === 0
+                ? "Create a goal — an emergency fund, a trip, a debt payoff — and the agent keeps it on your radar as you spend."
+                : "Nothing matches this filter yet. Try another, or create a new goal."
+            }
+            actions={<button className="btn primary" type="button" onClick={() => setCreating(true)}>+ New goal</button>}
           />
-        ))}
+        ) : (
+          visible.map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              onEdit={setEditingGoal}
+              linkedAccountName={goal.accountId ? accountNameById.get(goal.accountId) ?? null : null}
+              onTogglePause={(g) => void handleTogglePause(g)}
+              pausePending={updateGoalMonthly.isPending}
+              pausedByUser={goal.id in pausedPrevious}
+            />
+          ))
+        )}
       </div>
 
       <GoalsHorizon goals={goals} />

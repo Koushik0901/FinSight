@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import Recurring from "./Recurring";
 import { createWrapperWithEntries } from "../test-utils";
+import { useRecurring } from "../api/hooks/recurring";
+import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 
 vi.mock("../api/hooks/recurring", () => ({
   useRecurring: vi.fn(() => ({
@@ -57,6 +59,16 @@ vi.mock("../api/hooks/accounts", () => ({
 vi.mock("../api/hooks/transactions", () => ({
   useCategories: vi.fn(() => ({ data: [{ id: "cat-1", label: "Insurance" }] })),
 }));
+
+describe("Recurring — empty state", () => {
+  it("renders an intentional empty state when nothing is recurring or planned", () => {
+    vi.mocked(useRecurring).mockReturnValueOnce({ data: [], isLoading: false, error: null } as ReturnType<typeof useRecurring>);
+    vi.mocked(usePlannedTransactions).mockReturnValueOnce({ data: [] } as ReturnType<typeof usePlannedTransactions>);
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+    expect(screen.getByText("No recurring items yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Import transactions/i })).toBeInTheDocument();
+  });
+});
 
 describe("Recurring — planned transactions", () => {
   it("opens the planned transaction drawer when focusPlanned is present", async () => {

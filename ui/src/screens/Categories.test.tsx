@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Categories from "./Categories";
 import { createWrapper } from "../test-utils";
+import { useCategoriesWithSpending } from "../api/hooks/transactions";
 
 vi.mock("../api/hooks/transactions", () => ({
   useCategoriesWithSpending: vi.fn(() => ({
@@ -21,6 +22,15 @@ vi.mock("../api/hooks/transactions", () => ({
   useArchiveCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetCategoryGuidance: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
+
+describe("Categories — empty state", () => {
+  it("renders an intentional empty state on a fresh (no-category) database", () => {
+    vi.mocked(useCategoriesWithSpending).mockReturnValueOnce({ data: [], isLoading: false, error: null } as ReturnType<typeof useCategoriesWithSpending>);
+    render(<Categories />, { wrapper: createWrapper() });
+    expect(screen.getByText("No categories yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Get started/i })).toBeInTheDocument();
+  });
+});
 
 describe("Categories — AI insight sentence", () => {
   it("shows insight sentence when last-month data exists", () => {

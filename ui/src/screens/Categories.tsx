@@ -1,5 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import EmptyState from "../components/EmptyState";
 import {
   useCategoriesWithSpending,
   useSetCategorySpendingType,
@@ -42,6 +44,7 @@ function txnCountFor(category: CategoryWithSpending, scope: Scope) {
 }
 
 export default function Categories() {
+  const navigate = useNavigate();
   const [scope, setScope] = useState<Scope>("month");
   const { data: categories = [], isLoading, error } = useCategoriesWithSpending();
   const setSpendingType = useSetCategorySpendingType();
@@ -150,6 +153,18 @@ export default function Categories() {
 
   if (isLoading) return <div className="stub">Loading categories…</div>;
   if (error) return <div className="stub" role="alert">Error loading categories.</div>;
+
+  if (categories.length === 0) {
+    return (
+      <div className="screen screen-categories">
+        <EmptyState
+          title="No categories yet"
+          description="Import a statement or add an account, and your spending is grouped into categories here automatically."
+          actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Get started</button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="screen screen-categories">
