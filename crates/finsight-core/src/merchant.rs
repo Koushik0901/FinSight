@@ -151,9 +151,142 @@ pub fn bill_vendor_hint(normalized: &str) -> Option<&'static str> {
     VENDORS.iter().copied().find(|v| normalized.contains(v))
 }
 
+/// Generic "plan / billing" words that describe HOW a vendor charges, not WHICH
+/// vendor it is. Stripped when building a grouping key so "<vendor>",
+/// "<vendor> subscription", and "<vendor> membership fee" collapse to one key.
+const PLAN_WORDS: &[&str] = &[
+    "subscription",
+    "subscr",
+    "membership",
+    "installment",
+    "instalment",
+    "fee",
+    "plan",
+    "monthly",
+    "annual",
+    "yearly",
+    "recurring",
+    "renewal",
+    "autopay",
+    "dues",
+];
+
+/// Parent-company ↔ product-brand aliases: descriptors that bill the same vendor
+/// under different names (a company and its product) and must group as one
+/// series. This is reference data — extend it as real multi-name vendors are
+/// found — not per-transaction special-casing.
+const VENDOR_ALIASES: &[(&str, &[&str])] = &[
+    ("openai", &["openai", "chatgpt"]),
+    ("anthropic", &["anthropic", "claude"]),
+];
+
+/// Canonical vendor token for a normalized descriptor, collapsing brand/product
+/// aliases of the same company. `None` when no known multi-name vendor matches.
+pub fn canonical_vendor(normalized: &str) -> Option<&'static str> {
+    VENDOR_ALIASES
+        .iter()
+        .find(|(_, aliases)| aliases.iter().any(|a| normalized.contains(a)))
+        .map(|(canon, _)| *canon)
+}
+
+/// Stable, vendor-canonical grouping key for recurring detection:
+/// [`normalize_merchant`] plus company-alias collapsing and plan-word stripping,
+/// so every descriptor for the same vendor — statement padding, product brand
+/// (`OPENAI *CHATGPT SUBSCR` vs `CHATGPT SUBSCRIPTION` vs `OPENAI`), or a
+/// `subscription`/`membership fee` suffix — groups into ONE series instead of
+/// splitting one monthly charge into two "quarterly" ones.
+pub fn canonical_merchant_key(raw: &str) -> String {
+    let norm = normalize_merchant(raw);
+    if let Some(canon) = canonical_vendor(&norm) {
+        return canon.to_string();
+    }
+    let kept: Vec<&str> = norm
+        .split_whitespace()
+        .filter(|t| !PLAN_WORDS.contains(&t.trim_matches(|c: char| !c.is_alphanumeric())))
+        .collect();
+    // Never strip a descriptor down to nothing (e.g. "MEMBERSHIP FEE
+    // INSTALLMENT" is all plan-words) — keep the normalized form so it still
+    // groups with itself.
+    if kept.is_empty() {
+        norm
+    } else {
+        kept.join(" ")
+    }
+}
+
+/// True when a descriptor names a recurring membership / plan / installment fee.
+/// Such a charge is a real recurring commitment regardless of amount jitter
+/// (e.g. an annual card fee billed monthly whose price steps mid-year), so the
+/// recurring classifier rescues it from the amount-stability heuristic. This is
+/// vocabulary, not a vendor list.
+pub fn is_membership_like(descriptor_lower: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "membership",
+        "installment",
+        "instalment",
+        "subscription",
+        "annual fee",
+        "member fee",
+        " dues",
+    ];
+    PATTERNS.iter().any(|p| descriptor_lower.contains(p))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_key_merges_company_and_product_brand_variants() {
+        // The P1-2 split: three descriptors for the same OpenAI subscription.
+        let a = canonical_merchant_key("OPENAI *CHATGPT SUBSCR  SAN FRANCISCO");
+        let b = canonical_merchant_key("CHATGPT SUBSCRIPTION    SAN FRANCISCO");
+        let c = canonical_merchant_key("OPENAI                  SAN FRANCISCO");
+        assert_eq!(a, "openai");
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+
+        // …and three for Anthropic/Claude.
+        let d = canonical_merchant_key("ANTHROPIC               SAN FRANCISCO");
+        let e = canonical_merchant_key("CLAUDE.AI SUBSCRIPTION  SAN FRANCISCO");
+        let f = canonical_merchant_key("ANTHROPIC* CLAUDE SUB   SAN FRANCISCO");
+        assert_eq!(d, "anthropic");
+        assert_eq!(d, e);
+        assert_eq!(d, f);
+    }
+
+    #[test]
+    fn canonical_key_strips_plan_words_but_keeps_distinct_vendors() {
+        // Same gym, "membership"/"subscription" suffix vs bare → one key.
+        assert_eq!(
+            canonical_merchant_key("GOLDS GYM MEMBERSHIP"),
+            canonical_merchant_key("GOLDS GYM"),
+        );
+        assert_eq!(
+            canonical_merchant_key("GOLDS GYM SUBSCRIPTION"),
+            canonical_merchant_key("GOLDS GYM"),
+        );
+        // Different vendors stay distinct.
+        assert_ne!(
+            canonical_merchant_key("SPOTIFY  STOCKHOLM"),
+            canonical_merchant_key("NETFLIX.COM"),
+        );
+        // An all-plan-word descriptor is not stripped to nothing.
+        assert_eq!(
+            canonical_merchant_key("MEMBERSHIP FEE INSTALLMENT"),
+            canonical_merchant_key("MEMBERSHIP FEE INSTALLMENT"),
+        );
+        assert!(!canonical_merchant_key("MEMBERSHIP FEE INSTALLMENT").is_empty());
+    }
+
+    #[test]
+    fn membership_vocabulary_is_recognized() {
+        assert!(is_membership_like("membership fee installment"));
+        assert!(is_membership_like("claude.ai subscription"));
+        assert!(is_membership_like("planet fitness annual fee"));
+        assert!(!is_membership_like("mcdonalds west vancouver"));
+        assert!(!is_membership_like("uber eats toronto"));
+    }
 
     #[test]
     fn groups_statement_padded_variants_to_same_vendor() {

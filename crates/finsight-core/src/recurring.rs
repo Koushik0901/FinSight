@@ -14,7 +14,9 @@
 
 use crate::categorize::is_transfer;
 use crate::error::CoreResult;
-use crate::merchant::{bill_vendor_hint, normalize_merchant, subscription_vendor_hint};
+use crate::merchant::{
+    bill_vendor_hint, canonical_merchant_key, is_membership_like, subscription_vendor_hint,
+};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -86,6 +88,7 @@ struct Group {
     category: Option<String>,
     category_color: Option<String>,
     any_transfer_flag: bool,
+    any_membership_like: bool,
 }
 
 /// Detect recurring items from transaction history.
@@ -134,7 +137,10 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
     let mut groups: std::collections::HashMap<String, Group> = std::collections::HashMap::new();
     for row in rows.flatten() {
         let (raw, date_str, amount, category, color, transfer_flag) = row;
-        let key = normalize_merchant(&raw);
+        // Group by a VENDOR-CANONICAL key so brand/product variants of the same
+        // subscription (OPENAI *CHATGPT SUBSCR / CHATGPT SUBSCRIPTION / OPENAI)
+        // form one series instead of several sparse ones.
+        let key = canonical_merchant_key(&raw);
         if key.is_empty() {
             continue;
         }
@@ -148,6 +154,7 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             category: None,
             category_color: None,
             any_transfer_flag: false,
+            any_membership_like: false,
         });
         g.occ.push(Occurrence { date, amount_cents: amount });
         if g.category.is_none() {
@@ -155,6 +162,10 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             g.category_color = color;
         }
         g.any_transfer_flag |= transfer_flag;
+        // Check the FULL raw descriptor (not the canonical key, which strips
+        // these very words) so an installment/membership fee is recognized even
+        // when statement padding separates the vocabulary.
+        g.any_membership_like |= is_membership_like(&raw.to_lowercase());
     }
 
     let mut out = Vec::new();
@@ -184,9 +195,15 @@ fn classify(g: Group) -> Option<RecurringItem> {
     if gaps.is_empty() {
         return None;
     }
-    let avg_gap = mean(&gaps);
-    let gap_cv = coefficient_of_variation(&gaps, avg_gap);
+    let mean_gap = mean(&gaps);
+    let gap_cv = coefficient_of_variation(&gaps, mean_gap);
     let cadence_regularity = (1.0 - gap_cv.min(1.0)).max(0.0);
+    // Cadence label, next-expected date, and the subscription/bill split use the
+    // MEDIAN gap ("typical" spacing), not the mean, so a couple of billing lapses
+    // don't drag a monthly subscription into the "quarterly" bucket (a real
+    // ChatGPT sub that paused twice still reads monthly). The mean still drives
+    // the regularity CV above.
+    let avg_gap = median(&gaps);
 
     // Amount stats on absolute values.
     let abs_amounts: Vec<f64> = occ.iter().map(|o| o.amount_cents.abs() as f64).collect();
@@ -244,6 +261,18 @@ fn classify(g: Group) -> Option<RecurringItem> {
     } else if let Some(v) = bill_hint {
         reasons.push(format!("known bill vendor ({v})"));
         (RecurringKind::Bill, 0.6 + 0.3 * cadence_regularity)
+    } else if g.any_membership_like && cadence_regularity >= 0.5 {
+        // A membership / installment / subscription fee is a real recurring
+        // commitment even when the amount steps (e.g. an annual card fee billed
+        // monthly that rises mid-year) — the amount-stability heuristic wrongly
+        // buckets those as repeat purchases, so rescue by vocabulary. Small &
+        // monthly-ish → subscription; larger / less frequent → bill.
+        reasons.push("recurring membership / subscription / installment fee".to_string());
+        if avg_gap <= 45.0 && median_abs <= 20_000.0 {
+            (RecurringKind::Subscription, 0.55 + 0.3 * cadence_regularity)
+        } else {
+            (RecurringKind::Bill, 0.55 + 0.3 * cadence_regularity)
+        }
     } else if excluded_category {
         // Dining/groceries/transport/shopping/travel without a subscription
         // vendor hint → a repeat purchase, never a subscription.
@@ -508,6 +537,56 @@ mod tests {
         insert_series(&conn, "SPOTIFY  STOCKHOLM", "2025-01-05", 30, 2, -716, 0.0, Some("subscriptions"), 0);
         let items = detect_recurring(&conn, 400).unwrap();
         assert!(find(&items, "spotify").is_none(), "2 occurrences is not enough");
+    }
+
+    #[test]
+    fn brand_variants_merge_into_one_monthly_series() {
+        // P1-2: the three OpenAI descriptor variants each appear ~quarterly, but
+        // interleaved they are one monthly subscription. Canonical grouping must
+        // merge them into ONE series with a monthly cadence, not three sparse
+        // "quarterly" ones.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        insert_series(&conn, "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO", "2025-01-04", 90, 4, -2900, 0.05, None, 0);
+        insert_series(&conn, "CHATGPT SUBSCRIPTION    SAN FRANCISCO", "2025-02-03", 90, 4, -2900, 0.05, None, 0);
+        insert_series(&conn, "OPENAI                  SAN FRANCISCO", "2025-03-05", 90, 4, -2900, 0.05, None, 0);
+
+        let items = detect_recurring(&conn, 500).unwrap();
+        let openai: Vec<_> = items.iter().filter(|i| i.merchant_key == "openai").collect();
+        assert_eq!(openai.len(), 1, "all OpenAI variants must merge into ONE series");
+        let it = openai[0];
+        assert_eq!(it.occurrences, 12, "all 12 charges land in one series");
+        assert_eq!(it.kind, RecurringKind::Subscription);
+        assert_eq!(
+            it.cadence, "monthly",
+            "interleaved variants read monthly, not quarterly (gap {:.1})",
+            it.avg_gap_days
+        );
+    }
+
+    #[test]
+    fn membership_fee_with_price_step_is_recurring_not_repeat_purchase() {
+        // P1-2: an annual card fee billed monthly whose price steps up mid-stream
+        // (12.99 → 15.99). The higher price becomes the in-window majority, so the
+        // 12.99 rows fall outside the amount-stability band → WITHOUT a vocabulary
+        // rescue it is misclassified RepeatPurchase (the audit's conf-0.54 case).
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        insert_series(&conn, "MEMBERSHIP FEE INSTALLMENT", "2025-01-24", 30, 6, -1299, 0.0, None, 0);
+        insert_series(&conn, "MEMBERSHIP FEE INSTALLMENT", "2025-07-24", 30, 8, -1599, 0.0, None, 0);
+
+        let items = detect_recurring(&conn, 500).unwrap();
+        let it = find(&items, "membership fee installment")
+            .unwrap_or_else(|| panic!("membership fee not detected: {items:?}"));
+        assert!(
+            matches!(it.kind, RecurringKind::Subscription | RecurringKind::Bill),
+            "a monthly membership fee must be a subscription/bill, got {:?} ({:?})",
+            it.kind,
+            it.reasons
+        );
+        assert_eq!(it.cadence, "monthly");
     }
 }
 
