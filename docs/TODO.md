@@ -8,6 +8,26 @@
 
 ---
 
+## 📍 Live status — where the real gaps are
+
+**Everything below this section is a historical shipping log (all `[x]`), not the
+live gap list.** For what is actually incomplete, see the product audit:
+
+> **`docs/audits/2026-07-10-finsight-product-audit.md`** — ranked findings (P0–P3)
+> with root causes, acceptance criteria, and a dependency graph. This is the
+> living "known gaps" document.
+
+Audit findings resolved so far (git log, commits tagged `P0-*`/`P1-*`/`P2-*`):
+P0-1 transfer detection · P0-2 household per-person model · P0-3 privacy redaction ·
+P0-4 durability/backups · P1-1 e-transfer disposition · P1-2 recurring/merchant
+normalization · P1-3 Copilot residuals · P1-4 re-import set-matching · P1-5
+opening-balance UX · P2-1 categorization coverage · P2-5 health-score Unbudgeted
+envelope. Remaining P2/P3 items (Reports per-person switcher, import AI prompt,
+empty-state sweep, recipes→tool-loop, anomaly triage UX, doc/currency polish) are
+tracked in the audit and as spawned follow-up tasks.
+
+---
+
 ## ✅ Agent rich responses shipped (2026-06-28)
 
 Detailed handoff: `docs/agent-rich-responses-handoff.md`.

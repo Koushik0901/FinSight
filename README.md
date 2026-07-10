@@ -106,7 +106,16 @@ FinSight/
 
 ## What's next
 
-The core app is feature-complete. Potential next areas:
+All screens are built; correctness and depth are an ongoing effort. The live
+list of known gaps and their priority is the product audit at
+[`docs/audits/2026-07-10-finsight-product-audit.md`](docs/audits/2026-07-10-finsight-product-audit.md)
+— its P0/P1 findings (transfer detection, per-person household model, privacy
+redaction, durability, recurring/merchant normalization, Copilot grounding) have
+been addressed; the remaining P2/P3 items (per-person Reports, explicit import
+AI-categorization prompt, empty-state sweep, anomaly triage UX, doc/currency
+polish) are tracked there.
+
+Longer-horizon ideas beyond the audit:
 
 1. **More Copilot recipes** — custom user-defined automation templates
 2. **Debt avalanche mode** — highest-interest-first as an alternative to snowball
