@@ -114,18 +114,23 @@ pub fn reconcile_excluding(
     )
 }
 
-/// Like [`reconcile_excluding`], but additionally takes `self_import_ids`: the
-/// set of transaction ids inserted *earlier in this same import batch*.
+/// Like [`reconcile_excluding`], but implements bipartite set-matching across an
+/// import batch via two exclusion sets, so a re-imported statement pairs each
+/// incoming row with a *distinct* existing row instead of queuing identical
+/// duplicates for review:
 ///
-/// A single authoritative statement (one CSV export) lists every posted
-/// transaction exactly once — two identical lines are two real charges (e.g. a
-/// handful of same-day pay-as-you-go API top-ups of the same amount), not an
-/// accidental double. So rows created by the current import must never be
-/// treated as duplicate *targets* for later rows in the same file: they are
-/// fully excluded from candidacy here. `excluded_fuzzy_ids` (pre-existing rows
-/// already consumed by an auto-match) keeps its distinct "collides with another
-/// row in this batch → review" semantics, which is correct for *re-importing*
-/// an overlapping statement against transactions that existed beforehand.
+/// - `self_import_ids` — rows this same import inserted earlier. A single
+///   authoritative statement lists every posted transaction exactly once, so two
+///   identical lines are two real charges (e.g. same-day pay-as-you-go API
+///   top-ups of the same amount), not an accidental double. Rows the current
+///   import just created must never be duplicate *targets* for later rows in the
+///   same file, so they are excluded from candidacy entirely.
+/// - `excluded_fuzzy_ids` — pre-existing rows already consumed by an auto-match
+///   earlier in this batch. Removing them means when a re-imported statement
+///   repeats K identical charges, the K incoming rows claim the K existing rows
+///   one-for-one and the whole group auto-matches silently. Only a genuine
+///   surplus (more incoming than existing) leaves an unmatched row, handled
+///   below as new (`None`).
 pub fn reconcile_excluding_batch(
     conn: &Connection,
     account_id: &str,
@@ -165,8 +170,17 @@ pub fn reconcile_excluding_batch(
     )
     .map_err(ProviderError::Core)?;
 
-    // Rows inserted earlier in this same import are not duplicate targets.
-    matches.retain(|m| !self_import_ids.contains(&m.transaction.id));
+    // Rows inserted earlier in this same import are not duplicate targets, and
+    // existing rows already consumed by an earlier incoming row in this batch
+    // are no longer available. Removing BOTH up front implements bipartite
+    // set-matching: when a re-imported statement repeats K identical charges,
+    // each incoming row claims one distinct existing row and the whole group
+    // auto-matches silently. Only when the counts differ (more incoming than
+    // existing) does an unmatched row remain — handled below as new/None.
+    matches.retain(|m| {
+        !self_import_ids.contains(&m.transaction.id)
+            && !excluded_fuzzy_ids.contains(&m.transaction.id)
+    });
 
     if matches.is_empty() {
         return Ok(ReconciliationDecision::None);
@@ -182,18 +196,31 @@ pub fn reconcile_excluding_batch(
     }
 
     let best = matches[0].clone();
-    if excluded_fuzzy_ids.contains(&best.transaction.id) {
-        return Ok(ReconciliationDecision::NeedsReview {
-            confidence: best.score,
-            matches,
-            reason: "Possible duplicate collides with another row in this batch".to_string(),
+    // When `best` is a PERFECT twin of the candidate — identical amount and
+    // identical raw descriptor — there is no genuine question about which
+    // existing row is the same charge, even when a near-tied sibling exists.
+    // Two same-amount, same-day charges whose descriptors differ (LYFT …5PM vs
+    // …7PM, two McDonald's at different stores) are DIFFERENT charges: each
+    // incoming row claims its own exact twin and greedy consumption pairs them
+    // 1:1, so an exact twin must auto-match regardless of siblings. (An exact
+    // twin already auto-matches when it stands alone; this just extends that to
+    // the has-a-sibling case instead of spuriously queuing it for review.)
+    let best_is_exact_twin = best.transaction.amount_cents == candidate.amount_cents
+        && best
+            .transaction
+            .merchant_raw
+            .eq_ignore_ascii_case(&candidate.merchant_raw);
+    // Otherwise, ambiguity counts only among candidates MEANINGFULLY DIFFERENT
+    // from the best (different amount or merchant). Near-tied candidates that
+    // are exact duplicates of each other (a group of identical charges) are
+    // interchangeable — matching any one is correct — so they must not force a
+    // review. This is what stops identical re-imports queueing rows.
+    let ambiguous = !best_is_exact_twin
+        && matches.iter().skip(1).any(|m| {
+            best.score.saturating_sub(m.score) <= 10
+                && (m.transaction.amount_cents != best.transaction.amount_cents
+                    || m.transaction.merchant_raw != best.transaction.merchant_raw)
         });
-    }
-
-    let ambiguous = matches
-        .iter()
-        .skip(1)
-        .any(|m| best.score.saturating_sub(m.score) <= 10);
 
     if best.score >= AUTO_MATCH_SCORE && !ambiguous {
         Ok(ReconciliationDecision::AutoMatch(best.transaction))

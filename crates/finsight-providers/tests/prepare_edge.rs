@@ -1,9 +1,14 @@
 //! Staleness + edge-case coverage for `CsvProvider::prepare`.
 //!
-//! Ground truth (proven in the parity task, do not loosen):
+//! Ground truth (proven against the real amex sample, do not loosen):
 //! - Empty ledger: prepare/import the amex sample → 1988 rows imported.
 //! - Re-import against a ledger that already has the amex file imported once:
-//!   rows_imported == 0, rows_skipped_duplicates == 1843, rows_queued_for_review == 145.
+//!   rows_imported == 0, rows_skipped_duplicates == 1988, rows_queued_for_review == 0.
+//!   Every incoming row is an exact twin of an existing row, so bipartite
+//!   set-matching pairs them 1:1 and NOTHING queues for review. (The earlier
+//!   1843/145 split predated the P1-4 fix, where ~7% of an identical re-import
+//!   was wrongly queued because same-amount/same-day sibling charges — two Lyft
+//!   rides, two McDonald's — made each row's exact twin look "ambiguous".)
 mod common;
 use finsight_providers::csv::CsvProvider;
 use finsight_providers::error::ProviderError;
@@ -40,12 +45,12 @@ fn stale_signature_changes_after_ledger_mutation() {
     );
     assert_eq!(prepared_b.rows_imported, 0, "re-import shape: no new inserts");
     assert_eq!(
-        prepared_b.rows_skipped_duplicates, 1843,
-        "re-import shape: proven duplicate count"
+        prepared_b.rows_skipped_duplicates, 1988,
+        "re-import shape: every row is an exact twin → all skip as duplicates"
     );
     assert_eq!(
-        prepared_b.rows_queued_for_review, 145,
-        "re-import shape: proven review count"
+        prepared_b.rows_queued_for_review, 0,
+        "re-import shape: identical duplicates must NEVER queue for review"
     );
 }
 

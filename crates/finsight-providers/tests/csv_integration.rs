@@ -210,10 +210,11 @@ fn repeated_identical_rows_in_one_statement_all_import() {
         .unwrap();
     assert_eq!(count, 6);
 
-    // Cross-import dedup must still fire: re-importing the same file inserts
-    // nothing new — every row is caught as a duplicate of a prior-import row
-    // (either auto-skipped or, when several identical priors tie, queued for
-    // review), never blindly re-inserted.
+    // Cross-import dedup must fire cleanly: re-importing the same file inserts
+    // nothing new AND queues nothing for review. Every incoming row is an exact
+    // twin of a prior-import row, so bipartite set-matching pairs the identical
+    // group 1:1 and each row auto-skips — no "several identical priors tie"
+    // review noise (that was the P1-4 bug).
     let s2 = CsvProvider::import(
         &csv_path,
         &acct,
@@ -225,10 +226,76 @@ fn repeated_identical_rows_in_one_statement_all_import() {
     .unwrap();
     assert_eq!(s2.rows_imported, 0, "re-import must not blindly duplicate");
     assert_eq!(
-        s2.rows_skipped_duplicates + s2.rows_queued_for_review,
-        6,
-        "re-import must reconcile every row against the prior import"
+        s2.rows_skipped_duplicates, 6,
+        "every re-imported row auto-skips as an exact duplicate"
     );
+    assert_eq!(
+        s2.rows_queued_for_review, 0,
+        "identical duplicates must never queue for review"
+    );
+}
+
+#[test]
+fn overlapping_import_lands_only_genuinely_new_rows() {
+    // The real risk of exact-twin set-matching is the OVERLAPPING re-import: a
+    // second statement that repeats some earlier rows AND carries genuinely new
+    // ones. The overlap must auto-skip (0 queued), and every new charge must
+    // land — the refinement must not swallow a new charge just because it shares
+    // a merchant with an existing one.
+    let (dir, db, acct) = fresh_db();
+    let mapping = CsvImportMapping {
+        skip_header_rows: 1,
+        columns: vec![ColumnRole::Date, ColumnRole::Merchant, ColumnRole::Amount],
+        date_format: "%Y-%m-%d".to_string(),
+        amount_convention: AmountConvention::NegativeIsOutflow,
+        decimal_separator: '.',
+        delimiter: Some(','),
+    };
+
+    // First statement: five distinct charges.
+    let a = dir.path().join("statement_a.csv");
+    std::fs::write(
+        &a,
+        "date,merchant,amount\n\
+         2026-03-01,COSTCO WHOLESALE,-50.00\n\
+         2026-03-05,SHELL GAS,-40.00\n\
+         2026-03-10,NETFLIX,-15.99\n\
+         2026-03-15,LOBLAWS,-87.50\n\
+         2026-03-20,HYDRO ONE,-120.00\n",
+    )
+    .unwrap();
+    let s1 = CsvProvider::import(&a, &acct, &uuid::Uuid::new_v4().to_string(), &mapping, &db, |_| {}).unwrap();
+    assert_eq!(s1.rows_imported, 5, "base statement lands in full");
+
+    // Second statement: three exact repeats of A (overlap) + two genuinely new
+    // charges. One new charge (COSTCO -75.00, 3 days after the existing COSTCO
+    // -50.00) shares a merchant with an existing row but differs in amount
+    // beyond tolerance — it must still import, never be swallowed as a dup.
+    let b = dir.path().join("statement_b.csv");
+    std::fs::write(
+        &b,
+        "date,merchant,amount\n\
+         2026-03-05,SHELL GAS,-40.00\n\
+         2026-03-10,NETFLIX,-15.99\n\
+         2026-03-20,HYDRO ONE,-120.00\n\
+         2026-03-25,SPOTIFY,-9.99\n\
+         2026-03-04,COSTCO WHOLESALE,-75.00\n",
+    )
+    .unwrap();
+    let s2 = CsvProvider::import(&b, &acct, &uuid::Uuid::new_v4().to_string(), &mapping, &db, |_| {}).unwrap();
+
+    assert_eq!(s2.rows_imported, 2, "only the two genuinely-new charges land");
+    assert_eq!(s2.rows_skipped_duplicates, 3, "the three overlapping rows auto-skip");
+    assert_eq!(s2.rows_queued_for_review, 0, "overlap must not queue for review");
+
+    // Ledger holds the original 5 plus the 2 new rows = 7 (no charge lost, none
+    // double-counted).
+    let count: i64 = db
+        .get()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM transactions WHERE account_id = ?1", [&acct], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 7, "5 original + 2 new, overlap deduped");
 }
 
 #[test]

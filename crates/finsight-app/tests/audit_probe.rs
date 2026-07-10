@@ -398,24 +398,56 @@ fn audit_import_samples_and_dump_everything() {
     }
     drop(stmt);
 
-    // 8. RE-IMPORT the first file (dedup audit): everything should skip.
-    println!("\n== RE-IMPORT DEDUP CHECK (amex) ==");
+    // 8. RE-IMPORT EVERY file (dedup audit): a clean re-import of an already
+    // imported statement must insert nothing and queue nothing — every incoming
+    // row is an exact twin, so bipartite set-matching pairs them 1:1. This is
+    // read-only via `prepare` so it does not perturb the ledger between files.
+    println!("\n== RE-IMPORT DEDUP CHECK (all samples) ==");
     drop(conn);
-    let spec0 = &specs()[0];
-    let import_id = uuid::Uuid::new_v4().to_string();
-    let s = CsvProvider::import(
-        &samples.join(spec0.file),
-        &ids[0].0,
-        &import_id,
-        &spec0.mapping,
-        &db,
-        |_| {},
-    )
-    .unwrap();
-    println!(
-        "re-import amex: imported={} skipped_dup={} queued={} (expect imported=0)",
-        s.rows_imported, s.rows_skipped_duplicates, s.rows_queued_for_review
-    );
+    for (spec, (acct_id, _name)) in specs().iter().zip(ids.iter()) {
+        let conn2 = db.get().unwrap();
+        let prepared =
+            CsvProvider::prepare(&samples.join(spec.file), acct_id, &spec.mapping, &conn2).unwrap();
+        println!(
+            "re-prepare {} -> imported={} skipped={} queued={} (expect imported=0, queued=0)",
+            spec.name,
+            prepared.rows_imported,
+            prepared.rows_skipped_duplicates,
+            prepared.rows_queued_for_review
+        );
+        // Forensics: dump any rows that still queue (should be none).
+        let mut shown = 0;
+        for row in &prepared.rows {
+            if let finsight_providers::csv::prepare::PreparedDecision::Review {
+                candidate,
+                matches,
+                confidence,
+                reason,
+            } = &row.decision
+            {
+                if shown < 8 {
+                    let top = matches.first();
+                    println!(
+                        "  QUEUED {} row#{} cand[{}c '{}' @{}] conf={} reason='{}' -> best[{}c '{}' score={}] n={}",
+                        spec.name,
+                        row.row_number,
+                        candidate.amount_cents,
+                        candidate.merchant_raw,
+                        candidate.posted_at.date_naive(),
+                        confidence,
+                        reason,
+                        top.map(|t| t.transaction.amount_cents).unwrap_or(0),
+                        top.map(|t| t.transaction.merchant_raw.as_str()).unwrap_or(""),
+                        top.map(|t| t.score).unwrap_or(0),
+                        matches.len(),
+                    );
+                }
+                shown += 1;
+            }
+        }
+        assert_eq!(prepared.rows_imported, 0, "{}: re-import must insert nothing", spec.name);
+        assert_eq!(prepared.rows_queued_for_review, 0, "{}: re-import must queue nothing", spec.name);
+    }
 
     // 9. Reset (Delete All) then verify empty.
     println!("\n== RESET CHECK ==");
