@@ -400,8 +400,12 @@ fn build_system_prompt(categories: &[CategoryRow], recent_examples: &[(String, S
 }
 
 fn build_user_prompt(txns: &[(String, String, i64)]) -> String {
+    // Privacy: redact personally-identifying tokens (bank reference numbers and
+    // the counterparty NAME of a person-to-person e-transfer) before the
+    // merchant string leaves the machine. The category-relevant vocabulary is
+    // preserved; a stranger's name is never useful to the categorizer anyway.
     let items: Vec<_> = txns.iter().map(|(id, merchant, amount)| {
-        json!({"txn_id": id, "merchant_raw": merchant, "amount_cents": amount})
+        json!({"txn_id": id, "merchant_raw": finsight_core::categorize::redact_for_llm(merchant), "amount_cents": amount})
     }).collect();
     format!(
         "Classify these transactions:\n{}\n\nRespond:\n[\

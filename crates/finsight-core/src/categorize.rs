@@ -454,6 +454,74 @@ fn name_tokens(name: &str) -> Vec<String> {
         .collect()
 }
 
+/// Structural (non-identifying) tokens kept verbatim when redacting a transfer
+/// descriptor for the cloud LLM — bank/product/direction words. Anything else
+/// alphabetic in a named-transfer string is a counterparty NAME and is dropped.
+const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
+    "internet", "banking", "interac", "transfer", "email", "money", "fulfill",
+    "request", "electronic", "funds", "eft", "payment", "paiement", "merci",
+    "deposit", "withdrawal", "preauthorized", "authorized", "debit", "credit",
+    "account", "card", "to", "from", "thank", "you", "received", "e", "pre",
+    "bill", "pay", "wire", "online", "branch", "transaction",
+    // Compound tokens whose alphabetic core (hyphen removed) must be kept.
+    "etransfer", "preauthorized", "emt", "etfr",
+];
+
+/// Mask personally-identifying tokens from a merchant string BEFORE it is sent
+/// to a cloud LLM for categorization: (1) bank reference / account / phone
+/// numbers (digit runs ≥ 4) become `#`, and (2) in a named e-transfer / Interac
+/// / money-transfer descriptor, the counterparty's NAME is dropped. The
+/// category-relevant vocabulary ("E-TRANSFER", "PAYMENT") is preserved — only
+/// the identity is removed. Non-transfer merchants (a store name) are unchanged.
+pub fn redact_for_llm(merchant_raw: &str) -> String {
+    // 1) Mask long digit runs everywhere.
+    let mut masked = String::new();
+    let mut digits = String::new();
+    let flush = |digits: &mut String, out: &mut String| {
+        if digits.len() >= 4 {
+            out.push('#');
+        } else {
+            out.push_str(digits);
+        }
+        digits.clear();
+    };
+    for ch in merchant_raw.chars() {
+        if ch.is_ascii_digit() {
+            digits.push(ch);
+        } else {
+            flush(&mut digits, &mut masked);
+            masked.push(ch);
+        }
+    }
+    flush(&mut digits, &mut masked);
+
+    // 2) Drop counterparty names from person-to-person transfer descriptors.
+    let lower = masked.to_lowercase();
+    let named_transfer = ["e-transfer", "e transfer", "interac", "email money transfer", "fulfill request"]
+        .iter()
+        .any(|k| lower.contains(k));
+    if !named_transfer {
+        return masked;
+    }
+    let keep: std::collections::HashSet<&str> = TRANSFER_STRUCTURAL_TOKENS.iter().copied().collect();
+    let out: Vec<String> = masked
+        .split_whitespace()
+        .filter(|tok| {
+            let core: String = tok.chars().filter(|c| c.is_alphabetic()).collect();
+            // Keep punctuation/masked/number-only tokens and known structural
+            // words; drop any other alphabetic token (a name).
+            core.is_empty() || keep.contains(core.to_lowercase().as_str())
+        })
+        .map(|s| s.to_string())
+        .collect();
+    let joined = out.join(" ");
+    if joined.trim().is_empty() {
+        "E-TRANSFER".to_string()
+    } else {
+        joined
+    }
+}
+
 fn table_exists(conn: &Connection, name: &str) -> CoreResult<bool> {
     let n: i64 = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -949,6 +1017,28 @@ mod tests {
         // a transfer.
         assert!(!is_transfer("Interac - Purchase - COSTCO WHOLESALE W51"));
         assert!(!is_transfer("Interac Network Usage Charge"));
+    }
+
+    #[test]
+    fn redact_for_llm_strips_names_and_reference_numbers() {
+        // Person-to-person e-transfer: name AND reference number removed.
+        let r = redact_for_llm("Internet Banking E-TRANSFER 011654884429 swathi");
+        assert!(!r.to_lowercase().contains("swathi"), "name must be dropped: {r}");
+        assert!(!r.contains("011654884429"), "reference number masked: {r}");
+        assert!(r.to_lowercase().contains("transfer"), "category vocab kept: {r}");
+
+        let r2 = redact_for_llm("INTERAC e-Transfer From: SATHVIK DIVILI");
+        assert!(!r2.to_uppercase().contains("SATHVIK"));
+        assert!(!r2.to_uppercase().contains("DIVILI"));
+
+        // Ordinary merchants keep their NAME (only digit runs are masked).
+        let tim = redact_for_llm("TIM HORTONS #3356 BURNABY");
+        assert!(tim.contains("TIM HORTONS") && tim.contains("BURNABY"), "{tim}");
+        assert!(!tim.contains("3356"), "store number masked: {tim}");
+        assert_eq!(redact_for_llm("STARBUCKS 12345678 SEATTLE"), "STARBUCKS # SEATTLE");
+        // A non-transfer with a person-looking token is NOT a named transfer, so
+        // it is left intact (we never touch normal merchant identities).
+        assert_eq!(redact_for_llm("PAYPAL SOMECORP"), "PAYPAL SOMECORP");
     }
 
     #[test]

@@ -422,6 +422,14 @@ export default function Settings() {
 
           <Section id="agent" title="Agent" description="Control what the agent does automatically.">
             <div className="s-row"><div><div className="label">Auto-categorize new transactions</div><div className="desc">Automatically categorize transactions after each import or sync, using your configured AI provider.</div></div><div className="muted">{autoCategorizeEnabled ? "Currently on" : "Currently off"}</div><Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} /></div>
+            <div className="card tight" style={{ marginTop: 12 }}>
+              <div className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
+                <span aria-hidden style={{ fontSize: 15 }}>🔒</span>
+                <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--ink)" }}>What leaves your device.</strong> When auto-categorize is on and you use a <em>cloud</em> AI provider (OpenAI-compatible or Anthropic), the merchant description and amount of each <em>uncategorized</em> transaction are sent to that provider to pick a category. Balances, account numbers, and totals are never sent. Transaction reference numbers, and the names of people in e-transfers, are redacted before sending. Choose a local <strong>Ollama</strong> provider to keep everything on this machine, or turn auto-categorize off to categorize manually.
+                </div>
+              </div>
+            </div>
           </Section>
 
           <Section id="provider" title="AI Provider" description="Choose where categorization and forecasting run.">

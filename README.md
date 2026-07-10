@@ -2,7 +2,18 @@
 
 Your AI-powered financial copilot — a quiet way to understand, plan, and master your money.
 
-Dark-first, encrypted at rest, AI-assisted planning and categorization with no data leaving your machine unless you opt in. Built on the timeless principles of *The Richest Man in Babylon*, *The Total Money Makeover*, *I Will Teach You to Be Rich*, *The Psychology of Money*, *Rich Dad Poor Dad*, and *Think and Grow Rich*.
+Dark-first and encrypted at rest, with AI-assisted planning and categorization. Built on the timeless principles of *The Richest Man in Babylon*, *The Total Money Makeover*, *I Will Teach You to Be Rich*, *The Psychology of Money*, *Rich Dad Poor Dad*, and *Think and Grow Rich*.
+
+### Privacy
+
+Your data lives only in an encrypted SQLCipher database on your machine (key in the OS keychain). Nothing is uploaded to any FinSight server — there isn't one.
+
+The one time data leaves your device is when you opt into a **cloud** AI provider (OpenAI-compatible or Anthropic) for categorization or the Copilot:
+
+- **Auto-categorization** sends the *merchant description and amount* of each **uncategorized** transaction to your chosen provider to pick a category. Reference numbers and the names of people in e-transfers are **redacted** first; balances, account numbers, and totals are never sent. Toggle it off in Settings → Agent, or pick a local **Ollama** provider to keep everything on-device.
+- **The Copilot** answers your questions using tools that read your local data; when you ask it something, the relevant figures/merchants it needs are sent to your provider as part of the conversation.
+
+Settings → Agent shows exactly what is sent, and Settings → Data & backups lets you snapshot and restore your encrypted database at any time.
 
 ## Philosophy
 
