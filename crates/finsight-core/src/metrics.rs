@@ -293,6 +293,201 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
     Ok(out)
 }
 
+// ── Per-member attribution ──────────────────────────────────────────────────
+//
+// A member's share of an account is `1 / owner_count`: a sole account is fully
+// theirs (1.0), a 2-owner JOINT account splits equally (0.5 each), matching the
+// V038 "shares are equal in v1" model. Accounts with NO owner belong to the
+// household, not any member, so they carry zero member weight.
+//
+// The reconciliation contract this yields — and the one the tests pin — is:
+//   Σ(every member's slice) + unassigned_residual == household total
+// It is NOT `member_a + member_b == household` on its own; the ownerless
+// accounts are a distinct residual bucket. And because joint shares are
+// fractional cents, per-member cents reconcile to the household total only up to
+// rounding (≤ 1 cent per joint account per aggregate) — round at the display
+// edge, not mid-reconciliation.
+
+/// Per-account ownership weight for `member_id` (`1 / owner_count`). Accounts the
+/// member does not own are absent from the map.
+fn account_weights_for_member(
+    conn: &Connection,
+    member_id: &str,
+) -> CoreResult<std::collections::HashMap<String, f64>> {
+    let mut stmt = conn.prepare(
+        "SELECT ao.account_id, 1.0 / oc.n \
+         FROM account_owners ao \
+         JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+           ON oc.account_id = ao.account_id \
+         WHERE ao.member_id = ?1",
+    )?;
+    let rows = stmt.query_map(params![member_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+    })?;
+    let mut out = std::collections::HashMap::new();
+    for r in rows {
+        let (account_id, weight) = r?;
+        out.insert(account_id, weight);
+    }
+    Ok(out)
+}
+
+/// Income and expense (both positive cents), transfers excluded, attributed to
+/// one member by ownership weight over `[start, end)` (end optional = open).
+fn weighted_income_expense(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: Option<&str>,
+    member_id: &str,
+) -> CoreResult<(i64, i64)> {
+    let sql = format!(
+        "SELECT \
+            COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents * w.weight ELSE 0 END), 0), \
+            COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents * w.weight ELSE 0 END), 0) \
+         FROM transactions t \
+         JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight \
+               FROM account_owners ao \
+               JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+                 ON oc.account_id = ao.account_id \
+               WHERE ao.member_id = ?1) w ON w.account_id = t.account_id \
+         WHERE t.posted_at >= ?2 AND t.is_transfer = 0{}",
+        if end_exclusive.is_some() {
+            " AND t.posted_at < ?3"
+        } else {
+            ""
+        }
+    );
+    let (inc, exp): (f64, f64) = if let Some(end) = end_exclusive {
+        conn.query_row(&sql, params![member_id, start_inclusive, end], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+    } else {
+        conn.query_row(&sql, params![member_id, start_inclusive], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+    };
+    Ok((inc.round() as i64, exp.round() as i64))
+}
+
+/// [`income_expense_since`] optionally scoped to one member (`None` = household,
+/// running the existing unweighted query verbatim).
+pub fn income_expense_since_for(
+    conn: &Connection,
+    start_inclusive: &str,
+    member_id: Option<&str>,
+) -> CoreResult<(i64, i64)> {
+    match member_id {
+        None => income_expense_since(conn, start_inclusive),
+        Some(m) => weighted_income_expense(conn, start_inclusive, None, m),
+    }
+}
+
+/// [`income_expense_between`] optionally scoped to one member.
+pub fn income_expense_between_for(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: &str,
+    member_id: Option<&str>,
+) -> CoreResult<(i64, i64)> {
+    match member_id {
+        None => income_expense_between(conn, start_inclusive, end_exclusive),
+        Some(m) => weighted_income_expense(conn, start_inclusive, Some(end_exclusive), m),
+    }
+}
+
+/// [`cashflow_since`] optionally scoped to one member.
+pub fn cashflow_since_for(
+    conn: &Connection,
+    start_inclusive: &str,
+    member_id: Option<&str>,
+) -> CoreResult<Cashflow> {
+    let (income, expense) = income_expense_since_for(conn, start_inclusive, member_id)?;
+    Ok(Cashflow::from_income_expense(income, expense))
+}
+
+/// [`cashflow_between`] optionally scoped to one member.
+pub fn cashflow_between_for(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: &str,
+    member_id: Option<&str>,
+) -> CoreResult<Cashflow> {
+    let (income, expense) = income_expense_between_for(conn, start_inclusive, end_exclusive, member_id)?;
+    Ok(Cashflow::from_income_expense(income, expense))
+}
+
+/// [`rolling_averages`] optionally scoped to one member.
+pub fn rolling_averages_for(
+    conn: &Connection,
+    days: i64,
+    member_id: Option<&str>,
+) -> CoreResult<RollingAverages> {
+    let months = (days / 30).max(1);
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+    let (income_total, expense_total) = income_expense_since_for(conn, &cutoff, member_id)?;
+    let avg_income = income_total / months;
+    let avg_expense = expense_total / months;
+    Ok(RollingAverages {
+        window_days: days,
+        months,
+        avg_monthly_income_cents: avg_income,
+        avg_monthly_expense_cents: avg_expense,
+        net_monthly_cents: avg_income - avg_expense,
+        savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
+    })
+}
+
+/// [`balance_breakdown`] optionally scoped to one member. Each account balance is
+/// weighted by the member's ownership share; ownerless accounts (and manual
+/// assets, which have no owner) are excluded — so per-member `net_worth_cents`
+/// is the member's owned-account net worth, deliberately NOT the household net
+/// worth that folds in unattributable manual assets.
+pub fn balance_breakdown_for(
+    conn: &mut Connection,
+    member_id: Option<&str>,
+) -> CoreResult<BalanceBreakdown> {
+    let Some(member) = member_id else {
+        return balance_breakdown(conn);
+    };
+    let weights = account_weights_for_member(conn, member)?;
+    let summaries = accounts::list_summaries(conn)?;
+    let (mut liquid, mut invested, mut debt, mut ef, mut net) = (0f64, 0f64, 0f64, 0f64, 0f64);
+    let mut unknown = 0i64;
+    for a in &summaries {
+        let Some(&weight) = weights.get(&a.id) else {
+            continue; // not owned by this member
+        };
+        if !a.balance_known {
+            unknown += 1;
+            continue;
+        }
+        let bal = a.balance_cents as f64 * weight;
+        if is_debt_type(a.r#type) {
+            if a.balance_cents < 0 {
+                debt += -bal;
+            }
+            net += bal;
+        } else if is_investment_type(a.r#type) {
+            invested += bal;
+            net += bal;
+        } else {
+            liquid += bal;
+            net += bal;
+        }
+        if a.emergency_fund_eligible && !is_debt_type(a.r#type) {
+            ef += bal;
+        }
+    }
+    Ok(BalanceBreakdown {
+        liquid_cents: liquid.round() as i64,
+        invested_cents: invested.round() as i64,
+        debt_cents: debt.round() as i64,
+        emergency_fund_cents: ef.round() as i64,
+        net_worth_cents: net.round() as i64,
+        accounts_with_unknown_balance: unknown,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,6 +597,100 @@ mod tests {
         assert_eq!(income, 300_000);
         assert_eq!(expense, 100_000);
         assert_eq!(savings_rate_pct(income, expense), 66);
+    }
+
+    #[test]
+    fn per_member_flows_reconcile_to_household_with_joint_split() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+
+        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 0, true)).unwrap().id;
+        let b_sole = accounts::insert(&mut conn, account("B", AccountType::Checking, 0, true)).unwrap().id;
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 0, true)).unwrap().id;
+        let shared = accounts::insert(&mut conn, account("U", AccountType::Checking, 0, true)).unwrap().id;
+
+        household::set_account_owners(&mut conn, &a_sole, &[alice.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &b_sole, &[bob.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        // `shared` is left unassigned (0 owners) → the household residual.
+
+        insert_txn(&mut conn, &a_sole, 300_000, 5, false);
+        insert_txn(&mut conn, &a_sole, -100_000, 5, false);
+        insert_txn(&mut conn, &b_sole, 200_000, 5, false);
+        insert_txn(&mut conn, &b_sole, -50_000, 5, false);
+        insert_txn(&mut conn, &joint, 100_000, 5, false);
+        insert_txn(&mut conn, &joint, -40_000, 5, false);
+        insert_txn(&mut conn, &shared, 70_000, 5, false);
+        insert_txn(&mut conn, &shared, -30_000, 5, false);
+        // A transfer in the joint account must be ignored on every slice.
+        insert_txn(&mut conn, &joint, 999_999, 5, true);
+
+        let start = "1970-01-01T00:00:00Z";
+        // None path is the existing unweighted query verbatim.
+        let (h_inc, h_exp) = income_expense_since_for(&conn, start, None).unwrap();
+        assert_eq!(
+            (h_inc, h_exp),
+            income_expense_since(&conn, start).unwrap(),
+            "None path == household verbatim"
+        );
+        assert_eq!(h_inc, 670_000);
+        assert_eq!(h_exp, 220_000);
+
+        let (a_inc, a_exp) = income_expense_since_for(&conn, start, Some(&alice.id)).unwrap();
+        let (b_inc, b_exp) = income_expense_since_for(&conn, start, Some(&bob.id)).unwrap();
+        // Joint account split equally (50k income / 20k expense each).
+        assert_eq!(a_inc, 350_000, "alice: 300k sole + 50k half-joint");
+        assert_eq!(a_exp, 120_000);
+        assert_eq!(b_inc, 250_000, "bob: 200k sole + 50k half-joint");
+        assert_eq!(b_exp, 70_000);
+
+        // Reconciliation contract: members + unassigned residual == household.
+        let (u_inc, u_exp) = (70_000, 30_000); // ownerless `shared` account
+        assert_eq!(a_inc + b_inc + u_inc, h_inc, "income reconciles with residual");
+        assert_eq!(a_exp + b_exp + u_exp, h_exp, "expense reconciles with residual");
+
+        // rolling_averages_for threads the same filter.
+        let r_alice = rolling_averages_for(&conn, 90, Some(&alice.id)).unwrap();
+        assert_eq!(r_alice.avg_monthly_income_cents, 350_000 / 3);
+    }
+
+    #[test]
+    fn per_member_balances_split_within_fractional_cent_tolerance() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+
+        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 40_000, true)).unwrap().id;
+        // Odd-cent joint balance: halves are 50_000.5 → round away from zero → 50_001
+        // each, so the two slices exceed the whole by 1 cent (per joint account).
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 100_001, true)).unwrap().id;
+        household::set_account_owners(&mut conn, &a_sole, &[alice.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+
+        // None path == existing household breakdown verbatim.
+        let household_bd = balance_breakdown_for(&mut conn, None).unwrap();
+        assert_eq!(household_bd, balance_breakdown(&mut conn).unwrap());
+        assert_eq!(household_bd.liquid_cents, 140_001);
+
+        let a = balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap();
+        let b = balance_breakdown_for(&mut conn, Some(&bob.id)).unwrap();
+        assert_eq!(b.liquid_cents, 50_001, "bob: half of the odd joint balance");
+        assert_eq!(a.liquid_cents, 90_001, "alice: 40k sole + half joint");
+        // Reconciles to the household total up to ≤ 1 cent per joint account.
+        let joint_accounts = 1;
+        assert!(
+            (a.liquid_cents + b.liquid_cents - household_bd.liquid_cents).abs() <= joint_accounts,
+            "member balances reconcile to household within fractional-cent tolerance"
+        );
+        // A member's net worth is their owned-account net worth (no ownerless assets).
+        assert_eq!(a.net_worth_cents, 90_001);
     }
 
     #[test]
