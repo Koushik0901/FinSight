@@ -73,6 +73,13 @@ existing model already weights *both* by `1/owner_count`
 
 ### 1.3 Build order (each step ends green + committed)
 
+> **DONE (commits 370237b, e785ba5):** the operator/self identity primitive —
+> `household_members.is_self` (V042), `set_self_member` (unique/movable),
+> the `set_self_member` command (re-runs the classification cascade), and the
+> "This is me" UI toggle. This both lands the cleanest F0 win (own e-transfers
+> stop counting as income/spending — probe: −$3,500 reclassified, savings
+> −23%→−16%) and seeds the ownership model. Next steps ↓.
+
 1. **Unify the weight source.** The `1/n` weight is computed in ≥3 SQL sites
    (`account_weights_for_member`, the inline join in `weighted_income_expense`,
    `get_member_financial_summary` in reasoning/tools/read.rs). Collapse to **one**
