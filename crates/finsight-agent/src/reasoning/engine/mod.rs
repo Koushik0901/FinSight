@@ -11,6 +11,12 @@ use std::time::Duration;
 
 pub struct ReasoningEngine;
 
+/// Time reserved for one final synthesis turn before a run's deadline. A single
+/// provider turn can take up to its HTTP timeout (60s), so this keeps the
+/// synthesis — and any in-flight/failed turn near the wall — from overrunning
+/// the caller's outer timeout.
+const SYNTHESIS_HEADROOM: Duration = Duration::from_secs(55);
+
 /// Bounded retry around a single provider turn. A cloud LLM call is an
 /// unreliable I/O boundary — rate-limit blips and response-decode hiccups are
 /// common enough that the eval harness already retries a whole run over them;
@@ -25,6 +31,7 @@ async fn call_provider_with_retry(
     messages: &[ChatMessage],
     tool_defs: &[crate::reasoning::messages::ToolDefinition],
     forced: bool,
+    deadline: Option<std::time::Instant>,
 ) -> Result<AssistantTurn> {
     const MAX_ATTEMPTS: u32 = 3;
     for attempt in 1..=MAX_ATTEMPTS {
@@ -35,7 +42,16 @@ async fn call_provider_with_retry(
         };
         match result {
             Ok(turn) => return Ok(turn),
-            Err(_) if attempt < MAX_ATTEMPTS => {
+            // Don't burn the whole wall retrying a slow/erroring turn: if we're
+            // within a synthesis headroom of the deadline, surface the error now
+            // so the loop's budget check can synthesize a best-effort answer
+            // instead of a hard timeout. (Retries×HTTP-timeout can otherwise eat
+            // the entire budget before the top-of-loop check ever fires.)
+            Err(_)
+                if attempt < MAX_ATTEMPTS
+                    && !deadline
+                        .is_some_and(|d| std::time::Instant::now() + SYNTHESIS_HEADROOM >= d) =>
+            {
                 tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
             }
             Err(e) => return Err(e),
@@ -131,11 +147,6 @@ impl ReasoningEngine {
         // deterministic correction beats a polite request it can still ignore.
         let mut force_next_tool_call = false;
 
-        // Time reserved for one final synthesis turn before the deadline. A
-        // provider turn can take up to its HTTP timeout (60s); this keeps the
-        // synthesis comfortably inside the caller's outer wall.
-        const SYNTHESIS_HEADROOM: Duration = Duration::from_secs(40);
-
         for iteration in 0..max_iterations {
             // Wall-clock budget: once we're within a turn's headroom of the
             // deadline, stop gathering and synthesize a best-effort answer from
@@ -186,7 +197,7 @@ impl ReasoningEngine {
             let forced = force_next_tool_call;
             force_next_tool_call = false;
             let turn =
-                call_provider_with_retry(&provider, &messages, &tools.definitions(), forced)
+                call_provider_with_retry(&provider, &messages, &tools.definitions(), forced, deadline)
                     .await?;
 
             match turn {

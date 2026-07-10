@@ -209,8 +209,23 @@ async fn main() -> Result<()> {
                 args.model.as_str(),
                 "openrouter",
             ));
-            let run =
-                ReasoningEngine::run(&mut conn, &q.question, &tools, provider_try, args.max_iterations);
+            // Give the loop an internal wall-clock budget 30s inside the harness
+            // timeout, matching production (copilot_chat): a heavy question
+            // degrades to a synthesized best-effort answer instead of a hard
+            // timeout that scores as a total failure. Single model (no
+            // synthesizer) mirrors the default eval config.
+            let deadline =
+                Some(Instant::now() + Duration::from_secs(args.timeout_secs.saturating_sub(30)));
+            let run = ReasoningEngine::run_with_events(
+                &mut conn,
+                &q.question,
+                &tools,
+                provider_try,
+                None,
+                args.max_iterations,
+                deadline,
+                |_| {},
+            );
             let outcome = tokio::time::timeout(Duration::from_secs(args.timeout_secs), run).await;
             match &outcome {
                 Ok(Err(_)) if attempt <= 3 => {
