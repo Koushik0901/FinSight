@@ -253,6 +253,33 @@ fn audit_import_samples_and_dump_everything() {
         )
         .unwrap();
     println!("txn_total={txn_total} transfers_flagged={transfers} anomalies={anomalies} uncategorized_expenses={uncat}");
+    // Top uncategorized expense merchants (normalized) — evidence for whether the
+    // remaining long tail is coverable by builtin keywords (P2-1).
+    {
+        use std::collections::HashMap;
+        let mut counts: HashMap<String, (i64, i64)> = HashMap::new();
+        let mut stmt = conn
+            .prepare(
+                "SELECT merchant_raw, amount_cents FROM transactions \
+                 WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .unwrap();
+        for row in rows.flatten() {
+            let key = finsight_core::merchant::canonical_merchant_key(&row.0);
+            let e = counts.entry(key).or_insert((0, 0));
+            e.0 += 1;
+            e.1 += -row.1;
+        }
+        let mut v: Vec<_> = counts.into_iter().collect();
+        v.sort_by_key(|(_, (_, spend))| -spend);
+        println!("-- top uncategorized merchants (by spend) --");
+        for (k, (n, spend)) in v.into_iter().take(25) {
+            println!("  {spend:>10}c n={n:<4} {k}");
+        }
+    }
     let paired: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM transactions WHERE transfer_peer_id IS NOT NULL",

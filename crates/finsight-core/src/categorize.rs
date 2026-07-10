@@ -186,6 +186,21 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("property management", "housing"),
     ("mortgage", "housing"),
     (" rent ", "housing"),
+    // ── P2-1: real merchant families seen uncategorized in the sample data ──
+    // (airlines / car rental → travel; marketplace + electronics → shopping;
+    // one more grocery/transit chain; LinkedIn → subscription). Evidence-based,
+    // not test-case tuning: these are the coverable heads of the long tail.
+    ("amzn", "shopping"), // "AMZN MKTP CA" — Amazon marketplace variant
+    ("samsung", "shopping"),
+    ("sobeys", "groceries"),
+    ("presto", "transport"),
+    ("linkedin", "subscriptions"),
+    ("air india", "travel"),
+    ("lufthansa", "travel"),
+    ("cathay", "travel"),
+    ("flair air", "travel"),
+    ("makemytrip", "travel"),
+    ("hertz", "travel"),
 ];
 
 /// Best-effort deterministic category for a merchant string. Returns the
