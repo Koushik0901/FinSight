@@ -105,10 +105,9 @@ struct ResultOut {
     // ── Run metadata ──
     latency_ms: u128,
     /// Mirrors `is_usable_tool_answer`: non-empty content, AND (used a tool OR
-    /// the model completed the structured-answer contract without needing
-    /// one — a legitimate decline/clarify). A `false` here in production
-    /// would have been replaced by the planner fallback, so it is a
-    /// first-class failure signal.
+    /// the content is a genuine answer rather than a stall — a legitimate
+    /// no-tool decline/clarify). A `false` here in production would have been
+    /// replaced by the planner fallback, so it is a first-class failure signal.
     is_usable: bool,
     error: Option<String>,
     seed_as_of: String,
@@ -233,7 +232,7 @@ async fn main() -> Result<()> {
             Ok(Ok(r)) => {
                 let tools_called = tool_names_from_trace(&r.trace);
                 let is_usable =
-                    (!tools_called.is_empty() || r.structured_answer) && !r.content.trim().is_empty();
+                    (!tools_called.is_empty() || r.is_real_answer) && !r.content.trim().is_empty();
                 let response_block_kinds = r.response_blocks.iter().map(block_kind).collect();
                 ResultOut {
                     id: q.id.clone(),

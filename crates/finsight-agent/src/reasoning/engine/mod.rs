@@ -203,7 +203,7 @@ impl ReasoningEngine {
             missing_data: Vec::new(),
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
-            structured_answer: false,
+            is_real_answer: false,
         })
     }
 
@@ -216,6 +216,13 @@ impl ReasoningEngine {
         draft_actions: Vec<crate::reasoning::messages::AgentDraftAction>,
     ) -> ReasoningResult {
         let Some(parsed) = parse_structured_final_answer(&content) else {
+            // Not JSON, but may still be a genuine free-text answer — the
+            // model sometimes answers a quick clarifying question or short
+            // decline in plain prose instead of following the JSON contract.
+            // Use the same test the run loop uses to decide whether a turn
+            // needs a nudge, so a real answer here isn't downgraded to a
+            // stall just because it skipped the JSON envelope.
+            let is_real_answer = !content_after_plan(&content).is_empty();
             return ReasoningResult {
                 content,
                 reasoning,
@@ -228,7 +235,7 @@ impl ReasoningEngine {
                 missing_data: Vec::new(),
                 follow_up_questions: Vec::new(),
                 response_blocks: Vec::new(),
-                structured_answer: false,
+                is_real_answer,
             };
         };
 
@@ -252,7 +259,7 @@ impl ReasoningEngine {
             missing_data: parsed.missing_data,
             follow_up_questions: parsed.follow_up_questions,
             response_blocks: parsed.response_blocks,
-            structured_answer: true,
+            is_real_answer: true,
         }
     }
 

@@ -523,3 +523,33 @@ fn content_after_plan_detects_plan_only_vs_real_answer() {
     );
     assert_eq!(content_after_plan("Just a plain answer."), "Just a plain answer.");
 }
+
+#[tokio::test]
+async fn plain_prose_clarification_with_no_tool_call_is_a_real_answer() {
+    // The model sometimes answers a quick clarifying question in plain prose
+    // instead of the JSON answer contract, and legitimately calls no tool. The
+    // engine must mark this a real answer (not a stall) so the app's usability
+    // gate doesn't replace a correct clarification with the canned fallback.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(MockCompletionProvider {
+        provider_id: "mock".into(),
+        model_id: "test".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![AssistantTurn::FinalAnswer {
+            content: "I'd love to help! What's the purchase and how much does it cost?"
+                .to_string(),
+            reasoning: String::new(),
+        }]),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run(&mut *conn, "Can I afford it?", &tools, provider, 5)
+        .await
+        .unwrap();
+    assert!(result.content.contains("What's the purchase"));
+    assert!(result.trace.is_empty(), "no tool call expected for a clarifying question");
+    assert!(
+        result.is_real_answer,
+        "plain-prose clarification must be marked a real answer, not a stall"
+    );
+}

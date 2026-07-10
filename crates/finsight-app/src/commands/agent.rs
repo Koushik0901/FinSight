@@ -1083,15 +1083,16 @@ pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
         .iter()
         .any(|entry| entry.starts_with("Called tool:"));
     let has_content = !result.content.trim().is_empty();
-    // A well-formed structured answer is usable even without a tool call:
-    // many correct answers legitimately need none — a clarifying question, a
-    // graceful decline of an unsupported capability, or a principles-only
-    // safety response. Requiring a tool call for those replaced a CORRECT
-    // answer with the canned fallback. Only fall back to requiring a tool call
-    // for raw/unstructured content, since that's the signature of a stalled
-    // turn (a bare plan preamble, or malformed JSON that didn't parse) rather
-    // than a deliberate no-tool answer.
-    has_content && (used_tool || result.structured_answer)
+    // A genuine answer is usable even without a tool call: many correct
+    // answers legitimately need none — a clarifying question, a graceful
+    // decline of an unsupported capability, or a principles-only safety
+    // response — whether or not the model wrapped it in the JSON contract.
+    // Requiring a tool call for those replaced a CORRECT answer with the
+    // canned fallback. Only fall back to requiring a tool call when the
+    // content is NOT a real answer (empty, or a bare plan preamble with
+    // nothing after it) — that's the signature of a stalled turn, not a
+    // deliberate no-tool answer.
+    has_content && (used_tool || result.is_real_answer)
 }
 
 pub(crate) fn reasoning_result_to_agent_answer(
@@ -1948,7 +1949,7 @@ mod tests {
             missing_data: Vec::new(),
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
-            structured_answer: true,
+            is_real_answer: true,
         };
         assert!(is_usable_tool_answer(&result));
 
@@ -1967,10 +1968,10 @@ mod tests {
     }
 
     #[test]
-    fn structured_no_tool_answer_is_usable_but_bare_plan_is_not() {
-        // A correct decline/clarification legitimately calls no tool but still
-        // completes the model's JSON answer contract — it must NOT be
-        // replaced by the canned fallback just for lacking a tool call.
+    fn genuine_no_tool_answer_is_usable_but_bare_plan_is_not() {
+        // A correct decline/clarification legitimately calls no tool — it must
+        // NOT be replaced by the canned fallback just for lacking a tool call,
+        // whether or not the model wrapped it in the JSON answer contract.
         let decline = finsight_agent::reasoning::messages::ReasoningResult {
             content: "I can't fetch live stock prices from this local app.".to_string(),
             reasoning: String::new(),
@@ -1983,16 +1984,16 @@ mod tests {
             missing_data: Vec::new(),
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
-            structured_answer: true,
+            is_real_answer: true,
         };
         assert!(is_usable_tool_answer(&decline));
 
-        // A stalled turn — no tool call AND the content never parsed as the
-        // structured answer contract (a bare PLAN: preamble, or malformed
-        // JSON) — is still rejected; that's a failure, not a valid decline.
+        // A stalled turn — no tool call AND the content is not a real answer
+        // (a bare PLAN: preamble with nothing after it) — is still rejected;
+        // that's a failure, not a valid decline.
         let stalled = finsight_agent::reasoning::messages::ReasoningResult {
             content: "PLAN:\n1. Get the net worth\n2. Report it".to_string(),
-            structured_answer: false,
+            is_real_answer: false,
             ..decline
         };
         assert!(!is_usable_tool_answer(&stalled));
