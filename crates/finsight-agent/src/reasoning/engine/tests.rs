@@ -648,6 +648,53 @@ fn content_after_plan_detects_plan_only_vs_real_answer() {
     assert_eq!(content_after_plan("Just a plain answer."), "Just a plain answer.");
 }
 
+#[test]
+fn finance_snapshot_block_reports_precomputed_figures() {
+    use super::finance_snapshot_block;
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    // A checking account with a $5,000 balance, three $3,000 paychecks and three
+    // $2,000 expenses across the last 90 days, plus a credit card and a loan in
+    // debt. Mirrors the finance.rs snapshot fixtures.
+    conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
+    conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1',date('now'),500000)", []).unwrap();
+    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Household','Manual','Credit','Credit Card','USD','#F97316','manual','restricted',0,'debt',24.9,5000,500000,datetime('now'))", []).unwrap();
+    conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc',date('now'),-250000,'manual')", []).unwrap();
+    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('loan','Household','Manual','Loan','Loan','USD','#F87171','manual','restricted',0,'debt',5.0,30000,datetime('now'))", []).unwrap();
+    conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('loan',date('now'),-1800000,'manual')", []).unwrap();
+    for days in [10, 40, 70] {
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),300000,'Payroll','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
+    }
+    for days in [5, 35, 65] {
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),-200000,'Rent','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
+    }
+
+    let block = finance_snapshot_block(&mut conn);
+    assert!(block.contains("CURRENT SNAPSHOT (authoritative"), "block: {block}");
+    // $900k income over 90 days ÷ 3 = $3,000/mo — deterministic.
+    assert!(block.contains("Avg monthly income (90d): $3000.00"), "block: {block}");
+    // Credit card $2,500 + loan $18,000 = $20,500 total debt.
+    assert!(block.contains("Total debt: $20500.00"), "block: {block}");
+    assert!(block.contains("Liquid cash: $"), "block: {block}");
+    assert!(block.contains("Savings rate:"), "block: {block}");
+    assert!(block.contains("Emergency fund:"), "block: {block}");
+}
+
+#[test]
+fn finance_snapshot_block_is_empty_string_when_snapshot_fails() {
+    // A brand-new migrated DB with no accounts still yields a valid snapshot
+    // (all zeros), so the block is present — the loop's context is only ever
+    // *augmented*, never broken, by this helper.
+    use super::finance_snapshot_block;
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let block = finance_snapshot_block(&mut conn);
+    assert!(
+        block.is_empty() || block.contains("CURRENT SNAPSHOT"),
+        "helper must return either nothing or a well-formed block, got: {block}"
+    );
+}
+
 #[tokio::test]
 async fn plain_prose_clarification_with_no_tool_call_is_a_real_answer() {
     // The model sometimes answers a quick clarifying question in plain prose

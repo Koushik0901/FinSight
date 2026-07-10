@@ -118,14 +118,22 @@ impl ReasoningEngine {
         deadline: Option<std::time::Instant>,
         mut on_event: impl FnMut(ReasoningEngineEvent),
     ) -> Result<ReasoningResult> {
-        let mut messages: Vec<ChatMessage> = vec![
-            ChatMessage::System {
-                content: Self::build_system_prompt(tools),
-            },
-            ChatMessage::User {
-                content: question.to_string(),
-            },
-        ];
+        let mut messages: Vec<ChatMessage> = vec![ChatMessage::System {
+            content: Self::build_system_prompt(tools),
+        }];
+        // Precompute a compact, authoritative financial snapshot into the loop's
+        // context so common planning questions can be answered with FEWER tool
+        // round-trips (fewer LLM turns = lower latency). The GROUNDING RULE
+        // already permits citing "the provided context", so these figures are
+        // safe to state directly; the model still calls tools for breakdowns,
+        // history, and anything not in the snapshot.
+        let snapshot = finance_snapshot_block(conn);
+        if !snapshot.is_empty() {
+            messages.push(ChatMessage::System { content: snapshot });
+        }
+        messages.push(ChatMessage::User {
+            content: question.to_string(),
+        });
         let mut trace: Vec<String> = Vec::new();
         let mut changes: Vec<AgentChange> = Vec::new();
         let mut draft_actions = Vec::new();
@@ -533,15 +541,16 @@ answer empty, and do not state any number you have not obtained from a tool resu
 /// Sent when the loop hits its wall-clock budget: force a final answer now from
 /// what's already gathered, with no more tool calls.
 const TIME_LIMIT_SYNTHESIS: &str = "You are out of time to gather more data. Using ONLY the tool \
-results already in this conversation, give your best, complete final answer NOW. Do not call any \
-tools. If a detail is missing, answer with what you have and briefly note what you could not \
-compute. Never state a number you did not obtain from a tool result.";
+results already in this conversation and the CURRENT SNAPSHOT above, give your best, complete \
+final answer NOW. Do not call any tools. If a detail is missing, answer with what you have and \
+briefly note what you could not compute. Never state a number that is not in a tool result or the \
+snapshot.";
 
 /// Sent to the strong synthesizer when the fast router is done gathering, so it
 /// writes the final answer from the tool results already in the conversation.
 const FINAL_SYNTHESIS: &str = "You now have the data you need. Write your complete final answer in \
-the required format, using ONLY the tool results above. Do not call any tools, and do not state \
-any number you did not obtain from a tool result.";
+the required format, using ONLY the tool results above and the CURRENT SNAPSHOT. Do not call any \
+tools, and do not state any number that is not in a tool result or the snapshot.";
 
 /// Last-resort content when even the time-limited synthesis turn yields nothing:
 /// summarize the steps taken so the user gets *something* actionable, never an
@@ -561,6 +570,44 @@ fn summarize_progress(trace: &[String]) -> String {
                 .join("\n")
         )
     }
+}
+
+/// A compact, authoritative financial snapshot injected into the reasoning loop's
+/// context so common planning questions can be answered with fewer tool
+/// round-trips: the model may cite these pre-computed figures directly (the
+/// GROUNDING RULE already permits "the provided context"). Returns an empty
+/// string on any failure, leaving the loop's behaviour unchanged.
+fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
+    let Ok(s) = crate::finance::build_snapshot(conn) else {
+        return String::new();
+    };
+    let surplus = s.avg_monthly_income_90d_cents - s.typical_monthly_expense_cents;
+    let debt: i64 = s.liabilities.iter().map(|l| l.balance_cents.abs()).sum();
+    let savings_rate = finsight_core::metrics::savings_rate_pct(
+        s.avg_monthly_income_90d_cents,
+        s.typical_monthly_expense_cents,
+    );
+    let m = |c: i64| format!("${:.2}", c as f64 / 100.0);
+    format!(
+        "CURRENT SNAPSHOT (authoritative, pre-computed from the user's own data — you MAY cite \
+         these figures directly WITHOUT a tool call. Use tools for category/merchant breakdowns, \
+         transaction history, goals, budgets, or anything not listed here):\n\
+         - Liquid cash: {}\n\
+         - Avg monthly income (90d): {}\n\
+         - Typical monthly expenses: {}\n\
+         - Monthly surplus (income − typical expenses): {}\n\
+         - Savings rate: {}%\n\
+         - Emergency fund: {} ({:.1} months of expenses)\n\
+         - Total debt: {}",
+        m(s.liquid_balance_cents),
+        m(s.avg_monthly_income_90d_cents),
+        m(s.typical_monthly_expense_cents),
+        m(surplus),
+        savings_rate,
+        m(s.emergency_fund_balance_cents),
+        s.emergency_fund_months,
+        m(debt),
+    )
 }
 
 /// Returns the substantive content that follows any leading `PLAN:` preamble.
