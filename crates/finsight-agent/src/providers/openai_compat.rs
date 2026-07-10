@@ -141,6 +141,17 @@ impl CompletionProvider for OpenAiCompatProvider {
         self.complete_tool_turn_with_choice(messages, tools, Some("required"))
             .await
     }
+
+    async fn complete_final_answer_turn(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<AssistantTurn> {
+        // tool_choice: "none" — the model may not call tools this turn, so it
+        // must return its final text answer from what it already gathered.
+        self.complete_tool_turn_with_choice(messages, tools, Some("none"))
+            .await
+    }
 }
 
 impl OpenAiCompatProvider {

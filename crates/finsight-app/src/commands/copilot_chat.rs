@@ -364,6 +364,13 @@ pub async fn stream_copilot_message(
                     &tools,
                     provider_clone,
                     10,
+                    // Internal wall-clock budget, 30s inside the outer 180s
+                    // timeout: the loop synthesizes a best-effort answer at ~110s
+                    // (deadline − synthesis headroom) and returns it, so the
+                    // outer timeout is a rare hard safety net rather than the
+                    // normal failure mode. Heavy questions degrade to a partial
+                    // answer instead of a bare "timed out" error.
+                    Some(std::time::Instant::now() + Duration::from_secs(150)),
                     move |event| match event {
                         ReasoningEngineEvent::PlanReady { steps } => {
                             emit_copilot_frame(

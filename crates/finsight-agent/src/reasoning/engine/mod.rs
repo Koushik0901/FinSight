@@ -68,7 +68,7 @@ impl ReasoningEngine {
         provider: Arc<dyn CompletionProvider>,
         max_iterations: usize,
     ) -> Result<ReasoningResult> {
-        Self::run_with_events(conn, question, tools, provider, max_iterations, |_| {}).await
+        Self::run_with_events(conn, question, tools, provider, max_iterations, None, |_| {}).await
     }
 
     pub async fn run_with_events(
@@ -77,6 +77,12 @@ impl ReasoningEngine {
         tools: &ToolSet,
         provider: Arc<dyn CompletionProvider>,
         max_iterations: usize,
+        // Optional wall-clock budget. When set, the loop stops gathering and
+        // synthesizes a best-effort answer once it's within one turn's headroom
+        // of the deadline — so a heavy question degrades to a partial answer
+        // instead of being hard-killed by the caller's outer timeout with
+        // nothing to show. `None` = run to the iteration limit (tests, recipes).
+        deadline: Option<std::time::Instant>,
         mut on_event: impl FnMut(ReasoningEngineEvent),
     ) -> Result<ReasoningResult> {
         let mut messages: Vec<ChatMessage> = vec![
@@ -105,7 +111,52 @@ impl ReasoningEngine {
         // deterministic correction beats a polite request it can still ignore.
         let mut force_next_tool_call = false;
 
+        // Time reserved for one final synthesis turn before the deadline. A
+        // provider turn can take up to its HTTP timeout (60s); this keeps the
+        // synthesis comfortably inside the caller's outer wall.
+        const SYNTHESIS_HEADROOM: Duration = Duration::from_secs(40);
+
         for iteration in 0..max_iterations {
+            // Wall-clock budget: once we're within a turn's headroom of the
+            // deadline, stop gathering and synthesize a best-effort answer from
+            // the tool results already in `messages` — never hand the user a
+            // hard timeout with nothing. Only after at least one real turn, so
+            // the synthesis has something to work from.
+            if let Some(d) = deadline {
+                if iteration > 0 && std::time::Instant::now() + SYNTHESIS_HEADROOM >= d {
+                    trace.push(
+                        "Time budget nearly spent — synthesizing a best-effort answer now"
+                            .to_string(),
+                    );
+                    messages.push(ChatMessage::User {
+                        content: TIME_LIMIT_SYNTHESIS.to_string(),
+                    });
+                    let content = match provider
+                        .complete_final_answer_turn(&messages, &tools.definitions())
+                        .await
+                    {
+                        Ok(AssistantTurn::FinalAnswer { content, .. })
+                            if !content.trim().is_empty() =>
+                        {
+                            content
+                        }
+                        // Synthesis produced tool calls / empty / errored: fall
+                        // back to the best content seen, else a trace summary.
+                        _ => best_effort_content
+                            .clone()
+                            .unwrap_or_else(|| summarize_progress(&trace)),
+                    };
+                    return Ok(Self::parse_final_answer(
+                        content,
+                        String::new(),
+                        plan,
+                        trace,
+                        changes,
+                        draft_actions,
+                    ));
+                }
+            }
+
             let forced = force_next_tool_call;
             force_next_tool_call = false;
             let turn =
@@ -393,6 +444,33 @@ const CONTINUE_AFTER_NON_ANSWER: &str = "You outlined a plan but have not answer
 Now carry it out: call the tools you need to fetch the actual numbers from the user's data, \
 then reply with ONLY the final JSON answer object. Do not restate the plan, do not leave the \
 answer empty, and do not state any number you have not obtained from a tool result.";
+
+/// Sent when the loop hits its wall-clock budget: force a final answer now from
+/// what's already gathered, with no more tool calls.
+const TIME_LIMIT_SYNTHESIS: &str = "You are out of time to gather more data. Using ONLY the tool \
+results already in this conversation, give your best, complete final answer NOW. Do not call any \
+tools. If a detail is missing, answer with what you have and briefly note what you could not \
+compute. Never state a number you did not obtain from a tool result.";
+
+/// Last-resort content when even the time-limited synthesis turn yields nothing:
+/// summarize the steps taken so the user gets *something* actionable, never an
+/// empty timeout.
+fn summarize_progress(trace: &[String]) -> String {
+    if trace.is_empty() {
+        "I ran out of time before I could gather enough to answer. Please try a more specific \
+         question."
+            .to_string()
+    } else {
+        format!(
+            "I ran out of time before finishing a full answer. Here's what I gathered so far:\n{}",
+            trace
+                .iter()
+                .map(|t| format!("- {t}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
+}
 
 /// Returns the substantive content that follows any leading `PLAN:` preamble.
 /// If the model emitted only a plan (or nothing at all), this is empty — the

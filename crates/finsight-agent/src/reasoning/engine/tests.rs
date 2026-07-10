@@ -48,6 +48,64 @@ async fn single_turn_final_answer() {
 }
 
 #[tokio::test]
+async fn hitting_the_time_budget_synthesizes_a_best_effort_answer() {
+    // A heavy question must never hard-fail: once the wall-clock budget is spent,
+    // the loop forces a final synthesis turn and returns a real answer instead of
+    // looping to exhaustion and shipping the canned non-answer.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(MockCompletionProvider {
+        provider_id: "mock".into(),
+        model_id: "test".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![
+            // Turn 0: a tool call, so the loop advances past iteration 0 with
+            // some data gathered.
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "c1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            // The forced time-limited synthesis turn returns a real answer.
+            AssistantTurn::FinalAnswer {
+                content: "Here's my best-effort read from the balances I gathered.".to_string(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let tools = build_toolset();
+    // Deadline already reached → synthesize on iteration 1.
+    let result = ReasoningEngine::run_with_events(
+        &mut *conn,
+        "Give me a full financial plan",
+        &tools,
+        provider,
+        10,
+        Some(std::time::Instant::now()),
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        result.content.contains("best-effort read"),
+        "should return the synthesized answer, got: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("ran out of reasoning steps"),
+        "must not return the canned iteration-exhaustion non-answer"
+    );
+    assert!(
+        result.trace.iter().any(|t| t.contains("Time budget")),
+        "trace should record the time-budget synthesis"
+    );
+}
+
+#[tokio::test]
 async fn structured_final_answer_populates_answer_metadata() {
     let (_dir, db) = fresh_db();
     let mut conn = db.get().unwrap();
@@ -374,6 +432,7 @@ async fn run_with_events_emits_plan_ready_before_any_tool_call() {
         &tools,
         provider,
         5,
+        None,
         |event| events.push(event),
     )
     .await
@@ -453,6 +512,7 @@ async fn run_with_events_ignores_a_plan_offered_on_a_later_turn() {
         &tools,
         provider,
         5,
+        None,
         |event| events.push(event),
     )
     .await

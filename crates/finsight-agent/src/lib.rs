@@ -66,6 +66,21 @@ pub trait CompletionProvider: Send + Sync {
     ) -> Result<AssistantTurn> {
         self.complete_tool_turn(messages, tools).await
     }
+
+    /// Ask the provider for a FINAL text answer with NO further tool calls
+    /// (`tool_choice: "none"`). Used by the reasoning loop when it hits its
+    /// wall-clock budget: rather than time out with nothing, it forces the model
+    /// to synthesize a best-effort answer from the tool results already gathered.
+    /// Default: providers that can't set `tool_choice` fall back to a normal
+    /// turn — the loop still appends an explicit "answer now, no tools" message,
+    /// so the model is strongly steered even without hard enforcement.
+    async fn complete_final_answer_turn(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<AssistantTurn> {
+        self.complete_tool_turn(messages, tools).await
+    }
 }
 
 /// Stub retained for Phase 5 (embedding-based nearest-neighbor search).
