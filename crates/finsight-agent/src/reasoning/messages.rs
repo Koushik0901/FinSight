@@ -72,6 +72,16 @@ pub struct ReasoningResult {
     pub missing_data: Vec<String>,
     pub follow_up_questions: Vec<String>,
     pub response_blocks: Vec<Value>,
+    /// True only when the model's final turn parsed as the well-formed JSON
+    /// answer contract (`parse_structured_final_answer` succeeded). A
+    /// legitimate no-tool answer (a clarifying question, a graceful decline of
+    /// an unsupported capability, a principles-only safety response) still
+    /// produces one of these — it just has no tool calls in the trace. False
+    /// for a stalled turn: an empty response, a bare plan preamble, or
+    /// malformed JSON that didn't parse. Used to distinguish "correctly
+    /// answered without a tool" from "failed to answer" without requiring a
+    /// tool call for every valid answer.
+    pub structured_answer: bool,
 }
 
 /// Upper bounds applied to a parsed plan, since the raw text this is parsed

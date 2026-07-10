@@ -203,6 +203,7 @@ impl ReasoningEngine {
             missing_data: Vec::new(),
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
+            structured_answer: false,
         })
     }
 
@@ -227,6 +228,7 @@ impl ReasoningEngine {
                 missing_data: Vec::new(),
                 follow_up_questions: Vec::new(),
                 response_blocks: Vec::new(),
+                structured_answer: false,
             };
         };
 
@@ -250,6 +252,7 @@ impl ReasoningEngine {
             missing_data: parsed.missing_data,
             follow_up_questions: parsed.follow_up_questions,
             response_blocks: parsed.response_blocks,
+            structured_answer: true,
         }
     }
 
