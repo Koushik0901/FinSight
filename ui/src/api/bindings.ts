@@ -229,7 +229,7 @@ async prepareCsvImport(path: string, accountId: string, mapping: CsvImportMappin
     else return { status: "error", error: e  as any };
 }
 },
-async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Promise<Result<ImportSummary, AppError>> {
+async importCsv(path: string, accountId: string, mapping: CsvImportMapping) : Promise<Result<ImportResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("import_csv", { path, accountId, mapping }) };
 } catch (e) {
@@ -1664,6 +1664,24 @@ export type Import = { id: string; source: ImportSource; filename: string | null
 export type ImportCandidate = { id: string; source: string; importId: string | null; syncRunId: string | null; accountId: string; candidateJson: string; rawPayloadJson: string | null; importedId: string | null; externalTxId: string | null; externalAccountId: string | null; postedAt: string; amountCents: number; merchantRaw: string; confidence: number; reason: string; status: string; resolution: string | null; resolvedTransactionId: string | null; createdAt: string; resolvedAt: string | null }
 export type ImportCandidateMatch = { id: string; candidateId: string; transactionId: string; matchKind: string; score: number; isRecommended: boolean; explanationJson: string | null; createdAt: string }
 export type ImportCandidateWithMatches = { candidate: ImportCandidate; matches: ImportCandidateMatch[] }
+/**
+ * The import outcome plus what still needs a category. Surfacing the
+ * uncategorized count (and whether the AI pass was auto-started) makes the
+ * cloud LLM categorization a visible, informed choice rather than a silent
+ * background enqueue.
+ */
+export type ImportResult = { summary: ImportSummary; 
+/**
+ * Uncategorized non-transfer EXPENSE rows in this account after the builtin
+ * pass — exactly what an AI categorization run would work on.
+ */
+uncategorizedAfter: number; 
+/**
+ * True when the background AI categorizer was auto-enqueued (the
+ * auto-categorize setting is on). When false, the UI offers an explicit
+ * "run AI categorization" action.
+ */
+aiCategorizationStarted: boolean }
 export type ImportSource = "csv" | "manual" | "sample" | "simple_fin"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; rows_queued_for_review: number; errors: RowError[] }
 export type JourneyMilestone = { stage: number; name: string; description: string; status: string; progressPct: number; detail: string; actionPrompt: string }

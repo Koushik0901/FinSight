@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportSummary, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
+import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportResult, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -72,7 +72,7 @@ export function useCreateTransaction() {
 
 export function useImportCsv() {
   const qc = useQueryClient();
-  return useMutation<ImportSummary, Error, { path: string; account_id: string; mapping: CsvImportMapping }>({
+  return useMutation<ImportResult, Error, { path: string; account_id: string; mapping: CsvImportMapping }>({
     mutationFn: async (args) => {
       if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.importCsv(args.path, args.account_id, args.mapping);

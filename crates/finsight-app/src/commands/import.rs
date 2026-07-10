@@ -83,6 +83,23 @@ pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResu
         .map_err(AppError::from)
 }
 
+/// The import outcome plus what still needs a category. Surfacing the
+/// uncategorized count (and whether the AI pass was auto-started) makes the
+/// cloud LLM categorization a visible, informed choice rather than a silent
+/// background enqueue.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub summary: ImportSummary,
+    /// Uncategorized non-transfer EXPENSE rows in this account after the builtin
+    /// pass — exactly what an AI categorization run would work on.
+    pub uncategorized_after: i64,
+    /// True when the background AI categorizer was auto-enqueued (the
+    /// auto-categorize setting is on). When false, the UI offers an explicit
+    /// "run AI categorization" action.
+    pub ai_categorization_started: bool,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn import_csv(
@@ -91,7 +108,7 @@ pub async fn import_csv(
     path: String,
     account_id: String,
     mapping: CsvImportMapping,
-) -> AppResult<ImportSummary> {
+) -> AppResult<ImportResult> {
     let db = (*state.db).clone();
     let path = PathBuf::from(path);
     let app_emit = app.clone();
@@ -200,7 +217,7 @@ pub async fn import_csv(
     // actually honours the "categorize after each import" promise. Best-effort:
     // a missing provider or full queue must not fail the import (the user can
     // still re-run the scan manually from Settings / Insights).
-    {
+    let ai_categorization_started = {
         let cfg_db = (*state.db).clone();
         let auto = run(&cfg_db, |conn| {
             let v: Option<bool> = finsight_core::settings::get(
@@ -211,15 +228,36 @@ pub async fn import_csv(
         })
         .await
         .unwrap_or(true);
-        if auto {
-            let _ = state
-                .agent
-                .tx
-                .try_send(finsight_agent::agent::AgentJob::CategorizeAll);
-        }
-    }
+        auto && state
+            .agent
+            .tx
+            .try_send(finsight_agent::agent::AgentJob::CategorizeAll)
+            .is_ok()
+    };
 
-    app.emit("import-complete", &summary).ok();
+    // How many rows still have no category after the builtin pass — what an AI
+    // run would work on, and what the UI surfaces so the LLM pass is an informed
+    // choice, not a silent enqueue.
+    let count_db = (*state.db).clone();
+    let count_acct = cascade_account_id.clone();
+    let uncategorized_after = run(&count_db, move |conn| {
+        conn.query_row(
+            "SELECT COUNT(*) FROM transactions \
+             WHERE account_id = ?1 AND category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
+            rusqlite::params![count_acct],
+            |r| r.get::<_, i64>(0),
+        )
+        .map_err(finsight_core::CoreError::from)
+    })
+    .await
+    .unwrap_or(0);
+
+    let result = ImportResult {
+        summary,
+        uncategorized_after,
+        ai_categorization_started,
+    };
+    app.emit("import-complete", &result).ok();
 
     let notify_app = app.clone();
     let notify_db = (*state.db).clone();
@@ -227,7 +265,7 @@ pub async fn import_csv(
         let _ = crate::notifications::check_and_fire(&notify_app, &notify_db).await;
     });
 
-    Ok(summary)
+    Ok(result)
 }
 
 /// The CSV import mapping (columns, date format, amount handling) last used for

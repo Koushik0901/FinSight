@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { usePreviewCsvColumns, useSavedCsvMapping, usePrepareImport } from "../api/hooks/csv";
 import { useImportCsv } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
-import type { CsvImportMapping, ImportSummary, ColumnRole } from "../api/client";
+import { commands, type CsvImportMapping, type ImportSummary, type ColumnRole } from "../api/client";
 import AccountDrawer from "./AccountDrawer";
 import Button from "./Button";
 import Select from "./Select";
@@ -203,7 +203,8 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       delimiter: null,
     };
     try {
-      const summary = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
+      const result = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
+      const summary = result.summary;
       const { rows_imported, rows_skipped_duplicates, rows_queued_for_review, errors } = summary;
       const importedNoun = rows_imported === 1 ? "transaction" : "transactions";
       const duplicateNoun = rows_skipped_duplicates === 1 ? "duplicate" : "duplicates";
@@ -227,6 +228,33 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       } else {
         toast.success(summaryText);
       }
+
+      // Make the cloud LLM categorization a visible, informed choice. If the
+      // auto-categorize setting already enqueued it, say so; otherwise offer an
+      // explicit action rather than silently sending nothing (or everything).
+      if (result.uncategorizedAfter > 0) {
+        const n = result.uncategorizedAfter;
+        const noun = n === 1 ? "transaction has" : "transactions have";
+        if (result.aiCategorizationStarted) {
+          toast(`Categorizing ${n} uncategorized ${n === 1 ? "transaction" : "transactions"} with AI…`, {
+            description: "Running in the background. You can turn this off in Settings → Agent.",
+          });
+        } else {
+          toast(`${n} ${noun} no category`, {
+            description: "Run AI categorization to sort them (sends merchant + amount to your provider).",
+            action: {
+              label: "Categorize with AI",
+              onClick: () => {
+                void commands.triggerCategorize().then((r) => {
+                  if (r.status === "error") toast.error(r.error.message);
+                  else toast.success("AI categorization started");
+                });
+              },
+            },
+          });
+        }
+      }
+
       onImported(summary);
       if (rows_queued_for_review > 0) {
         navigate("/import-review");
