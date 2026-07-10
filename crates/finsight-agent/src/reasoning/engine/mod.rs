@@ -541,16 +541,16 @@ answer empty, and do not state any number you have not obtained from a tool resu
 /// Sent when the loop hits its wall-clock budget: force a final answer now from
 /// what's already gathered, with no more tool calls.
 const TIME_LIMIT_SYNTHESIS: &str = "You are out of time to gather more data. Using ONLY the tool \
-results already in this conversation and the CURRENT SNAPSHOT above, give your best, complete \
-final answer NOW. Do not call any tools. If a detail is missing, answer with what you have and \
-briefly note what you could not compute. Never state a number that is not in a tool result or the \
-snapshot.";
+results already in this conversation (and any CURRENT SNAPSHOT shown above), give your best, \
+complete final answer NOW. Do not call any tools. If a detail is missing, answer with what you \
+have and briefly note what you could not compute. Never state a number that is not in a tool \
+result or the snapshot.";
 
 /// Sent to the strong synthesizer when the fast router is done gathering, so it
 /// writes the final answer from the tool results already in the conversation.
 const FINAL_SYNTHESIS: &str = "You now have the data you need. Write your complete final answer in \
-the required format, using ONLY the tool results above and the CURRENT SNAPSHOT. Do not call any \
-tools, and do not state any number that is not in a tool result or the snapshot.";
+the required format, using ONLY the tool results above (and any CURRENT SNAPSHOT shown above). Do \
+not call any tools, and do not state any number that is not in a tool result or the snapshot.";
 
 /// Last-resort content when even the time-limited synthesis turn yields nothing:
 /// summarize the steps taken so the user gets *something* actionable, never an
@@ -575,38 +575,51 @@ fn summarize_progress(trace: &[String]) -> String {
 /// A compact, authoritative financial snapshot injected into the reasoning loop's
 /// context so common planning questions can be answered with fewer tool
 /// round-trips: the model may cite these pre-computed figures directly (the
-/// GROUNDING RULE already permits "the provided context"). Returns an empty
-/// string on any failure, leaving the loop's behaviour unchanged.
+/// GROUNDING RULE already permits "the provided context").
+///
+/// Every figure is sourced from the shared `finsight_core::metrics` layer using
+/// the SAME two calls `context.rs` uses to build the Copilot's cashflow/balance
+/// context — `balance_breakdown` and `rolling_averages(conn, 90)` — so the
+/// snapshot is, by construction, the same number every screen (Today, Net Worth,
+/// Wellness) shows and the same number the cashflow/balance tools return. It must
+/// NOT hand-roll a savings rate, surplus, or liquid total on a different basis,
+/// or the model would cite a figure that silently contradicts the app.
+///
+/// Returns an empty string if either metric fails, leaving the loop unchanged.
 fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
-    let Ok(s) = crate::finance::build_snapshot(conn) else {
+    let Ok(bal) = finsight_core::metrics::balance_breakdown(conn) else {
         return String::new();
     };
-    let surplus = s.avg_monthly_income_90d_cents - s.typical_monthly_expense_cents;
-    let debt: i64 = s.liabilities.iter().map(|l| l.balance_cents.abs()).sum();
-    let savings_rate = finsight_core::metrics::savings_rate_pct(
-        s.avg_monthly_income_90d_cents,
-        s.typical_monthly_expense_cents,
+    let Ok(roll) = finsight_core::metrics::rolling_averages(conn, 90) else {
+        return String::new();
+    };
+    // Same EF definition as the Wellness screen (context.rs): EF-eligible balance
+    // over the rolling 90-day average monthly expense.
+    let ef_months = finsight_core::metrics::emergency_fund_months(
+        bal.emergency_fund_cents,
+        roll.avg_monthly_expense_cents,
     );
     let m = |c: i64| format!("${:.2}", c as f64 / 100.0);
     format!(
-        "CURRENT SNAPSHOT (authoritative, pre-computed from the user's own data — you MAY cite \
-         these figures directly WITHOUT a tool call. Use tools for category/merchant breakdowns, \
-         transaction history, goals, budgets, or anything not listed here):\n\
+        "CURRENT SNAPSHOT (authoritative, pre-computed from the user's own data — these are the \
+         SAME figures every screen shows, so you MAY cite them directly WITHOUT a tool call. Use \
+         tools for category/merchant breakdowns, transaction history, per-liability debt detail, \
+         goals, budgets, or anything not listed here):\n\
          - Liquid cash: {}\n\
-         - Avg monthly income (90d): {}\n\
-         - Typical monthly expenses: {}\n\
-         - Monthly surplus (income − typical expenses): {}\n\
+         - Avg monthly income (rolling 90d): {}\n\
+         - Avg monthly expenses (rolling 90d): {}\n\
+         - Monthly net (income − expenses): {}\n\
          - Savings rate: {}%\n\
          - Emergency fund: {} ({:.1} months of expenses)\n\
-         - Total debt: {}",
-        m(s.liquid_balance_cents),
-        m(s.avg_monthly_income_90d_cents),
-        m(s.typical_monthly_expense_cents),
-        m(surplus),
-        savings_rate,
-        m(s.emergency_fund_balance_cents),
-        s.emergency_fund_months,
-        m(debt),
+         - Total debt owed: {}",
+        m(bal.liquid_cents),
+        m(roll.avg_monthly_income_cents),
+        m(roll.avg_monthly_expense_cents),
+        m(roll.net_monthly_cents),
+        roll.savings_rate_pct,
+        m(bal.emergency_fund_cents),
+        ef_months,
+        m(bal.debt_cents),
     )
 }
 

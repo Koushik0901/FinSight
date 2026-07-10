@@ -649,14 +649,14 @@ fn content_after_plan_detects_plan_only_vs_real_answer() {
 }
 
 #[test]
-fn finance_snapshot_block_reports_precomputed_figures() {
+fn finance_snapshot_block_matches_the_shared_metrics_layer() {
     use super::finance_snapshot_block;
     let (_dir, db) = fresh_db();
     let mut conn = db.get().unwrap();
-    // A checking account with a $5,000 balance, three $3,000 paychecks and three
-    // $2,000 expenses across the last 90 days, plus a credit card and a loan in
-    // debt. Mirrors the finance.rs snapshot fixtures.
-    conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))", []).unwrap();
+    // An EF-eligible checking account with a $5,000 balance, three $3,000
+    // paychecks and three $2,000 expenses across the last 90 days, plus a credit
+    // card and a loan in debt. Mirrors the finance.rs snapshot fixtures.
+    conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff','manual','liquid',1,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id, as_of_date, balance_cents) VALUES('a1',date('now'),500000)", []).unwrap();
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,limit_cents,created_at) VALUES('cc','Household','Manual','Credit','Credit Card','USD','#F97316','manual','restricted',0,'debt',24.9,5000,500000,datetime('now'))", []).unwrap();
     conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('cc',date('now'),-250000,'manual')", []).unwrap();
@@ -670,21 +670,46 @@ fn finance_snapshot_block_reports_precomputed_figures() {
     }
 
     let block = finance_snapshot_block(&mut conn);
+
+    // Every figure must equal the shared metrics layer verbatim — the whole
+    // point of the snapshot is that it never contradicts a screen or a tool.
+    let bal = finsight_core::metrics::balance_breakdown(&mut conn).unwrap();
+    let roll = finsight_core::metrics::rolling_averages(&conn, 90).unwrap();
+    let m = |c: i64| format!("${:.2}", c as f64 / 100.0);
     assert!(block.contains("CURRENT SNAPSHOT (authoritative"), "block: {block}");
-    // $900k income over 90 days ÷ 3 = $3,000/mo — deterministic.
-    assert!(block.contains("Avg monthly income (90d): $3000.00"), "block: {block}");
-    // Credit card $2,500 + loan $18,000 = $20,500 total debt.
-    assert!(block.contains("Total debt: $20500.00"), "block: {block}");
-    assert!(block.contains("Liquid cash: $"), "block: {block}");
-    assert!(block.contains("Savings rate:"), "block: {block}");
-    assert!(block.contains("Emergency fund:"), "block: {block}");
+    assert!(block.contains(&format!("Liquid cash: {}", m(bal.liquid_cents))), "block: {block}");
+    assert!(
+        block.contains(&format!("Avg monthly income (rolling 90d): {}", m(roll.avg_monthly_income_cents))),
+        "block: {block}"
+    );
+    assert!(
+        block.contains(&format!("Avg monthly expenses (rolling 90d): {}", m(roll.avg_monthly_expense_cents))),
+        "block: {block}"
+    );
+    assert!(
+        block.contains(&format!("Monthly net (income − expenses): {}", m(roll.net_monthly_cents))),
+        "block: {block}"
+    );
+    assert!(block.contains(&format!("Savings rate: {}%", roll.savings_rate_pct)), "block: {block}");
+    assert!(block.contains(&format!("Total debt owed: {}", m(bal.debt_cents))), "block: {block}");
+
+    // And the concrete, deterministic values so a basis regression is caught even
+    // if the metrics layer itself changed: $3k income, $2k expense, $1k net, 33%,
+    // $5k liquid/EF (2.5 months), $20,500 debt.
+    assert!(block.contains("Avg monthly income (rolling 90d): $3000.00"), "block: {block}");
+    assert!(block.contains("Avg monthly expenses (rolling 90d): $2000.00"), "block: {block}");
+    assert!(block.contains("Monthly net (income − expenses): $1000.00"), "block: {block}");
+    assert!(block.contains("Savings rate: 33%"), "block: {block}");
+    assert!(block.contains("Liquid cash: $5000.00"), "block: {block}");
+    assert!(block.contains("Emergency fund: $5000.00 (2.5 months of expenses)"), "block: {block}");
+    assert!(block.contains("Total debt owed: $20500.00"), "block: {block}");
 }
 
 #[test]
-fn finance_snapshot_block_is_empty_string_when_snapshot_fails() {
-    // A brand-new migrated DB with no accounts still yields a valid snapshot
-    // (all zeros), so the block is present — the loop's context is only ever
-    // *augmented*, never broken, by this helper.
+fn finance_snapshot_block_augments_never_breaks_on_empty_db() {
+    // A brand-new migrated DB with no accounts still yields a valid metrics
+    // snapshot (all zeros), so the block is present — the loop's context is only
+    // ever *augmented*, never broken, by this helper.
     use super::finance_snapshot_block;
     let (_dir, db) = fresh_db();
     let mut conn = db.get().unwrap();
