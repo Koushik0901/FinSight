@@ -104,6 +104,10 @@ async fn hitting_the_time_budget_synthesizes_a_best_effort_answer() {
         result.trace.iter().any(|t| t.contains("Time budget")),
         "trace should record the time-budget synthesis"
     );
+    assert!(
+        result.hit_time_budget,
+        "hit_time_budget must be set so the caller can kick off a background deep answer"
+    );
 }
 
 #[tokio::test]

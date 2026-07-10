@@ -9,6 +9,7 @@
  */
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -1093,10 +1094,41 @@ function CopilotLocalRuntime() {
 
 function CopilotAgUiEnabled() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  // Bumped to force the session (and its AG-UI history adapter) to remount and
+  // reload, so a background "deep answer" persisted to the active conversation
+  // shows up without the user re-opening it.
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const activeIdRef = useRef(activeConversationId);
+  activeIdRef.current = activeConversationId;
+
+  // A heavy question's fuller follow-up arrives asynchronously (background mode).
+  // The message is already persisted; surface it — reload the active thread, or
+  // toast to open the conversation it landed in.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ conversationId?: string }>("copilot-async-answer", (event) => {
+      const convId = event.payload?.conversationId;
+      if (!convId) return;
+      if (convId === activeIdRef.current) {
+        setReloadNonce((n) => n + 1);
+        toast.success("Your fuller analysis is ready", {
+          description: "Added to this conversation.",
+        });
+      } else {
+        toast.info("Your fuller analysis is ready", {
+          description: "Open the conversation to read it.",
+          action: { label: "View", onClick: () => setActiveConversationId(convId) },
+        });
+      }
+    }).then((u) => {
+      unlisten = u;
+    });
+    return () => unlisten?.();
+  }, []);
 
   return (
     <CopilotAgUiSession
-      key={activeConversationId ?? "new"}
+      key={`${activeConversationId ?? "new"}-${reloadNonce}`}
       activeConversationId={activeConversationId}
       onSelectConversation={setActiveConversationId}
       onNewThread={() => setActiveConversationId(null)}

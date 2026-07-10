@@ -168,14 +168,18 @@ impl ReasoningEngine {
                             .clone()
                             .unwrap_or_else(|| summarize_progress(&trace)),
                     };
-                    return Ok(Self::parse_final_answer(
+                    let mut result = Self::parse_final_answer(
                         content,
                         String::new(),
                         plan,
                         trace,
                         changes,
                         draft_actions,
-                    ));
+                    );
+                    // Signal the caller to kick off a background deep answer:
+                    // this question was heavy enough to nearly time out.
+                    result.hit_time_budget = true;
+                    return Ok(result);
                 }
             }
 
@@ -332,6 +336,7 @@ impl ReasoningEngine {
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
             is_real_answer: false,
+            hit_time_budget: false,
         })
     }
 
@@ -387,6 +392,7 @@ impl ReasoningEngine {
                 follow_up_questions: Vec::new(),
                 response_blocks: Vec::new(),
                 is_real_answer,
+                hit_time_budget: false,
             };
         };
 
@@ -411,6 +417,7 @@ impl ReasoningEngine {
             follow_up_questions: parsed.follow_up_questions,
             response_blocks: parsed.response_blocks,
             is_real_answer: true,
+            hit_time_budget: false,
         }
     }
 

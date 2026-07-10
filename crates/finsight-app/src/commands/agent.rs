@@ -1969,6 +1969,7 @@ mod tests {
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
             is_real_answer: true,
+            hit_time_budget: false,
         };
         assert!(is_usable_tool_answer(&result));
 
@@ -2004,6 +2005,7 @@ mod tests {
             follow_up_questions: Vec::new(),
             response_blocks: Vec::new(),
             is_real_answer: true,
+            hit_time_budget: false,
         };
         assert!(is_usable_tool_answer(&decline));
 

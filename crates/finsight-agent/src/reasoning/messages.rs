@@ -82,6 +82,11 @@ pub struct ReasoningResult {
     /// "correctly answered without a tool" from "failed to answer" without
     /// requiring a tool call for every valid answer.
     pub is_real_answer: bool,
+    /// True when this answer was produced by the wall-clock-budget synthesis path
+    /// (the question was heavy enough to nearly time out). The caller uses this to
+    /// kick off a background "deep answer" that re-runs with a longer budget and
+    /// posts a more thorough follow-up.
+    pub hit_time_budget: bool,
 }
 
 /// Upper bounds applied to a parsed plan, since the raw text this is parsed

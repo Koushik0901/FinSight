@@ -456,9 +456,15 @@ pub async fn stream_copilot_message(
         );
     }
 
+    // Whether the reasoning loop had to bail to its wall-clock budget. If so we
+    // stream the best-effort partial now AND spin up a background "deep answer"
+    // that re-runs with a longer budget and posts a fuller follow-up.
+    let mut deep_answer_needed = false;
+
     // 5. Build AgentAnswer from result
     let mut answer: AgentAnswer = match tool_result {
         Ok(result) if is_usable_tool_answer(&result) => {
+            deep_answer_needed = result.hit_time_budget;
             let draft_actions = result.draft_actions.clone();
             // Kept alive past the bundle-persistence closure (which moves
             // `draft_actions`) so the recategorization preview can be synthesized
@@ -655,6 +661,23 @@ pub async fn stream_copilot_message(
             persist_failed_run(&db, &conv_id, &run_id, "agent.empty_response", safe).await;
             return Err(AppError::new("agent.empty_response", safe));
         }
+    }
+
+    // Heavy question that bailed to the time budget: note it on the quick answer
+    // and kick off a detached background "deep answer" (OpenAI background-mode
+    // style) that re-runs on the strong model with a longer budget and posts a
+    // fuller follow-up assistant message the UI surfaces via copilot-async-answer.
+    if deep_answer_needed {
+        answer.prose.push_str(
+            "\n\n_⏳ That was a quick read under a time limit — I'm working on a fuller analysis and will post it here shortly._",
+        );
+        spawn_deep_answer(
+            app.clone(),
+            db.clone(),
+            Arc::clone(&provider),
+            conv_id.clone(),
+            enriched_question.clone(),
+        );
     }
 
     let provider_id = provider.provider_id().to_string();
@@ -1098,6 +1121,93 @@ fn tool_names_from_trace(trace: &[String]) -> Vec<String> {
                 .map(|name| name.trim_matches(':').trim().to_string())
         })
         .collect()
+}
+
+/// Detached background "deep answer" (OpenAI background-mode style): re-run the
+/// reasoning loop on the strong model with a longer, off-the-request-path budget
+/// and persist a fuller follow-up assistant message, then notify the UI via a
+/// `copilot-async-answer` event. Triggered when the synchronous turn had to bail
+/// to its wall-clock budget. Best-effort: any failure is silently dropped (the
+/// user already has the quick partial answer).
+fn spawn_deep_answer(
+    app: tauri::AppHandle,
+    db: finsight_core::Db,
+    provider: Arc<dyn finsight_agent::CompletionProvider>,
+    conversation_id: String,
+    question: String,
+) {
+    tauri::async_runtime::spawn(async move {
+        let tools = build_toolset();
+        let q = question.clone();
+        let deep = run(&db, move |conn| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| {
+                    finsight_core::CoreError::InvalidState(format!("deep-answer rt: {e}"))
+                })?;
+            // 8-minute budget, no synchronous wall: the loop still degrades
+            // gracefully at the budget rather than running unbounded.
+            rt.block_on(ReasoningEngine::run_with_events(
+                conn,
+                &q,
+                &tools,
+                provider,
+                None,
+                15,
+                Some(Instant::now() + Duration::from_secs(480)),
+                |_| {},
+            ))
+            .map_err(|e| finsight_core::CoreError::InvalidState(format!("deep answer: {e}")))
+        })
+        .await;
+
+        let Ok(result) = deep else { return };
+        if !is_usable_tool_answer(&result) {
+            return;
+        }
+        // Prose-first AgentAnswer; enrich_agent_answer builds a markdown block
+        // from the prose so the persisted message renders. (Rich response blocks
+        // for async answers are a bounded follow-up.)
+        let mut answer = AgentAnswer {
+            prose: result.content,
+            reasoning: result.reasoning,
+            plan: result.plan,
+            trace: result.trace,
+            // The deep follow-up is prose-first (no draft-action bundle), so
+            // change entries — which drive bundle UI — are intentionally empty.
+            changes: Vec::new(),
+            action_label: None,
+            action_path: None,
+            bundle_id: None,
+            assumptions: result.assumptions,
+            data_sources: result.data_sources,
+            missing_data: result.missing_data,
+            alternatives: Vec::new(),
+            follow_up_questions: result.follow_up_questions,
+            response_blocks: Vec::new(),
+        };
+        enrich_agent_answer(&mut answer);
+        let parts = assistant_parts_json(&answer);
+        let prose = answer.prose.clone();
+        let cid = conversation_id.clone();
+        let persisted = run(&db, move |conn| {
+            let msg = conversations::insert_message(
+                conn, &cid, "assistant", &prose, None, None, None, Some(&parts),
+            )?;
+            Ok::<_, finsight_core::CoreError>(msg.id)
+        })
+        .await;
+        let Ok(message_id) = persisted else { return };
+        let _ = app.emit(
+            "copilot-async-answer",
+            json!({
+                "conversationId": conversation_id,
+                "messageId": message_id,
+                "prose": answer.prose,
+            }),
+        );
+    });
 }
 
 fn assistant_parts_json(answer: &AgentAnswer) -> String {
