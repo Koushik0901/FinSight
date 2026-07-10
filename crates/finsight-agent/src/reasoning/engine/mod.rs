@@ -206,6 +206,15 @@ impl ReasoningEngine {
                         }
                     }
 
+                    // NB: tools run SEQUENTIALLY here, deliberately. Parallel
+                    // tool calls are a major latency lever for agents whose tools
+                    // are remote/network-bound — but FinSight's tools are
+                    // synchronous rusqlite reads over a SINGLE `&mut Connection`
+                    // (ToolContext.conn), which cannot serve concurrent reads, and
+                    // they're local (sub-millisecond), not network. Parallelizing
+                    // here buys ~nothing and is blocked by the single-connection
+                    // model, so the latency work lives in fewer/faster LLM turns
+                    // instead (model tiers, prompt caching, capped max_tokens).
                     let mut tool_result_msgs = Vec::new();
                     for call in &calls {
                         trace.push(format!("Called tool: {}", call.name));
