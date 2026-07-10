@@ -10,6 +10,17 @@ vi.mock("../api/client", () => ({
   },
 }));
 
+// Two-member household so the MemberSwitcher renders and we can test per-person
+// scoping of the report queries.
+vi.mock("../api/hooks/household", () => ({
+  useHouseholdMembers: () => ({
+    data: [
+      { id: "m-alice", name: "Alice", color: "#38BDF8", created_at: "2026-01-01" },
+      { id: "m-bob", name: "Bob", color: "#F472B6", created_at: "2026-01-02" },
+    ],
+  }),
+}));
+
 const REPORT_DATA = {
   monthly: [
     { month: "2026-01", label: "Jan", incomeCents: 500000, expenseCents: 350000, netCents: 150000 },
@@ -55,8 +66,19 @@ describe("Reports screen", () => {
     await screen.findByText("See the shape of your money over time.");
     fireEvent.click(screen.getByText("Quarter"));
     await waitFor(() =>
-      expect(commands.getReportData).toHaveBeenCalledWith("quarter")
+      // second arg is the household-member filter (null = whole household)
+      expect(commands.getReportData).toHaveBeenCalledWith("quarter", null)
     );
+  });
+
+  it("scopes report data to a household member when selected", async () => {
+    render(<Reports />, { wrapper: createWrapper() });
+    await screen.findByText("See the shape of your money over time.");
+    // Default scope is "year"; whole-household fetch uses a null member.
+    await waitFor(() => expect(commands.getReportData).toHaveBeenCalledWith("year", null));
+    // Selecting a person refetches the report scoped to that member.
+    fireEvent.click(screen.getByRole("tab", { name: /Alice/ }));
+    await waitFor(() => expect(commands.getReportData).toHaveBeenCalledWith("year", "m-alice"));
   });
 
   it("renders category and merchant tables when data is present", async () => {

@@ -5,6 +5,7 @@ import { money } from "../utils/format";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import NetWorthChart from "../components/NetWorthChart";
+import MemberSwitcher from "../components/MemberSwitcher";
 
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
@@ -28,11 +29,12 @@ export function buildReportCsv(data: ReportData): string {
   return rows.join("\n");
 }
 
-function useReportData(scope: Scope) {
+function useReportData(scope: Scope, memberId: string | null) {
   return useQuery<ReportData>({
-    queryKey: ["report-data", scope],
+    // memberId in the key so switching person refetches; null = whole household.
+    queryKey: ["report-data", scope, memberId],
     queryFn: async () => {
-      const result = await commands.getReportData(scope);
+      const result = await commands.getReportData(scope, memberId);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
@@ -47,7 +49,8 @@ export default function Reports() {
   // historical) rather than the current calendar month, which may be empty.
   const [scope, setScope] = useState<Scope>("year");
   const [tab, setTab] = useState<Tab>("overview");
-  const { data, isLoading, error } = useReportData(scope);
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const { data, isLoading, error } = useReportData(scope, memberId);
   const netWorth = useNetWorth();
   const { data: metrics } = useFinancialMetrics();
   const { data: nwHistory = [] } = useNetWorthHistory(SCOPE_DAYS[scope]);
@@ -129,6 +132,15 @@ export default function Reports() {
           </div>
           <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
         </div>
+      </div>
+
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <MemberSwitcher value={memberId} onChange={setMemberId} />
+        {memberId && tab !== "networth" && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            Income & spending below are this person's share (joint accounts split equally). Net worth stays household.
+          </span>
+        )}
       </div>
 
       <div className="toolbar" style={{ marginBottom: 16 }}>

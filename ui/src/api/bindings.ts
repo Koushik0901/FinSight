@@ -476,9 +476,9 @@ async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getReportData(scope: string) : Promise<Result<ReportData, AppError>> {
+async getReportData(scope: string, memberId: string | null) : Promise<Result<ReportData, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_report_data", { scope }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_report_data", { scope, memberId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

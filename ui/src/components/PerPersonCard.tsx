@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import { money } from "../utils/format";
+import MemberSwitcher from "./MemberSwitcher";
 
 /**
  * Per-person cashflow & balances on Today. Hidden unless the household has 2+
@@ -21,7 +22,6 @@ export default function PerPersonCard({ currency }: { currency: string }) {
 
   const selected = members.find((x) => x.id === memberId) ?? null;
   const rate = m?.thisMonthSavingsRatePct ?? 0;
-  const activeChip = { borderColor: "var(--accent)", color: "var(--accent)" } as const;
 
   return (
     <section className="section">
@@ -31,35 +31,7 @@ export default function PerPersonCard({ currency }: { currency: string }) {
           style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}
         >
           <div className="eyebrow"><span className="dot" />Per person</div>
-          <div className="row row-sm wrap" role="tablist" aria-label="Filter by household member">
-            <button
-              type="button"
-              className="chip"
-              role="tab"
-              aria-selected={memberId === null}
-              style={memberId === null ? activeChip : undefined}
-              onClick={() => setMemberId(null)}
-            >
-              Everyone
-            </button>
-            {members.map((mem) => (
-              <button
-                key={mem.id}
-                type="button"
-                className="chip"
-                role="tab"
-                aria-selected={memberId === mem.id}
-                style={memberId === mem.id ? activeChip : undefined}
-                onClick={() => setMemberId(mem.id)}
-              >
-                <span
-                  className="cswatch"
-                  style={{ background: mem.color || "var(--ink-faint)", width: 8, height: 8, marginRight: 6 }}
-                />
-                {mem.name}
-              </button>
-            ))}
-          </div>
+          <MemberSwitcher value={memberId} onChange={setMemberId} />
         </div>
         <div className="stat-row">
           <div className="stat">

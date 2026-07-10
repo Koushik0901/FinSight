@@ -118,11 +118,27 @@ fn month_short_label(ym: &str) -> String {
 pub async fn get_report_data(
     state: tauri::State<'_, AppState>,
     scope: String,
+    member_id: Option<String>,
 ) -> AppResult<ReportData> {
     let db = (*state.db).clone();
 
     run(&db, move |conn| {
         let now = chrono::Utc::now();
+
+        // Per-member scoping: when a member is selected, JOIN the ownership-weight
+        // subquery (1/owner_count, joint accounts split equally) and multiply
+        // amounts by the share. `None` leaves the SQL unweighted (household). The
+        // member id, when present, is always the FIRST bound `?` (it appears in
+        // the JOIN, ahead of the date bounds).
+        let member = member_id.clone();
+        let owner_join: &str = if member.is_some() {
+            " JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight FROM account_owners ao \
+              JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+              ON oc.account_id = ao.account_id WHERE ao.member_id = ?) w ON w.account_id = t.account_id"
+        } else {
+            ""
+        };
+        let wmul: &str = if member.is_some() { "* w.weight" } else { "" };
 
         // Anchor the report windows on the most recent MONTH WITH ACTIVITY, not
         // wall-clock now. Imported statements are often historical, so anchoring
@@ -173,22 +189,30 @@ pub async fn get_report_data(
                 }
                 let first = &month_list[0];
                 let last = &month_list[month_list.len() - 1];
-                let mut stmt = conn.prepare(
-                    "SELECT strftime('%Y-%m', posted_at) AS mo,
-                        SUM(CASE WHEN amount_cents > 0 THEN amount_cents  ELSE 0 END),
-                        SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END)
-                 FROM transactions
-                 WHERE strftime('%Y-%m', posted_at) >= ?1
-                   AND strftime('%Y-%m', posted_at) <= ?2
-                   AND is_transfer = 0
-                 GROUP BY mo
-                 ORDER BY mo",
-                )?;
+                let sql = format!(
+                    "SELECT strftime('%Y-%m', t.posted_at) AS mo, \
+                        CAST(ROUND(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents {wmul} ELSE 0 END)) AS INTEGER), \
+                        CAST(ROUND(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents {wmul} ELSE 0 END)) AS INTEGER) \
+                     FROM transactions t{owner_join} \
+                     WHERE strftime('%Y-%m', t.posted_at) >= ? \
+                       AND strftime('%Y-%m', t.posted_at) <= ? \
+                       AND t.is_transfer = 0 \
+                     GROUP BY mo \
+                     ORDER BY mo"
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                // member (if any) is the leading bind, then the date bounds.
+                let mut binds: Vec<String> = Vec::new();
+                if let Some(m) = member.as_ref() {
+                    binds.push(m.clone());
+                }
+                binds.push(first.clone());
+                binds.push(last.clone());
                 // Every row must be readable — a corrupt page or query failure
                 // partway through must surface as a real error, not silently
                 // drop rows and render a fabricated $0 for the affected months.
                 let db_rows: std::collections::HashMap<String, (i64, i64)> = stmt
-                    .query_map(rusqlite::params![first, last], |r| {
+                    .query_map(rusqlite::params_from_iter(binds.iter()), |r| {
                         Ok((
                             r.get::<_, String>(0)?,
                             r.get::<_, i64>(1)?,
@@ -236,18 +260,25 @@ pub async fn get_report_data(
             })
             .unwrap_or_default();
 
+        let mut cat_binds: Vec<String> = Vec::new();
+        if let Some(m) = member.as_ref() {
+            cat_binds.push(m.clone());
+        }
+        cat_binds.push(scope_start.clone());
+        cat_binds.push(scope_end.clone());
         let top_categories = {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT c.id, c.label, COALESCE(c.color,''), \
-                        SUM(-t.amount_cents) AS total, COUNT(t.id) \
-                 FROM transactions t \
+                        CAST(ROUND(SUM(-t.amount_cents {wmul})) AS INTEGER) AS total, COUNT(t.id) \
+                 FROM transactions t{owner_join} \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
                  GROUP BY c.id, c.label, c.color \
                  ORDER BY total DESC \
-                 LIMIT 10",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![scope_start, scope_end], |r| {
+                 LIMIT 10"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
                 Ok(CategoryTotal {
                     // Uncategorized spending groups on a NULL category id via the
                     // LEFT JOIN; represent it with an empty id rather than
@@ -265,17 +296,18 @@ pub async fn get_report_data(
         };
 
         let top_merchants = {
-            let mut stmt = conn.prepare(
+            let sql = format!(
                 "SELECT t.merchant_raw, COALESCE(c.label,''), COALESCE(c.color,''), \
-                        SUM(-t.amount_cents) AS total, COUNT(t.id) \
-                 FROM transactions t \
+                        CAST(ROUND(SUM(-t.amount_cents {wmul})) AS INTEGER) AS total, COUNT(t.id) \
+                 FROM transactions t{owner_join} \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 AND t.posted_at < ?2 \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
                  GROUP BY t.merchant_raw \
                  ORDER BY total DESC \
-                 LIMIT 10",
-            )?;
-            let rows = stmt.query_map(rusqlite::params![scope_start, scope_end], |r| {
+                 LIMIT 10"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
                 Ok(MerchantTotal {
                     merchant_raw: r.get(0)?,
                     category_label: r.get(1)?,
