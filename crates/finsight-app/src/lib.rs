@@ -171,6 +171,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::agent::get_needs_review_count,
         commands::agent::trigger_categorize,
         commands::agent::recompute_anomalies,
+        commands::agent::set_anomaly_dismissed,
         commands::agent::trigger_recategorize_low_confidence,
         commands::agent::get_agent_status,
         commands::agent::ask_agent,

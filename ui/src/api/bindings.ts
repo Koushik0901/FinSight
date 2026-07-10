@@ -336,6 +336,20 @@ async recomputeAnomalies() : Promise<Result<number, AppError>> {
 }
 },
 /**
+ * Mark a flagged anomaly as reviewed-and-fine (dismiss) or restore it. A
+ * dismissed charge is cleared and the detector will not re-flag it on the next
+ * recompute; un-dismissing makes it flaggable again. Keeps the Insights anomaly
+ * feed trustworthy without per-transaction drawer edits.
+ */
+async setAnomalyDismissed(txnId: string, dismissed: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_anomaly_dismissed", { txnId, dismissed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Queue a re-categorization pass for all low-confidence LLM assignments.
  * Runs the rule engine first (picks up any new rules the user created), then
  * the LLM for whatever remains uncertain.

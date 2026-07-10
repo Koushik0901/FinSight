@@ -30,6 +30,9 @@ struct Row {
     abs_cents: f64,
     merchant_key: String,
     was_flagged: bool,
+    /// User marked this flagged charge as reviewed-and-fine — it still counts
+    /// toward its merchant's baseline but must never be re-flagged.
+    dismissed: bool,
 }
 
 /// Recompute `is_anomaly` for every expense transaction from live data.
@@ -51,6 +54,25 @@ pub fn recompute_anomalies_for_account(conn: &mut Connection, account_id: &str) 
     recompute(conn, Some(account_id))
 }
 
+/// Mark a flagged transaction as reviewed-and-fine, or un-dismiss it. Dismissing
+/// clears the current flag; the detector will not re-flag it while dismissed
+/// (it still counts toward its merchant's baseline). Un-dismissing lets the next
+/// recompute flag it again if it is still an outlier.
+pub fn set_dismissed(conn: &Connection, txn_id: &str, dismissed: bool) -> CoreResult<()> {
+    if dismissed {
+        conn.execute(
+            "UPDATE transactions SET anomaly_dismissed = 1, is_anomaly = 0 WHERE id = ?1",
+            rusqlite::params![txn_id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE transactions SET anomaly_dismissed = 0 WHERE id = ?1",
+            rusqlite::params![txn_id],
+        )?;
+    }
+    Ok(())
+}
+
 /// Shared core. When `scope_account` is `None`, recompute every merchant group
 /// and clear every prior flag (the authoritative full pass). When it is `Some`,
 /// touch only groups that have a member in that account: clear flags on their
@@ -66,7 +88,8 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
     let mut touched: std::collections::HashSet<String> = std::collections::HashSet::new();
     let rows: Vec<Row> = {
         let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, amount_cents, is_anomaly, account_id FROM transactions \
+            "SELECT id, merchant_raw, amount_cents, is_anomaly, account_id, \
+                    COALESCE(anomaly_dismissed, 0) FROM transactions \
              WHERE amount_cents < 0 AND is_transfer = 0",
         )?;
         let mapped = stmt.query_map([], |r| {
@@ -76,11 +99,12 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
                 r.get::<_, i64>(2)?,
                 r.get::<_, i64>(3)? != 0,
                 r.get::<_, String>(4)?,
+                r.get::<_, i64>(5)? != 0,
             ))
         })?;
         let mut out = Vec::new();
         for row in mapped {
-            let (id, raw, amount, was_flagged, account_id) = row?;
+            let (id, raw, amount, was_flagged, account_id, dismissed) = row?;
             let merchant_key = normalize_merchant(&raw);
             // Build the in-scope key set for free: any group with a member in
             // the target account could have been shifted by importing into it.
@@ -94,6 +118,7 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
                 abs_cents: amount.unsigned_abs() as f64,
                 merchant_key,
                 was_flagged,
+                dismissed,
             });
         }
         out
@@ -129,6 +154,11 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
         let threshold = med + K_SIGMA * robust_sigma;
 
         for &i in idxs {
+            // A dismissed charge still shapes the baseline above, but the user
+            // has said it's fine — never re-flag it.
+            if rows[i].dismissed {
+                continue;
+            }
             let a = rows[i].abs_cents;
             if a > threshold && a >= MIN_MULTIPLE * med && (a - med) >= MIN_ABS_DELTA_CENTS {
                 let reason = format!(
@@ -267,6 +297,40 @@ mod tests {
 
         let n = recompute_anomalies(&mut conn).unwrap();
         assert_eq!(n, 0, "no anomaly on normal variation or thin history");
+    }
+
+    #[test]
+    fn dismissed_anomaly_is_not_reflagged() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        for i in 0..8 {
+            ins(&conn, &format!("n{i}"), "a", "STARBUCKS  800", -1000);
+        }
+        ins(&conn, "outlier", "a", "STARBUCKS  800", -18000);
+
+        assert_eq!(recompute_anomalies(&mut conn).unwrap(), 1);
+        let flagged: i64 = conn
+            .query_row("SELECT is_anomaly FROM transactions WHERE id='outlier'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(flagged, 1);
+
+        // User dismisses it → flag cleared, marked dismissed.
+        set_dismissed(&conn, "outlier", true).unwrap();
+        let (isa, dis): (i64, i64) = conn
+            .query_row(
+                "SELECT is_anomaly, anomaly_dismissed FROM transactions WHERE id='outlier'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((isa, dis), (0, 1));
+
+        // Recompute must NOT re-flag a dismissed charge.
+        assert_eq!(recompute_anomalies(&mut conn).unwrap(), 0, "dismissed anomaly stays dismissed");
+
+        // Un-dismissing makes it flaggable again on the next recompute.
+        set_dismissed(&conn, "outlier", false).unwrap();
+        assert_eq!(recompute_anomalies(&mut conn).unwrap(), 1, "un-dismissed outlier is flaggable again");
     }
 
     #[test]

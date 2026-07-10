@@ -236,6 +236,25 @@ pub async fn recompute_anomalies(state: tauri::State<'_, AppState>) -> AppResult
     .map_err(AppError::from)
 }
 
+/// Mark a flagged anomaly as reviewed-and-fine (dismiss) or restore it. A
+/// dismissed charge is cleared and the detector will not re-flag it on the next
+/// recompute; un-dismissing makes it flaggable again. Keeps the Insights anomaly
+/// feed trustworthy without per-transaction drawer edits.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_anomaly_dismissed(
+    state: tauri::State<'_, AppState>,
+    txn_id: String,
+    dismissed: bool,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        finsight_core::anomaly::set_dismissed(conn, &txn_id, dismissed)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<()> {

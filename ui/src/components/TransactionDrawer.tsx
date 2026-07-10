@@ -9,7 +9,7 @@ import SplitModal from "./SplitModal";
 import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
-  useTransactionSplits, useSetTransactionSplits,
+  useTransactionSplits, useSetTransactionSplits, useSetAnomalyDismissed,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import type { Transaction } from "../api/bindings";
@@ -40,6 +40,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const del = useDeleteTransaction();
   const createRule = useCreateRule();
   const setFlags = useSetTransactionFlags();
+  const dismissAnomaly = useSetAnomalyDismissed();
   const { data: accounts = [] } = useAccounts();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -146,6 +147,30 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   return (
     <Drawer open={open} onClose={onClose} title={isEdit ? "Edit Transaction" : "Add transaction"}>
       <form onSubmit={handleSubmit(onSubmit)} className="drawer-form">
+        {isEdit && transaction?.is_anomaly && (
+          <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--negative)", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Flagged as unusual</div>
+            {transaction.ai_explanation && (
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{transaction.ai_explanation}</div>
+            )}
+            <button
+              type="button"
+              className="btn outline sm"
+              disabled={dismissAnomaly.isPending}
+              onClick={async () => {
+                try {
+                  await dismissAnomaly.mutateAsync({ txnId: transaction.id, dismissed: true });
+                  toast.success("Marked as not unusual", { description: "It won't be flagged again." });
+                  onClose();
+                } catch (err) {
+                  toast.error(userErrorMessage(err, "Could not update this charge."));
+                }
+              }}
+            >
+              This is fine — don't flag it
+            </button>
+          </div>
+        )}
         <label> Merchant
           <input {...register("merchant_raw")} aria-invalid={!!errors.merchant_raw} />
           {errors.merchant_raw && <span className="err">{errors.merchant_raw.message}</span>}

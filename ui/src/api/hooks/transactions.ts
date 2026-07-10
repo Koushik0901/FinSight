@@ -116,6 +116,22 @@ export function useDeleteTransaction() {
   });
 }
 
+/** Mark a flagged anomaly as reviewed-and-fine (dismiss) or restore it. The
+ *  detector won't re-flag a dismissed charge, so the anomaly feed stays clean. */
+export function useSetAnomalyDismissed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ txnId, dismissed }: { txnId: string; dismissed: boolean }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setAnomalyDismissed(txnId, dismissed);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      invalidateDomains(qc, "transactions");
+    },
+  });
+}
+
 export function useCreateRule() {
   const qc = useQueryClient();
   return useMutation({
