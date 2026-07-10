@@ -2,6 +2,7 @@ import { useState } from "react";
 import { usePlanNextMonthData, useApplyNextMonthPlan } from "../api/hooks/budget";
 import { type PlanAssignment } from "../api/client";
 import { toast } from "sonner";
+import { money } from "../utils/format";
 
 interface Props {
   onClose: () => void;
@@ -23,12 +24,8 @@ export default function PlanNextMonthModal({ onClose }: Props) {
     });
   };
 
-  const fmt = (cents: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(cents / 100);
+  // Uses the user's configured display currency (falls back to USD).
+  const fmt = (cents: number) => money(cents);
 
   const setAmt = (categoryId: string, cents: number) =>
     setAssignments(prev => ({ ...prev, [categoryId]: cents }));

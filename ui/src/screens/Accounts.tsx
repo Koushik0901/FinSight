@@ -131,10 +131,10 @@ export default function Accounts() {
       </header>
 
       <div className="stat-row">
-        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: "USD" })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
-        <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: "USD" })}</div><div className="sub">{assets.length} tracked manually</div></div>
-        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities, { currency: "USD" })}</div><div className="sub">Debt and payoff accounts</div></div>
-        <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: "USD" })}</div><div className="sub">Across every balance</div></div>
+        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets)}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
+        <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal)}</div><div className="sub">{assets.length} tracked manually</div></div>
+        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities)}</div><div className="sub">Debt and payoff accounts</div></div>
+        <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth)}</div><div className="sub">Across every balance</div></div>
       </div>
       {unknownBalanceCount > 0 && (
         <div className="muted" style={{ fontSize: 12.5, marginTop: -8, marginBottom: 16 }} role="status">
@@ -150,7 +150,7 @@ export default function Accounts() {
               <div key={row.id} className="row row-sm" style={{ alignItems: "center" }}>
                 <span className="cswatch" style={{ background: row.color || "var(--ink-faint)" }} />
                 <span style={{ fontSize: 13 }}>{row.name}</span>
-                <span className="money strong" style={{ fontSize: 13 }}>{money(row.cents, { currency: "USD" })}</span>
+                <span className="money strong" style={{ fontSize: 13 }}>{money(row.cents)}</span>
               </div>
             ))}
           </div>

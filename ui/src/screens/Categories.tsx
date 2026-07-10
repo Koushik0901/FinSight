@@ -188,13 +188,13 @@ export default function Categories() {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 16, marginBottom: 16 }}>
           <div>
             <div className="eyebrow">{valueLabel}</div>
-            <div className="figure money" style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}>{money(totalThis, { currency: "USD" })}</div>
+            <div className="figure money" style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}>{money(totalThis)}</div>
           </div>
           {compareLabel && (
             <div style={{ textAlign: "right" }}>
               <div className="muted" style={{ fontSize: 13 }}>vs. {compareLabel}</div>
               <div className={`figure money ${totalThis <= totalCompare ? "pos" : "neg"}`} style={{ fontSize: 22, marginTop: 4 }}>
-                {totalCompare > 0 ? money(Math.abs(totalThis - totalCompare), { currency: "USD" }) : money(0, { currency: "USD" })}
+                {totalCompare > 0 ? money(Math.abs(totalThis - totalCompare)) : money(0)}
                 {totalCompare > 0 && ` · ${Math.round((Math.abs(totalThis - totalCompare) / totalCompare) * 100)}%`}
               </div>
             </div>
@@ -202,12 +202,12 @@ export default function Categories() {
         </div>
 
         <div className="stream" style={{ height: 18, borderRadius: 6 }}>
-          {active.map((category) => <span key={category.id} title={`${category.label} · ${money(valueFor(category, scope), { currency: "USD" })}`} style={{ width: `${totalThis > 0 ? (valueFor(category, scope) / totalThis) * 100 : 0}%`, background: category.color || "var(--accent)" }} />)}
+          {active.map((category) => <span key={category.id} title={`${category.label} · ${money(valueFor(category, scope))}`} style={{ width: `${totalThis > 0 ? (valueFor(category, scope) / totalThis) * 100 : 0}%`, background: category.color || "var(--accent)" }} />)}
         </div>
 
         {biggestDrop && biggestRise && biggestDrop.delta < 0 && biggestRise.delta > 0 && (
           <p className="muted" style={{ marginTop: 18, marginBottom: 0 }}>
-            ✦ <strong>{biggestDrop.category.label}</strong> dropped <span className="money">{money(Math.abs(biggestDrop.delta), { currency: "USD" })}</span> — biggest move. <strong>{biggestRise.category.label}</strong> rose by <span className="money">{money(biggestRise.delta, { currency: "USD" })}</span>.
+            ✦ <strong>{biggestDrop.category.label}</strong> dropped <span className="money">{money(Math.abs(biggestDrop.delta))}</span> — biggest move. <strong>{biggestRise.category.label}</strong> rose by <span className="money">{money(biggestRise.delta)}</span>.
           </p>
         )}
       </div>
@@ -277,9 +277,9 @@ export default function Categories() {
                       )}
                     </td>
                     <td><div className="row row-sm" style={{ alignItems: "center" }}><div className={`goal-bar ${over ? "negative" : ""}`} style={{ width: 180, height: 6 }}><span style={{ width: `${pct}%`, background: over ? "var(--negative)" : category.color || "var(--accent)" }} /></div><span className={`num ${over ? "neg" : "muted"}`} style={{ fontSize: 12 }}>{Math.round(pct)}%</span></div></td>
-                    <td className="right"><span className="money">{money(current, { currency: "USD" })}</span></td>
-                    {compareLabel && <td className="right"><span className="money muted">{compare > 0 ? money(compare, { currency: "USD" }) : "—"}</span></td>}
-                    <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget, { currency: "USD" }) : "—"}</span></td>
+                    <td className="right"><span className="money">{money(current)}</span></td>
+                    {compareLabel && <td className="right"><span className="money muted">{compare > 0 ? money(compare) : "—"}</span></td>}
+                    <td className="right"><span className={`money ${over ? "neg" : "muted"}`}>{budget > 0 ? money(budget) : "—"}</span></td>
                     <td className="right"><span className="num muted">{txnCountFor(category, scope)}</span></td>
                     <td><select className="control" value={category.spendingType ?? ""} disabled={savingId === category.id} onChange={(e) => void saveSpendingType(category.id, e.target.value)} aria-label={`Spending type for ${category.label}`} style={{ minWidth: 130 }}>{SPENDING_TYPE_OPTIONS.map((option) => <option key={option.value || "untagged"} value={option.value}>{option.label}</option>)}</select></td>
                     <td className="right"><button className="btn ghost sm" type="button" onClick={() => openManage(category)} aria-expanded={manageId === category.id} aria-label={`Manage ${category.label}`}>{manageId === category.id ? "Close" : "Manage"}</button></td>

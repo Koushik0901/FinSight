@@ -107,7 +107,7 @@ export default function PlannedTransactionDrawer({ open, onClose, planned }: Pro
             <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
               <span className="chip">{planned.status}</span>
               <span className="chip">{new Date(planned.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
-              <span className="chip money">{money(planned.amountCents, { currency: "USD", decimals: 2 })}</span>
+              <span className="chip money">{money(planned.amountCents, { decimals: 2 })}</span>
             </div>
             <div className="muted">Source: {planned.source}</div>
             {linkedAccount && <div className="muted" style={{ marginTop: 4 }}>Linked account: {getAccountDisplayName(linkedAccount)}</div>}

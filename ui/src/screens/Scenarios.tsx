@@ -14,16 +14,12 @@ import Card from "../components/Card";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
 import { userErrorMessage } from "../utils/runtime";
+import { money } from "../utils/format";
 
 type Range = "6" | "12" | "24";
 
-function fmt(cents: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
+// Uses the user's configured display currency (falls back to USD).
+const fmt = (cents: number) => money(cents);
 
 // ── Dual-line forecast chart ───────────────────────────────────────────────
 

@@ -42,10 +42,18 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   const max = Math.max(...values);
   const range = max - min || 1;
   const innerW = w - PAD_X * 2;
-  const stepX = innerW / (points.length - 1);
+  // Space points by their actual date, not evenly by index. Snapshots mix
+  // monthly (backfilled history) and daily (going forward) cadences, so
+  // index-spacing would stretch a 1-day gap as wide as a 30-day gap and bend
+  // the trend. Time-proportional x keeps the slope honest.
+  const times = points.map((p) => new Date(p.date).getTime());
+  const tMin = times[0]!;
+  const tMax = times[times.length - 1]!;
+  const tSpan = tMax - tMin || 1;
+  const xOf = (i: number) => PAD_X + ((times[i]! - tMin) / tSpan) * innerW;
   const yOf = (v: number) => PAD_TOP + (1 - (v - min) / range) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
 
-  const linePts = points.map((p, i) => ({ x: PAD_X + i * stepX, y: yOf(p.totalCents) }));
+  const linePts = points.map((p, i) => ({ x: xOf(i), y: yOf(p.totalCents) }));
   const lineD = linePts.map((pt, i) => `${i === 0 ? "M" : "L"}${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(" ");
   const areaD = `${lineD} L${(PAD_X + innerW).toFixed(1)},${HEIGHT} L${PAD_X},${HEIGHT} Z`;
   const last = linePts[linePts.length - 1]!;
@@ -100,14 +108,28 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
           </text>
         </svg>
       </div>
-      <div style={{ display: "flex", padding: "6px 4px 0", justifyContent: "space-between" }}>
+      <div style={{ position: "relative", height: 16, marginTop: 6 }}>
         {points.map((p, i) => {
           const show = i % labelEvery === 0 || i === points.length - 1;
-          return show ? (
-            <span key={p.date} style={{ fontSize: 11, color: "var(--ink-faint)", fontFamily: "var(--mono)" }}>
+          if (!show) return null;
+          const isLast = i === points.length - 1;
+          const isFirst = i === 0;
+          return (
+            <span
+              key={p.date}
+              style={{
+                position: "absolute",
+                left: `${(xOf(i) / w) * 100}%`,
+                transform: isLast ? "translateX(-100%)" : isFirst ? "translateX(0)" : "translateX(-50%)",
+                fontSize: 11,
+                color: "var(--ink-faint)",
+                fontFamily: "var(--mono)",
+                whiteSpace: "nowrap",
+              }}
+            >
               {new Date(p.date).toLocaleDateString("en-US", { month: "short" })}
             </span>
-          ) : null;
+          );
         })}
       </div>
     </div>
