@@ -202,28 +202,265 @@ pub fn builtin_category(merchant_raw: &str) -> Option<&'static str> {
 
 /// Merchant substrings that identify a transfer between the user's own accounts
 /// (or a credit-card payment) rather than real income or spending.
-const TRANSFER_KEYWORDS: &[&str] = &[
-    "payment received - thank you", // credit-card payment
+/// Merchant phrases that ALONE identify an internal money movement with high
+/// precision — safe to flag even when the matching leg is not imported. Kept
+/// deliberately TINY: only credit-card payments received on a card, and
+/// explicit own-account markers. Broad, ambiguous phrases ("e-transfer",
+/// "electronic funds transfer", "eft", bare "transfer to/from") are NOT here —
+/// they also describe payroll, government benefits, and payments to real people
+/// (rent!), so they only make a leg *eligible to pair* (see
+/// `PAIRING_HINT_KEYWORDS`); a leg is flagged from them only when it actually
+/// pairs with an equal-and-opposite leg in another account.
+const UNILATERAL_TRANSFER_KEYWORDS: &[&str] = &[
+    // Credit-card payment received on a card (reduces card debt — never income).
+    "payment received - thank you",
     "payment - thank you",
+    "payment thank you", // CIBC "PAYMENT THANK YOU/PAIEMENT MERCI"
+    "paiement merci",
     "autopay",
-    "internet deposit from",   // Tangerine internal transfer in
-    "internet withdrawal to",  // Tangerine internal transfer out
-    "e-transfer",              // INTERAC e-Transfer to/from self or a friend
-    "e transfer",
-    "email money transfer",
-    "transfer to",
-    "transfer from",
+    // Explicit own-account markers (the string names the account moved to/from).
+    "internet withdrawal to",  // Tangerine internal out
+    "internet deposit from",   // Tangerine internal in
+    "transfer to account",
+    "transfer from account",
     "internal transfer",
     "online banking transfer",
     "tfr-to",
     "tfr-from",
 ];
 
-/// True when a merchant string looks like an internal money movement (transfer
-/// or credit-card payment) that must not count as income or spending.
+/// Broad transfer vocabulary that makes a leg ELIGIBLE to pair with an
+/// equal-and-opposite leg in another account, but never flags it alone. A
+/// superset of the unilateral list plus the ambiguous phrases that also occur
+/// on income (payroll/benefits) — those only become transfers when paired.
+const PAIRING_HINT_KEYWORDS: &[&str] = &[
+    "transfer",
+    "e-transfer",
+    "e transfer",
+    "email money transfer",
+    "electronic funds transfer",
+    "eft",
+    "preauthorized debit",
+    "pre-authorized debit",
+    "preauthorized payment",
+    "fulfill request", // CIBC "FULFILL REQUEST" = an e-transfer request fulfilled
+    "withdrawal to",
+    "deposit from",
+    "bill payment",
+    "money transfer",
+    "wire",
+];
+
+/// True when a merchant string looks like an internal money movement (credit-
+/// card payment or an explicitly own-account transfer) with enough precision to
+/// exclude it from income/spending even without a matching leg. Ambiguous
+/// transfer phrasing is handled by pairing, not here.
 pub fn is_transfer(merchant_raw: &str) -> bool {
     let m = merchant_raw.to_lowercase();
-    TRANSFER_KEYWORDS.iter().any(|kw| m.contains(kw))
+    UNILATERAL_TRANSFER_KEYWORDS.iter().any(|kw| m.contains(kw))
+        // A row that both carries transfer vocabulary AND names an own account
+        // or card ("INTERNET TRANSFER <ref> TO ACCOUNT 04930", "… TO CARD 4505")
+        // is an internal move regardless of whether the other leg is imported.
+        || (is_pairing_eligible(merchant_raw) && has_own_account_marker(merchant_raw))
+}
+
+/// True when a merchant string carries any transfer vocabulary — the leg is a
+/// candidate to be paired with its opposite. Broader (lower precision) than
+/// `is_transfer`; only ever used together with an equal-and-opposite match.
+fn is_pairing_eligible(merchant_raw: &str) -> bool {
+    let m = merchant_raw.to_lowercase();
+    PAIRING_HINT_KEYWORDS.iter().any(|kw| m.contains(kw))
+        || has_cc_counterparty_hint(merchant_raw)
+}
+
+/// An explicit own-account marker: the string names an account or card the
+/// money moved to/from, strongly implying an internal move (vs a payment to a
+/// person). Lifts a pair over the precision bar when no shared reference exists.
+fn has_own_account_marker(merchant_raw: &str) -> bool {
+    let m = merchant_raw.to_lowercase();
+    const MARKERS: &[&str] = &[
+        "to account",
+        "from account",
+        "to card",
+        "from card",
+        "internet withdrawal to",
+        "internet deposit from",
+        "transfer to account",
+        "transfer from account",
+        "internal transfer",
+    ];
+    MARKERS.iter().any(|kw| m.contains(kw))
+}
+
+/// Long digit runs (≥6) in a merchant string — bank transaction reference
+/// numbers. The SAME reference on two equal-and-opposite legs in different
+/// accounts is a near-certain internal transfer (astronomically unlikely to
+/// collide by chance), so a shared token is sufficient to pair. Shorter runs
+/// (account-number fragments like "00930") are excluded to avoid collisions.
+fn reference_tokens(merchant_raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for ch in merchant_raw.chars() {
+        if ch.is_ascii_digit() {
+            cur.push(ch);
+        } else if cur.len() >= 6 {
+            out.push(std::mem::take(&mut cur));
+        } else {
+            cur.clear();
+        }
+    }
+    if cur.len() >= 6 {
+        out.push(cur);
+    }
+    out
+}
+
+/// Public aliases for how Canadian banks describe themselves on the OTHER
+/// bank's statement (e.g. a Tangerine deposit from a CIBC account reads "from
+/// CANADIAN IMPERIAL"). This is generic public banking knowledge, not
+/// sample-specific data. Each entry maps a substring that may appear in the
+/// user's `accounts.bank` value to the distinctive descriptor fragments other
+/// banks print — truncation-robust (statements clip long names).
+const BANK_ALIASES: &[(&str, &[&str])] = &[
+    ("cibc", &["cibc", "canadian imp"]),
+    ("tangerine", &["tangerine"]),
+    ("rbc", &["rbc", "royal bank"]),
+    ("royal bank", &["rbc", "royal bank"]),
+    ("td", &["td canada", "toronto domin", "td bank"]),
+    ("toronto", &["td canada", "toronto domin"]),
+    ("bmo", &["bmo", "bank of montr"]),
+    ("montreal", &["bmo", "bank of montr"]),
+    ("scotia", &["scotiabank", "bank of nova", "nova scotia"]),
+    ("simplii", &["simplii"]),
+    ("national bank", &["national bank", "banque national"]),
+    ("desjardins", &["desjardins"]),
+    ("amex", &["amex", "american express"]),
+    ("american express", &["amex", "american express"]),
+    ("wealthsimple", &["wealthsimple"]),
+    ("eq bank", &["eq bank"]),
+    ("laurentian", &["laurentian"]),
+];
+
+/// Generic name tokens that must never count as an "owner name" match — they
+/// carry no identity (an account owner of "You" or "Household" is not a name
+/// that would appear in an e-transfer descriptor).
+const GENERIC_OWNER_TOKENS: &[&str] = &[
+    "you", "self", "household", "joint", "family", "shared", "and", "the",
+    "account", "chequing", "checking", "savings", "credit", "card",
+];
+
+/// The user's own identity, derived from their accounts + household members, so
+/// self-transfers can be recognised even when the two legs use different
+/// mechanisms (an e-transfer out of CIBC arriving as an "EFT Deposit from
+/// CANADIAN IMPERIAL" in Tangerine, or an Interac e-transfer to one's own
+/// name). Derived from the user's OWN data — never hard-coded merchant strings.
+#[derive(Debug, Clone, Default)]
+pub struct TransferContext {
+    /// Each owner's significant lowercase name tokens (generic tokens dropped).
+    owner_name_tokens: Vec<Vec<String>>,
+    /// Distinctive descriptor fragments for every bank the user holds an account
+    /// at (via `BANK_ALIASES`), so "from <another of my banks>" reads as self.
+    owned_bank_fragments: Vec<String>,
+}
+
+impl TransferContext {
+    /// Load owner names (accounts + household members) and owned-bank aliases.
+    pub fn load(conn: &Connection) -> CoreResult<Self> {
+        let mut owner_names: Vec<String> = Vec::new();
+        {
+            let mut stmt =
+                conn.prepare("SELECT DISTINCT owner FROM accounts WHERE owner IS NOT NULL")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for r in rows {
+                owner_names.push(r?);
+            }
+        }
+        if table_exists(conn, "household_members")? {
+            let mut stmt = conn.prepare("SELECT name FROM household_members")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for r in rows {
+                owner_names.push(r?);
+            }
+        }
+        let owner_name_tokens: Vec<Vec<String>> = owner_names
+            .iter()
+            .map(|n| name_tokens(n))
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        let mut banks: Vec<String> = Vec::new();
+        {
+            let mut stmt =
+                conn.prepare("SELECT DISTINCT lower(bank) FROM accounts WHERE bank IS NOT NULL")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for r in rows {
+                banks.push(r?);
+            }
+        }
+        let mut owned_bank_fragments: Vec<String> = Vec::new();
+        for bank in &banks {
+            for (needle, fragments) in BANK_ALIASES {
+                if bank.contains(needle) {
+                    for f in *fragments {
+                        if !owned_bank_fragments.iter().any(|x| x == f) {
+                            owned_bank_fragments.push((*f).to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(Self {
+            owner_name_tokens,
+            owned_bank_fragments,
+        })
+    }
+
+    fn descriptor_names_owner(&self, lowered: &str) -> bool {
+        self.owner_name_tokens.iter().any(|tokens| {
+            let hits = tokens.iter().filter(|t| lowered.contains(*t)).count();
+            // A single-token name needs that token; a multi-token name needs ≥2
+            // to avoid a shared first name matching a friend.
+            if tokens.len() == 1 {
+                hits == 1
+            } else {
+                hits >= 2
+            }
+        })
+    }
+
+    fn descriptor_names_owned_bank(&self, lowered: &str) -> bool {
+        self.owned_bank_fragments.iter().any(|f| lowered.contains(f))
+    }
+
+    /// True when a row is an internal move to/from one of the user's OWN
+    /// accounts (named owner or another owned bank) AND carries transfer
+    /// vocabulary — high precision, so it excludes income like payroll/benefits
+    /// (which name neither the owner nor another of the user's banks).
+    fn is_self_transfer(&self, merchant_raw: &str) -> bool {
+        if !is_pairing_eligible(merchant_raw) {
+            return false;
+        }
+        let m = merchant_raw.to_lowercase();
+        self.descriptor_names_owner(&m) || self.descriptor_names_owned_bank(&m)
+    }
+}
+
+/// Significant lowercase tokens of a person's name (≥3 chars, generic words
+/// dropped) for owner-name matching.
+fn name_tokens(name: &str) -> Vec<String> {
+    name.split(|c: char| !c.is_alphanumeric())
+        .map(|t| t.to_lowercase())
+        .filter(|t| t.len() >= 3 && !GENERIC_OWNER_TOKENS.contains(&t.as_str()))
+        .collect()
+}
+
+fn table_exists(conn: &Connection, name: &str) -> CoreResult<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        params![name],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
 }
 
 /// Keywords that identify the *credit-card side* of a card payment (the leg
@@ -278,6 +515,9 @@ struct PairCandidate {
     amount_cents: i64,
     merchant_raw: String,
     flagged: bool,
+    ref_tokens: Vec<String>,
+    eligible: bool,
+    own_account: bool,
 }
 
 /// Pair the two legs of a cross-account transfer: a withdrawal in one account
@@ -307,14 +547,18 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
              ORDER BY t.posted_at, t.id",
         )?;
         let rows = stmt.query_map([], |r| {
+            let merchant_raw: String = r.get(5)?;
             Ok(PairCandidate {
                 id: r.get(0)?,
                 account_id: r.get(1)?,
                 account_type: r.get(2)?,
                 day: r.get(3)?,
                 amount_cents: r.get(4)?,
-                merchant_raw: r.get(5)?,
                 flagged: r.get::<_, i64>(6)? != 0,
+                ref_tokens: reference_tokens(&merchant_raw),
+                eligible: is_pairing_eligible(&merchant_raw),
+                own_account: has_own_account_marker(&merchant_raw),
+                merchant_raw,
             })
         })?;
         let mut out = Vec::new();
@@ -323,33 +567,49 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
         }
         out
     };
-    // Keep only rows that could participate at all: flagged legs, or unflagged
-    // legs carrying a card-payment counterparty hint (rule B's bank side).
-    candidates.retain(|c| c.flagged || has_cc_counterparty_hint(&c.merchant_raw));
+    // Keep only rows that could participate at all: anything flagged, or carrying
+    // any transfer vocabulary. Pure spending/income rows are dropped — they can
+    // never be a transfer leg — which also keeps the O(n^2) match cheap.
+    candidates.retain(|c| c.flagged || c.eligible);
 
     let eligible = |a: &PairCandidate, b: &PairCandidate| -> bool {
         if a.account_id == b.account_id {
             return false;
         }
+        // Legs must be exactly equal-and-opposite (no fee tolerance: a missed
+        // transfer is far cheaper than falsely deleting real income/spending).
         if a.amount_cents != -b.amount_cents {
             return false;
         }
         if (a.day - b.day).abs() > PAIR_WINDOW_DAYS {
             return false;
         }
-        if a.flagged && b.flagged {
-            return true; // rule A
+        // Rule 1 — shared reference token. The same bank reference number on two
+        // equal-and-opposite legs in different accounts is a near-certain
+        // internal transfer; sufficient on its own (catches CIBC/internal
+        // transfers whose phrasing interposes the reference number).
+        if a.ref_tokens.iter().any(|t| b.ref_tokens.contains(t)) {
+            return true;
         }
-        // Rule B: exactly one leg flagged, and it must be a credit-card payment
-        // on a Credit account; the unflagged leg must carry a counterparty hint.
-        let (flagged, other) = match (a.flagged, b.flagged) {
-            (true, false) => (a, b),
-            (false, true) => (b, a),
-            _ => return false,
+        // Rule 2 — credit-card payment ↔ its bank-side debit. One leg is a
+        // card-payment on a Credit account; the other carries a card/bill hint.
+        let cc_pair = |x: &PairCandidate, y: &PairCandidate| {
+            x.account_type == "Credit"
+                && is_cc_payment(&x.merchant_raw)
+                && (has_cc_counterparty_hint(&y.merchant_raw) || y.eligible)
         };
-        flagged.account_type == "Credit"
-            && is_cc_payment(&flagged.merchant_raw)
-            && has_cc_counterparty_hint(&other.merchant_raw)
+        if cc_pair(a, b) || cc_pair(b, a) {
+            return true;
+        }
+        // Rule 3 — both legs carry transfer vocabulary AND at least one names an
+        // own account/card ("… TO ACCOUNT", "Internet Withdrawal to …"). The
+        // own-account marker is what separates an internal move from a
+        // coincidental income/expense collision, so payroll/benefits (no marker)
+        // are never eaten.
+        if a.eligible && b.eligible && (a.own_account || b.own_account) {
+            return true;
+        }
+        false
     };
 
     // Greedy nearest-date matching. Candidates are in (posted_at, id) order, so
@@ -357,8 +617,8 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
     let mut used: HashSet<usize> = HashSet::new();
     let mut pairs: Vec<(String, String)> = Vec::new();
     for i in 0..candidates.len() {
-        if used.contains(&i) || !candidates[i].flagged {
-            continue; // every pair has at least one flagged leg — anchor on it
+        if used.contains(&i) {
+            continue;
         }
         let mut best: Option<usize> = None;
         for j in 0..candidates.len() {
@@ -473,6 +733,10 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // Ensure the categorizer has categories to assign, even when the user
     // imported before completing onboarding's category step.
     ensure_default_categories(conn)?;
+    // The user's own identity (owner names + owned-bank aliases) lets us treat a
+    // move to/from one of their OWN accounts as a transfer even when the two
+    // legs use different mechanisms and never share a reference number.
+    let transfer_ctx = TransferContext::load(conn)?;
     let existing: HashSet<String> = {
         let mut stmt = conn.prepare("SELECT id FROM categories WHERE archived_at IS NULL")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -539,12 +803,12 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             // EXCEPT: a leg paired to a peer transaction (`pair_transfers`) is a
             // transfer by construction — rule B pairs legs whose merchants carry no
             // transfer keyword, and un-flagging them here would undo the pairing.
+            let unilateral_transfer = is_transfer(&merchant) || transfer_ctx.is_self_transfer(&merchant);
             if !paired {
-                let want = is_transfer(&merchant);
                 // Only write when the flag actually flips — the overwhelming
                 // majority of rows are non-transfers that already read 0.
-                if want != currently_transfer {
-                    set_transfer.execute(params![want as i64, txn_id])?;
+                if unilateral_transfer != currently_transfer {
+                    set_transfer.execute(params![unilateral_transfer as i64, txn_id])?;
                 }
             }
             if !uncategorized {
@@ -554,7 +818,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             // practice transfer keywords and the category keyword map are disjoint,
             // but make it structural for paired legs, whose merchants CAN look like
             // ordinary bill payments.
-            if paired || is_transfer(&merchant) {
+            if paired || unilateral_transfer {
                 continue;
             }
             let Some(cat) = builtin_category(&merchant) else {
@@ -650,20 +914,107 @@ mod tests {
 
     #[test]
     fn detects_transfers_and_cc_payments() {
+        // Unilaterally safe: credit-card payments received on a card, and
+        // explicit own-account markers.
         assert!(is_transfer("PAYMENT RECEIVED - THANK YOU"));
+        assert!(is_transfer("PAYMENT THANK YOU/PAIEMENT MERCI"));
         assert!(is_transfer("Internet Deposit from Tangerine"));
         assert!(is_transfer("Internet Withdrawal to Tangerine"));
-        assert!(is_transfer("INTERAC e-Transfer To: Koushik C"));
-        assert!(is_transfer("INTERAC e-Transfer From: BRITISH"));
-        assert!(is_transfer("Email Money Transfer to Alice")); // friend transfer
+        // CIBC's "INTERNET TRANSFER <ref> TO ACCOUNT" / "TO CARD" names an own
+        // account or card, so it is an internal move even if the other leg is
+        // not imported (transfer vocab + own-account marker).
+        assert!(is_transfer("Internet Banking INTERNET TRANSFER 000000112252 TO ACCOUNT 04930"));
+        assert!(is_transfer("Internet Banking INTERNET TRANSFER 000000227766 TO CARD 4505"));
+        // But bare "to account" with no transfer vocabulary must NOT trip it.
+        assert!(!is_transfer("REFUND CREDITED TO ACCOUNT HOLDER"));
+
+        // An e-transfer to a PERSON is NOT a transfer on its own — it may be
+        // rent or a payment to a friend. It only becomes a transfer if a
+        // matching opposite leg is imported (see pair_* tests). This was the
+        // bug that made rent-via-e-transfer invisible in spending.
+        assert!(!is_transfer("INTERAC e-Transfer To: Koushik C"));
+        assert!(!is_transfer("INTERAC e-Transfer From: BRITISH"));
+        assert!(!is_transfer("Email Money Transfer to Alice"));
+        assert!(!is_transfer("Internet Banking E-TRANSFER 011630 SREE VYSHNAVI"));
+        // Payroll and government benefits ride "Electronic Funds Transfer
+        // DEPOSIT" too — must never be unilaterally flagged as a transfer.
+        assert!(!is_transfer("Electronic Funds Transfer DEPOSIT 387402_260630 Infoblox"));
+        assert!(!is_transfer("Electronic Funds Transfer DEPOSIT AE/EI"));
+
         // Real spending must NOT be flagged as a transfer.
         assert!(!is_transfer("TIM HORTONS #3356 BURNABY"));
         assert!(!is_transfer("WALMART SUPERCENTER BURNABY"));
         assert!(!is_transfer("Interest Paid"));
         // "Interac" is Canada's debit network — a debit PURCHASE or a fee is not
-        // a transfer (only the e-Transfer product is, caught by 'e-transfer').
+        // a transfer.
         assert!(!is_transfer("Interac - Purchase - COSTCO WHOLESALE W51"));
         assert!(!is_transfer("Interac Network Usage Charge"));
+    }
+
+    #[test]
+    fn reference_tokens_extracts_long_runs_only() {
+        assert_eq!(
+            reference_tokens("INTERNET TRANSFER 000000238417 FROM ACCOUNT 00930/****233"),
+            vec!["000000238417".to_string()],
+            "12-digit ref kept; 5-digit account fragment dropped"
+        );
+        assert!(reference_tokens("TIM HORTONS #3356 BURNABY").is_empty());
+    }
+
+    #[test]
+    fn pairs_unflagged_internal_transfers_by_shared_reference() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                   ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Same 12-digit reference on both legs; NO own-account marker and no
+        // unilateral keyword — so only the shared reference can pair them.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('a','chk','2026-05-01T12:00:00Z',-20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared',datetime('now')),\
+             ('b','sav','2026-05-01T12:00:00Z', 20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        assert!(!is_transfer("Internet Banking INTERNET TRANSFER 000000238417"),
+            "a bare internet-transfer with no own-account marker is not unilaterally flagged");
+        let n = pair_transfers(&mut conn).unwrap();
+        assert_eq!(n, 1, "the two legs pair via their shared reference number");
+        let flagged: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions WHERE is_transfer=1 AND transfer_peer_id IS NOT NULL", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(flagged, 2, "both legs flagged as a transfer once paired");
+    }
+
+    #[test]
+    fn does_not_pair_coincidental_income_and_expense() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES\
+             ('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+             ('sav','You','Tangerine','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Payroll deposit and an unrelated equal purchase in another account,
+        // same day — no shared ref, no own-account marker → must NOT pair.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('pay','chk','2026-05-01T12:00:00Z', 118600,'Electronic Funds Transfer DEPOSIT AE/EI','cleared',datetime('now')),\
+             ('buy','sav','2026-05-01T12:00:00Z',-118600,'FLAIR AIRLINES YXE','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let n = pair_transfers(&mut conn).unwrap();
+        assert_eq!(n, 0, "real income must never pair with a coincidental expense");
     }
 
     #[test]

@@ -12,11 +12,21 @@ use finsight_providers::CsvProvider;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+fn bank_for(name: &str) -> &'static str {
+    if name.starts_with("Amex") {
+        "Amex"
+    } else if name.starts_with("CIBC") {
+        "CIBC"
+    } else {
+        "Tangerine"
+    }
+}
+
 fn new_account(id_hint: &str, name: &str, ty: AccountType, ef: bool) -> NewAccount {
     let _ = id_hint;
     NewAccount {
-        owner: "You".into(),
-        bank: "Bank".into(),
+        owner: "Koushik Sivarama Krishnan".into(),
+        bank: bank_for(name).into(),
         r#type: ty,
         name: name.into(),
         last4: None,
