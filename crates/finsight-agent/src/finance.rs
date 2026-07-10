@@ -32,6 +32,11 @@ pub struct FinancialSnapshot {
     pub avg_monthly_expense_90d_cents: i64,
     pub avg_monthly_income_12m_cents: i64,
     pub avg_monthly_expense_12m_cents: i64,
+    /// Median of the last up-to-12 COMPLETE months of expense — a one-off-proof
+    /// "typical month" used as the basis for monthly-surplus projections, so a
+    /// single large purchase in the trailing 90 days doesn't crush the surplus.
+    #[serde(default)]
+    pub typical_monthly_expense_cents: i64,
     pub emergency_fund_months: f64,
     pub emergency_fund_balance_cents: i64,
     pub paycheck_cadence: Option<String>,
@@ -513,6 +518,35 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+/// Median of the last up-to-12 COMPLETE calendar months of expense (transfers
+/// excluded). Robust to a single one-off purchase that inflates a 90-day
+/// average. Returns 0 when there is less than 3 months of completed history, so
+/// callers fall back to the 90-day average.
+fn robust_monthly_expense_cents(conn: &Connection) -> rusqlite::Result<i64> {
+    let this_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let mut stmt = conn.prepare(
+        "SELECT SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END) AS spent \
+         FROM transactions \
+         WHERE is_transfer = 0 AND substr(posted_at,1,7) < ?1 \
+         GROUP BY substr(posted_at,1,7) \
+         ORDER BY substr(posted_at,1,7) DESC LIMIT 12",
+    )?;
+    let mut vals: Vec<i64> = stmt
+        .query_map(rusqlite::params![this_month], |r| r.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    if vals.len() < 3 {
+        return Ok(0);
+    }
+    vals.sort_unstable();
+    let mid = vals.len() / 2;
+    Ok(if vals.len() % 2 == 0 {
+        (vals[mid - 1] + vals[mid]) / 2
+    } else {
+        vals[mid]
+    })
+}
+
 pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapshot> {
     let now = Utc::now();
     let cut90 = (now - Duration::days(90)).to_rfc3339();
@@ -542,11 +576,23 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
     let avg_monthly_expense_90d_cents = expense90 / 3;
     let avg_monthly_income_12m_cents = income365 / 12;
     let avg_monthly_expense_12m_cents = expense365 / 12;
-    let emergency_fund_months = if avg_monthly_expense_90d_cents > 0 {
-        emergency_fund_balance_cents.max(0) as f64 / avg_monthly_expense_90d_cents as f64
-    } else {
-        0.0
+    // One-off-proof "typical month" for surplus projections; fall back to the
+    // 90-day average when there isn't enough completed history to take a median.
+    let typical_monthly_expense_cents = {
+        let median = robust_monthly_expense_cents(conn)?;
+        if median > 0 {
+            median
+        } else {
+            avg_monthly_expense_90d_cents
+        }
     };
+    // ONE emergency-fund-months definition (EF-eligible balance ÷ avg expense,
+    // capped) from the shared metrics layer, so the snapshot, the drawdown
+    // scenarios below, and every screen report the same number.
+    let emergency_fund_months = finsight_core::metrics::emergency_fund_months(
+        emergency_fund_balance_cents,
+        avg_monthly_expense_90d_cents,
+    );
 
     let paycheck_cadence = setting_string(conn, "planning.paycheck_cadence")?;
     let expected_paycheck_cents = setting_i64(conn, "planning.expected_paycheck_cents")?;
@@ -594,6 +640,7 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
         avg_monthly_expense_90d_cents,
         avg_monthly_income_12m_cents,
         avg_monthly_expense_12m_cents,
+        typical_monthly_expense_cents,
         emergency_fund_months,
         emergency_fund_balance_cents,
         paycheck_cadence,
@@ -872,12 +919,13 @@ pub fn compare_debt_vs_goal(
     } else {
         0
     };
-    let after_liquid = snapshot.liquid_balance_cents - suggested_goal_drawdown_cents;
-    let emergency_fund_months_after_drawdown = if snapshot.avg_monthly_expense_90d_cents > 0 {
-        after_liquid.max(0) as f64 / snapshot.avg_monthly_expense_90d_cents as f64
-    } else {
-        0.0
-    };
+    // Same EF-months definition as the snapshot (EF-eligible pool ÷ avg expense,
+    // capped), conservatively treating the drawdown as coming out of the safety
+    // net — so "months of emergency fund" means the same thing everywhere.
+    let emergency_fund_months_after_drawdown = finsight_core::metrics::emergency_fund_months(
+        (snapshot.emergency_fund_balance_cents - suggested_goal_drawdown_cents).max(0),
+        snapshot.avg_monthly_expense_90d_cents,
+    );
     let monthly_min_payment_cents: i64 = debts.iter().filter_map(|d| d.min_payment_cents).sum();
     let weighted_apr = weighted_apr(&debts);
     let payoff_current = weighted_apr
@@ -1136,8 +1184,10 @@ pub fn run_emergency_fund_scenarios(
     let expense = snapshot.avg_monthly_expense_90d_cents.max(0);
     // Default the savings rate to the current monthly surplus so "when will my
     // emergency fund be full?" is answerable without the user quoting a number.
+    // Uses the one-off-proof typical expense so a single big purchase in the
+    // last 90 days doesn't zero out the projected surplus.
     let monthly_surplus_cents =
-        expected_monthly_income_cents(&snapshot) - snapshot.avg_monthly_expense_90d_cents;
+        expected_monthly_income_cents(&snapshot) - snapshot.typical_monthly_expense_cents;
     let effective_monthly_contribution_cents = if monthly_contribution_cents > 0 {
         monthly_contribution_cents
     } else {
@@ -1230,7 +1280,10 @@ pub fn run_cashflow_timeline(
 ) -> rusqlite::Result<CashflowTimeline> {
     let snapshot = build_snapshot(conn)?;
     let months = months.clamp(1, 24);
-    let mut balance = snapshot.emergency_fund_balance_cents;
+    // A cashflow timeline projects SPENDABLE cash over time, so it starts from
+    // the liquid balance — not the emergency-fund-eligible subset (a prior bug
+    // that understated the runway for anyone with non-EF liquid accounts).
+    let mut balance = snapshot.liquid_balance_cents;
     let mut out = Vec::new();
     let mut warnings = Vec::new();
     let emergency_floor = snapshot
@@ -1269,7 +1322,7 @@ pub fn run_cashflow_timeline(
     }
 
     Ok(CashflowTimeline {
-        starting_liquid_cents: snapshot.emergency_fund_balance_cents,
+        starting_liquid_cents: snapshot.liquid_balance_cents,
         avg_monthly_income_cents: snapshot.avg_monthly_income_90d_cents,
         avg_monthly_expense_cents: snapshot.avg_monthly_expense_90d_cents,
         months: out,
@@ -1317,7 +1370,7 @@ pub fn run_goal_conflict_scenario(
         .max(STARTER_EMERGENCY_CENTS);
     let starting_emergency_fund_cents = snapshot.emergency_fund_balance_cents.max(0);
     let monthly_surplus_cents =
-        expected_monthly_income_cents(&snapshot) - snapshot.avg_monthly_expense_90d_cents;
+        expected_monthly_income_cents(&snapshot) - snapshot.typical_monthly_expense_cents;
     let available_for_goal_after_floor = (starting_emergency_fund_cents
         + monthly_surplus_cents.max(0)
         - upcoming_obligations_cents
@@ -1415,7 +1468,9 @@ pub fn run_purchase_affordability(
         0.0
     };
     let monthly_income = expected_monthly_income_cents(&snapshot);
-    let monthly_surplus_cents = monthly_income - snapshot.avg_monthly_expense_90d_cents;
+    // Typical (median-month) expense basis so one recent big purchase doesn't
+    // make everything look unaffordable.
+    let monthly_surplus_cents = monthly_income - snapshot.typical_monthly_expense_cents;
     let high_interest_debt_cents: i64 = snapshot
         .liabilities
         .iter()
@@ -1723,12 +1778,12 @@ fn build_debt_goal_alternatives(
     with_redirect: Option<PayoffProjection>,
 ) -> Vec<ScenarioAlternative> {
     let post_drawdown_debt = debt_cents.saturating_sub(safe_drawdown_cents);
-    let after_liquid = snapshot.liquid_balance_cents - safe_drawdown_cents;
-    let emergency_after = if snapshot.avg_monthly_expense_90d_cents > 0 {
-        after_liquid.max(0) as f64 / snapshot.avg_monthly_expense_90d_cents as f64
-    } else {
-        0.0
-    };
+    // EF-months on the single (EF-eligible, capped) definition, conservatively
+    // netting the drawdown against the emergency-fund pool.
+    let emergency_after = finsight_core::metrics::emergency_fund_months(
+        (snapshot.emergency_fund_balance_cents - safe_drawdown_cents).max(0),
+        snapshot.avg_monthly_expense_90d_cents,
+    );
 
     vec![
         ScenarioAlternative {
@@ -2018,6 +2073,46 @@ mod tests {
         for days in [5, 35, 65] {
             conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),-200000,'Rent','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
         }
+    }
+
+    #[test]
+    fn typical_monthly_expense_ignores_one_off_spike() {
+        // P1-3.3: a single large one-off in the last 90 days inflates the 90-day
+        // average expense and crushes projected surplus. The median-month basis
+        // is immune, so surplus projections stay sane.
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('a1','Me','Bank','Checking','Chk','USD','#fff',datetime('now'))", []).unwrap();
+        let today = chrono::Utc::now().date_naive();
+        // 12 completed months of a steady ~$2,000/month expense.
+        for m in 1..=12 {
+            let d = today - chrono::Duration::days(30 * m);
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                 VALUES(hex(randomblob(16)),'a1',?1,-200000,'Groceries','cleared',datetime('now'))",
+                [format!("{}T12:00:00Z", d.format("%Y-%m-%d"))],
+            )
+            .unwrap();
+        }
+        // One-off $20,000 spike ~1 month ago (inside the 90-day window).
+        let spike = today - chrono::Duration::days(30);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+             VALUES(hex(randomblob(16)),'a1',?1,-2000000,'Car repair','cleared',datetime('now'))",
+            [format!("{}T12:00:00Z", spike.format("%Y-%m-%d"))],
+        )
+        .unwrap();
+
+        let snap = build_snapshot(&mut conn).unwrap();
+        assert!(
+            snap.typical_monthly_expense_cents <= 300_000,
+            "median month is not inflated by the one-off (got {})",
+            snap.typical_monthly_expense_cents
+        );
+        assert!(
+            snap.avg_monthly_expense_90d_cents > snap.typical_monthly_expense_cents,
+            "the 90-day average IS dragged up by the spike — so the robust basis matters"
+        );
     }
 
     #[test]

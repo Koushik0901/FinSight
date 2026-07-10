@@ -148,10 +148,10 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
             "get_spending_breakdown"
         }
         fn description(&self) -> &str {
-            "Where the money goes over a window of months: top spending categories, top merchants, and per-month spend totals. Use for 'where am I spending the most' and overspending questions."
+            "Where the money goes over a window of months: top spending categories, top merchants, and per-month spend totals. Use for 'where am I spending the most' and overspending questions. The window defaults to the last 6 months, but the history often goes back years — the result includes data_range (earliest/latest transaction dates). ALWAYS widen `months` (up to 60) to cover the period asked about before concluding that data is missing; never say 'data only goes back N months' from a short window."
         }
         fn parameters(&self) -> Value {
-            json!({"type": "object", "properties": {"months": {"type": "integer", "default": 6}, "limit": {"type": "integer", "default": 8}}})
+            json!({"type": "object", "properties": {"months": {"type": "integer", "default": 6, "description": "Whole months of history to analyze, ending this month. Widen (up to 60) for older periods."}, "limit": {"type": "integer", "default": 8}}})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
             let months = args["months"].as_i64().unwrap_or(6).clamp(1, 60);
@@ -213,13 +213,33 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .filter_map(|m| m["spent_cents"].as_i64())
                 .sum();
 
+            // Full available history, so the model never mistakes a short window
+            // for the extent of the data ("data only goes back 6 months").
+            let (earliest, latest): (Option<String>, Option<String>) = ctx
+                .conn
+                .query_row(
+                    "SELECT MIN(substr(posted_at,1,10)), MAX(substr(posted_at,1,10)) \
+                     FROM transactions WHERE is_transfer = 0",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((None, None));
+            let window_note = match earliest.as_deref() {
+                Some(e) if e < start_str.as_str() => format!(
+                    "History goes back to {e}. This window only covers the last {months} month(s) — increase `months` (up to 60) to analyze earlier periods; do not conclude data is missing from this short window."
+                ),
+                _ => String::new(),
+            };
+
             Ok(json!({
                 "window_months": months,
                 "window_start": start_str,
+                "data_range": {"earliest": earliest, "latest": latest},
                 "top_categories": top_categories,
                 "top_merchants": top_merchants,
                 "monthly": monthly,
                 "total_spent_cents": total_spent_cents,
+                "note": window_note,
             }))
         }
     }
