@@ -675,6 +675,47 @@ async setAccountOwners(accountId: string, memberIds: string[]) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
+async getDataHealth() : Promise<Result<DataHealth, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_data_health") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createManualBackup() : Promise<Result<BackupInfo, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_manual_backup") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stage a restore: copy the chosen backup to `data.pending-restore.sqlcipher`.
+ * The swap into `data.sqlcipher` happens on the NEXT startup, before the DB is
+ * opened, so we never replace a database that has live connections. The
+ * current database is itself backed up first, so a restore is reversible.
+ */
+async stageRestoreBackup(path: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stage_restore_backup", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Cancel a staged restore (delete the pending file) before the next restart.
+ */
+async cancelStagedRestore() : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_staged_restore") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAgentMemory() : Promise<Result<AgentMemory[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_agent_memory") };
@@ -1489,6 +1530,11 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
  */
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
+export type BackupInfo = { path: string; name: string; bytes: number; 
+/**
+ * File modified time, RFC3339. Empty when unavailable.
+ */
+createdAt: string }
 /**
  * One category's budget + actual for a month.
  */
@@ -1571,6 +1617,19 @@ export type ConversationSummary = { id: string; title: string; messageCount: num
 export type CreateMonthlyReviewInput = { year: number; month: number; notes: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
+export type DataHealth = { 
+/**
+ * "ok" when the last integrity check passed; otherwise the error rows.
+ */
+integrityStatus: string; integrityCheckedAt: string | null; lastBackupAt: string | null; dbBytes: number; walBytes: number; 
+/**
+ * Non-fatal problems from the last startup derived-data cascade.
+ */
+startupWarnings: string[]; backups: BackupInfo[]; 
+/**
+ * Set once a restore is staged; the app must restart to apply it.
+ */
+pendingRestore: boolean }
 export type DebtPayoffResult = { strategy: string; extraMonthlyCents: number; totalInterestCents: number; totalMonths: number; payoffDateLabel: string; summaries: DebtPayoffSummary[] }
 export type DebtPayoffSummary = { accountId: string; accountName: string; initialBalanceCents: number; totalInterestCents: number; payoffMonthLabel: string; monthsToPayoff: number }
 export type EditConversationMessageInput = { conversationId: string; messageId: string; content: string }

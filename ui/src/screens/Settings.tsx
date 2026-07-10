@@ -12,6 +12,7 @@ import {
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
 import { useFinancialMetrics, useSetFinancialAssumptions } from "../api/hooks/metrics";
+import { useDataHealth, useCreateBackup, useStageRestore, useCancelRestore } from "../api/hooks/dataHealth";
 import {
   useSimpleFinStatus,
   useDisconnectSimpleFin,
@@ -42,6 +43,7 @@ const SECTIONS = [
   ["profile", "Profile"],
   ["targets", "Financial targets"],
   ["privacy", "Privacy & data"],
+  ["backups", "Data & backups"],
   ["agent", "Agent"],
   ["provider", "AI Provider"],
   ["appearance", "Appearance"],
@@ -111,6 +113,102 @@ function FinancialTargetsSection() {
       {field("Emergency fund target", "Months of expenses a full emergency fund should cover (Ramsey: 3–6).", efMonths, setEfMonths, "months", "0.5")}
       {field("Expected annual return", "Long-run growth the compound projector assumes when a goal has no linked account APY.", returnPct, setReturnPct, "% / yr", "0.5")}
       <div className="s-row"><div /><div style={{ textAlign: "right" }}><button className="btn primary sm" type="button" disabled={save.isPending || !dirty} onClick={() => void onSave()}>{save.isPending ? "Applying…" : "Apply targets"}</button></div><div /></div>
+    </Section>
+  );
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fmtWhen(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+}
+
+function DataBackupsSection() {
+  const { data: health, isLoading } = useDataHealth();
+  const backup = useCreateBackup();
+  const stageRestore = useStageRestore();
+  const cancelRestore = useCancelRestore();
+
+  const integrityOk = (health?.integrityStatus ?? "").trim() === "ok";
+
+  return (
+    <Section
+      id="backups"
+      title="Data & backups"
+      description="Your data is encrypted on this device. FinSight snapshots it before every update; you can also back up on demand and restore a snapshot."
+    >
+      {isLoading ? (
+        <div className="muted">Checking data health…</div>
+      ) : (
+        <>
+          <div className="s-row">
+            <div>
+              <div className="label">Database integrity</div>
+              <div className="desc">Last checked {fmtWhen(health?.integrityCheckedAt)}.</div>
+            </div>
+            <div className="row row-sm" style={{ justifyContent: "flex-end", alignItems: "center" }}>
+              <span className={`chip ${integrityOk ? "positive" : "warning"}`}>
+                {integrityOk ? "Healthy" : (health?.integrityStatus || "Unknown")}
+              </span>
+            </div>
+            <div />
+          </div>
+
+          {health && health.startupWarnings.length > 0 && (
+            <div className="card" style={{ borderColor: "var(--negative)", marginBottom: 12 }}>
+              <div className="label" style={{ color: "var(--negative)" }}>Some background updates didn't finish</div>
+              <ul className="muted" style={{ margin: "8px 0 0 16px", fontSize: 12.5 }}>
+                {health.startupWarnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Some numbers may be momentarily stale. Restarting usually clears this.</div>
+            </div>
+          )}
+
+          {health?.pendingRestore && (
+            <div className="card accent" style={{ marginBottom: 12 }}>
+              <div className="label">A restore is staged</div>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12.5 }}>It will be applied the next time you restart FinSight.</div>
+              <button className="btn ghost sm" type="button" style={{ marginTop: 10 }} disabled={cancelRestore.isPending} onClick={async () => { try { await cancelRestore.mutateAsync(); toast.success("Restore cancelled"); } catch (e) { toast.error("Could not cancel", { description: userErrorMessage(e) }); } }}>Cancel staged restore</button>
+            </div>
+          )}
+
+          <div className="s-row">
+            <div>
+              <div className="label">Storage</div>
+              <div className="desc">Database {fmtBytes(health?.dbBytes ?? 0)} · write-ahead log {fmtBytes(health?.walBytes ?? 0)}.</div>
+            </div>
+            <div className="row row-sm" style={{ justifyContent: "flex-end" }}>
+              <button className="btn primary sm" type="button" disabled={backup.isPending} onClick={async () => { try { const b = await backup.mutateAsync(); toast.success("Backup created", { description: b.name }); } catch (e) { toast.error("Backup failed", { description: userErrorMessage(e) }); } }}>{backup.isPending ? "Backing up…" : "Back up now"}</button>
+            </div>
+            <div />
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <div className="label" style={{ marginBottom: 8 }}>Snapshots</div>
+            {(!health || health.backups.length === 0) ? (
+              <div className="muted" style={{ fontSize: 13 }}>No backups yet. One is created automatically before each app update.</div>
+            ) : (
+              <div className="tbl" role="table">
+                {health.backups.map((b) => (
+                  <div key={b.path} className="row" role="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="mono" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis" }}>{b.name.replace(/^data\.backup-/, "").replace(/\.sqlcipher$/, "")}</div>
+                      <div className="muted" style={{ fontSize: 11.5 }}>{fmtWhen(b.createdAt)} · {fmtBytes(b.bytes)}</div>
+                    </div>
+                    <button className="btn ghost sm" type="button" disabled={stageRestore.isPending} onClick={async () => { try { await stageRestore.mutateAsync(b.path); toast.success("Restore staged", { description: "Restart FinSight to apply." }); } catch (e) { toast.error("Could not stage restore", { description: userErrorMessage(e) }); } }}>Restore…</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </Section>
   );
 }
@@ -301,6 +399,8 @@ export default function Settings() {
           </Section>
 
           <FinancialTargetsSection />
+
+          <DataBackupsSection />
 
           <Section id="privacy" title="Privacy & data" description="Keep control of your data and what appears on-screen.">
             <div className="s-row">
