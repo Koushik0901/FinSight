@@ -65,11 +65,23 @@ impl ReasoningEngine {
         // nudge doesn't get it to act, more won't (observed: it can loop forever).
         let mut nudges_used: usize = 0;
         const MAX_NUDGES: usize = 1;
+        // Set right after we send the non-answer nudge, so the VERY NEXT turn
+        // asks the provider to force a tool call (tool_choice: "required")
+        // instead of hoping the model responds to the prose nudge — a
+        // deterministic correction beats a polite request it can still ignore.
+        let mut force_next_tool_call = false;
 
         for iteration in 0..max_iterations {
-            let turn = provider
-                .complete_tool_turn(&messages, &tools.definitions())
-                .await?;
+            let turn = if force_next_tool_call {
+                force_next_tool_call = false;
+                provider
+                    .complete_tool_turn_forced(&messages, &tools.definitions())
+                    .await?
+            } else {
+                provider
+                    .complete_tool_turn(&messages, &tools.definitions())
+                    .await?
+            };
 
             match turn {
                 AssistantTurn::ToolCalls {
@@ -160,6 +172,7 @@ impl ReasoningEngine {
                             messages.push(ChatMessage::User {
                                 content: CONTINUE_AFTER_NON_ANSWER.to_string(),
                             });
+                            force_next_tool_call = true;
                             continue;
                         }
                         // Give up nudging: return the best real content we have

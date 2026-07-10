@@ -553,3 +553,86 @@ async fn plain_prose_clarification_with_no_tool_call_is_a_real_answer() {
         "plain-prose clarification must be marked a real answer, not a stall"
     );
 }
+
+/// Test-only provider that scripts turns like `MockCompletionProvider`, but
+/// also counts calls to `complete_tool_turn_forced` — so a test can assert
+/// the engine actually asked for a FORCED tool call after a stall, not merely
+/// that the scripted turns were consumed in order (which the default
+/// delegation would satisfy either way).
+struct ForceTrackingProvider {
+    tool_turns: Mutex<Vec<AssistantTurn>>,
+    forced_calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl crate::CompletionProvider for ForceTrackingProvider {
+    fn provider_id(&self) -> &str {
+        "force-tracking"
+    }
+    fn model_id(&self) -> &str {
+        "test"
+    }
+    async fn complete_json(&self, _system: &str, _user: &str) -> anyhow::Result<serde_json::Value> {
+        Ok(json!({}))
+    }
+    async fn complete_tool_turn(
+        &self,
+        _messages: &[crate::reasoning::messages::ChatMessage],
+        _tools: &[crate::reasoning::messages::ToolDefinition],
+    ) -> anyhow::Result<AssistantTurn> {
+        let mut turns = self.tool_turns.lock().unwrap();
+        if turns.is_empty() {
+            Ok(AssistantTurn::FinalAnswer {
+                content: "No more turns scripted".to_string(),
+                reasoning: String::new(),
+            })
+        } else {
+            Ok(turns.remove(0))
+        }
+    }
+    async fn complete_tool_turn_forced(
+        &self,
+        messages: &[crate::reasoning::messages::ChatMessage],
+        tools: &[crate::reasoning::messages::ToolDefinition],
+    ) -> anyhow::Result<AssistantTurn> {
+        self.forced_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.complete_tool_turn(messages, tools).await
+    }
+}
+
+#[tokio::test]
+async fn stall_recovery_forces_a_tool_call_on_the_retry_turn() {
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let provider = Arc::new(ForceTrackingProvider {
+        tool_turns: Mutex::new(vec![
+            AssistantTurn::FinalAnswer {
+                content: "PLAN:\n1. Fetch net worth\n2. Report it".to_string(),
+                reasoning: String::new(),
+            },
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "c1".to_string(),
+                    name: "get_net_worth".to_string(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            AssistantTurn::FinalAnswer {
+                content: "Your net worth is -$2,200.".to_string(),
+                reasoning: String::new(),
+            },
+        ]),
+        forced_calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider.clone(), 5)
+        .await
+        .unwrap();
+    assert!(result.content.contains("-$2,200"));
+    assert_eq!(
+        provider.forced_calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "expected exactly one forced tool-call turn, right after the stall"
+    );
+}

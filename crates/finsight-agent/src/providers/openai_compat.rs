@@ -129,6 +129,27 @@ impl CompletionProvider for OpenAiCompatProvider {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> Result<AssistantTurn> {
+        self.complete_tool_turn_with_choice(messages, tools, None)
+            .await
+    }
+
+    async fn complete_tool_turn_forced(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<AssistantTurn> {
+        self.complete_tool_turn_with_choice(messages, tools, Some("required"))
+            .await
+    }
+}
+
+impl OpenAiCompatProvider {
+    async fn complete_tool_turn_with_choice(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+        tool_choice: Option<&str>,
+    ) -> Result<AssistantTurn> {
         let oai_messages: Vec<Value> = messages
             .iter()
             .map(|m| match m {
@@ -163,7 +184,7 @@ impl CompletionProvider for OpenAiCompatProvider {
             })
             .collect();
 
-        let body = json!({
+        let mut body = json!({
             "model": self.model,
             // See complete_json: reasoning models need headroom for thinking
             // tokens plus the large final structured-JSON answer.
@@ -171,6 +192,9 @@ impl CompletionProvider for OpenAiCompatProvider {
             "messages": oai_messages,
             "tools": oai_tools,
         });
+        if let Some(choice) = tool_choice {
+            body["tool_choice"] = json!(choice);
+        }
 
         let resp: OaiRespWithTools = self
             .client

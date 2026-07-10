@@ -48,6 +48,24 @@ pub trait CompletionProvider: Send + Sync {
             "Tool calling not implemented for this provider"
         ))
     }
+
+    /// Like `complete_tool_turn`, but asks the provider to FORCE a tool call
+    /// on this turn (`tool_choice: "required"`) rather than leaving it to the
+    /// model's discretion. Used for a single retry after the model stalls on
+    /// a text-only turn (a bare plan, or "let me pull that data now" with no
+    /// tool calls) — a deterministic nudge is far more reliable than asking
+    /// nicely in prose, which the model can (and does) ignore.
+    /// Default: providers that don't support forcing just behave normally: no
+    /// call errors, no different outcome, since the run loop's own
+    /// nudge-then-best-effort-fallback logic already tolerates a turn that
+    /// stalls again.
+    async fn complete_tool_turn_forced(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<AssistantTurn> {
+        self.complete_tool_turn(messages, tools).await
+    }
 }
 
 /// Stub retained for Phase 5 (embedding-based nearest-neighbor search).
