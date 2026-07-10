@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 pub fn list_members(conn: &mut Connection) -> CoreResult<Vec<HouseholdMember>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, color, created_at FROM household_members ORDER BY created_at, name",
+        "SELECT id, name, color, created_at, is_self FROM household_members ORDER BY created_at, name",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(HouseholdMember {
@@ -20,6 +20,7 @@ pub fn list_members(conn: &mut Connection) -> CoreResult<Vec<HouseholdMember>> {
             name: r.get(1)?,
             color: r.get(2)?,
             created_at: r.get(3)?,
+            is_self: r.get::<_, i64>(4)? != 0,
         })
     })?;
     let mut out = Vec::new();
@@ -27,6 +28,41 @@ pub fn list_members(conn: &mut Connection) -> CoreResult<Vec<HouseholdMember>> {
         out.push(r?);
     }
     Ok(out)
+}
+
+/// Mark exactly one member as the "self" (the person operating this install),
+/// clearing the flag on every other member. Idempotent. Passing a member id
+/// that doesn't exist clears self entirely (no-op set). At most one member is
+/// ever self — enforced here rather than by a DB constraint.
+pub fn set_self_member(conn: &mut Connection, member_id: &str) -> CoreResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute("UPDATE household_members SET is_self = 0", [])?;
+    tx.execute(
+        "UPDATE household_members SET is_self = 1 WHERE id = ?1",
+        params![member_id],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// The current operator ("self") member, if one is set.
+pub fn self_member(conn: &mut Connection) -> CoreResult<Option<HouseholdMember>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, color, created_at, is_self FROM household_members WHERE is_self = 1 LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([], |r| {
+        Ok(HouseholdMember {
+            id: r.get(0)?,
+            name: r.get(1)?,
+            color: r.get(2)?,
+            created_at: r.get(3)?,
+            is_self: r.get::<_, i64>(4)? != 0,
+        })
+    })?;
+    match rows.next() {
+        Some(m) => Ok(Some(m?)),
+        None => Ok(None),
+    }
 }
 
 pub fn create_member(
@@ -55,6 +91,7 @@ pub fn create_member(
         name: name.to_string(),
         color: color.map(|c| c.to_string()),
         created_at: chrono::Utc::now().to_rfc3339(),
+        is_self: false,
     };
     conn.execute(
         "INSERT INTO household_members(id, name, color, created_at) VALUES(?1, ?2, ?3, ?4)",
@@ -245,5 +282,73 @@ mod tests {
 
         assert_eq!(list_account_owners(&mut conn).unwrap().len(), 0);
         assert_eq!(list_members(&mut conn).unwrap().len(), 1, "the member survives");
+    }
+
+    #[test]
+    fn self_member_is_unique_and_movable() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let a = create_member(&mut conn, "Koushik", None).unwrap();
+        let b = create_member(&mut conn, "Swathi", None).unwrap();
+        assert!(self_member(&mut conn).unwrap().is_none(), "no self by default");
+        assert!(!a.is_self, "create_member never marks self");
+
+        set_self_member(&mut conn, &a.id).unwrap();
+        assert_eq!(self_member(&mut conn).unwrap().unwrap().id, a.id);
+        assert_eq!(
+            list_members(&mut conn).unwrap().iter().filter(|m| m.is_self).count(),
+            1
+        );
+
+        // Re-pointing self moves it — never two selves at once.
+        set_self_member(&mut conn, &b.id).unwrap();
+        assert_eq!(self_member(&mut conn).unwrap().unwrap().id, b.id);
+        assert_eq!(
+            list_members(&mut conn).unwrap().iter().filter(|m| m.is_self).count(),
+            1
+        );
+    }
+
+    #[test]
+    fn operator_identity_flags_own_e_transfers_but_not_a_friends() {
+        // F0: once the operator's name is known (a household member), the builtin
+        // pass recognizes their OWN e-transfers as internal moves — but a
+        // same-shaped transfer naming a DIFFERENT person stays income/expense
+        // (genuinely ambiguous: reimbursement vs. rent — left for user review, NOT
+        // silently flagged). This is the whole reason a real user's savings rate
+        // is wrong until they enter their name.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        insert_account(&conn, "chq", "CIBC Chequing");
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+             VALUES('t_self','chq','2026-06-21T00:00:00Z',-300000,'INTERAC e-Transfer To: Koushik','cleared','2026-06-21T00:00:00Z')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+             VALUES('t_friend','chq','2026-06-22T00:00:00Z',-50000,'Internet Banking E-TRANSFER 105950894357 Swathi','cleared','2026-06-22T00:00:00Z')",
+            [],
+        ).unwrap();
+
+        // No operator yet: the own e-transfer is not recognized as internal.
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        assert_eq!(transfer_flag(&conn, "t_self"), 0, "no operator ⇒ own e-transfer not flagged");
+
+        // Configure the operator; re-running recognizes their own e-transfer only.
+        let me = create_member(&mut conn, "Koushik", None).unwrap();
+        set_self_member(&mut conn, &me.id).unwrap();
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        assert_eq!(transfer_flag(&conn, "t_self"), 1, "own e-transfer is an internal move");
+        assert_eq!(transfer_flag(&conn, "t_friend"), 0, "a friend's e-transfer stays for review");
+    }
+
+    fn transfer_flag(conn: &Connection, id: &str) -> i64 {
+        conn.query_row(
+            "SELECT is_transfer FROM transactions WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
     }
 }

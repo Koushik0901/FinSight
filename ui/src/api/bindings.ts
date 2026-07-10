@@ -672,6 +672,21 @@ async createHouseholdMember(name: string, color: string | null) : Promise<Result
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Mark one member as the operator ("self") of this install, then re-run the
+ * classification cascade so existing data reflects the identity immediately:
+ * the operator's OWN e-transfers become internal moves (out of income/expense
+ * and off the anomaly list), which is what makes the savings rate correct.
+ * Passing a non-existent id clears self.
+ */
+async setSelfMember(memberId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_self_member", { memberId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteHouseholdMember(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_household_member", { id }) };
@@ -1673,7 +1688,13 @@ export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: n
  * A person in the household (single user, partner, family member, roommate).
  * Accounts are owned by zero or more members; 2+ owners = a joint account.
  */
-export type HouseholdMember = { id: string; name: string; color: string | null; createdAt: string }
+export type HouseholdMember = { id: string; name: string; color: string | null; createdAt: string; 
+/**
+ * True for the one member who operates this install (the "self"). At most
+ * one member is self; drives "my finances" views and self-transfer
+ * recognition. Zero members ⇒ no self, behaves as a solo household.
+ */
+isSelf: boolean }
 export type Import = { id: string; source: ImportSource; filename: string | null; account_id: string | null; started_at: string; finished_at: string | null; rows_imported: number; rows_skipped_duplicates: number; error: string | null }
 export type ImportCandidate = { id: string; source: string; importId: string | null; syncRunId: string | null; accountId: string; candidateJson: string; rawPayloadJson: string | null; importedId: string | null; externalTxId: string | null; externalAccountId: string | null; postedAt: string; amountCents: number; merchantRaw: string; confidence: number; reason: string; status: string; resolution: string | null; resolvedTransactionId: string | null; createdAt: string; resolvedAt: string | null }
 export type ImportCandidateMatch = { id: string; candidateId: string; transactionId: string; matchKind: string; score: number; isRecommended: boolean; explanationJson: string | null; createdAt: string }

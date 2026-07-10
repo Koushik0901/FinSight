@@ -10,6 +10,10 @@ pub struct HouseholdMember {
     pub name: String,
     pub color: Option<String>,
     pub created_at: String,
+    /// True for the one member who operates this install (the "self"). At most
+    /// one member is self; drives "my finances" views and self-transfer
+    /// recognition. Zero members ⇒ no self, behaves as a solo household.
+    pub is_self: bool,
 }
 
 /// One (account, member) ownership pair. The full list lets the UI derive

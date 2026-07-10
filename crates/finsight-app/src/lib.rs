@@ -243,6 +243,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::assets::get_uncelebrated_milestones,
         commands::household::list_household_members,
         commands::household::create_household_member,
+        commands::household::set_self_member,
         commands::household::delete_household_member,
         commands::household::list_account_owners,
         commands::household::set_account_owners,

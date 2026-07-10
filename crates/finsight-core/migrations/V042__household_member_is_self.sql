@@ -1,0 +1,17 @@
+-- The "operator" of this app — the person whose device this is. FinSight is
+-- local-first and single-user per install: each person (the user, their
+-- girlfriend, a family member) runs their OWN app over their OWN data. Marking
+-- one household member as "self" gives that install a primary identity, which:
+--   1. lets transfer detection recognize the operator's OWN e-transfers
+--      ("INTERAC e-Transfer To/From: <me>") as internal moves, not income/
+--      expense (TransferContext already matches household-member names — this
+--      just makes clear which member is the operator), and
+--   2. seeds the cross-user ownership model: "my finances" = the self member's
+--      ownership slice of shared accounts/assets, so combining separate apps
+--      never double-counts a jointly-owned item.
+--
+-- Optional and additive: zero members (the default, and the only state a solo
+-- user ever needs) behaves exactly as before. At most one member is self; the
+-- repo enforces uniqueness (SQLite lacks partial-unique-on-value in older
+-- versions we target, so it is enforced in code, not a constraint).
+ALTER TABLE household_members ADD COLUMN is_self INTEGER NOT NULL DEFAULT 0;

@@ -29,6 +29,26 @@ pub async fn create_household_member(
     .map_err(AppError::from)
 }
 
+/// Mark one member as the operator ("self") of this install, then re-run the
+/// classification cascade so existing data reflects the identity immediately:
+/// the operator's OWN e-transfers become internal moves (out of income/expense
+/// and off the anomaly list), which is what makes the savings rate correct.
+/// Passing a non-existent id clears self.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_self_member(state: tauri::State<'_, AppState>, member_id: String) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        household::set_self_member(conn, &member_id)?;
+        finsight_core::categorize::apply_builtin_categorization(conn)?;
+        finsight_core::categorize::pair_transfers(conn)?;
+        finsight_core::anomaly::recompute_anomalies(conn)?;
+        Ok::<_, finsight_core::CoreError>(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_household_member(
