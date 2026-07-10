@@ -10,6 +10,7 @@ import {
   useCreateHouseholdMember,
   useHouseholdMembers,
   useSetAccountOwners,
+  useSetSelfMember,
 } from "../api/hooks/household";
 import type { Account } from "../api/bindings";
 
@@ -74,6 +75,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
   const { data: members = [] } = useHouseholdMembers();
   const { data: allOwners = [] } = useAccountOwners();
   const createMember = useCreateHouseholdMember();
+  const setSelf = useSetSelfMember();
   const setAccountOwners = useSetAccountOwners();
   const [selectedOwnerIds, setSelectedOwnerIds] = useState<string[]>([]);
   const [newPersonName, setNewPersonName] = useState("");
@@ -357,15 +359,33 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             </span>
           </legend>
           {members.map((member) => (
-            <label key={member.id}>
-              <input
-                type="checkbox"
-                checked={selectedOwnerIds.includes(member.id)}
-                onChange={() => toggleOwner(member.id)}
-                aria-label={`Owner ${member.name}`}
-              />{" "}
-              <span className="cswatch" style={{ background: member.color || "var(--ink-faint)", width: 8, height: 8 }} /> {member.name}
-            </label>
+            <div key={member.id} className="row row-sm" style={{ alignItems: "center", gap: 6 }}>
+              <label style={{ flex: 1 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedOwnerIds.includes(member.id)}
+                  onChange={() => toggleOwner(member.id)}
+                  aria-label={`Owner ${member.name}`}
+                />{" "}
+                <span className="cswatch" style={{ background: member.color || "var(--ink-faint)", width: 8, height: 8 }} /> {member.name}
+              </label>
+              {member.isSelf ? (
+                <span className="chip" style={{ fontSize: 11 }} title="This install is set up as you">
+                  you
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={setSelf.isPending}
+                  onClick={() => void setSelf.mutateAsync(member.id)}
+                  aria-label={`Mark ${member.name} as me`}
+                  title="Mark this person as you, so your own e-transfers (To/From your name) aren't counted as income or spending"
+                >
+                  This is me
+                </button>
+              )}
+            </div>
           ))}
           <div className="row row-sm" style={{ marginTop: 8 }}>
             <input
@@ -391,6 +411,8 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           </div>
           <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
             Pick everyone who owns this account — two or more makes it a joint account.
+            Mark yourself with “This is me” so your own transfers between accounts aren’t
+            counted as income or spending.
           </div>
         </fieldset>
         <div className="form-actions">

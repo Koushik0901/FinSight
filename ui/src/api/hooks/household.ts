@@ -29,6 +29,23 @@ export function useCreateHouseholdMember() {
   });
 }
 
+export function useSetSelfMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setSelfMember(memberId);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    // Setting the operator re-runs the classification cascade (their own
+    // e-transfers become internal moves), so cashflow, savings rate, anomalies
+    // and category totals across the whole app change — invalidate everything.
+    onSuccess: () => {
+      void qc.invalidateQueries();
+    },
+  });
+}
+
 export function useDeleteHouseholdMember() {
   const qc = useQueryClient();
   return useMutation({
