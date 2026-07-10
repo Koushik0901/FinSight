@@ -111,7 +111,29 @@ pub async fn get_financial_health_score(
                 |r| r.get(0),
             )
             .unwrap_or(0);
-        let overage_count = ctx.budget.overages.len() as i64;
+        // Virtual "Unbudgeted" envelope: spend with no category bypasses every
+        // real envelope, so a "0 overages" score is false comfort when a big
+        // chunk of the month is uncategorized. Count material uncategorized spend
+        // (> 5% of this month's income, floor $50) as one more overage so budget
+        // adherence reflects the spend the envelopes never saw.
+        let month_start = format!("{}-01", ctx.budget.month);
+        let unbudgeted_cents: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
+                 WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0 AND posted_at >= ?1",
+                rusqlite::params![month_start],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let income_this_month = ctx.cashflow.this_month_income_cents.max(0);
+        // Only counts when the user actually budgets — that's where uncategorized
+        // spend produces the "false under-budget" comfort. With no budgets at all,
+        // the budget component is already neutral.
+        let unbudgeted_material = unbudgeted_cents > (income_this_month / 20).max(5_000)
+            && total_budget_categories > 0;
+        let unbudgeted_overage = if unbudgeted_material { 1 } else { 0 };
+
+        let overage_count = ctx.budget.overages.len() as i64 + unbudgeted_overage;
         let budget_adherence_pts = if overage_count == 0 {
             15
         } else if overage_count <= 2 {
@@ -121,12 +143,13 @@ pub async fn get_financial_health_score(
         } else {
             0
         };
-        let budget_adherence_pct = if total_budget_categories > 0 {
-            (((total_budget_categories - overage_count).max(0)) * 100) / total_budget_categories
-        } else if ctx.budget.overages.is_empty() {
-            100
+        // The virtual Unbudgeted envelope joins the denominator when it fires.
+        let effective_categories = total_budget_categories + unbudgeted_overage;
+        let budget_adherence_pct = if effective_categories > 0 {
+            (((effective_categories - overage_count).max(0)) * 100) / effective_categories
         } else {
-            50
+            // No budgets set at all → adherence is not applicable; stay neutral.
+            100
         };
 
         let total = savings_rate_pts
@@ -164,11 +187,17 @@ pub async fn get_financial_health_score(
         if goal_progress_pts < 10 {
             tips.push("Increase monthly contributions to active goals".to_string());
         }
-        if budget_adherence_pts < 15 {
+        if unbudgeted_material {
+            tips.push(
+                "Some of this month's spending has no category, so it isn't tracked against any budget — categorize it for an accurate score.".to_string(),
+            );
+        }
+        let real_overages = ctx.budget.overages.len();
+        if budget_adherence_pts < 15 && real_overages > 0 {
             tips.push(format!(
                 "{} budget categor{} over limit — review spending",
-                overage_count,
-                if overage_count == 1 { "y" } else { "ies" }
+                real_overages,
+                if real_overages == 1 { "y" } else { "ies" }
             ));
         }
         tips.truncate(3);
