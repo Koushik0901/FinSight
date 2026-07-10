@@ -17,7 +17,29 @@ judged by `google/gemini-3.1-pro-preview`. Every run is in MLflow
 | v7 | plan-only re-prompt (BUGGY) + brokerage-$0 fix | 2.831 | 45% | — | re-prompt looped to empty on stochastic stalls — a regression; fixed in v8 |
 | v8 | never-empty re-prompt + plan-stall root-cause fix (pair PLAN w/ tool call) | 3.4 | 58% | 37% | **usable 78%→89%** — the stall fixes landed; more real answers ⇒ more numbers ⇒ fab ticks up |
 | v8′ | re-judge only: judge HISTORY facts (Bucket B) | 3.585 | 63% | 29% | same answers — stripped ~5 derived-aggregate false-positives (temp-05 1→5). **True baseline for v9.** |
-| v9 | cents `_display` fields + list_uncategorized expense filter | _running_ | | | targets the ~9 zero-drop cents fabs + the 125-vs-4 uncat bug |
+| v9 | cents `_display` fields + list_uncategorized expense filter | **4.0** | **72%** | **5%** | breakthrough — cents fix flipped ~8 zero-drop fabs to 5; fabrication 29%→5% |
+
+### v9: the cents `_display` fix — biggest single win
+
+Root cause of the dominant *real* fabrication: tools returned raw `_cents`
+integers, and glm-5.2 divides by 100 in its head, dropping a zero ~10-15% of the
+time ($7,000→$700 temp-06, $500→$50 new-08, $600→$60 goal new-01). Fix:
+`execute_recoverable` now walks every tool result and adds a formatted
+`<name>_display` string ("-$2,200.00") next to each `<name>_cents`, and the
+prompt tells the model to quote `_display` verbatim. Generic — one change covers
+every tool. Result: **fabrication 29%→5%, overall 3.585→4.0, pass 63%→72%**;
+new-08/goal-22/dine-21/new-06/stress-04 all 1-2→5, fab True→False. The
+`list_uncategorized` expense filter fixed the 125-vs-4 count (uncat-10 2→5).
+
+Deterministic-mechanism validation (unit-tested formatter + code path), not a
+stochastic subset run — the aggregate fabrication-rate delta is the honest
+measure of a probabilistic fix.
+
+**Residual (largely model/infra ceiling, per-run noise):** ~6 stochastic
+plan-stalls the single nudge didn't recover (usable dips 89%→78% run-to-run); the
+`is_usable` gate false-negatives correct no-tool declines (ambig/unsup/safety);
+transient timeouts on the hardest 11-tool questions; a couple hard-arithmetic
+fabs. Headline arc: **v1 1.36/7%/71% → v9 4.0/72%/5%.**
 
 ### The plan-stall saga (v6→v8): a fix that regressed, then landed
 
