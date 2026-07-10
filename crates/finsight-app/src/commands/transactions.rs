@@ -112,14 +112,19 @@ pub async fn create_rule(
 ) -> AppResult<finsight_core::models::Rule> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        rules::insert(
+        let rule = rules::insert(
             conn,
             finsight_core::models::NewRule {
-                pattern,
-                category_id,
+                pattern: pattern.clone(),
+                category_id: category_id.clone(),
                 source: "user".to_string(),
             },
-        )
+        )?;
+        // Apply immediately to existing uncategorized history so the user sees
+        // the effect at once (e.g. "always Rent" back-fills past rent payments),
+        // rather than waiting for the next import/scan.
+        rules::apply_to_uncategorized(conn, &pattern, &category_id)?;
+        Ok(rule)
     })
     .await
     .map_err(AppError::from)
