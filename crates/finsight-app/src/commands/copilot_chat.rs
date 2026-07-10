@@ -1166,27 +1166,14 @@ fn spawn_deep_answer(
         if !is_usable_tool_answer(&result) {
             return;
         }
-        // Prose-first AgentAnswer; enrich_agent_answer builds a markdown block
-        // from the prose so the persisted message renders. (Rich response blocks
-        // for async answers are a bounded follow-up.)
-        let mut answer = AgentAnswer {
-            prose: result.content,
-            reasoning: result.reasoning,
-            plan: result.plan,
-            trace: result.trace,
-            // The deep follow-up is prose-first (no draft-action bundle), so
-            // change entries — which drive bundle UI — are intentionally empty.
-            changes: Vec::new(),
-            action_label: None,
-            action_path: None,
-            bundle_id: None,
-            assumptions: result.assumptions,
-            data_sources: result.data_sources,
-            missing_data: result.missing_data,
-            alternatives: Vec::new(),
-            follow_up_questions: result.follow_up_questions,
-            response_blocks: Vec::new(),
-        };
+        // Same answer-construction pipeline as the synchronous turn, so the deep
+        // follow-up renders identically — including the model's own structured
+        // blocks (tables/charts/verdicts), which reasoning_result_to_agent_answer
+        // now maps. The deep answer persists no applyable action bundle, so drop
+        // any drafted change entries (they'd have no bundle to apply against).
+        let mut answer = reasoning_result_to_agent_answer(result, None);
+        answer.changes = Vec::new();
+        validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
         let parts = assistant_parts_json(&answer);
         let prose = answer.prose.clone();
@@ -1207,6 +1194,15 @@ fn spawn_deep_answer(
                 "prose": answer.prose,
             }),
         );
+        // Surface it even if the user navigated away: an OS notification (which
+        // honors the notifications.enabled setting) points back to the thread.
+        crate::notifications::fire_notification(
+            &app,
+            &db,
+            "Copilot finished a deeper analysis",
+            "Your fuller answer is ready in the conversation.",
+        )
+        .await;
     });
 }
 

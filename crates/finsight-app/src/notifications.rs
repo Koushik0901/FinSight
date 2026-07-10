@@ -186,3 +186,23 @@ pub async fn check_and_fire(app: &AppHandle, db: &Db) -> AppResult<()> {
     }
     Ok(())
 }
+
+/// Fire a single ad-hoc OS notification, honoring the user's
+/// `notifications.enabled` setting (default on when unset). Best-effort: a
+/// settings-read failure falls back to "enabled", and a `show()` failure is
+/// swallowed — a notification is never load-bearing. Used for event-driven
+/// notifications (e.g. a background Copilot "deep answer" landing) that don't
+/// belong in the periodic budget/bill sweep above.
+pub async fn fire_notification(app: &AppHandle, db: &Db, title: &str, body: &str) {
+    let db = db.clone();
+    let enabled = run(&db, |conn| {
+        let v: Option<bool> = settings::get(conn, ENABLED_KEY)?;
+        Ok::<_, finsight_core::CoreError>(v.unwrap_or(true))
+    })
+    .await
+    .unwrap_or(true);
+    if !enabled {
+        return;
+    }
+    let _ = app.notification().builder().title(title).body(body).show();
+}

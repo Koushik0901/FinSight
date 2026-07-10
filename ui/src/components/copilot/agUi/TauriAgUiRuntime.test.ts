@@ -59,4 +59,33 @@ describe("conversationMessagesToAgUiThreadMessages", () => {
       expect.objectContaining({ type: "generative-ui", id: "block-1" }),
     ]));
   });
+
+  it("preserves a model-authored structured block on reload (root block-mapping fix)", () => {
+    // Before the fix, reasoning_result_to_agent_answer dropped the model's
+    // structured blocks, so a persisted Copilot answer never carried them. Now
+    // both the streaming and async-deep answers persist them. This asserts such
+    // a block survives the history-load conversion as an array-content
+    // generative-ui part (renderers.test.tsx covers the render itself), i.e. it
+    // renders on reload instead of crashing content.map and dropping the thread.
+    const messages = conversationMessagesToAgUiThreadMessages([
+      message({
+        id: "a1",
+        content: "Your net worth is $20,606.",
+        partsJson: JSON.stringify([
+          {
+            type: "generative-ui",
+            id: "block-0",
+            spec: { root: { component: "FinSightResponseBlock", props: { block: { kind: "metricGrid", metrics: [{ label: "Net worth", value: "$20,606", detail: null, tone: null }] } } } },
+          },
+          { type: "text", text: "Your net worth is $20,606." },
+        ]),
+      }),
+    ]);
+
+    const assistant = messages[0];
+    expect(Array.isArray(assistant?.content)).toBe(true);
+    expect(assistant?.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "generative-ui", id: "block-0" }),
+    ]));
+  });
 });

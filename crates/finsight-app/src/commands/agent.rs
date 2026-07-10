@@ -1126,6 +1126,19 @@ pub(crate) fn reasoning_result_to_agent_answer(
         ]);
     }
 
+    // Map the model's own structured blocks (tables/charts/verdicts it chose to
+    // emit under the JSON answer contract) so the Copilot renders them, not just
+    // prose. The reasoning engine parses and carries these, but every Copilot
+    // answer path (streaming `stream_copilot_message` and the deep `ask_agent`
+    // command) funnels through here — so mapping them once, at the root, is what
+    // makes them render. `parse_response_blocks` validates each block's
+    // shape/size and caps the count; the copilot_chat emit path applies artifact
+    // bounds on top, so a malformed or oversized block is dropped, never
+    // rendered.
+    let response_blocks = parse_response_blocks(&serde_json::json!({
+        "response_blocks": result.response_blocks,
+    }));
+
     AgentAnswer {
         prose: result.content,
         reasoning: result.reasoning,
@@ -1147,7 +1160,7 @@ pub(crate) fn reasoning_result_to_agent_answer(
         missing_data: result.missing_data,
         alternatives: Vec::new(),
         follow_up_questions: result.follow_up_questions,
-        response_blocks: Vec::new(),
+        response_blocks,
     }
 }
 #[cfg(test)]
@@ -1985,6 +1998,50 @@ mod tests {
             ..result
         };
         assert!(!is_usable_tool_answer(&empty_no_tool));
+    }
+
+    #[test]
+    fn reasoning_result_maps_the_models_structured_blocks() {
+        // The reasoning engine parses the model's structured blocks into
+        // result.response_blocks; every Copilot answer path funnels through
+        // reasoning_result_to_agent_answer, so it must carry the VALID ones
+        // through (the Copilot renders tables/charts/verdicts, not just prose)
+        // while dropping malformed ones via valid_response_block.
+        let good = serde_json::to_value(AgentResponseBlock::Table(AgentTableBlock {
+            title: Some("Accounts".to_string()),
+            columns: vec!["Account".to_string(), "Balance".to_string()],
+            rows: vec![vec!["Checking".to_string(), "$5,000".to_string()]],
+        }))
+        .unwrap();
+        // Same tag/shape, but a row narrower than the column count — invalid.
+        let bad = serde_json::to_value(AgentResponseBlock::Table(AgentTableBlock {
+            title: None,
+            columns: vec!["A".to_string(), "B".to_string()],
+            rows: vec![vec!["only-one-cell".to_string()]],
+        }))
+        .unwrap();
+        let result = finsight_agent::reasoning::messages::ReasoningResult {
+            content: "Here are your accounts.".to_string(),
+            reasoning: String::new(),
+            plan: Vec::new(),
+            trace: vec!["Called tool: get_net_worth".to_string()],
+            changes: Vec::new(),
+            draft_actions: Vec::new(),
+            assumptions: Vec::new(),
+            data_sources: Vec::new(),
+            missing_data: Vec::new(),
+            follow_up_questions: Vec::new(),
+            response_blocks: vec![good, bad],
+            is_real_answer: true,
+            hit_time_budget: false,
+        };
+        let answer = reasoning_result_to_agent_answer(result, None);
+        assert_eq!(
+            answer.response_blocks.len(),
+            1,
+            "the valid table is mapped through; the malformed one is dropped"
+        );
+        assert!(matches!(answer.response_blocks[0], AgentResponseBlock::Table(_)));
     }
 
     #[test]
