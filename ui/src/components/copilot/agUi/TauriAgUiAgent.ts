@@ -147,6 +147,8 @@ export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | nu
         modelId: pick<string>(raw, "modelId", "model_id") ?? "unknown",
         elapsedMs: Number(pick(raw, "elapsedMs", "elapsed_ms") ?? 0),
         toolCount: Number(pick(raw, "toolCount", "tool_count") ?? 0),
+        cachedTokens: Number(pick(raw, "cachedTokens", "cached_tokens") ?? 0),
+        promptTokens: Number(pick(raw, "promptTokens", "prompt_tokens") ?? 0),
       };
     case "done":
       return {
@@ -162,6 +164,8 @@ export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | nu
         modelId: pick<string>(raw, "modelId", "model_id") ?? "unknown",
         elapsedMs: Number(pick(raw, "elapsedMs", "elapsed_ms") ?? 0),
         toolCount: Number(pick(raw, "toolCount", "tool_count") ?? 0),
+        cachedTokens: Number(pick(raw, "cachedTokens", "cached_tokens") ?? 0),
+        promptTokens: Number(pick(raw, "promptTokens", "prompt_tokens") ?? 0),
       };
     case "error":
       return {
@@ -373,6 +377,8 @@ export class TauriAgUiAgent extends AbstractAgent {
                 modelId: frame.modelId,
                 elapsedMs: frame.elapsedMs,
                 toolCount: frame.toolCount,
+                cachedTokens: frame.cachedTokens,
+                promptTokens: frame.promptTokens,
               },
             } as BaseEvent);
             break;

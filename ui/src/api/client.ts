@@ -70,6 +70,8 @@ export type CopilotStreamFrame =
       modelId: string;
       elapsedMs: number;
       toolCount: number;
+      cachedTokens?: number;
+      promptTokens?: number;
     } & CopilotStreamFrameMeta)
   | ({
       type: "done";
@@ -85,5 +87,7 @@ export type CopilotStreamFrame =
       modelId: string;
       elapsedMs: number;
       toolCount: number;
+      cachedTokens?: number;
+      promptTokens?: number;
     } & CopilotStreamFrameMeta)
   | ({ type: "error"; conversationId: string; runId: string; code: string; message: string } & CopilotStreamFrameMeta);

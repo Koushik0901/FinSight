@@ -24,6 +24,27 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 
+/// Token usage a provider reports for a single completion turn. Only the
+/// OpenAI-compatible provider populates it (from `usage.prompt_tokens` and
+/// `usage.prompt_tokens_details.cached_tokens`); every other provider returns
+/// the default (all zeros). The reasoning loop sums these across turns so the UI
+/// can show how much of the prompt was served from the provider's cache.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TurnUsage {
+    pub prompt_tokens: u32,
+    pub cached_tokens: u32,
+}
+
+impl TurnUsage {
+    /// Overflow-safe accumulation across the turns of a run.
+    pub fn saturating_add(self, other: TurnUsage) -> TurnUsage {
+        TurnUsage {
+            prompt_tokens: self.prompt_tokens.saturating_add(other.prompt_tokens),
+            cached_tokens: self.cached_tokens.saturating_add(other.cached_tokens),
+        }
+    }
+}
+
 /// Core provider abstraction. All impls must be Send + Sync so they can be
 /// shared across tokio tasks behind Arc<RwLock<...>>.
 #[async_trait]
@@ -80,6 +101,51 @@ pub trait CompletionProvider: Send + Sync {
         tools: &[ToolDefinition],
     ) -> Result<AssistantTurn> {
         self.complete_tool_turn(messages, tools).await
+    }
+
+    // ── Usage-reporting variants ────────────────────────────────────────────
+    //
+    // The reasoning loop calls THESE so it can accumulate token usage (cache
+    // hits included) across the run. Each defaults to delegating to its plain
+    // counterpart and reporting no usage — so a provider that doesn't expose
+    // usage (and the in-test mocks) needs no changes and is still exercised via
+    // the delegation, while only the OpenAI-compatible provider overrides them
+    // to report real numbers.
+
+    /// `complete_tool_turn` plus the provider's token usage for the turn.
+    async fn complete_tool_turn_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
+        Ok((
+            self.complete_tool_turn(messages, tools).await?,
+            TurnUsage::default(),
+        ))
+    }
+
+    /// `complete_tool_turn_forced` plus the provider's token usage for the turn.
+    async fn complete_tool_turn_forced_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
+        Ok((
+            self.complete_tool_turn_forced(messages, tools).await?,
+            TurnUsage::default(),
+        ))
+    }
+
+    /// `complete_final_answer_turn` plus the provider's token usage for the turn.
+    async fn complete_final_answer_turn_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
+        Ok((
+            self.complete_final_answer_turn(messages, tools).await?,
+            TurnUsage::default(),
+        ))
     }
 }
 

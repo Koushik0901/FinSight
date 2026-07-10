@@ -1983,6 +1983,7 @@ mod tests {
             response_blocks: Vec::new(),
             is_real_answer: true,
             hit_time_budget: false,
+            usage: Default::default(),
         };
         assert!(is_usable_tool_answer(&result));
 
@@ -2034,6 +2035,7 @@ mod tests {
             response_blocks: vec![good, bad],
             is_real_answer: true,
             hit_time_budget: false,
+            usage: Default::default(),
         };
         let answer = reasoning_result_to_agent_answer(result, None);
         assert_eq!(
@@ -2063,6 +2065,7 @@ mod tests {
             response_blocks: Vec::new(),
             is_real_answer: true,
             hit_time_budget: false,
+            usage: Default::default(),
         };
         assert!(is_usable_tool_answer(&decline));
 

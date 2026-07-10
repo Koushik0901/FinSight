@@ -87,6 +87,10 @@ pub struct ReasoningResult {
     /// kick off a background "deep answer" that re-runs with a longer budget and
     /// posts a more thorough follow-up.
     pub hit_time_budget: bool,
+    /// Token usage summed across every provider turn of the run (cache hits
+    /// included). Only the OpenAI-compatible provider reports non-zero numbers;
+    /// the app surfaces the cached fraction in the Copilot usage chip.
+    pub usage: crate::TurnUsage,
 }
 
 /// Upper bounds applied to a parsed plan, since the raw text this is parsed

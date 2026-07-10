@@ -2,7 +2,7 @@ use crate::reasoning::messages::{
     parse_plan_preamble, AgentChange, AssistantTurn, ChatMessage, ReasoningResult, ToolCall,
 };
 use crate::reasoning::tools::{ToolContext, ToolSet};
-use crate::CompletionProvider;
+use crate::{CompletionProvider, TurnUsage};
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
@@ -32,13 +32,17 @@ async fn call_provider_with_retry(
     tool_defs: &[crate::reasoning::messages::ToolDefinition],
     forced: bool,
     deadline: Option<std::time::Instant>,
-) -> Result<AssistantTurn> {
+) -> Result<(AssistantTurn, TurnUsage)> {
     const MAX_ATTEMPTS: u32 = 3;
     for attempt in 1..=MAX_ATTEMPTS {
         let result = if forced {
-            provider.complete_tool_turn_forced(messages, tool_defs).await
+            provider
+                .complete_tool_turn_forced_with_usage(messages, tool_defs)
+                .await
         } else {
-            provider.complete_tool_turn(messages, tool_defs).await
+            provider
+                .complete_tool_turn_with_usage(messages, tool_defs)
+                .await
         };
         match result {
             Ok(turn) => return Ok(turn),
@@ -154,6 +158,11 @@ impl ReasoningEngine {
         // instead of hoping the model responds to the prose nudge — a
         // deterministic correction beats a polite request it can still ignore.
         let mut force_next_tool_call = false;
+        // Token usage summed across every provider turn of this run (tool
+        // selection, the strong-synthesizer rewrite, and the time-budget
+        // synthesis), stamped onto whichever ReasoningResult we return so the UI
+        // can show how much of the prompt the provider served from cache.
+        let mut usage_acc = TurnUsage::default();
 
         for iteration in 0..max_iterations {
             // Wall-clock budget: once we're within a turn's headroom of the
@@ -173,17 +182,26 @@ impl ReasoningEngine {
                     let content = match synthesizer
                         .as_ref()
                         .unwrap_or(&provider)
-                        .complete_final_answer_turn(&messages, &tools.definitions())
+                        .complete_final_answer_turn_with_usage(&messages, &tools.definitions())
                         .await
                     {
-                        Ok(AssistantTurn::FinalAnswer { content, .. })
+                        Ok((AssistantTurn::FinalAnswer { content, .. }, u))
                             if !content.trim().is_empty() =>
                         {
+                            usage_acc = usage_acc.saturating_add(u);
                             content
                         }
-                        // Synthesis produced tool calls / empty / errored: fall
-                        // back to the best content seen, else a trace summary.
-                        _ => best_effort_content
+                        // Synthesis produced tool calls / empty (but still cost
+                        // prompt tokens — count them): fall back to the best
+                        // content seen, else a trace summary.
+                        Ok((_, u)) => {
+                            usage_acc = usage_acc.saturating_add(u);
+                            best_effort_content
+                                .clone()
+                                .unwrap_or_else(|| summarize_progress(&trace))
+                        }
+                        // Errored: nothing to count.
+                        Err(_) => best_effort_content
                             .clone()
                             .unwrap_or_else(|| summarize_progress(&trace)),
                     };
@@ -198,15 +216,17 @@ impl ReasoningEngine {
                     // Signal the caller to kick off a background deep answer:
                     // this question was heavy enough to nearly time out.
                     result.hit_time_budget = true;
+                    result.usage = usage_acc;
                     return Ok(result);
                 }
             }
 
             let forced = force_next_tool_call;
             force_next_tool_call = false;
-            let turn =
+            let (turn, turn_usage) =
                 call_provider_with_retry(&provider, &messages, &tools.definitions(), forced, deadline)
                     .await?;
+            usage_acc = usage_acc.saturating_add(turn_usage);
 
             match turn {
                 AssistantTurn::ToolCalls {
@@ -319,14 +339,16 @@ impl ReasoningEngine {
                         } else {
                             content
                         };
-                        return Ok(Self::parse_final_answer(
+                        let mut result = Self::parse_final_answer(
                             fallback,
                             reasoning,
                             plan,
                             trace,
                             changes,
                             draft_actions,
-                        ));
+                        );
+                        result.usage = usage_acc;
+                        return Ok(result);
                     }
 
                     // Model tiers: if a strong synthesizer is configured and we
@@ -335,18 +357,23 @@ impl ReasoningEngine {
                     // selection, the strong model writes the answer the user sees.
                     let final_content = match synthesizer.as_ref() {
                         Some(synth) if tool_calls_made => {
-                            Self::synthesize_final(synth, &messages, tools, content).await
+                            let (content, u) =
+                                Self::synthesize_final(synth, &messages, tools, content).await;
+                            usage_acc = usage_acc.saturating_add(u);
+                            content
                         }
                         _ => content,
                     };
-                    return Ok(Self::parse_final_answer(
+                    let mut result = Self::parse_final_answer(
                         final_content,
                         reasoning,
                         plan,
                         trace,
                         changes,
                         draft_actions,
-                    ));
+                    );
+                    result.usage = usage_acc;
+                    return Ok(result);
                 }
             }
         }
@@ -365,6 +392,7 @@ impl ReasoningEngine {
             response_blocks: Vec::new(),
             is_real_answer: false,
             hit_time_budget: false,
+            usage: usage_acc,
         })
     }
 
@@ -377,17 +405,22 @@ impl ReasoningEngine {
         messages: &[ChatMessage],
         tools: &ToolSet,
         fallback: String,
-    ) -> String {
+    ) -> (String, TurnUsage) {
         let mut msgs = messages.to_vec();
         msgs.push(ChatMessage::User {
             content: FINAL_SYNTHESIS.to_string(),
         });
         match synthesizer
-            .complete_final_answer_turn(&msgs, &tools.definitions())
+            .complete_final_answer_turn_with_usage(&msgs, &tools.definitions())
             .await
         {
-            Ok(AssistantTurn::FinalAnswer { content, .. }) if !content.trim().is_empty() => content,
-            _ => fallback,
+            Ok((AssistantTurn::FinalAnswer { content, .. }, u)) if !content.trim().is_empty() => {
+                (content, u)
+            }
+            // Synthesis missed (tool call / empty) but still cost tokens; keep
+            // the fallback answer, count the usage.
+            Ok((_, u)) => (fallback, u),
+            Err(_) => (fallback, TurnUsage::default()),
         }
     }
 
@@ -421,6 +454,8 @@ impl ReasoningEngine {
                 response_blocks: Vec::new(),
                 is_real_answer,
                 hit_time_budget: false,
+                // Stamped by the caller from the run's accumulator.
+                usage: TurnUsage::default(),
             };
         };
 
@@ -446,6 +481,8 @@ impl ReasoningEngine {
             response_blocks: parsed.response_blocks,
             is_real_answer: true,
             hit_time_budget: false,
+            // Stamped by the caller from the run's accumulator.
+            usage: TurnUsage::default(),
         }
     }
 

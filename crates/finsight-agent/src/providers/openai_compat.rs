@@ -1,7 +1,7 @@
 use crate::reasoning::messages::{
     parse_plan_preamble, AssistantTurn, ChatMessage, ToolCall, ToolDefinition,
 };
-use crate::CompletionProvider;
+use crate::{CompletionProvider, TurnUsage};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -156,8 +156,10 @@ impl CompletionProvider for OpenAiCompatProvider {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> Result<AssistantTurn> {
-        self.complete_tool_turn_with_choice(messages, tools, None)
-            .await
+        Ok(self
+            .complete_tool_turn_with_choice(messages, tools, None)
+            .await?
+            .0)
     }
 
     async fn complete_tool_turn_forced(
@@ -165,8 +167,10 @@ impl CompletionProvider for OpenAiCompatProvider {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
     ) -> Result<AssistantTurn> {
-        self.complete_tool_turn_with_choice(messages, tools, Some("required"))
-            .await
+        Ok(self
+            .complete_tool_turn_with_choice(messages, tools, Some("required"))
+            .await?
+            .0)
     }
 
     async fn complete_final_answer_turn(
@@ -176,6 +180,38 @@ impl CompletionProvider for OpenAiCompatProvider {
     ) -> Result<AssistantTurn> {
         // tool_choice: "none" — the model may not call tools this turn, so it
         // must return its final text answer from what it already gathered.
+        Ok(self
+            .complete_tool_turn_with_choice(messages, tools, Some("none"))
+            .await?
+            .0)
+    }
+
+    // Usage-reporting variants the reasoning loop calls: same requests as above,
+    // but they surface the token usage `complete_tool_turn_with_choice` parses.
+
+    async fn complete_tool_turn_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
+        self.complete_tool_turn_with_choice(messages, tools, None)
+            .await
+    }
+
+    async fn complete_tool_turn_forced_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
+        self.complete_tool_turn_with_choice(messages, tools, Some("required"))
+            .await
+    }
+
+    async fn complete_final_answer_turn_with_usage(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> Result<(AssistantTurn, TurnUsage)> {
         self.complete_tool_turn_with_choice(messages, tools, Some("none"))
             .await
     }
@@ -187,7 +223,7 @@ impl OpenAiCompatProvider {
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
         tool_choice: Option<&str>,
-    ) -> Result<AssistantTurn> {
+    ) -> Result<(AssistantTurn, TurnUsage)> {
         let oai_messages: Vec<Value> = messages
             .iter()
             .map(|m| match m {
@@ -269,6 +305,21 @@ impl OpenAiCompatProvider {
             eprintln!("copilot cache: {cached}/{prompt} prompt tokens cached ({})", self.model);
         }
 
+        // Token usage for this turn (cache hits included). Threaded back to the
+        // reasoning loop, which sums it across the run for the UI's cache chip.
+        let usage = resp
+            .usage
+            .as_ref()
+            .map(|u| TurnUsage {
+                prompt_tokens: u.prompt_tokens,
+                cached_tokens: u
+                    .prompt_tokens_details
+                    .as_ref()
+                    .map(|d| d.cached_tokens)
+                    .unwrap_or(0),
+            })
+            .unwrap_or_default();
+
         let choice = resp
             .choices
             .into_iter()
@@ -291,15 +342,18 @@ impl OpenAiCompatProvider {
                         }
                     })
                     .collect();
-                return Ok(AssistantTurn::ToolCalls { calls, plan });
+                return Ok((AssistantTurn::ToolCalls { calls, plan }, usage));
             }
         }
 
         let content = msg.content.unwrap_or_default();
-        Ok(AssistantTurn::FinalAnswer {
-            content,
-            reasoning: "".to_string(),
-        })
+        Ok((
+            AssistantTurn::FinalAnswer {
+                content,
+                reasoning: "".to_string(),
+            },
+            usage,
+        ))
     }
 }
 

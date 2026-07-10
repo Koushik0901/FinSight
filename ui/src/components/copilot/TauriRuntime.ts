@@ -41,6 +41,11 @@ export interface MessageMeta {
   modelId?: string;
   elapsedMs?: number;
   toolCount?: number;
+  /** Prompt tokens served from the provider's cache this run, and the total
+   * prompt tokens. Present only when the provider reports usage; optional so
+   * messages persisted before this existed still load. */
+  cachedTokens?: number;
+  promptTokens?: number;
 }
 
 type MetaByMessageId = Record<string, MessageMeta>;
@@ -223,6 +228,8 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
         modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
         elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
         toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
+        cachedTokens: Number(pickFrameValue(raw, "cachedTokens", "cached_tokens") ?? 0),
+        promptTokens: Number(pickFrameValue(raw, "promptTokens", "prompt_tokens") ?? 0),
       };
     case "done":
       return {
@@ -238,6 +245,8 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
         modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
         elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
         toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
+        cachedTokens: Number(pickFrameValue(raw, "cachedTokens", "cached_tokens") ?? 0),
+        promptTokens: Number(pickFrameValue(raw, "promptTokens", "prompt_tokens") ?? 0),
       };
     case "error":
       return {
@@ -311,6 +320,8 @@ function metaFromDone(payload: Extract<CopilotStreamFrame, { type: "done" }>): M
     modelId: payload.modelId,
     elapsedMs: payload.elapsedMs,
     toolCount: payload.toolCount,
+    cachedTokens: payload.cachedTokens,
+    promptTokens: payload.promptTokens,
   };
 }
 
@@ -402,6 +413,8 @@ export function createTauriChatModelAdapter({
                 modelId: usage.modelId,
                 elapsedMs: usage.elapsedMs,
                 toolCount: usage.toolCount,
+                cachedTokens: usage.cachedTokens,
+                promptTokens: usage.promptTokens,
               },
             }
           : undefined,
@@ -553,6 +566,8 @@ export function createTauriChatModelAdapter({
                   modelId: frame.modelId,
                   elapsedMs: frame.elapsedMs,
                   toolCount: frame.toolCount,
+                  cachedTokens: frame.cachedTokens,
+                  promptTokens: frame.promptTokens,
                 },
               },
             };
@@ -596,6 +611,8 @@ export function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMe
           if (typeof parsed.modelId === "string") meta.modelId = parsed.modelId;
           if (typeof parsed.elapsedMs === "number") meta.elapsedMs = parsed.elapsedMs;
           if (typeof parsed.toolCount === "number") meta.toolCount = parsed.toolCount;
+          if (typeof parsed.cachedTokens === "number") meta.cachedTokens = parsed.cachedTokens;
+          if (typeof parsed.promptTokens === "number") meta.promptTokens = parsed.promptTokens;
         } catch {
           // Ignore corrupt metadata and fall back to legacy fields.
         }

@@ -116,6 +116,12 @@ pub enum CopilotStreamFrame {
         model_id: String,
         elapsed_ms: u64,
         tool_count: u32,
+        /// Prompt tokens the provider served from its cache this run, and the
+        /// total prompt tokens, summed across every turn. 0/0 unless the active
+        /// provider reports usage (OpenAI-compatible). The UI shows the cached
+        /// fraction as a chip.
+        cached_tokens: u32,
+        prompt_tokens: u32,
     },
     Done {
         conversation_id: String,
@@ -134,6 +140,8 @@ pub enum CopilotStreamFrame {
         model_id: String,
         elapsed_ms: u64,
         tool_count: u32,
+        cached_tokens: u32,
+        prompt_tokens: u32,
     },
     Error {
         conversation_id: String,
@@ -460,11 +468,16 @@ pub async fn stream_copilot_message(
     // stream the best-effort partial now AND spin up a background "deep answer"
     // that re-runs with a longer budget and posts a fuller follow-up.
     let mut deep_answer_needed = false;
+    // Token usage summed across the run's provider turns (cache hits included),
+    // captured from the ReasoningResult before it's mapped into the AgentAnswer,
+    // so the Usage/Done frames and the persisted metadata can carry it.
+    let mut copilot_usage = finsight_agent::TurnUsage::default();
 
     // 5. Build AgentAnswer from result
     let mut answer: AgentAnswer = match tool_result {
         Ok(result) if is_usable_tool_answer(&result) => {
             deep_answer_needed = result.hit_time_budget;
+            copilot_usage = result.usage;
             let draft_actions = result.draft_actions.clone();
             // Kept alive past the bundle-persistence closure (which moves
             // `draft_actions`) so the recategorization preview can be synthesized
@@ -539,6 +552,9 @@ pub async fn stream_copilot_message(
             answer
         }
         Ok(result) => {
+            // The tool loop ran (and spent tokens) but didn't produce a usable
+            // answer; still report its usage before falling back to the planner.
+            copilot_usage = result.usage;
             // Try planner fallback
             let planned = run(&db, {
                 let q = enriched_question.clone();
@@ -816,6 +832,8 @@ pub async fn stream_copilot_message(
             model_id: model_id.clone(),
             elapsed_ms,
             tool_count: tool_names.len() as u32,
+            cached_tokens: copilot_usage.cached_tokens,
+            prompt_tokens: copilot_usage.prompt_tokens,
         },
     );
 
@@ -836,6 +854,8 @@ pub async fn stream_copilot_message(
         "modelId": model_id.clone(),
         "elapsedMs": elapsed_ms,
         "toolCount": tool_names.len(),
+        "cachedTokens": copilot_usage.cached_tokens,
+        "promptTokens": copilot_usage.prompt_tokens,
         "bundleId": answer.bundle_id.clone(),
         "toolTrace": answer.trace.clone(),
         "plan": answer.plan.clone(),
@@ -892,6 +912,8 @@ pub async fn stream_copilot_message(
             model_id: model_id.clone(),
             elapsed_ms,
             tool_count: tool_names.len() as u32,
+            cached_tokens: copilot_usage.cached_tokens,
+            prompt_tokens: copilot_usage.prompt_tokens,
         },
     );
 

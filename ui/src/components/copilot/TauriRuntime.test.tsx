@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatModelRunOptions, ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
-import { createTauriChatModelAdapter } from "./TauriRuntime";
+import { buildMetaFromMessages, createTauriChatModelAdapter } from "./TauriRuntime";
+import type { ConversationMessage } from "../../api/client";
 
 const eventMocks = vi.hoisted(() => ({
   listen: vi.fn(),
@@ -107,6 +108,8 @@ describe("createTauriChatModelAdapter", () => {
           modelId: "gpt-test",
           elapsedMs: 1200,
           toolCount: 1,
+          cachedTokens: 800,
+          promptTokens: 1000,
         },
       });
       return { status: "ok", data: "conv-1" };
@@ -139,7 +142,7 @@ describe("createTauriChatModelAdapter", () => {
       type: "text",
       text: "Hello there",
     });
-    expect(final?.metadata?.custom).toMatchObject({ modelId: "gpt-test", toolCount: 1 });
+    expect(final?.metadata?.custom).toMatchObject({ modelId: "gpt-test", toolCount: 1, cachedTokens: 800, promptTokens: 1000 });
     expect(done).toHaveBeenCalledWith(
       expect.objectContaining({ messageId: "assistant-db-id" }),
       expect.objectContaining({})
@@ -223,5 +226,35 @@ describe("createTauriChatModelAdapter", () => {
         },
       },
     ]);
+  });
+});
+
+describe("buildMetaFromMessages — cache-usage reload survival", () => {
+  it("recovers cachedTokens/promptTokens from persisted agUiMetadataJson", () => {
+    // The live cache chip rides the Usage/Done frames; on reload it must come
+    // back from agUiMetadataJson alongside elapsedMs/toolCount, or the chip
+    // vanishes when the thread is reopened.
+    const meta = buildMetaFromMessages([
+      {
+        id: "a1",
+        conversationId: "conv-1",
+        role: "assistant",
+        content: "Answer.",
+        toolTrace: null,
+        actionBundleId: null,
+        branchParentId: null,
+        partsJson: null,
+        runStatus: "completed",
+        agUiMetadataJson: JSON.stringify({
+          schemaVersion: 1,
+          elapsedMs: 1200,
+          toolCount: 2,
+          cachedTokens: 800,
+          promptTokens: 1000,
+        }),
+        createdAt: "2026-07-01T00:00:00Z",
+      } as ConversationMessage,
+    ]);
+    expect(meta["a1"]).toMatchObject({ cachedTokens: 800, promptTokens: 1000, toolCount: 2 });
   });
 });

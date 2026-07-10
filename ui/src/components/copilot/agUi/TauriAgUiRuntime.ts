@@ -142,6 +142,8 @@ function metaFromDone(payload: Extract<CopilotStreamFrame, { type: "done" }>): M
     modelId: payload.modelId,
     elapsedMs: payload.elapsedMs,
     toolCount: payload.toolCount,
+    cachedTokens: payload.cachedTokens,
+    promptTokens: payload.promptTokens,
   };
 }
 

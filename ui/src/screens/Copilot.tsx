@@ -590,6 +590,15 @@ function AssistantMessage({
               <span>{Math.round((meta?.elapsedMs ?? timing?.totalStreamTime ?? 0) / 100) / 10}s</span>
             )}
             {typeof meta?.toolCount === "number" && <span>{meta.toolCount} tools</span>}
+            {typeof meta?.cachedTokens === "number" && meta.cachedTokens > 0 && (
+              <span
+                title={`${meta.cachedTokens.toLocaleString()} of ${(meta.promptTokens ?? 0).toLocaleString()} prompt tokens served from the provider's cache`}
+              >
+                {meta.promptTokens && meta.promptTokens > 0
+                  ? `${Math.round((meta.cachedTokens / meta.promptTokens) * 100)}% cached`
+                  : `${meta.cachedTokens.toLocaleString()} cached`}
+              </span>
+            )}
           </div>
         )}
 
