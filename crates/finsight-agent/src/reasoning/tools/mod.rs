@@ -92,10 +92,17 @@ impl ToolSet {
         args: Value,
     ) -> ToolExecutionResult {
         match self.try_execute(name, ctx, args) {
-            Ok(value) => ToolExecutionResult {
-                value: json!({"ok": true, "data": value}),
-                had_error: false,
-            },
+            Ok(mut value) => {
+                // Give the model a formatted dollar string next to every raw
+                // `_cents` integer so it can quote the value verbatim instead of
+                // dividing by 100 in its head — a step it gets wrong ~10-15% of
+                // the time (dropping a zero: $7,000 -> $700).
+                augment_cents_fields(&mut value);
+                ToolExecutionResult {
+                    value: json!({"ok": true, "data": value}),
+                    had_error: false,
+                }
+            }
             Err(error) => ToolExecutionResult {
                 value: error.to_tool_result(),
                 had_error: true,
@@ -126,6 +133,51 @@ impl ToolSet {
             message: friendly_tool_error(name, &err.to_string()),
             retryable: true,
         })
+    }
+}
+
+/// Formats integer cents as a signed dollar string with thousands separators,
+/// e.g. `-220000 -> "-$2,200.00"`, `700000 -> "$7,000.00"`, `0 -> "$0.00"`.
+pub fn format_dollars(cents: i64) -> String {
+    let neg = cents < 0;
+    let abs = cents.unsigned_abs();
+    let dollars = abs / 100;
+    let rem = abs % 100;
+    let digits = dollars.to_string();
+    let n = digits.len();
+    let mut grouped = String::with_capacity(n + n / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (n - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    format!("{}${}.{:02}", if neg { "-" } else { "" }, grouped, rem)
+}
+
+/// Recursively adds a `<name>_display` formatted-dollar string next to every
+/// integer `<name>_cents` field in a tool result, so the model can quote the
+/// dollar value verbatim instead of dividing cents by 100 itself.
+pub fn augment_cents_fields(v: &mut Value) {
+    match v {
+        Value::Object(map) => {
+            let additions: Vec<(String, String)> = map
+                .iter()
+                .filter_map(|(k, val)| {
+                    let stem = k.strip_suffix("_cents")?;
+                    let c = val.as_i64()?;
+                    Some((format!("{stem}_display"), format_dollars(c)))
+                })
+                .collect();
+            for (key, disp) in additions {
+                map.entry(key).or_insert(Value::String(disp));
+            }
+            for val in map.values_mut() {
+                augment_cents_fields(val);
+            }
+        }
+        Value::Array(arr) => arr.iter_mut().for_each(augment_cents_fields),
+        _ => {}
     }
 }
 
@@ -259,4 +311,36 @@ fn friendly_tool_error(tool_name: &str, raw: &str) -> String {
         return format!("{tool_name} is missing a required input: {raw}");
     }
     raw.to_string()
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::{augment_cents_fields, format_dollars};
+    use serde_json::json;
+
+    #[test]
+    fn formats_dollars_with_sign_and_separators() {
+        assert_eq!(format_dollars(0), "$0.00");
+        assert_eq!(format_dollars(700_000), "$7,000.00");
+        assert_eq!(format_dollars(-220_000), "-$2,200.00");
+        assert_eq!(format_dollars(-920_000), "-$9,200.00");
+        assert_eq!(format_dollars(5000), "$50.00");
+        assert_eq!(format_dollars(199), "$1.99");
+        assert_eq!(format_dollars(141_301_300), "$1,413,013.00");
+    }
+
+    #[test]
+    fn augments_nested_cents_fields() {
+        let mut v = json!({
+            "net_worth_cents": -220000,
+            "accounts": [{"name": "Checking", "balance_cents": 200000}],
+            "note": "hi"
+        });
+        augment_cents_fields(&mut v);
+        assert_eq!(v["net_worth_display"], "-$2,200.00");
+        assert_eq!(v["accounts"][0]["balance_display"], "$2,000.00");
+        // Non-cents fields are untouched; raw cents remain for any consumer.
+        assert_eq!(v["note"], "hi");
+        assert_eq!(v["net_worth_cents"], -220000);
+    }
 }

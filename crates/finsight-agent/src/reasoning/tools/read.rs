@@ -507,15 +507,19 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
             let limit = args["limit"].as_i64().unwrap_or(50).clamp(1, 100);
+            // Uncategorized means uncategorized SPENDING (expenses): income
+            // inflows like payroll are legitimately left without a spending
+            // category and must not be counted here — otherwise the count is
+            // dominated by paycheck rows. Matches build_snapshot's definition.
             let total_uncategorized: i64 = ctx.conn.query_row(
-                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND is_transfer = 0",
+                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
                 [],
                 |r| r.get(0),
             )?;
             let mut txn_stmt = ctx.conn.prepare(
                 "SELECT t.id, t.merchant_raw, t.amount_cents, substr(t.posted_at,1,10), COALESCE(a.name,'Unknown account') \
                  FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id \
-                 WHERE t.category_id IS NULL AND t.is_transfer = 0 \
+                 WHERE t.category_id IS NULL AND t.amount_cents < 0 AND t.is_transfer = 0 \
                  ORDER BY t.posted_at DESC LIMIT ?1",
             )?;
             let uncategorized: Vec<Value> = txn_stmt
