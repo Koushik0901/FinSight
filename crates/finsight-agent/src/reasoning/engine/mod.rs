@@ -68,14 +68,31 @@ impl ReasoningEngine {
         provider: Arc<dyn CompletionProvider>,
         max_iterations: usize,
     ) -> Result<ReasoningResult> {
-        Self::run_with_events(conn, question, tools, provider, max_iterations, None, |_| {}).await
+        Self::run_with_events(
+            conn,
+            question,
+            tools,
+            provider,
+            None,
+            max_iterations,
+            None,
+            |_| {},
+        )
+        .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_with_events(
         conn: &mut rusqlite::Connection,
         question: &str,
         tools: &ToolSet,
+        // The tool-selection "router" — used for every gathering turn. In a
+        // single-model setup this is the only model.
         provider: Arc<dyn CompletionProvider>,
+        // Optional strong "synthesizer": when set, the FINAL answer is (re)written
+        // by this model from the gathered tool results, while the cheaper router
+        // above drives the many tool-selection turns. `None` = single model.
+        synthesizer: Option<Arc<dyn CompletionProvider>>,
         max_iterations: usize,
         // Optional wall-clock budget. When set, the loop stops gathering and
         // synthesizes a best-effort answer once it's within one turn's headroom
@@ -101,6 +118,9 @@ impl ReasoningEngine {
         // ends on a non-answer (empty/plan-only) we fall back to this rather than
         // a canned empty string — a plan the user can read beats nothing.
         let mut best_effort_content: Option<String> = None;
+        // Whether any tool ran. Gates the strong-synthesizer rewrite: a trivial
+        // answer with no tool data is not worth a second (expensive) model call.
+        let mut tool_calls_made = false;
         // How many times we've nudged the model to stop stalling. Capped: if one
         // nudge doesn't get it to act, more won't (observed: it can loop forever).
         let mut nudges_used: usize = 0;
@@ -131,7 +151,9 @@ impl ReasoningEngine {
                     messages.push(ChatMessage::User {
                         content: TIME_LIMIT_SYNTHESIS.to_string(),
                     });
-                    let content = match provider
+                    let content = match synthesizer
+                        .as_ref()
+                        .unwrap_or(&provider)
                         .complete_final_answer_turn(&messages, &tools.definitions())
                         .await
                     {
@@ -205,6 +227,9 @@ impl ReasoningEngine {
                             content: result.value.to_string(),
                         });
                     }
+                    if !calls.is_empty() {
+                        tool_calls_made = true;
+                    }
                     messages.push(ChatMessage::Assistant {
                         content: None,
                         tool_calls: calls,
@@ -272,8 +297,18 @@ impl ReasoningEngine {
                         ));
                     }
 
+                    // Model tiers: if a strong synthesizer is configured and we
+                    // actually gathered tool data, let it (re)write the final
+                    // answer from that data — the cheap router drove the tool
+                    // selection, the strong model writes the answer the user sees.
+                    let final_content = match synthesizer.as_ref() {
+                        Some(synth) if tool_calls_made => {
+                            Self::synthesize_final(synth, &messages, tools, content).await
+                        }
+                        _ => content,
+                    };
                     return Ok(Self::parse_final_answer(
-                        content,
+                        final_content,
                         reasoning,
                         plan,
                         trace,
@@ -298,6 +333,29 @@ impl ReasoningEngine {
             response_blocks: Vec::new(),
             is_real_answer: false,
         })
+    }
+
+    /// Have the strong synthesizer (re)write the final answer from the tool
+    /// results already gathered. Falls back to the router's `fallback` answer on
+    /// any miss (error, empty, or the model tries to call a tool anyway), so the
+    /// tiering never makes the answer worse.
+    async fn synthesize_final(
+        synthesizer: &Arc<dyn CompletionProvider>,
+        messages: &[ChatMessage],
+        tools: &ToolSet,
+        fallback: String,
+    ) -> String {
+        let mut msgs = messages.to_vec();
+        msgs.push(ChatMessage::User {
+            content: FINAL_SYNTHESIS.to_string(),
+        });
+        match synthesizer
+            .complete_final_answer_turn(&msgs, &tools.definitions())
+            .await
+        {
+            Ok(AssistantTurn::FinalAnswer { content, .. }) if !content.trim().is_empty() => content,
+            _ => fallback,
+        }
     }
 
     fn parse_final_answer(
@@ -451,6 +509,12 @@ const TIME_LIMIT_SYNTHESIS: &str = "You are out of time to gather more data. Usi
 results already in this conversation, give your best, complete final answer NOW. Do not call any \
 tools. If a detail is missing, answer with what you have and briefly note what you could not \
 compute. Never state a number you did not obtain from a tool result.";
+
+/// Sent to the strong synthesizer when the fast router is done gathering, so it
+/// writes the final answer from the tool results already in the conversation.
+const FINAL_SYNTHESIS: &str = "You now have the data you need. Write your complete final answer in \
+the required format, using ONLY the tool results above. Do not call any tools, and do not state \
+any number you did not obtain from a tool result.";
 
 /// Last-resort content when even the time-limited synthesis turn yields nothing:
 /// summarize the steps taken so the user gets *something* actionable, never an

@@ -127,6 +127,39 @@ pub(crate) fn build_provider_from_config(
     }
 }
 
+/// Optional fast "router" model for the Copilot tool loop. When the user sets a
+/// `copilot.router_model` in settings AND the main provider is OpenAI-compatible
+/// (OpenRouter etc.), build a cheap, small-budget router that drives the many
+/// tool-selection turns while the configured (strong) model writes the final
+/// answer. Returns None when unset or not applicable → single-model loop.
+pub(crate) fn build_copilot_router_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider>> {
+    let conn = db.get().ok()?;
+    let router_model: String = settings::get(&conn, "copilot.router_model").ok()??;
+    let router_model = router_model.trim().to_string();
+    if router_model.is_empty() {
+        return None;
+    }
+    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").ok()??;
+    // Only OpenAI-compatible endpoints can serve a cheap sibling model on the
+    // same base URL + key.
+    if cfg.get("kind")?.as_str()? != "openai_compat" {
+        return None;
+    }
+    let base_url = cfg["base_url"].as_str()?.to_string();
+    let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
+    let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
+        .ok()??
+        .trim()
+        .to_string();
+    if api_key.is_empty() {
+        return None;
+    }
+    // Small completion budget: a routing turn only emits a short tool call.
+    Some(Arc::new(
+        OpenAiCompatProvider::new(base_url, api_key, router_model, preset).with_max_tokens(1024),
+    ))
+}
+
 /// Build the tauri-specta builder with all commands registered.
 /// Shared between the Tauri app and the `export_bindings` binary so the
 /// generated TS bindings stay in sync with what Tauri actually exposes.

@@ -14,6 +14,10 @@ pub struct OpenAiCompatProvider {
     api_key: String,
     model: String,
     preset: String,
+    /// Completion budget per request. 8192 suits the strong "synthesizer" model
+    /// (thinking tokens + a large final JSON answer); a fast "router" model used
+    /// only to pick the next tool can run far smaller (see [`with_max_tokens`]).
+    max_tokens: u32,
     client: reqwest::Client,
 }
 
@@ -29,11 +33,19 @@ impl OpenAiCompatProvider {
             api_key: api_key.into(),
             model: model.into(),
             preset: preset.into(),
+            max_tokens: 8192,
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(60))
                 .build()
                 .expect("reqwest client"),
         }
+    }
+
+    /// Cap the per-request completion budget — used to build a cheap, fast
+    /// tool-selection "router" whose turns only emit a short tool call.
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
     }
 }
 
@@ -92,11 +104,10 @@ impl CompletionProvider for OpenAiCompatProvider {
             "model": self.model,
             // Give the model room to finish; without this some OpenRouter routes
             // default to a small completion budget and truncate the response.
-            // 2048 was sized for small fast models — reasoning models (Claude,
-            // o-series) spend part of the budget on thinking tokens, and the
-            // final structured-JSON answer is large, so a small cap truncates
+            // Reasoning models spend part of the budget on thinking tokens and
+            // the final structured-JSON answer is large, so a small cap truncates
             // the JSON mid-object and the parse fails downstream.
-            "max_tokens": 8192,
+            "max_tokens": self.max_tokens,
             "messages": [
                 {"role": "system", "content": format!("{system}\n\nReturn valid JSON only. Do not include markdown fences or explanatory text.")},
                 {"role": "user",   "content": user},
@@ -198,8 +209,10 @@ impl OpenAiCompatProvider {
         let mut body = json!({
             "model": self.model,
             // See complete_json: reasoning models need headroom for thinking
-            // tokens plus the large final structured-JSON answer.
-            "max_tokens": 8192,
+            // tokens plus the large final structured-JSON answer. A fast router
+            // instance overrides this down (with_max_tokens) since its turns only
+            // emit a short tool call.
+            "max_tokens": self.max_tokens,
             "messages": oai_messages,
             "tools": oai_tools,
         });

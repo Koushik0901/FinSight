@@ -83,6 +83,7 @@ async fn hitting_the_time_budget_synthesizes_a_best_effort_answer() {
         "Give me a full financial plan",
         &tools,
         provider,
+        None,
         10,
         Some(std::time::Instant::now()),
         |_| {},
@@ -103,6 +104,63 @@ async fn hitting_the_time_budget_synthesizes_a_best_effort_answer() {
         result.trace.iter().any(|t| t.contains("Time budget")),
         "trace should record the time-budget synthesis"
     );
+}
+
+#[tokio::test]
+async fn strong_synthesizer_rewrites_the_final_answer_after_tool_gathering() {
+    // Model tiers: the cheap router drives tool selection, the strong synthesizer
+    // writes the answer the user sees. After a tool runs, the router's draft is
+    // replaced by the synthesizer's answer.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let router = Arc::new(MockCompletionProvider {
+        provider_id: "router".into(),
+        model_id: "fast".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "c1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            AssistantTurn::FinalAnswer {
+                content: "router draft answer".to_string(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let synthesizer = Arc::new(MockCompletionProvider {
+        provider_id: "synth".into(),
+        model_id: "strong".into(),
+        response: json!({}),
+        tool_turns: Mutex::new(vec![AssistantTurn::FinalAnswer {
+            content: "STRONG synthesized final answer".to_string(),
+            reasoning: String::new(),
+        }]),
+    });
+    let tools = build_toolset();
+    let result = ReasoningEngine::run_with_events(
+        &mut *conn,
+        "What are my balances?",
+        &tools,
+        router,
+        Some(synthesizer),
+        5,
+        None,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        result.content.contains("STRONG synthesized"),
+        "the strong synthesizer should write the final answer, got: {}",
+        result.content
+    );
+    assert!(!result.content.contains("router draft"));
 }
 
 #[tokio::test]
@@ -431,6 +489,7 @@ async fn run_with_events_emits_plan_ready_before_any_tool_call() {
         "What's my net worth?",
         &tools,
         provider,
+        None,
         5,
         None,
         |event| events.push(event),
@@ -511,6 +570,7 @@ async fn run_with_events_ignores_a_plan_offered_on_a_later_turn() {
         "What's my net worth?",
         &tools,
         provider,
+        None,
         5,
         None,
         |event| events.push(event),

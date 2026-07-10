@@ -299,7 +299,14 @@ pub async fn stream_copilot_message(
 
     // 4. Run reasoning engine (deep mode, same as ask_agent)
     let tools = build_toolset();
-    let provider_clone = Arc::clone(&provider);
+    // Model tiers: with a configured fast router model, the cheap router drives
+    // the tool-selection turns and the configured (strong) model synthesizes the
+    // final answer; otherwise one model does both.
+    let (provider_clone, synthesizer_clone) =
+        match crate::build_copilot_router_from_settings(&db) {
+            Some(router) => (router, Some(Arc::clone(&provider))),
+            None => (Arc::clone(&provider), None),
+        };
     let question_for_engine = enriched_question.clone();
     let emitted_live_tool_frames = Arc::new(AtomicBool::new(false));
     emit_copilot_frame(
@@ -363,6 +370,7 @@ pub async fn stream_copilot_message(
                     &question_for_engine,
                     &tools,
                     provider_clone,
+                    synthesizer_clone,
                     10,
                     // Internal wall-clock budget, 30s inside the outer 180s
                     // timeout: the loop synthesizes a best-effort answer at ~110s
