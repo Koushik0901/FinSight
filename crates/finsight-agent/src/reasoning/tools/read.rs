@@ -226,6 +226,115 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn get_member_spending() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "get_member_spending"
+        }
+        fn description(&self) -> &str {
+            "Income and spending for ONE household member (e.g. a partner or family member) over a window of months. Joint accounts are split equally between their owners; household-shared (unassigned) accounts are excluded. Call with member omitted or member=\"list\" to see who is in the household FIRST. Use for 'what did <name> spend/earn last month', 'her savings rate', 'my spending vs theirs'. Never guess a person's numbers — if the member is unknown, say so."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type":"object","properties":{
+                "member": {"type":"string","description":"Household member name (case-insensitive). Omit or \"list\" to list members."},
+                "months": {"type":"integer","default":1,"description":"Whole calendar months back to include, ending this month."}
+            }})
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let members = finsight_core::repos::household::list_members(ctx.conn)?;
+            let names: Vec<String> = members.iter().map(|m| m.name.clone()).collect();
+            let requested = args["member"].as_str().unwrap_or("").trim().to_string();
+
+            // Discovery / no-member: return the roster so the model can pick a
+            // real member instead of inventing one.
+            if requested.is_empty() || requested.eq_ignore_ascii_case("list") {
+                return Ok(json!({
+                    "household_members": names,
+                    "note": if names.is_empty() {
+                        "No household members are defined — every number in the app is for the whole household. Answer at the household level.".to_string()
+                    } else {
+                        format!("Call again with member set to one of: {}.", names.join(", "))
+                    }
+                }));
+            }
+
+            let Some(member) = members
+                .iter()
+                .find(|m| m.name.eq_ignore_ascii_case(&requested))
+            else {
+                return Ok(json!({
+                    "error": "unknown_member",
+                    "requested": requested,
+                    "household_members": names,
+                    "note": format!(
+                        "No household member named \"{requested}\". Known members: {}. Do NOT report numbers for an unknown person.",
+                        if names.is_empty() { "none".to_string() } else { names.join(", ") }
+                    ),
+                }));
+            };
+
+            let months = args["months"].as_i64().unwrap_or(1).clamp(1, 60);
+            let now = chrono::Utc::now().date_naive();
+            let start = {
+                use chrono::Datelike;
+                let total = now.year() * 12 + (now.month0() as i32) - (months as i32 - 1);
+                let y = total.div_euclid(12);
+                let m = total.rem_euclid(12) as u32 + 1;
+                chrono::NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(now)
+            };
+            let start_str = start.format("%Y-%m-%d").to_string();
+
+            // The SAME weighted metric the per-member screens use, so the
+            // Copilot's number is literally the screen's number.
+            let (income, expense) = finsight_core::metrics::income_expense_since_for(
+                ctx.conn,
+                &start_str,
+                Some(member.id.as_str()),
+            )?;
+            let savings_rate = finsight_core::metrics::savings_rate_pct(income, expense);
+            let balances =
+                finsight_core::metrics::balance_breakdown_for(ctx.conn, Some(member.id.as_str()))?;
+
+            // Ownership-weighted top spending categories for this member.
+            let mut cat_stmt = ctx.conn.prepare(
+                "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
+                        CAST(ROUND(SUM(ABS(t.amount_cents) * w.weight)) AS INTEGER) AS spent \
+                 FROM transactions t \
+                 LEFT JOIN categories c ON c.id = t.category_id \
+                 JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight \
+                       FROM account_owners ao \
+                       JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+                         ON oc.account_id = ao.account_id \
+                       WHERE ao.member_id = ?1) w ON w.account_id = t.account_id \
+                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?2 \
+                 GROUP BY label ORDER BY spent DESC LIMIT 8",
+            )?;
+            let top_categories: Vec<Value> = cat_stmt
+                .query_map(rusqlite::params![member.id, start_str], |r| {
+                    Ok(json!({"category": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            Ok(json!({
+                "member": member.name,
+                "window_months": months,
+                "window_start": start_str,
+                "income_cents": income,
+                "spent_cents": expense,
+                "net_cents": income - expense,
+                "savings_rate_pct": savings_rate,
+                "liquid_balance_cents": balances.liquid_cents,
+                "owned_net_worth_cents": balances.net_worth_cents,
+                "top_categories": top_categories,
+                "note": "Joint accounts are split equally between owners; household-shared (unassigned) accounts are excluded from this member's figures.",
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn get_budgets() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
@@ -957,6 +1066,62 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    fn seed_household(conn: &mut Connection) {
+        use finsight_core::repos::household;
+        let alice = household::create_member(conn, "Alice", None).unwrap();
+        let bob = household::create_member(conn, "Bob", None).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('a_sole','Alice','Bank','Checking','A','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('joint','Alice & Bob','Bank','Savings','J','USD','#fff',datetime('now'))", []).unwrap();
+        household::set_account_owners(conn, "a_sole", &[alice.id.clone()]).unwrap();
+        household::set_account_owners(conn, "joint", &[alice.id.clone(), bob.id.clone()]).unwrap();
+        // Alice sole: -$100. Joint: -$40 (split → -$20 each). Dates well in the past
+        // so any months-window that reaches back far enough includes them.
+        for (acct, date, amt, merch) in [
+            ("a_sole", "2026-07-05", -10_000, "Costco"),
+            ("joint", "2026-07-06", -4_000, "Dining"),
+        ] {
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                 VALUES(hex(randomblob(16)),?1,?2,?3,?4,'cleared',datetime('now'))",
+                rusqlite::params![acct, date, amt, merch],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn member_spending_lists_members_and_weights_joint_accounts() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_household(&mut conn);
+
+        // Discovery: no member → roster, no fabricated numbers.
+        let list = call(&mut conn, get_member_spending(), json!({"member": "list"}));
+        let names: Vec<String> = list["household_members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(names.contains(&"Alice".to_string()) && names.contains(&"Bob".to_string()));
+        assert!(list.get("spent_cents").is_none());
+
+        // Alice: sole $100 + half of joint $40 = $120. (months=60 so the window
+        // reaches the seeded dates regardless of the wall clock.)
+        let alice = call(&mut conn, get_member_spending(), json!({"member": "alice", "months": 60}));
+        assert_eq!(alice["member"], "Alice");
+        assert_eq!(alice["spent_cents"], 12_000, "sole 100 + half-joint 20");
+
+        // Bob: only half of the joint account = $20.
+        let bob = call(&mut conn, get_member_spending(), json!({"member": "Bob", "months": 60}));
+        assert_eq!(bob["spent_cents"], 2_000);
+
+        // Unknown member → explicit error, never a guessed number.
+        let unknown = call(&mut conn, get_member_spending(), json!({"member": "Carol"}));
+        assert_eq!(unknown["error"], "unknown_member");
+        assert!(unknown.get("spent_cents").is_none());
     }
 
     #[test]

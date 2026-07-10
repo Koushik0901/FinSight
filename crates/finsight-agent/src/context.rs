@@ -12,6 +12,11 @@ pub struct FinancialContext {
     pub transactions: TransactionContext,
     pub memory: Vec<MemoryItem>,
     pub wellness: WellnessContext,
+    /// Household member names (empty for a single-person household). Lets the
+    /// Copilot know whose money it can break out per person via
+    /// `get_member_spending`.
+    #[serde(default)]
+    pub household_members: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -352,6 +357,16 @@ impl FinancialContext {
             }
         }
 
+        if !self.household_members.is_empty() {
+            lines.push("HOUSEHOLD MEMBERS".to_string());
+            lines.push(format!(
+                "   - {}. Every number above is the WHOLE household. For one person's \
+                 income/spending/savings-rate call get_member_spending(member=\"<name>\") \
+                 — joint accounts split equally. Never split a household number yourself.",
+                self.household_members.join(", ")
+            ));
+        }
+
         lines.join("\n")
     }
 }
@@ -412,6 +427,9 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
         transactions: transaction_context(conn, &month_start),
         memory: recent_memory(conn),
         wellness: wellness_context(conn, avg_monthly_expense_cents, savings_rate_pct),
+        household_members: finsight_core::repos::household::list_members(conn)
+            .map(|ms| ms.into_iter().map(|m| m.name).collect())
+            .unwrap_or_default(),
     }
 }
 

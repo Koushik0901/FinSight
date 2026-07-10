@@ -198,6 +198,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::get_month_totals());
     tools.register(read::get_top_spending_categories());
     tools.register(read::get_spending_breakdown());
+    tools.register(read::get_member_spending());
     tools.register(read::get_budgets());
     tools.register(read::get_goals());
     tools.register(read::get_recurring_bills());
