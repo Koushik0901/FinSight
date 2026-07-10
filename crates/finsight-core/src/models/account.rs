@@ -98,6 +98,12 @@ pub struct AccountSummary {
     /// as a trustworthy current balance when this is false.
     #[serde(default = "default_balance_known")]
     pub balance_known: bool,
+    /// Source of the snapshot `balance_cents` came from: `simplefin` (bank-
+    /// reported), `manual` (legacy user-stamped), `derived` (computed from
+    /// opening + activity), or `seed` (untouched opening). Lets the UI show the
+    /// balance's basis — "synced", "estimated from your transactions", etc.
+    #[serde(default)]
+    pub balance_source: Option<String>,
     pub currency: String,
     pub color: String,
     pub source: String,

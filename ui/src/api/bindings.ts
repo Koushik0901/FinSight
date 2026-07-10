@@ -40,9 +40,10 @@ async archiveAccount(id: string) : Promise<Result<null, AppError>> {
 },
 /**
  * User-confirmed "this is my real balance right now" entry point — e.g. after
- * importing CSV history that carries no balance field. Always stamped with
- * source="manual" so `list_summaries` treats it as a trustworthy balance
- * rather than the untouched account-creation seed value.
+ * importing CSV history that carries no balance field. Back-solves the account
+ * opening so the balance model reproduces the entered value AND keeps tracking
+ * as transactions change, instead of freezing a fixed snapshot that goes stale
+ * (see [`accounts::set_current_balance`]).
  */
 async setAccountBalance(id: string, balanceCents: number) : Promise<Result<null, AppError>> {
     try {
@@ -1446,7 +1447,14 @@ export type AccountSummary = { id: string; owner: string; bank: string; type: Ac
  * the real balance since then. The UI must not present `balance_cents`
  * as a trustworthy current balance when this is false.
  */
-balance_known?: boolean; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
+balance_known?: boolean; 
+/**
+ * Source of the snapshot `balance_cents` came from: `simplefin` (bank-
+ * reported), `manual` (legacy user-stamped), `derived` (computed from
+ * opening + activity), or `seed` (untouched opening). Lets the UI show the
+ * balance's basis — "synced", "estimated from your transactions", etc.
+ */
+balance_source?: string | null; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
 export type AccountSyncResult = { accountId: string; added: number; updated: number; skipped: number; queuedForReview: number; error: string | null }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other"
 /**

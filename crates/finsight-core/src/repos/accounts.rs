@@ -116,7 +116,12 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
                   ELSE 0 \
                 END AS balance_known, \
                 a.apr_pct, a.min_payment_cents, a.payoff_date, a.limit_cents, \
-                a.original_balance_cents, a.started_at \
+                a.original_balance_cents, a.started_at, \
+                (SELECT b.source FROM account_balances b \
+                   WHERE b.account_id = a.id \
+                   ORDER BY b.as_of_date DESC, \
+                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END \
+                   LIMIT 1) AS balance_source \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
@@ -134,6 +139,7 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             color: r.get(6)?,
             balance_cents: r.get(7)?,
             balance_known: r.get::<_, i64>(28)? != 0,
+            balance_source: r.get(35)?,
             source: r.get(8)?,
             liquidity_type: r.get(9)?,
             emergency_fund_eligible: r.get::<_, i64>(10)? != 0,
@@ -462,6 +468,71 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         None,
         Some("derived"),
     )?;
+    Ok(())
+}
+
+/// Set an account's CURRENT balance by BACK-SOLVING its opening anchor.
+///
+/// The balance model is YNAB/Actual-style: `current = opening + Σ(all cleared
+/// activity)`. So to make the current balance equal a user-known value (e.g.
+/// entered after a CSV import that carried no balance field), we solve for the
+/// opening: `opening = current − Σ(all cleared txns)`, write it to the seed
+/// snapshot, and let [`recompute_balance_if_linked`] derive today's balance.
+///
+/// Unlike stamping a fixed "today = X" snapshot, this keeps the balance LIVE:
+/// every later transaction (edit, add, forward import) re-derives from the fixed
+/// opening, so the number tracks reality instead of freezing at X. Any prior
+/// user-stamped `manual` snapshot is cleared, otherwise `recompute` would treat
+/// the account as pinned and refuse to re-derive.
+///
+/// Limitation: the opening is solved against the activity present *now*. If you
+/// later import *older* history (dated before everything currently loaded), that
+/// activity folds onto the same fixed opening and shifts today's balance — just
+/// re-run "set current balance" after backfilling older statements.
+pub fn set_current_balance(
+    conn: &mut Connection,
+    account_id: &str,
+    current_cents: i64,
+) -> CoreResult<()> {
+    let sum_all: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
+         WHERE account_id = ?1 AND pending = 0",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    let opening = current_cents - sum_all;
+
+    // Reset the opening (seed) anchor to the back-solved value.
+    let updated = conn.execute(
+        "UPDATE account_balances SET balance_cents = ?1 \
+         WHERE account_id = ?2 AND source = 'seed'",
+        params![opening, account_id],
+    )?;
+    if updated == 0 {
+        // No seed row (unusual) — anchor one at the account's creation date.
+        let created_date: String = conn.query_row(
+            "SELECT substr(created_at, 1, 10) FROM accounts WHERE id = ?1",
+            params![account_id],
+            |r| r.get(0),
+        )?;
+        conn.execute(
+            "INSERT INTO account_balances (account_id, as_of_date, balance_cents, source) \
+             VALUES (?1, ?2, ?3, 'seed')",
+            params![account_id, created_date, opening],
+        )?;
+    }
+
+    // Clear any stale user-stamped 'manual' snapshot from the old freeze path;
+    // otherwise `recompute_balance_if_linked` sees a user-set balance and bails,
+    // leaving the account frozen at the previous number.
+    conn.execute(
+        "DELETE FROM account_balances WHERE account_id = ?1 AND source = 'manual'",
+        params![account_id],
+    )?;
+
+    // Derive today's balance from the fresh opening. No-op for linked accounts,
+    // whose balances are bank-reported during sync.
+    recompute_balance_if_linked(conn, account_id)?;
     Ok(())
 }
 
@@ -1156,6 +1227,106 @@ mod tests {
             .unwrap();
         assert!(summary.balance_known);
         assert_eq!(summary.balance_cents, 0);
+    }
+
+    #[test]
+    fn set_current_balance_backsolves_opening_and_keeps_tracking() {
+        // P1-5: after a PARTIAL import (history that doesn't reach account
+        // opening), the naive opening-0 derivation is wrong. Setting the real
+        // current balance back-solves the opening so (a) the number is exactly
+        // right AND (b) it keeps tracking forward activity — the whole reason to
+        // back-solve instead of freezing a fixed "today = X" snapshot.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn); // seed $0 @ today
+        insert_txn(&conn, &acc.id, -50_000, "2026-04-10");
+        insert_txn(&conn, &acc.id, 38_000, "2026-05-01");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+        let naive = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(
+            naive.balance_cents, -12_000,
+            "opening-0 derivation is the wrong number after a partial import"
+        );
+
+        // (a) User sets their real current balance → shown balance equals it.
+        set_current_balance(&mut conn, &acc.id, 4_800_00).unwrap();
+        let after = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(after.balance_cents, 4_800_00, "current balance equals the value the user set");
+        assert!(after.balance_known, "a set balance reads as known");
+
+        // (b) A later forward transaction MOVES the balance (a frozen snapshot
+        // would not) — this is the property that distinguishes back-solve.
+        insert_txn(&conn, &acc.id, -20_000, "2026-07-01");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+        let tracked = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(
+            tracked.balance_cents,
+            4_800_00 - 20_000,
+            "balance tracks forward activity after back-solve"
+        );
+
+        // (c) Re-confirming the balance still lands exactly (idempotent-ish:
+        // clears the prior anchor and re-solves against current activity).
+        set_current_balance(&mut conn, &acc.id, 5_000_00).unwrap();
+        let reconfirmed = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(reconfirmed.balance_cents, 5_000_00, "re-setting lands exactly");
+    }
+
+    #[test]
+    fn set_current_balance_overrides_stale_manual_freeze() {
+        // Migration guard: an account that was pinned under the OLD freeze path
+        // (a 'manual' snapshot) must re-derive after a back-solve, not stay
+        // frozen — the manual snapshot has to be cleared or recompute bails.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, -30_000, "2026-04-10");
+        let today = Utc::now().date_naive().to_string();
+        // Simulate the old freeze: a user-stamped manual balance.
+        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_000_00, None, Some("manual")).unwrap();
+
+        set_current_balance(&mut conn, &acc.id, 2_500_00).unwrap();
+
+        let no_manual: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account_balances WHERE account_id = ?1 AND source = 'manual'",
+                params![acc.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(no_manual, 0, "stale manual freeze snapshot cleared");
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(summary.balance_cents, 2_500_00, "re-derives to the new value, not the old freeze");
+
+        // And it now tracks forward (the freeze would have stayed at 2_500_00).
+        insert_txn(&conn, &acc.id, -5_000, "2026-07-02");
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+        let tracked = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == acc.id)
+            .unwrap();
+        assert_eq!(tracked.balance_cents, 2_500_00 - 5_000, "tracks forward after clearing the freeze");
     }
 
     #[test]

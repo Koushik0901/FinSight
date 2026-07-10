@@ -313,6 +313,12 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         {!isEdit && (
           <label> Opening balance ($)
             <input type="number" step="0.01" {...register("opening_dollars")} />
+            <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
+              Balance <em>before</em> your earliest transaction. Enter 0 only if you'll import
+              history all the way back to when the account was opened — FinSight adds every
+              imported transaction on top. Importing just recent statements? Leave this and use
+              “Set current balance” after importing.
+            </div>
           </label>
         )}
         {isDebtType(watch("type")) && (

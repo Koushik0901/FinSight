@@ -46,8 +46,8 @@ export default function SetBalanceDialog({ open, onClose, account }: Props) {
       >
         <p className="muted" style={{ marginTop: 0, marginBottom: 16, fontSize: 13.5 }}>
           {account
-            ? `Imported transaction history for ${account.name} doesn't include a balance. Enter the account's current balance so FinSight can track it accurately.`
-            : "Enter the account's current balance."}
+            ? `Imported history for ${account.name} doesn't include a balance. Enter what the account holds right now — FinSight anchors your imported transactions to it, so the balance stays correct and keeps tracking as you add activity.`
+            : "Enter what the account holds right now."}
         </p>
         <label>
           Current balance ($)

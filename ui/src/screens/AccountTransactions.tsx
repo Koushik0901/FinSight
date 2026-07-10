@@ -23,6 +23,21 @@ function formatStamp(value: string | null | undefined) {
   return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/** How the shown balance was arrived at, and whether it's a confirmed figure or
+ *  an estimate the user may want to correct (P1-5). */
+function balanceBasis(source: string | null | undefined): { label: string; estimated: boolean } {
+  switch (source) {
+    case "simplefin":
+      return { label: "Synced from your bank", estimated: false };
+    case "manual":
+      return { label: "Balance you set", estimated: false };
+    case "derived":
+      return { label: "Estimated from your transactions", estimated: true };
+    default: // "seed" or unknown — the untouched opening balance
+      return { label: "From opening balance", estimated: true };
+  }
+}
+
 function avatarColor(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
@@ -133,7 +148,22 @@ export default function AccountTransactions() {
         </div>
         <div style={{ textAlign: "right" }}>
           {account.balance_known ? (
-            <div className="figure money" style={{ fontSize: 34, color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+            <div>
+              <div className="figure money" style={{ fontSize: 34, color: account.balance_cents < 0 ? "var(--negative)" : "var(--ink)" }}>{money(account.balance_cents, { currency: account.currency || "USD", decimals: 2 })}</div>
+              {(() => {
+                const basis = balanceBasis(account.balance_source);
+                return (
+                  <div className="row row-sm" style={{ justifyContent: "flex-end", marginTop: 4, fontSize: 12, color: "var(--ink-faint)" }}>
+                    <span>{basis.label}</span>
+                    {basis.estimated && (
+                      <button className="btn ghost sm" type="button" onClick={() => setBalanceOpen(true)}>
+                        Set current balance
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
           ) : (
             <div>
               <div className="figure" style={{ fontSize: 22, color: "var(--ink-mute)" }}>Balance not set</div>

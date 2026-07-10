@@ -56,9 +56,10 @@ pub async fn archive_account(state: tauri::State<'_, AppState>, id: String) -> A
 }
 
 /// User-confirmed "this is my real balance right now" entry point — e.g. after
-/// importing CSV history that carries no balance field. Always stamped with
-/// source="manual" so `list_summaries` treats it as a trustworthy balance
-/// rather than the untouched account-creation seed value.
+/// importing CSV history that carries no balance field. Back-solves the account
+/// opening so the balance model reproduces the entered value AND keeps tracking
+/// as transactions change, instead of freezing a fixed snapshot that goes stale
+/// (see [`accounts::set_current_balance`]).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_account_balance(
@@ -67,9 +68,8 @@ pub async fn set_account_balance(
     balance_cents: i64,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    let today = chrono::Utc::now().date_naive().to_string();
     run(&db, move |conn| {
-        accounts::upsert_balance_snapshot(conn, &id, &today, balance_cents, None, Some("manual"))
+        accounts::set_current_balance(conn, &id, balance_cents)
     })
     .await
     .map_err(AppError::from)
