@@ -40,15 +40,15 @@ ACCOUNTS (current):
 - Known net worth = -$2,200 (assets $7,000 - debt $9,200). Total debt $9,200.
   Liquid assets (checking+savings) = $7,000.
 
-INCOME: $4,000/mo payroll ("Acme Payroll", 1st of month) — the tools' 90-day and
+INCOME: $4,000/mo payroll ("Infoblox", 1st of month) — the tools' 90-day and
 12-month average income both compute to ~$4,000/mo. Plus a single small brokerage
 dividend (~$100) over a year ago — not part of regular monthly income.
 
 MONTHLY RECURRING EXPENSES (every month), ~$1,897/mo:
-- Rent "Skyline Apartments" (Housing): $1,200  ← biggest category by far
-- Groceries $400/mo: Costco $250 + Trader Joe's $150
-- Dining $110/mo: Chipotle $50 (restaurant) + DoorDash $60 (delivery)
-- Shell (Transport): $120 · Netflix $16 + Spotify $11 (Entertainment $27)
+- Rent "Metrotown Rentals" (Housing): $1,200  ← biggest category by far
+- Groceries $400/mo: Walmart Supercentre $250 + T&T Supermarket $150
+- Dining $110/mo: McDonald's $50 (restaurant) + Uber Eats $60 (delivery)
+- EVO Car Share (Transport): $120 · Netflix $16 + Spotify $11 (Entertainment $27)
 - Anytime Fitness gym (Health): $40
 MONTHLY SURPLUS ~ $1,900-2,100/mo (income ~$4,000 - expenses ~$1,900-2,100; the
 tools' surplus computes to ~$1,893/mo). Any surplus figure in that range is
@@ -59,7 +59,7 @@ The per-MONTH figures are the stable truth. Tools report over different windows
 ~15%, or figures reflecting a different window, are correct, not fabrication.
 
 FOOD (for "groceries vs restaurants vs delivery"): Groceries $400/mo is the
-biggest; restaurants ~$50/mo (Chipotle); delivery ~$60/mo (DoorDash). The
+biggest; restaurants ~$50/mo (McDonald's); delivery ~$60/mo (Uber Eats). The
 biggest food lever is groceries.
 
 BUDGETS (current month, budgeted vs actual): OVER on Groceries ($400 vs $350
@@ -69,11 +69,11 @@ Entertainment ($27 vs $40). So the consistent overspending is Groceries + Dining
 UPCOMING OBLIGATION: an Annual Insurance Premium of $1,200 is due in ~4 months
 (a planned transaction) — relevant to liquidity/cash-to-keep questions.
 
-BIGGEST MERCHANTS by spend: Skyline Apartments (rent) #1 by far ($1,200/mo); then
-Costco, Apple Store (a $2,500 one-off ~5 months ago), Trader Joe's, Shell.
+BIGGEST MERCHANTS by spend: Metrotown Rentals (rent) #1 by far ($1,200/mo); then
+Walmart Supercentre, Apple Store (a $2,500 one-off ~5 months ago), T&T Supermarket, EVO Car Share.
 
-UNCATEGORIZED EXPENSES, 4 total (~5 months ago): Best Buy $300, Delta Airlines
-$450, SQ*Blue Bottle $18, Apple Store $2,500. The $2,500 Apple Store charge is
+UNCATEGORIZED EXPENSES, 4 total (~5 months ago): Best Buy $300, Flair Airlines
+$450, Tim Hortons $18, Apple Store $2,500. The $2,500 Apple Store charge is
 the ONE flagged anomaly (far larger than typical).
 
 GOALS: Emergency Fund $5,000 of $11,000 ($500/mo); Vacation $600 of $3,000 ($100/mo).
@@ -101,9 +101,9 @@ clearly implausible:
   ago -> ~$1,900/mo now. Recent years are the highest-spending; Housing (rent) is
   the #1 category EVERY year. Rent rose ~$800 -> $950 -> $1,100 -> $1,200.
 - SUBSCRIPTION/RECURRING TENURES (from earliest charge): Netflix $16/mo ~7 years;
-  Spotify $11/mo ~5 years; Anytime Fitness gym $40/mo ~3 years; DoorDash (food
+  Spotify $11/mo ~5 years; Anytime Fitness gym $40/mo ~3 years; Uber Eats (food
   delivery) $60/mo ~2 years (started ~Jul 2024, ~25 charges, ~$1,500 total).
-  DoorDash is the ONLY delivery merchant.
+  Uber Eats is the ONLY delivery merchant.
 - The current year (2026) also carries the $2,500 Apple Store one-off.
 Per-year and per-merchant totals the Copilot SUMS from this history are
 legitimate derived aggregates; do NOT flag them as fabrication merely for being

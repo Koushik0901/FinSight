@@ -121,8 +121,8 @@ pub fn seed(conn: &mut Connection) {
             42..=83 => 95000,
             _ => 80000,
         };
-        insert_txn(conn, "chk", day_in(m, 1), income, "Acme Payroll", None);
-        insert_txn(conn, "chk", day_in(m, 2), -rent, "Skyline Apartments", Some("housing"));
+        insert_txn(conn, "chk", day_in(m, 1), income, "Infoblox", None);
+        insert_txn(conn, "chk", day_in(m, 2), -rent, "Metrotown Rentals", Some("housing"));
 
         // Subscriptions started at different points in the timeline.
         if months_ago <= 84 {
@@ -143,13 +143,13 @@ pub fn seed(conn: &mut Connection) {
         } else {
             (-16000, -9000, -8000)
         };
-        insert_txn(conn, "chk", day_in(m, 12), costco, "Costco", Some("groceries"));
-        insert_txn(conn, "chk", day_in(m, 22), tj, "Trader Joe's", Some("groceries"));
-        insert_txn(conn, "chk", day_in(m, 15), -5000, "Chipotle", Some("dining"));
-        insert_txn(conn, "chk", day_in(m, 18), shell, "Shell", Some("transport"));
+        insert_txn(conn, "chk", day_in(m, 12), costco, "Walmart Supercentre", Some("groceries"));
+        insert_txn(conn, "chk", day_in(m, 22), tj, "T&T Supermarket", Some("groceries"));
+        insert_txn(conn, "chk", day_in(m, 15), -5000, "McDonald's", Some("dining"));
+        insert_txn(conn, "chk", day_in(m, 18), shell, "EVO Car Share", Some("transport"));
         // Food delivery only became a habit in the last ~2 years.
         if months_ago <= 24 {
-            insert_txn(conn, "chk", day_in(m, 19), -6000, "DoorDash", Some("dining"));
+            insert_txn(conn, "chk", day_in(m, 19), -6000, "Uber Eats", Some("dining"));
         }
     }
 
@@ -160,8 +160,8 @@ pub fn seed(conn: &mut Connection) {
     // charge is the one flagged anomaly.
     let midpast = first_of_month_back(newest, 5);
     insert_txn(conn, "cc", day_in(midpast, 10), -30000, "Best Buy", None);
-    insert_txn(conn, "cc", day_in(midpast, 14), -45000, "Delta Airlines", None);
-    insert_txn(conn, "chk", day_in(midpast, 24), -1800, "SQ *Blue Bottle", None);
+    insert_txn(conn, "cc", day_in(midpast, 14), -45000, "Flair Airlines", None);
+    insert_txn(conn, "chk", day_in(midpast, 24), -1800, "Tim Hortons", None);
     insert_txn(conn, "cc", day_in(midpast, 20), -250000, "Apple Store", None);
     conn.execute(
         "UPDATE transactions SET is_anomaly = 1, ai_explanation = 'Much larger than this account''s typical charge' WHERE merchant_raw = 'Apple Store'",
@@ -174,7 +174,7 @@ pub fn seed(conn: &mut Connection) {
     // doesn't disturb the spending / uncategorized-count facts. Its only job is
     // to make the brokerage's balance genuinely "unknown".
     let old = first_of_month_back(newest, 13);
-    insert_txn(conn, "inv", day_in(old, 15), 10000, "Vanguard Dividend", None);
+    insert_txn(conn, "inv", day_in(old, 15), 10000, "Wealthsimple", None);
 
     // ── Goals ────────────────────────────────────────────────────────────────
     conn.execute("INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) VALUES('ef','Emergency Fund','save',1100000,500000,50000,'#10B981',0,datetime('now'))", []).unwrap();
@@ -265,7 +265,7 @@ mod tests {
             let exp = q(&format!("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE amount_cents<0 AND posted_at < date('now','-{lo} days') AND posted_at >= date('now','-{hi} days')"));
             eprintln!("{lbl}: 12mo income={} expense={} (/12 = {}/{} per mo)", inc, exp, inc/12, exp/12);
         }
-        eprintln!("Netflix age = {:.1} yr, Spotify = {:.1}, Gym = {:.1}, DoorDash = {:.1}", yr("Netflix"), yr("Spotify"), yr("Anytime Fitness"), yr("DoorDash"));
+        eprintln!("Netflix age = {:.1} yr, Spotify = {:.1}, Gym = {:.1}, Uber Eats = {:.1}", yr("Netflix"), yr("Spotify"), yr("Anytime Fitness"), yr("Uber Eats"));
     }
 
     /// Locks the benchmark's ground-truth reference facts to the actual seed so
@@ -305,7 +305,7 @@ mod tests {
         // Current-state facts live in the trailing 12-month window: payroll at
         // the current $4,000/mo tier, rent at the $1,200 tier.
         let income_12m: i64 = conn
-            .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw='Acme Payroll' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
+            .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw='Infoblox' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
             .unwrap();
         assert!((4_600_000..=5_000_000).contains(&income_12m), "recent-year income ≈ 12×$4,000, got {income_12m}");
         let housing_12m: i64 = conn
@@ -316,7 +316,7 @@ mod tests {
         let uncategorized: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(uncategorized, 4, "Best Buy, Delta, Blue Bottle, Apple Store");
+        assert_eq!(uncategorized, 4, "Best Buy, Flair Airlines, Tim Hortons, Apple Store");
 
         let anomalies: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1", [], |r| r.get(0))
