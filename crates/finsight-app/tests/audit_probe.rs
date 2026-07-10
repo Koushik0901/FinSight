@@ -385,6 +385,43 @@ fn audit_import_samples_and_dump_everything() {
         Err(e) => println!("ERROR {e}"),
     }
 
+    // 6b. P0-2: assign owners to the REAL sample accounts and confirm per-member
+    // flows reconcile to the household total on real data (Amex+CIBC → A,
+    // Tangerine → B, CIBC Savings joint).
+    println!("\n== PER-MEMBER RECONCILIATION (P0-2) ==");
+    {
+        use finsight_core::repos::household;
+        let mut c = db.get().unwrap();
+        let a = household::create_member(&mut c, "Person A", None).unwrap();
+        let b = household::create_member(&mut c, "Person B", None).unwrap();
+        for (id, name) in &ids {
+            let owners: Vec<String> = if name.starts_with("Tangerine") {
+                vec![b.id.clone()]
+            } else if *name == "CIBC Savings" {
+                vec![a.id.clone(), b.id.clone()] // joint
+            } else {
+                vec![a.id.clone()]
+            };
+            household::set_account_owners(&mut c, id, &owners).unwrap();
+        }
+        let start = "2000-01-01T00:00:00Z";
+        let (h_inc, h_exp) = metrics::income_expense_since_for(&c, start, None).unwrap();
+        let (a_inc, a_exp) = metrics::income_expense_since_for(&c, start, Some(a.id.as_str())).unwrap();
+        let (b_inc, b_exp) = metrics::income_expense_since_for(&c, start, Some(b.id.as_str())).unwrap();
+        println!("household inc={h_inc} exp={h_exp}");
+        println!("A inc={a_inc} exp={a_exp} | B inc={b_inc} exp={b_exp}");
+        println!(
+            "A+B inc={} exp={} (expect ~household; 1 joint acct → ≤1c drift/aggregate)",
+            a_inc + b_inc,
+            a_exp + b_exp
+        );
+        let inc_drift = (a_inc + b_inc - h_inc).abs();
+        let exp_drift = (a_exp + b_exp - h_exp).abs();
+        assert!(inc_drift <= 2, "per-member income reconciles (drift={inc_drift})");
+        assert!(exp_drift <= 2, "per-member expense reconciles (drift={exp_drift})");
+        println!("reconciles: income drift={inc_drift}c, expense drift={exp_drift}c");
+    }
+
     // 7. Net worth history sanity (backfill result).
     println!("\n== NET WORTH HISTORY (last 8 points) ==");
     let mut stmt = conn
