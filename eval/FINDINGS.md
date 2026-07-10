@@ -14,7 +14,24 @@ judged by `google/gemini-3.1-pro-preview`. Every run is in MLflow
 | v4 | **90-day-window surplus fixed**, +11 planning Q (53 total) | 3.47 | 62% | 26% | affordability 1.0 → 5.0 |
 | v5 | brokerage-unknown fix, EF facts reconciled | 3.34 | 58% | **21%** | net_worth/facts/grounding → 5.0/4.3/5.0 |
 | v6 | 10-year seed, +12 temporal/stress Q (65 total) | 3.0 | 49% | 34% | headline *dropped* — but forensics show most of it is 2 deterministic bugs + judge false-positives, not reasoning |
-| v7 | plan-only re-prompt + brokerage-$0 snapshot fix | _running_ | | | targets the two deterministic bugs below (~9 questions) |
+| v7 | plan-only re-prompt (BUGGY) + brokerage-$0 fix | 2.831 | 45% | — | re-prompt looped to empty on stochastic stalls — a regression; fixed in v8 |
+| v8 | never-empty re-prompt + plan-stall root-cause fix (pair PLAN w/ tool call) | 3.4 | 58% | 37% | **usable 78%→89%** — the stall fixes landed; more real answers ⇒ more numbers ⇒ fab ticks up |
+| v8′ | re-judge only: judge HISTORY facts (Bucket B) | 3.585 | 63% | 29% | same answers — stripped ~5 derived-aggregate false-positives (temp-05 1→5). **True baseline for v9.** |
+| v9 | cents `_display` fields + list_uncategorized expense filter | _running_ | | | targets the ~9 zero-drop cents fabs + the 125-vs-4 uncat bug |
+
+### The plan-stall saga (v6→v8): a fix that regressed, then landed
+
+v6 forensics found the biggest failure was a **plan-only / empty final turn**: the
+mandatory `PLAN:`-before-tools instruction made glm-class models end a turn with a
+plan + "let me pull the data now" and *no tool call*, which the API returns as a
+final answer. v7's first re-prompt fix **looped to empty** on stochastic stalls
+(converting "ships a plan, score 1" into "empty, score 1, worse UX") — a net
+regression (usable 78%→65%). The lesson: **a non-answer backstop must be
+never-empty.** v8 fixed it two ways — (a) cap the nudge at 1 and fall back to the
+best content seen (a plan beats nothing); (b) reword the prompt so the PLAN is
+emitted *in the same turn* as the first tool call, and forbid text-only turns.
+Result: **usable 78%→89%**, the real headline. Validated on a 13-question subset
+harness (no judge) to avoid burning full runs on a deterministic-mechanism fix.
 
 Headline moved from **1.36 → ~3.4/5** and fabrication fell **monotonically 71% →
 29% → 21%**, with roughly half of the gain being *measurement* fixes (a fair,
