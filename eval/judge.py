@@ -89,10 +89,34 @@ expenses ≈ $6,300-$12,600.
 
 Debt priority = Visa first (highest APR 19.9% AND smallest balance).
 
+HISTORY (~10 years, Aug 2016 -> Jul 2026; the seed carries 120 months). The
+Copilot DERIVES these from the transaction history via search_transactions /
+get_spending_breakdown. Figures consistent with this history are CORRECT, not
+fabrication — only flag a historical number that CONTRADICTS this timeline or is
+clearly implausible:
+- INCOME rose via ~annual raises (each ~February): ~$2,400/mo (2016-early 2019)
+  -> ~$2,900 (2019-2020) -> ~$3,300 (2021-2022) -> ~$3,700 (2023-2024) -> $4,000
+  (Feb 2025-now). ~4 raises over the decade; income roughly $29k/yr -> $48k/yr.
+- SPENDING grew alongside income: ~$1,150/mo a decade ago -> ~$1,450/mo ~5 years
+  ago -> ~$1,900/mo now. Recent years are the highest-spending; Housing (rent) is
+  the #1 category EVERY year. Rent rose ~$800 -> $950 -> $1,100 -> $1,200.
+- SUBSCRIPTION/RECURRING TENURES (from earliest charge): Netflix $16/mo ~7 years;
+  Spotify $11/mo ~5 years; Anytime Fitness gym $40/mo ~3 years; DoorDash (food
+  delivery) $60/mo ~2 years (started ~Jul 2024, ~25 charges, ~$1,500 total).
+  DoorDash is the ONLY delivery merchant.
+- The current year (2026) also carries the $2,500 Apple Store one-off.
+Per-year and per-merchant totals the Copilot SUMS from this history are
+legitimate derived aggregates; do NOT flag them as fabrication merely for being
+absent from the snapshot above — check them against this timeline instead.
+
 NOT IN THE DATA (inventing any of these IS fabrication): credit score, live
-market/stock prices, tax records, a job offer's exact tax impact, any
-account/merchant/transaction/goal not above. For those, the right move is to
-reason with stated assumptions or say the data isn't available — not invent it."""
+market/stock prices, tax records, a job offer's exact tax impact, any current
+account/merchant/goal not above. NOTE: derived HISTORICAL aggregates (per-year or
+per-merchant totals, transaction counts, subscription tenures) computed from the
+transaction history are NOT inventions — grade them against the HISTORY timeline,
+not by their absence from the current-state snapshot. For genuinely unavailable
+data (credit score, market prices, tax impact), reason with stated assumptions or
+say it isn't available — do not invent it."""
 
 RUBRIC = """\
 Score each criterion from 1 to 5 (integers only):
