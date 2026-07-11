@@ -10,7 +10,7 @@ import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
   useTransactionSplits, useSetTransactionSplits, useSetAnomalyDismissed,
-  useSetTransactionOwner, useSetTransactionTransfer,
+  useSetTransactionOwner, useSetTransactionTransfer, useApplyTransferVerdictToSimilar,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
@@ -43,6 +43,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const createRule = useCreateRule();
   const setFlags = useSetTransactionFlags();
   const setTransfer = useSetTransactionTransfer();
+  const applySimilar = useApplyTransferVerdictToSimilar();
   const dismissAnomaly = useSetAnomalyDismissed();
   const { data: accounts = [] } = useAccounts();
   const setOwner = useSetTransactionOwner();
@@ -317,12 +318,31 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             onClick={async () => {
               const next = !transaction.is_transfer;
               try {
-                await setTransfer.mutateAsync({ id: transaction.id, isTransfer: next });
-                toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", {
-                  description: next
-                    ? "It no longer counts as income or spending, and this won't be undone by future imports."
-                    : "It now counts in your income and spending, and this won't be undone by future imports.",
-                });
+                const result = await setTransfer.mutateAsync({ id: transaction.id, isTransfer: next });
+                const description = next
+                  ? "It no longer counts as income or spending, and this won't be undone by future imports."
+                  : "It now counts in your income and spending, and this won't be undone by future imports.";
+                if (result?.similarPattern && result.similarCount > 0) {
+                  // One decision can clear the whole counterparty from review.
+                  const pattern = result.similarPattern;
+                  const n = result.similarCount;
+                  toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", {
+                    description,
+                    action: {
+                      label: `Also mark ${n} more with «${result.similarLabel}»`,
+                      onClick: async () => {
+                        try {
+                          const applied = await applySimilar.mutateAsync({ pattern, isTransfer: next });
+                          toast.success(`Marked ${applied} transaction${applied === 1 ? "" : "s"} the same way`);
+                        } catch (err) {
+                          toast.error(userErrorMessage(err, "Could not update the similar transactions."));
+                        }
+                      },
+                    },
+                  });
+                } else {
+                  toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", { description });
+                }
               } catch (err) {
                 toast.error(userErrorMessage(err, "Could not update this transaction. Try again."));
               }

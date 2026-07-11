@@ -281,6 +281,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::recipes::list_recipe_runs,
         commands::transactions::set_transaction_flags,
         commands::transactions::set_transaction_transfer,
+        commands::transactions::apply_transfer_verdict_to_similar,
         commands::transactions::get_transaction_splits,
         commands::transactions::set_transaction_splits,
         commands::budget::update_goal_monthly,

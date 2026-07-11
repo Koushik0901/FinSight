@@ -148,6 +148,12 @@ the user saves money. Ranked by impact:
 >   every user). The remaining leak is REAL spend + ambiguous person-to-person
 >   transfers — savings staying tight/negative for a heavy travel month is
 >   *correct*, not a bug.
+>   **Bulk verdicts: DONE** — the review population clusters by counterparty
+>   (samples/: swathi ×11, joe ×12, …), so ruling one e-transfer offers "also
+>   mark N more with «name»" (`transfer_verdict_siblings` +
+>   `apply_transfer_verdict_to_similar`, riding the same counterparty
+>   generalization as the F3 rule proposals); each row still goes through
+>   `set_transfer_override`, categorized/already-ruled siblings untouched.
 >   **Review affordance: DONE** (this session) — V046 `transfer_override` makes a
 >   user's transfer verdict sticky (categorizer + `pair_transfers` both respect
 >   it; unmark unlinks the peer leg on both sides and neither can re-pair). The

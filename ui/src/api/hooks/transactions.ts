@@ -313,7 +313,9 @@ export function useSetTransactionFlags() {
 }
 
 /** Record the user's verdict on whether a transaction is a transfer between
- *  their own accounts. Sticky — survives re-imports and categorizer re-runs. */
+ *  their own accounts. Sticky — survives re-imports and categorizer re-runs.
+ *  The result reports undecided siblings with the same counterparty so the UI
+ *  can offer a one-click bulk verdict. */
 export function useSetTransactionTransfer() {
   const qc = useQueryClient();
   return useMutation({
@@ -325,6 +327,24 @@ export function useSetTransactionTransfer() {
     },
     // A transfer verdict moves money in/out of income & spending — every
     // headline number (savings rate, cashflow, budget, inbox) can change.
+    onSuccess: () => {
+      invalidateDomains(qc, "transactions");
+      void qc.invalidateQueries();
+    },
+  });
+}
+
+/** Apply a transfer verdict to every undecided transaction with the same
+ *  counterparty (pattern from `useSetTransactionTransfer`'s result). */
+export function useApplyTransferVerdictToSimilar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ pattern, isTransfer }: { pattern: string; isTransfer: boolean }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.applyTransferVerdictToSimilar(pattern, isTransfer);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
       void qc.invalidateQueries();

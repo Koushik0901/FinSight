@@ -9,6 +9,7 @@ vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children
 const setFlags = vi.fn();
 const setOwner = vi.fn();
 const setTransfer = vi.fn();
+const applySimilar = vi.fn();
 
 vi.mock("../api/hooks/transactions", () => ({
   useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
@@ -23,6 +24,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
   useSetTransactionTransfer: vi.fn(() => ({ mutateAsync: setTransfer, isPending: false })),
+  useApplyTransferVerdictToSimilar: vi.fn(() => ({ mutateAsync: applySimilar, isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetTransactionOwner: vi.fn(() => ({ mutate: setOwner })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),
@@ -116,6 +118,31 @@ describe("TransactionDrawer — edit mode", () => {
     await waitFor(() =>
       expect(setTransfer).toHaveBeenCalledWith({ id: "t1", isTransfer: true })
     );
+  });
+
+  it("offers to apply the verdict to undecided siblings with the same counterparty", async () => {
+    const { toast } = await import("sonner");
+    setTransfer.mockResolvedValueOnce({
+      transaction: { ...existingTxn, is_transfer: true },
+      similarPattern: "%swathi%",
+      similarLabel: "swathi",
+      similarCount: 11,
+    });
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^transfer$/i }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    const [, opts] = vi.mocked(toast.success).mock.calls.at(-1)!;
+    const action = (opts as unknown as { action?: { label: string; onClick: () => Promise<void> } }).action;
+    expect(action?.label).toMatch(/11 more with «swathi»/);
+
+    // Taking the offer rules the whole counterparty in one call.
+    applySimilar.mockResolvedValueOnce(11);
+    await action!.onClick();
+    expect(applySimilar).toHaveBeenCalledWith({ pattern: "%swathi%", isTransfer: true });
   });
 
   it("shows the transfer state and hides the category picker on a transfer", () => {

@@ -1010,9 +1010,22 @@ async setTransactionFlags(id: string, isReimbursable: boolean, isSplit: boolean)
  * Record the user's verdict on whether a transaction is a transfer between
  * their own accounts. Sticky: survives re-imports and categorizer re-runs.
  */
-async setTransactionTransfer(id: string, isTransfer: boolean) : Promise<Result<Transaction, AppError>> {
+async setTransactionTransfer(id: string, isTransfer: boolean) : Promise<Result<TransferVerdictResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_transaction_transfer", { id, isTransfer }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Apply a transfer verdict to every undecided transaction matching the
+ * counterparty pattern returned by `set_transaction_transfer`. One decision
+ * clears a whole person's e-transfer history from the review list.
+ */
+async applyTransferVerdictToSimilar(pattern: string, isTransfer: boolean) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_transfer_verdict_to_similar", { pattern, isTransfer }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1943,6 +1956,21 @@ owner_member_id: string | null; imported_id: string | null; source: string | nul
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TransferSuggestionInfo = { id: string; confidence: string; detectedAt: string; fromTransactionId: string; fromAccountName: string; fromMerchant: string; fromAmountCents: number; fromPostedAt: string; toTransactionId: string; toAccountName: string; toMerchant: string; toAmountCents: number; toPostedAt: string }
+/**
+ * Result of a transfer verdict: the updated transaction, plus how many other
+ * UNDECIDED transactions share the same counterparty so the UI can offer to
+ * apply the verdict to all of them in one click.
+ */
+export type TransferVerdictResult = { transaction: Transaction; 
+/**
+ * LIKE pattern identifying the siblings (pass to
+ * `apply_transfer_verdict_to_similar`), e.g. `%swathi%`.
+ */
+similarPattern: string | null; 
+/**
+ * Human-readable counterparty ("swathi") for the offer text.
+ */
+similarLabel: string | null; similarCount: number }
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
