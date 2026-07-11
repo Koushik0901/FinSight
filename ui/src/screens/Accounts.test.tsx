@@ -46,6 +46,8 @@ vi.mock("../api/hooks/household", () => ({
   useDeleteHouseholdMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useSetAccountOwners: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useSetAccountOwnerShares: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useAssetOwners: vi.fn(() => ({ data: [] })),
+  useSetAssetOwners: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useSetSelfMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 
