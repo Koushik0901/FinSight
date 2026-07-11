@@ -308,19 +308,26 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
 // rounding (≤ 1 cent per joint account per aggregate) — round at the display
 // edge, not mid-reconciliation.
 
+/// The ONE definition of a member's per-account ownership weight, shared by
+/// balance attribution ([`account_weights_for_member`]) and flow attribution
+/// ([`weighted_income_expense`]) so the two can never drift. Today it is an equal
+/// split (`1 / owner_count`); an explicit `account_owners.share_bps` can be
+/// swapped in *here* as `COALESCE(ao.share_bps / 10000.0, 1.0 / oc.n)` and every
+/// consumer inherits it. Selects `(account_id, weight)` for the member bound to
+/// `?1` — callers must supply the member id as the first parameter.
+pub const MEMBER_WEIGHT_SUBQUERY: &str = "SELECT ao.account_id, 1.0 / oc.n AS weight \
+     FROM account_owners ao \
+     JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+       ON oc.account_id = ao.account_id \
+     WHERE ao.member_id = ?1";
+
 /// Per-account ownership weight for `member_id` (`1 / owner_count`). Accounts the
 /// member does not own are absent from the map.
 fn account_weights_for_member(
     conn: &Connection,
     member_id: &str,
 ) -> CoreResult<std::collections::HashMap<String, f64>> {
-    let mut stmt = conn.prepare(
-        "SELECT ao.account_id, 1.0 / oc.n \
-         FROM account_owners ao \
-         JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
-           ON oc.account_id = ao.account_id \
-         WHERE ao.member_id = ?1",
-    )?;
+    let mut stmt = conn.prepare(MEMBER_WEIGHT_SUBQUERY)?;
     let rows = stmt.query_map(params![member_id], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
     })?;
@@ -345,13 +352,9 @@ fn weighted_income_expense(
             COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents * w.weight ELSE 0 END), 0), \
             COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents * w.weight ELSE 0 END), 0) \
          FROM transactions t \
-         JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight \
-               FROM account_owners ao \
-               JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
-                 ON oc.account_id = ao.account_id \
-               WHERE ao.member_id = ?1) w ON w.account_id = t.account_id \
-         WHERE t.posted_at >= ?2 AND t.is_transfer = 0{}",
-        if end_exclusive.is_some() {
+         JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+         WHERE t.posted_at >= ?2 AND t.is_transfer = 0{end}",
+        end = if end_exclusive.is_some() {
             " AND t.posted_at < ?3"
         } else {
             ""

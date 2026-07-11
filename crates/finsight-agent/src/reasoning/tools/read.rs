@@ -316,20 +316,19 @@ pub fn get_member_spending() -> Arc<dyn Tool> {
             let balances =
                 finsight_core::metrics::balance_breakdown_for(ctx.conn, Some(member.id.as_str()))?;
 
-            // Ownership-weighted top spending categories for this member.
-            let mut cat_stmt = ctx.conn.prepare(
+            // Ownership-weighted top spending categories for this member. The
+            // weight subquery is the shared single source (metrics layer) so the
+            // Copilot attributes exactly as the screens do.
+            let mut cat_stmt = ctx.conn.prepare(&format!(
                 "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
                         CAST(ROUND(SUM(ABS(t.amount_cents) * w.weight)) AS INTEGER) AS spent \
                  FROM transactions t \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight \
-                       FROM account_owners ao \
-                       JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
-                         ON oc.account_id = ao.account_id \
-                       WHERE ao.member_id = ?1) w ON w.account_id = t.account_id \
+                 JOIN ({weight}) w ON w.account_id = t.account_id \
                  WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?2 \
                  GROUP BY label ORDER BY spent DESC LIMIT 8",
-            )?;
+                weight = finsight_core::metrics::MEMBER_WEIGHT_SUBQUERY,
+            ))?;
             let top_categories: Vec<Value> = cat_stmt
                 .query_map(rusqlite::params![member.id, start_str], |r| {
                     Ok(json!({"category": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
