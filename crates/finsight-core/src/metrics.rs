@@ -341,6 +341,34 @@ fn account_weights_for_member(
     Ok(out)
 }
 
+/// The manual-asset analogue of [`MEMBER_WEIGHT_SUBQUERY`]: a member's share of a
+/// jointly-owned asset — explicit `share_bps` when set, else an equal split.
+/// Selects `(asset_id, weight)` for the member bound to `?1`.
+pub const MEMBER_ASSET_WEIGHT_SUBQUERY: &str = "SELECT ao.asset_id, \
+       COALESCE(ao.share_bps / 10000.0, 1.0 / oc.n) AS weight \
+     FROM asset_owners ao \
+     JOIN (SELECT asset_id, COUNT(*) AS n FROM asset_owners GROUP BY asset_id) oc \
+       ON oc.asset_id = ao.asset_id \
+     WHERE ao.member_id = ?1";
+
+/// Per-asset ownership weight for `member_id`. Assets the member does not own are
+/// absent from the map.
+fn asset_weights_for_member(
+    conn: &Connection,
+    member_id: &str,
+) -> CoreResult<std::collections::HashMap<String, f64>> {
+    let mut stmt = conn.prepare(MEMBER_ASSET_WEIGHT_SUBQUERY)?;
+    let rows = stmt.query_map(params![member_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+    })?;
+    let mut out = std::collections::HashMap::new();
+    for r in rows {
+        let (asset_id, weight) = r?;
+        out.insert(asset_id, weight);
+    }
+    Ok(out)
+}
+
 /// Income and expense (both positive cents), transfers excluded, attributed to
 /// one member by ownership weight over `[start, end)` (end optional = open).
 fn weighted_income_expense(
@@ -442,11 +470,12 @@ pub fn rolling_averages_for(
     })
 }
 
-/// [`balance_breakdown`] optionally scoped to one member. Each account balance is
-/// weighted by the member's ownership share; ownerless accounts (and manual
-/// assets, which have no owner) are excluded — so per-member `net_worth_cents`
-/// is the member's owned-account net worth, deliberately NOT the household net
-/// worth that folds in unattributable manual assets.
+/// [`balance_breakdown`] optionally scoped to one member. Each account balance
+/// AND each jointly-owned manual asset is weighted by the member's ownership
+/// share; ownerless accounts and ownerless assets stay in the household residual
+/// (never attributed to a member). So per-member `net_worth_cents` is the
+/// member's owned share of accounts + assets, and the members' slices plus the
+/// residual reconcile to the household total.
 pub fn balance_breakdown_for(
     conn: &mut Connection,
     member_id: Option<&str>,
@@ -481,6 +510,18 @@ pub fn balance_breakdown_for(
         }
         if a.emergency_fund_eligible && !is_debt_type(a.r#type) {
             ef += bal;
+        }
+    }
+    // Fold in the member's share of jointly-owned manual assets. Assets aren't
+    // liquid/invested/debt — they only move net worth — matching how the
+    // household breakdown folds in manual_asset_cents. An asset with no owner
+    // stays in the household residual, exactly like an ownerless account.
+    let asset_weights = asset_weights_for_member(conn, member)?;
+    if !asset_weights.is_empty() {
+        for asset in crate::repos::manual_assets::list(conn)? {
+            if let Some(&w) = asset_weights.get(&asset.id) {
+                net += asset.value_cents as f64 * w;
+            }
         }
     }
     Ok(BalanceBreakdown {
@@ -784,6 +825,58 @@ mod tests {
         let (h_inc, h_exp) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
         assert_eq!(a_inc + b_inc, h_inc);
         assert_eq!(a_exp + b_exp, h_exp);
+    }
+
+    #[test]
+    fn member_net_worth_folds_in_owned_manual_asset_shares() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+        // A $500,000 house jointly owned 60/40 — the "shared assets" case.
+        conn.execute(
+            "INSERT INTO manual_assets(id,name,asset_type,value_cents,currency,created_at,updated_at) \
+             VALUES('house','House','Real Estate',50000000,'CAD','2024-01-01','2024-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO asset_owners(asset_id,member_id,share_bps) VALUES('house',?1,6000)",
+            rusqlite::params![alice.id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO asset_owners(asset_id,member_id,share_bps) VALUES('house',?1,4000)",
+            rusqlite::params![bob.id],
+        )
+        .unwrap();
+
+        let a = balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap();
+        let b = balance_breakdown_for(&mut conn, Some(&bob.id)).unwrap();
+        assert_eq!(a.net_worth_cents, 30_000_000, "alice: 60% of the house");
+        assert_eq!(b.net_worth_cents, 20_000_000, "bob: 40% of the house");
+        // Reconciles to the household net worth (which folds in the whole asset).
+        let h = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(
+            a.net_worth_cents + b.net_worth_cents,
+            h.net_worth_cents,
+            "60 + 40 == the household's whole-asset net worth"
+        );
+
+        // NULL share ⇒ equal split, and an ownerless asset stays in the residual.
+        conn.execute("UPDATE asset_owners SET share_bps = NULL", []).unwrap();
+        assert_eq!(
+            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().net_worth_cents,
+            25_000_000,
+            "NULL share ⇒ 50/50"
+        );
+        conn.execute("DELETE FROM asset_owners", []).unwrap();
+        assert_eq!(
+            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().net_worth_cents,
+            0,
+            "ownerless asset attributes to no member (household residual)"
+        );
     }
 
     #[test]
