@@ -161,11 +161,12 @@ the user saves money. Ranked by impact:
 >   ONE user confirmation (categorize a rent e-transfer → "Create rule") makes
 >   every payment to that person auto-categorize (Housing) — rent finally appears
 >   in "where does my money go". Safe & generic: user-confirmed, transfer-only, no
->   auto-classification change. **Follow-up:** rent as a *bill on the Recurring
->   screen* needs recipient-aware e-transfer grouping — `canonical_merchant_key`
->   strips the recipient, so all e-transfers merge into one group; making the
->   Recurring view respect a user's category requires splitting that grouping by
->   counterparty first (a bounded but separate change).
+>   auto-classification change. **Recurring-bill display: DONE** (this session) —
+>   `canonical_merchant_key` now re-keys e-transfers by counterparty (they used to
+>   all collapse via `truncate(3)`), and a user's real-cost category overrides the
+>   transfer keyword in `classify()`, so categorized rent shows as a Bill too.
+>   Rent-by-e-transfer is now fully visible: categorize once → spending AND
+>   recurring bill.
 
 ### F0 — Transfer detection STILL leaks; headline numbers still wrong (highest impact)
 The prior P0-1 fix improved flagging (287→**400** legs) but the probe still lists
