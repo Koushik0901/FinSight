@@ -133,6 +133,20 @@ async createRule(pattern: string, categoryId: string) : Promise<Result<Rule, App
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Attribute a single transaction to one household member, overriding its
+ * account's ownership shares for that row's cashflow — for a personal purchase
+ * on a joint account. `member_id` None clears the override (revert to account
+ * shares). Only flows are affected; balances are per-account.
+ */
+async setTransactionOwner(transactionId: string, memberId: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_transaction_owner", { transactionId, memberId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listCategories() : Promise<Result<CategoryDto[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_categories") };

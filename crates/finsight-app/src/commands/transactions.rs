@@ -130,6 +130,29 @@ pub async fn create_rule(
     .map_err(AppError::from)
 }
 
+/// Attribute a single transaction to one household member, overriding its
+/// account's ownership shares for that row's cashflow — for a personal purchase
+/// on a joint account. `member_id` None clears the override (revert to account
+/// shares). Only flows are affected; balances are per-account.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transaction_owner(
+    state: tauri::State<'_, AppState>,
+    transaction_id: String,
+    member_id: Option<String>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        conn.execute(
+            "UPDATE transactions SET owner_member_id = ?1 WHERE id = ?2",
+            rusqlite::params![member_id, transaction_id],
+        )?;
+        Ok::<_, finsight_core::CoreError>(())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct CategoryDto {
     pub id: String,

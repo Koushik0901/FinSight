@@ -180,6 +180,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::update_transaction,
         commands::transactions::delete_transaction,
         commands::transactions::create_rule,
+        commands::transactions::set_transaction_owner,
         commands::transactions::list_categories,
         commands::transactions::set_category_spending_type,
         commands::transactions::get_spending_breakdown,

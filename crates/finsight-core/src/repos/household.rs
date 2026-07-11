@@ -113,6 +113,12 @@ pub fn delete_member(conn: &mut Connection, member_id: &str) -> CoreResult<()> {
         }
         out
     };
+    // Clear any per-transaction ownership overrides pointing at this member so no
+    // stale id lingers (those transactions revert to account-share attribution).
+    conn.execute(
+        "UPDATE transactions SET owner_member_id = NULL WHERE owner_member_id = ?1",
+        params![member_id],
+    )?;
     conn.execute(
         "DELETE FROM household_members WHERE id = ?1",
         params![member_id],

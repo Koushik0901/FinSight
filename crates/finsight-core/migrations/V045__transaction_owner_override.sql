@@ -1,0 +1,17 @@
+-- Per-transaction ownership override for joint accounts.
+--
+-- Normally a transaction is attributed to household members by its ACCOUNT's
+-- ownership shares (account_owners.share_bps). But a single charge on a joint
+-- account is very often ONE person's — a personal purchase on the joint credit
+-- card. `owner_member_id`, when set, attributes that transaction's whole cashflow
+-- (income/expense) to that one member, overriding the account share for that row
+-- only. NULL (the default, and every existing row) = use the account's shares, so
+-- this migration changes no number until an override is set.
+--
+-- Scope: this refines FLOWS only. Balances (stock) are a property of the account,
+-- not individual transactions, so net-worth attribution is unaffected.
+--
+-- Plain TEXT (no FK) keeps ALTER ADD COLUMN simple and portable; the household
+-- repo clears it when a member is deleted, and a stale id simply attributes to
+-- nobody (the amount falls into the household residual) rather than erroring.
+ALTER TABLE transactions ADD COLUMN owner_member_id TEXT;

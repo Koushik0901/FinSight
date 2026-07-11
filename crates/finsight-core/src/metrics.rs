@@ -377,13 +377,26 @@ fn weighted_income_expense(
     end_exclusive: Option<&str>,
     member_id: &str,
 ) -> CoreResult<(i64, i64)> {
+    // Per-transaction weight for this member: an explicit per-transaction owner
+    // (`owner_member_id`) attributes the WHOLE transaction to that one member —
+    // overriding the account's ownership share for that row (a personal purchase
+    // on a joint card) — otherwise the account share applies. A LEFT JOIN (not
+    // INNER) so an overridden transaction on an account the member doesn't own by
+    // share is still counted 100% for them. The member id binds to ?1 in both the
+    // weight subquery and the override.
     let sql = format!(
         "SELECT \
-            COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents * w.weight ELSE 0 END), 0), \
-            COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents * w.weight ELSE 0 END), 0) \
-         FROM transactions t \
-         JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
-         WHERE t.posted_at >= ?2 AND t.is_transfer = 0{end}",
+            COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents * t.mw ELSE 0 END), 0), \
+            COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents * t.mw ELSE 0 END), 0) \
+         FROM ( \
+             SELECT t.amount_cents AS amount_cents, \
+                    CASE WHEN t.owner_member_id IS NOT NULL \
+                         THEN (CASE WHEN t.owner_member_id = ?1 THEN 1.0 ELSE 0.0 END) \
+                         ELSE COALESCE(w.weight, 0.0) END AS mw \
+             FROM transactions t \
+             LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+             WHERE t.posted_at >= ?2 AND t.is_transfer = 0{end} \
+         ) t",
         end = if end_exclusive.is_some() {
             " AND t.posted_at < ?3"
         } else {
@@ -877,6 +890,38 @@ mod tests {
             0,
             "ownerless asset attributes to no member (household residual)"
         );
+    }
+
+    #[test]
+    fn per_transaction_owner_override_attributes_the_whole_txn_to_one_member() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+        let joint =
+            accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true)).unwrap().id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+
+        // A shared $1,000 expense (no override) splits 50/50 by account share.
+        insert_txn(&mut conn, &joint, -100_000, 5, false);
+        // Alice's personal $400 purchase on the joint card → 100% hers (override),
+        // even though the account is jointly owned 50/50.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at,owner_member_id) \
+             VALUES('t_alice',?1,'2025-01-01T00:00:00Z',-40000,'M','cleared',0,0,'2025-01-01T00:00:00Z',?2)",
+            rusqlite::params![joint, alice.id],
+        )
+        .unwrap();
+
+        let start = "1970-01-01T00:00:00Z";
+        let (_a_inc, a_exp) = income_expense_since_for(&conn, start, Some(&alice.id)).unwrap();
+        let (_b_inc, b_exp) = income_expense_since_for(&conn, start, Some(&bob.id)).unwrap();
+        assert_eq!(a_exp, 90_000, "alice: half the shared $1,000 + all of her own $400");
+        assert_eq!(b_exp, 50_000, "bob: only half the shared (0 of alice's override)");
+        // Still reconciles to the household total ($1,400).
+        let (_h_inc, h_exp) = income_expense_since(&conn, start).unwrap();
+        assert_eq!(a_exp + b_exp, h_exp, "member expenses reconcile to the household");
     }
 
     #[test]
