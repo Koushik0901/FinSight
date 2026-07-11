@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import TransactionDrawer from "./TransactionDrawer";
 import { createWrapper } from "../test-utils";
+import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
 
 const setFlags = vi.fn();
+const setOwner = vi.fn();
 
 vi.mock("../api/hooks/transactions", () => ({
   useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
@@ -20,12 +22,18 @@ vi.mock("../api/hooks/transactions", () => ({
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
-  useSetTransactionOwner: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetTransactionOwner: vi.fn(() => ({ mutate: setOwner })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),
   useSetTransactionSplits: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),
+}));
+// Household owners default to empty (solo account → no attribution selector); the
+// joint-account test overrides these per-render.
+vi.mock("../api/hooks/household", () => ({
+  useAccountOwners: vi.fn(() => ({ data: [] })),
+  useHouseholdMembers: vi.fn(() => ({ data: [] })),
 }));
 vi.mock("sonner", () => ({ toast: { custom: vi.fn(), error: vi.fn() } }));
 
@@ -47,6 +55,10 @@ const existingTxn = {
 describe("TransactionDrawer — edit mode", () => {
   beforeEach(() => {
     setFlags.mockReset();
+    setOwner.mockReset();
+    // Solo account by default — the attribution selector is joint-account-only.
+    vi.mocked(useAccountOwners).mockReturnValue({ data: [] } as any);
+    vi.mocked(useHouseholdMembers).mockReturnValue({ data: [] } as any);
   });
 
   it("pre-fills merchant_raw field", () => {
@@ -91,5 +103,43 @@ describe("TransactionDrawer — edit mode", () => {
     await waitFor(() =>
       expect(setFlags).toHaveBeenCalledWith({ id: "t1", isReimbursable: true, isSplit: false })
     );
+  });
+
+  it("hides the attribution selector on a solo (0/1-owner) account", () => {
+    // Default mocks: no owners on this account → nothing to attribute between.
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.queryByRole("combobox", { name: /attribute this transaction to/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the 'Attributed to' selector on a joint (2-owner) account and attributes on change", () => {
+    // A jointly-owned account (both members own acct "a1", the txn's account) is
+    // the only place a per-transaction override is meaningful.
+    vi.mocked(useAccountOwners).mockReturnValue({ data: [
+      { accountId: "a1", memberId: "m1", shareBps: null },
+      { accountId: "a1", memberId: "m2", shareBps: null },
+    ] } as any);
+    vi.mocked(useHouseholdMembers).mockReturnValue({ data: [
+      { id: "m1", name: "Alex", color: "#38BDF8", createdAt: "2026-01-01T00:00:00Z" },
+      { id: "m2", name: "Sam", color: "#F472B6", createdAt: "2026-01-02T00:00:00Z" },
+    ] } as any);
+
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+
+    const select = screen.getByRole("combobox", { name: /attribute this transaction to/i });
+    expect(select).toBeInTheDocument();
+    // Both owners are attribution options, plus the shared default.
+    expect(screen.getByRole("option", { name: /shared — split by account ownership/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Alex" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Sam" })).toBeInTheDocument();
+
+    // Attributing to one member calls the override mutation with that member.
+    fireEvent.change(select, { target: { value: "m1" } });
+    expect(setOwner).toHaveBeenCalledWith({ transactionId: "t1", memberId: "m1" });
   });
 });
