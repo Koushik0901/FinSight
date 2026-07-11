@@ -385,8 +385,12 @@ pub fn update(
                     other => Err(other),
                 })?;
             if !rule_exists {
+                // Generalize a person-to-person transfer descriptor to a
+                // `%counterparty%` key so a rule created from e.g. a rent
+                // e-transfer matches every future payment to that person (each
+                // carries a unique reference number). Normal merchants unchanged.
                 proposed_rule = Some(ProposedRule {
-                    pattern: merchant_raw,
+                    pattern: crate::categorize::suggested_rule_pattern(&merchant_raw),
                     category_id: category_id.clone(),
                     category_label,
                 });

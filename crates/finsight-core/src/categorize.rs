@@ -482,6 +482,41 @@ const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
     "etransfer", "preauthorized", "emt", "etfr",
 ];
 
+/// The pattern to propose for an "always categorize like this" rule from a
+/// user's categorization.
+///
+/// For a normal merchant the raw string is the right key — matching future
+/// identical rows. But a person-to-person transfer descriptor
+/// ("Internet Banking E-TRANSFER 106001023942 Swathi") carries a UNIQUE reference
+/// number every time, so a rule keyed on the raw string would only ever match
+/// that one row — the single most important recurring cost, rent-by-e-transfer,
+/// would never stick. So for a transfer/e-transfer descriptor, generalize to
+/// `%<counterparty tokens>%` (structural transfer words and reference numbers
+/// stripped) so one confirmation catches every payment to that person. Normal
+/// merchants are returned unchanged. The user always confirms the proposed
+/// pattern, so a generalized key is never applied silently.
+pub fn suggested_rule_pattern(merchant_raw: &str) -> String {
+    let lower = merchant_raw.to_lowercase();
+    let is_transferish = ["e-transfer", "etransfer", "e transfer", "interac"]
+        .iter()
+        .any(|k| lower.contains(k));
+    if !is_transferish {
+        return merchant_raw.to_string();
+    }
+    // Keep only counterparty NAME tokens: alphabetic, ≥3 chars, and not a
+    // structural transfer word (bank/product/direction vocabulary).
+    let name: Vec<String> = merchant_raw
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))
+        .map(|t| t.to_lowercase())
+        .filter(|t| !TRANSFER_STRUCTURAL_TOKENS.contains(&t.as_str()))
+        .collect();
+    if name.is_empty() {
+        return merchant_raw.to_string();
+    }
+    format!("%{}%", name.join(" "))
+}
+
 /// Mask personally-identifying tokens from a merchant string BEFORE it is sent
 /// to a cloud LLM for categorization: (1) bank reference / account / phone
 /// numbers (digit runs ≥ 4) become `#`, and (2) in a named e-transfer / Interac
@@ -1032,6 +1067,30 @@ mod tests {
         // a transfer.
         assert!(!is_transfer("Interac - Purchase - COSTCO WHOLESALE W51"));
         assert!(!is_transfer("Interac Network Usage Charge"));
+    }
+
+    #[test]
+    fn suggested_rule_pattern_generalizes_e_transfers_but_not_normal_merchants() {
+        // A rent e-transfer's reference number changes every month; a rule must
+        // key on the COUNTERPARTY so one confirmation catches every future payment
+        // to that person (F3: rent-by-e-transfer becomes visible and sticky).
+        assert_eq!(
+            suggested_rule_pattern("Internet Banking E-TRANSFER 106001023942 Swathi"),
+            "%swathi%"
+        );
+        assert_eq!(suggested_rule_pattern("INTERAC e-Transfer To: Koushik"), "%koushik%");
+        // Normal merchants keep the exact string (unchanged behavior).
+        assert_eq!(suggested_rule_pattern("AMAZON.CA"), "AMAZON.CA");
+        assert_eq!(
+            suggested_rule_pattern("TIM HORTONS #3356 BURNABY"),
+            "TIM HORTONS #3356 BURNABY"
+        );
+        // A bare internal internet transfer has no counterparty name → not
+        // generalized (correct: it isn't a payment to a person).
+        assert_eq!(
+            suggested_rule_pattern("Internet Banking INTERNET TRANSFER 000000239758"),
+            "Internet Banking INTERNET TRANSFER 000000239758"
+        );
     }
 
     #[test]
