@@ -344,13 +344,23 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           </label>
         )}
         {!isEdit && (
-          <label> Opening balance ($)
+          <label> {watch("type") === "Investment" ? "Current market value ($)" : "Opening balance ($)"}
             <input type="number" step="0.01" {...register("opening_dollars")} />
             <div className="hint" style={{ marginTop: 6, fontSize: 12, color: "var(--ink-faint)" }}>
-              Balance <em>before</em> your earliest transaction. Enter 0 only if you'll import
-              history all the way back to when the account was opened — FinSight adds every
-              imported transaction on top. Importing just recent statements? Leave this and use
-              “Set current balance” after importing.
+              {watch("type") === "Investment" ? (
+                <>
+                  What your holdings are worth today. FinSight tracks an investment account by its
+                  market value — importing a contribution/trade history won’t change this figure,
+                  so update it as your portfolio moves.
+                </>
+              ) : (
+                <>
+                  Balance <em>before</em> your earliest transaction. Enter 0 only if you'll import
+                  history all the way back to when the account was opened — FinSight adds every
+                  imported transaction on top. Importing just recent statements? Leave this and use
+                  “Set current balance” after importing.
+                </>
+              )}
             </div>
           </label>
         )}
