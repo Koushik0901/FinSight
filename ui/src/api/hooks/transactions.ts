@@ -312,6 +312,26 @@ export function useSetTransactionFlags() {
   });
 }
 
+/** Record the user's verdict on whether a transaction is a transfer between
+ *  their own accounts. Sticky — survives re-imports and categorizer re-runs. */
+export function useSetTransactionTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isTransfer }: { id: string; isTransfer: boolean }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setTransactionTransfer(id, isTransfer);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    // A transfer verdict moves money in/out of income & spending — every
+    // headline number (savings rate, cashflow, budget, inbox) can change.
+    onSuccess: () => {
+      invalidateDomains(qc, "transactions");
+      void qc.invalidateQueries();
+    },
+  });
+}
+
 export function useTransactionSplits(txnId: string | undefined) {
   return useQuery({
     queryKey: ["splits", txnId],

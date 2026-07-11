@@ -10,7 +10,7 @@ import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
   useTransactionSplits, useSetTransactionSplits, useSetAnomalyDismissed,
-  useSetTransactionOwner,
+  useSetTransactionOwner, useSetTransactionTransfer,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
@@ -42,6 +42,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const del = useDeleteTransaction();
   const createRule = useCreateRule();
   const setFlags = useSetTransactionFlags();
+  const setTransfer = useSetTransactionTransfer();
   const dismissAnomaly = useSetAnomalyDismissed();
   const { data: accounts = [] } = useAccounts();
   const setOwner = useSetTransactionOwner();
@@ -187,6 +188,17 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             </button>
           </div>
         )}
+        {isEdit && transaction?.is_transfer && (
+          <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--accent)", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Transfer between your accounts</div>
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>
+              {transaction.transfer_peer_account_name
+                ? `Matched with the opposite leg in ${transaction.transfer_peer_account_name}. `
+                : ""}
+              It doesn't count as income or spending.
+            </div>
+          </div>
+        )}
         <label> Merchant
           <input {...register("merchant_raw")} aria-invalid={!!errors.merchant_raw} />
           {errors.merchant_raw && <span className="err">{errors.merchant_raw.message}</span>}
@@ -210,7 +222,11 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
         )}
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Category</div>
-          {transaction?.is_split ? (
+          {transaction?.is_transfer ? (
+            <div className="muted" style={{ fontSize: 12.5, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 7, border: "1px solid var(--line)" }}>
+              Transfers aren't categorized — this is money moved between your accounts, not spending.
+            </div>
+          ) : transaction?.is_split ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 7, border: "1px solid var(--line)" }}>
               <span style={{ flex: 1, fontSize: 13, color: "var(--ink-mute)" }}>
                 Split · {existingSplits.length} {existingSplits.length === 1 ? "category" : "categories"} · ${(Math.abs(transaction.amount_cents) / 100).toFixed(2)}
@@ -291,6 +307,28 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           }}
           >
             Split
+          </button>
+          <button
+            type="button"
+            className={`chip${transaction.is_transfer ? " accent" : ""}`}
+            aria-pressed={transaction.is_transfer}
+            disabled={setTransfer.isPending}
+            title="A transfer moves money between your own accounts and never counts as income or spending"
+            onClick={async () => {
+              const next = !transaction.is_transfer;
+              try {
+                await setTransfer.mutateAsync({ id: transaction.id, isTransfer: next });
+                toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", {
+                  description: next
+                    ? "It no longer counts as income or spending, and this won't be undone by future imports."
+                    : "It now counts in your income and spending, and this won't be undone by future imports.",
+                });
+              } catch (err) {
+                toast.error(userErrorMessage(err, "Could not update this transaction. Try again."));
+              }
+            }}
+          >
+            Transfer
           </button>
         </div>
       )}

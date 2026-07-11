@@ -30,6 +30,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useDeleteTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useSetTransactionTransfer: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetTransactionOwner: vi.fn(() => ({ mutate: vi.fn() })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),

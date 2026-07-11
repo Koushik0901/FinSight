@@ -8,6 +8,7 @@ vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children
 
 const setFlags = vi.fn();
 const setOwner = vi.fn();
+const setTransfer = vi.fn();
 
 vi.mock("../api/hooks/transactions", () => ({
   useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
@@ -21,6 +22,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useCreateRule: vi.fn(() => ({ mutate: vi.fn() })),
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
+  useSetTransactionTransfer: vi.fn(() => ({ mutateAsync: setTransfer, isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetTransactionOwner: vi.fn(() => ({ mutate: setOwner })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),
@@ -35,7 +37,7 @@ vi.mock("../api/hooks/household", () => ({
   useAccountOwners: vi.fn(() => ({ data: [] })),
   useHouseholdMembers: vi.fn(() => ({ data: [] })),
 }));
-vi.mock("sonner", () => ({ toast: { custom: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { custom: vi.fn(), error: vi.fn(), success: vi.fn() } }));
 
 const existingTxn = {
   id: "t1", account_id: "a1",
@@ -103,6 +105,38 @@ describe("TransactionDrawer — edit mode", () => {
     await waitFor(() =>
       expect(setFlags).toHaveBeenCalledWith({ id: "t1", isReimbursable: true, isSplit: false })
     );
+  });
+
+  it("marks a transaction as a transfer via the Transfer chip", async () => {
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^transfer$/i }));
+    await waitFor(() =>
+      expect(setTransfer).toHaveBeenCalledWith({ id: "t1", isTransfer: true })
+    );
+  });
+
+  it("shows the transfer state and hides the category picker on a transfer", () => {
+    render(
+      <TransactionDrawer
+        open={true}
+        onClose={() => {}}
+        transaction={{ ...existingTxn, is_transfer: true, transfer_peer_account_name: "Savings" }}
+      />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByText("Transfer between your accounts")).toBeInTheDocument();
+    expect(screen.getByText(/matched with the opposite leg in savings/i)).toBeInTheDocument();
+    // Transfers are never categorized — the picker is replaced by a note.
+    expect(screen.queryByRole("listbox", { name: /category/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/transfers aren't categorized/i)).toBeInTheDocument();
+    // The chip reads as pressed, and clicking it unmarks the transfer.
+    const chip = screen.getByRole("button", { name: /^transfer$/i });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(chip);
+    expect(setTransfer).toHaveBeenCalledWith({ id: "t1", isTransfer: false });
   });
 
   it("hides the attribution selector on a solo (0/1-owner) account", () => {

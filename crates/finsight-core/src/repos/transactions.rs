@@ -142,6 +142,9 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
         Some("no_category") => {
             conditions.push("t.category_id IS NULL".to_string());
         }
+        Some("transfer_review") => {
+            conditions.push(crate::categorize::transfer_review_predicate("t"));
+        }
         _ => {}
     }
     if !conditions.is_empty() {
@@ -426,6 +429,71 @@ pub fn set_flags(
     get_by_id(conn, id)
 }
 
+/// Record the user's verdict on whether a transaction is a transfer between
+/// their own accounts. The verdict is sticky: `transfer_override` is respected
+/// by both `apply_builtin_categorization` and `pair_transfers`, so it survives
+/// re-imports and re-categorization runs.
+///
+/// Marking as a transfer clears the category (transfers are never categorized)
+/// and the anomaly flag (moving your own money is not unusual spending).
+/// Unmarking also unlinks a paired peer leg on both sides — the peer is then
+/// re-evaluated on its own keyword merits, and the next pairing run may match
+/// it elsewhere, but never back to this row.
+pub fn set_transfer_override(
+    conn: &mut Connection,
+    id: &str,
+    is_transfer: bool,
+) -> CoreResult<Transaction> {
+    let tx = conn.transaction()?;
+    if is_transfer {
+        tx.execute(
+            "UPDATE transactions SET transfer_override = 1, is_transfer = 1, \
+             category_id = NULL, ai_confidence = NULL, ai_explanation = NULL, \
+             is_anomaly = 0 \
+             WHERE id = ?1",
+            params![id],
+        )?;
+    } else {
+        let peer_id: Option<String> = tx.query_row(
+            "SELECT transfer_peer_id FROM transactions WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        if let Some(peer_id) = &peer_id {
+            // Without this leg the peer is no longer pair-proven; keep it
+            // flagged only if its own descriptor says transfer (same unilateral
+            // logic the categorizer applies).
+            let peer_merchant: String = tx.query_row(
+                "SELECT merchant_raw FROM transactions WHERE id = ?1",
+                params![peer_id],
+                |r| r.get(0),
+            )?;
+            let ctx = crate::categorize::TransferContext::load(&tx)?;
+            let peer_flag = crate::categorize::is_transfer(&peer_merchant)
+                || ctx.is_self_transfer(&peer_merchant);
+            tx.execute(
+                "UPDATE transactions SET transfer_peer_id = NULL, is_transfer = ?2 \
+                 WHERE id = ?1 AND transfer_override IS NULL",
+                params![peer_id, peer_flag as i64],
+            )?;
+            // A peer the user already ruled on keeps its verdict; only the link goes.
+            tx.execute(
+                "UPDATE transactions SET transfer_peer_id = NULL \
+                 WHERE id = ?1 AND transfer_override IS NOT NULL",
+                params![peer_id],
+            )?;
+        }
+        tx.execute(
+            "UPDATE transactions SET transfer_override = 0, is_transfer = 0, \
+             transfer_peer_id = NULL \
+             WHERE id = ?1",
+            params![id],
+        )?;
+    }
+    tx.commit()?;
+    get_by_id(conn, id)
+}
+
 /// Fetch a single transaction by id (used internally).
 fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
     conn.query_row(
@@ -669,6 +737,147 @@ mod tests {
         let cleared = set_flags(&mut conn, &txn_id, false, true).unwrap();
         assert!(!cleared.is_reimbursable);
         assert!(cleared.is_split);
+    }
+
+    #[test]
+    fn transfer_override_mark_clears_category_and_anomaly_and_survives_recategorization() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        // Simulate an ambiguous e-transfer the pipeline mis-treated as income:
+        // categorized and anomaly-flagged. (Keyword pass says NOT a transfer.)
+        conn.execute(
+            "UPDATE transactions SET merchant_raw = 'INTERAC e-Transfer From: SATHVIK', \
+             category_id = 'cat1', is_anomaly = 1 WHERE id = ?1",
+            params![txn_id],
+        )
+        .unwrap();
+
+        let t = set_transfer_override(&mut conn, &txn_id, true).unwrap();
+        assert!(t.is_transfer, "user verdict flags the row");
+        assert!(t.category_id.is_none(), "transfers are never categorized");
+        assert!(!t.is_anomaly, "own money movement is not an anomaly");
+
+        // A later categorizer re-run (e.g. after the next import) must not
+        // overturn the user's verdict even though the keyword pass disagrees.
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        let (is_tf, cat): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_transfer, category_id FROM transactions WHERE id = ?1",
+                params![txn_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(is_tf, 1, "override survives recategorization");
+        assert!(cat.is_none(), "override keeps the row uncategorized");
+    }
+
+    #[test]
+    fn transfer_override_unmark_unlinks_peer_and_survives_reruns() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES\
+             ('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+             ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Two legs pair via their shared reference number...
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('a','chk','2026-05-01T12:00:00Z',-20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared','2026-05-01T12:00:00Z'),\
+             ('b','sav','2026-05-01T12:00:00Z', 20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared','2026-05-01T12:00:00Z')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(crate::categorize::pair_transfers(&mut conn).unwrap(), 1);
+
+        // ...but the user says leg 'a' is real spending.
+        let t = set_transfer_override(&mut conn, "a", false).unwrap();
+        assert!(!t.is_transfer);
+        assert!(t.transfer_peer_id.is_none(), "peer link removed on this side");
+        let (peer_tf, peer_link): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_transfer, transfer_peer_id FROM transactions WHERE id = 'b'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(peer_link.is_none(), "peer link removed on the other side too");
+        assert_eq!(peer_tf, 0, "bare ref-only peer is not a transfer on its own merits");
+
+        // Neither the pairing pass nor the categorizer may resurrect the pair.
+        assert_eq!(
+            crate::categorize::pair_transfers(&mut conn).unwrap(),
+            0,
+            "a user-declared non-transfer never re-pairs"
+        );
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        let is_tf: i64 = conn
+            .query_row("SELECT is_transfer FROM transactions WHERE id = 'a'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(is_tf, 0, "override survives the categorizer re-run");
+    }
+
+    #[test]
+    fn transfer_override_not_transfer_beats_transfer_keywords() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        // A descriptor the keyword pass unilaterally flags…
+        conn.execute(
+            "UPDATE transactions SET merchant_raw = 'Internet Withdrawal to Tangerine' WHERE id = ?1",
+            params![txn_id],
+        )
+        .unwrap();
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        let is_tf: i64 = conn
+            .query_row("SELECT is_transfer FROM transactions WHERE id = ?1", params![txn_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(is_tf, 1, "precondition: keyword pass flags it");
+
+        // …the user overrules, and the verdict sticks through a re-run.
+        set_transfer_override(&mut conn, &txn_id, false).unwrap();
+        crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
+        let is_tf: i64 = conn
+            .query_row("SELECT is_transfer FROM transactions WHERE id = ?1", params![txn_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(is_tf, 0, "user's NOT-a-transfer verdict beats the keyword pass");
+    }
+
+    #[test]
+    fn transfer_review_preset_lists_only_undecided_transfer_like_rows() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, txn_id) = seed(&mut conn);
+        // The seeded AMAZON row is not transfer-like. Add: an undecided bare
+        // internet transfer, a person e-transfer, an already-flagged transfer,
+        // and a user-ruled (override=0) e-transfer.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('rv1',?1,'2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared','2026-05-01T12:00:00Z',0,NULL),\
+             ('rv2',?1,'2026-05-02T12:00:00Z', 150000,'INTERAC e-Transfer From: SATHVIK','cleared','2026-05-02T12:00:00Z',0,NULL),\
+             ('rv3',?1,'2026-05-03T12:00:00Z',-50000,'Internet Withdrawal to Tangerine','cleared','2026-05-03T12:00:00Z',1,NULL),\
+             ('rv4',?1,'2026-05-04T12:00:00Z', 90000,'INTERAC e-Transfer From: swathi','cleared','2026-05-04T12:00:00Z',0,0)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let rows = list(
+            &mut conn,
+            TxnFilter {
+                filter_preset: Some("transfer_review".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let ids: Vec<&str> = rows.iter().map(|t| t.id.as_str()).collect();
+        assert!(ids.contains(&"rv1"), "bare internet transfer needs review");
+        assert!(ids.contains(&"rv2"), "person e-transfer counted as income needs review");
+        assert!(!ids.contains(&"rv3"), "already-flagged transfers are decided");
+        assert!(!ids.contains(&"rv4"), "user-ruled rows never reappear");
+        assert!(!ids.contains(&txn_id.as_str()), "ordinary merchants are not suspects");
     }
 
     #[test]

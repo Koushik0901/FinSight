@@ -288,6 +288,34 @@ fn is_pairing_eligible(merchant_raw: &str) -> bool {
         || has_cc_counterparty_hint(merchant_raw)
 }
 
+/// Vocabulary for the transfer-review surface: rows that LOOK like a money
+/// transfer but were neither unilaterally flagged nor paired, so their
+/// income/expense treatment is a silent guess until the user rules on them
+/// (bare "INTERNET TRANSFER <ref>" legs whose counter-leg was never imported,
+/// person-to-person e-transfers that may be rent, gifts, or reimbursements).
+/// Deliberately NARROWER than `PAIRING_HINT_KEYWORDS`: bill payments and
+/// preauthorized debits are almost always real bills, and burying the genuine
+/// suspects under every hydro bill would make the review list useless.
+pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &["transfer", "tfr-", "fulfill request"];
+
+/// SQL predicate selecting the transactions that need a user's transfer
+/// verdict. `alias` is the `transactions` table alias in the caller's query.
+/// Built from `TRANSFER_REVIEW_KEYWORDS` so the vocabulary lives in one place;
+/// the keywords are static lowercase strings (enforced by a unit test), so
+/// interpolation is safe.
+pub fn transfer_review_predicate(alias: &str) -> String {
+    let vocab = TRANSFER_REVIEW_KEYWORDS
+        .iter()
+        .map(|kw| format!("lower({alias}.merchant_raw) LIKE '%{kw}%'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    format!(
+        "({alias}.is_transfer = 0 AND {alias}.transfer_peer_id IS NULL \
+         AND {alias}.transfer_override IS NULL AND {alias}.category_id IS NULL \
+         AND {alias}.amount_cents != 0 AND ({vocab}))"
+    )
+}
+
 /// An explicit own-account marker: the string names an account or card the
 /// money moved to/from, strongly implying an internal move (vs a payment to a
 /// person). Lifts a pair over the precision bar when no shared reference exists.
@@ -451,7 +479,7 @@ impl TransferContext {
     /// accounts (named owner or another owned bank) AND carries transfer
     /// vocabulary — high precision, so it excludes income like payroll/benefits
     /// (which name neither the owner nor another of the user's banks).
-    fn is_self_transfer(&self, merchant_raw: &str) -> bool {
+    pub(crate) fn is_self_transfer(&self, merchant_raw: &str) -> bool {
         if !is_pairing_eligible(merchant_raw) {
             return false;
         }
@@ -662,6 +690,7 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
                     t.amount_cents, t.merchant_raw, t.is_transfer \
              FROM transactions t JOIN accounts a ON a.id = t.account_id \
              WHERE t.transfer_peer_id IS NULL AND t.amount_cents != 0 \
+               AND COALESCE(t.transfer_override, 1) != 0 \
              ORDER BY t.posted_at, t.id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -874,9 +903,9 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // carries a category, e.g. an "Interac - Purchase" once tagged a transfer).
     // Also select the current `is_transfer` so the hot loop can skip a write
     // when the flag is unchanged (the common case: a non-transfer stays 0).
-    let pending: Vec<(String, String, bool, bool, bool)> = {
+    let pending: Vec<(String, String, bool, bool, bool, Option<bool>)> = {
         let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL, is_transfer \
+            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL, is_transfer, transfer_override \
              FROM transactions \
              WHERE category_id IS NULL OR is_transfer = 1",
         )?;
@@ -887,6 +916,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
                 r.get::<_, i64>(2)? != 0,
                 r.get::<_, i64>(3)? != 0,
                 r.get::<_, i64>(4)? != 0,
+                r.get::<_, Option<i64>>(5)?.map(|v| v != 0),
             ))
         })?;
         let mut out = Vec::new();
@@ -913,7 +943,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             "INSERT INTO categorizations(id, txn_id, category_id, source, confidence, model, at) \
              VALUES(?1, ?2, ?3, 'builtin', 1.0, NULL, ?4)",
         )?;
-        for (txn_id, merchant, uncategorized, paired, currently_transfer) in pending {
+        for (txn_id, merchant, uncategorized, paired, currently_transfer, override_) in pending {
             // Transfer detection runs regardless of category state, and is written
             // in BOTH directions so a re-run after the keyword list changes corrects
             // stale flags (e.g. an "Interac - Purchase" no longer treated as a
@@ -921,8 +951,10 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             // EXCEPT: a leg paired to a peer transaction (`pair_transfers`) is a
             // transfer by construction — rule B pairs legs whose merchants carry no
             // transfer keyword, and un-flagging them here would undo the pairing.
+            // ALSO EXCEPT: a user verdict (`transfer_override`) always wins — a
+            // re-run must never overwrite what the user explicitly decided.
             let unilateral_transfer = is_transfer(&merchant) || transfer_ctx.is_self_transfer(&merchant);
-            if !paired {
+            if !paired && override_.is_none() {
                 // Only write when the flag actually flips — the overwhelming
                 // majority of rows are non-transfers that already read 0.
                 if unilateral_transfer != currently_transfer {
@@ -935,8 +967,11 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             // Invariant: transfers are never categorized (see docs + memory). In
             // practice transfer keywords and the category keyword map are disjoint,
             // but make it structural for paired legs, whose merchants CAN look like
-            // ordinary bill payments.
-            if paired || unilateral_transfer {
+            // ordinary bill payments. A user's "this IS a transfer" verdict blocks
+            // categorization the same way; "this is NOT a transfer" makes the row
+            // categorizable even when its descriptor looks like a transfer.
+            let treat_as_transfer = override_.unwrap_or(paired || unilateral_transfer);
+            if treat_as_transfer {
                 continue;
             }
             let Some(cat) = builtin_category(&merchant) else {
@@ -1154,6 +1189,43 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM transactions WHERE is_transfer=1 AND transfer_peer_id IS NOT NULL", [], |r| r.get(0))
             .unwrap();
         assert_eq!(flagged, 2, "both legs flagged as a transfer once paired");
+    }
+
+    #[test]
+    fn pairing_skips_user_declared_non_transfers() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                   ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // Identical to the shared-reference pair above, except the user has
+        // already ruled one leg is real spending — nothing may pair with it.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,transfer_override) VALUES\
+             ('a','chk','2026-05-01T12:00:00Z',-20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared',datetime('now'),0),\
+             ('b','sav','2026-05-01T12:00:00Z', 20000,'Internet Banking INTERNET TRANSFER 000000238417','cleared',datetime('now'),NULL)",
+            [],
+        )
+        .unwrap();
+        let n = pair_transfers(&mut conn).unwrap();
+        assert_eq!(n, 0, "a user-declared non-transfer is excluded from pairing");
+    }
+
+    #[test]
+    fn transfer_review_keywords_are_sql_safe_and_lowercase() {
+        // `transfer_review_predicate` interpolates these into a LIKE pattern;
+        // they must be static lowercase literals with no quotes or wildcards.
+        for kw in TRANSFER_REVIEW_KEYWORDS {
+            assert_eq!(*kw, kw.to_lowercase(), "keyword must be lowercase: {kw}");
+            for bad in ['\'', '%', '_', '"'] {
+                assert!(!kw.contains(bad), "keyword {kw:?} contains SQL-unsafe {bad:?}");
+            }
+        }
     }
 
     #[test]

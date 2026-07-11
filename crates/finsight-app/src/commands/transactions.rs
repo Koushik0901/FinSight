@@ -497,6 +497,23 @@ pub async fn set_transaction_flags(
     .map_err(AppError::from)
 }
 
+/// Record the user's verdict on whether a transaction is a transfer between
+/// their own accounts. Sticky: survives re-imports and categorizer re-runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transaction_transfer(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    is_transfer: bool,
+) -> AppResult<finsight_core::models::Transaction> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        transactions::set_transfer_override(conn, &id, is_transfer)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 // ── Split transaction commands ────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Type)]

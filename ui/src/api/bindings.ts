@@ -1006,6 +1006,18 @@ async setTransactionFlags(id: string, isReimbursable: boolean, isSplit: boolean)
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Record the user's verdict on whether a transaction is a transfer between
+ * their own accounts. Sticky: survives re-imports and categorizer re-runs.
+ */
+async setTransactionTransfer(id: string, isTransfer: boolean) : Promise<Result<Transaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_transaction_transfer", { id, isTransfer }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getTransactionSplits(transactionId: string) : Promise<Result<TransactionSplitDto[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_transaction_splits", { transactionId }) };
