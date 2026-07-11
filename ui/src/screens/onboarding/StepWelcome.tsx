@@ -1,4 +1,6 @@
+import { useState } from "react";
 import Button from "../../components/Button";
+import { useCreateHouseholdMember, useSetSelfMember } from "../../api/hooks/household";
 
 interface Props {
   onNext: () => void;
@@ -6,6 +8,27 @@ interface Props {
 }
 
 export default function StepWelcome({ onNext, onSkipToToday }: Props) {
+  const [name, setName] = useState("");
+  const createMember = useCreateHouseholdMember();
+  const setSelf = useSetSelfMember();
+
+  // Capturing the operator's name up front (optional) lets FinSight recognize
+  // THEIR own e-transfers ("To/From: <you>") as internal moves from the very
+  // first import, instead of miscounting them as income/spending until the user
+  // later marks themselves via "This is me". Best-effort: never blocks setup.
+  const handleGetStarted = async () => {
+    const trimmed = name.trim();
+    if (trimmed) {
+      try {
+        const member = await createMember.mutateAsync({ name: trimmed });
+        await setSelf.mutateAsync(member.id);
+      } catch {
+        // A name is optional — proceed to setup regardless.
+      }
+    }
+    onNext();
+  };
+
   return (
     <div className="step-welcome onb-split">
       <div className="onb-left">
@@ -20,8 +43,20 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
           <span className="chip">Encrypted</span>
           <span className="chip">No ads</span>
         </div>
+        <label style={{ display: "block", marginBottom: 16, maxWidth: 340 }}>
+          <span className="muted" style={{ fontSize: 13 }}>
+            Your name <span style={{ opacity: 0.7 }}>(optional — so your own transfers between accounts aren’t counted as income or spending)</span>
+          </span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Koushik"
+            aria-label="Your name"
+            style={{ marginTop: 6, width: "100%" }}
+          />
+        </label>
         <div className="onb-actions">
-          <Button variant="primary" onClick={onNext}>Get started →</Button>
+          <Button variant="primary" onClick={() => void handleGetStarted()}>Get started →</Button>
           <Button variant="outline" onClick={onSkipToToday}>Skip setup</Button>
         </div>
       </div>
