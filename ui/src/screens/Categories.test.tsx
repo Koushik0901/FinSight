@@ -25,7 +25,7 @@ vi.mock("../api/hooks/transactions", () => ({
 
 describe("Categories — empty state", () => {
   it("renders an intentional empty state on a fresh (no-category) database", () => {
-    vi.mocked(useCategoriesWithSpending).mockReturnValueOnce({ data: [], isLoading: false, error: null } as ReturnType<typeof useCategoriesWithSpending>);
+    vi.mocked(useCategoriesWithSpending).mockReturnValueOnce({ data: [], isLoading: false, error: null } as unknown as ReturnType<typeof useCategoriesWithSpending>);
     render(<Categories />, { wrapper: createWrapper() });
     expect(screen.getByText("No categories yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Get started/i })).toBeInTheDocument();

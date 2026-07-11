@@ -62,8 +62,8 @@ vi.mock("../api/hooks/transactions", () => ({
 
 describe("Recurring — empty state", () => {
   it("renders an intentional empty state when nothing is recurring or planned", () => {
-    vi.mocked(useRecurring).mockReturnValueOnce({ data: [], isLoading: false, error: null } as ReturnType<typeof useRecurring>);
-    vi.mocked(usePlannedTransactions).mockReturnValueOnce({ data: [] } as ReturnType<typeof usePlannedTransactions>);
+    vi.mocked(useRecurring).mockReturnValueOnce({ data: [], isLoading: false, error: null } as unknown as ReturnType<typeof useRecurring>);
+    vi.mocked(usePlannedTransactions).mockReturnValueOnce({ data: [] } as unknown as ReturnType<typeof usePlannedTransactions>);
     render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
     expect(screen.getByText("No recurring items yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Import transactions/i })).toBeInTheDocument();
