@@ -522,6 +522,7 @@ mod fuzzy_tests {
             is_transfer: false,
             transfer_peer_id: None,
             transfer_peer_account_name: None,
+            owner_member_id: None,
             imported_id: None,
             source: None,
             raw_synced_data: None,
