@@ -1,0 +1,17 @@
+-- Explicit ownership share for a member on an account, in basis points
+-- (10000 = 100%). NULL means "no explicit share" and falls back to an equal
+-- split (1 / owner_count) — so every existing joint account keeps its current
+-- 50/50 behavior with zero recomputation, and this migration is purely
+-- additive.
+--
+-- Why basis points (integers), not a float percentage: money math must be
+-- exact and reproducible; a 1/3 split is stored as three 3333/3333/3334 bps
+-- rows that sum to exactly 10000, never 0.333… floats that drift.
+--
+-- Cross-user semantics: a member's share need NOT sum to 100% across the
+-- owners recorded in THIS install. The unassigned residual (household total
+-- minus the sum of recorded slices) is exactly "the share owned by people who
+-- run their own separate FinSight app" — so an operator who owns 50% of a joint
+-- account records share_bps=5000 and the other 50% correctly sits in the
+-- residual, never double-counted when two partners' apps are viewed together.
+ALTER TABLE account_owners ADD COLUMN share_bps INTEGER;

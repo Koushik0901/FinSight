@@ -309,13 +309,15 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
 // edge, not mid-reconciliation.
 
 /// The ONE definition of a member's per-account ownership weight, shared by
-/// balance attribution ([`account_weights_for_member`]) and flow attribution
-/// ([`weighted_income_expense`]) so the two can never drift. Today it is an equal
-/// split (`1 / owner_count`); an explicit `account_owners.share_bps` can be
-/// swapped in *here* as `COALESCE(ao.share_bps / 10000.0, 1.0 / oc.n)` and every
-/// consumer inherits it. Selects `(account_id, weight)` for the member bound to
-/// `?1` — callers must supply the member id as the first parameter.
-pub const MEMBER_WEIGHT_SUBQUERY: &str = "SELECT ao.account_id, 1.0 / oc.n AS weight \
+/// balance attribution ([`account_weights_for_member`]), flow attribution
+/// ([`weighted_income_expense`]), and the Copilot's per-member breakdown, so they
+/// can never drift. The weight is the member's explicit `share_bps` (basis
+/// points, 10000 = 100%) when set, else an equal split (`1 / owner_count`) — so
+/// accounts with no explicit share behave exactly as before. Selects
+/// `(account_id, weight)` for the member bound to `?1` — callers must supply the
+/// member id as the first parameter.
+pub const MEMBER_WEIGHT_SUBQUERY: &str = "SELECT ao.account_id, \
+       COALESCE(ao.share_bps / 10000.0, 1.0 / oc.n) AS weight \
      FROM account_owners ao \
      JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
        ON oc.account_id = ao.account_id \
@@ -694,6 +696,94 @@ mod tests {
         );
         // A member's net worth is their owned-account net worth (no ownerless assets).
         assert_eq!(a.net_worth_cents, 90_001);
+    }
+
+    #[test]
+    fn explicit_share_bps_attributes_balances_by_share() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+        let joint =
+            accounts::insert(&mut conn, account("J", AccountType::Checking, 100_000, true)).unwrap().id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        let share = |conn: &Connection, m: &str, bps: i64| {
+            conn.execute(
+                "UPDATE account_owners SET share_bps = ?3 WHERE account_id = ?1 AND member_id = ?2",
+                rusqlite::params![joint, m, bps],
+            )
+            .unwrap();
+        };
+
+        // NULL share_bps ⇒ equal split, exactly as before this feature existed.
+        assert_eq!(
+            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().liquid_cents,
+            50_000,
+            "NULL share_bps ⇒ equal split (backward compatible)"
+        );
+
+        // Explicit 70/30 attributes 70/30 and still reconciles to household.
+        share(&conn, &alice.id, 7000);
+        share(&conn, &bob.id, 3000);
+        let a = balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap();
+        let b = balance_breakdown_for(&mut conn, Some(&bob.id)).unwrap();
+        let h = balance_breakdown_for(&mut conn, None).unwrap();
+        assert_eq!(a.liquid_cents, 70_000, "alice owns 70%");
+        assert_eq!(b.liquid_cents, 30_000, "bob owns 30%");
+        assert_eq!(a.liquid_cents + b.liquid_cents, h.liquid_cents, "70 + 30 == household");
+
+        // Cross-app: an operator can own <100% recorded here — the rest is the
+        // residual (owned by people who run their own separate app). Drop bob and
+        // give alice a 30% share: her slice is 30%, the other 70% is never
+        // attributed here and so is never double-counted across apps.
+        conn.execute(
+            "DELETE FROM account_owners WHERE account_id = ?1 AND member_id = ?2",
+            rusqlite::params![joint, bob.id],
+        )
+        .unwrap();
+        share(&conn, &alice.id, 3000);
+        assert_eq!(
+            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().liquid_cents,
+            30_000,
+            "sole-recorded owner with a 30% share attributes only 30%; 70% is the cross-app residual"
+        );
+    }
+
+    #[test]
+    fn explicit_share_bps_attributes_flows_by_share() {
+        use crate::repos::household;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = household::create_member(&mut conn, "Bob", None).unwrap();
+        let joint =
+            accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true)).unwrap().id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        conn.execute(
+            "UPDATE account_owners SET share_bps = 7000 WHERE account_id = ?1 AND member_id = ?2",
+            rusqlite::params![joint, alice.id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE account_owners SET share_bps = 3000 WHERE account_id = ?1 AND member_id = ?2",
+            rusqlite::params![joint, bob.id],
+        )
+        .unwrap();
+
+        insert_txn(&mut conn, &joint, 100_000, 5, false);
+        insert_txn(&mut conn, &joint, -50_000, 5, false);
+        // Shares weight flows too (documented decision): alice gets 70% of both.
+        let (a_inc, a_exp) =
+            income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&alice.id)).unwrap();
+        let (b_inc, b_exp) =
+            income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&bob.id)).unwrap();
+        assert_eq!((a_inc, a_exp), (70_000, 35_000), "alice: 70% of joint flows");
+        assert_eq!((b_inc, b_exp), (30_000, 15_000), "bob: 30% of joint flows");
+        // Reconciles to the household total.
+        let (h_inc, h_exp) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
+        assert_eq!(a_inc + b_inc, h_inc);
+        assert_eq!(a_exp + b_exp, h_exp);
     }
 
     #[test]
