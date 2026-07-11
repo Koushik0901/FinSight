@@ -148,6 +148,19 @@ the user saves money. Ranked by impact:
 >   every user). The remaining leak is REAL spend + ambiguous person-to-person
 >   transfers — savings staying tight/negative for a heavy travel month is
 >   *correct*, not a bug.
+>   **Review affordance: DONE** (this session) — V046 `transfer_override` makes a
+>   user's transfer verdict sticky (categorizer + `pair_transfers` both respect
+>   it; unmark unlinks the peer leg on both sides and neither can re-pair). The
+>   drawer gets a "Transfer" chip + transfer state card (category picker replaced
+>   by a note — transfers are never categorized); a "Possible transfers" filter
+>   preset (`transfer_review`, SQL predicate built from
+>   `TRANSFER_REVIEW_KEYWORDS`) lists undecided transfer-like rows; the Inbox
+>   surfaces them as a first-class action item. **Also fixed in passing: the
+>   `/transactions` route did not exist** — every Inbox CTA
+>   (`/transactions?filter=…`) landed on a blank page. `AccountTransactions` now
+>   doubles as the all-accounts ledger at `/transactions`, with the `?filter=`
+>   param driving the preset (chips: All / Needs review / Anomalies /
+>   Uncategorized / Possible transfers).
 > - **F1** — DONE for local CSV: the generic column mapping imports the
 >   brokerage activity, and investment accounts now track MARKET value
 >   (96092b8: never derive an investment balance from cash flows; 91d5bd6:

@@ -336,6 +336,50 @@ fn audit_import_samples_and_dump_everything() {
     println!("TOTAL unflagged transfer-like: inflow={leak_in} outflow={leak_out}");
     drop(stmt);
 
+    // The user-facing "Possible transfers" review surface (F0 affordance): the
+    // rows the Inbox/transactions filter would ask the user to rule on. The
+    // whole leak above should be reachable through this surface (or already
+    // categorized/decided) — an unreachable leak means the predicate rotted.
+    let (review_n, review_in, review_out): (i64, i64, i64) = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),
+                        COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0)
+                 FROM transactions t WHERE {}",
+                finsight_core::categorize::transfer_review_predicate("t")
+            ),
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap_or((-1, 0, 0));
+    println!(
+        "TRANSFER-REVIEW surface: n={review_n} inflow={review_in} outflow={review_out}"
+    );
+    assert!(
+        review_n > 0,
+        "samples/ contain undecided transfer-like rows; the review surface must list them"
+    );
+    {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT merchant_raw, COUNT(*), SUM(amount_cents)
+                 FROM transactions t WHERE {}
+                 GROUP BY 1 ORDER BY ABS(SUM(amount_cents)) DESC LIMIT 20",
+                finsight_core::categorize::transfer_review_predicate("t")
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .unwrap();
+        println!("-- review surface top merchants --");
+        for row in rows.flatten() {
+            println!("  n={:<4} sum={:>10}  {}", row.1, row.2, &row.0[..row.0.len().min(60)]);
+        }
+    }
+
     // Top raw inflows for May 2026 — what exactly is the app calling "income"?
     println!("\n== MAY 2026 'INCOME' ROWS (is_transfer=0, amount>0) top 15 ==");
     let mut stmt = conn

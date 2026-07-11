@@ -293,10 +293,21 @@ fn is_pairing_eligible(merchant_raw: &str) -> bool {
 /// income/expense treatment is a silent guess until the user rules on them
 /// (bare "INTERNET TRANSFER <ref>" legs whose counter-leg was never imported,
 /// person-to-person e-transfers that may be rent, gifts, or reimbursements).
-/// Deliberately NARROWER than `PAIRING_HINT_KEYWORDS`: bill payments and
-/// preauthorized debits are almost always real bills, and burying the genuine
-/// suspects under every hydro bill would make the review list useless.
-pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &["transfer", "tfr-", "fulfill request"];
+/// Deliberately NARROWER than `PAIRING_HINT_KEYWORDS`: bill payments,
+/// preauthorized debits, and — critically — payroll/benefits ("Electronic
+/// Funds Transfer PAY Wage/salary", "… DEPOSIT AE/EI", direct deposits) are
+/// almost always real money, and burying the genuine suspects under every
+/// paycheck would make the review list useless (measured on samples/: a bare
+/// "transfer" keyword put $95k of wages at the top of the list).
+pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &[
+    "internet transfer",
+    "e-transfer",
+    "e transfer",
+    "etransfer",
+    "money transfer",
+    "tfr-",
+    "fulfill request",
+];
 
 /// SQL predicate selecting the transactions that need a user's transfer
 /// verdict. `alias` is the `transactions` table alias in the caller's query.

@@ -7,10 +7,12 @@ interface TransactionFilterProps {
   className?: string;
 }
 
-const PRESETS: { label: string; key: "all" | "needs_review" | "anomalies"; value: string | null }[] = [
+const PRESETS: { label: string; key: "all" | "needs_review" | "anomalies" | "no_category" | "transfer_review"; value: string | null }[] = [
   { label: "All", key: "all", value: null },
   { label: "Needs review", key: "needs_review", value: "needs_review" },
   { label: "Anomalies", key: "anomalies", value: "anomalies" },
+  { label: "Uncategorized", key: "no_category", value: "no_category" },
+  { label: "Possible transfers", key: "transfer_review", value: "transfer_review" },
 ];
 
 export default function TransactionFilter({ value, onChange, counts, className }: TransactionFilterProps) {

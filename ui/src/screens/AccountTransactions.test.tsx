@@ -31,8 +31,10 @@ vi.mock("../api/hooks/accounts", () => ({
   useSetAccountBalance: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
 }));
 
+const { infiniteSpy } = vi.hoisted(() => ({ infiniteSpy: vi.fn() }));
+
 vi.mock("../api/hooks/transactions", () => ({
-  useInfiniteTransactions: () => ({
+  useInfiniteTransactions: (filter: unknown) => infiniteSpy(filter) ?? ({
     data: {
       pages: [
         [
@@ -164,5 +166,40 @@ describe("AccountTransactions", () => {
     const back = await screen.findByRole("button", { name: /Back to accounts/i });
     fireEvent.click(back);
     expect(screen.getByText("Accounts list")).toBeInTheDocument();
+  });
+});
+
+describe("AccountTransactions — all-accounts mode (/transactions)", () => {
+  it("renders the all-accounts ledger and honors the ?filter= deep link", async () => {
+    render(
+      <MemoryRouter initialEntries={["/transactions?filter=transfer_review"]}>
+        <Routes>
+          <Route path="/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText("All transactions")).toBeInTheDocument();
+    // Each row says which account it belongs to (there is no account header).
+    expect(screen.getAllByText(/Chase · Chase Checking/).length).toBeGreaterThan(0);
+    // The Inbox deep link flows through to the backend query…
+    expect(infiniteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: null, filterPreset: "transfer_review" })
+    );
+    // …and the matching chip shows as active.
+    expect(screen.getByRole("button", { name: /Possible transfers/i })).toHaveClass("on");
+  });
+
+  it("ignores an unknown ?filter= value instead of sending it to the backend", async () => {
+    render(
+      <MemoryRouter initialEntries={["/transactions?filter=nonsense"]}>
+        <Routes>
+          <Route path="/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(await screen.findByText("All transactions")).toBeInTheDocument();
+    expect(infiniteSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ filterPreset: null })
+    );
   });
 });

@@ -265,6 +265,8 @@ export function App() {
                     <Route path="/insights" element={<Insights />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+                    {/* All-accounts ledger — where Inbox review CTAs deep-link (?filter=…). */}
+                    <Route path="/transactions" element={<AccountTransactions />} />
                     <Route path="/budget" element={<Budget />} />
                     <Route path="/categories" element={<Categories />} />
                     <Route path="/recurring" element={<Recurring />} />

@@ -84,6 +84,51 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
             });
         }
 
+        // ── 1b. Transfer-like transactions with no verdict ────────────────────
+        // Rows that carry transfer vocabulary but were neither flagged nor
+        // paired: bare "INTERNET TRANSFER <ref>" legs whose counter-leg was
+        // never imported, person-to-person e-transfers that may be rent or
+        // reimbursements. Until the user rules on them they silently count as
+        // income/expense, so they get a first-class review surface.
+        let review_predicate = finsight_core::categorize::transfer_review_predicate("transactions");
+        let (transfer_review_count, transfer_review_total): (i64, i64) = conn
+            .query_row(
+                &format!(
+                    "SELECT COUNT(*), COALESCE(SUM(ABS(amount_cents)), 0) \
+                     FROM transactions WHERE {review_predicate}"
+                ),
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+
+        if transfer_review_count > 0 {
+            items.push(ActionItem {
+                id: "transfer-review".to_string(),
+                category: "review".to_string(),
+                priority: if transfer_review_count >= 5 {
+                    "high".to_string()
+                } else {
+                    "medium".to_string()
+                },
+                title: format!(
+                    "{transfer_review_count} transaction{} look{} like transfers — {}",
+                    if transfer_review_count == 1 { "" } else { "s" },
+                    if transfer_review_count == 1 { "s" } else { "" },
+                    fmt_money(transfer_review_total)
+                ),
+                detail: "These carry transfer wording but have no matching leg in your \
+                         accounts. If one is a move between your own accounts, mark it a \
+                         transfer so it stops counting as income or spending; if it's real \
+                         (rent, a gift, a reimbursement), categorize it."
+                    .to_string(),
+                action_label: "Review transfers".to_string(),
+                action_route: "/transactions?filter=transfer_review".to_string(),
+                badge_count: Some(transfer_review_count),
+                amount_cents: Some(transfer_review_total),
+            });
+        }
+
         // ── 2. Anomalies flagged by the agent ────────────────────────────────
         let anomaly_count: i64 = conn
             .query_row(
