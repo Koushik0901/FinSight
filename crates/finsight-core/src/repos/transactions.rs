@@ -54,6 +54,7 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         is_transfer: false,
         transfer_peer_id: None,
         transfer_peer_account_name: None,
+        owner_member_id: None,
         imported_id: input.imported_id,
         source: input.source,
         raw_synced_data: input.raw_synced_data,
@@ -99,7 +100,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
-                t.transfer_peer_id, pa.name \
+                t.transfer_peer_id, pa.name, t.owner_member_id \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -198,6 +199,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 is_transfer: r.get::<_, i64>(26)? != 0,
                 transfer_peer_id: r.get(27)?,
                 transfer_peer_account_name: r.get(28)?,
+                owner_member_id: r.get(29)?,
                 imported_id: r.get(20)?,
                 source: r.get(21)?,
                 raw_synced_data: r.get(22)?,
@@ -433,7 +435,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
-                t.transfer_peer_id, pa.name \
+                t.transfer_peer_id, pa.name, t.owner_member_id \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -484,6 +486,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 is_transfer: r.get::<_, i64>(26)? != 0,
                 transfer_peer_id: r.get(27)?,
                 transfer_peer_account_name: r.get(28)?,
+                owner_member_id: r.get(29)?,
                 imported_id: r.get(20)?,
                 source: r.get(21)?,
                 raw_synced_data: r.get(22)?,

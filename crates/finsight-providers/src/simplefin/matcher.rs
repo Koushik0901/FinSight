@@ -480,6 +480,8 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
         is_transfer: r.get::<_, i64>(26)? != 0,
         transfer_peer_id: r.get(27)?,
         transfer_peer_account_name: r.get(28)?,
+        // Not selected here; import matching doesn't need per-txn ownership.
+        owner_member_id: None,
         imported_id: r.get(20)?,
         source: r.get(21)?,
         raw_synced_data: r.get(22)?,

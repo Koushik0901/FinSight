@@ -20,6 +20,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useSetTransactionOwner: vi.fn(() => ({ mutate: vi.fn() })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),
   useSetTransactionSplits: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
@@ -38,7 +39,7 @@ const existingTxn = {
   ai_confidence: null, ai_explanation: null, is_anomaly: false,
   created_at: "2024-01-15T00:00:00Z",
   is_reimbursable: false, is_split: false, is_transfer: false,
-  transfer_peer_id: null, transfer_peer_account_name: null,
+  transfer_peer_id: null, transfer_peer_account_name: null, owner_member_id: null,
   imported_id: null, source: null,
   raw_synced_data: null, pending: false, external_tx_id: null, external_account_id: null,
 };

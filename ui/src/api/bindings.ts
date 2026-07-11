@@ -1921,7 +1921,13 @@ transfer_peer_id: string | null;
 /**
  * Display name of the peer leg's account ("Transfer → Tangerine Savings").
  */
-transfer_peer_account_name: string | null; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
+transfer_peer_account_name: string | null; 
+/**
+ * Household member this transaction is attributed to, overriding the
+ * account's ownership shares for its cashflow (a personal purchase on a
+ * joint account). None = use the account shares.
+ */
+owner_member_id: string | null; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TransferSuggestionInfo = { id: string; confidence: string; detectedAt: string; fromTransactionId: string; fromAccountName: string; fromMerchant: string; fromAmountCents: number; fromPostedAt: string; toTransactionId: string; toAccountName: string; toMerchant: string; toAmountCents: number; toPostedAt: string }

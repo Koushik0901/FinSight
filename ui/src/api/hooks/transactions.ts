@@ -147,6 +147,22 @@ export function useCreateRule() {
   });
 }
 
+export function useSetTransactionOwner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ transactionId, memberId }: { transactionId: string; memberId: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setTransactionOwner(transactionId, memberId);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    // Attribution changes per-member cashflow — refresh transactions and metrics.
+    onSuccess: () => {
+      invalidateDomains(qc, "transactions");
+      void qc.invalidateQueries();
+    },
+  });
+}
+
 export function useCategories() {
   return useQuery<CategoryDto[]>({
     queryKey: ["categories"],

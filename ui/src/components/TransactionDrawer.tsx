@@ -10,8 +10,10 @@ import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
   useTransactionSplits, useSetTransactionSplits, useSetAnomalyDismissed,
+  useSetTransactionOwner,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
+import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
 import type { Transaction } from "../api/bindings";
 import { userErrorMessage } from "../utils/runtime";
 
@@ -42,7 +44,20 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const setFlags = useSetTransactionFlags();
   const dismissAnomaly = useSetAnomalyDismissed();
   const { data: accounts = [] } = useAccounts();
+  const setOwner = useSetTransactionOwner();
+  const { data: allOwners = [] } = useAccountOwners();
+  const { data: members = [] } = useHouseholdMembers();
+  // Owners of THIS transaction's account. A 2+ owner (joint) account is where a
+  // per-transaction attribution override is meaningful (a personal purchase on
+  // the joint card).
+  const accountOwners = transaction
+    ? allOwners
+        .filter((o) => o.accountId === transaction.account_id)
+        .map((o) => members.find((m) => m.id === o.memberId))
+        .filter((m): m is NonNullable<typeof m> => !!m)
+    : [];
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const { data: existingSplits = [] } = useTransactionSplits(transaction?.id);
@@ -69,6 +84,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
         account_id: transaction.account_id,
       });
       setSelectedCategory(transaction.category_id ?? null);
+      setOwnerId(transaction.owner_member_id ?? null);
     } else {
       reset({
         merchant_raw: "",
@@ -207,6 +223,32 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             <CategoryPicker value={selectedCategory} onChange={setSelectedCategory} />
           )}
         </div>
+        {isEdit && transaction && accountOwners.length >= 2 && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Attributed to</div>
+            <select
+              value={ownerId ?? ""}
+              onChange={(e) => {
+                const memberId = e.target.value || null;
+                setOwnerId(memberId);
+                setOwner.mutate({ transactionId: transaction.id, memberId });
+              }}
+              aria-label="Attribute this transaction to"
+              style={{ width: "100%" }}
+            >
+              <option value="">Shared — split by account ownership</option>
+              {accountOwners.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <div className="hint" style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 4 }}>
+              On a joint account, attribute a personal purchase to one person so it counts as only
+              their spending.
+            </div>
+          </div>
+        )}
         <div className="form-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" disabled={isSubmitting} className="primary">

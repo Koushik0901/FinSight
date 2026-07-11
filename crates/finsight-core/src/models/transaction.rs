@@ -57,6 +57,10 @@ pub struct Transaction {
     pub transfer_peer_id: Option<String>,
     /// Display name of the peer leg's account ("Transfer → Tangerine Savings").
     pub transfer_peer_account_name: Option<String>,
+    /// Household member this transaction is attributed to, overriding the
+    /// account's ownership shares for its cashflow (a personal purchase on a
+    /// joint account). None = use the account shares.
+    pub owner_member_id: Option<String>,
     pub imported_id: Option<String>,
     pub source: Option<String>,
     pub raw_synced_data: Option<String>,
