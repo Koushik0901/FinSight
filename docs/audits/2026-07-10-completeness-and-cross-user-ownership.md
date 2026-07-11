@@ -26,9 +26,12 @@ settable via repo/commands + per-owner `%` editors in the account and asset
 drawers · "(you)" marker on the member switcher. Reconciliation contract proven
 (members + residual == household); the residual IS the cross-app share, so no
 double-counting; NULL share ⇒ equal split ⇒ byte-identical to before; solo users
-never forced into setup. **Remaining polish (optional):** per-transaction
-attribution override on joint accounts (deferred, §3); a household net-worth
-"who owns what" summary view.
+never forced into setup. **Both optional refinements now DONE** (this session):
+per-transaction attribution override on joint accounts (V045 `owner_member_id`, an
+"Attributed to" selector in the transaction drawer that appears only on 2+‑owner
+accounts, weighting the whole txn to one member and reconciling), and a household
+net-worth "who owns what" summary (`household_net_worth_breakdown` command +
+share-aware attribution on the Accounts screen).
 
 ### 1.0 The key insight (why this is small, not new architecture)
 
@@ -226,8 +229,10 @@ type and assert in the probe.
 
 - Cross-app **shared-item identifier / reconciliation key** — no consumer without
   a sync feature; defer until sync/merge exists.
-- **Per-transaction ownership attribution** override on joint accounts (the
-  precise refinement to §1.1's flow approximation).
+- ~~**Per-transaction ownership attribution** override on joint accounts~~ — **BUILT
+  this session** (V045 `owner_member_id` + "Attributed to" selector; see Part 1).
+  It resolves §1.1's flow approximation: a personal purchase on a joint card can be
+  attributed 100% to one member instead of being split by the account share.
 - Envelope-per-person budgets (budgets stay household-level, per P0-2's v1 call).
 
 ---
