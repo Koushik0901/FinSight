@@ -403,6 +403,23 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         return Ok(());
     }
 
+    // An investment/brokerage account's value is its MARKET value — what the
+    // brokerage says the holdings are worth — not the sum of its cash flows. A
+    // fully-invested account nets ~$0 cash (money in as contributions, straight
+    // out into securities), and folding transaction activity on top of a
+    // user-entered market value would double-count it. So never derive an
+    // investment account's balance; it comes from a market-value snapshot the
+    // user (or a sync) sets. Importing the brokerage's activity CSV still gives a
+    // useful contribution/trade history without corrupting the account value.
+    let is_investment: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND type = 'Investment')",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    if is_investment {
+        return Ok(());
+    }
+
     // Respect an explicit balance the user set themselves — never overwrite it
     // with a derived estimate. (Seed and our own 'derived' snapshots don't count.)
     let user_set_balance: bool = conn.query_row(
@@ -1164,6 +1181,51 @@ mod tests {
             .unwrap();
         assert!(summary.balance_known, "derived balance must read as known");
         assert_eq!(summary.balance_cents, 491_568);
+    }
+
+    #[test]
+    fn investment_account_balance_is_not_derived_from_cash_flows() {
+        // A brokerage account's value is its MARKET value, not the sum of its
+        // cash activity. Importing the brokerage's contribution/trade history must
+        // NOT change the user-entered market value — otherwise a fully-invested
+        // account would read ~$0, or a market value with activity on top would
+        // double-count. (F1: local CSV import of investment activity.)
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('tfsa','Me','Wealthsimple','Investment','TFSA','CAD','#22C55E','manual',?1)",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        // The market value the user entered (seeded at account creation).
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+             VALUES('tfsa',date('now'),1000000,'seed')",
+            [],
+        )
+        .unwrap();
+        // A $500 contribution and a $300 securities buy — net +$200 cash, which
+        // is NOT the account's value change (prices move independently).
+        insert_txn(&conn, "tfsa", 50_000, "2024-12-18");
+        insert_txn(&conn, "tfsa", -30_000, "2024-12-22");
+
+        recompute_balance_if_linked(&mut conn, "tfsa").unwrap();
+
+        let derived_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account_balances WHERE account_id='tfsa' AND source='derived'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(derived_count, 0, "an investment balance is never derived from transactions");
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == "tfsa")
+            .unwrap();
+        assert_eq!(summary.balance_cents, 1_000_000, "market value stands; cash flows ignored");
     }
 
     #[test]
