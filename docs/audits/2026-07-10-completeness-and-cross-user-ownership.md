@@ -16,7 +16,19 @@ now-fixed pipeline.
 
 ---
 
-## Part 1 — Cross-user shared ownership (central new pillar)
+## Part 1 — Cross-user shared ownership (central new pillar) — ✅ COMPLETE
+
+**Delivered end-to-end (correct + tested + user-facing) across ~11 commits:**
+operator/self identity (V042 `is_self`, "This is me", onboarding name capture) ·
+unified weight source (`MEMBER_WEIGHT_SUBQUERY`) · explicit `share_bps` on accounts
+(V043) and `asset_owners` on manual assets (V044), weighting both stock and flow ·
+settable via repo/commands + per-owner `%` editors in the account and asset
+drawers · "(you)" marker on the member switcher. Reconciliation contract proven
+(members + residual == household); the residual IS the cross-app share, so no
+double-counting; NULL share ⇒ equal split ⇒ byte-identical to before; solo users
+never forced into setup. **Remaining polish (optional):** per-transaction
+attribution override on joint accounts (deferred, §3); a household net-worth
+"who owns what" summary view.
 
 ### 1.0 The key insight (why this is small, not new architecture)
 
