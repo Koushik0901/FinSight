@@ -41,6 +41,11 @@ export default function MemberSwitcher({ value, onChange }: Props) {
             style={{ background: m.color || "var(--ink-faint)", width: 8, height: 8, marginRight: 6 }}
           />
           {m.name}
+          {m.isSelf && (
+            <span className="muted" style={{ marginLeft: 4, fontSize: 11 }}>
+              (you)
+            </span>
+          )}
         </button>
       ))}
     </div>
