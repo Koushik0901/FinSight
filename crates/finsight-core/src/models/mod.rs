@@ -34,7 +34,7 @@ pub use copilot::{
     ConversationSummary,
 };
 pub use holding::Holding;
-pub use household::{AccountOwner, HouseholdMember};
+pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
 pub use import_candidate::{
     ImportCandidate, ImportCandidateMatch, ImportCandidateWithMatches, NewImportCandidate,
     NewImportCandidateMatch,

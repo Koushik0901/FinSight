@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::models::{AccountOwner, HouseholdMember};
+use finsight_core::models::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
 use finsight_core::repos::{household, run};
 
 #[tauri::command]
@@ -85,4 +85,47 @@ pub async fn set_account_owners(
     })
     .await
     .map_err(AppError::from)
+}
+
+/// Replace an account's owners with explicit per-owner shares (basis points;
+/// null ⇒ equal split). Recomputing metrics is not needed — the weight is read
+/// live from `share_bps` on every query.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_account_owner_shares(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    owners: Vec<OwnerShare>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        household::set_account_owner_shares(conn, &account_id, &owners)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_asset_owners(state: tauri::State<'_, AppState>) -> AppResult<Vec<AssetOwner>> {
+    let db = (*state.db).clone();
+    run(&db, household::list_asset_owners)
+        .await
+        .map_err(AppError::from)
+}
+
+/// Replace a manual asset's owners with explicit per-owner shares (basis points;
+/// null ⇒ equal split), so a jointly-owned house/car folds each owner's share
+/// into their net worth.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_asset_owners(
+    state: tauri::State<'_, AppState>,
+    asset_id: String,
+    owners: Vec<OwnerShare>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| household::set_asset_owners(conn, &asset_id, &owners))
+        .await
+        .map_err(AppError::from)
 }

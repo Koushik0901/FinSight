@@ -711,6 +711,40 @@ async setAccountOwners(accountId: string, memberIds: string[]) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Replace an account's owners with explicit per-owner shares (basis points;
+ * null ⇒ equal split). Recomputing metrics is not needed — the weight is read
+ * live from `share_bps` on every query.
+ */
+async setAccountOwnerShares(accountId: string, owners: OwnerShare[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_account_owner_shares", { accountId, owners }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listAssetOwners() : Promise<Result<AssetOwner[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_asset_owners") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replace a manual asset's owners with explicit per-owner shares (basis points;
+ * null ⇒ equal split), so a jointly-owned house/car folds each owner's share
+ * into their net worth.
+ */
+async setAssetOwners(assetId: string, owners: OwnerShare[]) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_asset_owners", { assetId, owners }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getDataHealth() : Promise<Result<DataHealth, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_data_health") };
@@ -1469,10 +1503,11 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
 export type AccountBalancePoint = { date: string; balanceCents: number }
 /**
- * One (account, member) ownership pair. The full list lets the UI derive
- * sole/joint badges and per-member net-worth attribution in one query.
+ * One (account, member) ownership pair with the member's explicit share, if
+ * any. The full list lets the UI derive sole/joint badges and per-member
+ * net-worth attribution in one query. `share_bps` None = equal split.
  */
-export type AccountOwner = { accountId: string; memberId: string }
+export type AccountOwner = { accountId: string; memberId: string; shareBps: number | null }
 export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
 export type AccountSparkline = { accountId: string; points: AccountBalancePoint[] }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; 
@@ -1573,6 +1608,11 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
  */
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
+/**
+ * One (asset, member) ownership pair — the manual-asset analogue of
+ * [`AccountOwner`].
+ */
+export type AssetOwner = { assetId: string; memberId: string; shareBps: number | null }
 export type BackupInfo = { path: string; name: string; bytes: number; 
 /**
  * File modified time, RFC3339. Empty when unavailable.
@@ -1772,6 +1812,11 @@ export type NewPlannedTransaction = { description: string; amountCents: number; 
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
+/**
+ * An owner and their explicit ownership share (basis points, 10000 = 100%) for
+ * an account or asset. `share_bps` None ⇒ equal split with the other owners.
+ */
+export type OwnerShare = { memberId: string; shareBps: number | null }
 export type PlanAssignment = { categoryId: string; amountCents: number }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }

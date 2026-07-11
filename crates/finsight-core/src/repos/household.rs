@@ -6,7 +6,7 @@
 //! unassigned) so older read paths and AI context stay meaningful.
 
 use crate::error::{CoreError, CoreResult};
-use crate::models::{AccountOwner, HouseholdMember};
+use crate::models::{AccountOwner, HouseholdMember, OwnerShare};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
@@ -126,11 +126,12 @@ pub fn delete_member(conn: &mut Connection, member_id: &str) -> CoreResult<()> {
 /// The full (account, member) pair list — one call for the whole UI to derive
 /// badges and attribution.
 pub fn list_account_owners(conn: &mut Connection) -> CoreResult<Vec<AccountOwner>> {
-    let mut stmt = conn.prepare("SELECT account_id, member_id FROM account_owners")?;
+    let mut stmt = conn.prepare("SELECT account_id, member_id, share_bps FROM account_owners")?;
     let rows = stmt.query_map([], |r| {
         Ok(AccountOwner {
             account_id: r.get(0)?,
             member_id: r.get(1)?,
+            share_bps: r.get(2)?,
         })
     })?;
     let mut out = Vec::new();
@@ -138,6 +139,70 @@ pub fn list_account_owners(conn: &mut Connection) -> CoreResult<Vec<AccountOwner
         out.push(r?);
     }
     Ok(out)
+}
+
+/// Replace the owner set for an account with explicit shares. `share_bps` None on
+/// an owner ⇒ that owner falls back to an equal split. Shares need not sum to
+/// 10000 — a recorded total below 100% leaves the remainder in the household
+/// residual (the cross-app share owned by another person's separate app).
+pub fn set_account_owner_shares(
+    conn: &mut Connection,
+    account_id: &str,
+    owners: &[OwnerShare],
+) -> CoreResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM account_owners WHERE account_id = ?1",
+        params![account_id],
+    )?;
+    for o in owners {
+        tx.execute(
+            "INSERT OR IGNORE INTO account_owners(account_id, member_id, share_bps) VALUES(?1, ?2, ?3)",
+            params![account_id, o.member_id, o.share_bps],
+        )?;
+    }
+    tx.commit()?;
+    sync_owner_display(conn, account_id)
+}
+
+/// The full (asset, member) ownership pair list — the manual-asset analogue of
+/// [`list_account_owners`].
+pub fn list_asset_owners(conn: &mut Connection) -> CoreResult<Vec<crate::models::AssetOwner>> {
+    let mut stmt = conn.prepare("SELECT asset_id, member_id, share_bps FROM asset_owners")?;
+    let rows = stmt.query_map([], |r| {
+        Ok(crate::models::AssetOwner {
+            asset_id: r.get(0)?,
+            member_id: r.get(1)?,
+            share_bps: r.get(2)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+/// Replace the owner set for a manual asset with explicit shares (see
+/// [`set_account_owner_shares`] for the share semantics).
+pub fn set_asset_owners(
+    conn: &mut Connection,
+    asset_id: &str,
+    owners: &[OwnerShare],
+) -> CoreResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM asset_owners WHERE asset_id = ?1",
+        params![asset_id],
+    )?;
+    for o in owners {
+        tx.execute(
+            "INSERT OR IGNORE INTO asset_owners(asset_id, member_id, share_bps) VALUES(?1, ?2, ?3)",
+            params![asset_id, o.member_id, o.share_bps],
+        )?;
+    }
+    tx.commit()
+        .map_err(crate::error::CoreError::from)
 }
 
 /// Replace the owner set for an account (empty = household/unassigned).
@@ -350,5 +415,53 @@ mod tests {
             |r| r.get(0),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn set_owner_shares_persists_explicit_shares_for_accounts_and_assets() {
+        use crate::models::OwnerShare;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        insert_account(&conn, "chq", "Joint Chequing");
+        let a = create_member(&mut conn, "Koushik", None).unwrap();
+        let b = create_member(&mut conn, "Swathi", None).unwrap();
+
+        set_account_owner_shares(
+            &mut conn,
+            "chq",
+            &[
+                OwnerShare { member_id: a.id.clone(), share_bps: Some(7000) },
+                OwnerShare { member_id: b.id.clone(), share_bps: Some(3000) },
+            ],
+        )
+        .unwrap();
+        let owners = list_account_owners(&mut conn).unwrap();
+        assert_eq!(owners.len(), 2);
+        assert_eq!(
+            owners.iter().find(|o| o.member_id == a.id).unwrap().share_bps,
+            Some(7000)
+        );
+        assert_eq!(owner_display(&conn, "chq"), "Koushik & Swathi", "display still syncs");
+
+        conn.execute(
+            "INSERT INTO manual_assets(id,name,asset_type,value_cents,currency,created_at,updated_at) \
+             VALUES('house','House','Real Estate',50000000,'CAD','2024-01-01','2024-01-01')",
+            [],
+        )
+        .unwrap();
+        set_asset_owners(
+            &mut conn,
+            "house",
+            &[
+                OwnerShare { member_id: a.id.clone(), share_bps: Some(6000) },
+                // None ⇒ equal-split fallback (stored NULL).
+                OwnerShare { member_id: b.id.clone(), share_bps: None },
+            ],
+        )
+        .unwrap();
+        let ao = list_asset_owners(&mut conn).unwrap();
+        assert_eq!(ao.len(), 2);
+        assert_eq!(ao.iter().find(|o| o.member_id == a.id).unwrap().share_bps, Some(6000));
+        assert_eq!(ao.iter().find(|o| o.member_id == b.id).unwrap().share_bps, None);
     }
 }
