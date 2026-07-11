@@ -472,7 +472,7 @@ fn name_tokens(name: &str) -> Vec<String> {
 /// Structural (non-identifying) tokens kept verbatim when redacting a transfer
 /// descriptor for the cloud LLM — bank/product/direction words. Anything else
 /// alphabetic in a named-transfer string is a counterparty NAME and is dropped.
-const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
+pub(crate) const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
     "internet", "banking", "interac", "transfer", "email", "money", "fulfill",
     "request", "electronic", "funds", "eft", "payment", "paiement", "merci",
     "deposit", "withdrawal", "preauthorized", "authorized", "debit", "credit",

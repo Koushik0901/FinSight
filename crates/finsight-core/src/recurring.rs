@@ -243,7 +243,19 @@ fn classify(g: Group) -> Option<RecurringItem> {
 
     let sub_hint = subscription_vendor_hint(&g.key);
     let bill_hint = bill_vendor_hint(&g.key);
-    let looks_transfer = g.any_transfer_flag || is_transfer(&g.display) || is_payment_like(&g.key);
+    // A user-set REAL spending category (e.g. Housing on a recurring rent
+    // e-transfer) is an explicit "this is a real cost" — respect it over the
+    // transfer-descriptor keyword heuristic, so rent-by-e-transfer surfaces as a
+    // recurring bill once categorized. A CONFIRMED transfer (`any_transfer_flag`)
+    // is never overridden (those rows aren't categorized), and an uncategorized
+    // transfer stays dismissed — so this can't turn a real internal transfer into
+    // a fake bill.
+    let user_categorized_real_cost = g
+        .category
+        .as_deref()
+        .map_or(false, |c| !matches!(c.to_lowercase().as_str(), "transfer" | "transfers" | "income"));
+    let looks_transfer = g.any_transfer_flag
+        || (!user_categorized_real_cost && (is_transfer(&g.display) || is_payment_like(&g.key)));
 
     let mut reasons = vec![format!("{n} occurrences"), format!("~{cadence} cadence")];
 
@@ -469,6 +481,38 @@ mod tests {
 
     fn find<'a>(items: &'a [RecurringItem], needle: &str) -> Option<&'a RecurringItem> {
         items.iter().find(|i| i.merchant_key.contains(needle))
+    }
+
+    #[test]
+    fn categorized_rent_e_transfer_is_a_bill_not_dismissed_as_transfer() {
+        // F3: rent paid by e-transfer, once categorized (Housing), is a real
+        // recurring cost and must surface as a bill — keyed on the counterparty
+        // so it's a distinct series, and NOT dismissed by the transfer keyword.
+        // An UNcategorized recurring e-transfer stays dismissed.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('housing','g','Housing','#888',0)",
+            [],
+        )
+        .unwrap();
+
+        insert_series(&conn, "Internet Banking E-TRANSFER 100000000001 Swathi", "2025-01-01", 30, 8, -160_000, 0.01, Some("housing"), 0);
+        insert_series(&conn, "Internet Banking E-TRANSFER 200000000002 Landlord", "2025-01-05", 30, 8, -50_000, 0.01, None, 0);
+
+        let items = detect_recurring(&conn, 400).unwrap();
+        let rent = find(&items, "swathi").expect("categorized rent is a distinct, surfaced series");
+        assert!(
+            !matches!(rent.kind, RecurringKind::Transfer),
+            "categorized rent must not be dismissed as a transfer (got {:?})",
+            rent.kind
+        );
+        let other = find(&items, "landlord").expect("the other e-transfer is its own series");
+        assert!(
+            matches!(other.kind, RecurringKind::Transfer),
+            "an UNcategorized recurring e-transfer stays dismissed as a transfer"
+        );
     }
 
     #[test]

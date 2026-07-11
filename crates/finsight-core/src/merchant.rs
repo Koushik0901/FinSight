@@ -200,6 +200,29 @@ pub fn canonical_merchant_key(raw: &str) -> String {
     if let Some(canon) = canonical_vendor(&norm) {
         return canon.to_string();
     }
+    // A person-to-person transfer normalizes to structural words only
+    // ("internet banking e-transfer") because the recipient is truncated away —
+    // so EVERY e-transfer would collapse into one series regardless of who it's
+    // to, and a recurring rent-by-e-transfer could never be told apart from an
+    // unrelated payment. Re-key such descriptors on the counterparty NAME (the
+    // alphabetic tokens that aren't transfer vocabulary) so each recipient forms
+    // its own series. An uncategorized one is still dismissed as a transfer
+    // downstream; only a user-categorized one surfaces as a real recurring cost.
+    let lower = raw.to_lowercase();
+    if ["e-transfer", "etransfer", "e transfer", "interac"]
+        .iter()
+        .any(|k| lower.contains(k))
+    {
+        let name: Vec<String> = raw
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))
+            .map(|t| t.to_lowercase())
+            .filter(|t| !crate::categorize::TRANSFER_STRUCTURAL_TOKENS.contains(&t.as_str()))
+            .collect();
+        if !name.is_empty() {
+            return format!("e-transfer {}", name.join(" "));
+        }
+    }
     let kept: Vec<&str> = norm
         .split_whitespace()
         .filter(|t| !PLAN_WORDS.contains(&t.trim_matches(|c: char| !c.is_alphanumeric())))
