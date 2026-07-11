@@ -137,6 +137,31 @@ Probe on `samples/` (3,213 txns, 6 bank accounts; the TFSA is NOT yet importable
 −$1,455, savings −23%**; May/Jun net −$1,490 / −$3,029. These are still fiction —
 the user saves money. Ranked by impact:
 
+> **STATUS (updated):**
+> - **F0** — operator-identity part DONE (own e-transfers no longer counted;
+>   probe −23%→−16% with the operator seeded). Bare `INTERNET TRANSFER <ref>`
+>   singles are genuinely unpairable (no imported counter-leg) → the review
+>   affordance below, NOT keyword-broadening (would false-flag real purchases on
+>   every user). The remaining leak is REAL spend + ambiguous person-to-person
+>   transfers — savings staying tight/negative for a heavy travel month is
+>   *correct*, not a bug.
+> - **F1** — DONE for local CSV: the generic column mapping imports the
+>   brokerage activity, and investment accounts now track MARKET value
+>   (96092b8: never derive an investment balance from cash flows; 91d5bd6:
+>   "Current market value" label). Auto holdings valuation needs a price feed →
+>   out of scope for an offline app.
+> - **F2** — already addressed by the earlier P2-1 builtin-map extension; adding
+>   more merchant keywords now would sample-fit the probe. Long tail → AI pass.
+> - **F4** — heals from F0 (self-transfers leave the anomaly list) + the P2-6
+>   dismiss loop; remaining top anomalies (tuition, flights) are REAL large spend.
+> - **F3** — the one substantial remaining feature ↓. Implement as a REVIEW
+>   affordance (surface unpaired recurring e-transfers for the user to confirm
+>   "this is Rent — always"), NOT an auto-reclassification: `recurring.rs` today
+>   dismisses e-transfers as "not a real cost" (line 246 `looks_transfer`), and
+>   flipping that for *every* user would surface legit internal transfers (to
+>   unimported accounts) as fake bills. The safe path needs an Inbox/review UI +
+>   a stable "counterparty rule" so the confirmation sticks. Fresh-context work.
+
 ### F0 — Transfer detection STILL leaks; headline numbers still wrong (highest impact)
 The prior P0-1 fix improved flagging (287→**400** legs) but the probe still lists
 **$7,302 outflow / $2,000 inflow of unflagged transfer-like rows** leaking into
