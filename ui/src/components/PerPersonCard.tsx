@@ -7,8 +7,9 @@ import MemberSwitcher from "./MemberSwitcher";
 /**
  * Per-person cashflow & balances on Today. Hidden unless the household has 2+
  * members (with one person, "Everyone" already IS that person). Numbers come
- * from the member-weighted metrics layer — joint accounts split equally — so
- * each person's slice plus the unassigned residual reconciles to the household
+ * from the member-weighted metrics layer — joint accounts split by each owner's
+ * share (equal when no explicit share is set) — so each person's slice plus the
+ * unassigned residual reconciles to the household
  * total. Selecting "Everyone" shows the same household figures as the rest of
  * the screen.
  */
@@ -53,8 +54,8 @@ export default function PerPersonCard({ currency }: { currency: string }) {
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
           {selected
-            ? `${selected.name}'s share — joint accounts are split equally; household-shared accounts aren't counted here.`
-            : "Whole household. Pick a person to see their share, with joint accounts split equally."}
+            ? `${selected.name}'s share — joint accounts split by ownership share; household-shared accounts aren't counted here.`
+            : "Whole household. Pick a person to see their share, with joint accounts split by ownership share."}
         </div>
       </div>
     </section>

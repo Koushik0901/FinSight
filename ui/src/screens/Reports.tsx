@@ -138,7 +138,7 @@ export default function Reports() {
         <MemberSwitcher value={memberId} onChange={setMemberId} />
         {memberId && tab !== "networth" && (
           <span className="muted" style={{ fontSize: 12 }}>
-            Income & spending below are this person's share (joint accounts split equally). Net worth stays household.
+            Income & spending below are this person's share (joint accounts split by ownership share). Net worth stays household.
           </span>
         )}
       </div>

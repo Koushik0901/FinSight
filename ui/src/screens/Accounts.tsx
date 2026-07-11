@@ -138,7 +138,7 @@ export default function Accounts() {
 
       {attribution.length > 0 && (
         <div className="card tight" style={{ marginBottom: 16, padding: 16 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />By owner · joint accounts split equally</div>
+          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />By owner · your share of shared accounts &amp; assets</div>
           <div className="row wrap" style={{ gap: 20 }}>
             {attribution.map((row) => (
               <div key={row.id} className="row row-sm" style={{ alignItems: "center" }}>
