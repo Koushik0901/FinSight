@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type AccountOwner, type AssetOwner, type HouseholdMember, type OwnerShare } from "../client";
+import { commands, type AccountOwner, type AssetOwner, type HouseholdMember, type MemberNetWorth, type OwnerShare } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
+
+export function useHouseholdNetWorthBreakdown() {
+  return useQuery<MemberNetWorth[]>({
+    queryKey: ["household-net-worth"],
+    queryFn: async () => {
+      const result = await commands.householdNetWorthBreakdown();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime(),
+  });
+}
 
 export function useHouseholdMembers() {
   return useQuery<HouseholdMember[]>({

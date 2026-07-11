@@ -6,7 +6,7 @@ import { prefetchAccountTransactions } from "../api/prefetch";
 import { useAccounts } from "../api/hooks/accounts";
 import { useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets } from "../api/hooks/assets";
-import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
+import { useAccountOwners, useHouseholdMembers, useHouseholdNetWorthBreakdown } from "../api/hooks/household";
 import { useNetWorth } from "../api/hooks/networth";
 import type { AccountSummary, ManualAsset } from "../api/client";
 import { money } from "../utils/format";
@@ -36,8 +36,7 @@ export default function Accounts() {
   const { data: members = [] } = useHouseholdMembers();
   const { data: accountOwners = [] } = useAccountOwners();
 
-  // Owner names per account, and each member's attributed net worth: sole
-  // accounts count fully, joint accounts split equally among their owners.
+  // Owner names per account (for the per-account owner badges).
   const ownersByAccount = useMemo(() => {
     const map = new Map<string, typeof members>();
     for (const pair of accountOwners) {
@@ -48,25 +47,20 @@ export default function Accounts() {
     return map;
   }, [accountOwners, members]);
 
-  const attribution = useMemo(() => {
-    if (members.length === 0) return [];
-    const totals = new Map<string, number>(members.map((m) => [m.id, 0]));
-    let household = 0;
-    for (const account of accounts) {
-      if (!account.balance_known) continue;
-      const owners = ownersByAccount.get(account.id) ?? [];
-      if (owners.length === 0) {
-        household += account.balance_cents;
-      } else {
-        for (const owner of owners) {
-          totals.set(owner.id, (totals.get(owner.id) ?? 0) + account.balance_cents / owners.length);
-        }
-      }
-    }
-    const rows = members.map((m) => ({ id: m.id, name: m.name, color: m.color, cents: Math.round(totals.get(m.id) ?? 0) }));
-    if (household !== 0) rows.push({ id: "__household__", name: "Household (shared)", color: null, cents: household });
-    return rows;
-  }, [accounts, members, ownersByAccount]);
+  // Each member's net worth — their SHARE of accounts AND jointly-owned assets,
+  // from the shared metrics layer (explicit share_bps, not a client equal split),
+  // plus an unassigned/shared residual so the rows reconcile to the household.
+  const { data: netWorthBreakdown = [] } = useHouseholdNetWorthBreakdown();
+  const attribution = useMemo(
+    () =>
+      netWorthBreakdown.map((r) => ({
+        id: r.memberId ?? "__household__",
+        name: r.name,
+        color: r.color,
+        cents: r.netWorthCents,
+      })),
+    [netWorthBreakdown],
+  );
   const syncAll = useSyncAllSimpleFinAccounts();
   const netWorth = useNetWorth();
 

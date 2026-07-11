@@ -533,12 +533,26 @@ async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
 /**
  * `get_financial_metrics`, optionally scoped to one household member. A `None`
  * member returns the whole-household numbers (unchanged); `Some(id)` weights
- * every figure by account ownership (joint accounts split equally), so the
- * per-person view reconciles to the household total plus the unassigned residual.
+ * every figure by the member's ownership share (explicit `share_bps`, else an
+ * equal split), so the per-person view reconciles to the household total plus
+ * the unassigned residual.
  */
 async getFinancialMetrics(memberId: string | null) : Promise<Result<FinancialMetrics, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_financial_metrics", { memberId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Each household member's share of net worth (share-weighted across accounts AND
+ * jointly-owned assets, via the metrics layer — NOT a client-side equal split),
+ * plus an "unassigned" residual so the rows sum to the household total.
+ */
+async householdNetWorthBreakdown() : Promise<Result<MemberNetWorth[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("household_net_worth_breakdown") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1765,6 +1779,13 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
+/**
+ * One row of the "who owns what" household net-worth split. `member_id` None is
+ * the unassigned residual — value owned by no recorded member, i.e. by people
+ * running their OWN separate FinSight app (the cross-user share). Member slices
+ * plus the residual reconcile to the household total.
+ */
+export type MemberNetWorth = { memberId: string | null; name: string; color: string | null; netWorthCents: number; liquidCents: number; investedCents: number; debtCents: number }
 /**
  * One merchant's 12-month total.
  */

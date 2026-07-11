@@ -49,6 +49,11 @@ vi.mock("../api/hooks/household", () => ({
   useAssetOwners: vi.fn(() => ({ data: [] })),
   useSetAssetOwners: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useSetSelfMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useHouseholdNetWorthBreakdown: vi.fn(() => ({ data: [
+    { memberId: "m1", name: "Koushik", color: "#38BDF8", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },
+    { memberId: "m2", name: "Swathi", color: "#F472B6", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },
+    { memberId: null, name: "Unassigned / shared", color: null, netWorthCents: 10000000, liquidCents: 10000000, investedCents: 0, debtCents: 0 },
+  ] })),
 }));
 
 vi.mock("../api/hooks/assets", () => ({
@@ -73,17 +78,18 @@ describe("Accounts — navigation", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/accounts/acc-1/transactions");
   });
 
-  it("shows a Joint badge with owner names and per-owner attribution with equal splits", async () => {
+  it("shows a Joint badge with owner names and share-aware per-owner net worth", async () => {
     render(<Accounts />, { wrapper: createWrapper() });
 
     // Ally Savings (2 owners) gets the Joint badge and both names.
     expect(screen.getByText("Joint")).toBeInTheDocument();
     expect(screen.getByText(/Koushik & Swathi/)).toBeInTheDocument();
 
-    // Attribution: Chase Checking $100,000 is unassigned → Household (shared);
-    // Ally Savings $250,000 joint → $125,000 each.
+    // Per-owner net worth comes from the share-aware metrics command (not a
+    // client equal-split): each owner $125,000, and the $100,000 unassigned
+    // account plus any other-app share sit in the reconciling residual.
     expect(screen.getByText(/By owner/)).toBeInTheDocument();
-    expect(screen.getByText("Household (shared)")).toBeInTheDocument();
+    expect(screen.getByText("Unassigned / shared")).toBeInTheDocument();
     expect(screen.getAllByText("$125,000")).toHaveLength(2);
     expect(screen.getByText("$100,000")).toBeInTheDocument();
   });

@@ -40,8 +40,9 @@ pub struct FinancialMetrics {
 
 /// `get_financial_metrics`, optionally scoped to one household member. A `None`
 /// member returns the whole-household numbers (unchanged); `Some(id)` weights
-/// every figure by account ownership (joint accounts split equally), so the
-/// per-person view reconciles to the household total plus the unassigned residual.
+/// every figure by the member's ownership share (explicit `share_bps`, else an
+/// equal split), so the per-person view reconciles to the household total plus
+/// the unassigned residual.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_financial_metrics(
@@ -83,6 +84,73 @@ pub async fn get_financial_metrics(
             emergency_fund_target_months: assumptions.emergency_fund_target_months,
             expected_annual_return_pct: assumptions.expected_annual_return_pct,
         })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// One row of the "who owns what" household net-worth split. `member_id` None is
+/// the unassigned residual — value owned by no recorded member, i.e. by people
+/// running their OWN separate FinSight app (the cross-user share). Member slices
+/// plus the residual reconcile to the household total.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberNetWorth {
+    pub member_id: Option<String>,
+    pub name: String,
+    pub color: Option<String>,
+    pub net_worth_cents: i64,
+    pub liquid_cents: i64,
+    pub invested_cents: i64,
+    pub debt_cents: i64,
+}
+
+/// Each household member's share of net worth (share-weighted across accounts AND
+/// jointly-owned assets, via the metrics layer — NOT a client-side equal split),
+/// plus an "unassigned" residual so the rows sum to the household total.
+#[tauri::command]
+#[specta::specta]
+pub async fn household_net_worth_breakdown(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<MemberNetWorth>> {
+    use finsight_core::repos::household;
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let members = household::list_members(conn)?;
+        let household_bd = metrics::balance_breakdown_for(conn, None)?;
+        let mut out = Vec::new();
+        let (mut nw, mut liq, mut inv, mut debt) = (0i64, 0i64, 0i64, 0i64);
+        for m in &members {
+            let bd = metrics::balance_breakdown_for(conn, Some(&m.id))?;
+            nw += bd.net_worth_cents;
+            liq += bd.liquid_cents;
+            inv += bd.invested_cents;
+            debt += bd.debt_cents;
+            out.push(MemberNetWorth {
+                member_id: Some(m.id.clone()),
+                name: m.name.clone(),
+                color: m.color.clone(),
+                net_worth_cents: bd.net_worth_cents,
+                liquid_cents: bd.liquid_cents,
+                invested_cents: bd.invested_cents,
+                debt_cents: bd.debt_cents,
+            });
+        }
+        // The unattributed remainder: ownerless accounts/assets and the shares of
+        // jointly-owned items owned by people in their own separate apps.
+        let residual = household_bd.net_worth_cents - nw;
+        if residual != 0 || (out.is_empty() && household_bd.net_worth_cents != 0) {
+            out.push(MemberNetWorth {
+                member_id: None,
+                name: "Unassigned / shared".to_string(),
+                color: None,
+                net_worth_cents: residual,
+                liquid_cents: household_bd.liquid_cents - liq,
+                invested_cents: household_bd.invested_cents - inv,
+                debt_cents: household_bd.debt_cents - debt,
+            });
+        }
+        Ok(out)
     })
     .await
     .map_err(AppError::from)
