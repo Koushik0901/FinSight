@@ -10,6 +10,7 @@ import {
   useCreateHouseholdMember,
   useHouseholdMembers,
   useSetAccountOwners,
+  useSetAccountOwnerShares,
   useSetSelfMember,
 } from "../api/hooks/household";
 import type { Account } from "../api/bindings";
@@ -77,8 +78,29 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
   const createMember = useCreateHouseholdMember();
   const setSelf = useSetSelfMember();
   const setAccountOwners = useSetAccountOwners();
+  const setAccountOwnerShares = useSetAccountOwnerShares();
   const [selectedOwnerIds, setSelectedOwnerIds] = useState<string[]>([]);
+  // memberId → percentage string (e.g. "70"). Empty ⇒ equal split for that owner.
+  const [ownerShares, setOwnerShares] = useState<Record<string, string>>({});
   const [newPersonName, setNewPersonName] = useState("");
+
+  // Persist ownership. A joint account (2+ owners) saves explicit shares — a
+  // blank % for an owner means an equal split for that owner; shares need not
+  // sum to 100 (a recorded total below 100% leaves the rest in the household
+  // residual, i.e. owned in someone else's separate app). Sole/unassigned use
+  // the plain equal-split path.
+  const persistOwners = async (accountId: string) => {
+    if (selectedOwnerIds.length >= 2) {
+      const owners = selectedOwnerIds.map((memberId) => {
+        const raw = ownerShares[memberId]?.trim();
+        const pct = raw ? Number(raw) : NaN;
+        return { memberId, shareBps: Number.isFinite(pct) ? Math.round(pct * 100) : null };
+      });
+      await setAccountOwnerShares.mutateAsync({ accountId, owners });
+    } else {
+      await setAccountOwners.mutateAsync({ accountId, memberIds: selectedOwnerIds });
+    }
+  };
 
   const { register, handleSubmit, watch, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -115,7 +137,15 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         payoff_date: account.payoff_date ?? undefined,
         started_at: account.started_at ?? undefined,
       });
-      setSelectedOwnerIds(allOwners.filter((o) => o.accountId === account.id).map((o) => o.memberId));
+      const owners = allOwners.filter((o) => o.accountId === account.id);
+      setSelectedOwnerIds(owners.map((o) => o.memberId));
+      setOwnerShares(
+        Object.fromEntries(
+          owners
+            .filter((o) => o.shareBps != null)
+            .map((o) => [o.memberId, String((o.shareBps as number) / 100)]),
+        ),
+      );
     } else {
       reset({
         type: "Checking",
@@ -130,6 +160,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         started_at: undefined,
       });
       setSelectedOwnerIds([]);
+      setOwnerShares({});
     }
     setNewPersonName("");
     setArchiveConfirm(false);
@@ -211,7 +242,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             ...debtFieldsFromValues(values, account.type),
           },
         });
-        await setAccountOwners.mutateAsync({ accountId: account.id, memberIds: selectedOwnerIds });
+        await persistOwners(account.id);
       } else {
         const created = await createAccount.mutateAsync({
           bank: values.bank,
@@ -248,7 +279,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           import_pending: false,
         });
         if (selectedOwnerIds.length > 0) {
-          await setAccountOwners.mutateAsync({ accountId: created.id, memberIds: selectedOwnerIds });
+          await persistOwners(created.id);
         }
         reset();
         onCreated?.(created.id);
@@ -387,6 +418,50 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
               )}
             </div>
           ))}
+          {selectedOwnerIds.length >= 2 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                Ownership split — leave a % blank for an equal share
+              </div>
+              {selectedOwnerIds.map((id) => {
+                const m = members.find((mm) => mm.id === id);
+                return (
+                  <div key={id} className="row row-sm" style={{ alignItems: "center", gap: 6 }}>
+                    <span style={{ flex: 1, fontSize: 13 }}>{m?.name ?? "Member"}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={ownerShares[id] ?? ""}
+                      onChange={(e) => setOwnerShares((prev) => ({ ...prev, [id]: e.target.value }))}
+                      aria-label={`Ownership percent for ${m?.name ?? "member"}`}
+                      style={{ width: 72 }}
+                    />
+                    <span style={{ fontSize: 12 }}>%</span>
+                  </div>
+                );
+              })}
+              {(() => {
+                const total = selectedOwnerIds.reduce((sum, id) => sum + (Number(ownerShares[id]) || 0), 0);
+                if (total > 100) {
+                  return (
+                    <div style={{ fontSize: 12, color: "var(--negative)" }}>
+                      Shares add up to {total}% — they can’t exceed 100%.
+                    </div>
+                  );
+                }
+                if (total > 0 && total < 100) {
+                  return (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {100 - total}% is owned outside this app (household residual).
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
           <div className="row row-sm" style={{ marginTop: 8 }}>
             <input
               placeholder="Add a person (e.g. Swathi)"

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type AccountOwner, type HouseholdMember } from "../client";
+import { commands, type AccountOwner, type HouseholdMember, type OwnerShare } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 
 export function useHouseholdMembers() {
@@ -85,6 +85,21 @@ export function useSetAccountOwners() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["account-owners"] });
       void qc.invalidateQueries({ queryKey: ["accounts"] });
+    },
+  });
+}
+
+export function useSetAccountOwnerShares() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ accountId, owners }: { accountId: string; owners: OwnerShare[] }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setAccountOwnerShares(accountId, owners);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    // Explicit shares change every per-member number, so invalidate broadly.
+    onSuccess: () => {
+      void qc.invalidateQueries();
     },
   });
 }
