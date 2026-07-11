@@ -73,14 +73,32 @@ existing model already weights *both* by `1/owner_count`
 
 ### 1.3 Build order (each step ends green + committed)
 
-> **DONE (commits 370237b, e785ba5):** the operator/self identity primitive —
-> `household_members.is_self` (V042), `set_self_member` (unique/movable),
-> the `set_self_member` command (re-runs the classification cascade), and the
-> "This is me" UI toggle. This both lands the cleanest F0 win (own e-transfers
-> stop counting as income/spending — probe: −$3,500 reclassified, savings
-> −23%→−16%) and seeds the ownership model. Next steps ↓.
+> **DONE so far:**
+> - **370237b, e785ba5** — operator/self identity (`household_members.is_self`
+>   V042, `set_self_member` + cascade, "This is me" UI). Cleanest F0 win + seeds
+>   ownership (probe: −$3,500 self-transfers reclassified, savings −23%→−16%).
+> - **c6a8f63** — unified the `1/n` weight into one source
+>   (`metrics::MEMBER_WEIGHT_SUBQUERY`, shared by balances, flows, Copilot).
+> - **b04dba2** — explicit **`account_owners.share_bps`** (V043): one-line weight
+>   swap `COALESCE(share_bps/10000, 1/n)`; 70/30 attributes 70/30 for stock+flow,
+>   reconciles, and the cross-app under-100% single-owner case is proven.
+>
+> **NEXT (precise, additive, each commit green):**
+> - **`asset_owners` (V044)** mirroring `account_owners` (asset_id, member_id,
+>   share_bps). Add a `MEMBER_ASSET_WEIGHT_SUBQUERY` and fold the member's share
+>   of owned `manual_assets` into `balance_breakdown_for` net worth (today it
+>   deliberately excludes assets as unattributable — see metrics.rs:447). Test:
+>   a jointly-owned house at 60/40 adds 60/40 to each member's net worth and
+>   reconciles. This completes the "shared **assets**" half of the mandate
+>   (accounts ✓, liabilities-as-accounts ✓, assets ← here).
+> - **Share editor UI:** `set_account_owners` / a new `set_asset_owners` write
+>   `share_bps` (today they write equal-split rows); the Owners editor gets a
+>   per-owner % field summing to ≤100 (over-100 guarded; under-100 = the rest is
+>   another app's, which is valid). Bindings regen.
+> - **"Mine vs Household" surfacing** on the per-person switcher + Copilot (the
+>   `member_id` filter already exists; feed explicit shares through).
 
-1. **Unify the weight source.** The `1/n` weight is computed in ≥3 SQL sites
+1. **Unify the weight source.** ✅ (c6a8f63) — The `1/n` weight is computed in ≥3 SQL sites
    (`account_weights_for_member`, the inline join in `weighted_income_expense`,
    `get_member_financial_summary` in reasoning/tools/read.rs). Collapse to **one**
    canonical weight expression/CTE *before* changing behavior, so the
