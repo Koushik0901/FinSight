@@ -385,13 +385,11 @@ pub async fn get_spending_breakdown(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )?;
 
-        let total_income_cents: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount_cents), 0)
-             FROM transactions
-             WHERE amount_cents > 0 AND posted_at >= ?1",
-            rusqlite::params![this_month_start],
-            |r| r.get(0),
-        )?;
+        // Through the metrics layer: raw `amount_cents > 0` would count
+        // transfers-in and brokerage contributions as "income", inflating the
+        // conscious-spending denominator.
+        let (total_income_cents, _) =
+            finsight_core::metrics::income_expense_since(conn, &this_month_start)?;
 
         Ok(SpendingBreakdown {
             fixed_cents,

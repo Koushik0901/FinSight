@@ -119,8 +119,12 @@ pub async fn get_financial_health_score(
         let month_start = format!("{}-01", ctx.budget.month);
         let unbudgeted_cents: i64 = conn
             .query_row(
-                "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions \
-                 WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0 AND posted_at >= ?1",
+                &format!(
+                    "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions t \
+                     WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0 \
+                       AND posted_at >= ?1 AND {}",
+                    finsight_core::metrics::non_investment_txn_predicate("t")
+                ),
                 rusqlite::params![month_start],
                 |r| r.get(0),
             )

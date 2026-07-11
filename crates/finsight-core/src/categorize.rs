@@ -320,10 +320,14 @@ pub fn transfer_review_predicate(alias: &str) -> String {
         .map(|kw| format!("lower({alias}.merchant_raw) LIKE '%{kw}%'"))
         .collect::<Vec<_>>()
         .join(" OR ");
+    // Investment-account rows never need a verdict: they are already excluded
+    // from income/expense wholesale, so an "is this a transfer?" answer would
+    // change nothing — don't ask.
+    let non_investment = crate::metrics::non_investment_txn_predicate(alias);
     format!(
         "({alias}.is_transfer = 0 AND {alias}.transfer_peer_id IS NULL \
          AND {alias}.transfer_override IS NULL AND {alias}.category_id IS NULL \
-         AND {alias}.amount_cents != 0 AND ({vocab}))"
+         AND {alias}.amount_cents != 0 AND {non_investment} AND ({vocab}))"
     )
 }
 

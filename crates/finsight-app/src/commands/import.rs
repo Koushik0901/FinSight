@@ -242,8 +242,12 @@ pub async fn import_csv(
     let count_acct = cascade_account_id.clone();
     let uncategorized_after = run(&count_db, move |conn| {
         conn.query_row(
-            "SELECT COUNT(*) FROM transactions \
-             WHERE account_id = ?1 AND category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
+            &format!(
+                "SELECT COUNT(*) FROM transactions t \
+                 WHERE account_id = ?1 AND category_id IS NULL AND amount_cents < 0 \
+                   AND is_transfer = 0 AND {}",
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ),
             rusqlite::params![count_acct],
             |r| r.get::<_, i64>(0),
         )

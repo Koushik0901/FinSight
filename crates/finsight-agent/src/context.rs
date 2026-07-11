@@ -576,12 +576,15 @@ fn goal_context(conn: &mut Connection, today: NaiveDate) -> Vec<GoalContextItem>
 fn transaction_context(conn: &mut Connection, month_start: &str) -> TransactionContext {
     let counts = conn
         .query_row(
-            "SELECT
-                COUNT(*),
-                COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
-             FROM transactions",
+            &format!(
+                "SELECT
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 AND {} THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
+                 FROM transactions t",
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ),
             [],
             |r| {
                 Ok((

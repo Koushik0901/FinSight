@@ -140,7 +140,13 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
             conditions.push("t.is_anomaly = 1".to_string());
         }
         Some("no_category") => {
-            conditions.push("t.category_id IS NULL".to_string());
+            // Only rows the user can actually categorize: transfers and
+            // investment-account activity are never categorized, so listing
+            // them here would make the "needs categorizing" list unclearable.
+            conditions.push(format!(
+                "t.category_id IS NULL AND t.is_transfer = 0 AND {}",
+                crate::metrics::non_investment_txn_predicate("t")
+            ));
         }
         Some("transfer_review") => {
             conditions.push(crate::categorize::transfer_review_predicate("t"));

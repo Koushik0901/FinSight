@@ -511,6 +511,23 @@ pub fn set_current_balance(
     account_id: &str,
     current_cents: i64,
 ) -> CoreResult<()> {
+    // An investment account's entered value IS the market value — stamp it as
+    // today's snapshot verbatim. Back-solving an opening from cash flows (the
+    // cash-account path below) would display `market value − net contributions`
+    // instead of what the user just typed: the seed row would hold the solved
+    // opening, and `recompute_balance_if_linked` deliberately never re-derives
+    // investment balances, so the skewed seed would BE the shown balance.
+    let is_investment: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND type = 'Investment')",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    if is_investment {
+        let today = Utc::now().date_naive().to_string();
+        upsert_balance_snapshot(conn, account_id, &today, current_cents, None, Some("manual"))?;
+        return Ok(());
+    }
+
     let sum_all: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
          WHERE account_id = ?1 AND pending = 0",
@@ -1226,6 +1243,46 @@ mod tests {
             .find(|a| a.id == "tfsa")
             .unwrap();
         assert_eq!(summary.balance_cents, 1_000_000, "market value stands; cash flows ignored");
+    }
+
+    #[test]
+    fn set_current_balance_on_investment_account_stamps_market_value_verbatim() {
+        // Regression: the back-solve path computed `opening = entered − Σflows`
+        // and wrote it to the seed; since investment balances are never derived,
+        // the skewed seed became the displayed balance. Entering a $10,000
+        // market value on a TFSA with +$200 net cash activity showed $9,800.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('tfsa','Me','Wealthsimple','Investment','TFSA','CAD','#22C55E','manual',?1)",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        insert_txn(&conn, "tfsa", 50_000, "2024-12-18"); // contribution in
+        insert_txn(&conn, "tfsa", -30_000, "2024-12-22"); // securities buy
+
+        set_current_balance(&mut conn, "tfsa", 1_000_000).unwrap();
+
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == "tfsa")
+            .unwrap();
+        assert!(summary.balance_known);
+        assert_eq!(
+            summary.balance_cents, 1_000_000,
+            "the entered market value is shown verbatim, not skewed by cash flows"
+        );
+
+        // Setting it again later replaces the market value (no accumulation).
+        set_current_balance(&mut conn, "tfsa", 1_100_000).unwrap();
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == "tfsa")
+            .unwrap();
+        assert_eq!(summary.balance_cents, 1_100_000);
     }
 
     #[test]

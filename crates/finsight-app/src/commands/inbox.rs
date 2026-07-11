@@ -44,7 +44,6 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         let now = Utc::now();
         let today = now.format("%Y-%m-%d").to_string();
         let month_start = now.format("%Y-%m-01").to_string();
-        let cutoff_90 = (now - Duration::days(90)).format("%Y-%m-%d").to_string();
         let week_out = (now + Duration::days(7)).format("%Y-%m-%d").to_string();
 
         let mut items: Vec<ActionItem> = Vec::new();
@@ -55,7 +54,11 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         // this action item permanently non-clearable.
         let uncategorized_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0",
+                &format!(
+                    "SELECT COUNT(*) FROM transactions t \
+                     WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0 AND {}",
+                    finsight_core::metrics::non_investment_txn_predicate("t")
+                ),
                 [],
                 |r| r.get(0),
             )
@@ -230,7 +233,7 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         // Reuse the same recurring detection logic but only surface items due soon.
         let cutoff_past = (now - Duration::days(395)).format("%Y-%m-%d").to_string();
         let mut bill_stmt = conn
-            .prepare(
+            .prepare(&format!(
                 "WITH dated AS (
                    SELECT t.merchant_raw,
                           date(t.posted_at) AS d,
@@ -239,7 +242,7 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
                             PARTITION BY t.merchant_raw ORDER BY t.posted_at
                           ) AS prev_d
                    FROM transactions t
-                   WHERE t.posted_at >= ?1 AND t.amount_cents < 0
+                   WHERE t.posted_at >= ?1 AND t.amount_cents < 0 AND {}
                  ),
                  gaps AS (
                    SELECT merchant_raw, d, amount_cents,
@@ -259,7 +262,8 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
                  SELECT merchant_raw, avg_gap, last_seen, last_amount
                  FROM agg
                  ORDER BY last_amount ASC",
-            )
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ))
             .ok();
 
         if let Some(ref mut stmt) = bill_stmt {
@@ -465,19 +469,14 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         }
 
         // ── 7. Savings rate below 10% (last 90 days) ─────────────────────────
-        let (income_90, expense_90): (i64, i64) = conn
-            .query_row(
-                "SELECT
-                    COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-                 FROM transactions WHERE posted_at >= ?1",
-                params![cutoff_90],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap_or((0, 0));
+        // Through the metrics layer, not hand-rolled SQL: this item used to
+        // re-derive the rate WITHOUT the transfer exclusion, so moving money
+        // between your own accounts changed the "savings rate" the Inbox nagged
+        // about while every other screen disagreed.
+        let rolling = finsight_core::metrics::rolling_averages(conn, 90).unwrap_or_default();
 
-        if income_90 > 0 {
-            let savings_rate_pct = ((income_90 - expense_90) * 100) / income_90;
+        if rolling.avg_monthly_income_cents > 0 {
+            let savings_rate_pct = rolling.savings_rate_pct;
 
             if savings_rate_pct < 10 {
                 items.push(ActionItem {
@@ -505,7 +504,7 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
         }
 
         // ── 8. Missing emergency fund (< 1 month of expenses) ────────────────
-        let avg_monthly_expense: i64 = if expense_90 > 0 { expense_90 / 3 } else { 0 };
+        let avg_monthly_expense: i64 = rolling.avg_monthly_expense_cents;
 
         if avg_monthly_expense > 0 {
             // Look for any emergency-fund-type goal with meaningful balance

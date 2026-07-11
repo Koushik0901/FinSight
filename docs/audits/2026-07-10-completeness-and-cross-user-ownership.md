@@ -230,11 +230,29 @@ not a transfer) + a rent-recognition review.
 8+ of the top anomalies are internet transfers / bill pays / a "GLOBAL MONEY
 TRANSFER FEE $0.00" row. Heals substantially once F0 lands; re-verify after.
 
-### F5 — Investment-account classification (advisor-flagged, verify after F1)
-Once an Investment account exists: confirm it is net-worth *invested* (not
-liquid), NOT emergency-fund-eligible, and its contributions aren't counted as
-spending. `is_investment_type`/`is_liquid_type` exist; wire the import to set the
-type and assert in the probe.
+### F5 — Investment-account classification — ✅ DONE (this session)
+The TFSA sample now runs through the probe (116 rows via the generic column
+mapping; the single RowError is the CSV's "As of …" footer line, correctly
+rejected). Verified + fixed:
+- **Probe assertions:** invested bucket gets the market value verbatim; liquid
+  and emergency fund unchanged; net worth includes it; cashflow metric equals
+  the non-investment-account sums; re-import dedup clean.
+- **BUG FIXED — market value skewed by cash flows:** `set_current_balance`
+  back-solved `opening = entered − Σflows` even for Investment accounts, and
+  since investment balances are never derived, the skewed seed WAS the shown
+  balance (enter $10,000 market value → app shows $10,000 − net contributions).
+  Now stamps the entered value as today's snapshot verbatim.
+- **BUG FIXED — brokerage activity leaked into every cashflow surface:**
+  `metrics::non_investment_txn_predicate()` is the one source; applied to
+  `income_expense_since/between`, `weighted_income_expense`, monthly cashflow
+  report, savings-rate history, monthly review (which also now uses the shared
+  honest signed rate instead of a private clamped variant), budget plan income
+  + recurring-expense estimate, anomaly detection (a big BUY is not "unusual
+  spending"), recurring-bill detection (monthly contributions are not bills),
+  the LLM categorizer candidates (don't ship trades to the cloud), and every
+  "N need categorizing" count (inbox, insights, import nudge, agent status,
+  Copilot context/finance/read tools). The `no_category` filter preset and the
+  transfer-review surface exclude investment rows too, so counts match lists.
 
 ---
 

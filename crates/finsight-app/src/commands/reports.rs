@@ -197,8 +197,10 @@ pub async fn get_report_data(
                      WHERE strftime('%Y-%m', t.posted_at) >= ? \
                        AND strftime('%Y-%m', t.posted_at) <= ? \
                        AND t.is_transfer = 0 \
+                       AND {pred} \
                      GROUP BY mo \
-                     ORDER BY mo"
+                     ORDER BY mo",
+                    pred = finsight_core::metrics::non_investment_txn_predicate("t")
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 // member (if any) is the leading bind, then the date bounds.
@@ -388,16 +390,17 @@ pub async fn get_savings_rate_history(
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(365))
             .format("%Y-%m-01")
             .to_string();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT
                 strftime('%Y-%m', posted_at) AS month,
                 COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS income,
                 COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS expense
-             FROM transactions
-             WHERE posted_at >= ?1 AND is_transfer = 0
+             FROM transactions t
+             WHERE posted_at >= ?1 AND is_transfer = 0 AND {}
              GROUP BY month
              ORDER BY month ASC",
-        )?;
+            finsight_core::metrics::non_investment_txn_predicate("t")
+        ))?;
         let rows = stmt.query_map(rusqlite::params![cutoff], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
         })?;
@@ -471,21 +474,12 @@ pub async fn create_monthly_review(
             if input.month == 12 { input.year + 1 } else { input.year },
             if input.month == 12 { 1 } else { input.month + 1 }
         );
-        let (income_cents, expense_cents): (i64, i64) = conn.query_row(
-            "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-             FROM transactions
-             WHERE posted_at >= ?1 AND posted_at < ?2 AND is_transfer = 0",
-            rusqlite::params![&month_start, &month_end],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let net = income_cents - expense_cents;
-        let savings_rate_pct = if income_cents > 0 {
-            (net.max(0) * 100) / income_cents
-        } else {
-            0
-        };
+        // Through the one shared window metric (transfer + investment exclusions,
+        // honest signed rate) instead of a private variant that clamped deficits
+        // to 0% — a review of a deficit month must say so.
+        let (income_cents, expense_cents) =
+            finsight_core::metrics::income_expense_between(conn, &month_start, &month_end)?;
+        let savings_rate_pct = finsight_core::metrics::savings_rate_pct(income_cents, expense_cents);
 
         let month_str = format!("{}-{:02}", input.year, input.month);
         let over_budget_categories: Vec<String> = {

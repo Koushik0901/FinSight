@@ -459,13 +459,17 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
 
         // Average monthly income over last 3 months
         let income_cents: i64 = conn.query_row(
-            "SELECT CAST(COALESCE(AVG(mi), 0) AS INTEGER)
-             FROM (SELECT SUM(amount_cents) AS mi
-                   FROM transactions
-                   WHERE amount_cents > 0
-                     AND is_transfer = 0
-                     AND strftime('%Y-%m', posted_at) IN (?1, ?2, ?3)
-                   GROUP BY strftime('%Y-%m', posted_at))",
+            &format!(
+                "SELECT CAST(COALESCE(AVG(mi), 0) AS INTEGER)
+                 FROM (SELECT SUM(amount_cents) AS mi
+                       FROM transactions t
+                       WHERE amount_cents > 0
+                         AND is_transfer = 0
+                         AND {}
+                         AND strftime('%Y-%m', posted_at) IN (?1, ?2, ?3)
+                       GROUP BY strftime('%Y-%m', posted_at))",
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ),
             rusqlite::params![m0, m1, m2],
             |r| r.get(0),
         )?;
@@ -527,14 +531,15 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
         // Recurring expense estimate
         let cutoff = (now - chrono::Duration::days(395)).format("%Y-%m-%d").to_string();
         let recurring_expense_cents: i64 = conn.query_row(
-            "WITH gaps AS (
+            &format!(
+                "WITH gaps AS (
                SELECT merchant_raw,
                       julianday(date(posted_at)) -
                         julianday(LAG(date(posted_at)) OVER (
                           PARTITION BY merchant_raw ORDER BY posted_at
                         )) AS gap,
                       amount_cents
-               FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0
+               FROM transactions t WHERE posted_at >= ?1 AND is_transfer = 0 AND {}
              ),
              agg AS (
                SELECT merchant_raw, AVG(gap) AS avg_gap, MAX(amount_cents) AS last_amount
@@ -543,6 +548,8 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
                HAVING COUNT(*) >= 2 AND AVG(gap) < 45
              )
              SELECT COALESCE(SUM(ABS(last_amount)), 0) FROM agg WHERE last_amount < 0",
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ),
             rusqlite::params![cutoff],
             |r| r.get(0),
         )?;

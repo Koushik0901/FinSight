@@ -115,13 +115,16 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
         .format("%Y-%m-%d")
         .to_string();
 
-    let mut stmt = conn.prepare(
+    // Investment-account rows are excluded: monthly TFSA contributions or
+    // repeated BUY trades would otherwise read as recurring "bills".
+    let mut stmt = conn.prepare(&format!(
         "SELECT t.merchant_raw, substr(t.posted_at,1,10) AS d, t.amount_cents, \
                 c.label, c.color, COALESCE(t.is_transfer,0) \
          FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
-         WHERE substr(t.posted_at,1,10) >= ?1 \
+         WHERE substr(t.posted_at,1,10) >= ?1 AND {} \
          ORDER BY t.posted_at ASC",
-    )?;
+        crate::metrics::non_investment_txn_predicate("t")
+    ))?;
     let rows = stmt.query_map([cutoff], |r| {
         Ok((
             r.get::<_, String>(0)?,
