@@ -154,13 +154,18 @@ the user saves money. Ranked by impact:
 >   more merchant keywords now would sample-fit the probe. Long tail → AI pass.
 > - **F4** — heals from F0 (self-transfers leave the anomaly list) + the P2-6
 >   dismiss loop; remaining top anomalies (tuition, flights) are REAL large spend.
-> - **F3** — the one substantial remaining feature ↓. Implement as a REVIEW
->   affordance (surface unpaired recurring e-transfers for the user to confirm
->   "this is Rent — always"), NOT an auto-reclassification: `recurring.rs` today
->   dismisses e-transfers as "not a real cost" (line 246 `looks_transfer`), and
->   flipping that for *every* user would surface legit internal transfers (to
->   unimported accounts) as fake bills. The safe path needs an Inbox/review UI +
->   a stable "counterparty rule" so the confirmation sticks. Fresh-context work.
+> - **F3** — rent visible in SPENDING: DONE (f8e1f13). Rent-by-e-transfer carries
+>   a unique reference number each time, so the "always categorize like this" rule
+>   proposed the full string and never matched the next payment. `suggested_rule_
+>   pattern` now generalizes a transfer descriptor to a `%counterparty%` key, so
+>   ONE user confirmation (categorize a rent e-transfer → "Create rule") makes
+>   every payment to that person auto-categorize (Housing) — rent finally appears
+>   in "where does my money go". Safe & generic: user-confirmed, transfer-only, no
+>   auto-classification change. **Follow-up:** rent as a *bill on the Recurring
+>   screen* needs recipient-aware e-transfer grouping — `canonical_merchant_key`
+>   strips the recipient, so all e-transfers merge into one group; making the
+>   Recurring view respect a user's category requires splitting that grouping by
+>   counterparty first (a bounded but separate change).
 
 ### F0 — Transfer detection STILL leaks; headline numbers still wrong (highest impact)
 The prior P0-1 fix improved flagging (287→**400** legs) but the probe still lists
