@@ -5,6 +5,7 @@ import { useRecurring } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 import type { PlannedTransaction } from "../api/client";
 import { money } from "../utils/format";
+import { prettyMerchant } from "../utils/merchant";
 import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";
 import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
 
@@ -114,7 +115,7 @@ export default function Recurring() {
                   </tr>,
                   ...group.items.map((item) => (
                     <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`} title={(item.reasons ?? []).join(" · ")}>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{item.merchantRaw}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence</div></div></div></td>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence</div></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
                       <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
                       <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { decimals: 2 })}</span></td>

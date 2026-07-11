@@ -10,6 +10,7 @@ import {
 import {
   useHouseholdMembers, useAssetOwners, useSetAssetOwners,
 } from "../api/hooks/household";
+import { useDefaultCurrency } from "../api/hooks/settings";
 import type { ManualAsset } from "../api/client";
 
 const ASSET_TYPES = ["cash", "property", "vehicle", "investment", "crypto", "other"] as const;
@@ -30,6 +31,9 @@ interface Props {
 
 export default function AssetDrawer({ open, onClose, asset }: Props) {
   const isEdit = !!asset;
+  // New assets record the user's configured currency — a CAD household's
+  // house must not be silently stored (and displayed) as USD.
+  const { data: configuredCurrency } = useDefaultCurrency();
   const create = useCreateManualAsset();
   const update = useUpdateManualAsset();
   const del = useDeleteManualAsset();
@@ -99,7 +103,7 @@ export default function AssetDrawer({ open, onClose, asset }: Props) {
       } else {
         const created = await create.mutateAsync({
           name: values.name, assetType: values.assetType, valueCents,
-          currency: "USD", notes: values.notes || null,
+          currency: configuredCurrency ?? "USD", notes: values.notes || null,
         });
         if (selectedOwnerIds.length > 0) await persistOwners(created.id);
       }

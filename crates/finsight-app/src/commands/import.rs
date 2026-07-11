@@ -91,6 +91,11 @@ pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResu
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
     pub summary: ImportSummary,
+    /// Rows the deterministic builtin pass categorized in this import's
+    /// cascade — shown post-import so the derived work is visible, not silent.
+    pub builtin_categorized: u32,
+    /// Cross-account transfer pairs linked in this import's cascade.
+    pub transfers_paired: u32,
     /// Uncategorized non-transfer EXPENSE rows in this account after the builtin
     /// pass — exactly what an AI categorization run would work on.
     pub uncategorized_after: i64,
@@ -160,26 +165,32 @@ pub async fn import_csv(
     // the pending reset drains faster; the lease guarantees correctness even if
     // this raced.
     let wiped = || reset_lease.superseded();
+    let mut builtin_categorized: u32 = 0;
+    let mut transfers_paired: u32 = 0;
     if !wiped() {
         // Deterministic, provider-free baseline categorization. Runs on every
         // import so common merchants get a stable category even with no LLM
         // provider configured; the AI categorizer (if a provider is set) still
         // refines the rest. Best-effort — a failure here must not fail the
-        // import itself.
+        // import itself. The count is surfaced in the result so the cascade's
+        // work is visible instead of silent.
         {
             let cat_db = (*state.db).clone();
-            let _ = run(
+            builtin_categorized = run(
                 &cat_db,
                 finsight_core::categorize::apply_builtin_categorization,
             )
-            .await;
+            .await
+            .unwrap_or(0);
         }
         // Pair cross-account transfer legs (withdrawal ↔ matching deposit) now
         // that both sides may exist. Runs after the keyword pass, which supplies
         // the flagged anchors. Best-effort — must not fail the import.
         if !wiped() {
             let pair_db = (*state.db).clone();
-            let _ = run(&pair_db, finsight_core::categorize::pair_transfers).await;
+            transfers_paired = run(&pair_db, finsight_core::categorize::pair_transfers)
+                .await
+                .unwrap_or(0);
         }
         // Recompute statistical anomaly flags from the (now larger) history.
         // Scoped to the imported account's merchants: only those groups can
@@ -258,6 +269,8 @@ pub async fn import_csv(
 
     let result = ImportResult {
         summary,
+        builtin_categorized,
+        transfers_paired,
         uncategorized_after,
         ai_categorization_started,
     };

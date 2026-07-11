@@ -170,6 +170,17 @@ function DataBackupsSection() {
             </div>
           )}
 
+          {health && health.startupSummary && (
+            <div className="s-row">
+              <div>
+                <div className="label">Launch refresh</div>
+                <div className="desc">{health.startupSummary}</div>
+              </div>
+              <div />
+              <div />
+            </div>
+          )}
+
           {health?.pendingRestore && (
             <div className="card accent" style={{ marginBottom: 12 }}>
               <div className="label">A restore is staged</div>

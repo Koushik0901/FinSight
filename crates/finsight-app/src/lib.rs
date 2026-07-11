@@ -452,15 +452,27 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 // Re-run the deterministic builtin pass so transfer flags reflect
                 // the current keyword list (idempotent; fixes stale is_transfer),
                 // then pair cross-account transfer legs so existing imports gain
-                // pairing without a re-import.
-                step!(
-                    "startup categorization",
-                    finsight_core::categorize::apply_builtin_categorization(&mut conn)
-                );
-                step!(
-                    "startup transfer pairing",
-                    finsight_core::categorize::pair_transfers(&mut conn)
-                );
+                // pairing without a re-import. Positive outcomes are summarized
+                // (P3: startup mutation transparency) — the user can see WHAT
+                // launch changed, not just whether something failed.
+                let mut startup_summary_parts: Vec<String> = Vec::new();
+                match finsight_core::categorize::apply_builtin_categorization(&mut conn) {
+                    Ok(n) if n > 0 => {
+                        startup_summary_parts.push(format!("categorized {n}"));
+                    }
+                    Ok(_) => {}
+                    Err(err) => startup_warnings.push(format!("startup categorization: {err}")),
+                }
+                match finsight_core::categorize::pair_transfers(&mut conn) {
+                    Ok(n) if n > 0 => {
+                        startup_summary_parts.push(format!(
+                            "matched {n} transfer pair{}",
+                            if n == 1 { "" } else { "s" }
+                        ));
+                    }
+                    Ok(_) => {}
+                    Err(err) => startup_warnings.push(format!("startup transfer pairing: {err}")),
+                }
                 if let Ok(ids) = conn
                     .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
                     .and_then(|mut s| {
@@ -483,9 +495,25 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                     "startup net-worth backfill",
                     finsight_core::repos::net_worth::backfill_history_from_transactions(&mut conn)
                 );
-                step!(
-                    "startup anomaly recompute",
-                    finsight_core::anomaly::recompute_anomalies(&mut conn)
+                match finsight_core::anomaly::recompute_anomalies(&mut conn) {
+                    Ok(n) if n > 0 => {
+                        startup_summary_parts.push(format!(
+                            "flagged {n} unusual charge{}",
+                            if n == 1 { "" } else { "s" }
+                        ));
+                    }
+                    Ok(_) => {}
+                    Err(err) => startup_warnings.push(format!("startup anomaly recompute: {err}")),
+                }
+                let startup_summary = if startup_summary_parts.is_empty() {
+                    String::new()
+                } else {
+                    format!("Refreshed on launch: {}", startup_summary_parts.join(" · "))
+                };
+                let _ = finsight_core::settings::set(
+                    &conn,
+                    "data.startup_summary",
+                    &startup_summary,
                 );
                 let _ = finsight_core::settings::set(
                     &conn,

@@ -357,22 +357,31 @@ to keep Insights trustworthy.
 
 ---
 
-## P3 — worth doing, not urgent
+## P3 — worth doing, not urgent — ✅ ALL DONE (2026-07-11)
 
-1. **Startup mutation transparency** — join with P0-4(b); show "recomputed N
-   balances, paired M transfers" in the agent activity log instead of silence.
-2. **Import progress + cascade visibility** — import completes, then builtin
-   categorization/anomalies/net-worth run invisibly; a small post-import summary
-   ("categorized 1,603 · flagged 12 transfers · 936 need review") builds trust.
-3. **Merchant display naming** — raw strings like `UBER TRIP HTTPS://HELP.UBER.C`
-   leak into UI/recurring; a display-name normalization layer (shared with P1-2)
-   improves every table.
-4. **Currency correctness** — data is CAD; ensure the currency setting flows
-   everywhere (money() default was fixed 2026-07-09; verify report exports/CSVs).
-5. **`docs/TODO.md` refresh** — replace the all-✅ ledger with a live gaps list
-   (or point it at this audit).
-6. **Copilot chat-history housekeeping** — conversations accumulate without
-   pruning/archive UX (V029-32 tables); verify long-term growth is bounded.
+1. **Startup mutation transparency — DONE.** The launch cascade now records a
+   positive summary ("Refreshed on launch: categorized N · matched M transfer
+   pairs · flagged K unusual charges") to `data.startup_summary`, shown in
+   Settings → Data health alongside the existing failure warnings.
+2. **Import progress + cascade visibility — DONE.** `ImportResult` carries
+   `builtin_categorized` + `transfers_paired`; the post-import toast reads
+   "imported 573, categorized 214, matched 12 transfer pairs" instead of hiding
+   the cascade. (Uncategorized count + the AI-pass choice were already surfaced.)
+3. **Merchant display naming — DONE.** `prettyMerchant()` (ui/src/utils/
+   merchant.ts) collapses statement column-alignment space runs and drops
+   support-URL tails, without renaming anything (casing/words stay as the bank
+   wrote them; domain-style names like TEMU.COM kept). Applied to the
+   transactions table and Recurring; the drawer's editable field stays raw.
+4. **Currency correctness — DONE.** `money()`/`compactMoney()` already followed
+   the configured currency; the real gaps were creation defaults — new accounts
+   defaulted the picker to USD and new manual ASSETS were silently stored as
+   USD (a CAD house displayed as US$). Both drawers now default to the
+   configured currency.
+5. **`docs/TODO.md` refresh — DONE** (points at the audits as the live gap
+   list; status line kept current).
+6. **Copilot chat-history housekeeping — VERIFIED.** `delete_conversation` is
+   wired end-to-end (command → hook → thread list), so history is
+   user-boundable; no unbounded background growth beyond user-visible threads.
 
 ---
 

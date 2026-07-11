@@ -5,6 +5,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useCreateAccount, useUpdateAccount, useArchiveAccount } from "../api/hooks/accounts";
+import { useDefaultCurrency } from "../api/hooks/settings";
 import {
   useAccountOwners,
   useCreateHouseholdMember,
@@ -66,6 +67,13 @@ interface Props {
 
 export default function AccountDrawer({ open, onClose, account, onCreated, elevated }: Props) {
   const isEdit = !!account;
+  // New accounts default to the user's configured currency, not a hardcoded
+  // USD — a CAD household shouldn't have to fix every new account's currency.
+  // (Clamped to the account currency list; the setting may hold e.g. JPY.)
+  const { data: configuredCurrency } = useDefaultCurrency();
+  const defaultCurrency = (["USD", "EUR", "GBP", "CAD", "AUD"] as const).find(
+    (c) => c === configuredCurrency
+  ) ?? "USD";
   const createAccount = useCreateAccount();
   const updateAccount = useUpdateAccount();
   const archiveAccount = useArchiveAccount();
@@ -106,7 +114,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
     resolver: zodResolver(schema),
     defaultValues: {
       type: "Checking",
-      currency: "USD",
+      currency: defaultCurrency,
       opening_dollars: 0,
       apy_pct: undefined,
       nickname: undefined,
@@ -149,7 +157,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
     } else {
       reset({
         type: "Checking",
-        currency: "USD",
+        currency: defaultCurrency,
         opening_dollars: 0,
         nickname: undefined,
         apr_pct: undefined,

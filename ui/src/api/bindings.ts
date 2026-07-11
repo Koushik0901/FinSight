@@ -1761,7 +1761,13 @@ integrityStatus: string; integrityCheckedAt: string | null; lastBackupAt: string
 /**
  * Non-fatal problems from the last startup derived-data cascade.
  */
-startupWarnings: string[]; backups: BackupInfo[]; 
+startupWarnings: string[]; 
+/**
+ * What the last launch's derived-data refresh actually changed
+ * ("Refreshed on launch: categorized 12 · matched 3 transfer pairs"),
+ * empty when launch changed nothing.
+ */
+startupSummary: string; backups: BackupInfo[]; 
 /**
  * Set once a restore is staged; the app must restart to apply it.
  */
@@ -1799,6 +1805,15 @@ export type ImportCandidateWithMatches = { candidate: ImportCandidate; matches: 
  * background enqueue.
  */
 export type ImportResult = { summary: ImportSummary; 
+/**
+ * Rows the deterministic builtin pass categorized in this import's
+ * cascade — shown post-import so the derived work is visible, not silent.
+ */
+builtinCategorized: number; 
+/**
+ * Cross-account transfer pairs linked in this import's cascade.
+ */
+transfersPaired: number; 
 /**
  * Uncategorized non-transfer EXPENSE rows in this account after the builtin
  * pass — exactly what an AI categorization run would work on.

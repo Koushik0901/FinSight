@@ -15,6 +15,7 @@ import SetBalanceDialog from "../components/SetBalanceDialog";
 import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
+import { prettyMerchant } from "../utils/merchant";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 
@@ -279,7 +280,7 @@ export default function AccountTransactions() {
               ) : (
                 transactions.map((transaction) => {
                   const category = transaction.category_id ? categoryById[transaction.category_id] : undefined;
-                  const merchantName = transaction.merchant_label ?? transaction.merchant_raw;
+                  const merchantName = transaction.merchant_label ?? prettyMerchant(transaction.merchant_raw);
                   const avatarBg = transaction.merchant_color || avatarColor(merchantName);
                   const txnAccount = account ?? accountById[transaction.account_id];
                   return (
