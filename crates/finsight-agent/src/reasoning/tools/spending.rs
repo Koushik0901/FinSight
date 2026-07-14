@@ -137,6 +137,42 @@ pub fn annotate_spending_driver() -> std::sync::Arc<dyn Tool> {
     std::sync::Arc::new(T)
 }
 
+pub fn plan_spending_reduction() -> std::sync::Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "plan_spending_reduction"
+        }
+        fn description(&self) -> &str {
+            "Build an HONEST path back toward a spending target. Given `period` (YYYY-MM, the elevated month; omit to use the most recent month) and optional `target_monthly_cents`, it separates one-off spend (self_correcting_cents — falls off on its own, no action) from the recurring 'levers' you can trim (recoverable_recurring_cents + the `levers` list), projects where trimming lands you (projected_after_levers_cents), and sets structural_gap_cents when the target is BELOW what trimming can reach — meaning the rest is a structural floor, not more cuts. Read the `note`. Use for 'how do I get back to $X' / 'how do I cut my spending'. Every number is precomputed — quote the *_display values and never claim a target is reachable when structural_gap_cents is set."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type":"object","properties":{
+                "period":{"type":"string","description":"Elevated month YYYY-MM. Omit to use the most recent month with activity."},
+                "target_monthly_cents":{"type":"integer","description":"Optional monthly spend goal in cents (e.g. 150000 for $1,500/mo)."}
+            }})
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let period = match args["period"].as_str() {
+                Some(p) if p.len() >= 7 => p.to_string(),
+                _ => match finsight_core::spending::baseline::latest_activity_month(ctx.conn)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?
+                {
+                    Some(ym) => ym,
+                    None => return Ok(json!({"error":"no_data","note":"No spending activity to plan from."})),
+                },
+            };
+            let target = args["target_monthly_cents"].as_i64();
+            let plan = finsight_core::spending::plan::plan_spending_reduction(ctx.conn, &period, target)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let mut v = serde_json::to_value(plan)?;
+            v["period"] = json!(period);
+            Ok(v)
+        }
+    }
+    std::sync::Arc::new(T)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,5 +269,25 @@ mod tests {
             .unwrap();
         assert_eq!(out["saved"], false);
         assert_eq!(out["error"], "unknown_merchant_key");
+    }
+
+    #[test]
+    fn plan_tool_flags_structural_target() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -200_000, "SAVE ON FOODS  EDMONTON, AB");
+        }
+        ins(&conn, "2026-01", -250_000, "SAVE ON FOODS  EDMONTON, AB");
+        ins(&conn, "2026-01", -90_000, "FLAIR AIRLINES  BURNABY, BC");
+        let mut changes = Vec::new();
+        let mut drafts = Vec::new();
+        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+        let out = plan_spending_reduction()
+            .execute(&mut ctx, json!({"period":"2026-01","target_monthly_cents":150_000}))
+            .unwrap();
+        assert_eq!(out["structural_gap_cents"], 50_000);
+        assert_eq!(out["self_correcting_cents"], 90_000);
+        assert_eq!(out["period"], "2026-01");
     }
 }

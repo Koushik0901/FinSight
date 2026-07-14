@@ -218,6 +218,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(spending::explain_spending_change());
     tools.register(spending::classify_spending_period());
     tools.register(spending::annotate_spending_driver());
+    tools.register(spending::plan_spending_reduction());
     tools.register(act::set_budget());
     tools.register(act::update_goal_monthly());
     tools.register(act::create_planned_transaction());
