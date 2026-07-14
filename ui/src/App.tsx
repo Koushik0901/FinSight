@@ -8,7 +8,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useIsFetching } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 import { markRouteStart, markRouteContent, perf } from "./utils/perf";
@@ -25,7 +25,6 @@ import * as I from "./components/Icons";
 const Today = lazy(() => import("./screens/Today"));
 const Inbox = lazy(() => import("./screens/Inbox"));
 const ImportReview = lazy(() => import("./screens/ImportReview"));
-const Insights = lazy(() => import("./screens/Insights"));
 const Accounts = lazy(() => import("./screens/Accounts"));
 const AccountTransactions = lazy(() => import("./screens/AccountTransactions"));
 const Budget = lazy(() => import("./screens/Budget"));
@@ -262,9 +261,12 @@ export function App() {
                     <Route path="/" element={<Today />} />
                     <Route path="/inbox" element={<Inbox />} />
                     <Route path="/import-review" element={<ImportReview />} />
-                    <Route path="/insights" element={<Insights />} />
+                    {/* Insights retired — its action items live in Inbox, its agent memory in Settings. */}
+                    <Route path="/insights" element={<Navigate to="/inbox" replace />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+                    {/* All-accounts ledger — where Inbox review CTAs deep-link (?filter=…). */}
+                    <Route path="/transactions" element={<AccountTransactions />} />
                     <Route path="/budget" element={<Budget />} />
                     <Route path="/categories" element={<Categories />} />
                     <Route path="/recurring" element={<Recurring />} />

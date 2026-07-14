@@ -9,6 +9,7 @@ vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children
 const setFlags = vi.fn();
 const setOwner = vi.fn();
 const setTransfer = vi.fn();
+const applySimilar = vi.fn();
 
 vi.mock("../api/hooks/transactions", () => ({
   useCreateTransaction: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
@@ -23,6 +24,7 @@ vi.mock("../api/hooks/transactions", () => ({
   useCategories: vi.fn(() => ({ data: [{ id: "cat1", label: "Food", color: "#f00", group_id: "g1", group_label: "Daily" }] })),
   useSetTransactionFlags: vi.fn(() => ({ mutateAsync: setFlags, isPending: false })),
   useSetTransactionTransfer: vi.fn(() => ({ mutateAsync: setTransfer, isPending: false })),
+  useApplyTransferVerdictToSimilar: vi.fn(() => ({ mutateAsync: applySimilar, isPending: false })),
   useSetAnomalyDismissed: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetTransactionOwner: vi.fn(() => ({ mutate: setOwner })),
   useTransactionSplits: vi.fn(() => ({ data: [] })),
@@ -117,6 +119,64 @@ describe("TransactionDrawer — edit mode", () => {
     await waitFor(() =>
       expect(setTransfer).toHaveBeenCalledWith({ id: "t1", isTransfer: true })
     );
+  });
+
+  it("offers to apply the verdict to undecided siblings with the same counterparty", async () => {
+    const { toast } = await import("sonner");
+    setTransfer.mockResolvedValueOnce({
+      transaction: { ...existingTxn, is_transfer: true },
+      similarPattern: "%swathi%",
+      similarLabel: "swathi",
+      similarCount: 11,
+    });
+    render(
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^transfer$/i }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+
+    const [, opts] = vi.mocked(toast.success).mock.calls.at(-1)!;
+    const action = (opts as unknown as { action?: { label: string; onClick: () => Promise<void> } }).action;
+    expect(action?.label).toMatch(/11 more with «swathi»/);
+
+    // Taking the offer rules the whole counterparty in one call.
+    applySimilar.mockResolvedValueOnce(11);
+    await action!.onClick();
+    expect(applySimilar).toHaveBeenCalledWith({ pattern: "%swathi%", isTransfer: true });
+  });
+
+  it("reflects the transfer verdict immediately from the mutation result, without waiting on the `transaction` prop to update", async () => {
+    // Regression found via live UI testing: the parent screen re-derives its
+    // `transaction` prop from a FILTERED list (e.g. "Possible transfers").
+    // Marking a row as a transfer removes it from that filter's refetched
+    // result, so the prop can go stale while the drawer stays open. Before
+    // this fix, the drawer's category-note/pressed-chip rendering read the
+    // prop directly and never updated until the drawer was closed and
+    // reopened — even though the backend write had already succeeded. The
+    // drawer must use the mutation's OWN returned transaction instead.
+    setTransfer.mockResolvedValueOnce({
+      transaction: { ...existingTxn, is_transfer: true },
+      similarPattern: null,
+      similarLabel: null,
+      similarCount: 0,
+    });
+    render(
+      // The prop is deliberately held constant at is_transfer:false for the
+      // whole test — simulating the parent's stale/frozen list — so any
+      // update we observe must have come from the mutation result, not props.
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByRole("listbox", { name: /category/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^transfer$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/transfers aren't categorized/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("listbox", { name: /category/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^transfer$/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("shows the transfer state and hides the category picker on a transfer", () => {

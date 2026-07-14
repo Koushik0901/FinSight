@@ -251,6 +251,14 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       if (rows_queued_for_review > 0) {
         parts.push(`${rows_queued_for_review} queued for review`);
       }
+      // The post-import cascade's work, so derived changes are visible instead
+      // of silent (P3: import cascade visibility).
+      if (result.builtinCategorized > 0) {
+        parts.push(`categorized ${result.builtinCategorized}`);
+      }
+      if (result.transfersPaired > 0) {
+        parts.push(`matched ${result.transfersPaired} transfer pair${result.transfersPaired === 1 ? "" : "s"}`);
+      }
       const summaryText = parts.length > 0 ? parts.join(", ") : "No rows were imported";
       if (errors.length > 0) {
         const firstReason = errors[0]?.reason ?? "Check the row details.";

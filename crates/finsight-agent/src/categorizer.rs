@@ -306,10 +306,13 @@ fn load_uncategorized(
     // not be handed to the LLM — otherwise it invents a bogus spending category
     // (e.g. a "PAYMENT RECEIVED - THANK YOU" card payment tagged "Shopping")
     // and burns a low-confidence "Needs review" slot on something already known.
-    let mut stmt = conn.prepare(
-        "SELECT id, merchant_raw, amount_cents FROM transactions \
-         WHERE category_id IS NULL AND is_transfer = 0 ORDER BY posted_at DESC",
-    )?;
+    // Investment-account rows (trades, contributions) are equally not spending —
+    // don't ship them to the cloud either.
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, merchant_raw, amount_cents FROM transactions t \
+         WHERE category_id IS NULL AND is_transfer = 0 AND {} ORDER BY posted_at DESC",
+        finsight_core::metrics::non_investment_txn_predicate("t")
+    ))?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut out = Vec::new();
     for r in rows {

@@ -58,6 +58,13 @@ pub fn normalize_merchant(raw: &str) -> String {
     }
 }
 
+/// A human-facing merchant label: the segment before the first run of 2+
+/// spaces (statement city/padding), trimmed. Used for display next to a
+/// canonical key. Falls back to the whole string.
+pub fn split_display(raw: &str) -> String {
+    raw.split("  ").next().unwrap_or(raw).trim().to_string()
+}
+
 fn split_on_double_space(raw: &str) -> &str {
     let bytes = raw.as_bytes();
     let mut i = 0;

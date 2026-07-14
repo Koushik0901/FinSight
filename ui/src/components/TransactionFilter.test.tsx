@@ -56,4 +56,15 @@ describe("TransactionFilter", () => {
     fireEvent.click(screen.getByRole("button", { name: /^All$/ }));
     expect(onChange).toHaveBeenCalledWith({ ...baseFilter, filterPreset: null });
   });
+
+  it("offers Uncategorized and Possible transfers presets", () => {
+    const onChange = vi.fn();
+    render(<TransactionFilter value={baseFilter} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Uncategorized/ }));
+    expect(onChange).toHaveBeenCalledWith({ ...baseFilter, filterPreset: "no_category" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Possible transfers/ }));
+    expect(onChange).toHaveBeenCalledWith({ ...baseFilter, filterPreset: "transfer_review" });
+  });
 });

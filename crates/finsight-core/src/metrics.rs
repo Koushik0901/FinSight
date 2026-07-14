@@ -10,6 +10,10 @@
 //! Convention decisions made here, deliberately:
 //! - **Transfers are never income or expense.** Every aggregate below filters
 //!   `is_transfer = 0`; callers cannot forget it because they never write the SQL.
+//! - **Investment-account activity is never income or expense.** Trades,
+//!   contributions arriving, and dividends inside a brokerage account are wealth
+//!   moving within the investment world ([`non_investment_txn_predicate`]); the
+//!   spendable-side contribution leg is handled by transfer detection/review.
 //! - **Savings rate is signed and honest.** A deficit month yields a *negative*
 //!   rate; it is not clamped to zero. Callers that want a progress bar can clamp
 //!   at the display edge, but the metric itself never hides a deficit.
@@ -41,6 +45,17 @@ pub fn is_debt_type(t: AccountType) -> bool {
 /// Brokerage / retirement holdings — assets, but not spendable liquidity.
 pub fn is_investment_type(t: AccountType) -> bool {
     matches!(t, AccountType::Investment)
+}
+
+/// SQL predicate: the transaction (on the given `transactions` alias) does not
+/// live in an investment account. Brokerage activity — BUY/SELL trades,
+/// contributions arriving, dividends — is wealth moving inside the investment
+/// world, not living income or spending; letting it into cashflow swings the
+/// savings rate with every trade, and letting it into categorization/recurring/
+/// anomaly surfaces nags the user about rows that aren't budget material. Must
+/// stay in lockstep with [`is_investment_type`] (pinned by a unit test).
+pub fn non_investment_txn_predicate(alias: &str) -> String {
+    format!("{alias}.account_id NOT IN (SELECT id FROM accounts WHERE type = 'Investment')")
 }
 
 /// Cash and near-cash: everything that isn't debt or an investment. This is the
@@ -139,14 +154,17 @@ pub fn set_assumptions(conn: &Connection, a: &Assumptions) -> CoreResult<()> {
 // ── Cashflow over a window ──────────────────────────────────────────────────
 
 /// Income and expense (both positive cents) since `start_inclusive`, transfers
-/// excluded.
+/// and investment-account activity excluded.
 pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreResult<(i64, i64)> {
+    let pred = non_investment_txn_predicate("t");
     conn.query_row(
-        "SELECT
-            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-         FROM transactions
-         WHERE posted_at >= ?1 AND is_transfer = 0",
+        &format!(
+            "SELECT
+                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+             FROM transactions t
+             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}"
+        ),
         params![start_inclusive],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
@@ -154,18 +172,22 @@ pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreRes
 }
 
 /// Income and expense (both positive cents) over `[start_inclusive, end_exclusive)`,
-/// transfers excluded.
+/// transfers and investment-account activity excluded.
 pub fn income_expense_between(
     conn: &Connection,
     start_inclusive: &str,
     end_exclusive: &str,
 ) -> CoreResult<(i64, i64)> {
+    let pred = non_investment_txn_predicate("t");
     conn.query_row(
-        "SELECT
-            COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
-         FROM transactions
-         WHERE posted_at >= ?1 AND posted_at < ?2 AND is_transfer = 0",
+        &format!(
+            "SELECT
+                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+             FROM transactions t
+             WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0 \
+               AND {pred}"
+        ),
         params![start_inclusive, end_exclusive],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
@@ -395,8 +417,10 @@ fn weighted_income_expense(
                          ELSE COALESCE(w.weight, 0.0) END AS mw \
              FROM transactions t \
              LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
-             WHERE t.posted_at >= ?2 AND t.is_transfer = 0{end} \
+             WHERE t.posted_at >= ?2 AND t.is_transfer = 0 \
+               AND {pred}{end} \
          ) t",
+        pred = non_investment_txn_predicate("t"),
         end = if end_exclusive.is_some() {
             " AND t.posted_at < ?3"
         } else {
@@ -656,6 +680,62 @@ mod tests {
         assert_eq!(income, 300_000);
         assert_eq!(expense, 100_000);
         assert_eq!(savings_rate_pct(income, expense), 66);
+    }
+
+    #[test]
+    fn income_expense_excludes_investment_account_activity() {
+        // A TFSA/brokerage import brings BUY/SELL trades and contribution
+        // inflows; none of it is living income or spending, and a single trade
+        // must not swing the savings rate.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let chk = accounts::insert(&mut conn, account("Chq", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        let tfsa = accounts::insert(&mut conn, account("TFSA", AccountType::Investment, 0, false))
+            .unwrap()
+            .id;
+        insert_txn(&mut conn, &chk, 300_000, 5, false); // real income
+        insert_txn(&mut conn, &chk, -100_000, 5, false); // real expense
+        insert_txn(&mut conn, &tfsa, 20_000, 5, false); // contribution arriving
+        insert_txn(&mut conn, &tfsa, -12_260, 5, false); // BUY trade
+
+        let (income, expense) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
+        assert_eq!(income, 300_000, "TFSA inflows are not income");
+        assert_eq!(expense, 100_000, "trades are not spending");
+
+        // The per-member weighted path applies the same exclusion.
+        use crate::repos::household;
+        let alice = household::create_member(&mut conn, "Alice", None).unwrap();
+        household::set_account_owners(&mut conn, &chk, &[alice.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &tfsa, &[alice.id.clone()]).unwrap();
+        let (m_inc, m_exp) =
+            income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&alice.id)).unwrap();
+        assert_eq!(m_inc, 300_000);
+        assert_eq!(m_exp, 100_000);
+    }
+
+    #[test]
+    fn non_investment_predicate_stays_in_lockstep_with_is_investment_type() {
+        // The SQL predicate names the DB type strings directly; if AccountType
+        // gains a new investment-classified variant, this test must fail until
+        // the predicate learns it too.
+        for ty in [
+            AccountType::Checking,
+            AccountType::Savings,
+            AccountType::Credit,
+            AccountType::Investment,
+            AccountType::Cash,
+            AccountType::Loan,
+            AccountType::Other,
+        ] {
+            let in_sql = non_investment_txn_predicate("t").contains(&format!("'{}'", ty.as_db()));
+            assert_eq!(
+                in_sql,
+                is_investment_type(ty),
+                "predicate and is_investment_type disagree on {ty:?}"
+            );
+        }
     }
 
     #[test]

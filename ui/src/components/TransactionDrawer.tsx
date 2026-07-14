@@ -10,7 +10,7 @@ import {
   useCreateTransaction, useUpdateTransaction,
   useDeleteTransaction, useCreateRule, useSetTransactionFlags,
   useTransactionSplits, useSetTransactionSplits, useSetAnomalyDismissed,
-  useSetTransactionOwner, useSetTransactionTransfer,
+  useSetTransactionOwner, useSetTransactionTransfer, useApplyTransferVerdictToSimilar,
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
@@ -36,13 +36,23 @@ interface Props {
 }
 
 export default function TransactionDrawer({ open, onClose, transaction, accountId, onCreated }: Props) {
-  const isEdit = !!transaction;
+  // Local, authoritative snapshot of the transaction being edited — NOT read
+  // directly from the `transaction` prop for rendering. A mutation made from
+  // this drawer (e.g. marking a transfer) can remove the row from the
+  // parent's currently active filter once it refetches, so the prop may
+  // briefly go stale/disappear even though the backend write succeeded. Synced
+  // from the prop whenever a (new or the same) transaction is opened; updated
+  // immediately from a mutation's own returned transaction so the drawer
+  // reflects what just happened without waiting on the parent's list.
+  const [displayTxn, setDisplayTxn] = useState<Transaction | undefined>(transaction);
+  const isEdit = !!displayTxn;
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const del = useDeleteTransaction();
   const createRule = useCreateRule();
   const setFlags = useSetTransactionFlags();
   const setTransfer = useSetTransactionTransfer();
+  const applySimilar = useApplyTransferVerdictToSimilar();
   const dismissAnomaly = useSetAnomalyDismissed();
   const { data: accounts = [] } = useAccounts();
   const setOwner = useSetTransactionOwner();
@@ -51,9 +61,9 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   // Owners of THIS transaction's account. A 2+ owner (joint) account is where a
   // per-transaction attribution override is meaningful (a personal purchase on
   // the joint card).
-  const accountOwners = transaction
+  const accountOwners = displayTxn
     ? allOwners
-        .filter((o) => o.accountId === transaction.account_id)
+        .filter((o) => o.accountId === displayTxn.account_id)
         .map((o) => members.find((m) => m.id === o.memberId))
         .filter((m): m is NonNullable<typeof m> => !!m)
     : [];
@@ -61,7 +71,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [splitModalOpen, setSplitModalOpen] = useState(false);
-  const { data: existingSplits = [] } = useTransactionSplits(transaction?.id);
+  const { data: existingSplits = [] } = useTransactionSplits(displayTxn?.id);
   const clearSplits = useSetTransactionSplits();
 
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
@@ -76,6 +86,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   });
 
   useEffect(() => {
+    setDisplayTxn(transaction);
     if (transaction) {
       reset({
         merchant_raw: transaction.merchant_raw,
@@ -101,9 +112,9 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
 
   async function onSubmit(values: FormValues) {
     try {
-      if (isEdit && transaction) {
+      if (isEdit && displayTxn) {
         const result = await update.mutateAsync({
-          id: transaction.id,
+          id: displayTxn.id,
           patch: {
             notes: values.notes || null,
             category_id: selectedCategory,
@@ -151,9 +162,9 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
 
   async function handleDelete() {
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
-    if (!transaction) return;
+    if (!displayTxn) return;
     try {
-      await del.mutateAsync(transaction.id);
+      await del.mutateAsync(displayTxn.id);
       onClose();
     } catch (err) {
       toast.error(userErrorMessage(err, "Could not delete this transaction. Try again."));
@@ -164,11 +175,11 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
   return (
     <Drawer open={open} onClose={onClose} title={isEdit ? "Edit Transaction" : "Add transaction"}>
       <form onSubmit={handleSubmit(onSubmit)} className="drawer-form">
-        {isEdit && transaction?.is_anomaly && (
+        {isEdit && displayTxn?.is_anomaly && (
           <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--negative)", marginBottom: 4 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Flagged as unusual</div>
-            {transaction.ai_explanation && (
-              <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{transaction.ai_explanation}</div>
+            {displayTxn.ai_explanation && (
+              <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{displayTxn.ai_explanation}</div>
             )}
             <button
               type="button"
@@ -176,7 +187,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
               disabled={dismissAnomaly.isPending}
               onClick={async () => {
                 try {
-                  await dismissAnomaly.mutateAsync({ txnId: transaction.id, dismissed: true });
+                  await dismissAnomaly.mutateAsync({ txnId: displayTxn.id, dismissed: true });
                   toast.success("Marked as not unusual", { description: "It won't be flagged again." });
                   onClose();
                 } catch (err) {
@@ -188,12 +199,12 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             </button>
           </div>
         )}
-        {isEdit && transaction?.is_transfer && (
+        {isEdit && displayTxn?.is_transfer && (
           <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--accent)", marginBottom: 4 }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Transfer between your accounts</div>
             <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>
-              {transaction.transfer_peer_account_name
-                ? `Matched with the opposite leg in ${transaction.transfer_peer_account_name}. `
+              {displayTxn.transfer_peer_account_name
+                ? `Matched with the opposite leg in ${displayTxn.transfer_peer_account_name}. `
                 : ""}
               It doesn't count as income or spending.
             </div>
@@ -222,14 +233,14 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
         )}
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Category</div>
-          {transaction?.is_transfer ? (
+          {displayTxn?.is_transfer ? (
             <div className="muted" style={{ fontSize: 12.5, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 7, border: "1px solid var(--line)" }}>
               Transfers aren't categorized — this is money moved between your accounts, not spending.
             </div>
-          ) : transaction?.is_split ? (
+          ) : displayTxn?.is_split ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface-2)", borderRadius: 7, border: "1px solid var(--line)" }}>
               <span style={{ flex: 1, fontSize: 13, color: "var(--ink-mute)" }}>
-                Split · {existingSplits.length} {existingSplits.length === 1 ? "category" : "categories"} · ${(Math.abs(transaction.amount_cents) / 100).toFixed(2)}
+                Split · {existingSplits.length} {existingSplits.length === 1 ? "category" : "categories"} · ${(Math.abs(displayTxn.amount_cents) / 100).toFixed(2)}
               </span>
               <button type="button" onClick={() => setSplitModalOpen(true)} style={{ fontSize: 12, color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                 Edit splits →
@@ -239,7 +250,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
             <CategoryPicker value={selectedCategory} onChange={setSelectedCategory} />
           )}
         </div>
-        {isEdit && transaction && accountOwners.length >= 2 && (
+        {isEdit && displayTxn && accountOwners.length >= 2 && (
           <div>
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Attributed to</div>
             <select
@@ -247,7 +258,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
               onChange={(e) => {
                 const memberId = e.target.value || null;
                 setOwnerId(memberId);
-                setOwner.mutate({ transactionId: transaction.id, memberId });
+                setOwner.mutate({ transactionId: displayTxn.id, memberId });
               }}
               aria-label="Attribute this transaction to"
               style={{ width: "100%" }}
@@ -272,15 +283,16 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           </button>
         </div>
       </form>
-      {isEdit && transaction && (
+      {isEdit && displayTxn && (
         <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
           <button
             type="button"
-            className={`chip${transaction.is_reimbursable ? " accent" : ""}`}
-            aria-pressed={transaction.is_reimbursable}
+            className={`chip${displayTxn.is_reimbursable ? " accent" : ""}`}
+            aria-pressed={displayTxn.is_reimbursable}
             onClick={async () => {
             try {
-              await setFlags.mutateAsync({ id: transaction.id, isReimbursable: !transaction.is_reimbursable, isSplit: transaction.is_split });
+              const updated = await setFlags.mutateAsync({ id: displayTxn.id, isReimbursable: !displayTxn.is_reimbursable, isSplit: displayTxn.is_split });
+              setDisplayTxn(updated);
             } catch (err) {
               toast.error(userErrorMessage(err, "Could not update this flag. Try again."));
             }
@@ -290,16 +302,17 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           </button>
           <button
             type="button"
-            className={`chip${transaction.is_split ? " accent" : ""}`}
-            aria-pressed={transaction.is_split}
+            className={`chip${displayTxn.is_split ? " accent" : ""}`}
+            aria-pressed={displayTxn.is_split}
             onClick={async () => {
-            if (!transaction.is_split) {
+            if (!displayTxn.is_split) {
               // Turning ON: open SplitModal to define splits
               setSplitModalOpen(true);
             } else {
               // Turning OFF: clear splits
               try {
-                await clearSplits.mutateAsync({ txnId: transaction.id, splits: [] });
+                await clearSplits.mutateAsync({ txnId: displayTxn.id, splits: [] });
+                setDisplayTxn({ ...displayTxn, is_split: false });
               } catch (err) {
                 toast.error(userErrorMessage(err, "Could not clear splits. Try again."));
               }
@@ -310,19 +323,39 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           </button>
           <button
             type="button"
-            className={`chip${transaction.is_transfer ? " accent" : ""}`}
-            aria-pressed={transaction.is_transfer}
+            className={`chip${displayTxn.is_transfer ? " accent" : ""}`}
+            aria-pressed={displayTxn.is_transfer}
             disabled={setTransfer.isPending}
             title="A transfer moves money between your own accounts and never counts as income or spending"
             onClick={async () => {
-              const next = !transaction.is_transfer;
+              const next = !displayTxn.is_transfer;
               try {
-                await setTransfer.mutateAsync({ id: transaction.id, isTransfer: next });
-                toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", {
-                  description: next
-                    ? "It no longer counts as income or spending, and this won't be undone by future imports."
-                    : "It now counts in your income and spending, and this won't be undone by future imports.",
-                });
+                const result = await setTransfer.mutateAsync({ id: displayTxn.id, isTransfer: next });
+                if (result?.transaction) setDisplayTxn(result.transaction);
+                const description = next
+                  ? "It no longer counts as income or spending, and this won't be undone by future imports."
+                  : "It now counts in your income and spending, and this won't be undone by future imports.";
+                if (result?.similarPattern && result.similarCount > 0) {
+                  // One decision can clear the whole counterparty from review.
+                  const pattern = result.similarPattern;
+                  const n = result.similarCount;
+                  toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", {
+                    description,
+                    action: {
+                      label: `Also mark ${n} more with «${result.similarLabel}»`,
+                      onClick: async () => {
+                        try {
+                          const applied = await applySimilar.mutateAsync({ pattern, isTransfer: next });
+                          toast.success(`Marked ${applied} transaction${applied === 1 ? "" : "s"} the same way`);
+                        } catch (err) {
+                          toast.error(userErrorMessage(err, "Could not update the similar transactions."));
+                        }
+                      },
+                    },
+                  });
+                } else {
+                  toast.success(next ? "Marked as a transfer" : "Marked as not a transfer", { description });
+                }
               } catch (err) {
                 toast.error(userErrorMessage(err, "Could not update this transaction. Try again."));
               }
@@ -344,12 +377,12 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           )}
         </div>
       )}
-      {transaction && (
+      {displayTxn && (
         <SplitModal
           open={splitModalOpen}
           onClose={() => setSplitModalOpen(false)}
-          transactionId={transaction.id}
-          totalCents={Math.abs(transaction.amount_cents)}
+          transactionId={displayTxn.id}
+          totalCents={Math.abs(displayTxn.amount_cents)}
           existingSplits={existingSplits}
         />
       )}

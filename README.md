@@ -106,16 +106,18 @@ FinSight/
 
 ## What's next
 
-All screens are built; correctness and depth are an ongoing effort. The live
-list of known gaps and their priority is the product audit at
-[`docs/audits/2026-07-10-finsight-product-audit.md`](docs/audits/2026-07-10-finsight-product-audit.md)
-— its P0/P1 findings (transfer detection, per-person household model, privacy
-redaction, durability, recurring/merchant normalization, Copilot grounding) have
-been addressed; the remaining P2/P3 items (per-person Reports, explicit import
-AI-categorization prompt, empty-state sweep, anomaly triage UX, doc/currency
-polish) are tracked there.
+All screens are built. The two audit documents in `docs/audits/` are the
+living record of what was found and fixed:
+[`2026-07-10-finsight-product-audit.md`](docs/audits/2026-07-10-finsight-product-audit.md)
+(15 ranked P0–P2 findings + 6 P3 items, each with its resolving commit) and
+[`2026-07-10-completeness-and-cross-user-ownership.md`](docs/audits/2026-07-10-completeness-and-cross-user-ownership.md)
+(cross-user ownership shares + a fresh real-data sweep). As of 2026-07-13 every
+item in both documents is resolved and verified — against `samples/` via the
+rerunnable probe (`crates/finsight-app/tests/audit_probe.rs`) and, for the UI
+layer, against the actual compiled Tauri app. New gaps will be added to those
+documents as they're found, not tracked here.
 
-Longer-horizon ideas beyond the audit:
+Longer-horizon ideas beyond the audits:
 
 1. **More Copilot recipes** — custom user-defined automation templates
 2. **Debt avalanche mode** — highest-interest-first as an alternative to snowball

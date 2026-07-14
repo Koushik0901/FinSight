@@ -17,6 +17,7 @@ pub mod reset_barrier;
 pub mod sample;
 pub mod seed;
 pub mod settings;
+pub mod spending;
 
 pub use db::Db;
 pub use error::{CoreError, CoreResult};

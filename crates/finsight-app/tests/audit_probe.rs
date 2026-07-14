@@ -17,6 +17,8 @@ fn bank_for(name: &str) -> &'static str {
         "Amex"
     } else if name.starts_with("CIBC") {
         "CIBC"
+    } else if name.starts_with("Wealthsimple") {
+        "Wealthsimple"
     } else {
         "Tangerine"
     }
@@ -151,6 +153,27 @@ fn specs() -> Vec<Spec> {
                 skip_header_rows: 1,
                 columns: vec![Date, Skip, Merchant, Notes, Amount],
                 date_format: "%m/%d/%Y".into(),
+                amount_convention: AmountConvention::NegativeIsOutflow,
+                decimal_separator: '.',
+                delimiter: None,
+            },
+        },
+        // Brokerage activity statement (F1/F5): trades + contributions through
+        // the same generic column mapping. Merchant = activity_sub_type
+        // (EFT / E_TRFIN / BUY / SELL), Notes = security name, Amount =
+        // net_cash_amount. The TFSA is invested, NOT emergency-fund-eligible.
+        Spec {
+            file: "wealthsimple-tfsa-all-time-statement.csv",
+            name: "Wealthsimple TFSA",
+            ty: AccountType::Investment,
+            ef: false,
+            mapping: CsvImportMapping {
+                skip_header_rows: 1,
+                columns: vec![
+                    Date, Skip, Skip, Skip, Skip, Merchant, Skip, Skip, Notes, Skip, Skip, Skip,
+                    Skip, Amount,
+                ],
+                date_format: "%Y-%m-%d".into(),
                 amount_convention: AmountConvention::NegativeIsOutflow,
                 decimal_separator: '.',
                 delimiter: None,
@@ -336,6 +359,50 @@ fn audit_import_samples_and_dump_everything() {
     println!("TOTAL unflagged transfer-like: inflow={leak_in} outflow={leak_out}");
     drop(stmt);
 
+    // The user-facing "Possible transfers" review surface (F0 affordance): the
+    // rows the Inbox/transactions filter would ask the user to rule on. The
+    // whole leak above should be reachable through this surface (or already
+    // categorized/decided) — an unreachable leak means the predicate rotted.
+    let (review_n, review_in, review_out): (i64, i64, i64) = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),
+                        COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0)
+                 FROM transactions t WHERE {}",
+                finsight_core::categorize::transfer_review_predicate("t")
+            ),
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap_or((-1, 0, 0));
+    println!(
+        "TRANSFER-REVIEW surface: n={review_n} inflow={review_in} outflow={review_out}"
+    );
+    assert!(
+        review_n > 0,
+        "samples/ contain undecided transfer-like rows; the review surface must list them"
+    );
+    {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT merchant_raw, COUNT(*), SUM(amount_cents)
+                 FROM transactions t WHERE {}
+                 GROUP BY 1 ORDER BY ABS(SUM(amount_cents)) DESC LIMIT 20",
+                finsight_core::categorize::transfer_review_predicate("t")
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            })
+            .unwrap();
+        println!("-- review surface top merchants --");
+        for row in rows.flatten() {
+            println!("  n={:<4} sum={:>10}  {}", row.1, row.2, &row.0[..row.0.len().min(60)]);
+        }
+    }
+
     // Top raw inflows for May 2026 — what exactly is the app calling "income"?
     println!("\n== MAY 2026 'INCOME' ROWS (is_transfer=0, amount>0) top 15 ==");
     let mut stmt = conn
@@ -399,6 +466,71 @@ fn audit_import_samples_and_dump_everything() {
     println!("rolling_90: {ra:?}");
     let nw = finsight_core::repos::net_worth::breakdown(&mut conn).unwrap();
     println!("net_worth: {nw:?}");
+
+    // F5: investment-account classification, proven on the real TFSA sample.
+    {
+        let tfsa_id = ids
+            .iter()
+            .find(|(_, n)| *n == "Wealthsimple TFSA")
+            .map(|(id, _)| id.clone())
+            .expect("TFSA spec imported");
+        let (tfsa_n, tfsa_in, tfsa_out): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),
+                        COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0)
+                 FROM transactions WHERE account_id = ?1 AND is_transfer = 0",
+                rusqlite::params![tfsa_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        println!("TFSA activity: n={tfsa_n} inflow={tfsa_in} outflow={tfsa_out}");
+        assert!(tfsa_n > 0, "the brokerage CSV imports through the generic mapping");
+        assert!(
+            tfsa_in > 0 && tfsa_out > 0,
+            "TFSA has real two-sided activity, so the exclusion below is exercised"
+        );
+
+        // Cashflow: brokerage activity is NOT income/spending. The metric must
+        // equal the same sums restricted to non-investment accounts.
+        let (m_inc, m_exp) = metrics::income_expense_since(&conn, "2000-01-01T00:00:00Z").unwrap();
+        let (raw_inc, raw_exp): (i64, i64) = conn
+            .query_row(
+                "SELECT
+                    COALESCE(SUM(CASE WHEN t.amount_cents>0 THEN t.amount_cents ELSE 0 END),0),
+                    COALESCE(SUM(CASE WHEN t.amount_cents<0 THEN -t.amount_cents ELSE 0 END),0)
+                 FROM transactions t JOIN accounts a ON a.id = t.account_id
+                 WHERE t.is_transfer = 0 AND a.type != 'Investment'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(m_inc, raw_inc, "income metric excludes investment-account activity");
+        assert_eq!(m_exp, raw_exp, "expense metric excludes investment-account activity");
+
+        // Balances: the entered market value lands in `invested`, never in
+        // liquid or the emergency fund, and net worth includes it.
+        let before = metrics::balance_breakdown(&mut conn).unwrap();
+        finsight_core::repos::accounts::set_current_balance(&mut conn, &tfsa_id, 1_234_500)
+            .unwrap();
+        let after = metrics::balance_breakdown(&mut conn).unwrap();
+        println!("balance_breakdown after TFSA market value: {after:?}");
+        assert_eq!(
+            after.invested_cents,
+            before.invested_cents + 1_234_500,
+            "market value entered verbatim into the invested bucket"
+        );
+        assert_eq!(after.liquid_cents, before.liquid_cents, "TFSA is not liquid");
+        assert_eq!(
+            after.emergency_fund_cents, before.emergency_fund_cents,
+            "TFSA is not emergency-fund-eligible"
+        );
+        assert_eq!(
+            after.net_worth_cents,
+            before.net_worth_cents + 1_234_500,
+            "net worth includes the market value"
+        );
+    }
 
     // DECOMPOSITION (F0): what actually drives the rolling-90 expense? The top
     // expense rows in the window, so we can see whether the inflated number is

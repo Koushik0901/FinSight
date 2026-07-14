@@ -87,11 +87,14 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
     // on; it just does far less sorting/writing.
     let mut touched: std::collections::HashSet<String> = std::collections::HashSet::new();
     let rows: Vec<Row> = {
-        let mut stmt = conn.prepare(
+        // Investment-account rows (BUY/SELL trades) are excluded: a large trade
+        // is not "unusual spending" — it isn't spending at all.
+        let mut stmt = conn.prepare(&format!(
             "SELECT id, merchant_raw, amount_cents, is_anomaly, account_id, \
-                    COALESCE(anomaly_dismissed, 0) FROM transactions \
-             WHERE amount_cents < 0 AND is_transfer = 0",
-        )?;
+                    COALESCE(anomaly_dismissed, 0) FROM transactions t \
+             WHERE amount_cents < 0 AND is_transfer = 0 AND {}",
+            crate::metrics::non_investment_txn_predicate("t")
+        ))?;
         let mapped = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,

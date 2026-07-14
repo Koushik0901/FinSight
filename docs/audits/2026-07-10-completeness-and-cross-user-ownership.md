@@ -1,5 +1,21 @@
 # FinSight Completeness & Cross-User Ownership Roadmap — 2026-07-10 (v2)
 
+> **STATUS (2026-07-13): fully resolved.** Part 1 (cross-user ownership, V042–V045)
+> is complete including both optional refinements. Part 2's F0–F5 are all
+> addressed: F0/F1/F3/F5 with concrete new code (this session added the sticky
+> transfer-verdict review surface + bulk counterparty verdicts + investment
+> market-value/cashflow-exclusion fixes), F2/F4 with an explicit, reasoned
+> "no further generic fix" call (F2: more hardcoded merchant keywords would be
+> sample-fitting, not a real gap — the long tail needs the AI pass; F4: heals
+> from F0 + the P2-6 dismiss loop, and the remaining top anomalies are real
+> large spend, not a detection bug). See Part 2's inline STATUS block below and
+> the sibling audit
+> [`2026-07-10-finsight-product-audit.md`](2026-07-10-finsight-product-audit.md)
+> (its own 15 P0–P2 findings + 6 P3 items, also all resolved) for the full
+> picture. Real-app validation (not just the samples/ probe) ran 2026-07-13
+> against the actual compiled Tauri binary via an isolated app-data dir + CDP —
+> see that document's Appendix B.
+
 **Mandate (user goal):** make FinSight a complete, production-quality personal
 finance app the user can use daily *and* hand to a girlfriend/family members who
 each run their own private local app. Audit the whole product for bugs, weak
@@ -148,6 +164,25 @@ the user saves money. Ranked by impact:
 >   every user). The remaining leak is REAL spend + ambiguous person-to-person
 >   transfers — savings staying tight/negative for a heavy travel month is
 >   *correct*, not a bug.
+>   **Bulk verdicts: DONE** — the review population clusters by counterparty
+>   (samples/: swathi ×11, joe ×12, …), so ruling one e-transfer offers "also
+>   mark N more with «name»" (`transfer_verdict_siblings` +
+>   `apply_transfer_verdict_to_similar`, riding the same counterparty
+>   generalization as the F3 rule proposals); each row still goes through
+>   `set_transfer_override`, categorized/already-ruled siblings untouched.
+>   **Review affordance: DONE** (this session) — V046 `transfer_override` makes a
+>   user's transfer verdict sticky (categorizer + `pair_transfers` both respect
+>   it; unmark unlinks the peer leg on both sides and neither can re-pair). The
+>   drawer gets a "Transfer" chip + transfer state card (category picker replaced
+>   by a note — transfers are never categorized); a "Possible transfers" filter
+>   preset (`transfer_review`, SQL predicate built from
+>   `TRANSFER_REVIEW_KEYWORDS`) lists undecided transfer-like rows; the Inbox
+>   surfaces them as a first-class action item. **Also fixed in passing: the
+>   `/transactions` route did not exist** — every Inbox CTA
+>   (`/transactions?filter=…`) landed on a blank page. `AccountTransactions` now
+>   doubles as the all-accounts ledger at `/transactions`, with the `?filter=`
+>   param driving the preset (chips: All / Needs review / Anomalies /
+>   Uncategorized / Possible transfers).
 > - **F1** — DONE for local CSV: the generic column mapping imports the
 >   brokerage activity, and investment accounts now track MARKET value
 >   (96092b8: never derive an investment balance from cash flows; 91d5bd6:
@@ -217,11 +252,29 @@ not a transfer) + a rent-recognition review.
 8+ of the top anomalies are internet transfers / bill pays / a "GLOBAL MONEY
 TRANSFER FEE $0.00" row. Heals substantially once F0 lands; re-verify after.
 
-### F5 — Investment-account classification (advisor-flagged, verify after F1)
-Once an Investment account exists: confirm it is net-worth *invested* (not
-liquid), NOT emergency-fund-eligible, and its contributions aren't counted as
-spending. `is_investment_type`/`is_liquid_type` exist; wire the import to set the
-type and assert in the probe.
+### F5 — Investment-account classification — ✅ DONE (this session)
+The TFSA sample now runs through the probe (116 rows via the generic column
+mapping; the single RowError is the CSV's "As of …" footer line, correctly
+rejected). Verified + fixed:
+- **Probe assertions:** invested bucket gets the market value verbatim; liquid
+  and emergency fund unchanged; net worth includes it; cashflow metric equals
+  the non-investment-account sums; re-import dedup clean.
+- **BUG FIXED — market value skewed by cash flows:** `set_current_balance`
+  back-solved `opening = entered − Σflows` even for Investment accounts, and
+  since investment balances are never derived, the skewed seed WAS the shown
+  balance (enter $10,000 market value → app shows $10,000 − net contributions).
+  Now stamps the entered value as today's snapshot verbatim.
+- **BUG FIXED — brokerage activity leaked into every cashflow surface:**
+  `metrics::non_investment_txn_predicate()` is the one source; applied to
+  `income_expense_since/between`, `weighted_income_expense`, monthly cashflow
+  report, savings-rate history, monthly review (which also now uses the shared
+  honest signed rate instead of a private clamped variant), budget plan income
+  + recurring-expense estimate, anomaly detection (a big BUY is not "unusual
+  spending"), recurring-bill detection (monthly contributions are not bills),
+  the LLM categorizer candidates (don't ship trades to the cloud), and every
+  "N need categorizing" count (inbox, insights, import nudge, agent status,
+  Copilot context/finance/read tools). The `no_category` filter preset and the
+  transfer-review surface exclude investment rows too, so counts match lists.
 
 ---
 

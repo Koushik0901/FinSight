@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useMemo, useRef, useState } from "react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAccounts } from "../api/hooks/accounts";
@@ -16,6 +16,7 @@ import HoldingsCard from "../components/HoldingsCard";
 import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
+import { prettyMerchant } from "../utils/merchant";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
 
@@ -54,6 +55,10 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Filter presets that may arrive via the `?filter=` query param (Financial
+ *  Inbox CTAs deep-link here) or via the filter chips. */
+const VALID_PRESETS = ["needs_review", "anomalies", "no_category", "transfer_review"];
+
 export default function AccountTransactions() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -66,13 +71,43 @@ export default function AccountTransactions() {
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
-  const [preset, setPreset] = useState<"all" | "needs_review" | "anomalies">("all");
+  // The preset lives in the URL (?filter=…) so Inbox action items can deep-link
+  // straight to e.g. the possible-transfers review list.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawFilter = searchParams.get("filter");
+  const preset = rawFilter && VALID_PRESETS.includes(rawFilter) ? rawFilter : "all";
+  const setPreset = (next: string) => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        if (next === "all") p.delete("filter");
+        else p.set("filter", next);
+        return p;
+      },
+      { replace: true }
+    );
+  };
   const [editTxnId, setEditTxnId] = useState<string | null>(null);
+  // Caches the last known transaction object for the currently-open editTxnId.
+  // A mutation made from the drawer (e.g. marking a transfer) can remove the
+  // row from the CURRENT filter's refetched result — it no longer matches
+  // "Possible transfers"/"Uncategorized"/etc — so re-deriving `editTxn` purely
+  // from the live list would flip the still-open drawer to a blank "Add
+  // transaction" form (isEdit = !!transaction). See editTxn below.
+  const lastEditTxnIdRef = useRef<string | null>(null);
+  const lastEditTxnRef = useRef<Transaction | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [csvPath, setCsvPath] = useState<string | null>(null);
   const [balanceOpen, setBalanceOpen] = useState(false);
 
+  // Without an :id this screen is the all-accounts ledger (routed at
+  // /transactions — where the Inbox review CTAs land).
   const account = accounts.find((a) => a.id === id);
+  const allAccountsMode = !id;
+  const accountById = useMemo(
+    () => Object.fromEntries(accounts.map((a) => [a.id, a])),
+    [accounts]
+  );
 
   // Debounce the free-text search so each keystroke doesn't fire its own
   // backend query + IPC round-trip; the input below stays bound to the raw
@@ -112,11 +147,10 @@ export default function AccountTransactions() {
     setSearch(next.search ?? "");
     setStartDate(next.startDate ?? null);
     setEndDate(next.endDate ?? null);
-    setPreset((next.filterPreset as "all" | "needs_review" | "anomalies") ?? "all");
+    setPreset(next.filterPreset ?? "all");
   };
 
   const handleExport = async () => {
-    if (!account) return;
     try {
       const result = await commands.exportTransactionsCsv(filterValue);
       if (result.status === "ok" && result.data) toast.success("Exported", { description: result.data });
@@ -127,7 +161,7 @@ export default function AccountTransactions() {
 
   if (isLoading) return <div className="stub">Loading transactions…</div>;
   if (error) return <div className="stub" role="alert">Error loading transactions.</div>;
-  if (!account) {
+  if (id && !account) {
     return (
       <div className="stub" role="alert">
         Account not found.
@@ -137,16 +171,44 @@ export default function AccountTransactions() {
     );
   }
 
-  const editTxn = transactions.find((t) => t.id === editTxnId) ?? null;
+  // See the ref comment above: keep showing the last known transaction for
+  // this id even if a mutation-triggered refetch drops it from the currently
+  // active filter. Reset the cache whenever the TARGET id changes (a
+  // different row opened, or the drawer closed) so stale data never leaks
+  // across transactions.
+  const liveEditTxn = transactions.find((t) => t.id === editTxnId) ?? null;
+  if (editTxnId !== lastEditTxnIdRef.current) {
+    lastEditTxnIdRef.current = editTxnId;
+    lastEditTxnRef.current = liveEditTxn;
+  } else if (liveEditTxn) {
+    lastEditTxnRef.current = liveEditTxn;
+  }
+  const editTxn = lastEditTxnRef.current;
 
   return (
     <div className="screen screen-account-transactions">
       <div className="day-hdr">
-        <div>
-          <button className="btn ghost sm" type="button" onClick={() => navigate("/accounts")}>← Back to accounts</button>
-          <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" style={{ background: accountTypeColor(account.type) }} />{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
-        </div>
+        {account ? (
+          <div>
+            <button className="btn ghost sm" type="button" onClick={() => navigate("/accounts")}>← Back to accounts</button>
+            <div className="eyebrow" style={{ marginTop: 10 }}><span className="dot" style={{ background: accountTypeColor(account.type) }} />{account.bank} · <span style={{ color: accountTypeColor(account.type) }}>{account.type}</span></div>
+            <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>{getAccountDisplayName(account)}</h1>
+          </div>
+        ) : (
+          <div>
+            <div className="eyebrow">Every account</div>
+            <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>All transactions</h1>
+          </div>
+        )}
+        {!account && (
+          <div style={{ textAlign: "right" }}>
+            <div className="row row-sm wrap" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+              <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
+              <button className="btn primary sm" type="button" onClick={() => setAddOpen(true)}>Add manual</button>
+            </div>
+          </div>
+        )}
+        {account && (
         <div style={{ textAlign: "right" }}>
           {account.balance_known ? (
             <div>
@@ -207,6 +269,7 @@ export default function AccountTransactions() {
             <button className="btn primary sm" type="button" onClick={() => setAddOpen(true)}>Add manual</button>
           </div>
         </div>
+        )}
       </div>
 
       {account.type === "Investment" && <HoldingsCard account={account} />}
@@ -240,8 +303,9 @@ export default function AccountTransactions() {
               ) : (
                 transactions.map((transaction) => {
                   const category = transaction.category_id ? categoryById[transaction.category_id] : undefined;
-                  const merchantName = transaction.merchant_label ?? transaction.merchant_raw;
+                  const merchantName = transaction.merchant_label ?? prettyMerchant(transaction.merchant_raw);
                   const avatarBg = transaction.merchant_color || avatarColor(merchantName);
+                  const txnAccount = account ?? accountById[transaction.account_id];
                   return (
                     <tr key={transaction.id} onClick={() => setEditTxnId(transaction.id)} style={{ cursor: "pointer" }}>
                       <td style={{ width: 76 }}><span className="mono faint">{formatDate(transaction.posted_at)}</span></td>
@@ -263,6 +327,9 @@ export default function AccountTransactions() {
                               {transaction.is_reimbursable && <span className="chip accent">Reimbursable</span>}
                             </div>
                             {transaction.notes && <div className="muted" style={{ fontSize: 12 }}>{transaction.notes}</div>}
+                            {allAccountsMode && txnAccount && (
+                              <div className="muted" style={{ fontSize: 12 }}>{txnAccount.bank} · {getAccountDisplayName(txnAccount)}</div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -271,7 +338,7 @@ export default function AccountTransactions() {
                       ) : (
                         <><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></>
                       )}</div></td>
-                      <td className="right"><span className={`figure money ${transaction.amount_cents > 0 ? "pos" : ""}`} style={{ fontSize: 16 }}>{money(transaction.amount_cents, { currency: account.currency || "USD", decimals: 2 })}</span></td>
+                      <td className="right"><span className={`figure money ${transaction.amount_cents > 0 ? "pos" : ""}`} style={{ fontSize: 16 }}>{money(transaction.amount_cents, { currency: txnAccount?.currency || "USD", decimals: 2 })}</span></td>
                     </tr>
                   );
                 })
@@ -298,8 +365,8 @@ export default function AccountTransactions() {
         </div>
       </div>
 
-      <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} accountId={account.id} />
-      <TransactionDrawer open={editTxnId !== null} onClose={() => setEditTxnId(null)} transaction={editTxn ?? undefined} accountId={account.id} />
+      <TransactionDrawer open={addOpen} onClose={() => setAddOpen(false)} accountId={account?.id} />
+      <TransactionDrawer open={editTxnId !== null} onClose={() => setEditTxnId(null)} transaction={editTxn ?? undefined} accountId={account?.id} />
       {csvPath && account && (
         <ImportMappingDialog
           path={csvPath}
@@ -315,7 +382,7 @@ export default function AccountTransactions() {
           }}
         />
       )}
-      <SetBalanceDialog open={balanceOpen} onClose={() => setBalanceOpen(false)} account={account} />
+      {account && <SetBalanceDialog open={balanceOpen} onClose={() => setBalanceOpen(false)} account={account} />}
     </div>
   );
 }

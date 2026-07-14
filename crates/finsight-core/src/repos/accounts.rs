@@ -511,16 +511,15 @@ pub fn set_current_balance(
     account_id: &str,
     current_cents: i64,
 ) -> CoreResult<()> {
-    // Investment accounts are valued as a MARKET-VALUE snapshot, not derived
-    // from cash flow — `recompute_balance_if_linked` deliberately never
-    // re-derives one for this type (contributions/trades net near-zero, so
-    // folding activity on top would double-count). The back-solve-opening
-    // strategy below relies on that later derivation step to surface a
-    // same-day "known" balance; for Investment accounts that step never
-    // runs, so the anchor would sit invisible forever and the account would
-    // stay "Balance not set". Write a plain dated snapshot instead, exactly
-    // like a periodic market-value update — the same semantics an Investment
-    // account already carries when it has no imported activity at all.
+    // An investment account's entered value IS the market value — stamp it as
+    // today's snapshot verbatim. Back-solving an opening from cash flows (the
+    // cash-account path below) would display `market value − net contributions`
+    // instead of what the user just typed: the seed row would hold the solved
+    // opening, and `recompute_balance_if_linked` deliberately never re-derives
+    // investment balances, so the skewed seed would BE the shown balance —
+    // and since nothing ever re-derives a "today" row for this type, the
+    // account would stay "Balance not set" forever, not just show a wrong
+    // number.
     let is_investment: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND type = 'Investment')",
         params![account_id],
@@ -1250,15 +1249,13 @@ mod tests {
     }
 
     #[test]
-    fn set_current_balance_on_investment_account_writes_a_known_manual_snapshot() {
-        // Investment accounts never get a same-day 'derived' snapshot (see
-        // `investment_account_balance_is_not_derived_from_cash_flows` above),
-        // so the general back-solve-the-opening strategy in
-        // `set_current_balance` would leave the balance permanently invisible
-        // (nothing ever re-derives a "today" row for this type). Confirm the
-        // Investment special case instead writes a plain, immediately-known
-        // snapshot — this is the path the Holdings "Set balance from
-        // estimate" button relies on.
+    fn set_current_balance_on_investment_account_stamps_market_value_verbatim() {
+        // Regression: the back-solve path computed `opening = entered − Σflows`
+        // and wrote it to the seed; since investment balances are never derived,
+        // the skewed seed became the displayed balance (and, worse, never even
+        // became "known" — see `feat(investments)` PR notes). Entering a
+        // $10,000 market value on a TFSA with +$200 net cash activity showed
+        // $9,800 (or nothing at all).
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         conn.execute(
@@ -1267,15 +1264,10 @@ mod tests {
             params![Utc::now().to_rfc3339()],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
-             VALUES('tfsa',date('now'),0,'seed')",
-            [],
-        )
-        .unwrap();
-        insert_txn(&conn, "tfsa", 46_005, "2024-12-18"); // imported cash activity
+        insert_txn(&conn, "tfsa", 50_000, "2024-12-18"); // contribution in
+        insert_txn(&conn, "tfsa", -30_000, "2024-12-22"); // securities buy
 
-        set_current_balance(&mut conn, "tfsa", 314_368).unwrap();
+        set_current_balance(&mut conn, "tfsa", 1_000_000).unwrap();
 
         let summary = list_summaries(&mut conn)
             .unwrap()
@@ -1287,10 +1279,9 @@ mod tests {
             "an explicitly set investment balance must read as known"
         );
         assert_eq!(
-            summary.balance_cents, 314_368,
-            "must show exactly the value the user set, not a back-solved opening anchor"
+            summary.balance_cents, 1_000_000,
+            "the entered market value is shown verbatim, not skewed by cash flows"
         );
-
         let manual_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM account_balances WHERE account_id='tfsa' AND source='manual'",
@@ -1299,6 +1290,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(manual_count, 1);
+
+        // Setting it again later replaces the market value (no accumulation).
+        set_current_balance(&mut conn, "tfsa", 1_100_000).unwrap();
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == "tfsa")
+            .unwrap();
+        assert_eq!(summary.balance_cents, 1_100_000);
     }
 
     #[test]

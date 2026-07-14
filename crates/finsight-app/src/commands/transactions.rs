@@ -385,13 +385,11 @@ pub async fn get_spending_breakdown(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )?;
 
-        let total_income_cents: i64 = conn.query_row(
-            "SELECT COALESCE(SUM(amount_cents), 0)
-             FROM transactions
-             WHERE amount_cents > 0 AND posted_at >= ?1",
-            rusqlite::params![this_month_start],
-            |r| r.get(0),
-        )?;
+        // Through the metrics layer: raw `amount_cents > 0` would count
+        // transfers-in and brokerage contributions as "income", inflating the
+        // conscious-spending denominator.
+        let (total_income_cents, _) =
+            finsight_core::metrics::income_expense_since(conn, &this_month_start)?;
 
         Ok(SpendingBreakdown {
             fixed_cents,
@@ -497,6 +495,21 @@ pub async fn set_transaction_flags(
     .map_err(AppError::from)
 }
 
+/// Result of a transfer verdict: the updated transaction, plus how many other
+/// UNDECIDED transactions share the same counterparty so the UI can offer to
+/// apply the verdict to all of them in one click.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferVerdictResult {
+    pub transaction: finsight_core::models::Transaction,
+    /// LIKE pattern identifying the siblings (pass to
+    /// `apply_transfer_verdict_to_similar`), e.g. `%swathi%`.
+    pub similar_pattern: Option<String>,
+    /// Human-readable counterparty ("swathi") for the offer text.
+    pub similar_label: Option<String>,
+    pub similar_count: i64,
+}
+
 /// Record the user's verdict on whether a transaction is a transfer between
 /// their own accounts. Sticky: survives re-imports and categorizer re-runs.
 #[tauri::command]
@@ -505,10 +518,44 @@ pub async fn set_transaction_transfer(
     state: tauri::State<'_, AppState>,
     id: String,
     is_transfer: bool,
-) -> AppResult<finsight_core::models::Transaction> {
+) -> AppResult<TransferVerdictResult> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        transactions::set_transfer_override(conn, &id, is_transfer)
+        // Count siblings BEFORE ruling this row so the source row's own state
+        // change can't affect the sibling query.
+        let siblings = transactions::transfer_verdict_siblings(conn, &id)?;
+        let transaction = transactions::set_transfer_override(conn, &id, is_transfer)?;
+        let (similar_pattern, similar_count) = match siblings {
+            Some((p, n)) => (Some(p), n),
+            None => (None, 0),
+        };
+        let similar_label = similar_pattern
+            .as_deref()
+            .map(|p| p.trim_matches('%').to_string());
+        Ok(TransferVerdictResult {
+            transaction,
+            similar_pattern,
+            similar_label,
+            similar_count,
+        })
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Apply a transfer verdict to every undecided transaction matching the
+/// counterparty pattern returned by `set_transaction_transfer`. One decision
+/// clears a whole person's e-transfer history from the review list.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_transfer_verdict_to_similar(
+    state: tauri::State<'_, AppState>,
+    pattern: String,
+    is_transfer: bool,
+) -> AppResult<u32> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        transactions::apply_transfer_override_to_matching(conn, &pattern, is_transfer)
     })
     .await
     .map_err(AppError::from)

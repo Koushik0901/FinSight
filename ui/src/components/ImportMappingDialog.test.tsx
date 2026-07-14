@@ -48,7 +48,7 @@ vi.mock("../api/client", () => ({
     }),
     importCsv: vi.fn().mockResolvedValue({
       status: "ok",
-      data: { summary: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, rows_queued_for_review: 0, errors: [] }, uncategorizedAfter: 0, aiCategorizationStarted: false },
+      data: { summary: { import_id: "imp1", rows_imported: 1, rows_skipped_duplicates: 0, rows_queued_for_review: 0, errors: [] }, builtinCategorized: 0, transfersPaired: 0, uncategorizedAfter: 0, aiCategorizationStarted: false },
     }),
     getSavedCsvMapping: vi.fn().mockResolvedValue({ status: "ok", data: null }),
     createAccount: vi.fn().mockResolvedValue({ status: "ok", data: { id: "new1" } }),
@@ -235,7 +235,7 @@ describe("ImportMappingDialog", () => {
     const { commands } = await import("../api/client");
     (commands.importCsv as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "ok",
-      data: { summary: { import_id: "imp1", rows_imported: 0, rows_skipped_duplicates: 0, rows_queued_for_review: 3, errors: [] }, uncategorizedAfter: 0, aiCategorizationStarted: false },
+      data: { summary: { import_id: "imp1", rows_imported: 0, rows_skipped_duplicates: 0, rows_queued_for_review: 3, errors: [] }, builtinCategorized: 0, transfersPaired: 0, uncategorizedAfter: 0, aiCategorizationStarted: false },
     });
 
     render(

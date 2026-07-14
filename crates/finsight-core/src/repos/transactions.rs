@@ -178,7 +178,13 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
             conditions.push("t.is_anomaly = 1".to_string());
         }
         Some("no_category") => {
-            conditions.push("t.category_id IS NULL".to_string());
+            // Only rows the user can actually categorize: transfers and
+            // investment-account activity are never categorized, so listing
+            // them here would make the "needs categorizing" list unclearable.
+            conditions.push(format!(
+                "t.category_id IS NULL AND t.is_transfer = 0 AND {}",
+                crate::metrics::non_investment_txn_predicate("t")
+            ));
         }
         Some("transfer_review") => {
             conditions.push(crate::categorize::transfer_review_predicate("t"));
@@ -531,6 +537,76 @@ pub fn set_transfer_override(
     }
     tx.commit()?;
     get_by_id(conn, id)
+}
+
+/// The other UNDECIDED transactions that share this transaction's transfer
+/// counterparty, so one verdict can be offered for all of them ("also mark the
+/// other 11 e-transfers with swathi"). Returns `(like_pattern, count)` — or
+/// `None` when the descriptor has no counterparty to generalize on (a bare
+/// "INTERNET TRANSFER <ref>" is unique per row; bulk would be meaningless).
+///
+/// "Undecided" mirrors the transfer-review surface: no user verdict, not
+/// paired, not flagged... and not categorized — a categorized sibling was
+/// already ruled real spending by the user or a rule.
+pub fn transfer_verdict_siblings(
+    conn: &mut Connection,
+    id: &str,
+) -> CoreResult<Option<(String, i64)>> {
+    let merchant: String = conn.query_row(
+        "SELECT merchant_raw FROM transactions WHERE id = ?1",
+        params![id],
+        |r| r.get(0),
+    )?;
+    let pattern = crate::categorize::suggested_rule_pattern(&merchant);
+    // Only a GENERALIZED pattern (`%counterparty%`) identifies siblings; the
+    // raw string only ever matches itself (unique reference numbers).
+    if !pattern.starts_with('%') {
+        return Ok(None);
+    }
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM transactions \
+         WHERE id != ?1 AND lower(merchant_raw) LIKE ?2 \
+           AND transfer_override IS NULL AND transfer_peer_id IS NULL \
+           AND category_id IS NULL",
+        params![id, pattern],
+        |r| r.get(0),
+    )?;
+    if count == 0 {
+        return Ok(None);
+    }
+    Ok(Some((pattern, count)))
+}
+
+/// Apply one transfer verdict to every undecided transaction matching a
+/// counterparty pattern (from [`transfer_verdict_siblings`]). Each row goes
+/// through [`set_transfer_override`] so the full semantics apply (category and
+/// anomaly cleared on mark, peers unlinked on unmark, verdict sticky).
+/// Returns how many rows were ruled.
+pub fn apply_transfer_override_to_matching(
+    conn: &mut Connection,
+    pattern: &str,
+    is_transfer: bool,
+) -> CoreResult<u32> {
+    let ids: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT id FROM transactions \
+             WHERE lower(merchant_raw) LIKE ?1 \
+               AND transfer_override IS NULL AND transfer_peer_id IS NULL \
+               AND category_id IS NULL",
+        )?;
+        let rows = stmt.query_map(params![pattern], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        out
+    };
+    let mut count = 0u32;
+    for id in &ids {
+        set_transfer_override(conn, id, is_transfer)?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 /// Fetch a single transaction by id (used internally).
@@ -920,6 +996,66 @@ mod tests {
         assert!(!ids.contains(&"rv3"), "already-flagged transfers are decided");
         assert!(!ids.contains(&"rv4"), "user-ruled rows never reappear");
         assert!(!ids.contains(&txn_id.as_str()), "ordinary merchants are not suspects");
+    }
+
+    #[test]
+    fn bulk_transfer_verdict_covers_a_counterparty_and_only_undecided_rows() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        // Eleven months of rent-like e-transfers to the same person, each with
+        // a unique reference number, plus one already-categorized and one
+        // already-ruled — those two must be left alone. And an unrelated bare
+        // internal transfer that must never ride a counterparty verdict.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('s1',?1,'2026-01-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105152493591 Swathi','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('s2',?1,'2026-02-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105249142383 SWATHI','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('s3',?1,'2026-03-01T12:00:00Z', 300000,'Internet Banking E-TRANSFER 011654884429 swathi','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
+             ('s4',?1,'2026-04-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105583684812 Swathi','cleared','2026-04-01T12:00:00Z',0,NULL,'cat1'),\
+             ('s5',?1,'2026-05-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105588077665 Swathi','cleared','2026-05-01T12:00:00Z',0,0,NULL),\
+             ('u1',?1,'2026-05-02T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared','2026-05-02T12:00:00Z',0,NULL,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        // The offer: ruling s1 finds the two other undecided swathi rows.
+        let siblings = transfer_verdict_siblings(&mut conn, "s1").unwrap();
+        let (pattern, n) = siblings.expect("a person e-transfer generalizes");
+        assert_eq!(pattern, "%swathi%");
+        assert_eq!(n, 2, "s2+s3 are undecided; s4 categorized, s5 ruled — excluded");
+
+        // A bare internal transfer has no counterparty — no bulk offer.
+        assert!(transfer_verdict_siblings(&mut conn, "u1").unwrap().is_none());
+
+        // Apply the verdict to the whole counterparty.
+        let applied = apply_transfer_override_to_matching(&mut conn, &pattern, true).unwrap();
+        assert_eq!(applied, 3, "s1, s2, s3 ruled in one decision");
+        let (flags, overrides): (i64, i64) = conn
+            .query_row(
+                "SELECT SUM(is_transfer), SUM(transfer_override IS NOT NULL) \
+                 FROM transactions WHERE id IN ('s1','s2','s3')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((flags, overrides), (3, 3), "all three flagged with a sticky verdict");
+        let s4_touched: (i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_transfer, category_id FROM transactions WHERE id = 's4'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            s4_touched,
+            (0, Some("cat1".into())),
+            "the categorized sibling keeps its category and stays real spending"
+        );
+        let s5_override: i64 = conn
+            .query_row("SELECT transfer_override FROM transactions WHERE id = 's5'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(s5_override, 0, "an existing verdict is never overwritten by bulk");
     }
 
     #[test]

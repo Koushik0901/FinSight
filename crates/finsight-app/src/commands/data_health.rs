@@ -31,6 +31,10 @@ pub struct DataHealth {
     pub wal_bytes: u64,
     /// Non-fatal problems from the last startup derived-data cascade.
     pub startup_warnings: Vec<String>,
+    /// What the last launch's derived-data refresh actually changed
+    /// ("Refreshed on launch: categorized 12 · matched 3 transfer pairs"),
+    /// empty when launch changed nothing.
+    pub startup_summary: String,
     pub backups: Vec<BackupInfo>,
     /// Set once a restore is staged; the app must restart to apply it.
     pub pending_restore: bool,
@@ -91,18 +95,21 @@ pub async fn get_data_health(
 ) -> AppResult<DataHealth> {
     let dir = app_data_dir(&app)?;
     let db = (*state.db).clone();
-    let (integrity_status, integrity_checked_at, last_backup_at, startup_warnings) = run(&db, |conn| {
-        Ok((
-            finsight_core::settings::get::<String>(conn, "data.integrity_status")?
-                .unwrap_or_else(|| "unknown".into()),
-            finsight_core::settings::get::<String>(conn, "data.integrity_checked_at")?,
-            finsight_core::settings::get::<String>(conn, "data.last_backup_at")?,
-            finsight_core::settings::get::<Vec<String>>(conn, "data.startup_warnings")?
-                .unwrap_or_default(),
-        ))
-    })
-    .await
-    .map_err(AppError::from)?;
+    let (integrity_status, integrity_checked_at, last_backup_at, startup_warnings, startup_summary) =
+        run(&db, |conn| {
+            Ok((
+                finsight_core::settings::get::<String>(conn, "data.integrity_status")?
+                    .unwrap_or_else(|| "unknown".into()),
+                finsight_core::settings::get::<String>(conn, "data.integrity_checked_at")?,
+                finsight_core::settings::get::<String>(conn, "data.last_backup_at")?,
+                finsight_core::settings::get::<Vec<String>>(conn, "data.startup_warnings")?
+                    .unwrap_or_default(),
+                finsight_core::settings::get::<String>(conn, "data.startup_summary")?
+                    .unwrap_or_default(),
+            ))
+        })
+        .await
+        .map_err(AppError::from)?;
 
     Ok(DataHealth {
         integrity_status,
@@ -111,6 +118,7 @@ pub async fn get_data_health(
         db_bytes: file_len(&dir.join("data.sqlcipher")),
         wal_bytes: file_len(&dir.join("data.sqlcipher-wal")),
         startup_warnings,
+        startup_summary,
         backups: list_backup_files(&dir.join("backups")),
         pending_restore: dir.join("data.pending-restore.sqlcipher").exists(),
     })

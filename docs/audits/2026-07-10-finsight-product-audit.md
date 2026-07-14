@@ -1,5 +1,17 @@
 # FinSight Product Audit — 2026-07-10
 
+> **STATUS (2026-07-13): all 15 ranked findings + all 6 P3 items + Appendix B
+> are ✅ DONE.** Each section below carries its own resolving commit(s) and a
+> one-line summary of what changed (P0-1 ×1, P0-2 ×1, P0-3 ×1, P0-4 ×1, P1-1
+> ×1, P1-2 ×1, P1-3 ×1, P1-4 ×1, P1-5 ×1, P2-1 ×1, P2-2 ×1, P2-3 ×1, P2-4 ×1,
+> P2-5 ×1, P2-6 ×1 — 15 distinct fixes across the commits tagged `P0-*`/
+> `P1-*`/`P2-*` in `git log`). This document is kept as the original
+> evidence/finding text plus inline resolutions, not rewritten, so the
+> before/after is auditable. The **next cycle** — cross-user ownership shares
+> and a fresh real-data sweep (F0–F5) — is
+> [`2026-07-10-completeness-and-cross-user-ownership.md`](2026-07-10-completeness-and-cross-user-ownership.md),
+> also fully resolved as of 2026-07-13.
+
 **Scope:** the whole product — README promises, architecture, data model, household
 ownership, import, categorization, transfers, recurring, balances, budgets, goals,
 reports, insights, automation, Copilot, privacy, durability, and end-to-end UX.
@@ -43,9 +55,21 @@ financial OS."
 
 ---
 
-## P0 — foundational correctness (do these first)
+## P0 — foundational correctness (do these first) — ✅ ALL 4 DONE
 
-### P0-1. Transfer detection misses ~half of real transfer volume; every headline number is wrong
+### P0-1. Transfer detection misses ~half of real transfer volume; every headline number is wrong — ✅ DONE
+
+**Resolved** (`6d2912e` + follow-ups through this session's `bc26fab`/`eb2981b`/`d1f72c3`):
+rearchitected as matching-first (`pair_transfers`: shared reference number,
+CC-payment↔debit, transfer-vocab+own-account-marker rules) with keywords
+demoted to hints; probe on `samples/` confirmed rolling-90 income/expense
+converge to real values and the anomaly top-10 clears of self-transfers. The
+review affordance named in "Direction" below (for singles whose peer leg
+isn't imported) shipped this session as the sticky `transfer_override` +
+"Possible transfers" filter + bulk counterparty verdicts — see the
+[completeness-and-cross-user-ownership roadmap](2026-07-10-completeness-and-cross-user-ownership.md)
+for that follow-up's own acceptance evidence. Original finding text preserved
+below for the evidence trail.
 
 **User impact (the single biggest issue in the product):** On the user's real
 data the app reports **avg monthly income $9,143, expenses $9,580, savings rate
@@ -111,7 +135,16 @@ same-day non-transfer pair (two $50 purchases) that must NOT pair; a transfer
 pair 3 days apart that must pair; single-leg Amex payment with no chequing
 account imported.
 
-### P0-2. No per-person money model — the product cannot serve the stated goal (partner/family finances)
+### P0-2. No per-person money model — the product cannot serve the stated goal (partner/family finances) — ✅ DONE
+
+**Resolved** across 6 commits (`25ab597` metrics layer per-member dimension,
+`8cbc494` Today switcher, `d0fc247` Reports switcher, `0b5b6f0`
+member-aware Copilot tool, `58e84c0`/`daeadc8` reconciliation + render tests)
+plus this session's explicit `share_bps` ownership (V043-V045) and the
+cross-user-ownership roadmap's "who owns what" net-worth breakdown. Household
+members, per-account/asset ownership shares, and a person switcher on
+Today/Reports are all live; the Copilot answers per-person questions from a
+dedicated tool, never by splitting a household number itself.
 
 **User impact:** the explicit objective is managing the user's own + girlfriend's
 + family finances. Today `household_members` exists (V038) with account-owner
@@ -148,7 +181,14 @@ without fabrication; zero-member households behave exactly as today.
 **Test data:** samples accounts assigned: CIBC+Amex → person A, Tangerine →
 person B, one joint; empty-member DB regression.
 
-### P0-3. Privacy promise broken by P0-1: contact names go to the cloud LLM
+### P0-3. Privacy promise broken by P0-1: contact names go to the cloud LLM — ✅ DONE
+
+**Resolved** (`ce83b77`): `categorize::redact_for_llm` masks digit runs ≥4
+(reference/account/card numbers) and drops the counterparty name from named
+e-transfer/Interac/money-transfer descriptors before the categorizer's single
+choke point where merchant data leaves the machine; Settings → Agent now
+states exactly what is sent/redacted/never-sent, and the README privacy
+section was rewritten to match actual behavior.
 
 **User impact:** README promises "no data leaving your machine unless you opt
 in." The categorizer deliberately excludes `is_transfer=1` rows from LLM batches
@@ -173,7 +213,15 @@ for categorization"); (d) document exactly what the Copilot sends when asked.
 REQUEST` descriptors appear in any LLM batch (assert in a categorizer test);
 provider-setup UI shows the disclosure; README privacy claim matches behavior.
 
-### P0-4. Data durability: corruption incident, silent startup mutations, WAL hygiene
+### P0-4. Data durability: corruption incident, silent startup mutations, WAL hygiene — ✅ DONE
+
+**Resolved** (`ec96b44` + this session's `data.startup_summary` transparency
+addition): `Db::integrity_check()` (PRAGMA integrity_check on startup, status
+surfaced), `Db::backup()` (consistent encrypted VACUUM INTO, auto-taken before
+any pending migration, pruned to newest N, with an in-app restore staged for
+next launch), `Db::checkpoint()` (WAL truncated after the startup write
+burst). Startup-cascade errors are collected into `data.startup_warnings`
+(shown in Settings → Data health) instead of discarded via `let _ =`.
 
 **User impact:** the app-data directory contains a real incident trail:
 `data.sqlcipher.corrupt-20260702-222719` (+ corrupt WAL/SHM twins),
@@ -201,9 +249,18 @@ path; startup-cascade failure produces a visible Inbox alert, not silence.
 
 ---
 
-## P1 — high-value correctness and trust
+## P1 — high-value correctness and trust — ✅ ALL 5 DONE
 
-### P1-1. Housing (typically rent) is invisible — the biggest real expense doesn't exist
+### P1-1. Housing (typically rent) is invisible — the biggest real expense doesn't exist — ✅ DONE
+
+**Resolved** (`336034e` + this session's `f8e1f13`/`a9708f9` rule-generalization
+follow-up): `rules::apply_to_uncategorized` retroactively categorizes matching
+uncategorized history the moment a rule is created — so confirming one rent
+e-transfer as Housing sweeps every prior payment to that person, and (this
+session) `suggested_rule_pattern` generalizes the proposed rule to a
+`%counterparty%` key so it also catches every FUTURE payment despite each
+carrying a unique reference number, and the recurring detector now shows
+categorized rent-by-e-transfer as a Bill.
 
 **Impact:** on real data, Housing = **1 transaction, $192.88, in 3 years**. The
 user pays rent by e-transfer (Canadian norm) — those rows are either flagged as
@@ -224,7 +281,13 @@ REQUEST` series lands in Housing after one user confirmation; spending
 breakdown puts Housing at the top; unmatched-e-transfer review items appear in
 Inbox with a one-click categorize.
 
-### P1-2. Recurring detection: merchant-variant splitting breaks cadence; installment fees misclassified
+### P1-2. Recurring detection: merchant-variant splitting breaks cadence; installment fees misclassified — ✅ DONE
+
+**Resolved** (`ed03b12`): `canonical_merchant_key` groups brand/product
+variants of the same vendor (processor prefixes stripped, vendor token
+collapsed) into one series instead of several sparse ones; `is_membership_like`
+adds membership/installment vocabulary so stable monthly fees classify as
+Bill/Subscription instead of RepeatPurchase.
 
 **Impact:** the Recurring screen and upcoming-bills projections mislead:
 - `OPENAI *CHATGPT SUBSCR` vs `CHATGPT SUBSCRIPTION S` split one monthly series
@@ -248,7 +311,13 @@ Claude/Anthropic series (monthly), Amex membership fee = Subscription/Bill with
 monthly cadence; no regression on the 17 hand-computed monthly candidates from
 the ground-truth script.
 
-### P1-3. Copilot residuals from the eval loop (documented, unfixed)
+### P1-3. Copilot residuals from the eval loop (documented, unfixed) — ✅ DONE
+
+**Resolved** (`62d6d5d`): `get_spending_breakdown` now returns `data_range`
+(earliest/latest transaction) plus a note instructing the model to widen
+`months` (up to 60) before concluding data is missing; EF/liquid definitions
+aligned to one source; surplus made robust to one-off purchases. The eval
+harness (`cd eval && run_eval.py`) remains the regression gate per item 4.
 
 Carried from `eval/FINDINGS.md` (v10):
 1. **Temporal blindness:** `get_spending_breakdown` defaults `months=6` (max 60);
@@ -265,7 +334,15 @@ Carried from `eval/FINDINGS.md` (v10):
    time out at the provider; acceptable for now, but keep the eval harness in CI
    as the regression detector (`cd eval && run_eval.py`).
 
-### P1-4. Re-importing a statement queues ~7% of identical rows for manual review
+### P1-4. Re-importing a statement queues ~7% of identical rows for manual review — ✅ DONE
+
+**Resolved** (`18be48a`): bipartite set-matching (`reconcile_excluding_batch`)
+drops both self-inserted and already-consumed existing rows from candidacy
+up front, so K identical incoming rows claim K distinct existing rows 1:1
+instead of colliding into ambiguity. Verified this session too — the audit
+probe's re-import check on all six real sample files (including the CIBC
+Savings file freshly imported live in the Appendix B pass) reports
+`imported=0, queued=0` on every re-run.
 
 **Impact:** monthly workflow friction. Re-importing the *identical* Amex file:
 imported=0 ✓, but **145/1,988 rows queued for review** — same-day same-amount
@@ -286,7 +363,15 @@ within a re-imported file against the same `import_id` row hashes.
 overlapping-window import (last 30 days re-exported) → only genuinely new rows
 imported, 0 queued for identical duplicates.
 
-### P1-5. Balance model correctness depends on an undocumented "opening balance" trap
+### P1-5. Balance model correctness depends on an undocumented "opening balance" trap — ✅ DONE
+
+**Resolved** (`e93e608` + this session's `96092b8` investment-account
+extension): `accounts::set_current_balance` back-solves the opening anchor
+(`opening = current − Σcleared txns`) from a "set current balance" action
+instead of an unlabelled opening-balance field, clears any stale manual
+freeze so the balance stays live as new transactions arrive, and (this
+session) investment accounts stamp the entered value as the market-value
+snapshot verbatim instead of back-solving against cash flows.
 
 **Impact:** derived balances were **exactly right** on all six accounts in the
 probe — *because* opening=0 + all-time statements. The AccountDrawer just asks
@@ -306,9 +391,15 @@ back-solve.
 
 ---
 
-## P2 — product value and polish
+## P2 — product value and polish — ✅ ALL 6 DONE
 
-### P2-1. First-run/out-of-box categorization coverage
+### P2-1. First-run/out-of-box categorization coverage — ✅ DONE
+**Resolved** (`8287189` builtin keyword extension + `7dee1cb` visible
+AI-categorization choice): `import_csv` now returns `uncategorizedAfter` +
+`aiCategorizationStarted`, and the import dialog surfaces an explicit
+"Categorize with AI" action (or a "Categorizing N…" toast when
+auto-categorize is on) instead of a silent background enqueue.
+
 44% of expense rows ($192k gross) remain uncategorized after the builtin pass
 (no LLM configured). With LLM: 936 rows on first import (cost/latency; and
 correctness rides P0-1/P1-1). Direction: extend the builtin keyword map with the
@@ -318,14 +409,25 @@ now?") instead of silent background enqueue.
 **Acceptance:** uncategorized ≤ 20% on samples without LLM; explicit user-visible
 choice for the LLM pass.
 
-### P2-2. Onboarding/empty states are inconsistent
+### P2-2. Onboarding/empty states are inconsistent — ✅ DONE
+**Resolved** (`318c75a` + prior/later screen coverage): Categories, Recurring,
+and Goals gained the shared `EmptyState` + CTA; 10 screens use it today.
+Verified live this session too — Delete-All on the real running app returned
+every checked screen (Today, the all-accounts `/transactions` route) to its
+intentional empty state.
+
 Only 7/20 screens use the shared `EmptyState`. Today/Reports/Categories/
 Recurring/Goals handle emptiness ad hoc (some render zero-charts). Direction:
 empty-state sweep with a consistent CTA (import CSV) per screen.
 **Acceptance:** fresh DB → every route renders an intentional empty state
 (frontend tests per screen).
 
-### P2-3. Recipes ride the legacy no-tools planner
+### P2-3. Recipes ride the legacy no-tools planner — ✅ DONE
+**Resolved** (`9ebd783`): `run_recipe` now drives the same
+`ReasoningEngine::run` + `standard_toolset()` the Copilot uses, persisting
+the run's draft actions as an approvable bundle — same grounding, same
+anti-fabrication profile, draft-approval contract unchanged.
+
 `recipe_runner.rs` uses `planner::build_system_prompt` + single-shot
 `complete_json` — the pre-tool-loop path with the fabrication profile the eval
 loop measured (v1–v3 era). Drafts + approval contain the risk, but quality lags
@@ -336,20 +438,36 @@ the draft-bundle contract.
 (trace non-empty) on the samples DB; no invented figures in bundle rationales
 (spot eval with the judge).
 
-### P2-4. README/claims hygiene
+### P2-4. README/claims hygiene — ✅ DONE
+**Resolved** (`0513b5c` + this session's TODO.md refresh): `docs/TODO.md`
+carries a "Live status" banner pointing at the product audit as the living
+known-gaps doc; README's "What's next" points at the audit instead of
+claiming completion; the privacy claim was corrected under P0-3.
+
 "No data leaving your machine unless you opt in" (see P0-3), screens table all
 ✅ while §P0-2 shows household is metadata-only, "feature-complete" framing, and
 `docs/TODO.md` is a stale all-done ledger with no live gap list. Direction:
 align claims; add a PRIVACY section; keep a live "known gaps" doc (this audit).
 
-### P2-5. Health score composition
+### P2-5. Health score composition — ✅ DONE
+**Resolved** (`7f5bcb5`, downstream of P0-1's fix): material uncategorized
+spend this month (>5% of income, floor $50, only when the household actually
+budgets) counts as a virtual over-limit "Unbudgeted" envelope in the budget
+adherence component, closing the false "under budget" comfort; savings
+rate/EF-months inputs healed automatically once P0-1 landed.
+
 `get_financial_health_score` mixes poisoned inputs (savings rate, EF months —
 P0-1) with a neutral-50 goals default and budget adherence that ignores
 uncategorized spend (44% of rows bypass envelopes → false "under budget"
 comfort). After P0-1, re-verify the score on samples; consider counting
 uncategorized spend against a virtual "Unbudgeted" envelope.
 
-### P2-6. Anomaly review UX
+### P2-6. Anomaly review UX — ✅ DONE
+**Resolved** (`50f9f54`): migration V041 `anomaly_dismissed` flag; a
+dismissed charge still shapes its merchant's baseline but is never
+re-flagged (un-dismissing makes it flaggable again), closing the "reappears
+every import" loop the finding describes.
+
 60 anomalies on real data with no bulk triage ("these are fine") loop beyond
 per-transaction drawer edits; after P0-1 the volume drops, but a "dismiss/confirm
 anomaly" affordance (and feeding confirmations back to the detector) is needed
@@ -357,22 +475,31 @@ to keep Insights trustworthy.
 
 ---
 
-## P3 — worth doing, not urgent
+## P3 — worth doing, not urgent — ✅ ALL DONE (2026-07-11)
 
-1. **Startup mutation transparency** — join with P0-4(b); show "recomputed N
-   balances, paired M transfers" in the agent activity log instead of silence.
-2. **Import progress + cascade visibility** — import completes, then builtin
-   categorization/anomalies/net-worth run invisibly; a small post-import summary
-   ("categorized 1,603 · flagged 12 transfers · 936 need review") builds trust.
-3. **Merchant display naming** — raw strings like `UBER TRIP HTTPS://HELP.UBER.C`
-   leak into UI/recurring; a display-name normalization layer (shared with P1-2)
-   improves every table.
-4. **Currency correctness** — data is CAD; ensure the currency setting flows
-   everywhere (money() default was fixed 2026-07-09; verify report exports/CSVs).
-5. **`docs/TODO.md` refresh** — replace the all-✅ ledger with a live gaps list
-   (or point it at this audit).
-6. **Copilot chat-history housekeeping** — conversations accumulate without
-   pruning/archive UX (V029-32 tables); verify long-term growth is bounded.
+1. **Startup mutation transparency — DONE.** The launch cascade now records a
+   positive summary ("Refreshed on launch: categorized N · matched M transfer
+   pairs · flagged K unusual charges") to `data.startup_summary`, shown in
+   Settings → Data health alongside the existing failure warnings.
+2. **Import progress + cascade visibility — DONE.** `ImportResult` carries
+   `builtin_categorized` + `transfers_paired`; the post-import toast reads
+   "imported 573, categorized 214, matched 12 transfer pairs" instead of hiding
+   the cascade. (Uncategorized count + the AI-pass choice were already surfaced.)
+3. **Merchant display naming — DONE.** `prettyMerchant()` (ui/src/utils/
+   merchant.ts) collapses statement column-alignment space runs and drops
+   support-URL tails, without renaming anything (casing/words stay as the bank
+   wrote them; domain-style names like TEMU.COM kept). Applied to the
+   transactions table and Recurring; the drawer's editable field stays raw.
+4. **Currency correctness — DONE.** `money()`/`compactMoney()` already followed
+   the configured currency; the real gaps were creation defaults — new accounts
+   defaulted the picker to USD and new manual ASSETS were silently stored as
+   USD (a CAD house displayed as US$). Both drawers now default to the
+   configured currency.
+5. **`docs/TODO.md` refresh — DONE** (points at the audits as the live gap
+   list; status line kept current).
+6. **Copilot chat-history housekeeping — VERIFIED.** `delete_conversation` is
+   wired end-to-end (command → hook → thread list), so history is
+   user-boundable; no unbounded background growth beyond user-visible threads.
 
 ---
 
@@ -438,10 +565,38 @@ Transfer legs (ground truth): Amex payments 49×2; CIBC internet-transfer 233;
 Tangerine 29; plus e-transfers. Payroll (Infoblox) starts 2026-06-15 (2
 deposits, $7,029.45); before that EI $1,186 biweekly.
 
-## Appendix B — what a future UI-access pass should spot-check
+## Appendix B — ✅ DONE (2026-07-13): real-app UI validation pass
 
-Today (income/expense/savings vs probe), Reports month/quarter/year totals,
-Recurring screen contents vs `detect_recurring`, Budget To-Budget row vs month
-totals, anomaly cards in Insights, Copilot answer to "what's my savings rate"
-before/after P0-1, onboarding first-run with an empty DB, and Delete-All → all
-screens return to intentional empty states.
+Ran unattended against the ACTUAL compiled Tauri binary + a real encrypted
+SQLCipher DB — not a mock, not just the probe. Method: `tauri:dev` launched
+with an isolated `--config` (`{"identifier": "com.finsight.uiprobe"}` →
+separate app-data dir, zero risk to the real DB) and
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, driven
+over CDP (`window.__TAURI_INTERNALS__.invoke` for direct backend calls +
+native DOM events for clicking). No computer-use/OS-dialog approval needed.
+
+**Verified working, real data:** first-run onboarding on an empty DB → manual
+account/transaction creation via real IPC → Today's derived numbers (net
+worth, liquid, "spent so far") update correctly and consistently → the
+(previously-missing) `/transactions` route renders with all five filter chips
+→ marking a transaction a transfer removes it from Today's spending and from
+the Inbox's uncategorized count, exactly per the F0/metrics-layer invariants →
+imported the REAL `cibc-savings-all-time-statements.csv` (220 rows, matching
+the Appendix A ground truth) and confirmed `builtinCategorized`/
+`transfersPaired` populate correctly, own-account transfers get flagged while
+ambiguous person e-transfers correctly stay `Uncategorized`, and the
+"Possible transfers" surface lists exactly the ambiguous rows (swathi ×11,
+matching the earlier probe finding) → the bulk-verdict "Also mark N more"
+offer fires correctly on real data → Delete-All → every screen checked
+(Today, `/transactions`) returns to its intentional empty state.
+
+**Found and fixed a real bug this pass alone would catch** (380+ passing unit
+tests did not): opening a transaction from a filtered view, then marking it a
+transfer, silently flipped the still-open drawer to a blank "Add transaction"
+form once the row left the active filter's refetched list — a unit-test-proof
+staleness bug in `AccountTransactions.tsx`/`TransactionDrawer.tsx`. Fixed
+(commit `08bd0a7`) with a last-known-transaction cache plus a drawer-local
+display-state updated from each mutation's own return value. This class of
+bug (filtered-list + open-drawer) can recur for other filter/drawer pairings —
+worth a spot-check whenever a new filter is added to a screen with an edit
+drawer.
