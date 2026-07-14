@@ -543,6 +543,32 @@ pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Ve
             }
         }
 
+        // ── Spending regime shift ─────────────────────────────────────────────
+        // Proactively surface when the latest month is a SUSTAINED step up vs the
+        // user's normal (not a one-off spike). Deep-links to the Path Back screen;
+        // same engine the screen + Copilot use, so the numbers reconcile.
+        if let Some(ym) = finsight_core::spending::baseline::latest_activity_month(conn)? {
+            if let Ok(a) = finsight_core::spending::classify::classify_spending_period(conn, &ym) {
+                if a.class == finsight_core::spending::classify::PeriodClass::RegimeShift {
+                    let over = (a.period_total_cents - a.baseline_monthly_cents).max(0);
+                    items.push(ActionItem {
+                        id: "spending-regime-shift".to_string(),
+                        category: "budget".to_string(),
+                        priority: "high".to_string(),
+                        title: "Your spending has stepped up from your normal".to_string(),
+                        detail: format!(
+                            "This isn't a one-off — the last month is running about {} above your usual, and recent months are elevated too. See what's driving it and your path back.",
+                            fmt_money(over)
+                        ),
+                        action_label: "See your path back".to_string(),
+                        action_route: "/path-back".to_string(),
+                        badge_count: None,
+                        amount_cents: Some(over),
+                    });
+                }
+            }
+        }
+
         // ── Sort: high first, then medium, then low ───────────────────────────
         items.sort_by_key(|item| match item.priority.as_str() {
             "high" => 0,
