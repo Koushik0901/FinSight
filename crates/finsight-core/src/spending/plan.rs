@@ -49,7 +49,13 @@ pub fn plan_spending_reduction(
     let self_correcting = d.persistence_subtotals.one_off_cents;
     let recoverable =
         d.persistence_subtotals.recurring_cents + d.persistence_subtotals.emerging_cents;
-    let projected_after = recent - self_correcting - recoverable;
+    // Trimming your recent *increases* returns you to your normal — it cannot
+    // take you below it. Clamp the projected floor at the baseline so a target
+    // below your normal reads as structural, not "within reach". This also
+    // corrects the median-headline vs mean-driver mismatch (positive deltas can
+    // exceed the median gap when some merchants stopped), which would otherwise
+    // over-promise reachability. Surfaced by live-app validation on real data.
+    let projected_after = (recent - self_correcting - recoverable).max(baseline_monthly);
 
     let levers: Vec<Driver> = d
         .drivers
@@ -190,5 +196,31 @@ mod tests {
         // so the projection is the full recent spend, not an understated floor.
         assert_eq!(p.projected_after_levers_cents, 160_000);
         assert!(p.structural_gap_cents.is_some(), "target below the real floor stays structural");
+    }
+
+    #[test]
+    fn projected_floor_never_undershoots_the_baseline() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        // Baseline: $1,000 groceries + a $500 sub every month → normal $1,500/mo.
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -100_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(&conn, &format!("2025-{:02}", i + 1), -50_000, "OLD SUB  ONLINE, ON");
+        }
+        // Target month: groceries flat, the sub STOPPED (a tailwind), plus one
+        // $800 one-off. The positive delta ($800) exceeds the gap because the
+        // stopped sub is a negative delta — so the naive floor dips below the
+        // $1,500 baseline. It must clamp at the baseline, not over-promise.
+        ins(&conn, "2026-01", -100_000, "SAVE ON FOODS  EDMONTON, AB");
+        ins(&conn, "2026-01", -80_000, "GADGET SHOP  ONLINE, ON");
+        let p = plan_spending_reduction(&conn, "2026-01", Some(120_000)).unwrap();
+        assert!(
+            p.projected_after_levers_cents >= p.baseline_monthly_cents,
+            "the floor can't dip below your normal (projected {}, baseline {})",
+            p.projected_after_levers_cents,
+            p.baseline_monthly_cents
+        );
+        // $1,200 target sits below the $1,500 floor → structural, not "reachable".
+        assert_eq!(p.structural_gap_cents, Some(p.baseline_monthly_cents - 120_000));
     }
 }
