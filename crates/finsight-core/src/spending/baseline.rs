@@ -28,6 +28,9 @@ pub struct Baseline {
     pub months: i64,
     /// Robust "normal" monthly spend: median of the per-month grand totals.
     pub grand_monthly_median_cents: i64,
+    /// Robust spread (MAD) of the per-month grand totals — the volatility band
+    /// classify uses to tell an episodic spike from a new regime.
+    pub grand_monthly_mad_cents: i64,
     /// Keyed by `canonical_merchant_key`.
     pub per_merchant: HashMap<String, MerchantBaseline>,
     /// Dominant account currency in the window (v1 analyzes one currency).
@@ -149,15 +152,46 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
             monthly_totals.push(*grand.get(&ym).unwrap_or(&0) as f64);
         }
     }
-    let grand_monthly_median_cents = stats::median(&monthly_totals).round() as i64;
+    let med = stats::median(&monthly_totals);
+    let grand_monthly_median_cents = med.round() as i64;
+    let grand_monthly_mad_cents = stats::mad(&monthly_totals, med).round() as i64;
 
     Ok(Baseline {
         months,
         grand_monthly_median_cents,
+        grand_monthly_mad_cents,
         per_merchant,
         currency,
         mixed_currency,
     })
+}
+
+/// The trailing `months`-month baseline ending the month BEFORE `period_ym`
+/// (so the target month is never inside its own baseline). This is the
+/// canonical "your normal" window; the agent tools and classify all use it.
+pub fn trailing(conn: &Connection, period_ym: &str, months: i64) -> CoreResult<Baseline> {
+    let (py, pm) = crate::spending::parse_ym(period_ym);
+    let end = format!("{py:04}-{pm:02}"); // exclusive end = the period month itself
+    let start_idx = py * 12 + (pm as i32 - 1) - months as i32;
+    let start = format!("{:04}-{:02}", start_idx.div_euclid(12), start_idx.rem_euclid(12) + 1);
+    compute(conn, &start, &end)
+}
+
+/// Total expense (positive cents) in one calendar month `ym` (`YYYY-MM`),
+/// applying the same exclusions as the baseline (transfers + investment out).
+pub fn month_total(conn: &Connection, ym: &str) -> CoreResult<i64> {
+    let (y, m) = crate::spending::parse_ym(ym);
+    let start = format!("{y:04}-{m:02}-01");
+    let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+    let end = format!("{ny:04}-{nm:02}-01");
+    let pred = crate::metrics::non_investment_txn_predicate("t");
+    let sql = format!(
+        "SELECT COALESCE(SUM(-t.amount_cents), 0) FROM transactions t \
+         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
+           AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2"
+    );
+    let total: i64 = conn.query_row(&sql, rusqlite::params![start, end], |r| r.get(0))?;
+    Ok(total)
 }
 
 #[cfg(test)]
@@ -216,5 +250,22 @@ mod tests {
         let b = compute(&conn, "2025-05", "2026-05").unwrap();
         assert_eq!(b.months, 2, "history depth is 2 months, not the 12-month span");
         assert!(b.grand_monthly_median_cents > 0, "median must not be zero-deflated by empty pre-history");
+    }
+
+    #[test]
+    fn trailing_excludes_the_target_month_and_month_total_sums_it() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+        }
+        ins(&conn, "2026-01", -99_000, "FLAIR AIRLINES  BURNABY, BC"); // the target month
+
+        let base = trailing(&conn, "2026-01", 12).unwrap(); // [2025-01, 2026-01)
+        assert_eq!(base.months, 12);
+        assert!(base.per_merchant.get(&canonical_merchant_key("FLAIR AIRLINES  BURNABY, BC")).is_none());
+        assert!(base.grand_monthly_mad_cents >= 0);
+
+        assert_eq!(month_total(&conn, "2026-01").unwrap(), 99_000);
     }
 }
