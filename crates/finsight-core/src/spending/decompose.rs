@@ -90,6 +90,7 @@ pub fn decompose(
     let start_ym = target.start.get(..7).unwrap_or(target.start.as_str());
     let end_ym = target.end.get(..7).unwrap_or(target.end.as_str());
     let target_bl = baseline::compute(conn, start_ym, end_ym)?;
+    let verdicts = crate::spending::annotate::annotations(conn)?;
     let months = target.months.max(1.0);
 
     let mut keys: HashSet<String> = target_bl.per_merchant.keys().cloned().collect();
@@ -129,6 +130,7 @@ pub fn decompose(
             base_txns_per_month: base_pm,
             mechanism,
             persistence,
+            user_verdict: verdicts.get(key).cloned(),
         };
         if passes(&driver, filter, min_ratio) {
             drivers.push(driver);
@@ -141,7 +143,10 @@ pub fn decompose(
     // "how much of the increase will recur" reflects every driver.
     let mut subtotals = PersistenceSubtotals::default();
     for d in drivers.iter().filter(|d| d.delta_cents > 0) {
-        match d.persistence {
+        // A user-annotated driver is accepted — it never counts as a recurring
+        // "lever"; fold it into one-off so the levers total drops it.
+        let effective = if d.user_verdict.is_some() { Persistence::OneOff } else { d.persistence };
+        match effective {
             Persistence::Recurring => subtotals.recurring_cents += d.delta_cents,
             Persistence::OneOff => subtotals.one_off_cents += d.delta_cents,
             Persistence::Emerging => subtotals.emerging_cents += d.delta_cents,
@@ -188,6 +193,7 @@ fn passes(d: &Driver, filter: Filter, min_ratio: f64) -> bool {
 mod tests {
     use super::*;
     use crate::{db::run_migrations, keychain, Db};
+    use crate::merchant::canonical_merchant_key;
     use tempfile::TempDir;
 
     #[test]
@@ -264,5 +270,26 @@ mod tests {
         let may = Window::for_month("2026-05");
         let out = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
         assert!(out.note.to_lowercase().contains("month"), "cold-start note should fire, got: {:?}", out.note);
+    }
+
+    #[test]
+    fn annotation_drops_driver_from_recurring_levers() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -10_000, "AMAZON  ONLINE, ON");
+        }
+        ins(&conn, "2026-05", -40_000, "AMAZON  ONLINE, ON");
+        let base = baseline::compute(&conn, "2025-01", "2026-01").unwrap();
+        let may = Window::for_month("2026-05");
+
+        let before = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
+        assert!(before.persistence_subtotals.recurring_cents > 0, "amazon is a lever before annotation");
+
+        crate::spending::annotate::set_annotation(&conn, &canonical_merchant_key("AMAZON  ONLINE, ON"), "expected", None).unwrap();
+        let after = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
+        let amz = after.drivers.iter().find(|d| d.display == "AMAZON").unwrap();
+        assert_eq!(amz.user_verdict.as_deref(), Some("expected"));
+        assert_eq!(after.persistence_subtotals.recurring_cents, 0, "annotated driver leaves the levers");
     }
 }

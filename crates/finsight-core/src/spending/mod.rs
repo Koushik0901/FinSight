@@ -85,6 +85,9 @@ pub struct Driver {
     pub base_txns_per_month: f64,
     pub mechanism: Mechanism,
     pub persistence: Persistence,
+    /// A sticky user verdict (one_off / expected / investment) if the user has
+    /// annotated this merchant; overrides how it counts toward the "levers".
+    pub user_verdict: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
