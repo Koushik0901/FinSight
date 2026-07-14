@@ -1,5 +1,6 @@
 //! Spending Analysis Engine — deterministic "what changed vs your normal".
 pub mod stats;
+pub mod baseline;
 
 /// A half-open date window `[start, end)` in `YYYY-MM-DD`, plus the number of
 /// whole calendar months it spans (used to convert a window total into a
