@@ -272,7 +272,7 @@ export default function AccountTransactions() {
         )}
       </div>
 
-      {account.type === "Investment" && <HoldingsCard account={account} />}
+      {account && account.type === "Investment" && <HoldingsCard account={account} />}
 
       <div style={{ marginTop: 14 }}>
         <TransactionFilter

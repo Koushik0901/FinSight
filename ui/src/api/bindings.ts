@@ -227,6 +227,22 @@ async appReady() : Promise<Result<AppReady, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listAccountPositions(accountId: string) : Promise<Result<Position[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_account_positions", { accountId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getInvestmentSummary(accountId: string) : Promise<Result<InvestmentSummary, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_investment_summary", { accountId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async previewCsvColumns(path: string, skipHeaderRows: number) : Promise<Result<CsvPreview, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("preview_csv_columns", { path, skipHeaderRows }) };
@@ -1724,7 +1740,7 @@ guidance: string | null }
  * A single prior turn from the conversation history for multi-turn awareness.
  */
 export type ChatHistoryEntry = { role: string; content: string }
-export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit"
+export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit" | "ActivityType" | "ActivitySubType" | "Symbol" | "SecurityName" | "Quantity" | "UnitPrice"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 /**
  * A single message within a conversation thread.
@@ -1827,6 +1843,40 @@ uncategorizedAfter: number;
 aiCategorizationStarted: boolean }
 export type ImportSource = "csv" | "manual" | "sample" | "simple_fin"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; rows_queued_for_review: number; errors: RowError[] }
+/**
+ * Ledger-derived portfolio summary for one investment account.
+ */
+export type InvestmentSummary = { 
+/**
+ * Cash in the account: opening (seed) balance + every ledger row. Trades,
+ * contributions, dividends, interest, and tax are all cash movements.
+ */
+cashCents: number; 
+/**
+ * Σ market value of open positions at their last trade price.
+ */
+positionsValueCents: number; 
+/**
+ * cash + positions value — the "portfolio estimate".
+ */
+portfolioEstimateCents: number; 
+/**
+ * All-time dividend income (activity_type = 'Dividend').
+ */
+dividendIncomeCents: number; 
+/**
+ * All-time interest income (activity_type = 'Interest').
+ */
+interestIncomeCents: number; 
+/**
+ * All-time withholding tax, as a positive magnitude (rows are negative).
+ */
+withholdingTaxCents: number; openPositions: number; 
+/**
+ * True when any symbol nets below zero — a SELL without its earlier BUYs
+ * (partial-history import). The estimate is unreliable; warn, don't hide.
+ */
+hasNegativeQuantity: boolean }
 export type JourneyMilestone = { stage: number; name: string; description: string; status: string; progressPct: number; detail: string; actionPrompt: string }
 export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
@@ -1884,7 +1934,11 @@ export type NewAccount = { owner: string; bank: string; type: AccountType; name:
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; accountId: string | null }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewPlannedTransaction = { description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; source: string }
-export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
+export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null; 
+/**
+ * `#[serde(default)]` keeps pre-V048 `candidate_json` review rows decodable.
+ */
+activity?: TxnActivity | null }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 /**
@@ -1897,6 +1951,32 @@ export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goa
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
 export type PlannedTxnFilter = { status: string | null; dueBefore: string | null }
+/**
+ * One open position in an investment account, aggregated from Trade rows.
+ */
+export type Position = { symbol: string; name: string | null; 
+/**
+ * Net units held: SUM(quantity) over all trades (SELL rows are negative).
+ */
+quantity: number; 
+/**
+ * Unit price of the most recent trade in this symbol (dollars).
+ */
+lastPrice: number | null; 
+/**
+ * Date of that most recent trade (RFC3339).
+ */
+lastTradeAt: string | null; 
+/**
+ * quantity × last_price, rounded to cents. None when no price is known.
+ */
+marketValueCents: number | null; 
+/**
+ * Net cash put into this symbol: SUM(−amount) over its trades. A closed
+ * round trip leaves the realized P&L here as a negative (profit) or
+ * positive (loss) residue.
+ */
+investedCents: number }
 /**
  * A lightweight, bounded preview of what an import WOULD do — counts + a
  * capped error list + a staleness signature — so the UI can show
@@ -1967,7 +2047,7 @@ transfer_peer_account_name: string | null;
  * account's ownership shares for its cashflow (a personal purchase on a
  * joint account). None = use the account shares.
  */
-owner_member_id: string | null; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null }
+owner_member_id: string | null; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null; activity: TxnActivity | null }
 export type TransactionSplitDto = { id: string; txnId: string; categoryId: string | null; amountCents: number }
 export type TransactionStatus = "cleared" | "pending" | "manual"
 export type TransferSuggestionInfo = { id: string; confidence: string; detectedAt: string; fromTransactionId: string; fromAccountName: string; fromMerchant: string; fromAmountCents: number; fromPostedAt: string; toTransactionId: string; toAccountName: string; toMerchant: string; toAmountCents: number; toPostedAt: string }
@@ -1986,6 +2066,21 @@ similarPattern: string | null;
  * Human-readable counterparty ("swathi") for the offer text.
  */
 similarLabel: string | null; similarCount: number }
+/**
+ * Investment/activity metadata parsed from brokerage CSV exports
+ * (Wealthsimple et al). Stored provider-verbatim in the six V048 columns;
+ * `categorize::activity_implies_transfer` decides which activity types are
+ * internal moves (Trade, MoneyMovement) vs real income/expense.
+ */
+export type TxnActivity = { activityType: string; activitySubType: string | null; symbol: string | null; securityName: string | null; 
+/**
+ * Signed units traded; SELL rows are negative.
+ */
+quantity: number | null; 
+/**
+ * Dollars at full export precision (sub-cent), NOT cents.
+ */
+unitPrice: number | null }
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
