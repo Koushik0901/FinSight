@@ -10,10 +10,16 @@
 //! Convention decisions made here, deliberately:
 //! - **Transfers are never income or expense.** Every aggregate below filters
 //!   `is_transfer = 0`; callers cannot forget it because they never write the SQL.
-//! - **Investment-account activity is never income or expense.** Trades,
-//!   contributions arriving, and dividends inside a brokerage account are wealth
-//!   moving within the investment world ([`non_investment_txn_predicate`]); the
-//!   spendable-side contribution leg is handled by transfer detection/review.
+//! - **Investment-account activity is never income or expense, EXCEPT
+//!   dividends/interest/withholding tax.** Trades and contributions inside a
+//!   brokerage account are wealth moving within the investment world
+//!   ([`non_investment_txn_predicate`]); the spendable-side contribution leg
+//!   is handled by transfer detection/review. But a dividend or interest
+//!   payment IS real income the moment it lands (`activity_type` = 'Dividend'
+//!   | 'Interest'), and withholding tax on it IS a real expense
+//!   (`activity_type` = 'Tax') — both are carved back in so a brokerage
+//!   account's income shows up in savings rate, budget, and Copilot context
+//!   like any other income.
 //! - **Savings rate is signed and honest.** A deficit month yields a *negative*
 //!   rate; it is not clamped to zero. Callers that want a progress bar can clamp
 //!   at the display edge, but the metric itself never hides a deficit.
@@ -48,14 +54,24 @@ pub fn is_investment_type(t: AccountType) -> bool {
 }
 
 /// SQL predicate: the transaction (on the given `transactions` alias) does not
-/// live in an investment account. Brokerage activity — BUY/SELL trades,
-/// contributions arriving, dividends — is wealth moving inside the investment
-/// world, not living income or spending; letting it into cashflow swings the
-/// savings rate with every trade, and letting it into categorization/recurring/
+/// live in an investment account, OR it does but is a Dividend/Interest/Tax
+/// row (V048 `activity_type` — real income/expense, not wealth-shuffling).
+/// BUY/SELL trades and contributions are wealth moving inside the investment
+/// world, not living income or spending; letting them into cashflow swings the
+/// savings rate with every trade, and letting them into categorization/recurring/
 /// anomaly surfaces nags the user about rows that aren't budget material. Must
-/// stay in lockstep with [`is_investment_type`] (pinned by a unit test).
+/// stay in lockstep with [`is_investment_type`] (pinned by a unit test) for the
+/// account-type half; the activity carve-out is independently pinned by
+/// `income_expense_includes_dividend_and_interest_in_investment_accounts`.
+///
+/// Untyped investment-account rows (a manual entry, or a non-CSV provider that
+/// never populates `activity_type`) fall through to the blanket exclusion —
+/// only rows explicitly typed as income/expense earn the exception.
 pub fn non_investment_txn_predicate(alias: &str) -> String {
-    format!("{alias}.account_id NOT IN (SELECT id FROM accounts WHERE type = 'Investment')")
+    format!(
+        "({alias}.account_id NOT IN (SELECT id FROM accounts WHERE type = 'Investment') \
+          OR {alias}.activity_type IN ('Dividend', 'Interest', 'Tax'))"
+    )
 }
 
 /// Cash and near-cash: everything that isn't debt or an investment. This is the
@@ -713,6 +729,43 @@ mod tests {
             income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&alice.id)).unwrap();
         assert_eq!(m_inc, 300_000);
         assert_eq!(m_exp, 100_000);
+    }
+
+    #[test]
+    fn income_expense_includes_dividend_interest_tax_in_investment_accounts() {
+        // The blanket investment-account exclusion above must not swallow a
+        // dividend/interest payment (real income the moment it lands) or its
+        // withholding tax (a real expense) — only Trade/MoneyMovement rows are
+        // wealth-shuffling. An untyped row (no activity_type set — a manual
+        // entry) stays excluded, matching the account-level rule.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let tfsa = accounts::insert(&mut conn, account("TFSA", AccountType::Investment, 0, false))
+            .unwrap()
+            .id;
+        let insert_activity = |conn: &Connection, amount: i64, activity_type: &str| {
+            conn.execute(
+                "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
+                                          status, is_anomaly, is_transfer, created_at, activity_type) \
+                 VALUES(?1, ?2, ?3, ?4, 'M', 'cleared', 0, 0, ?3, ?5)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    tfsa,
+                    Utc::now().to_rfc3339(),
+                    amount,
+                    activity_type,
+                ],
+            )
+            .unwrap();
+        };
+        insert_activity(&conn, 500, "Dividend");
+        insert_activity(&conn, 10, "Interest");
+        insert_activity(&conn, -20, "Tax");
+        insert_txn(&mut conn, &tfsa, 100, 0, false); // untyped — stays excluded
+
+        let (income, expense) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
+        assert_eq!(income, 510, "dividends + interest count as real income");
+        assert_eq!(expense, 20, "withholding tax counts as a real expense");
     }
 
     #[test]
