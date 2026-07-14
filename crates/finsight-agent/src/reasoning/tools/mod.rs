@@ -1,5 +1,6 @@
 pub mod act;
 pub mod read;
+pub mod spending;
 
 use crate::reasoning::messages::{AgentDraftAction, ToolDefinition};
 use anyhow::Result;
@@ -214,6 +215,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::run_cashflow_timeline());
     tools.register(read::run_purchase_affordability());
     tools.register(read::get_data_quality_report());
+    tools.register(spending::explain_spending_change());
     tools.register(act::set_budget());
     tools.register(act::update_goal_monthly());
     tools.register(act::create_planned_transaction());
