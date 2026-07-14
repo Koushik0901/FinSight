@@ -27,6 +27,7 @@ const NAV_MAIN: NavEntry[] = [
   { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
   { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
   { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
+  { id: "path-back", path: "/path-back", label: "Path back", Icon: I.Flow },
 ];
 
 const NAV_WORKSHOP: NavEntry[] = [

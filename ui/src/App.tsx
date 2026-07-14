@@ -34,6 +34,7 @@ const Goals = lazy(() => import("./screens/Goals"));
 const Journey = lazy(() => import("./screens/Journey"));
 const Scenarios = lazy(() => import("./screens/Scenarios"));
 const Reports = lazy(() => import("./screens/Reports"));
+const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
 const Settings = lazy(() => import("./screens/Settings"));
 const Copilot = lazy(() => import("./screens/Copilot"));
@@ -274,6 +275,7 @@ export function App() {
                     <Route path="/journey" element={<Journey />} />
                     <Route path="/scenarios" element={<Scenarios />} />
                     <Route path="/reports" element={<Reports />} />
+                    <Route path="/path-back" element={<PathBack />} />
                     <Route path="/rules" element={<Rules />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/copilot" element={<Copilot />} />
