@@ -98,6 +98,11 @@ pub struct DecomposeResult {
     pub currency: String,
     pub target_total_cents: i64,
     pub baseline_monthly_cents: i64,
+    /// Monthly-equivalent gap vs the robust baseline (target monthly − median
+    /// normal). NOTE: the headline uses the MEDIAN normal while each driver's
+    /// `delta_cents` uses the MEAN normal, so drivers do NOT sum to `gap_cents`.
+    /// Narrate them as "the biggest movers", never "these add up to your
+    /// increase". A later phase reconciles the two views.
     pub gap_cents: i64,
     pub drivers: Vec<Driver>,
     pub persistence_subtotals: PersistenceSubtotals,

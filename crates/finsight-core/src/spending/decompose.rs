@@ -86,7 +86,10 @@ pub fn decompose(
     limit: usize,
 ) -> CoreResult<DecomposeResult> {
     // The target window's own per-merchant aggregates (same exclusions/normalization).
-    let target_bl = baseline::compute(conn, &target.start[..7], &target.end[..7])?;
+    // `get(..7)` (not `[..7]`) so a hand-built Window with a short start can't panic.
+    let start_ym = target.start.get(..7).unwrap_or(target.start.as_str());
+    let end_ym = target.end.get(..7).unwrap_or(target.end.as_str());
+    let target_bl = baseline::compute(conn, start_ym, end_ym)?;
     let months = target.months.max(1.0);
 
     let mut keys: HashSet<String> = target_bl.per_merchant.keys().cloned().collect();
@@ -249,5 +252,17 @@ mod tests {
 
         let elevated = decompose(&conn, &may, &base, Filter::Elevated, 2.0, 20).unwrap();
         assert!(elevated.drivers.iter().any(|d| d.display == "SAVE ON FOODS"));
+    }
+
+    #[test]
+    fn cold_start_emits_low_confidence_note() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        ins(&conn, "2026-03", -50_000, "SAVE ON FOODS  EDMONTON, AB");
+        ins(&conn, "2026-04", -50_000, "SAVE ON FOODS  EDMONTON, AB");
+        let base = baseline::compute(&conn, "2025-05", "2026-05").unwrap();
+        let may = Window::for_month("2026-05");
+        let out = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
+        assert!(out.note.to_lowercase().contains("month"), "cold-start note should fire, got: {:?}", out.note);
     }
 }

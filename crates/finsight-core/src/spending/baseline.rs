@@ -80,7 +80,6 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
     let (ey, em) = crate::spending::parse_ym(end_ym);
     let start = format!("{sy:04}-{sm:02}-01");
     let end = format!("{ey:04}-{em:02}-01");
-    let months = months_between(start_ym, end_ym).max(1);
     let rows = load_rows(conn, &start, &end)?;
 
     // Dominant currency.
@@ -109,6 +108,20 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
         *grand.entry(r.ym).or_default() += r.amount_abs;
     }
 
+    // Effective history DEPTH: from the first month that actually has spend to
+    // the window end. Empty PRE-history months (before the user's first
+    // transaction) must not deflate the per-merchant divisor or the grand
+    // median, and must not mask a genuinely thin baseline — otherwise a
+    // brand-new user gets a fabricated "$0 normal, everything is new" with no
+    // low-confidence caveat. Interior/trailing quiet months are real zeros and
+    // still count. So `months` is history depth, not window span.
+    let first_active_ym = grand.keys().min().cloned();
+    let months = match &first_active_ym {
+        Some(fa) => months_between(fa, end_ym).max(1),
+        None => 0,
+    };
+    let div = months.max(1);
+
     let per_merchant = m_month
         .into_iter()
         .map(|(key, by_month)| {
@@ -117,22 +130,24 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
             let mb = MerchantBaseline {
                 display: m_display.remove(&key).unwrap_or_else(|| key.clone()),
                 category: m_cat.remove(&key).flatten(),
-                monthly_cents: total / months,
-                txns_per_month: count as f64 / months as f64,
+                monthly_cents: total / div,
+                txns_per_month: count as f64 / div as f64,
                 active_months: by_month.len() as i64,
             };
             (key, mb)
         })
         .collect();
 
-    // Robust grand monthly: median over ALL baseline months, counting months
-    // with no spend as 0. Build the full month vector from the span, not just
-    // months present.
-    let mut monthly_totals: Vec<f64> = Vec::with_capacity(months as usize);
-    for i in 0..months {
-        let idx = sy * 12 + (sm as i32 - 1) + i as i32;
-        let ym = format!("{:04}-{:02}", idx.div_euclid(12), idx.rem_euclid(12) + 1);
-        monthly_totals.push(*grand.get(&ym).unwrap_or(&0) as f64);
+    // Robust grand monthly: median over the EFFECTIVE months only (first active
+    // month .. window end), zero-filling interior quiet months (real zeros).
+    let mut monthly_totals: Vec<f64> = Vec::new();
+    if let Some(fa) = &first_active_ym {
+        let (fy, fm) = crate::spending::parse_ym(fa);
+        for i in 0..months {
+            let idx = fy * 12 + (fm as i32 - 1) + i as i32;
+            let ym = format!("{:04}-{:02}", idx.div_euclid(12), idx.rem_euclid(12) + 1);
+            monthly_totals.push(*grand.get(&ym).unwrap_or(&0) as f64);
+        }
     }
     let grand_monthly_median_cents = stats::median(&monthly_totals).round() as i64;
 
@@ -189,5 +204,17 @@ mod tests {
         let groceries = b.per_merchant.get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB")).unwrap();
         assert_eq!(groceries.monthly_cents, 200_000);
         assert_eq!(groceries.active_months, 12);
+    }
+
+    #[test]
+    fn thin_history_uses_real_depth_not_window_span() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        // Only 2 months of spend inside a 12-month-wide window.
+        ins(&conn, "2026-03", -50_000, "SAVE ON FOODS  EDMONTON, AB");
+        ins(&conn, "2026-04", -50_000, "SAVE ON FOODS  EDMONTON, AB");
+        let b = compute(&conn, "2025-05", "2026-05").unwrap();
+        assert_eq!(b.months, 2, "history depth is 2 months, not the 12-month span");
+        assert!(b.grand_monthly_median_cents > 0, "median must not be zero-deflated by empty pre-history");
     }
 }
