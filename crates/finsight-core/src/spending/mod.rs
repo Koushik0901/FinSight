@@ -58,3 +58,48 @@ mod window_tests {
         assert_eq!(months_between("2026-05", "2026-06"), 1);
     }
 }
+
+pub mod decompose;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mechanism { New, Stopped, PriceUp, PriceDown, FrequencyUp, FrequencyDown, Mixed, Flat }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Persistence { OneOff, Recurring, Emerging, Uncertain }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Driver {
+    pub merchant_key: String,
+    pub display: String,
+    pub category: Option<String>,
+    pub delta_cents: i64,
+    pub recent_monthly_cents: i64,
+    pub base_monthly_cents: i64,
+    pub recent_txns_per_month: f64,
+    pub base_txns_per_month: f64,
+    pub mechanism: Mechanism,
+    pub persistence: Persistence,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PersistenceSubtotals {
+    pub recurring_cents: i64,
+    pub one_off_cents: i64,
+    pub emerging_cents: i64,
+    pub uncertain_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecomposeResult {
+    pub currency: String,
+    pub target_total_cents: i64,
+    pub baseline_monthly_cents: i64,
+    pub gap_cents: i64,
+    pub drivers: Vec<Driver>,
+    pub persistence_subtotals: PersistenceSubtotals,
+    pub note: String,
+}
