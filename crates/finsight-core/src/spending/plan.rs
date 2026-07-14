@@ -8,8 +8,9 @@ use crate::spending::decompose::{decompose, Filter};
 use crate::spending::{baseline, Driver, Persistence, Window};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct SpendingPlan {
     pub currency: String,
     /// The elevated month's spend (monthly-equivalent).
@@ -24,6 +25,8 @@ pub struct SpendingPlan {
     pub projected_after_levers_cents: i64,
     /// The specific recurring levers to act on, ranked by size.
     pub levers: Vec<Driver>,
+    /// The one-off drivers that lapse on their own — shown as "leave them".
+    pub self_correcting: Vec<Driver>,
     pub target_monthly_cents: Option<i64>,
     /// Present only with a target BELOW what trimming reaches: the remaining
     /// gap is structural (a floor / fixed commitments), not more trimming.
@@ -50,12 +53,23 @@ pub fn plan_spending_reduction(
 
     let levers: Vec<Driver> = d
         .drivers
-        .into_iter()
+        .iter()
         .filter(|dr| {
             dr.delta_cents > 0
                 && dr.user_verdict.is_none()
                 && matches!(dr.persistence, Persistence::Recurring | Persistence::Emerging)
         })
+        .cloned()
+        .collect();
+    let self_correcting_drivers: Vec<Driver> = d
+        .drivers
+        .iter()
+        .filter(|dr| {
+            dr.delta_cents > 0
+                && (dr.user_verdict.as_deref() == Some("one_off")
+                    || (dr.user_verdict.is_none() && dr.persistence == Persistence::OneOff))
+        })
+        .cloned()
         .collect();
 
     let (structural_gap_cents, note) = match target_monthly_cents {
@@ -81,6 +95,7 @@ pub fn plan_spending_reduction(
         recoverable_recurring_cents: recoverable,
         projected_after_levers_cents: projected_after,
         levers,
+        self_correcting: self_correcting_drivers,
         target_monthly_cents,
         structural_gap_cents,
         note,
@@ -135,6 +150,8 @@ mod tests {
         assert!(p.levers.iter().any(|d| d.display == "SAVE ON FOODS"));
         assert!(!p.levers.iter().any(|d| d.display == "FLAIR AIRLINES"), "one-offs are not levers");
         assert_eq!(p.structural_gap_cents, Some(50_000));
+        assert!(p.self_correcting.iter().any(|d| d.display == "FLAIR AIRLINES"), "the one-off flight shows in self_correcting");
+        assert!(!p.self_correcting.iter().any(|d| d.display == "SAVE ON FOODS"), "the recurring grocery is not self-correcting");
     }
 
     #[test]

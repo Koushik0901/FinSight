@@ -65,16 +65,17 @@ pub mod decompose;
 pub mod plan;
 
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Mechanism { New, Stopped, PriceUp, PriceDown, FrequencyUp, FrequencyDown, Mixed, Flat }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Persistence { OneOff, Recurring, Emerging, Uncertain }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Driver {
     pub merchant_key: String,
     pub display: String,
