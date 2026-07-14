@@ -49,13 +49,8 @@ pub fn explain_spending_change() -> Arc<dyn Tool> {
                     };
                     baseline::compute(ctx.conn, rm, &end).map_err(|e| anyhow::anyhow!(e.to_string()))?
                 }
-                _ => {
-                    let (py, pm) = finsight_core::spending::parse_ym(&period);
-                    let end = format!("{py:04}-{pm:02}"); // exclusive: the month before `period`
-                    let start_idx = py * 12 + (pm as i32 - 1) - 12;
-                    let start = format!("{:04}-{:02}", start_idx.div_euclid(12), start_idx.rem_euclid(12) + 1);
-                    baseline::compute(ctx.conn, &start, &end).map_err(|e| anyhow::anyhow!(e.to_string()))?
-                }
+                _ => finsight_core::spending::baseline::trailing(ctx.conn, &period, 12)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?,
             };
 
             let target = Window::for_month(&period);
@@ -65,6 +60,33 @@ pub fn explain_spending_change() -> Arc<dyn Tool> {
         }
     }
     Arc::new(T)
+}
+
+pub fn classify_spending_period() -> std::sync::Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "classify_spending_period"
+        }
+        fn description(&self) -> &str {
+            "Judge whether a month is normal, an episodic one-off spike, or a sustained new regime, versus the user's own trailing history. Use for 'was last month a blip or my new normal?'. `period` is YYYY-MM. Returns the class plus evidence (the month's total, the normal median, the upper band, and how many recent months were also elevated) — all precomputed; quote the *_display values, don't recompute."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type":"object","properties":{
+                "period":{"type":"string","description":"Month to judge, YYYY-MM."}
+            },"required":["period"]})
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let period = args["period"].as_str().unwrap_or("");
+            if period.len() < 7 {
+                return Ok(json!({"error":"bad_period","note":"period must be YYYY-MM"}));
+            }
+            let a = finsight_core::spending::classify::classify_spending_period(ctx.conn, period)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            Ok(serde_json::to_value(a)?)
+        }
+    }
+    std::sync::Arc::new(T)
 }
 
 #[cfg(test)]
@@ -112,5 +134,20 @@ mod tests {
         let drivers = out["drivers"].as_array().unwrap();
         assert_eq!(drivers[0]["display"], "FLAIR AIRLINES");
         assert_eq!(drivers[0]["mechanism"], "new");
+    }
+
+    #[test]
+    fn classify_tool_flags_episodic_spike() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+        }
+        ins(&conn, "2026-01", -900_000, "FLAIR AIRLINES  BURNABY, BC");
+        let mut changes = Vec::new();
+        let mut drafts = Vec::new();
+        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+        let out = classify_spending_period().execute(&mut ctx, json!({"period":"2026-01"})).unwrap();
+        assert_eq!(out["class"], "episodic_spike");
     }
 }
