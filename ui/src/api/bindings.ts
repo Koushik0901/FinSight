@@ -560,6 +560,22 @@ async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getSpendingPathBack(period: string | null, targetMonthlyCents: number | null) : Promise<Result<PathBackView | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_spending_path_back", { period, targetMonthlyCents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setSpendingAnnotation(merchantKey: string, verdict: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_spending_annotation", { merchantKey, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * `get_financial_metrics`, optionally scoped to one household member. A `None`
  * member returns the whole-household numbers (unchanged); `Some(id)` weights
@@ -1790,6 +1806,12 @@ startupSummary: string; backups: BackupInfo[];
 pendingRestore: boolean }
 export type DebtPayoffResult = { strategy: string; extraMonthlyCents: number; totalInterestCents: number; totalMonths: number; payoffDateLabel: string; summaries: DebtPayoffSummary[] }
 export type DebtPayoffSummary = { accountId: string; accountName: string; initialBalanceCents: number; totalInterestCents: number; payoffMonthLabel: string; monthsToPayoff: number }
+export type Driver = { merchant_key: string; display: string; category: string | null; delta_cents: number; recent_monthly_cents: number; base_monthly_cents: number; recent_txns_per_month: number; base_txns_per_month: number; mechanism: Mechanism; persistence: Persistence; 
+/**
+ * A sticky user verdict (one_off / expected / investment) if the user has
+ * annotated this merchant; overrides how it counts toward the "levers".
+ */
+user_verdict: string | null }
 export type EditConversationMessageInput = { conversationId: string; messageId: string; content: string }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
@@ -1883,6 +1905,7 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
+export type Mechanism = "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat"
 /**
  * One row of the "who owns what" household net-worth split. `member_id` None is
  * the unassigned residual — value owned by no recorded member, i.e. by people
@@ -1946,6 +1969,26 @@ export type OnboardingState = { account_count: number; category_count: number; c
  * an account or asset. `share_bps` None ⇒ equal split with the other owners.
  */
 export type OwnerShare = { memberId: string; shareBps: number | null }
+/**
+ * Everything the Path Back screen needs, in one read.
+ */
+export type PathBackView = { period: string; assessment: PeriodAssessment; plan: SpendingPlan }
+export type PeriodAssessment = { class: PeriodClass; period_total_cents: number; baseline_monthly_cents: number; 
+/**
+ * median + BAND_K robust sigmas — spend above this is "elevated".
+ */
+upper_band_cents: number; 
+/**
+ * How many of the 3 months before `period` were also above the band.
+ */
+elevated_recent_months: number; baseline_months: number; 
+/**
+ * True when the ledger spans multiple currencies — the totals mix them, so
+ * treat the verdict as approximate (parity with decompose's warning).
+ */
+mixed_currency: boolean; note: string }
+export type PeriodClass = "normal" | "episodic_spike" | "regime_shift" | "insufficient_history"
+export type Persistence = "one_off" | "recurring" | "emerging" | "uncertain"
 export type PlanAssignment = { categoryId: string; amountCents: number }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
@@ -2029,6 +2072,40 @@ export type SimpleFinPurgeSummary = { accountsDeleted: number; transactionsDelet
 export type SimpleFinStatus = { configured: boolean }
 export type SimpleFinSyncSettings = { backgroundSyncEnabled: boolean; backgroundSyncIntervalMinutes: number }
 export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }
+export type SpendingPlan = { currency: string; 
+/**
+ * The elevated month's spend (monthly-equivalent).
+ */
+recent_monthly_cents: number; 
+/**
+ * Your robust normal (median of the trailing months).
+ */
+baseline_monthly_cents: number; 
+/**
+ * One-off drivers that fall off on their own — no action needed.
+ */
+self_correcting_cents: number; 
+/**
+ * Recurring/emerging drivers you could trim — the levers.
+ */
+recoverable_recurring_cents: number; 
+/**
+ * Where you'd land if the one-offs lapse AND you trim every lever.
+ */
+projected_after_levers_cents: number; 
+/**
+ * The specific recurring levers to act on, ranked by size.
+ */
+levers: Driver[]; 
+/**
+ * The one-off drivers that lapse on their own — shown as "leave them".
+ */
+self_correcting: Driver[]; target_monthly_cents: number | null; 
+/**
+ * Present only with a target BELOW what trimming reaches: the remaining
+ * gap is structural (a floor / fixed commitments), not more trimming.
+ */
+structural_gap_cents: number | null; note: string }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string; color: string }
 export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }

@@ -22,4 +22,5 @@ pub mod reports;
 pub mod scenarios;
 pub mod settings;
 pub mod simplefin;
+pub mod spending;
 pub mod transactions;

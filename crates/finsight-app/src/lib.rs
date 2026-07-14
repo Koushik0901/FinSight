@@ -229,6 +229,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::reports::get_savings_rate_history,
         commands::reports::create_monthly_review,
         commands::reports::list_monthly_reviews,
+        commands::spending::get_spending_path_back,
+        commands::spending::set_spending_annotation,
         commands::metrics::get_financial_metrics,
         commands::metrics::household_net_worth_breakdown,
         commands::metrics::set_financial_assumptions,
