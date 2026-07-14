@@ -61,7 +61,7 @@ function DriverRow({
           (driver.user_verdict ? (
             <>
               <span className="muted" style={{ fontSize: 12 }}>
-                · {driver.user_verdict === "expected" ? "kept" : "one-time"}
+                · {driver.user_verdict === "one_off" ? "one-time" : "kept"}
               </span>
               <Button size="sm" variant="ghost" onClick={() => onAnnotate?.("reset")} loading={pending}>
                 Undo
