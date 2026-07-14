@@ -117,6 +117,11 @@ pub fn annotate_spending_driver() -> std::sync::Arc<dyn Tool> {
                 finsight_core::spending::annotate::clear_annotation(ctx.conn, key)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             } else if finsight_core::spending::annotate::VERDICTS.contains(&verdict) {
+                let known = finsight_core::spending::annotate::known_driver_keys(ctx.conn)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                if !known.contains(key) {
+                    return Ok(json!({"saved": false, "error": "unknown_merchant_key", "note": "No spending driver matches that merchant_key. Pass the exact merchant_key from explain_spending_change output."}));
+                }
                 finsight_core::spending::annotate::set_annotation(ctx.conn, key, verdict, note)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             } else {
@@ -198,19 +203,35 @@ mod tests {
     fn annotate_tool_writes_a_sticky_verdict() {
         let (_d, db) = fresh();
         let mut conn = db.get().unwrap();
+        ins(&conn, "2026-01", -50_000, "FLAIR AIRLINES  BURNABY, BC");
+        let key = finsight_core::merchant::canonical_merchant_key("FLAIR AIRLINES  BURNABY, BC");
         let mut changes = Vec::new();
         let mut drafts = Vec::new();
         {
             let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
             let out = annotate_spending_driver()
-                .execute(&mut ctx, json!({"merchant_key":"flair airlines","verdict":"one_off"}))
+                .execute(&mut ctx, json!({"merchant_key": key, "verdict": "one_off"}))
                 .unwrap();
             assert_eq!(out["saved"], true);
         }
         assert_eq!(
-            finsight_core::spending::annotate::annotations(&conn).unwrap().get("flair airlines").unwrap(),
+            finsight_core::spending::annotate::annotations(&conn).unwrap().get(&key).unwrap(),
             "one_off"
         );
         assert_eq!(changes.len(), 1);
+    }
+
+    #[test]
+    fn annotate_tool_rejects_unknown_merchant_key() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let mut changes = Vec::new();
+        let mut drafts = Vec::new();
+        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+        let out = annotate_spending_driver()
+            .execute(&mut ctx, json!({"merchant_key": "nonexistent vendor", "verdict": "one_off"}))
+            .unwrap();
+        assert_eq!(out["saved"], false);
+        assert_eq!(out["error"], "unknown_merchant_key");
     }
 }

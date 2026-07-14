@@ -5,7 +5,7 @@
 -- the baseline/decompose use). Mirrors the transfer_override sticky-verdict idea.
 CREATE TABLE spending_driver_annotations (
     merchant_key TEXT PRIMARY KEY,
-    verdict      TEXT NOT NULL,          -- 'one_off' | 'expected' | 'investment'
+    verdict      TEXT NOT NULL CHECK (verdict IN ('one_off','expected','investment')),
     note         TEXT,
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))

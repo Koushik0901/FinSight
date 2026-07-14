@@ -30,6 +30,9 @@ pub struct PeriodAssessment {
     /// How many of the 3 months before `period` were also above the band.
     pub elevated_recent_months: i64,
     pub baseline_months: i64,
+    /// True when the ledger spans multiple currencies — the totals mix them, so
+    /// treat the verdict as approximate (parity with decompose's warning).
+    pub mixed_currency: bool,
     pub note: String,
 }
 
@@ -49,6 +52,7 @@ fn month_back(period_ym: &str, n: i64) -> String {
 
 pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResult<PeriodAssessment> {
     let base = baseline::trailing(conn, period_ym, 12)?;
+    let mixed = base.mixed_currency;
     let period_total = baseline::month_total(conn, period_ym)?;
     let band = upper_band(base.grand_monthly_median_cents, base.grand_monthly_mad_cents);
 
@@ -60,6 +64,7 @@ pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResul
             upper_band_cents: band,
             elevated_recent_months: 0,
             baseline_months: base.months,
+            mixed_currency: mixed,
             note: format!(
                 "Only {} month(s) of history — can't yet judge normal vs. spike vs. regime.",
                 base.months
@@ -84,12 +89,15 @@ pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResul
         PeriodClass::EpisodicSpike
     };
 
-    let note = match class {
+    let mut note = match class {
         PeriodClass::Normal => "Within your normal range.".to_string(),
         PeriodClass::EpisodicSpike => "A one-month spike — surrounding months are within your normal band.".to_string(),
         PeriodClass::RegimeShift => "A sustained step up — recent months are also elevated, not a one-off.".to_string(),
         PeriodClass::InsufficientHistory => String::new(),
     };
+    if mixed {
+        note.push_str(" Multiple currencies present — totals mix them; treat as approximate.");
+    }
 
     Ok(PeriodAssessment {
         class,
@@ -98,6 +106,7 @@ pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResul
         upper_band_cents: band,
         elevated_recent_months: elevated_recent,
         baseline_months: base.months,
+        mixed_currency: mixed,
         note,
     })
 }

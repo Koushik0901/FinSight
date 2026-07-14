@@ -115,7 +115,11 @@ pub fn decompose(
             .max(b.map(|m| m.active_months).unwrap_or(0));
         let total_txns = ((recent_pm + base_pm) * months).round() as i64;
         let target_txns = (recent_pm * months).round() as i64;
-        let persistence = classify_persistence(mechanism, active, total_txns, target_txns);
+        let computed = classify_persistence(mechanism, active, total_txns, target_txns);
+        let user_verdict = verdicts.get(key).cloned();
+        // A sticky verdict overrides the computed persistence (spec §6): an
+        // accepted driver is never a recurring lever — in the field AND the total.
+        let persistence = if user_verdict.is_some() { crate::spending::Persistence::OneOff } else { computed };
 
         let driver = Driver {
             merchant_key: key.clone(),
@@ -130,7 +134,7 @@ pub fn decompose(
             base_txns_per_month: base_pm,
             mechanism,
             persistence,
-            user_verdict: verdicts.get(key).cloned(),
+            user_verdict,
         };
         if passes(&driver, filter, min_ratio) {
             drivers.push(driver);
@@ -143,10 +147,7 @@ pub fn decompose(
     // "how much of the increase will recur" reflects every driver.
     let mut subtotals = PersistenceSubtotals::default();
     for d in drivers.iter().filter(|d| d.delta_cents > 0) {
-        // A user-annotated driver is accepted — it never counts as a recurring
-        // "lever"; fold it into one-off so the levers total drops it.
-        let effective = if d.user_verdict.is_some() { Persistence::OneOff } else { d.persistence };
-        match effective {
+        match d.persistence {
             Persistence::Recurring => subtotals.recurring_cents += d.delta_cents,
             Persistence::OneOff => subtotals.one_off_cents += d.delta_cents,
             Persistence::Emerging => subtotals.emerging_cents += d.delta_cents,
@@ -290,6 +291,7 @@ mod tests {
         let after = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
         let amz = after.drivers.iter().find(|d| d.display == "AMAZON").unwrap();
         assert_eq!(amz.user_verdict.as_deref(), Some("expected"));
+        assert_eq!(amz.persistence, Persistence::OneOff, "annotation overrides the driver's persistence too");
         assert_eq!(after.persistence_subtotals.recurring_cents, 0, "annotated driver leaves the levers");
     }
 }

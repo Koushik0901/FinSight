@@ -3,8 +3,9 @@
 //! decompose honours it so an accepted driver drops out of the "levers".
 
 use crate::error::CoreResult;
+use crate::merchant::canonical_merchant_key;
 use rusqlite::Connection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The verdicts a user can stick on a driver.
 pub const VERDICTS: [&str; 3] = ["one_off", "expected", "investment"];
@@ -37,6 +38,24 @@ pub fn annotations(conn: &Connection) -> CoreResult<HashMap<String, String>> {
         .filter_map(|r| r.ok())
         .collect();
     Ok(map)
+}
+
+/// Canonical merchant keys present in the (non-transfer, non-investment) ledger.
+/// Used to validate an annotation target exists before writing, so a paraphrased
+/// key can't create a dead verdict.
+pub fn known_driver_keys(conn: &Connection) -> CoreResult<HashSet<String>> {
+    let pred = crate::metrics::non_investment_txn_predicate("t");
+    let sql = format!(
+        "SELECT DISTINCT t.merchant_raw FROM transactions t \
+         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred}"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let set = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .map(|raw| canonical_merchant_key(&raw))
+        .collect();
+    Ok(set)
 }
 
 #[cfg(test)]
