@@ -447,10 +447,38 @@ Transfer legs (ground truth): Amex payments 49×2; CIBC internet-transfer 233;
 Tangerine 29; plus e-transfers. Payroll (Infoblox) starts 2026-06-15 (2
 deposits, $7,029.45); before that EI $1,186 biweekly.
 
-## Appendix B — what a future UI-access pass should spot-check
+## Appendix B — ✅ DONE (2026-07-13): real-app UI validation pass
 
-Today (income/expense/savings vs probe), Reports month/quarter/year totals,
-Recurring screen contents vs `detect_recurring`, Budget To-Budget row vs month
-totals, anomaly cards in Insights, Copilot answer to "what's my savings rate"
-before/after P0-1, onboarding first-run with an empty DB, and Delete-All → all
-screens return to intentional empty states.
+Ran unattended against the ACTUAL compiled Tauri binary + a real encrypted
+SQLCipher DB — not a mock, not just the probe. Method: `tauri:dev` launched
+with an isolated `--config` (`{"identifier": "com.finsight.uiprobe"}` →
+separate app-data dir, zero risk to the real DB) and
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`, driven
+over CDP (`window.__TAURI_INTERNALS__.invoke` for direct backend calls +
+native DOM events for clicking). No computer-use/OS-dialog approval needed.
+
+**Verified working, real data:** first-run onboarding on an empty DB → manual
+account/transaction creation via real IPC → Today's derived numbers (net
+worth, liquid, "spent so far") update correctly and consistently → the
+(previously-missing) `/transactions` route renders with all five filter chips
+→ marking a transaction a transfer removes it from Today's spending and from
+the Inbox's uncategorized count, exactly per the F0/metrics-layer invariants →
+imported the REAL `cibc-savings-all-time-statements.csv` (220 rows, matching
+the Appendix A ground truth) and confirmed `builtinCategorized`/
+`transfersPaired` populate correctly, own-account transfers get flagged while
+ambiguous person e-transfers correctly stay `Uncategorized`, and the
+"Possible transfers" surface lists exactly the ambiguous rows (swathi ×11,
+matching the earlier probe finding) → the bulk-verdict "Also mark N more"
+offer fires correctly on real data → Delete-All → every screen checked
+(Today, `/transactions`) returns to its intentional empty state.
+
+**Found and fixed a real bug this pass alone would catch** (380+ passing unit
+tests did not): opening a transaction from a filtered view, then marking it a
+transfer, silently flipped the still-open drawer to a blank "Add transaction"
+form once the row left the active filter's refetched list — a unit-test-proof
+staleness bug in `AccountTransactions.tsx`/`TransactionDrawer.tsx`. Fixed
+(commit `08bd0a7`) with a last-known-transaction cache plus a drawer-local
+display-state updated from each mutation's own return value. This class of
+bug (filtered-list + open-drawer) can recur for other filter/drawer pairings —
+worth a spot-check whenever a new filter is added to a screen with an edit
+drawer.
