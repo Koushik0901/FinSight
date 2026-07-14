@@ -89,6 +89,49 @@ pub fn classify_spending_period() -> std::sync::Arc<dyn Tool> {
     std::sync::Arc::new(T)
 }
 
+pub fn annotate_spending_driver() -> std::sync::Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "annotate_spending_driver"
+        }
+        fn description(&self) -> &str {
+            "Remember the user's verdict on a spending driver so it stops showing as a recurring lever everywhere. Pass the `merchant_key` exactly as returned by explain_spending_change. `verdict`: one_off (a one-time thing), expected (a known/accepted cost), investment (spending the user considers an investment), or reset (forget a prior verdict). This WRITES immediately and is remembered across sessions. Only call it when the user has actually told you their verdict."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type":"object","properties":{
+                "merchant_key":{"type":"string","description":"canonical merchant key from explain_spending_change output"},
+                "verdict":{"type":"string","enum":["one_off","expected","investment","reset"]},
+                "note":{"type":"string"}
+            },"required":["merchant_key","verdict"]})
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            use crate::reasoning::messages::AgentChange;
+            let key = args["merchant_key"].as_str().unwrap_or("").trim();
+            let verdict = args["verdict"].as_str().unwrap_or("");
+            if key.is_empty() {
+                return Ok(json!({"error":"missing_merchant_key"}));
+            }
+            let note = args["note"].as_str();
+            if verdict == "reset" {
+                finsight_core::spending::annotate::clear_annotation(ctx.conn, key)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            } else if finsight_core::spending::annotate::VERDICTS.contains(&verdict) {
+                finsight_core::spending::annotate::set_annotation(ctx.conn, key, verdict, note)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            } else {
+                return Ok(json!({"error":"bad_verdict","note":"verdict must be one_off, expected, investment, or reset"}));
+            }
+            ctx.changes.push(AgentChange {
+                kind: "spending_annotation".to_string(),
+                description: format!("Marked '{key}' as {verdict}"),
+            });
+            Ok(json!({"saved": true, "merchant_key": key, "verdict": verdict}))
+        }
+    }
+    std::sync::Arc::new(T)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +192,25 @@ mod tests {
         let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
         let out = classify_spending_period().execute(&mut ctx, json!({"period":"2026-01"})).unwrap();
         assert_eq!(out["class"], "episodic_spike");
+    }
+
+    #[test]
+    fn annotate_tool_writes_a_sticky_verdict() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let mut changes = Vec::new();
+        let mut drafts = Vec::new();
+        {
+            let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+            let out = annotate_spending_driver()
+                .execute(&mut ctx, json!({"merchant_key":"flair airlines","verdict":"one_off"}))
+                .unwrap();
+            assert_eq!(out["saved"], true);
+        }
+        assert_eq!(
+            finsight_core::spending::annotate::annotations(&conn).unwrap().get("flair airlines").unwrap(),
+            "one_off"
+        );
+        assert_eq!(changes.len(), 1);
     }
 }
