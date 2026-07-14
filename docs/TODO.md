@@ -20,14 +20,19 @@ live gap list.** For what is actually incomplete, see the product audit:
 Audit findings resolved (git log, commits tagged `P0-*`/`P1-*`/`P2-*` +
 feat(transfers)/fix(investments)/P3): **all P0–P3 items in the product audit
 and all items in the completeness/cross-user-ownership roadmap are done** as
-of 2026-07-11 — including cross-user ownership shares (V042–V045), the sticky
+of 2026-07-13 — including cross-user ownership shares (V042–V045), the sticky
 transfer verdict + review surface + bulk counterparty verdicts (V046),
 investment-account correctness (market value verbatim; brokerage activity
 excluded from every cashflow/nudge surface), the previously-missing
-`/transactions` route the Inbox CTAs deep-link to, and the P3 polish tier
+`/transactions` route the Inbox CTAs deep-link to, the P3 polish tier
 (startup/import cascade transparency, merchant display naming, currency
-creation defaults, history housekeeping). The two audit docs in `docs/audits/`
-carry per-item status and acceptance evidence; the audit probe
+creation defaults, history housekeeping), a real-app UI validation pass
+against the compiled Tauri binary (found + fixed a live drawer-staleness bug
+unit tests couldn't catch), and per-item resolution evidence now inline in
+`2026-07-10-finsight-product-audit.md` itself (every P0/P1/P2/P3 heading
+carries its own resolving commit hash and summary, not just this pointer).
+The two audit docs in `docs/audits/` carry per-item status and acceptance
+evidence; the audit probe
 (`crates/finsight-app/tests/audit_probe.rs`) is the rerunnable acceptance
 harness on `samples/`.
 

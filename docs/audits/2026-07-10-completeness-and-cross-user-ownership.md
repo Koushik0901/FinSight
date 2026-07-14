@@ -1,5 +1,21 @@
 # FinSight Completeness & Cross-User Ownership Roadmap — 2026-07-10 (v2)
 
+> **STATUS (2026-07-13): fully resolved.** Part 1 (cross-user ownership, V042–V045)
+> is complete including both optional refinements. Part 2's F0–F5 are all
+> addressed: F0/F1/F3/F5 with concrete new code (this session added the sticky
+> transfer-verdict review surface + bulk counterparty verdicts + investment
+> market-value/cashflow-exclusion fixes), F2/F4 with an explicit, reasoned
+> "no further generic fix" call (F2: more hardcoded merchant keywords would be
+> sample-fitting, not a real gap — the long tail needs the AI pass; F4: heals
+> from F0 + the P2-6 dismiss loop, and the remaining top anomalies are real
+> large spend, not a detection bug). See Part 2's inline STATUS block below and
+> the sibling audit
+> [`2026-07-10-finsight-product-audit.md`](2026-07-10-finsight-product-audit.md)
+> (its own 15 P0–P2 findings + 6 P3 items, also all resolved) for the full
+> picture. Real-app validation (not just the samples/ probe) ran 2026-07-13
+> against the actual compiled Tauri binary via an isolated app-data dir + CDP —
+> see that document's Appendix B.
+
 **Mandate (user goal):** make FinSight a complete, production-quality personal
 finance app the user can use daily *and* hand to a girlfriend/family members who
 each run their own private local app. Audit the whole product for bugs, weak
