@@ -24,7 +24,7 @@ interface CmdItem {
 const NAV_ITEMS: CmdItem[] = [
   { kind: "nav", label: "Go to Today", path: "/", Icon: I.Today },
   { kind: "nav", label: "Go to Copilot", path: "/copilot", Icon: I.Brain },
-  { kind: "nav", label: "Go to Insights", path: "/insights", Icon: I.Sparkle },
+  { kind: "nav", label: "Go to Inbox", path: "/inbox", Icon: I.Bell },
   { kind: "nav", label: "Go to Accounts", path: "/accounts", Icon: I.Wallet },
   { kind: "nav", label: "Go to Budget", path: "/budget", Icon: I.Lego },
   { kind: "nav", label: "Go to Categories", path: "/categories", Icon: I.Grid },

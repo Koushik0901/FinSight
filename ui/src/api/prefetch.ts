@@ -87,7 +87,6 @@ const ROUTE_PREFETCH: Record<string, readonly Descriptor[]> = {
   "/categories": [D.categoriesWithSpending],
   "/budget": [D.categoriesWithSpending, D.goals, D.spendingBreakdown],
   "/recurring": [D.recurring],
-  "/insights": [D.healthScore],
   "/goals": [D.goals],
   "/inbox": [D.needsReview],
 };

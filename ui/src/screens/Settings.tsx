@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
@@ -12,6 +12,7 @@ import {
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
 import { useFinancialMetrics, useSetFinancialAssumptions } from "../api/hooks/metrics";
+import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 import { useDataHealth, useCreateBackup, useStageRestore, useCancelRestore } from "../api/hooks/dataHealth";
 import {
   useSimpleFinStatus,
@@ -224,6 +225,69 @@ function DataBackupsSection() {
   );
 }
 
+function AgentMemoryPanel() {
+  const { data: memory = [] } = useAgentMemory();
+  const forgetMemory = useForgetAgentMemory();
+  const [pendingForget, setPendingForget] = useState<Set<string>>(new Set());
+  const forgetTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => {
+    const timers = forgetTimers.current;
+    return () => { timers.forEach((t) => clearTimeout(t)); timers.clear(); };
+  }, []);
+
+  // Forgetting is delayed 5s so the toast Undo can cancel it before the write.
+  const handleForget = (m: { id: string; description: string }) => {
+    setPendingForget((s) => new Set([...s, m.id]));
+    const timer = setTimeout(async () => {
+      forgetTimers.current.delete(m.id);
+      try {
+        await forgetMemory.mutateAsync(m.id);
+      } catch {
+        toast.error("Could not forget that memory");
+      }
+      setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+    }, 5000);
+    forgetTimers.current.set(m.id, timer);
+    toast("Memory forgotten", {
+      description: m.description.slice(0, 60),
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const t = forgetTimers.current.get(m.id);
+          if (t) { clearTimeout(t); forgetTimers.current.delete(m.id); }
+          setPendingForget((s) => { const n = new Set(s); n.delete(m.id); return n; });
+        },
+      },
+    });
+  };
+
+  const visibleMemory = memory.filter((m) => !pendingForget.has(m.id));
+
+  return (
+    <div className="s-row" style={{ alignItems: "flex-start" }}>
+      <div>
+        <div className="label">What the agent has learned</div>
+        <div className="desc">Corrections and preferences the agent remembers about your finances. Forget any that are wrong or stale.</div>
+      </div>
+      <div style={{ gridColumn: "2 / -1" }}>
+        {visibleMemory.length === 0 ? (
+          <div className="muted" style={{ fontSize: 13 }}>Nothing remembered yet — the agent learns as you correct categories and confirm patterns.</div>
+        ) : (
+          <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none", width: "100%" }}>
+            {visibleMemory.map((m) => (
+              <li key={m.id} className="row-md" style={{ padding: "8px 0", borderBottom: "1px solid var(--hairline)", alignItems: "center" }}>
+                <div className="grow" style={{ fontSize: 13.5, minWidth: 0 }}>{m.description}</div>
+                <button className="btn ghost sm" type="button" onClick={() => handleForget(m)} aria-label={`Forget: ${m.description}`}>Forget</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Section({ id, title, description, children }: { id: string; title: string; description: string; children: React.ReactNode }) {
   return (
     <section id={`sec-${id}`}>
@@ -431,8 +495,9 @@ export default function Settings() {
             </div>
           </Section>
 
-          <Section id="agent" title="Agent" description="Control what the agent does automatically.">
+          <Section id="agent" title="Agent" description="Control what the agent does automatically, and what it remembers.">
             <div className="s-row"><div><div className="label">Auto-categorize new transactions</div><div className="desc">Automatically categorize transactions after each import or sync, using your configured AI provider.</div></div><div className="muted">{autoCategorizeEnabled ? "Currently on" : "Currently off"}</div><Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} /></div>
+            <AgentMemoryPanel />
             <div className="card tight" style={{ marginTop: 12 }}>
               <div className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
                 <span aria-hidden style={{ fontSize: 15 }}>🔒</span>

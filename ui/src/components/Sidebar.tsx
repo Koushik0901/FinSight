@@ -19,7 +19,7 @@ interface NavEntry {
 
 const NAV_MAIN: NavEntry[] = [
   { id: "today", path: "/", label: "Today", Icon: I.Today },
-  { id: "insights", path: "/insights", label: "Insights", Icon: I.Sparkle },
+  { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
   { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
   { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
   { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
@@ -87,7 +87,7 @@ export function Sidebar({ onOpenCmd }: Props) {
   };
 
   const renderPulse = (id: string) => {
-    if (id === "insights" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
+    if (id === "inbox" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
     if (id === "rules" && needsReview > 0) return <span className="pulse" />;
     return null;
   };

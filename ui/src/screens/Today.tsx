@@ -259,7 +259,7 @@ export default function Today() {
           <div className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</div>
           <p className="muted" style={{ marginTop: 0, lineHeight: 1.65, fontSize: 14 }}>{briefingText}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-            <button className="btn sm" type="button" onClick={() => navigate("/insights")}>Read full insights</button>
+            <button className="btn sm" type="button" onClick={() => navigate("/inbox")}>See what needs attention</button>
             <CopilotNudge prompt="Give me the short version of what changed financially this week and what I should do next." label="Ask follow-up ⌘K" variant="accent" />
           </div>
         </div>

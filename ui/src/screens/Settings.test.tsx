@@ -56,6 +56,10 @@ vi.mock("../api/hooks/metrics", () => ({
   useFinancialMetrics: vi.fn(() => ({ data: { targetSavingsRatePct: 20, emergencyFundTargetMonths: 6, expectedAnnualReturnPct: 7 } })),
   useSetFinancialAssumptions: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
+vi.mock("../api/hooks/agentMemory", () => ({
+  useAgentMemory: vi.fn(() => ({ data: [{ id: "m1", kind: "correction", description: "Amazon is Shopping, not Uncategorized", merchantKey: "amazon", createdAt: "2026-01-01" }] })),
+  useForgetAgentMemory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+}));
 vi.mock("../api/hooks/simplefin", () => ({
   useSimpleFinStatus: vi.fn(() => ({ data: { configured: false } })),
   useDisconnectSimpleFin: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
@@ -92,6 +96,15 @@ describe("Settings — Agent section", () => {
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.getByText("Auto-categorize new transactions")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Agent" })).toBeInTheDocument();
+  });
+
+  it("shows agent memory (relocated from Insights) and forgets on click", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByText("What the agent has learned")).toBeInTheDocument();
+    expect(screen.getByText(/Amazon is Shopping/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Forget: Amazon is Shopping/ }));
+    // Optimistically removed from the list immediately (before the delayed write).
+    expect(screen.queryByText(/Amazon is Shopping/)).toBeNull();
   });
 });
 
