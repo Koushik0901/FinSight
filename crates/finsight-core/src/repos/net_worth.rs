@@ -389,6 +389,7 @@ mod tests {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         };
         // Two months of activity in the past; current derived balance = −150.
         transactions::insert(&mut conn, mk(-100_00, "2024-01-10")).unwrap();
@@ -437,6 +438,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();

@@ -12,6 +12,7 @@ import TransactionFilter from "../components/TransactionFilter";
 import TransactionDrawer from "../components/TransactionDrawer";
 import ImportMappingDialog from "../components/ImportMappingDialog";
 import SetBalanceDialog from "../components/SetBalanceDialog";
+import HoldingsCard from "../components/HoldingsCard";
 import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
@@ -208,6 +209,8 @@ export default function AccountTransactions() {
         </div>
       </div>
 
+      {account.type === "Investment" && <HoldingsCard account={account} />}
+
       <div style={{ marginTop: 14 }}>
         <TransactionFilter
           value={{ ...filterValue, search: search || null }}
@@ -248,6 +251,13 @@ export default function AccountTransactions() {
                           <div>
                             <div className="row row-sm wrap" style={{ alignItems: "center" }}>
                               <span>{merchantName}</span>
+                              {transaction.activity && (
+                                <span className="chip">
+                                  {transaction.activity.activityType === "Trade"
+                                    ? (transaction.activity.activitySubType ?? "Trade")
+                                    : transaction.activity.activityType}
+                                </span>
+                              )}
                               {transaction.ai_confidence !== null && transaction.ai_confidence < 0.6 && <span className="chip warning">Needs review</span>}
                               {transaction.is_split && <span className="chip">Split</span>}
                               {transaction.is_reimbursable && <span className="chip accent">Reimbursable</span>}
@@ -257,7 +267,7 @@ export default function AccountTransactions() {
                         </div>
                       </td>
                       <td><div className="row row-sm">{transaction.is_transfer ? (
-                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">{transaction.transfer_peer_account_name ? `Transfer ${transaction.amount_cents < 0 ? "→" : "←"} ${transaction.transfer_peer_account_name}` : "Transfer"}</span></>
+                        <><span className="cswatch" style={{ background: "var(--ink-mute)" }} /><span className="muted">{transaction.activity?.activityType === "Trade" ? "Trade" : transaction.transfer_peer_account_name ? `Transfer ${transaction.amount_cents < 0 ? "→" : "←"} ${transaction.transfer_peer_account_name}` : "Transfer"}</span></>
                       ) : (
                         <><span className="cswatch" style={{ background: transaction.category_color || category?.color || "var(--ink-faint)" }} /><span>{transaction.category_label || category?.label || "Uncategorized"}</span></>
                       )}</div></td>

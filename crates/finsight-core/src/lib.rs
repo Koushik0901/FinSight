@@ -7,6 +7,7 @@ pub mod error;
 pub mod merchant;
 pub mod recurring;
 pub mod forecast;
+pub mod investments;
 pub mod keychain;
 pub mod metrics;
 pub mod models;

@@ -679,6 +679,10 @@ fn finance_snapshot_block_matches_the_shared_metrics_layer() {
     assert!(block.contains("CURRENT SNAPSHOT (authoritative"), "block: {block}");
     assert!(block.contains(&format!("Liquid cash: {}", m(bal.liquid_cents))), "block: {block}");
     assert!(
+        block.contains(&format!("Invested balance: {}", m(bal.invested_cents))),
+        "block: {block}"
+    );
+    assert!(
         block.contains(&format!("Avg monthly income (rolling 90d): {}", m(roll.avg_monthly_income_cents))),
         "block: {block}"
     );

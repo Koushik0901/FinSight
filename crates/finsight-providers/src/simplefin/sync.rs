@@ -211,6 +211,7 @@ fn commit_simplefin_import_inner(
                 external_tx_id: None,
                 external_account_id: Some(pending.simplefin_id.clone()),
                 category_id: None,
+                activity: None,
             },
         )
         .map_err(|e| ProviderError::Core(e.into()))?;
@@ -366,6 +367,7 @@ fn map_transaction(
         external_tx_id: Some(tx.id.clone()),
         external_account_id: None,
         category_id: None,
+        activity: None,
     })
 }
 
@@ -520,6 +522,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();

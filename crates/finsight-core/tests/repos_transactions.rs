@@ -1,5 +1,7 @@
 use chrono::Utc;
-use finsight_core::models::{AccountType, NewAccount, NewTransaction, TransactionStatus};
+use finsight_core::models::{
+    AccountType, NewAccount, NewTransaction, TransactionStatus, TxnActivity,
+};
 use finsight_core::repos::{accounts, transactions};
 use finsight_core::Db;
 use tempfile::tempdir;
@@ -73,6 +75,7 @@ fn insert_and_list_returns_descending_by_posted_at() {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         },
     )
     .unwrap();
@@ -92,6 +95,7 @@ fn insert_and_list_returns_descending_by_posted_at() {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         },
     )
     .unwrap();
@@ -201,6 +205,7 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         },
     )
     .unwrap();
@@ -220,6 +225,7 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         },
     )
     .unwrap();
@@ -296,6 +302,7 @@ fn list_respects_limit() {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();
@@ -311,4 +318,126 @@ fn list_respects_limit() {
     )
     .unwrap();
     assert_eq!(limited.len(), 2);
+}
+
+fn seed_investment_account(conn: &mut rusqlite::Connection) -> String {
+    accounts::insert(
+        conn,
+        NewAccount {
+            owner: "joint".into(),
+            bank: "Wealthsimple".into(),
+            r#type: AccountType::Investment,
+            name: "TFSA".into(),
+            last4: None,
+            currency: "CAD".into(),
+            color: "#fff".into(),
+            opening_balance_cents: 0,
+            source: "manual".into(),
+            liquidity_type: "invested".into(),
+            emergency_fund_eligible: false,
+            goal_earmark: None,
+            apy_pct: None,
+            simplefin_account_id: None,
+            nickname: None,
+            connection_id: None,
+            institution_id: None,
+            external_account_id: None,
+            official_name: None,
+            mask: None,
+            subtype: None,
+            account_group: "investments".into(),
+            available_balance_cents: None,
+            balance_date: None,
+            extra_json: None,
+            raw_json: None,
+            import_pending: false,
+            apr_pct: None,
+            min_payment_cents: None,
+            payoff_date: None,
+            limit_cents: None,
+            original_balance_cents: None,
+            started_at: None,
+        },
+    )
+    .unwrap()
+    .id
+}
+
+fn mk_activity_txn(account_id: &str, activity: Option<TxnActivity>) -> NewTransaction {
+    NewTransaction {
+        account_id: account_id.to_string(),
+        posted_at: Utc::now(),
+        amount_cents: -12_260,
+        merchant_raw: "Buy ACME".into(),
+        category_id: None,
+        notes: None,
+        status: TransactionStatus::Cleared,
+        imported_id: None,
+        source: Some("csv".into()),
+        raw_synced_data: None,
+        pending: false,
+        external_tx_id: None,
+        external_account_id: None,
+        activity,
+    }
+}
+
+#[test]
+fn insert_with_activity_persists_and_hydrates_and_flags_transfer() {
+    let (db, _dir) = open();
+    let mut conn = db.get().unwrap();
+    let acct = seed_investment_account(&mut conn);
+
+    let trade = TxnActivity {
+        activity_type: "Trade".into(),
+        activity_sub_type: Some("BUY".into()),
+        symbol: Some("ACME".into()),
+        security_name: Some("Acme Corp".into()),
+        quantity: Some(8.1234),
+        unit_price: Some(15.0876),
+    };
+    let inserted =
+        transactions::insert(&mut conn, mk_activity_txn(&acct, Some(trade.clone()))).unwrap();
+    // Trade rows are internal cash↔security moves: flagged at insert time.
+    assert!(inserted.is_transfer);
+    assert_eq!(inserted.activity, Some(trade.clone()));
+
+    let list = transactions::list(&mut conn, transactions::TxnFilter::default()).unwrap();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].is_transfer);
+    assert_eq!(list[0].activity, Some(trade));
+}
+
+#[test]
+fn insert_dividend_activity_is_not_a_transfer() {
+    let (db, _dir) = open();
+    let mut conn = db.get().unwrap();
+    let acct = seed_investment_account(&mut conn);
+
+    let dividend = TxnActivity {
+        activity_type: "Dividend".into(),
+        activity_sub_type: None,
+        symbol: Some("GLOBEX".into()),
+        security_name: Some("Globex Corp".into()),
+        quantity: None,
+        unit_price: None,
+    };
+    let inserted =
+        transactions::insert(&mut conn, mk_activity_txn(&acct, Some(dividend))).unwrap();
+    // Dividends are real income — must stay visible to income/expense metrics.
+    assert!(!inserted.is_transfer);
+}
+
+#[test]
+fn insert_without_activity_is_unchanged() {
+    let (db, _dir) = open();
+    let mut conn = db.get().unwrap();
+    let acct = seed_investment_account(&mut conn);
+
+    let inserted = transactions::insert(&mut conn, mk_activity_txn(&acct, None)).unwrap();
+    assert!(!inserted.is_transfer);
+    assert_eq!(inserted.activity, None);
+
+    let list = transactions::list(&mut conn, transactions::TxnFilter::default()).unwrap();
+    assert_eq!(list[0].activity, None);
 }

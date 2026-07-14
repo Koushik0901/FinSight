@@ -6,6 +6,8 @@ export interface DetectedMapping {
   dateFormat: string | null;
   amountConvention: AmountConvention;
   detectedFields: Set<string>;
+  /** True when the file looks like a brokerage export (activity + symbol columns). */
+  investmentDetected: boolean;
 }
 
 const ROLE_KEYWORDS: Record<ColumnRole, string[]> = {
@@ -16,8 +18,27 @@ const ROLE_KEYWORDS: Record<ColumnRole, string[]> = {
   Category: ["category"],
   Debit: ["debit", "debitamount", "withdrawal", "withdrawals"],
   Credit: ["credit", "creditamount", "deposit", "deposits"],
+  // Investment (brokerage export) roles. Only kept when the file ALSO has a
+  // symbol column (see finalizeInvestmentRoles) so a bank CSV with a generic
+  // "Transaction Type" column is never misread as a brokerage export.
+  ActivityType: ["activitytype", "activity", "transactiontype", "action"],
+  ActivitySubType: ["activitysubtype", "subtype"],
+  Symbol: ["symbol", "ticker", "tickersymbol"],
+  // Never greedy-matched ("name" belongs to Merchant); assigned only by the
+  // brokerage post-pass, which moves an empty-prone name column here.
+  SecurityName: [],
+  Quantity: ["quantity", "shares", "units"],
+  UnitPrice: ["unitprice", "price", "unitcost"],
   Skip: [],
 };
+
+const INVESTMENT_ROLES: ColumnRole[] = [
+  "ActivityType",
+  "ActivitySubType",
+  "Symbol",
+  "Quantity",
+  "UnitPrice",
+];
 
 const DATE_FORMATS = [
   "%Y-%m-%d",
@@ -54,7 +75,22 @@ export function detectColumnRoles(headers: string[]): ColumnRole[] {
   const assigned = new Set<number>();
   const roles: ColumnRole[] = Array(headers.length).fill("Skip");
 
-  const priorityOrder: ColumnRole[] = ["Date", "Merchant", "Amount", "Debit", "Credit", "Category", "Notes"];
+  // Investment roles come AFTER every bank role so files without brokerage
+  // columns detect byte-identically to before they existed.
+  const priorityOrder: ColumnRole[] = [
+    "Date",
+    "Merchant",
+    "Amount",
+    "Debit",
+    "Credit",
+    "Category",
+    "Notes",
+    "ActivityType",
+    "ActivitySubType",
+    "Symbol",
+    "Quantity",
+    "UnitPrice",
+  ];
 
   for (const role of priorityOrder) {
     let bestIdx = -1;
@@ -85,7 +121,21 @@ export function detectColumnRoles(headers: string[]): ColumnRole[] {
     }
   }
 
-  return roles;
+  return finalizeInvestmentRoles(roles, normalized);
+}
+
+/// Brokerage post-pass. A real brokerage export has BOTH an activity column
+/// and a symbol column; anything less (a bank CSV with a lone "Transaction
+/// Type" or "Units" header) reverts its investment roles to Skip. When it IS
+/// a brokerage export, a Merchant match on a literal `name` header is the
+/// security name (empty on non-trade rows), so it moves to SecurityName and
+/// merchants get synthesized from the activity instead.
+function finalizeInvestmentRoles(roles: ColumnRole[], normalized: string[]): ColumnRole[] {
+  const isBrokerage = roles.includes("ActivityType") && roles.includes("Symbol");
+  if (!isBrokerage) {
+    return roles.map((r) => (INVESTMENT_ROLES.includes(r) ? "Skip" : r));
+  }
+  return roles.map((r, i) => (r === "Merchant" && normalized[i] === "name" ? "SecurityName" : r));
 }
 
 export function detectDateFormat(values: string[]): string | null {
@@ -172,11 +222,14 @@ export function buildDetectedMapping(preview: CsvPreview): DetectedMapping {
   detectedFields.add("amountConvention");
   if (skipHeaderRows !== 1) detectedFields.add("skipHeaderRows");
 
+  const investmentDetected = columns.includes("ActivityType") && columns.includes("Symbol");
+
   return {
     skipHeaderRows,
     columns,
     dateFormat,
     amountConvention,
     detectedFields,
+    investmentDetected,
   };
 }

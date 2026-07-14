@@ -91,3 +91,92 @@ fn prepare_matches_import_on_reimport() {
         "review count parity"
     );
 }
+
+/// Investment-CSV parity, empty ledger: activity parsing, merchant synthesis,
+/// and the footer row error must fold identically through prepare and import.
+#[test]
+fn wealthsimple_prepare_counts_match_import_on_empty_ledger() {
+    let path = common::fixture("wealthsimple-tfsa.csv");
+    let mapping = common::wealthsimple_mapping();
+
+    let (db, _d, acct) = common::open_with_investment_account();
+    let prepared = {
+        let conn = db.get().unwrap();
+        CsvProvider::prepare(&path, &acct, &mapping, &conn).unwrap()
+    };
+
+    let (db2, _d2, acct2) = common::open_with_investment_account();
+    let id = uuid::Uuid::new_v4().to_string();
+    let summary = CsvProvider::import(&path, &acct2, &id, &mapping, &db2, |_| {}).unwrap();
+
+    assert_eq!(prepared.rows_imported, summary.rows_imported);
+    assert_eq!(prepared.rows_imported, 19);
+    assert_eq!(
+        prepared.rows_skipped_duplicates,
+        summary.rows_skipped_duplicates
+    );
+    assert_eq!(
+        prepared.rows_queued_for_review,
+        summary.rows_queued_for_review
+    );
+    assert_eq!(prepared.errors.len(), summary.errors.len());
+    assert_eq!(prepared.errors.len(), 1, "'As of …' footer row error");
+}
+
+/// Investment-CSV parity on RE-import — the idempotency pin. Deterministic
+/// merchant synthesis is what lets the matcher recognize every row (including
+/// same-day identical Interest lines) as an existing duplicate.
+#[test]
+fn wealthsimple_prepare_matches_import_on_reimport() {
+    let path = common::fixture("wealthsimple-tfsa.csv");
+    let mapping = common::wealthsimple_mapping();
+
+    let (db1, _d1, acct1) = common::open_with_investment_account();
+    CsvProvider::import(
+        &path,
+        &acct1,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db1,
+        |_| {},
+    )
+    .unwrap();
+    let prepared = {
+        let conn = db1.get().unwrap();
+        CsvProvider::prepare(&path, &acct1, &mapping, &conn).unwrap()
+    };
+
+    let (db2, _d2, acct2) = common::open_with_investment_account();
+    CsvProvider::import(
+        &path,
+        &acct2,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db2,
+        |_| {},
+    )
+    .unwrap();
+    let summary = CsvProvider::import(
+        &path,
+        &acct2,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db2,
+        |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(
+        prepared.rows_imported, summary.rows_imported,
+        "insert count parity"
+    );
+    assert_eq!(prepared.rows_imported, 0, "re-import inserts nothing");
+    assert_eq!(
+        prepared.rows_skipped_duplicates, summary.rows_skipped_duplicates,
+        "duplicate count parity"
+    );
+    assert_eq!(
+        prepared.rows_queued_for_review, summary.rows_queued_for_review,
+        "review count parity"
+    );
+}

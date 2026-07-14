@@ -488,6 +488,8 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
         pending: r.get::<_, i64>(23)? != 0,
         external_tx_id: r.get(24)?,
         external_account_id: r.get(25)?,
+        // Not selected here; import matching doesn't need activity metadata.
+        activity: None,
     })
 }
 
@@ -529,6 +531,7 @@ mod fuzzy_tests {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         }
     }
 

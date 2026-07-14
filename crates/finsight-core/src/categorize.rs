@@ -279,6 +279,16 @@ pub fn is_transfer(merchant_raw: &str) -> bool {
         || (is_pairing_eligible(merchant_raw) && has_own_account_marker(merchant_raw))
 }
 
+/// True when a brokerage activity type (V048 `transactions.activity_type`,
+/// stored provider-verbatim from investment CSV imports) marks the row as an
+/// internal move rather than income/spending: a Trade converts cash↔security
+/// inside the account, a MoneyMovement is a contribution/withdrawal whose
+/// other leg lives in another account. Dividend/Interest (income) and Tax
+/// (expense) stay out of this list deliberately.
+pub fn activity_implies_transfer(activity_type: &str) -> bool {
+    matches!(activity_type, "Trade" | "MoneyMovement")
+}
+
 /// True when a merchant string carries any transfer vocabulary — the leg is a
 /// candidate to be paired with its opposite. Broader (lower precision) than
 /// `is_transfer`; only ever used together with an equal-and-opposite match.
@@ -293,10 +303,21 @@ fn is_pairing_eligible(merchant_raw: &str) -> bool {
 /// income/expense treatment is a silent guess until the user rules on them
 /// (bare "INTERNET TRANSFER <ref>" legs whose counter-leg was never imported,
 /// person-to-person e-transfers that may be rent, gifts, or reimbursements).
-/// Deliberately NARROWER than `PAIRING_HINT_KEYWORDS`: bill payments and
-/// preauthorized debits are almost always real bills, and burying the genuine
-/// suspects under every hydro bill would make the review list useless.
-pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &["transfer", "tfr-", "fulfill request"];
+/// Deliberately NARROWER than `PAIRING_HINT_KEYWORDS`: bill payments,
+/// preauthorized debits, and — critically — payroll/benefits ("Electronic
+/// Funds Transfer PAY Wage/salary", "… DEPOSIT AE/EI", direct deposits) are
+/// almost always real money, and burying the genuine suspects under every
+/// paycheck would make the review list useless (measured on samples/: a bare
+/// "transfer" keyword put $95k of wages at the top of the list).
+pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &[
+    "internet transfer",
+    "e-transfer",
+    "e transfer",
+    "etransfer",
+    "money transfer",
+    "tfr-",
+    "fulfill request",
+];
 
 /// SQL predicate selecting the transactions that need a user's transfer
 /// verdict. `alias` is the `transactions` table alias in the caller's query.
@@ -309,10 +330,14 @@ pub fn transfer_review_predicate(alias: &str) -> String {
         .map(|kw| format!("lower({alias}.merchant_raw) LIKE '%{kw}%'"))
         .collect::<Vec<_>>()
         .join(" OR ");
+    // Investment-account rows never need a verdict: they are already excluded
+    // from income/expense wholesale, so an "is this a transfer?" answer would
+    // change nothing — don't ask.
+    let non_investment = crate::metrics::non_investment_txn_predicate(alias);
     format!(
         "({alias}.is_transfer = 0 AND {alias}.transfer_peer_id IS NULL \
          AND {alias}.transfer_override IS NULL AND {alias}.category_id IS NULL \
-         AND {alias}.amount_cents != 0 AND ({vocab}))"
+         AND {alias}.amount_cents != 0 AND {non_investment} AND ({vocab}))"
     )
 }
 
@@ -845,6 +870,48 @@ const DEFAULT_GROUPS: &[(&str, &str)] = &[
     ("wellbeing", "Wellbeing"),
 ];
 
+/// Seed the investing group + categories used by activity-driven
+/// categorization (brokerage CSV imports). Unlike `ensure_default_categories`
+/// this must work for users with an established category set, so it inserts
+/// just these rows with INSERT OR IGNORE — and is only called when an import
+/// actually produced investment-income/tax rows, never speculatively.
+/// Deliberately NOT part of DEFAULT_CATEGORIES: users without investment
+/// accounts should never see these.
+pub fn ensure_investment_categories(conn: &mut Connection) -> CoreResult<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('investing', 'Investing', 50)",
+        [],
+    )?;
+    // Dividends + interest are income (spending_type stays NULL — the
+    // conscious-spending buckets classify spending, not income); withholding
+    // tax is a real cost you can't opt out of → `fixed`.
+    tx.execute(
+        "INSERT OR IGNORE INTO categories(id, group_id, label, color, spending_type, sort_order) \
+         VALUES('investment-income', 'investing', 'Investment income', ?1, NULL, 100)",
+        params![crate::palette::color_for("investment-income")],
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO categories(id, group_id, label, color, spending_type, sort_order) \
+         VALUES('withholding-tax', 'investing', 'Withholding tax', ?1, 'fixed', 101)",
+        params![crate::palette::color_for("withholding-tax")],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Activity-driven category for investment rows (checked before the merchant
+/// keyword map): dividends and interest are investment income, NRT & friends
+/// are withholding tax. Trade/MoneyMovement never reach this — they are
+/// transfers and the categorizer skips them structurally.
+fn activity_category(activity_type: &str) -> Option<&'static str> {
+    match activity_type {
+        "Dividend" | "Interest" => Some("investment-income"),
+        "Tax" => Some("withholding-tax"),
+        _ => None,
+    }
+}
+
 /// Seed the standard starter categories, but ONLY when the categories table is
 /// empty — so a user who imports before completing onboarding's category step
 /// still gets their transactions categorized, without ever overwriting a
@@ -903,9 +970,18 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // carries a category, e.g. an "Interac - Purchase" once tagged a transfer).
     // Also select the current `is_transfer` so the hot loop can skip a write
     // when the flag is unchanged (the common case: a non-transfer stays 0).
-    let pending: Vec<(String, String, bool, bool, bool, Option<bool>)> = {
+    type PendingRow = (
+        String,
+        String,
+        bool,
+        bool,
+        bool,
+        Option<bool>,
+        Option<String>,
+    );
+    let pending: Vec<PendingRow> = {
         let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL, is_transfer, transfer_override \
+            "SELECT id, merchant_raw, category_id IS NULL, transfer_peer_id IS NOT NULL, is_transfer, transfer_override, activity_type \
              FROM transactions \
              WHERE category_id IS NULL OR is_transfer = 1",
         )?;
@@ -917,6 +993,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
                 r.get::<_, i64>(3)? != 0,
                 r.get::<_, i64>(4)? != 0,
                 r.get::<_, Option<i64>>(5)?.map(|v| v != 0),
+                r.get::<_, Option<String>>(6)?,
             ))
         })?;
         let mut out = Vec::new();
@@ -925,6 +1002,23 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
         }
         out
     };
+
+    // Lazily seed the investing categories the moment an import actually
+    // carries dividend/interest/tax rows to file under them (the empty-table
+    // guard in `ensure_default_categories` can't help existing users).
+    let mut existing = existing;
+    let needs_investment_categories = pending.iter().any(|(_, _, uncategorized, _, _, _, at)| {
+        *uncategorized
+            && at
+                .as_deref()
+                .and_then(activity_category)
+                .is_some_and(|cat| !existing.contains(cat))
+    });
+    if needs_investment_categories {
+        ensure_investment_categories(conn)?;
+        existing.insert("investment-income".to_string());
+        existing.insert("withholding-tax".to_string());
+    }
 
     let now = chrono::Utc::now().to_rfc3339();
     let tx = conn.transaction()?;
@@ -943,7 +1037,9 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             "INSERT INTO categorizations(id, txn_id, category_id, source, confidence, model, at) \
              VALUES(?1, ?2, ?3, 'builtin', 1.0, NULL, ?4)",
         )?;
-        for (txn_id, merchant, uncategorized, paired, currently_transfer, override_) in pending {
+        for (txn_id, merchant, uncategorized, paired, currently_transfer, override_, activity) in
+            pending
+        {
             // Transfer detection runs regardless of category state, and is written
             // in BOTH directions so a re-run after the keyword list changes corrects
             // stale flags (e.g. an "Interac - Purchase" no longer treated as a
@@ -953,7 +1049,16 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             // transfer keyword, and un-flagging them here would undo the pairing.
             // ALSO EXCEPT: a user verdict (`transfer_override`) always wins — a
             // re-run must never overwrite what the user explicitly decided.
-            let unilateral_transfer = is_transfer(&merchant) || transfer_ctx.is_self_transfer(&merchant);
+            // Activity typing (Trade/MoneyMovement from brokerage imports) is
+            // checked FIRST: those rows carry no transfer keyword in their
+            // merchant ("Buy ACME"), and without this the bidirectional write
+            // would silently UN-flag them on the next re-run.
+            let unilateral_transfer = activity
+                .as_deref()
+                .map(activity_implies_transfer)
+                .unwrap_or(false)
+                || is_transfer(&merchant)
+                || transfer_ctx.is_self_transfer(&merchant);
             if !paired && override_.is_none() {
                 // Only write when the flag actually flips — the overwhelming
                 // majority of rows are non-transfers that already read 0.
@@ -974,7 +1079,13 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
             if treat_as_transfer {
                 continue;
             }
-            let Some(cat) = builtin_category(&merchant) else {
+            // Activity typing beats the merchant keyword map: a "Dividend —
+            // ACME" row is investment income by construction, not a guess.
+            let Some(cat) = activity
+                .as_deref()
+                .and_then(activity_category)
+                .or_else(|| builtin_category(&merchant))
+            else {
                 continue;
             };
             if !existing.contains(cat) {
@@ -1617,5 +1728,108 @@ mod tests {
         ensure_default_categories(&mut conn).unwrap();
         let after: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
         assert_eq!(before, after, "must not seed defaults when a category set already exists");
+    }
+
+    // ---- activity-aware categorization (brokerage CSV imports) ----
+
+    fn insert_activity_txn(
+        conn: &Connection,
+        id: &str,
+        merchant: &str,
+        activity_type: &str,
+        is_transfer: bool,
+    ) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at,is_transfer,activity_type) \
+             VALUES(?1,'a1','2024-01-01T00:00:00Z',1500,?2,'cleared',0,'2024-01-01T00:00:00Z',?3,?4)",
+            params![id, merchant, is_transfer as i64, activity_type],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn rerun_does_not_unflag_activity_transfers() {
+        // The bidirectional transfer write (which un-flags rows whose merchant
+        // lost its keyword) must never strip Trade/MoneyMovement rows: their
+        // merchants ("Buy ACME") carry no transfer vocabulary at all.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        insert_activity_txn(&conn, "t1", "Buy ACME", "Trade", true);
+        insert_activity_txn(&conn, "t2", "Transfer in (EFT)", "MoneyMovement", true);
+
+        for _ in 0..2 {
+            apply_builtin_categorization(&mut conn).unwrap();
+            for id in ["t1", "t2"] {
+                let flagged: i64 = conn
+                    .query_row(
+                        "SELECT is_transfer FROM transactions WHERE id = ?1",
+                        params![id],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(flagged, 1, "{id} must stay a transfer across re-runs");
+            }
+        }
+        // And transfers are never categorized.
+        let cat: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id = 't1'",
+                params![],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cat, None);
+    }
+
+    #[test]
+    fn dividend_interest_tax_categorized_and_categories_lazily_seeded() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn); // established user set WITHOUT investing categories
+
+        insert_activity_txn(&conn, "d1", "Dividend — ACME", "Dividend", false);
+        insert_activity_txn(&conn, "i1", "Interest", "Interest", false);
+        insert_activity_txn(&conn, "x1", "Withholding tax (NRT)", "Tax", false);
+        apply_builtin_categorization(&mut conn).unwrap();
+
+        let cat = |id: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT category_id FROM transactions WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(cat("d1").as_deref(), Some("investment-income"));
+        assert_eq!(cat("i1").as_deref(), Some("investment-income"));
+        assert_eq!(cat("x1").as_deref(), Some("withholding-tax"));
+
+        // None of them count as transfers — they stay in income/expense.
+        let transfers: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE is_transfer = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(transfers, 0);
+    }
+
+    #[test]
+    fn investment_categories_not_seeded_without_investment_rows() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        insert_txn(&conn, "t1", "STARBUCKS #123");
+        apply_builtin_categorization(&mut conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM categories WHERE id IN ('investment-income','withholding-tax')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "investing categories must only appear when needed");
     }
 }

@@ -11,6 +11,15 @@ pub fn sample(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// Committed fixture under tests/fixtures/csv (unlike `sample`, which points
+/// at the untracked repo-root samples/ directory).
+#[allow(dead_code)]
+pub fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/csv")
+        .join(name)
+}
+
 pub fn amex_mapping() -> CsvImportMapping {
     CsvImportMapping {
         skip_header_rows: 1,
@@ -27,8 +36,53 @@ pub fn amex_mapping() -> CsvImportMapping {
     }
 }
 
+/// Column mapping for the Wealthsimple TFSA all-time statement export
+/// (fixture `wealthsimple-tfsa.csv`): transaction_date, settlement_date,
+/// account_id, account_type, activity_type, activity_sub_type, direction,
+/// symbol, name, currency, quantity, unit_price, commission, net_cash_amount.
+pub fn wealthsimple_mapping() -> CsvImportMapping {
+    CsvImportMapping {
+        skip_header_rows: 1,
+        columns: vec![
+            ColumnRole::Date,
+            ColumnRole::Skip, // settlement_date
+            ColumnRole::Skip, // account_id
+            ColumnRole::Skip, // account_type
+            ColumnRole::ActivityType,
+            ColumnRole::ActivitySubType,
+            ColumnRole::Skip, // direction
+            ColumnRole::Symbol,
+            ColumnRole::SecurityName,
+            ColumnRole::Skip, // currency
+            ColumnRole::Quantity,
+            ColumnRole::UnitPrice,
+            ColumnRole::Skip, // commission
+            ColumnRole::Amount,
+        ],
+        date_format: "%Y-%m-%d".to_string(),
+        amount_convention: AmountConvention::NegativeIsOutflow,
+        decimal_separator: '.',
+        delimiter: Some(','),
+    }
+}
+
 /// Fresh migrated DB + one Credit account; returns (db, tempdir, account_id).
 pub fn open_with_account() -> (Db, tempfile::TempDir, String) {
+    open_with_typed_account(AccountType::Credit, "Amex", "Amex Card", "credit")
+}
+
+/// Fresh migrated DB + one Investment account (Wealthsimple TFSA shape).
+#[allow(dead_code)]
+pub fn open_with_investment_account() -> (Db, tempfile::TempDir, String) {
+    open_with_typed_account(AccountType::Investment, "Wealthsimple", "TFSA", "investments")
+}
+
+fn open_with_typed_account(
+    r#type: AccountType,
+    bank: &str,
+    name: &str,
+    account_group: &str,
+) -> (Db, tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(&dir.path().join("t.sqlcipher"), &"cd".repeat(32)).unwrap();
     finsight_core::db::run_migrations(&db).unwrap();
@@ -38,9 +92,9 @@ pub fn open_with_account() -> (Db, tempfile::TempDir, String) {
             &mut conn,
             NewAccount {
                 owner: "joint".into(),
-                bank: "Amex".into(),
-                r#type: AccountType::Credit,
-                name: "Amex Card".into(),
+                bank: bank.into(),
+                r#type,
+                name: name.into(),
                 last4: None,
                 currency: "USD".into(),
                 color: "#000".into(),
@@ -58,7 +112,7 @@ pub fn open_with_account() -> (Db, tempfile::TempDir, String) {
                 official_name: None,
                 mask: None,
                 subtype: None,
-                account_group: "credit".into(),
+                account_group: account_group.into(),
                 available_balance_cents: None,
                 balance_date: None,
                 extra_json: None,

@@ -61,6 +61,98 @@ describe("detectColumnRoles", () => {
   });
 });
 
+describe("detectColumnRoles — investment (brokerage) exports", () => {
+  const WEALTHSIMPLE_HEADERS = [
+    "transaction_date",
+    "settlement_date",
+    "account_id",
+    "account_type",
+    "activity_type",
+    "activity_sub_type",
+    "direction",
+    "symbol",
+    "name",
+    "currency",
+    "quantity",
+    "unit_price",
+    "commission",
+    "net_cash_amount",
+  ];
+
+  it("maps the Wealthsimple TFSA export, moving the name column to SecurityName", () => {
+    const roles = detectColumnRoles(WEALTHSIMPLE_HEADERS);
+    expect(roles).toEqual([
+      "Date",
+      "Skip", // settlement_date
+      "Skip", // account_id
+      "Skip", // account_type
+      "ActivityType",
+      "ActivitySubType",
+      "Skip", // direction
+      "Symbol",
+      "SecurityName", // `name` is the security name, empty on non-trade rows
+      "Skip", // currency
+      "Quantity",
+      "UnitPrice",
+      "Skip", // commission
+      "Amount", // net_cash_amount
+    ]);
+  });
+
+  it("reverts investment roles when there is no symbol column (bank CSV with a Units column)", () => {
+    // A lone "Units" or "Type" header must not turn a bank export into a
+    // brokerage import — investment roles require BOTH activity and symbol.
+    const roles = detectColumnRoles(["Date", "Description", "Units", "Amount"]);
+    expect(roles).toEqual(["Date", "Merchant", "Skip", "Amount"]);
+  });
+
+  it("keeps detecting existing bank header sets identically (regression)", () => {
+    expect(
+      detectColumnRoles([
+        "Transaction Date",
+        "Post Date",
+        "Description",
+        "Category",
+        "Type",
+        "Amount",
+        "Memo",
+      ]),
+    ).toEqual(["Date", "Skip", "Merchant", "Category", "Skip", "Amount", "Notes"]);
+    expect(detectColumnRoles(["Date", "Description", "Debit", "Credit"])).toEqual([
+      "Date",
+      "Merchant",
+      "Debit",
+      "Credit",
+    ]);
+  });
+
+  it("flags investmentDetected on the full mapping", () => {
+    const p = preview(WEALTHSIMPLE_HEADERS, [
+      [
+        "2025-01-01", "2025-01-01", "WS0000000CAD", "TFSA", "Trade", "BUY", "LONG",
+        "ACME", "Acme Corp", "CAD", "8.1234", "15.0876", "0", "-122.6",
+      ],
+      [
+        "2025-01-05", "", "WS0000000CAD", "TFSA", "MoneyMovement", "EFT", "", "", "",
+        "CAD", "200", "", "", "200",
+      ],
+    ]);
+    const detected = buildDetectedMapping(p);
+    expect(detected.investmentDetected).toBe(true);
+    expect(detected.skipHeaderRows).toBe(1);
+    expect(detected.dateFormat).toBe("%Y-%m-%d");
+    expect(detected.amountConvention).toBe("negative_is_outflow");
+  });
+
+  it("does not flag investmentDetected for bank files", () => {
+    const p = preview(
+      ["Date", "Description", "Amount"],
+      [["2026-05-19", "Store", "-8.42"]],
+    );
+    expect(buildDetectedMapping(p).investmentDetected).toBe(false);
+  });
+});
+
 describe("detectDateFormat", () => {
   it("detects AMEX format", () => {
     expect(detectDateFormat(["01 Jul 2026", "30 Jun 2026"])).toBe("%d %b %Y");

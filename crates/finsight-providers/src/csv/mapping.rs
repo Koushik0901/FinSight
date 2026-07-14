@@ -25,6 +25,14 @@ pub enum ColumnRole {
     Skip,
     Debit,
     Credit,
+    // Investment-CSV roles (brokerage exports like Wealthsimple). Serialized
+    // by variant name, so mappings saved before these existed still decode.
+    ActivityType,
+    ActivitySubType,
+    Symbol,
+    SecurityName,
+    Quantity,
+    UnitPrice,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

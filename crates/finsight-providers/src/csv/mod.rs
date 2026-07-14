@@ -187,11 +187,25 @@ impl CsvProvider {
                     rows_queued += 1;
                 }
                 PreparedDecision::Insert { new_id, tx: new_tx } => {
+                    // Mirrors repos::transactions::insert (which the review-
+                    // accept path uses): activity columns persist verbatim and
+                    // Trade/MoneyMovement rows are transfer-flagged at insert
+                    // time. Pinned by the prepare/import parity tests.
+                    let is_transfer = new_tx
+                        .activity
+                        .as_ref()
+                        .map(|a| {
+                            finsight_core::categorize::activity_implies_transfer(&a.activity_type)
+                        })
+                        .unwrap_or(false);
+                    let activity = new_tx.activity.as_ref();
                     tx.execute(
                         "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
                                                   category_id, status, notes, created_at, imported_id, source, \
-                                                  raw_synced_data, pending, external_tx_id, external_account_id) \
-                         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                                                  raw_synced_data, pending, external_tx_id, external_account_id, \
+                                                  is_transfer, activity_type, activity_sub_type, symbol, \
+                                                  security_name, quantity, unit_price) \
+                         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                         params![
                             new_id,
                             &new_tx.account_id,
@@ -208,6 +222,13 @@ impl CsvProvider {
                             new_tx.pending,
                             &new_tx.external_tx_id,
                             &new_tx.external_account_id,
+                            is_transfer,
+                            activity.map(|a| a.activity_type.clone()),
+                            activity.and_then(|a| a.activity_sub_type.clone()),
+                            activity.and_then(|a| a.symbol.clone()),
+                            activity.and_then(|a| a.security_name.clone()),
+                            activity.and_then(|a| a.quantity),
+                            activity.and_then(|a| a.unit_price),
                         ],
                     )
                     .map_err(|e| ProviderError::Internal(format!("insert: {e}")))?;

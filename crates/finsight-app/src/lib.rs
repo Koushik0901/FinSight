@@ -191,6 +191,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::onboarding::probe_ollama,
         commands::onboarding::save_llm_provider,
         commands::meta::app_ready,
+        commands::investments::list_account_positions,
+        commands::investments::get_investment_summary,
         commands::import::preview_csv_columns,
         commands::import::prepare_csv_import,
         commands::import::import_csv,

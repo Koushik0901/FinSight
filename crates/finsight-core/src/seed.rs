@@ -136,6 +136,7 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )?;
         // Link merchant

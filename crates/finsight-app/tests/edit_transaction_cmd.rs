@@ -77,6 +77,7 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
             pending: false,
             external_tx_id: None,
             external_account_id: None,
+            activity: None,
         },
     )
     .unwrap();

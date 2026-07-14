@@ -52,6 +52,7 @@ const existingTxn = {
   transfer_peer_id: null, transfer_peer_account_name: null, owner_member_id: null,
   imported_id: null, source: null,
   raw_synced_data: null, pending: false, external_tx_id: null, external_account_id: null,
+  activity: null,
 };
 
 describe("TransactionDrawer — edit mode", () => {

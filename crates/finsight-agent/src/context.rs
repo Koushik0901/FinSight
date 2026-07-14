@@ -17,6 +17,32 @@ pub struct FinancialContext {
     /// `get_member_spending`.
     #[serde(default)]
     pub household_members: Vec<String>,
+    /// Investment accounts with ledger-derived positions (from imported
+    /// brokerage CSVs). Descriptive data only — the principles-only guardrail
+    /// on investment advice is restated where this renders.
+    #[serde(default)]
+    pub investments: Vec<InvestmentAccountContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InvestmentAccountContext {
+    pub name: String,
+    /// cash + open positions at last trade price. Stale between imports.
+    pub portfolio_estimate_cents: i64,
+    pub cash_cents: i64,
+    pub dividend_income_cents: i64,
+    pub interest_income_cents: i64,
+    /// Top open positions by market value (≤5).
+    pub positions: Vec<InvestmentPositionItem>,
+    /// Positions may be incomplete (a SELL without its earlier BUYs).
+    pub incomplete_history: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct InvestmentPositionItem {
+    pub symbol: String,
+    pub quantity: f64,
+    pub market_value_cents: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -357,6 +383,45 @@ impl FinancialContext {
             }
         }
 
+        if !self.investments.is_empty() {
+            lines.push("7. INVESTMENTS".to_string());
+            for acct in &self.investments {
+                let stale_note = if acct.incomplete_history {
+                    " (history may be incomplete — positions unreliable)"
+                } else {
+                    ""
+                };
+                lines.push(format!(
+                    "   - {} — portfolio estimate {} (cash {} + positions at last trade price){}",
+                    acct.name,
+                    fmt_money(acct.portfolio_estimate_cents),
+                    fmt_money(acct.cash_cents),
+                    stale_note
+                ));
+                lines.push(format!(
+                    "     All-time dividends {}, interest {}",
+                    fmt_money(acct.dividend_income_cents),
+                    fmt_money(acct.interest_income_cents)
+                ));
+                for p in &acct.positions {
+                    lines.push(format!(
+                        "     • {} — {:.4} units, ≈{}",
+                        p.symbol,
+                        p.quantity,
+                        p.market_value_cents
+                            .map(fmt_money)
+                            .unwrap_or_else(|| "value unknown".to_string())
+                    ));
+                }
+            }
+            lines.push(
+                "   - Descriptive data only — keep any investment discussion principles-only; \
+                 never recommend specific tickers, funds, or timing. Valuations use the last \
+                 imported trade price and may be stale."
+                    .to_string(),
+            );
+        }
+
         if !self.household_members.is_empty() {
             lines.push("HOUSEHOLD MEMBERS".to_string());
             lines.push(format!(
@@ -430,7 +495,65 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
         household_members: finsight_core::repos::household::list_members(conn)
             .map(|ms| ms.into_iter().map(|m| m.name).collect())
             .unwrap_or_default(),
+        investments: investment_context(conn),
     }
+}
+
+/// Ledger-derived portfolio picture per investment account (top 5 positions
+/// by market value). Empty when the user has no investment accounts or no
+/// imported activity — the section simply doesn't render.
+fn investment_context(conn: &Connection) -> Vec<InvestmentAccountContext> {
+    let accounts: Vec<(String, String)> = {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, name FROM accounts \
+             WHERE type = 'Investment' AND archived_at IS NULL \
+             ORDER BY name",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) else {
+            return Vec::new();
+        };
+        rows.flatten().collect()
+    };
+
+    let mut out = Vec::new();
+    for (id, name) in accounts {
+        let Ok(summary) = finsight_core::investments::summary_for_account(conn, &id) else {
+            continue;
+        };
+        let Ok(mut positions) = finsight_core::investments::positions_for_account(conn, &id)
+        else {
+            continue;
+        };
+        // Skip accounts with no imported investment activity at all.
+        if positions.is_empty()
+            && summary.dividend_income_cents == 0
+            && summary.interest_income_cents == 0
+            && summary.cash_cents == 0
+        {
+            continue;
+        }
+        positions.sort_by_key(|p| -(p.market_value_cents.unwrap_or(0)));
+        out.push(InvestmentAccountContext {
+            name,
+            portfolio_estimate_cents: summary.portfolio_estimate_cents,
+            cash_cents: summary.cash_cents,
+            dividend_income_cents: summary.dividend_income_cents,
+            interest_income_cents: summary.interest_income_cents,
+            positions: positions
+                .into_iter()
+                .take(5)
+                .map(|p| InvestmentPositionItem {
+                    symbol: p.symbol,
+                    quantity: p.quantity,
+                    market_value_cents: p.market_value_cents,
+                })
+                .collect(),
+            incomplete_history: summary.has_negative_quantity,
+        });
+    }
+    out
 }
 
 fn latest_total_balance(conn: &mut Connection) -> i64 {
@@ -576,12 +699,15 @@ fn goal_context(conn: &mut Connection, today: NaiveDate) -> Vec<GoalContextItem>
 fn transaction_context(conn: &mut Connection, month_start: &str) -> TransactionContext {
     let counts = conn
         .query_row(
-            "SELECT
-                COUNT(*),
-                COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
-             FROM transactions",
+            &format!(
+                "SELECT
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN category_id IS NULL AND is_transfer = 0 AND {} THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN is_reimbursable = 1 THEN 1 ELSE 0 END), 0)
+                 FROM transactions t",
+                finsight_core::metrics::non_investment_txn_predicate("t")
+            ),
             [],
             |r| {
                 Ok((
@@ -1153,6 +1279,60 @@ mod tests {
     }
 
     #[test]
+    fn investment_accounts_render_descriptive_section_with_guardrail() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) \
+             VALUES('inv','Me','Wealthsimple','Investment','TFSA','CAD','#10B981','manual','invested',0,'investments',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // One open position (buy ACME) + a dividend.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,activity_type,activity_sub_type,symbol,quantity,unit_price) \
+             VALUES('b1','inv',datetime('now','-30 days'),-20038,'Buy ACME','cleared',datetime('now'),1,'Trade','BUY','ACME',2.417,82.9012)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,activity_type,symbol) \
+             VALUES('d1','inv',datetime('now','-10 days'),53,'Dividend — ACME','cleared',datetime('now'),0,'Dividend','ACME')",
+            [],
+        )
+        .unwrap();
+
+        let ctx = build_context(&mut conn);
+        assert_eq!(ctx.investments.len(), 1);
+        let inv = &ctx.investments[0];
+        assert_eq!(inv.name, "TFSA");
+        assert_eq!(inv.dividend_income_cents, 53);
+        assert_eq!(inv.positions.len(), 1);
+        assert_eq!(inv.positions[0].symbol, "ACME");
+        assert!(!inv.incomplete_history);
+
+        let prompt = ctx.to_prompt_string();
+        assert!(prompt.contains("7. INVESTMENTS"), "prompt: {prompt}");
+        assert!(prompt.contains("TFSA"), "prompt: {prompt}");
+        assert!(prompt.contains("ACME"), "prompt: {prompt}");
+        // The guardrail restatement must always accompany the data.
+        assert!(
+            prompt.contains("principles-only"),
+            "prompt must restate the no-ticker guardrail: {prompt}"
+        );
+    }
+
+    #[test]
+    fn no_investment_accounts_means_no_investments_section() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_account(&mut conn, 100_000);
+        let ctx = build_context(&mut conn);
+        assert!(ctx.investments.is_empty());
+        assert!(!ctx.to_prompt_string().contains("7. INVESTMENTS"));
+    }
+
+    #[test]
     fn test_build_context_has_sane_cashflow() {
         let (_dir, db) = fresh_db();
         let mut conn = db.get().unwrap();
@@ -1183,6 +1363,7 @@ mod tests {
                     pending: false,
                     external_tx_id: None,
                     external_account_id: None,
+                    activity: None,
                 },
             )
             .unwrap();

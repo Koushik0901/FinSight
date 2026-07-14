@@ -643,6 +643,7 @@ fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
          tools for category/merchant breakdowns, transaction history, per-liability debt detail, \
          goals, budgets, or anything not listed here):\n\
          - Liquid cash: {}\n\
+         - Invested balance: {}\n\
          - Avg monthly income (rolling 90d): {}\n\
          - Avg monthly expenses (rolling 90d): {}\n\
          - Monthly net (income − expenses): {}\n\
@@ -650,6 +651,7 @@ fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
          - Emergency fund: {} ({:.1} months of expenses)\n\
          - Total debt owed: {}",
         m(bal.liquid_cents),
+        m(bal.invested_cents),
         m(roll.avg_monthly_income_cents),
         m(roll.avg_monthly_expense_cents),
         m(roll.net_monthly_cents),

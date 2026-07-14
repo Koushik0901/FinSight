@@ -37,6 +37,9 @@ const TRANSACTIONS: Root[] = [
   ["journey-status"],
   ["needs-review-count"],
   ["recurring"],
+  // Investment positions + portfolio estimate are derived from the ledger.
+  ["investment-positions"],
+  ["investment-summary"],
   // The net-worth HEADLINE (`useNetWorth`) is computed from accounts +
   // manual-assets, so it refreshes via those; the net-worth CHART is the only
   // net-worth *query* and its key is `["networth-history", days]` (one word).

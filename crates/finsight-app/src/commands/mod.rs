@@ -10,6 +10,7 @@ pub mod household;
 pub mod import;
 pub mod inbox;
 pub mod insights;
+pub mod investments;
 pub mod journey;
 pub mod meta;
 pub mod metrics;

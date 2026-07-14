@@ -50,5 +50,7 @@ pub use rule::{NewRule, Rule};
 pub use rule_proposal::RuleProposal;
 pub use security::Security;
 pub use sync_run::SyncRun;
-pub use transaction::{NewTransaction, ProposedRule, Transaction, TransactionStatus, TxnPatch};
+pub use transaction::{
+    NewTransaction, ProposedRule, Transaction, TransactionStatus, TxnActivity, TxnPatch,
+};
 pub use transfer::TransactionTransfer;

@@ -511,6 +511,27 @@ pub fn set_current_balance(
     account_id: &str,
     current_cents: i64,
 ) -> CoreResult<()> {
+    // Investment accounts are valued as a MARKET-VALUE snapshot, not derived
+    // from cash flow — `recompute_balance_if_linked` deliberately never
+    // re-derives one for this type (contributions/trades net near-zero, so
+    // folding activity on top would double-count). The back-solve-opening
+    // strategy below relies on that later derivation step to surface a
+    // same-day "known" balance; for Investment accounts that step never
+    // runs, so the anchor would sit invisible forever and the account would
+    // stay "Balance not set". Write a plain dated snapshot instead, exactly
+    // like a periodic market-value update — the same semantics an Investment
+    // account already carries when it has no imported activity at all.
+    let is_investment: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND type = 'Investment')",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    if is_investment {
+        let today = Utc::now().date_naive().to_string();
+        upsert_balance_snapshot(conn, account_id, &today, current_cents, None, Some("manual"))?;
+        return Ok(());
+    }
+
     let sum_all: i64 = conn.query_row(
         "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
          WHERE account_id = ?1 AND pending = 0",
@@ -1226,6 +1247,58 @@ mod tests {
             .find(|a| a.id == "tfsa")
             .unwrap();
         assert_eq!(summary.balance_cents, 1_000_000, "market value stands; cash flows ignored");
+    }
+
+    #[test]
+    fn set_current_balance_on_investment_account_writes_a_known_manual_snapshot() {
+        // Investment accounts never get a same-day 'derived' snapshot (see
+        // `investment_account_balance_is_not_derived_from_cash_flows` above),
+        // so the general back-solve-the-opening strategy in
+        // `set_current_balance` would leave the balance permanently invisible
+        // (nothing ever re-derives a "today" row for this type). Confirm the
+        // Investment special case instead writes a plain, immediately-known
+        // snapshot — this is the path the Holdings "Set balance from
+        // estimate" button relies on.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('tfsa','Me','Wealthsimple','Investment','TFSA','CAD','#22C55E','manual',?1)",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+             VALUES('tfsa',date('now'),0,'seed')",
+            [],
+        )
+        .unwrap();
+        insert_txn(&conn, "tfsa", 46_005, "2024-12-18"); // imported cash activity
+
+        set_current_balance(&mut conn, "tfsa", 314_368).unwrap();
+
+        let summary = list_summaries(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.id == "tfsa")
+            .unwrap();
+        assert!(
+            summary.balance_known,
+            "an explicitly set investment balance must read as known"
+        );
+        assert_eq!(
+            summary.balance_cents, 314_368,
+            "must show exactly the value the user set, not a back-solved opening anchor"
+        );
+
+        let manual_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account_balances WHERE account_id='tfsa' AND source='manual'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(manual_count, 1);
     }
 
     #[test]

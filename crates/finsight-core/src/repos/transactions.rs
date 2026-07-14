@@ -1,5 +1,7 @@
 use crate::error::CoreResult;
-use crate::models::{NewTransaction, ProposedRule, Transaction, TransactionStatus, TxnPatch};
+use crate::models::{
+    NewTransaction, ProposedRule, Transaction, TransactionStatus, TxnActivity, TxnPatch,
+};
 use crate::repos::{accounts, categorizations};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
@@ -8,10 +10,19 @@ use uuid::Uuid;
 pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transaction> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
+    // Trade/MoneyMovement rows are internal moves (cash↔security, account↔
+    // account), never income or spending — flag them at insert time so every
+    // `is_transfer = 0` metric filter excludes them from day one.
+    let is_transfer = input
+        .activity
+        .as_ref()
+        .map(|a| crate::categorize::activity_implies_transfer(&a.activity_type))
+        .unwrap_or(false);
+    let activity = input.activity.clone();
     conn.execute(
         "INSERT INTO transactions \
-         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at, imported_id, source, raw_synced_data, pending, external_tx_id, external_account_id) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+         (id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, notes, is_anomaly, created_at, imported_id, source, raw_synced_data, pending, external_tx_id, external_account_id, is_transfer, activity_type, activity_sub_type, symbol, security_name, quantity, unit_price) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         params![
             &id,
             &input.account_id,
@@ -28,6 +39,13 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
             input.pending,
             &input.external_tx_id,
             &input.external_account_id,
+            is_transfer,
+            activity.as_ref().map(|a| a.activity_type.clone()),
+            activity.as_ref().and_then(|a| a.activity_sub_type.clone()),
+            activity.as_ref().and_then(|a| a.symbol.clone()),
+            activity.as_ref().and_then(|a| a.security_name.clone()),
+            activity.as_ref().and_then(|a| a.quantity),
+            activity.as_ref().and_then(|a| a.unit_price),
         ],
     )?;
     let txn = Transaction {
@@ -51,7 +69,7 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         created_at: now,
         is_reimbursable: false,
         is_split: false,
-        is_transfer: false,
+        is_transfer,
         transfer_peer_id: None,
         transfer_peer_account_name: None,
         owner_member_id: None,
@@ -61,11 +79,30 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         pending: input.pending,
         external_tx_id: input.external_tx_id,
         external_account_id: input.external_account_id,
+        activity,
     };
     let account_id = txn.account_id.clone();
     // Keep SimpleFin-linked account balances in sync with the ledger.
     accounts::recompute_balance_if_linked(conn, &account_id)?;
     Ok(txn)
+}
+
+/// Hydrate the six V047 activity columns (selected contiguously starting at
+/// `base`) into a nested `TxnActivity` — present only when `activity_type`
+/// is non-NULL.
+fn read_activity(r: &rusqlite::Row<'_>, base: usize) -> rusqlite::Result<Option<TxnActivity>> {
+    let activity_type: Option<String> = r.get(base)?;
+    Ok(match activity_type {
+        None => None,
+        Some(activity_type) => Some(TxnActivity {
+            activity_type,
+            activity_sub_type: r.get(base + 1)?,
+            symbol: r.get(base + 2)?,
+            security_name: r.get(base + 3)?,
+            quantity: r.get(base + 4)?,
+            unit_price: r.get(base + 5)?,
+        }),
+    })
 }
 
 pub struct TxnFilter {
@@ -100,7 +137,8 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
-                t.transfer_peer_id, pa.name, t.owner_member_id \
+                t.transfer_peer_id, pa.name, t.owner_member_id, \
+                t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -209,6 +247,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 pending: r.get::<_, i64>(23)? != 0,
                 external_tx_id: r.get(24)?,
                 external_account_id: r.get(25)?,
+                activity: read_activity(r, 30)?,
             })
         },
     )?;
@@ -503,7 +542,8 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
                 t.is_reimbursable, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
-                t.transfer_peer_id, pa.name, t.owner_member_id \
+                t.transfer_peer_id, pa.name, t.owner_member_id, \
+                t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
          FROM transactions t \
          LEFT JOIN merchants m ON m.id = t.merchant_id \
          LEFT JOIN categories c ON c.id = t.category_id \
@@ -561,6 +601,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 pending: r.get::<_, i64>(23)? != 0,
                 external_tx_id: r.get(24)?,
                 external_account_id: r.get(25)?,
+                activity: read_activity(r, 30)?,
             })
         },
     )
@@ -652,6 +693,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();

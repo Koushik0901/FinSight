@@ -310,4 +310,33 @@ describe("ImportMappingDialog", () => {
       expect.objectContaining({ columns: expect.arrayContaining(["Date", "Merchant", "Amount"]) }),
     );
   });
+
+  it("an ActivityType column satisfies the merchant requirement (brokerage exports)", async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "a1" },
+    });
+
+    // Reassign the Merchant column to ActivityType — brokerage exports leave
+    // the name column empty on most rows and merchants get synthesized.
+    const headers = screen.getAllByRole("columnheader");
+    const dd1 = headers[1]!.querySelector("select")!;
+    fireEvent.change(dd1, { target: { value: "ActivityType" } });
+
+    // The requirement chip relabels and reads as satisfied.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Merchant / Activity mapped")).toBeInTheDocument(),
+    );
+
+    // With Date + Amount still mapped, the import button is enabled.
+    const btn = screen.getByRole("button", { name: /^import$/i });
+    await waitFor(() => expect(btn).not.toBeDisabled());
+
+    // The selected account is Checking → the investment hint shows.
+    expect(
+      screen.getByText(/best imported into an\s+Investment account/i),
+    ).toBeInTheDocument();
+  });
 });

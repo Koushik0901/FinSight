@@ -16,7 +16,31 @@ import { Grid, Check, ArrowRight } from "./Icons";
 import { buildDetectedMapping } from "../utils/csvDetection";
 import { accountTypeColor } from "../utils/accountColor";
 
-const COLUMN_ROLES: ColumnRole[] = ["Date", "Amount", "Merchant", "Notes", "Category", "Skip", "Debit", "Credit"];
+const COLUMN_ROLES: ColumnRole[] = [
+  "Date",
+  "Amount",
+  "Merchant",
+  "Notes",
+  "Category",
+  "Skip",
+  "Debit",
+  "Credit",
+  "ActivityType",
+  "ActivitySubType",
+  "Symbol",
+  "SecurityName",
+  "Quantity",
+  "UnitPrice",
+];
+
+const INVESTMENT_ROLES: ColumnRole[] = [
+  "ActivityType",
+  "ActivitySubType",
+  "Symbol",
+  "SecurityName",
+  "Quantity",
+  "UnitPrice",
+];
 
 const DATE_FORMATS = [
   { label: "2026-05-19",   value: "%Y-%m-%d" },
@@ -153,12 +177,20 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   const mappedCount = useMemo(() => {
     return {
       date: columns.includes("Date"),
-      merchant: columns.includes("Merchant"),
+      // An ActivityType column satisfies the merchant requirement: brokerage
+      // exports leave the name column empty on most rows and the importer
+      // synthesizes merchants from the activity instead.
+      merchant: columns.includes("Merchant") || columns.includes("ActivityType"),
       amount: columns.includes("Amount"),
       debit: columns.includes("Debit"),
       credit: columns.includes("Credit"),
     };
   }, [columns]);
+
+  const hasInvestmentColumns = useMemo(
+    () => columns.some((c) => INVESTMENT_ROLES.includes(c)),
+    [columns],
+  );
 
   const requiredMet = useMemo(() => {
     const amountReady = amountConvention === "split_debit_credit"
@@ -280,7 +312,11 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
 
   const requiredItems = [
     { key: "date", label: "Date", ready: mappedCount.date },
-    { key: "merchant", label: "Merchant", ready: mappedCount.merchant },
+    {
+      key: "merchant",
+      label: hasInvestmentColumns ? "Merchant / Activity" : "Merchant",
+      ready: mappedCount.merchant,
+    },
     {
       key: "amount",
       label: amountConvention === "split_debit_credit" ? "Debit + Credit" : "Amount",
@@ -356,6 +392,12 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             {usingSaved && (
               <p className="import-saved-hint muted">
                 Using the settings from your last import for this account.
+              </p>
+            )}
+            {hasInvestmentColumns && selectedAccount && selectedAccount.type !== "Investment" && (
+              <p className="import-saved-hint muted">
+                Investment columns detected — this statement is best imported into an
+                Investment account.
               </p>
             )}
             <Input

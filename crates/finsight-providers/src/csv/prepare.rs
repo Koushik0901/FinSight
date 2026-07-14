@@ -59,6 +59,29 @@ pub fn ledger_fingerprint(conn: &Connection, account_id: &str) -> ProviderResult
     Ok(format!("{count}:{}", max_created.unwrap_or_default()))
 }
 
+/// Verbatim source row as JSON: an object keyed by header when the file has
+/// one, else a positional array. Preserves columns without a mapped role
+/// (commission, settlement_date, currency, …) for future features.
+fn raw_row_json(headers: Option<&[String]>, fields: &[&str]) -> String {
+    match headers {
+        Some(h) if h.len() == fields.len() => {
+            let obj: serde_json::Map<String, serde_json::Value> = h
+                .iter()
+                .zip(fields.iter())
+                .map(|(k, v)| (k.clone(), serde_json::Value::String((*v).to_string())))
+                .collect();
+            serde_json::Value::Object(obj).to_string()
+        }
+        _ => serde_json::Value::Array(
+            fields
+                .iter()
+                .map(|v| serde_json::Value::String((*v).to_string()))
+                .collect(),
+        )
+        .to_string(),
+    }
+}
+
 fn mapping_signature(m: &CsvImportMapping) -> String {
     format!(
         "{:?}|{}|{:?}|{}|{}|{:?}",
@@ -107,6 +130,9 @@ impl CsvProvider {
         };
         let mut matched_existing_ids: HashSet<String> = HashSet::new();
         let mut self_import_ids: HashSet<String> = HashSet::new();
+        // Header names from the first skipped row, used to key each row's
+        // verbatim raw JSON (mirrors the SimpleFin raw_synced_data pattern).
+        let mut headers: Option<Vec<String>> = None;
 
         for (idx, rec) in reader.records().enumerate() {
             let row_number = (idx + 1) as u32;
@@ -121,6 +147,9 @@ impl CsvProvider {
                 }
             };
             if idx < mapping.skip_header_rows as usize {
+                if idx == 0 {
+                    headers = Some(rec.iter().map(|h| h.trim().to_string()).collect());
+                }
                 continue;
             }
             let fields: Vec<&str> = rec.iter().collect();
@@ -134,7 +163,8 @@ impl CsvProvider {
                     continue;
                 }
             };
-            let new_tx = into_new_transaction(parsed, account_id.to_string());
+            let raw_json = raw_row_json(headers.as_deref(), &fields);
+            let new_tx = into_new_transaction(parsed, account_id.to_string(), Some(raw_json));
             match reconcile_excluding_batch(
                 conn,
                 account_id,

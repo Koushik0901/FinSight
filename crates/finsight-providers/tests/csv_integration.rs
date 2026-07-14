@@ -324,6 +324,7 @@ fn csv_import_skips_matching_simplefin_transaction() {
                 pending: false,
                 external_tx_id: Some("sf-1".into()),
                 external_account_id: Some("sf-acct".into()),
+                activity: None,
             },
         )
         .unwrap();

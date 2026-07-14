@@ -71,6 +71,7 @@ fn mk_txn(account_id: &str, amount_cents: i64, date: &str) -> NewTransaction {
         pending: false,
         external_tx_id: None,
         external_account_id: None,
+        activity: None,
     }
 }
 

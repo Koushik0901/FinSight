@@ -203,6 +203,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap()
@@ -260,6 +261,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();
@@ -279,6 +281,7 @@ mod tests {
                 pending: true,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();
@@ -298,6 +301,7 @@ mod tests {
                 pending: false,
                 external_tx_id: None,
                 external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();
