@@ -87,7 +87,7 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
     Ok(txn)
 }
 
-/// Hydrate the six V047 activity columns (selected contiguously starting at
+/// Hydrate the six V048 activity columns (selected contiguously starting at
 /// `base`) into a nested `TxnActivity` — present only when `activity_type`
 /// is non-NULL.
 fn read_activity(r: &rusqlite::Row<'_>, base: usize) -> rusqlite::Result<Option<TxnActivity>> {

@@ -30,7 +30,7 @@ impl TransactionStatus {
 }
 
 /// Investment/activity metadata parsed from brokerage CSV exports
-/// (Wealthsimple et al). Stored provider-verbatim in the six V047 columns;
+/// (Wealthsimple et al). Stored provider-verbatim in the six V048 columns;
 /// `categorize::activity_implies_transfer` decides which activity types are
 /// internal moves (Trade, MoneyMovement) vs real income/expense.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
@@ -102,7 +102,7 @@ pub struct NewTransaction {
     pub pending: bool,
     pub external_tx_id: Option<String>,
     pub external_account_id: Option<String>,
-    /// `#[serde(default)]` keeps pre-V047 `candidate_json` review rows decodable.
+    /// `#[serde(default)]` keeps pre-V048 `candidate_json` review rows decodable.
     #[serde(default)]
     pub activity: Option<TxnActivity>,
 }

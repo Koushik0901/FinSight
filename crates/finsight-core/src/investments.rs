@@ -1,5 +1,5 @@
 //! Positions and portfolio summary for investment accounts, derived at read
-//! time from the transactions ledger (V047 activity columns) — never
+//! time from the transactions ledger (V048 activity columns) — never
 //! materialized. Deriving keeps re-imports idempotent by construction and the
 //! numbers always consistent with what the user sees in the transaction list.
 //!
