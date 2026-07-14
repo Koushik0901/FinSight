@@ -194,6 +194,18 @@ pub fn month_total(conn: &Connection, ym: &str) -> CoreResult<i64> {
     Ok(total)
 }
 
+/// The most recent calendar month (`YYYY-MM`) with any spending activity, or
+/// None if the ledger has none. Lets a caller default "the current period".
+pub fn latest_activity_month(conn: &Connection) -> CoreResult<Option<String>> {
+    let pred = crate::metrics::non_investment_txn_predicate("t");
+    let sql = format!(
+        "SELECT MAX(substr(t.posted_at,1,7)) FROM transactions t \
+         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred}"
+    );
+    let ym: Option<String> = conn.query_row(&sql, [], |r| r.get(0))?;
+    Ok(ym)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +279,15 @@ mod tests {
         assert!(base.grand_monthly_mad_cents >= 0);
 
         assert_eq!(month_total(&conn, "2026-01").unwrap(), 99_000);
+    }
+
+    #[test]
+    fn latest_activity_month_finds_the_newest_month() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        assert_eq!(latest_activity_month(&conn).unwrap(), None);
+        ins(&conn, "2025-03", -1000, "A  X, BC");
+        ins(&conn, "2026-02", -1000, "B  Y, BC");
+        assert_eq!(latest_activity_month(&conn).unwrap().as_deref(), Some("2026-02"));
     }
 }
