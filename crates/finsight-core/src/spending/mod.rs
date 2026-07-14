@@ -59,6 +59,7 @@ mod window_tests {
     }
 }
 
+pub mod annotate;
 pub mod classify;
 pub mod decompose;
 
