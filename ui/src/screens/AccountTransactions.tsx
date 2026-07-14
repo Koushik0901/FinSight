@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -87,6 +87,14 @@ export default function AccountTransactions() {
     );
   };
   const [editTxnId, setEditTxnId] = useState<string | null>(null);
+  // Caches the last known transaction object for the currently-open editTxnId.
+  // A mutation made from the drawer (e.g. marking a transfer) can remove the
+  // row from the CURRENT filter's refetched result — it no longer matches
+  // "Possible transfers"/"Uncategorized"/etc — so re-deriving `editTxn` purely
+  // from the live list would flip the still-open drawer to a blank "Add
+  // transaction" form (isEdit = !!transaction). See editTxn below.
+  const lastEditTxnIdRef = useRef<string | null>(null);
+  const lastEditTxnRef = useRef<Transaction | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [csvPath, setCsvPath] = useState<string | null>(null);
   const [balanceOpen, setBalanceOpen] = useState(false);
@@ -162,7 +170,19 @@ export default function AccountTransactions() {
     );
   }
 
-  const editTxn = transactions.find((t) => t.id === editTxnId) ?? null;
+  // See the ref comment above: keep showing the last known transaction for
+  // this id even if a mutation-triggered refetch drops it from the currently
+  // active filter. Reset the cache whenever the TARGET id changes (a
+  // different row opened, or the drawer closed) so stale data never leaks
+  // across transactions.
+  const liveEditTxn = transactions.find((t) => t.id === editTxnId) ?? null;
+  if (editTxnId !== lastEditTxnIdRef.current) {
+    lastEditTxnIdRef.current = editTxnId;
+    lastEditTxnRef.current = liveEditTxn;
+  } else if (liveEditTxn) {
+    lastEditTxnRef.current = liveEditTxn;
+  }
+  const editTxn = lastEditTxnRef.current;
 
   return (
     <div className="screen screen-account-transactions">

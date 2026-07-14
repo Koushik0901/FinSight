@@ -145,6 +145,39 @@ describe("TransactionDrawer — edit mode", () => {
     expect(applySimilar).toHaveBeenCalledWith({ pattern: "%swathi%", isTransfer: true });
   });
 
+  it("reflects the transfer verdict immediately from the mutation result, without waiting on the `transaction` prop to update", async () => {
+    // Regression found via live UI testing: the parent screen re-derives its
+    // `transaction` prop from a FILTERED list (e.g. "Possible transfers").
+    // Marking a row as a transfer removes it from that filter's refetched
+    // result, so the prop can go stale while the drawer stays open. Before
+    // this fix, the drawer's category-note/pressed-chip rendering read the
+    // prop directly and never updated until the drawer was closed and
+    // reopened — even though the backend write had already succeeded. The
+    // drawer must use the mutation's OWN returned transaction instead.
+    setTransfer.mockResolvedValueOnce({
+      transaction: { ...existingTxn, is_transfer: true },
+      similarPattern: null,
+      similarLabel: null,
+      similarCount: 0,
+    });
+    render(
+      // The prop is deliberately held constant at is_transfer:false for the
+      // whole test — simulating the parent's stale/frozen list — so any
+      // update we observe must have come from the mutation result, not props.
+      <TransactionDrawer open={true} onClose={() => {}} transaction={existingTxn} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByRole("listbox", { name: /category/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^transfer$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/transfers aren't categorized/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("listbox", { name: /category/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^transfer$/i })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows the transfer state and hides the category picker on a transfer", () => {
     render(
       <TransactionDrawer

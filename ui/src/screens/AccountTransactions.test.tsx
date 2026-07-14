@@ -97,7 +97,11 @@ vi.mock("../api/hooks/simplefin", () => ({
 }));
 
 vi.mock("../components/TransactionDrawer", () => ({
-  default: () => null,
+  // Renders enough to distinguish edit-mode (a real `transaction` prop) from
+  // create-mode (`transaction` undefined) — the regression this covers is the
+  // drawer silently flipping from one to the other while still open.
+  default: ({ open, transaction }: { open: boolean; transaction?: { id: string } }) =>
+    open ? <div data-testid="txn-drawer">{transaction ? `edit:${transaction.id}` : "add-mode"}</div> : null,
 }));
 
 vi.mock("../api/client", async () => {
@@ -166,6 +170,75 @@ describe("AccountTransactions", () => {
     const back = await screen.findByRole("button", { name: /Back to accounts/i });
     fireEvent.click(back);
     expect(screen.getByText("Accounts list")).toBeInTheDocument();
+  });
+});
+
+describe("AccountTransactions — edit drawer survives filter-changing mutations", () => {
+  it("keeps showing the opened transaction after it drops from the active filter's refetched list", async () => {
+    // Regression: marking a transaction a transfer (or any edit that removes
+    // it from the CURRENTLY ACTIVE filter, e.g. Uncategorized/Possible
+    // transfers) invalidates the list query. If the drawer re-derives its
+    // `transaction` prop by searching the freshly refetched (now-shorter)
+    // list, the still-open drawer silently flips to blank "Add transaction"
+    // mode instead of continuing to show the transaction the user is editing.
+    const fullList = [
+      {
+        id: "txn-3",
+        account_id: "acc-1",
+        posted_at: "2026-06-26T00:00:00Z",
+        merchant_raw: "INTERAC e-Transfer To: Alice",
+        merchant_label: null,
+        amount_cents: -4000,
+        category_label: null,
+        category_color: null,
+        is_transfer: false,
+        transfer_peer_id: null,
+        transfer_peer_account_name: null,
+      },
+    ];
+    infiniteSpy.mockReturnValue({
+      data: { pages: [fullList], pageParams: [0] },
+      isLoading: false,
+      error: null,
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/accounts/acc-1/transactions"]}>
+        <Routes>
+          <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(await screen.findByText(/INTERAC e-Transfer To: Alice/));
+    expect(await screen.findByTestId("txn-drawer")).toHaveTextContent("edit:txn-3");
+
+    // Simulate the post-mutation refetch: this filter no longer returns
+    // txn-3 (e.g. it's now flagged as a transfer and the active filter is
+    // "Possible transfers", which only lists undecided rows).
+    infiniteSpy.mockReturnValue({
+      data: { pages: [[]], pageParams: [0] },
+      isLoading: false,
+      error: null,
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+    });
+    rerender(
+      <MemoryRouter initialEntries={["/accounts/acc-1/transactions"]}>
+        <Routes>
+          <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // The drawer must still be in edit mode for txn-3, not flipped to "add-mode".
+    expect(screen.getByTestId("txn-drawer")).toHaveTextContent("edit:txn-3");
+
+    infiniteSpy.mockReset();
   });
 });
 
