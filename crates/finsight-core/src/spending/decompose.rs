@@ -115,11 +115,8 @@ pub fn decompose(
             .max(b.map(|m| m.active_months).unwrap_or(0));
         let total_txns = ((recent_pm + base_pm) * months).round() as i64;
         let target_txns = (recent_pm * months).round() as i64;
-        let computed = classify_persistence(mechanism, active, total_txns, target_txns);
+        let persistence = classify_persistence(mechanism, active, total_txns, target_txns);
         let user_verdict = verdicts.get(key).cloned();
-        // A sticky verdict overrides the computed persistence (spec §6): an
-        // accepted driver is never a recurring lever — in the field AND the total.
-        let persistence = if user_verdict.is_some() { crate::spending::Persistence::OneOff } else { computed };
 
         let driver = Driver {
             merchant_key: key.clone(),
@@ -147,11 +144,18 @@ pub fn decompose(
     // "how much of the increase will recur" reflects every driver.
     let mut subtotals = PersistenceSubtotals::default();
     for d in drivers.iter().filter(|d| d.delta_cents > 0) {
-        match d.persistence {
-            Persistence::Recurring => subtotals.recurring_cents += d.delta_cents,
-            Persistence::OneOff => subtotals.one_off_cents += d.delta_cents,
-            Persistence::Emerging => subtotals.emerging_cents += d.delta_cents,
-            Persistence::Uncertain => subtotals.uncertain_cents += d.delta_cents,
+        match d.user_verdict.as_deref() {
+            // one_off: the user says it won't recur → self-correcting.
+            Some("one_off") => subtotals.one_off_cents += d.delta_cents,
+            // expected / investment: a kept ongoing cost → stays in the floor,
+            // never a lever, never counted as self-correcting.
+            Some(_) => subtotals.accepted_cents += d.delta_cents,
+            None => match d.persistence {
+                Persistence::Recurring => subtotals.recurring_cents += d.delta_cents,
+                Persistence::OneOff => subtotals.one_off_cents += d.delta_cents,
+                Persistence::Emerging => subtotals.emerging_cents += d.delta_cents,
+                Persistence::Uncertain => subtotals.uncertain_cents += d.delta_cents,
+            },
         }
     }
     drivers.truncate(limit);
@@ -291,7 +295,8 @@ mod tests {
         let after = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
         let amz = after.drivers.iter().find(|d| d.display == "AMAZON").unwrap();
         assert_eq!(amz.user_verdict.as_deref(), Some("expected"));
-        assert_eq!(amz.persistence, Persistence::OneOff, "annotation overrides the driver's persistence too");
+        assert_eq!(amz.persistence, Persistence::Recurring, "persistence stays the computed nature; the verdict is the override");
         assert_eq!(after.persistence_subtotals.recurring_cents, 0, "annotated driver leaves the levers");
+        assert!(after.persistence_subtotals.accepted_cents > 0, "an accepted cost lands in the accepted bucket, not recurring or one-off");
     }
 }

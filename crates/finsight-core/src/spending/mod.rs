@@ -97,6 +97,9 @@ pub struct PersistenceSubtotals {
     pub one_off_cents: i64,
     pub emerging_cents: i64,
     pub uncertain_cents: i64,
+    /// User-accepted drivers (expected/investment verdicts) — a kept ongoing
+    /// cost that stays in the floor: never a lever, never self-correcting.
+    pub accepted_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -53,6 +53,7 @@ pub fn plan_spending_reduction(
         .into_iter()
         .filter(|dr| {
             dr.delta_cents > 0
+                && dr.user_verdict.is_none()
                 && matches!(dr.persistence, Persistence::Recurring | Persistence::Emerging)
         })
         .collect();
@@ -143,5 +144,34 @@ mod tests {
         seed_scenario(&conn);
         let p = plan_spending_reduction(&conn, "2026-01", Some(220_000)).unwrap();
         assert_eq!(p.structural_gap_cents, None, "$2,200 >= the $2,000 trimming floor");
+    }
+
+    #[test]
+    fn accepted_annotation_is_not_self_correcting_and_stays_in_the_floor() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        for i in 0..12 {
+            ins(&conn, &format!("2025-{:02}", i + 1), -100_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(&conn, &format!("2025-{:02}", i + 1), -10_000, "AMAZON  ONLINE, ON");
+        }
+        ins(&conn, "2026-01", -100_000, "SAVE ON FOODS  EDMONTON, AB");
+        ins(&conn, "2026-01", -60_000, "AMAZON  ONLINE, ON"); // recurring, elevated +$500
+
+        // The user says the Amazon spend is an accepted cost they're keeping.
+        crate::spending::annotate::set_annotation(
+            &conn,
+            &crate::merchant::canonical_merchant_key("AMAZON  ONLINE, ON"),
+            "expected",
+            None,
+        )
+        .unwrap();
+
+        let p = plan_spending_reduction(&conn, "2026-01", Some(90_000)).unwrap();
+        assert_eq!(p.self_correcting_cents, 0, "a kept cost is NOT self-correcting");
+        assert!(p.levers.is_empty(), "a kept cost is not a lever");
+        // The $500 Amazon rise stays in the floor (not subtracted as if it lapses),
+        // so the projection is the full recent spend, not an understated floor.
+        assert_eq!(p.projected_after_levers_cents, 160_000);
+        assert!(p.structural_gap_cents.is_some(), "target below the real floor stays structural");
     }
 }
