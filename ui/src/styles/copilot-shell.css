@@ -275,3 +275,9 @@
   display: inline-flex; align-items: center; justify-content: center; color: var(--accent); margin-top: 1px; }
 .cp-check-box.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .cp-check-txt { font-size: 13px; line-height: 1.45; }
+
+/* ── spendingReview ─────────────────────────────────────────────────── */
+.cp-review { display: flex; flex-direction: column; gap: 14px; }
+.cp-review-hd { margin-bottom: 14px; }
+.cp-review-summary { margin-top: 14px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px); font-size: 13px; line-height: 1.55; color: var(--ink-2); }

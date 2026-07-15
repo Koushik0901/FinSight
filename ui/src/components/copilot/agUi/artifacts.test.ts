@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CopilotResponseBlockSchema,
   FINANCE_ARTIFACT_MAX_BYTES,
   parseFinanceArtifactEnvelope,
   serializeFinanceArtifactEnvelope,
@@ -116,5 +117,47 @@ describe("finance artifact envelope validation", () => {
       },
     });
     expect(parseFinanceArtifactEnvelope(payload)).toBeNull();
+  });
+});
+
+describe("spendingReview block schema", () => {
+  it("accepts a valid block", () => {
+    const block = {
+      kind: "spendingReview",
+      months: [
+        {
+          label: "May 2026",
+          spentCents: 408600,
+          subtitle: "8 of 10 envelopes under",
+          categories: [{ label: "Housing", amountCents: 185000, tag: "fixed" }],
+          summary: "Steady.",
+          actions: ["Do X"],
+        },
+      ],
+    };
+    expect(CopilotResponseBlockSchema.safeParse(block).success).toBe(true);
+  });
+
+  it("rejects an unknown category tag", () => {
+    const block = {
+      kind: "spendingReview",
+      months: [
+        {
+          label: "May",
+          spentCents: 1,
+          subtitle: null,
+          categories: [{ label: "X", amountCents: 1, tag: "bogus" }],
+          summary: null,
+          actions: [],
+        },
+      ],
+    };
+    expect(CopilotResponseBlockSchema.safeParse(block).success).toBe(false);
+  });
+
+  it("rejects more than 6 months", () => {
+    const month = { label: "M", spentCents: 1, subtitle: null, categories: [], summary: null, actions: [] };
+    const block = { kind: "spendingReview", months: Array(7).fill(month) };
+    expect(CopilotResponseBlockSchema.safeParse(block).success).toBe(false);
   });
 });

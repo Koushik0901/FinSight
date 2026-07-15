@@ -18,6 +18,7 @@ import { AllocationSplitCard } from "./cards/AllocationSplitCard";
 import { RankedOptionsCard } from "./cards/RankedOptionsCard";
 import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 import { RecategorizationPreviewCard } from "./cards/RecategorizationPreviewCard";
+import { SpendingReviewCard } from "./cards/SpendingReviewCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -254,6 +255,8 @@ export function FinSightResponseBlock({
       return <ComparisonBarsCard block={block} isRunning={isRunning} />;
     case "recategorizationPreview":
       return <RecategorizationPreviewCard block={block} />;
+    case "spendingReview":
+      return <SpendingReviewCard block={block} />;
     default:
       return null;
   }
