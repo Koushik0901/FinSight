@@ -375,7 +375,11 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
-            let app_data_dir = app.path().app_data_dir()?;
+            // Dev/prod DB isolation (root-cause fix for recurring corruption): the
+            // Tauri identifier is shared with the installed app, so a debug
+            // `tauri dev` build would otherwise open/migrate/corrupt the REAL
+            // production database. Debug builds use a sibling ".dev" data dir.
+            let app_data_dir = resolve_app_data_dir(app.path().app_data_dir()?, cfg!(debug_assertions));
             std::fs::create_dir_all(&app_data_dir)?;
             let db_path = app_data_dir.join("data.sqlcipher");
 
@@ -604,5 +608,45 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 
             Ok(())
         })
+}
+
+/// Choose the app data directory. Debug builds get a sibling `<identifier>.dev`
+/// directory so development NEVER opens the installed app's production database
+/// — the Tauri identifier is shared, so without this a `tauri dev` build would
+/// migrate/corrupt the real DB (the root cause of the recurring corruption).
+fn resolve_app_data_dir(prod: std::path::PathBuf, is_debug: bool) -> std::path::PathBuf {
+    if !is_debug {
+        return prod;
+    }
+    let dev_name = prod
+        .file_name()
+        .map(|n| format!("{}.dev", n.to_string_lossy()))
+        .unwrap_or_else(|| "finsight.dev".to_string());
+    prod.with_file_name(dev_name)
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::resolve_app_data_dir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn release_uses_the_production_dir() {
+        let prod = PathBuf::from(r"C:\Users\k\AppData\Roaming\com.finsight.app");
+        assert_eq!(resolve_app_data_dir(prod.clone(), false), prod);
+    }
+
+    #[test]
+    fn debug_uses_a_sibling_dev_dir_beside_prod() {
+        let prod = PathBuf::from(r"C:\Users\k\AppData\Roaming\com.finsight.app");
+        let dev = resolve_app_data_dir(prod.clone(), true);
+        assert_eq!(
+            dev.file_name().unwrap(),
+            std::ffi::OsStr::new("com.finsight.app.dev")
+        );
+        // Same parent → fully separate from prod, never nested inside it.
+        assert_eq!(dev.parent(), prod.parent());
+        assert_ne!(dev, prod);
+    }
 }
 
