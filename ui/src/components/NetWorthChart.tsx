@@ -14,7 +14,7 @@ const MAX_DOTS = 14; // beyond this many points, per-point markers just clutter
  * with a ResizeObserver) — never with `preserveAspectRatio="none"`, whose
  * non-uniform scaling smears strokes into thick blurry bands on wide windows.
  */
-export default function NetWorthChart({ points, controls, rangeLabel = "6 months" }: { points: NetWorthPoint[]; controls?: ReactNode; rangeLabel?: string }) {
+export default function NetWorthChart({ points, controls, rangeLabel = "6 months", embed = false }: { points: NetWorthPoint[]; controls?: ReactNode; rangeLabel?: string; embed?: boolean }) {
   const gradId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -70,14 +70,16 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   const labelEvery = Math.max(1, Math.ceil((points.length - 1) / 6));
 
   return (
-    <div className="bigchart">
-      <div className="bigchart-head">
-        <div>
-          <div className="h3">Net worth · last {rangeLabel}</div>
-          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
+    <div className={`bigchart${embed ? " bigchart-embed" : ""}`}>
+      {!embed && (
+        <div className="bigchart-head">
+          <div>
+            <div className="h3">Net worth · last {rangeLabel}</div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
+          </div>
+          {controls}
         </div>
-        {controls}
-      </div>
+      )}
       <div ref={wrapRef} style={{ width: "100%" }}>
         <svg viewBox={`0 0 ${w} ${HEIGHT}`} style={{ width: "100%", height: HEIGHT, display: "block" }} role="img" aria-label={`Net worth trend, currently ${label}`}>
           <defs>

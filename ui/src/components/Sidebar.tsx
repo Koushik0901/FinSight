@@ -17,23 +17,50 @@ interface NavEntry {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
 }
 
-const NAV_MAIN: NavEntry[] = [
-  { id: "today", path: "/", label: "Today", Icon: I.Today },
-  { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
-  { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
-  { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
-  { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
-  { id: "recurring", path: "/recurring", label: "Recurring", Icon: I.Repeat },
-  { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
-  { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
-  { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
-  { id: "path-back", path: "/path-back", label: "Path back", Icon: I.Flow },
-];
+interface NavSection {
+  /** null → the top "overview" group, rendered without a header. */
+  label: string | null;
+  items: NavEntry[];
+}
 
-const NAV_WORKSHOP: NavEntry[] = [
-  { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
-  { id: "rules", path: "/rules", label: "Rules & agents", Icon: I.Bolt },
-  { id: "settings", path: "/settings", label: "Settings", Icon: I.Gear },
+// Grouped IA: a flat 13-item scroll became four scannable sections that read
+// as a financial story — where you stand, where money lives, where you're
+// headed, and the tools that run underneath. Every route/badge/pulse is
+// preserved; only the grouping and visual hierarchy changed.
+const NAV: NavSection[] = [
+  {
+    label: null,
+    items: [
+      { id: "today", path: "/", label: "Today", Icon: I.Today },
+      { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
+    ],
+  },
+  {
+    label: "Money",
+    items: [
+      { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
+      { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
+      { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
+      { id: "recurring", path: "/recurring", label: "Recurring", Icon: I.Repeat },
+    ],
+  },
+  {
+    label: "Plan",
+    items: [
+      { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
+      { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
+      { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
+      { id: "path-back", path: "/path-back", label: "Path back", Icon: I.Flow },
+    ],
+  },
+  {
+    label: "Workshop",
+    items: [
+      { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
+      { id: "rules", path: "/rules", label: "Rules & agents", Icon: I.Bolt },
+      { id: "settings", path: "/settings", label: "Settings", Icon: I.Gear },
+    ],
+  },
 ];
 
 interface Props {
@@ -126,41 +153,27 @@ export function Sidebar({ onOpenCmd }: Props) {
       </button>
 
       <nav className="nav" aria-label="Main">
-        {NAV_MAIN.map((n) => (
-          <NavLink
-            key={n.id}
-            to={n.path}
-            end={n.path === "/"}
-            onMouseEnter={() => warm(n.path)}
-            onFocus={() => warm(n.path)}
-            className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-          >
-            <n.Icon className="ico" aria-hidden="true" />
-            <span>{n.label}</span>
-            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
-              {renderPulse(n.id)}
-              {renderBadge(n.id)}
-            </span>
-          </NavLink>
-        ))}
-
-        <div className="nav-section">Workshop</div>
-        {NAV_WORKSHOP.map((n) => (
-          <NavLink
-            key={n.id}
-            to={n.path}
-            end
-            onMouseEnter={() => warm(n.path)}
-            onFocus={() => warm(n.path)}
-            className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-          >
-            <n.Icon className="ico" aria-hidden="true" />
-            <span>{n.label}</span>
-            <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
-              {renderPulse(n.id)}
-              {renderBadge(n.id)}
-            </span>
-          </NavLink>
+        {NAV.map((section) => (
+          <div key={section.label ?? "overview"} className="nav-group" role="group" aria-label={section.label ?? "Overview"}>
+            {section.label && <div className="nav-section">{section.label}</div>}
+            {section.items.map((n) => (
+              <NavLink
+                key={n.id}
+                to={n.path}
+                end={n.path === "/"}
+                onMouseEnter={() => warm(n.path)}
+                onFocus={() => warm(n.path)}
+                className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+              >
+                <span className="nav-ico-wrap" aria-hidden="true"><n.Icon className="ico" /></span>
+                <span className="nav-label">{n.label}</span>
+                <span className="nav-meta">
+                  {renderPulse(n.id)}
+                  {renderBadge(n.id)}
+                </span>
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
 

@@ -219,29 +219,35 @@ export default function Today() {
 
   return (
     <div className="screen">
-      <div className="day-hdr">
-        <div><div className="eyebrow"><span className="dot" />{weekday} · {dateLong}</div></div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><span className="chip"><I.Lock width="11" height="11" /> Local-only</span><span className="chip accent"><span className="dot" />Agent · {minutesAgoLabel(agentStatus?.lastScanAt)}</span></div>
-      </div>
-
-      <section className="hero-num">
-        <div className="eyebrow" style={{ color: "var(--ink-mute)" }}>Net worth</div>
-        <div className="h-display" style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}><span className="figure money">{money(netWorth, { currency: primaryCurrency })}</span></div>
-        <div className="hero-meta">
-          <span className={`npill${trendChipClass}`}>{trendText}</span>
-          <span>·</span>
-          <span>{totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent so far this month` : "Fresh month, fresh baseline."}</span>
-          {spendNarrative && <><span>·</span><span>{spendNarrative}</span></>}
+      <section className="today-hero card">
+        <div className="today-hero-head">
+          <div className="today-hero-headline">
+            <div className="eyebrow"><span className="dot" />{weekday} · {dateLong}</div>
+            <div className="eyebrow" style={{ color: "var(--ink-mute)", marginTop: -4 }}>Net worth</div>
+            <div className="h-display today-figure" style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}><span className="figure money">{money(netWorth, { currency: primaryCurrency })}</span></div>
+            <div className="hero-meta">
+              <span className={`npill${trendChipClass}`}>{trendText}</span>
+              <span className="hero-sep">·</span>
+              <span>{totalSpendRaw > 0 ? `${money(totalSpendRaw)} spent so far this month` : "Fresh month, fresh baseline."}</span>
+              {spendNarrative && <><span className="hero-sep">·</span><span>{spendNarrative}</span></>}
+            </div>
+          </div>
+          <div className="today-hero-side">
+            <div className="today-status">
+              <span className="chip"><I.Lock width="11" height="11" /> Local-only</span>
+              <span className="chip accent"><span className="dot" />Agent · {minutesAgoLabel(agentStatus?.lastScanAt)}</span>
+            </div>
+            <div className="toolbar today-range">{RANGES.map((r) => <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)} aria-pressed={range === r.key} type="button">{r.key}</button>)}</div>
+          </div>
         </div>
         {unknownBalanceCount > 0 && (
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }} role="status">
+          <div className="hero-note" role="status">
             {unknownBalanceCount} account{unknownBalanceCount === 1 ? "" : "s"} {unknownBalanceCount === 1 ? "has" : "have"} no balance set — excluded from the totals above. <Link to="/accounts">Set balances →</Link>
           </div>
         )}
-      </section>
-
-      <section>
-        <NetWorthChart points={nwHistory} rangeLabel={RANGES.find((r) => r.key === range)!.label} controls={<div className="toolbar">{RANGES.map((r) => <button key={r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)} aria-pressed={range === r.key} type="button">{r.key}</button>)}</div>} />
+        <div className="today-hero-chart">
+          <NetWorthChart points={nwHistory} rangeLabel={RANGES.find((r) => r.key === range)!.label} embed />
+        </div>
       </section>
 
       <section className="stat-row">
@@ -253,7 +259,7 @@ export default function Today() {
 
       <PerPersonCard currency={primaryCurrency} />
 
-      <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(320px, 0.95fr)", gap: 16 }}>
+      <section className="section today-split">
         <div className="card">
           <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Morning briefing · 60 seconds</div>
           <div className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</div>
@@ -276,9 +282,9 @@ export default function Today() {
 
       {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month in review</div><div className="h3">Capture this month’s snapshot before the calendar rolls over.</div></div><button className="btn primary" type="button" disabled={createMonthlyReview.isPending} onClick={async () => { try { const nowDate = new Date(); await createMonthlyReview.mutateAsync({ year: nowDate.getFullYear(), month: nowDate.getMonth() + 1, notes: null }); toast.success("Monthly review saved", { description: "Open Reports to revisit it later." }); navigate("/reports"); } catch { toast.error("Could not create monthly review"); } }}>{createMonthlyReview.isPending ? "Saving…" : "Save review"}</button></div></div></section>}
 
-      {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Spent this month</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12 }}>{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
+      {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Spent this month</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div className="today-cat-grid">{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
 
-      <section className="section" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(320px, 0.9fr)", gap: 16 }}>
+      <section className="section today-split today-split-b">
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Agent · while you were away</div><AgentActivityFeed /><div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{needsReview > 0 && <button className="chip warning" style={{ cursor: "pointer" }} onClick={() => navigate("/accounts")} type="button">{needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →</button>}{(agentStatus?.anomalyCount ?? 0) > 0 && <button className="chip warning" style={{ cursor: "pointer" }} onClick={() => navigate("/accounts")} type="button">{agentStatus!.anomalyCount} unusual charge{agentStatus!.anomalyCount === 1 ? "" : "s"} flagged →</button>}{needsReview === 0 && (agentStatus?.anomalyCount ?? 0) === 0 && <span className="muted" style={{ fontSize: 12.5 }}>Nothing needs your attention right now.</span>}</div></div>
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>{recurringSoon.length > 0 ? "Due in the next two weeks" : "Recurring commitments"}</div>{upcomingRecurring.length === 0 ? <div className="muted">No recurring subscriptions or bills detected yet.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>{recurringSoon.length > 0 ? "Due" : "Cadence"}</th><th className="right">Amount</th></tr></thead><tbody>{upcomingRecurring.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected) ?? item.cadence}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
       </section>

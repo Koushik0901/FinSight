@@ -1,0 +1,594 @@
+/**
+ * DEV-ONLY browser mock backend.
+ *
+ * FinSight is a Tauri desktop app: every screen reads its data through
+ * `commands.*`, which delegate to `window.__TAURI_INTERNALS__.invoke`. In a
+ * plain `vite` browser that global is absent, so `isTauriRuntime()` is false and
+ * screens render empty. This module installs a fixture-backed
+ * `__TAURI_INTERNALS__` so the app renders full, realistic data in an ordinary
+ * browser — enabling a fast visual-design iteration loop and letting us exercise
+ * every data state (rich / empty / partial / large / multi-account) instantly.
+ *
+ * SAFETY: this is imported ONLY from main.tsx, ONLY when
+ *   import.meta.env.DEV && new URLSearchParams(location.search).has("mock")
+ * and ONLY when no real `__TAURI_INTERNALS__` already exists. It is dynamically
+ * imported so it is tree-shaken out of production builds, and it never runs
+ * under vitest (which drives components directly, not through main.tsx).
+ *
+ * It is a design harness, not a source of truth. Numbers are plausible, not
+ * audited. The real-Tauri build remains the correctness backstop.
+ */
+
+type Kind = "rich" | "empty" | "partial" | "large" | "multi";
+
+// ── AccountSummary builder (fills every required binding field) ──────────────
+type AnyRec = Record<string, unknown>;
+
+const ACCOUNT_COLORS: Record<string, string> = {
+  Checking: "#60A5FA",
+  Savings: "#34D399",
+  Credit: "#FB923C",
+  Investment: "#A78BFA",
+  Cash: "#FACC15",
+  Loan: "#F8718C",
+  Other: "#9CA3AF",
+};
+
+let acctSeq = 0;
+function acct(o: AnyRec): AnyRec {
+  const type = (o.type as string) ?? "Checking";
+  return {
+    id: (o.id as string) ?? `acc-${++acctSeq}`,
+    owner: "You",
+    bank: "Bank",
+    type,
+    name: "Account",
+    balance_cents: 0,
+    currency: "USD",
+    color: ACCOUNT_COLORS[type] ?? "#60A5FA",
+    source: "manual",
+    liquidity_type: type === "Investment" ? "invested" : "liquid",
+    emergency_fund_eligible: type === "Savings" || type === "Checking",
+    goal_earmark: null,
+    apy_pct: null,
+    simplefin_account_id: null,
+    last_synced_at: null,
+    nickname: null,
+    connection_id: null,
+    institution_id: null,
+    external_account_id: null,
+    official_name: null,
+    mask: null,
+    subtype: null,
+    account_group: "default",
+    available_balance_cents: null,
+    balance_date: null,
+    extra_json: null,
+    raw_json: null,
+    import_pending: false,
+    apr_pct: null,
+    min_payment_cents: null,
+    payoff_date: null,
+    limit_cents: null,
+    original_balance_cents: null,
+    started_at: null,
+    balance_known: true,
+    balance_source: "manual",
+    ...o,
+  };
+}
+
+// ── Deterministic time-series helpers ───────────────────────────────────────
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+function isoInDays(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+function monthKey(monthsAgo: number): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - monthsAgo);
+  return d.toISOString().slice(0, 7);
+}
+
+/** Rising net-worth series: `months` monthly points ending near `endCents`. */
+function netWorthSeries(months: number, startCents: number, endCents: number): AnyRec[] {
+  const pts: AnyRec[] = [];
+  for (let i = 0; i < months; i++) {
+    const t = months <= 1 ? 1 : i / (months - 1);
+    // gentle ease + deterministic wobble so the line has character
+    const wobble = Math.sin(i * 1.7) * (endCents - startCents) * 0.02;
+    const total = Math.round(startCents + (endCents - startCents) * t + wobble);
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - (months - 1 - i));
+    pts.push({ date: d.toISOString().slice(0, 10), totalCents: total });
+  }
+  return pts;
+}
+
+// ── Dataset construction ─────────────────────────────────────────────────────
+interface Dataset {
+  accounts: AnyRec[];
+  metrics: AnyRec;
+  metricsByMember?: Record<string, AnyRec>;
+  healthScore: AnyRec | null;
+  savingsRateHistory: AnyRec[];
+  categories: AnyRec[];
+  recurring: AnyRec[];
+  goals: AnyRec[];
+  manualAssets: AnyRec[];
+  members: AnyRec[];
+  milestones: number[];
+  needsReview: number;
+  agentStatus: AnyRec;
+  monthTotals: AnyRec;
+  onboarding: AnyRec;
+  netWorthEnd: number;
+  netWorthStart: number;
+}
+
+function cat(id: string, label: string, color: string, thisM: number, lastM: number, type: string | null): AnyRec {
+  return {
+    id,
+    label,
+    color,
+    groupId: "g1",
+    groupLabel: "Spending",
+    spendingType: type,
+    thisMonthCents: thisM,
+    lastMonthCents: lastM,
+    txnCount: Math.max(1, Math.round(thisM / 4000)),
+    budgetCents: Math.round(lastM * 1.05),
+  };
+}
+
+function recur(merchant: string, color: string, label: string, kind: string, cadence: string, amt: number, dueInDays: number): AnyRec {
+  return {
+    merchantRaw: merchant,
+    categoryLabel: label,
+    categoryColor: color,
+    kind,
+    cadence,
+    confidence: 0.9,
+    reasons: ["Regular cadence", "Stable amount"],
+    lastAmountCents: amt,
+    minAmountCents: amt,
+    maxAmountCents: amt,
+    avgGapDays: cadence === "monthly" ? 30 : 7,
+    occurrences: 6,
+    lastSeen: isoDaysAgo(30 - dueInDays),
+    nextExpected: isoInDays(dueInDays),
+  };
+}
+
+function goal(id: string, name: string, target: number, current: number, monthly: number, color: string, accountId: string | null, goalType = "savings"): AnyRec {
+  return {
+    id,
+    name,
+    goalType,
+    targetCents: target,
+    currentCents: current,
+    monthlyCents: monthly,
+    targetDate: isoInDays(365),
+    color,
+    notes: null,
+    purpose: null,
+    sortOrder: 0,
+    accountId,
+  };
+}
+
+function baseMetrics(o: AnyRec): AnyRec {
+  return {
+    liquidCents: 0,
+    investedCents: 0,
+    debtCents: 0,
+    emergencyFundCents: 0,
+    netWorthCents: 0,
+    accountsWithUnknownBalance: 0,
+    avgMonthlyIncomeCents: 0,
+    avgMonthlyExpenseCents: 0,
+    netMonthlyCents: 0,
+    rollingSavingsRatePct: 0,
+    thisMonthIncomeCents: 0,
+    thisMonthExpenseCents: 0,
+    thisMonthNetCents: 0,
+    thisMonthSavingsRatePct: 0,
+    emergencyFundMonths: 0,
+    runwayDays: 0,
+    targetSavingsRatePct: 20,
+    emergencyFundTargetMonths: 6,
+    expectedAnnualReturnPct: 7,
+    ...o,
+  };
+}
+
+function agentStatus(o: AnyRec): AnyRec {
+  return {
+    uncategorizedCount: 0,
+    anomalyCount: 0,
+    overBudgetCount: 0,
+    upcomingBillsCount: 0,
+    lastScanAt: null,
+    lastScanCategorized: null,
+    ...o,
+  };
+}
+
+function buildDataset(kind: Kind): Dataset {
+  const C = {
+    housing: "#A78BFA",
+    groceries: "#34D399",
+    dining: "#FB923C",
+    transport: "#60A5FA",
+    utilities: "#FACC15",
+    subs: "#F472B6",
+    shopping: "#FCA5A5",
+    health: "#2DD4BF",
+    travel: "#818CF8",
+  };
+
+  if (kind === "empty") {
+    return {
+      accounts: [],
+      metrics: baseMetrics({}),
+      healthScore: null,
+      savingsRateHistory: [],
+      categories: [],
+      recurring: [],
+      goals: [],
+      manualAssets: [],
+      members: [],
+      milestones: [],
+      needsReview: 0,
+      agentStatus: agentStatus({}),
+      monthTotals: { incomeCents: 0, expenseCents: 0, netCents: 0, savingsRatePct: 0, txnCount: 0 },
+      onboarding: { account_count: 0, category_count: 0, completion_marked: true },
+      netWorthStart: 0,
+      netWorthEnd: 0,
+    };
+  }
+
+  if (kind === "partial") {
+    const accounts = [
+      acct({ id: "p-chk", type: "Checking", bank: "Tangerine", name: "Everyday Chequing", balance_cents: 231400 }),
+      acct({ id: "p-inv", type: "Investment", bank: "Wealthsimple", name: "TFSA", balance_cents: 0, balance_known: false, balance_source: "seed" }),
+    ];
+    return {
+      accounts,
+      metrics: baseMetrics({
+        liquidCents: 231400,
+        netWorthCents: 231400,
+        accountsWithUnknownBalance: 1,
+        avgMonthlyIncomeCents: 540000,
+        avgMonthlyExpenseCents: 388000,
+        netMonthlyCents: 152000,
+        rollingSavingsRatePct: 21,
+        thisMonthIncomeCents: 540000,
+        thisMonthExpenseCents: 174000,
+        thisMonthNetCents: 366000,
+        thisMonthSavingsRatePct: 24,
+        emergencyFundMonths: 0.6,
+        runwayDays: 18,
+      }),
+      healthScore: {
+        total: 52,
+        grade: "C",
+        breakdown: {
+          savingsRatePts: 12, emergencyFundPts: 4, debtRatioPts: 18, goalProgressPts: 6, budgetAdherencePts: 12,
+          savingsRatePct: 21, emergencyFundMonths: 0.6, debtToIncomePct: 8, avgGoalPct: 0, budgetAdherencePct: 74,
+        },
+        tips: ["Build one month of expenses in savings before anything else.", "Set a first goal so progress has a destination."],
+      },
+      savingsRateHistory: [
+        { month: monthKey(1), savingsRatePct: 18, incomeCents: 540000, expenseCents: 442000 },
+        { month: monthKey(0), savingsRatePct: 24, incomeCents: 540000, expenseCents: 410000 },
+      ],
+      categories: [
+        cat("c-groc", "Groceries", C.groceries, 62000, 58000, "Need"),
+        cat("c-dining", "Dining", C.dining, 41000, 39000, "Want"),
+        cat("c-transport", "Transport", C.transport, 24000, 28000, "Need"),
+      ],
+      recurring: [recur("Rent", C.housing, "Housing", "bill", "monthly", 145000, 6)],
+      goals: [],
+      manualAssets: [],
+      members: [],
+      milestones: [],
+      needsReview: 0,
+      agentStatus: agentStatus({ uncategorizedCount: 0, lastScanAt: isoDaysAgo(0.02) }),
+      monthTotals: { incomeCents: 540000, expenseCents: 174000, netCents: 366000, savingsRatePct: 24, txnCount: 22 },
+      onboarding: { account_count: 2, category_count: 6, completion_marked: true },
+      netWorthStart: 180000,
+      netWorthEnd: 231400,
+    };
+  }
+
+  if (kind === "large") {
+    const accounts = [
+      acct({ id: "l-chk", type: "Checking", bank: "CIBC", name: "Chequing", balance_cents: 612000 }),
+      acct({ id: "l-sav", type: "Savings", bank: "CIBC", name: "High-Interest Savings", balance_cents: 2840000 }),
+      acct({ id: "l-sav2", type: "Savings", bank: "Tangerine", name: "Emergency Fund", balance_cents: 1560000 }),
+      acct({ id: "l-cc1", type: "Credit", bank: "Amex", name: "Cobalt", balance_cents: -184000 }),
+      acct({ id: "l-cc2", type: "Credit", bank: "CIBC", name: "Aventura", balance_cents: -92000 }),
+      acct({ id: "l-inv1", type: "Investment", bank: "Wealthsimple", name: "TFSA", balance_cents: 6820000 }),
+      acct({ id: "l-inv2", type: "Investment", bank: "Wealthsimple", name: "RRSP", balance_cents: 9410000 }),
+      acct({ id: "l-loan", type: "Loan", bank: "CIBC", name: "Student Loan", balance_cents: -1240000 }),
+    ];
+    return {
+      accounts,
+      metrics: baseMetrics({
+        liquidCents: 5012000,
+        investedCents: 16230000,
+        debtCents: 1516000,
+        netWorthCents: 19726000,
+        avgMonthlyIncomeCents: 1120000,
+        avgMonthlyExpenseCents: 748000,
+        netMonthlyCents: 372000,
+        rollingSavingsRatePct: 33,
+        thisMonthIncomeCents: 1120000,
+        thisMonthExpenseCents: 512000,
+        thisMonthNetCents: 608000,
+        thisMonthSavingsRatePct: 38,
+        emergencyFundCents: 4400000,
+        emergencyFundMonths: 5.9,
+        runwayDays: 201,
+      }),
+      healthScore: {
+        total: 84,
+        grade: "A",
+        breakdown: {
+          savingsRatePts: 22, emergencyFundPts: 20, debtRatioPts: 16, goalProgressPts: 14, budgetAdherencePts: 12,
+          savingsRatePct: 33, emergencyFundMonths: 5.9, debtToIncomePct: 14, avgGoalPct: 61, budgetAdherencePct: 88,
+        },
+        tips: ["You're one month from a full emergency fund — nudge it over the line.", "Consider directing the surplus toward the student loan."],
+      },
+      savingsRateHistory: Array.from({ length: 6 }, (_, i) => ({
+        month: monthKey(5 - i),
+        savingsRatePct: [28, 31, 26, 35, 30, 38][i]!,
+        incomeCents: 1120000,
+        expenseCents: 1120000 * (1 - [28, 31, 26, 35, 30, 38][i]! / 100),
+      })),
+      categories: [
+        cat("c-housing", "Housing", C.housing, 210000, 210000, "Need"),
+        cat("c-groc", "Groceries", C.groceries, 78000, 71000, "Need"),
+        cat("c-dining", "Dining", C.dining, 52000, 61000, "Want"),
+        cat("c-transport", "Transport", C.transport, 34000, 29000, "Need"),
+        cat("c-shopping", "Shopping", C.shopping, 47000, 22000, "Want"),
+        cat("c-utilities", "Utilities", C.utilities, 18400, 17200, "Need"),
+        cat("c-health", "Health", C.health, 12600, 9800, "Need"),
+        cat("c-travel", "Travel", C.travel, 68000, 0, "Want"),
+        cat("c-subs", "Subscriptions", C.subs, 9400, 9400, "Want"),
+      ],
+      recurring: [
+        recur("Rent", C.housing, "Housing", "bill", "monthly", 210000, 3),
+        recur("Hydro One", C.utilities, "Utilities", "bill", "monthly", 8400, 9),
+        recur("Netflix", C.subs, "Subscriptions", "subscription", "monthly", 1699, 12),
+        recur("Spotify", C.subs, "Subscriptions", "subscription", "monthly", 1199, 5),
+        recur("Fitness World", C.health, "Health", "subscription", "monthly", 4500, 14),
+        recur("iCloud+", C.subs, "Subscriptions", "subscription", "monthly", 399, 1),
+        recur("Employer Payroll", "#6FCA8A", "Income", "income", "biweekly", 560000, 4),
+        recur("Internet — Bell", C.utilities, "Utilities", "bill", "monthly", 9500, 8),
+      ],
+      goals: [
+        goal("g-ef", "Emergency Fund", 4800000, 4400000, 40000, "#34D399", null, "safety"),
+        goal("g-vac", "Japan 2027", 900000, 340000, 30000, "#818CF8", null, "travel"),
+        goal("g-car", "Next Car", 3500000, 1180000, 60000, "#FB923C", null, "purchase"),
+        goal("g-house", "House Down Payment", 8000000, 2100000, 120000, "#A78BFA", null, "home"),
+      ],
+      manualAssets: [{ id: "ma1", name: "2019 Honda Civic", assetType: "vehicle", valueCents: 1650000, currency: "USD", notes: null, createdAt: isoDaysAgo(200), updatedAt: isoDaysAgo(10) }],
+      members: [],
+      milestones: [],
+      needsReview: 12,
+      agentStatus: agentStatus({ uncategorizedCount: 12, anomalyCount: 2, overBudgetCount: 1, upcomingBillsCount: 5, lastScanAt: isoDaysAgo(0.01), lastScanCategorized: 34 }),
+      monthTotals: { incomeCents: 1120000, expenseCents: 512000, netCents: 608000, savingsRatePct: 38, txnCount: 214 },
+      onboarding: { account_count: 8, category_count: 18, completion_marked: true },
+      netWorthStart: 12800000,
+      netWorthEnd: 19726000,
+    };
+  }
+
+  // ── rich (default) & multi share the core; multi adds household members ─────
+  const accountsRich = [
+    acct({ id: "r-chk", type: "Checking", bank: "Tangerine", name: "Everyday Chequing", balance_cents: 482000, owner: "You" }),
+    acct({ id: "r-sav", type: "Savings", bank: "CIBC", name: "High-Interest Savings", balance_cents: 1840000, owner: "You" }),
+    acct({ id: "r-cc", type: "Credit", bank: "Amex", name: "Cobalt Card", balance_cents: -124000, owner: kind === "multi" ? "Sam" : "You" }),
+    acct({ id: "r-inv", type: "Investment", bank: "Wealthsimple", name: "TFSA", balance_cents: 5230000, owner: kind === "multi" ? "Sam" : "You" }),
+  ];
+
+  const members = kind === "multi"
+    ? [
+        { id: "m-you", name: "Alex", color: "#C9F950", createdAt: isoDaysAgo(300), is_self: true },
+        { id: "m-sam", name: "Sam", color: "#818CF8", createdAt: isoDaysAgo(300), is_self: false },
+      ]
+    : [];
+
+  const metrics = baseMetrics({
+    liquidCents: 2322000,
+    investedCents: 5230000,
+    debtCents: 124000,
+    netWorthCents: 7428000,
+    emergencyFundCents: 1840000,
+    avgMonthlyIncomeCents: 700000,
+    avgMonthlyExpenseCents: 452000,
+    netMonthlyCents: 248000,
+    rollingSavingsRatePct: 33,
+    thisMonthIncomeCents: 700000,
+    thisMonthExpenseCents: 364000,
+    thisMonthNetCents: 336000,
+    thisMonthSavingsRatePct: 48,
+    emergencyFundMonths: 4.1,
+    runwayDays: 154,
+  });
+
+  const metricsByMember: Record<string, AnyRec> = {
+    "m-you": baseMetrics({
+      liquidCents: 2322000, investedCents: 2615000, netWorthCents: 4813000,
+      thisMonthIncomeCents: 420000, thisMonthExpenseCents: 210000, thisMonthNetCents: 210000, thisMonthSavingsRatePct: 50,
+      avgMonthlyIncomeCents: 420000, avgMonthlyExpenseCents: 262000, rollingSavingsRatePct: 38, runwayDays: 200,
+    }),
+    "m-sam": baseMetrics({
+      liquidCents: 0, investedCents: 2615000, debtCents: 124000, netWorthCents: 2491000,
+      thisMonthIncomeCents: 280000, thisMonthExpenseCents: 154000, thisMonthNetCents: 126000, thisMonthSavingsRatePct: 45,
+      avgMonthlyIncomeCents: 280000, avgMonthlyExpenseCents: 190000, rollingSavingsRatePct: 27, runwayDays: 90,
+    }),
+  };
+
+  return {
+    accounts: accountsRich,
+    metrics,
+    metricsByMember: kind === "multi" ? metricsByMember : undefined,
+    healthScore: {
+      total: 78,
+      grade: "B+",
+      breakdown: {
+        savingsRatePts: 20, emergencyFundPts: 15, debtRatioPts: 18, goalProgressPts: 13, budgetAdherencePts: 12,
+        savingsRatePct: 48, emergencyFundMonths: 4.1, debtToIncomePct: 6, avgGoalPct: 54, budgetAdherencePct: 86,
+      },
+      tips: ["Two more months of savings hits a full emergency fund.", "Dining is trending down — nice. Bank the difference."],
+    },
+    savingsRateHistory: [
+      { month: monthKey(5), savingsRatePct: 38, incomeCents: 700000, expenseCents: 434000 },
+      { month: monthKey(4), savingsRatePct: 42, incomeCents: 700000, expenseCents: 406000 },
+      { month: monthKey(3), savingsRatePct: 31, incomeCents: 700000, expenseCents: 483000 },
+      { month: monthKey(2), savingsRatePct: 47, incomeCents: 700000, expenseCents: 371000 },
+      { month: monthKey(1), savingsRatePct: 44, incomeCents: 700000, expenseCents: 392000 },
+      { month: monthKey(0), savingsRatePct: 48, incomeCents: 700000, expenseCents: 364000 },
+    ],
+    categories: [
+      cat("c-housing", "Housing", C.housing, 180000, 180000, "Need"),
+      cat("c-groc", "Groceries", C.groceries, 62000, 58000, "Need"),
+      cat("c-dining", "Dining", C.dining, 41000, 52000, "Want"),
+      cat("c-shopping", "Shopping", C.shopping, 33000, 19000, "Want"),
+      cat("c-transport", "Transport", C.transport, 24000, 21000, "Need"),
+      cat("c-utilities", "Utilities", C.utilities, 15400, 14200, "Need"),
+      cat("c-subs", "Subscriptions", C.subs, 8600, 8600, "Want"),
+    ],
+    recurring: [
+      recur("Rent", C.housing, "Housing", "bill", "monthly", 180000, 4),
+      recur("Netflix", C.subs, "Subscriptions", "subscription", "monthly", 1699, 9),
+      recur("Spotify", C.subs, "Subscriptions", "subscription", "monthly", 1199, 2),
+      recur("Hydro", C.utilities, "Utilities", "bill", "monthly", 8400, 11),
+      recur("Fitness World", C.health, "Health", "subscription", "monthly", 4500, 13),
+      recur("iCloud+", C.subs, "Subscriptions", "subscription", "monthly", 299, 1),
+    ],
+    goals: [
+      goal("g-ef", "Emergency Fund", 3000000, 1840000, 40000, "#34D399", null, "safety"),
+      goal("g-vac", "Vacation Fund", 500000, 220000, 25000, "#818CF8", null, "travel"),
+      goal("g-car", "New Car", 2500000, 400000, 50000, "#FB923C", null, "purchase"),
+    ],
+    manualAssets: [],
+    members,
+    milestones: [],
+    needsReview: 3,
+    agentStatus: agentStatus({ uncategorizedCount: 3, anomalyCount: 1, upcomingBillsCount: 2, lastScanAt: isoDaysAgo(0.008), lastScanCategorized: 18 }),
+    monthTotals: { incomeCents: 700000, expenseCents: 364000, netCents: 336000, savingsRatePct: 48, txnCount: 84 },
+    onboarding: { account_count: 4, category_count: 12, completion_marked: true },
+    netWorthStart: 5100000,
+    netWorthEnd: 7428000,
+  };
+}
+
+// ── invoke dispatch ─────────────────────────────────────────────────────────
+function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown> {
+  return {
+    list_accounts: () => ds.accounts,
+    get_agent_status: () => ds.agentStatus,
+    get_needs_review_count: () => ds.needsReview,
+    get_financial_metrics: (a) => {
+      const memberId = a?.memberId as string | null | undefined;
+      if (memberId && ds.metricsByMember?.[memberId]) return ds.metricsByMember[memberId];
+      return ds.metrics;
+    },
+    get_financial_health_score: () => ds.healthScore,
+    get_savings_rate_history: () => ds.savingsRateHistory,
+    list_categories_with_spending: () => ds.categories,
+    get_uncelebrated_milestones: () => ds.milestones,
+    list_net_worth_history: (a) => {
+      const days = Number(a?.days ?? 180);
+      if (ds.netWorthEnd === 0 && ds.accounts.length === 0) return [];
+      const months = Math.min(24, Math.max(2, Math.round(days / 30) + 1));
+      return netWorthSeries(months, ds.netWorthStart, ds.netWorthEnd);
+    },
+    list_recurring: () => ds.recurring,
+    list_manual_assets: () => ds.manualAssets,
+    list_goals: () => ds.goals,
+    get_month_totals: () => ds.monthTotals,
+    list_household_members: () => ds.members,
+    get_onboarding_state: () => ds.onboarding,
+    list_action_bundles: () => [],
+    list_account_balance_sparklines: () => [],
+    // mutations — echo a plausible success so optimistic flows don't throw
+    create_monthly_review: () => ({ id: "mr-1", year: new Date().getFullYear(), month: new Date().getMonth() + 1, monthLabel: "This month", notes: null, snapshot: {}, createdAt: new Date().toISOString() }),
+    contribute_to_goal: () => ({ id: "gc-1" }),
+  };
+}
+
+/**
+ * Best-effort default for commands not yet fixtured on the active screen.
+ * Returns [] rather than null: many hooks `.map()` their result, and an empty
+ * array degrades to an empty list everywhere (object-hooks just read undefined
+ * fields) — so an unfixtured screen renders sparse instead of hitting the
+ * error boundary. Explicit fixtures above always win.
+ */
+function fallback(cmd: string): unknown {
+  void cmd;
+  return [];
+}
+
+export function installMockBackend(kindRaw: string | null) {
+  const kind = (["rich", "empty", "partial", "large", "multi"].includes(kindRaw ?? "")
+    ? kindRaw
+    : "rich") as Kind;
+  const ds = buildDataset(kind);
+  const responders = buildResponders(ds);
+
+  let cbSeq = 0;
+  const w = window as unknown as AnyRec;
+
+  const invoke = async (cmd: string, args?: AnyRec): Promise<unknown> => {
+    // Tauri core/event plugin traffic — resolve harmlessly.
+    if (cmd.startsWith("plugin:")) {
+      if (cmd === "plugin:event|listen") return ++cbSeq;
+      return null;
+    }
+    const fn = responders[cmd];
+    if (fn) return fn(args ?? {});
+    if (!w.__finsightMockWarned) w.__finsightMockWarned = new Set<string>();
+    const warned = w.__finsightMockWarned as Set<string>;
+    if (!warned.has(cmd)) {
+      warned.add(cmd);
+      // eslint-disable-next-line no-console
+      console.info(`[mock] unfixtured command "${cmd}" → default`);
+    }
+    return fallback(cmd);
+  };
+
+  w.__TAURI_INTERNALS__ = {
+    invoke,
+    transformCallback: (cb: unknown) => {
+      const id = ++cbSeq;
+      w[`_${id}`] = cb;
+      return id;
+    },
+    unregisterCallback: () => {},
+    // The event plugin's unlisten path reads these; stub them so component
+    // unmount (AgentActivityFeed / ImportProgress) doesn't throw in the console.
+    unregisterListener: () => {},
+    metadata: {
+      currentWindow: { label: "main" },
+      currentWebview: { windowLabel: "main", label: "main" },
+    },
+  };
+  // Some @tauri-apps/api/event builds route unlisten through a dedicated
+  // plugin-internals global — provide a no-op so cleanup is silent.
+  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+
+  // eslint-disable-next-line no-console
+  console.info(
+    `%c FinSight mock backend active `,
+    "background:#C9F950;color:#0A0F02;font-weight:700;border-radius:4px;",
+    `dataset="${kind}" — switch with ?mock=rich|empty|partial|large|multi`
+  );
+}
