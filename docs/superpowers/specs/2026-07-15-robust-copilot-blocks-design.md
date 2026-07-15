@@ -101,6 +101,9 @@ OpenRouter structured-output support is per-model and inconsistent, and `tools` 
 - Gate per provider capability (config flag or preset allowlist).
 - **Redundancy note:** this constrains only blocks the model still emits in full — i.e. *not* `accountsOverview`/`spendingReview` (synthesized by (a)). Its value is the remaining model-emitted kinds.
 
+### 5.3 Single-model main path (follow-up, DONE 2026-07-15)
+Structured output cleanly applies to dedicated final-answer turns (tool_choice "none"), not the *mixed* tool/answer turn of the single-model main path. Rather than a full loop restructure, the engine does a **conditional structured repair**: `CompletionProvider::supports_structured_output()` gates it, and when a single-model run finishes with a botched-but-attempted JSON answer (`parse_structured_final_answer` fails AND the text looks like attempted structured output) it re-emits *that one turn* through the constrained final-answer turn. All three signals must hold, so the happy path and legitimate plain-prose replies pay no extra round-trip.
+
 If (b) lands, the generated schema can later become the single source for the frontend validator too (retiring hand-written Zod) — but that unification is **deferred**, not part of this project.
 
 ## 6. Non-goals / deferred
