@@ -742,7 +742,7 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
              FROM transactions t JOIN accounts a ON a.id = t.account_id \
              WHERE t.transfer_peer_id IS NULL AND t.amount_cents != 0 \
                AND COALESCE(t.transfer_override, 1) != 0 \
-             ORDER BY t.posted_at, t.id",
+             ORDER BY t.posted_at, t.amount_cents, t.merchant_raw, t.id",
         )?;
         let rows = stmt.query_map([], |r| {
             let merchant_raw: String = r.get(5)?;
@@ -822,8 +822,12 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
         false
     };
 
-    // Greedy nearest-date matching. Candidates are in (posted_at, id) order, so
-    // iteration and tie-breaks are deterministic.
+    // Greedy nearest-date matching. Candidates are ordered by stable CONTENT
+    // (posted_at, amount, merchant) before id, so both the iteration order and
+    // the equal-distance tie-break (first-in-order wins) are reproducible even
+    // when row ids are assigned randomly on re-import — id is only a final
+    // tie-break among rows identical in every content field, where the choice
+    // of which leg to flag is immaterial.
     let mut used: HashSet<usize> = HashSet::new();
     let mut pairs: Vec<(String, String)> = Vec::new();
     for i in 0..candidates.len() {
@@ -1396,6 +1400,57 @@ mod tests {
         .unwrap();
         let n = pair_transfers(&mut conn).unwrap();
         assert_eq!(n, 0, "a nameless transfer does not pair with a NAMED e-transfer of the opposite amount");
+    }
+
+    #[test]
+    fn pairing_is_deterministic_regardless_of_row_id_order() {
+        // The audit probe re-imports with random UUIDs, so pairing must not
+        // depend on which id a row happens to receive. Three same-date
+        // equal-and-opposite bare transfers make the greedy match ambiguous
+        // (the -$2000 leg can pair with either +$2000 leg); the outcome must be
+        // decided by stable content (amount, then merchant), never by row id.
+        fn run(ids: [&str; 3]) -> Vec<String> {
+            let (_d, db) = fresh_db();
+            let mut conn = db.get().unwrap();
+            seed_categories(&conn);
+            conn.execute(
+                "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES\
+                 ('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                 ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now')),\
+                 ('tng','You','Tangerine','Savings','Tng','CAD','#333','manual',datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                &format!(
+                    "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+                     ('{}','chk','2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000000001','cleared',datetime('now')),\
+                     ('{}','sav','2026-05-01T12:00:00Z', 200000,'Internet Banking INTERNET TRANSFER 000000000002','cleared',datetime('now')),\
+                     ('{}','tng','2026-05-01T12:00:00Z', 200000,'Internet Banking INTERNET TRANSFER 000000000003','cleared',datetime('now'))",
+                    ids[0], ids[1], ids[2]
+                ),
+                [],
+            )
+            .unwrap();
+            pair_transfers(&mut conn).unwrap();
+            let mut flagged: Vec<String> = conn
+                .prepare("SELECT merchant_raw FROM transactions WHERE is_transfer=1")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            flagged.sort();
+            flagged
+        }
+        // Same content, opposite id orderings → identical flagged set.
+        let ascending = run(["id-a", "id-b", "id-c"]);
+        let descending = run(["id-z", "id-y", "id-x"]);
+        assert_eq!(ascending.len(), 2, "exactly one pair forms from three ambiguous legs");
+        assert_eq!(
+            ascending, descending,
+            "pairing outcome must be identical regardless of row-id ordering"
+        );
     }
 
     #[test]
