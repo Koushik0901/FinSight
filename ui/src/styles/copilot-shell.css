@@ -296,3 +296,34 @@
 .cp-account-bal.is-neg { color: var(--negative); }
 .cp-account-badge { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--warning); border: 1px dashed currentColor; border-radius: 6px; padding: 3px 8px; }
+
+/* ── spendTimeline ──────────────────────────────────────────────────── */
+.cp-timeline-bars { display: flex; align-items: flex-end; gap: 10px; height: 160px; margin-top: 16px; }
+.cp-tl-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+.cp-tl-note { font-family: var(--mono); font-size: 9px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); }
+.cp-tl-val { font-size: 10.5px; color: var(--ink-faint); }
+.cp-tl-bar { width: 100%; max-width: 34px; background: var(--surface-2); border-radius: 6px 6px 0 0; min-height: 4px; }
+.cp-tl-col.is-hl .cp-tl-bar { background: color-mix(in srgb, var(--accent) 55%, var(--surface-2)); }
+.cp-tl-col.is-proj .cp-tl-bar { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 4px, transparent 4px, transparent 8px);
+  border: 1px dashed var(--line); }
+.cp-tl-label { font-size: 11px; color: var(--ink-mute); }
+
+/* ── spendingDrivers ────────────────────────────────────────────────── */
+.cp-drivers-list { display: flex; flex-direction: column; margin-top: 14px; }
+.cp-driver-row { display: grid; grid-template-columns: auto auto auto 1fr; gap: 10px; align-items: center;
+  padding: 11px 0; border-top: 1px solid var(--line); }
+.cp-driver-row:first-child { border-top: none; }
+.cp-driver-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.cp-driver-amt { font-size: 13px; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; grid-column: 4; }
+.cp-driver-note { grid-column: 2 / -1; font-size: 12px; color: var(--ink-faint); }
+
+/* ── watchList ──────────────────────────────────────────────────────── */
+.cp-watch-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.cp-watch-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+  padding: 11px 13px; background: var(--elevated); border: 1px solid var(--line); border-radius: 8px; }
+.cp-watch-n { width: 20px; height: 20px; border-radius: 999px; background: var(--surface-2); color: var(--ink-mute);
+  font-family: var(--mono); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.cp-watch-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cp-watch-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cp-watch-detail { font-size: 12px; color: var(--ink-mute); line-height: 1.45; }
+.cp-watch-amt { font-size: 12.5px; color: var(--negative); white-space: nowrap; }

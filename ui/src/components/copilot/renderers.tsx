@@ -20,6 +20,9 @@ import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 import { RecategorizationPreviewCard } from "./cards/RecategorizationPreviewCard";
 import { SpendingReviewCard } from "./cards/SpendingReviewCard";
 import { AccountsOverviewCard } from "./cards/AccountsOverviewCard";
+import { SpendTimelineCard } from "./cards/SpendTimelineCard";
+import { SpendingDriversCard } from "./cards/SpendingDriversCard";
+import { WatchListCard } from "./cards/WatchListCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -260,6 +263,12 @@ export function FinSightResponseBlock({
       return <SpendingReviewCard block={block} />;
     case "accountsOverview":
       return <AccountsOverviewCard block={block} />;
+    case "spendTimeline":
+      return <SpendTimelineCard block={block} />;
+    case "spendingDrivers":
+      return <SpendingDriversCard block={block} />;
+    case "watchList":
+      return <WatchListCard block={block} />;
     default:
       return null;
   }
