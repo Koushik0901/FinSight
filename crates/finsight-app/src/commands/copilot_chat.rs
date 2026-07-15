@@ -1448,6 +1448,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::SpendTimeline(_) => true,
         AgentResponseBlock::SpendingDrivers(_) => true,
         AgentResponseBlock::WatchList(_) => true,
+        AgentResponseBlock::ActionPlan(_) => true,
     }
 }
 
@@ -1603,6 +1604,9 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                         && it.detail.chars().count() <= ARTIFACT_MAX_TEXT
                         && opt_label_ok(&it.amount_display)
                 })
+        }
+        AgentResponseBlock::ActionPlan(b) => {
+            opt_label_ok(&b.title) && b.items.len() <= 8 && b.items.iter().all(|i| label_ok(i))
         }
     }
 }

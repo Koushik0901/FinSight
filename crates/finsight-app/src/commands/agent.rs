@@ -785,6 +785,13 @@ pub struct AgentWatchListBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActionPlanBlock {
+    pub title: Option<String>,
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -813,6 +820,7 @@ pub enum AgentResponseBlock {
     SpendTimeline(AgentSpendTimelineBlock),
     SpendingDrivers(AgentSpendingDriversBlock),
     WatchList(AgentWatchListBlock),
+    ActionPlan(AgentActionPlanBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -993,6 +1001,11 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.items.is_empty()
                 && b.items.len() <= 8
                 && b.items.iter().all(|it| !it.label.trim().is_empty())
+        }
+        AgentResponseBlock::ActionPlan(b) => {
+            !b.items.is_empty()
+                && b.items.len() <= 8
+                && b.items.iter().all(|i| !i.trim().is_empty())
         }
     }
 }
@@ -2751,5 +2764,20 @@ mod tests {
             items: vec![],
         });
         assert!(!valid_response_block(&empty));
+    }
+
+    #[test]
+    fn action_plan_valid_and_rejects_empty() {
+        let ok = AgentResponseBlock::ActionPlan(AgentActionPlanBlock {
+            title: Some("Action plan".into()),
+            items: vec!["Do X".into()],
+        });
+        assert!(valid_response_block(&ok));
+        let empty = AgentResponseBlock::ActionPlan(AgentActionPlanBlock {
+            title: None,
+            items: vec![],
+        });
+        assert!(!valid_response_block(&empty));
+        assert_eq!(serde_json::to_value(&ok).unwrap()["kind"], "actionPlan");
     }
 }
