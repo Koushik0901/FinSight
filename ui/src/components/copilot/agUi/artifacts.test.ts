@@ -161,3 +161,35 @@ describe("spendingReview block schema", () => {
     expect(CopilotResponseBlockSchema.safeParse(block).success).toBe(false);
   });
 });
+
+describe("real model output survives the artifact envelope", () => {
+  // The exact accountsOverview block emitted by glm-5.2 in the emission eval.
+  // Guards the full path a live block travels: block -> serialize envelope ->
+  // Zod re-validation. If this regresses, the card silently falls back to the
+  // generic tool row in the app (found via live eyeballing, not unit tests).
+  it("serializes a real accountsOverview block into a valid artifact", () => {
+    const block = {
+      kind: "accountsOverview",
+      title: "5 accounts",
+      subtitle: "$2,200 net liability across confirmed accounts · 1 missing a balance",
+      rows: [
+        { name: "Auto Loan", subtitle: "Loan", typeLabel: "Loan", amountCents: -800000, badge: null },
+        { name: "Brokerage", subtitle: "Investment", typeLabel: "Investment", amountCents: null, badge: "needs a balance set" },
+        { name: "Emergency Fund", subtitle: "Savings", typeLabel: "Savings", amountCents: 500000, badge: null },
+        { name: "Everyday Checking", subtitle: "Checking", typeLabel: "Checking", amountCents: 200000, badge: null },
+        { name: "Visa Rewards", subtitle: "Credit", typeLabel: "Credit", amountCents: -120000, badge: null },
+      ],
+    };
+    expect(CopilotResponseBlockSchema.safeParse(block).success).toBe(true);
+    const payload = serializeFinanceArtifactEnvelope({
+      schemaVersion: 1,
+      kind: "artifact",
+      component: "FinSightResponseBlock",
+      props: { block },
+      sourceToolName: null,
+      artifactId: "block-0",
+      createdAt: new Date().toISOString(),
+    });
+    expect(payload).not.toBeNull();
+  });
+});
