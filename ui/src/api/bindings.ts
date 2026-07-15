@@ -1686,7 +1686,12 @@ export type AgentReviewCategory = { label: string; amountCents: number;
  * Optional flag: "over" | "fixed" | "lever". None = plain bar.
  */
 tag: string | null }
-export type AgentReviewMonth = { label: string; spentCents: number; subtitle: string | null; categories: AgentReviewCategory[]; summary: string | null; actions: string[] }
+export type AgentReviewMonth = { label: string; spentCents: number; subtitle: string | null; categories: AgentReviewCategory[]; summary: string | null; actions: string[]; 
+/**
+ * `YYYY-MM` join key. The model supplies this (which months to review);
+ * the server keys on it to compute label/spentCents/categories from core.
+ */
+period?: string | null }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentSpendTimelineBlock = { title: string | null; subtitle: string | null; points: AgentTimelinePoint[] }

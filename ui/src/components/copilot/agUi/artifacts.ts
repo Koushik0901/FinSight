@@ -143,6 +143,7 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
             .max(10),
           summary: z.string().max(MAX_TEXT).nullable(),
           actions: z.array(shortString).max(6),
+          period: shortString.nullish(),
         }),
       )
       .min(1)

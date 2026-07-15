@@ -703,6 +703,10 @@ pub struct AgentReviewMonth {
     pub categories: Vec<AgentReviewCategory>,
     pub summary: Option<String>,
     pub actions: Vec<String>,
+    /// `YYYY-MM` join key. The model supplies this (which months to review);
+    /// the server keys on it to compute label/spentCents/categories from core.
+    #[serde(default)]
+    pub period: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -1400,6 +1404,12 @@ fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentR
                     *block = AgentResponseBlock::AccountsOverview(fresh);
                 }
             }
+            AgentResponseBlock::SpendingReview(model) => {
+                let model = model.clone();
+                if let Some(fresh) = synthesize_spending_review(conn, &model) {
+                    *block = AgentResponseBlock::SpendingReview(fresh);
+                }
+            }
             _ => {}
         }
     }
@@ -1487,6 +1497,58 @@ fn synthesize_accounts_overview(
         subtitle,
         rows,
     })
+}
+
+const MONTH_NAMES: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June", "July", "August",
+    "September", "October", "November", "December",
+];
+
+/// Hybrid synthesis: keep the model's generative `summary`/`actions` per month,
+/// but recompute every number (`label`, `spentCents`, `categories`) from the
+/// spending core, keyed by the model-supplied `period` ("YYYY-MM"). A requested
+/// month with no spending data is dropped. Numbers come from the same
+/// `spending::baseline` basis the snapshot uses, so a review's totals can never
+/// diverge from the answer's prose.
+fn synthesize_spending_review(
+    conn: &mut rusqlite::Connection,
+    model: &AgentSpendingReviewBlock,
+) -> Option<AgentSpendingReviewBlock> {
+    let mut months = Vec::new();
+    for m in &model.months {
+        let Some(period) = m.period.as_deref() else {
+            continue;
+        };
+        let categories = finsight_core::spending::baseline::month_category_breakdown(conn, period, 6)
+            .ok()
+            .filter(|c| !c.is_empty())?;
+        let spent_cents = finsight_core::spending::baseline::month_total(conn, period).unwrap_or(0);
+        let (y, mo) = finsight_core::spending::parse_ym(period);
+        let label = MONTH_NAMES
+            .get(mo.saturating_sub(1) as usize)
+            .map(|name| format!("{name} {y}"))
+            .unwrap_or_else(|| period.to_string());
+        months.push(AgentReviewMonth {
+            label,
+            spent_cents,
+            subtitle: None,
+            categories: categories
+                .into_iter()
+                .map(|c| AgentReviewCategory {
+                    label: c.label,
+                    amount_cents: c.amount_cents,
+                    tag: None,
+                })
+                .collect(),
+            summary: m.summary.clone(),
+            actions: m.actions.clone(),
+            period: m.period.clone(),
+        });
+    }
+    if months.is_empty() {
+        return None;
+    }
+    Some(AgentSpendingReviewBlock { months })
 }
 
 #[cfg(test)]
@@ -2778,6 +2840,7 @@ mod tests {
                 }],
                 summary: Some("A steady month.".into()),
                 actions: vec!["Glance at the PG&E bill".into()],
+                period: None,
             }],
         });
         assert!(valid_response_block(&ok));
@@ -2798,6 +2861,7 @@ mod tests {
                 }],
                 summary: None,
                 actions: vec![],
+                period: None,
             }],
         });
         assert!(!valid_response_block(&bad_tag));
@@ -2817,6 +2881,7 @@ mod tests {
                 }],
                 summary: None,
                 actions: vec![],
+                period: None,
             }],
         });
         let v = serde_json::to_value(&block).unwrap();
@@ -2999,8 +3064,12 @@ mod tests {
     /// `copilot_chat.rs` and are validated separately.)
     #[test]
     fn rust_verdicts_match_the_parity_corpus() {
-        let raw = std::fs::read_to_string("tests/fixtures/response_blocks.json")
-            .expect("read parity fixtures");
+        // Shared with ui/.../parity.test.ts (which imports it as JSON). Path is
+        // relative to the crate dir, which is cargo's CWD during `cargo test`.
+        let raw = std::fs::read_to_string(
+            "../../ui/src/components/copilot/agUi/response_blocks.fixture.json",
+        )
+        .expect("read parity fixtures");
         let cases: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
         assert!(!cases.is_empty());
         for case in cases {
@@ -3055,5 +3124,41 @@ mod tests {
             "the unknown-balance account is badged, not fabricated as $0"
         );
         assert!(b.title.as_deref().unwrap().contains("2 account"));
+    }
+
+    #[test]
+    fn spending_review_merges_model_prose_with_core_numbers_by_period() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Bank','Checking','Chq','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        // Two May-2026 expenses (uncategorized -> "Uncategorized" bucket), total $700.
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','chk','2026-05-10',-40000,'Store',NULL,'posted',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t2','chk','2026-05-15',-30000,'Cafe',NULL,'posted',datetime('now'))", []).unwrap();
+
+        // Model emits period + generative prose; the numbers/label are bogus and
+        // must be replaced from core.
+        let mut blocks = vec![AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "IGNORED".into(),
+                spent_cents: 999,
+                subtitle: Some("IGNORED".into()),
+                categories: vec![],
+                summary: Some("My insight".into()),
+                actions: vec!["Do X".into()],
+                period: Some("2026-05".into()),
+            }],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::SpendingReview(b) = &blocks[0] else {
+            panic!("expected spendingReview")
+        };
+        assert_eq!(b.months.len(), 1);
+        let m = &b.months[0];
+        assert_eq!(m.summary.as_deref(), Some("My insight"), "model prose preserved");
+        assert_eq!(m.actions, vec!["Do X".to_string()], "model actions preserved");
+        assert_eq!(m.spent_cents, 70000, "spent recomputed from core, not the model's 999");
+        assert!(!m.categories.is_empty(), "categories recomputed from core");
+        assert_eq!(m.label, "May 2026", "label derived from the period, not the model");
     }
 }
