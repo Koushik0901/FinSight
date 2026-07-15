@@ -440,7 +440,35 @@ function SourcePill({ part }: { part: { title?: string; id: string } }) {
   return <span className="copilot-source-pill">{part.title ?? part.id}</span>;
 }
 
-function CopilotMarkdown({ text }: { text: string }) {
+/**
+ * While an answer is still streaming, hide/complete the trailing markdown
+ * constructs that would otherwise flash as raw markup before their closing
+ * tokens arrive — an unclosed code fence (which would swallow the rest of the
+ * prose) and an in-progress table whose `|---|` delimiter row hasn't streamed
+ * yet (which renders as raw `| … |` pipes). Everything already complete keeps
+ * rendering live; only the incomplete tail is held back for a beat until it
+ * resolves. The final (done) render always uses the full, unmodified text.
+ */
+function stabilizeStreamingMarkdown(text: string): string {
+  const fenceCount = text.split("\n").filter((l) => l.trimStart().startsWith("```")).length;
+  if (fenceCount % 2 === 1) return `${text}\n\`\`\``;
+
+  const lines = text.split("\n");
+  let start = lines.length;
+  while (start > 0 && (lines[start - 1] ?? "").trimStart().startsWith("|")) start--;
+  if (start < lines.length) {
+    const isDelimiter = (l: string) => {
+      const t = l.trim();
+      return t.includes("-") && /^[|\s:-]+$/.test(t);
+    };
+    const hasDelimiter = lines.slice(start).some(isDelimiter);
+    if (!hasDelimiter) return lines.slice(0, start).join("\n");
+  }
+  return text;
+}
+
+function CopilotMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const markdown = streaming ? stabilizeStreamingMarkdown(text) : text;
   return (
     <div className="agent-rich-markdown copilot-answer-md">
       <ReactMarkdown
@@ -459,7 +487,7 @@ function CopilotMarkdown({ text }: { text: string }) {
           ),
         }}
       >
-        {text}
+        {markdown}
       </ReactMarkdown>
     </div>
   );
@@ -562,11 +590,7 @@ function AssistantMessage({
                       />
                     );
                   case "text":
-                    return isRunning ? (
-                      <span style={{ whiteSpace: "pre-wrap" }}>{part.text}</span>
-                    ) : (
-                      <CopilotMarkdown text={part.text} />
-                    );
+                    return <CopilotMarkdown text={part.text} streaming={isRunning} />;
                   case "indicator":
                     return <span className="copilot-cursor" aria-hidden="true" />;
                   default:
