@@ -1664,9 +1664,16 @@ export type AgentRecatRow = { merchant: string; categoryKey: string; confidence:
 export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock)
+export type AgentReviewCategory = { label: string; amountCents: number; 
+/**
+ * Optional flag: "over" | "fixed" | "lever". None = plain bar.
+ */
+tag: string | null }
+export type AgentReviewMonth = { label: string; spentCents: number; subtitle: string | null; categories: AgentReviewCategory[]; summary: string | null; actions: string[] }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
+export type AgentSpendingReviewBlock = { months: AgentReviewMonth[] }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
 export type AgentTableBlock = { title: string | null; columns: string[]; rows: string[][] }
 export type AgentTransactionTableBlock = { count: number; totalCents: number; rows: AgentTxRow[]; more: number; 
@@ -2100,7 +2107,12 @@ levers: Driver[];
 /**
  * The one-off drivers that lapse on their own — shown as "leave them".
  */
-self_correcting: Driver[]; target_monthly_cents: number | null; 
+self_correcting: Driver[]; 
+/**
+ * Drivers the user accepted (expected/investment) — kept in the floor,
+ * surfaced so they can be reviewed and undone; not levers, not self-correcting.
+ */
+accepted: Driver[]; target_monthly_cents: number | null; 
 /**
  * Present only with a target BELOW what trimming reaches: the remaining
  * gap is structural (a floor / fixed commitments), not more trimming.

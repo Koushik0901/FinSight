@@ -686,6 +686,32 @@ pub struct AgentRecategorizationPreviewBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReviewCategory {
+    pub label: String,
+    pub amount_cents: i64,
+    /// Optional flag: "over" | "fixed" | "lever". None = plain bar.
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReviewMonth {
+    pub label: String,
+    pub spent_cents: i64,
+    pub subtitle: Option<String>,
+    pub categories: Vec<AgentReviewCategory>,
+    pub summary: Option<String>,
+    pub actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendingReviewBlock {
+    pub months: Vec<AgentReviewMonth>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -709,6 +735,7 @@ pub enum AgentResponseBlock {
     RankedOptions(AgentRankedOptionsBlock),
     ComparisonBars(AgentComparisonBarsBlock),
     RecategorizationPreview(AgentRecategorizationPreviewBlock),
+    SpendingReview(AgentSpendingReviewBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -842,6 +869,23 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.rows.is_empty()
                 && b.rows.len() <= 20
                 && b.rows.iter().all(|r| (0.0..=1.0).contains(&r.confidence))
+        }
+        AgentResponseBlock::SpendingReview(b) => {
+            const REVIEW_TAGS: [&str; 3] = ["over", "fixed", "lever"];
+            !b.months.is_empty()
+                && b.months.len() <= 6
+                && b.months.iter().all(|m| {
+                    !m.label.trim().is_empty()
+                        && m.categories.len() <= 10
+                        && m.actions.len() <= 6
+                        && m.categories.iter().all(|c| {
+                            !c.label.trim().is_empty()
+                                && c.tag
+                                    .as_deref()
+                                    .map(|t| REVIEW_TAGS.contains(&t))
+                                    .unwrap_or(true)
+                        })
+                })
         }
     }
 }
@@ -2425,5 +2469,67 @@ mod tests {
             bundle_id: "bundle-abc".to_string(),
         });
         assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn spending_review_valid_and_rejects_empty_and_oversized() {
+        let ok = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May 2026".into(),
+                spent_cents: 408_600,
+                subtitle: Some("8 of 10 envelopes under".into()),
+                categories: vec![AgentReviewCategory {
+                    label: "Housing".into(),
+                    amount_cents: 185_000,
+                    tag: Some("fixed".into()),
+                }],
+                summary: Some("A steady month.".into()),
+                actions: vec!["Glance at the PG&E bill".into()],
+            }],
+        });
+        assert!(valid_response_block(&ok));
+
+        let no_months =
+            AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock { months: vec![] });
+        assert!(!valid_response_block(&no_months));
+
+        let bad_tag = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May".into(),
+                spent_cents: 1,
+                subtitle: None,
+                categories: vec![AgentReviewCategory {
+                    label: "X".into(),
+                    amount_cents: 1,
+                    tag: Some("bogus".into()),
+                }],
+                summary: None,
+                actions: vec![],
+            }],
+        });
+        assert!(!valid_response_block(&bad_tag));
+    }
+
+    #[test]
+    fn spending_review_serde_round_trip_is_camel_case() {
+        let block = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May".into(),
+                spent_cents: 100,
+                subtitle: None,
+                categories: vec![AgentReviewCategory {
+                    label: "Housing".into(),
+                    amount_cents: 50,
+                    tag: None,
+                }],
+                summary: None,
+                actions: vec![],
+            }],
+        });
+        let v = serde_json::to_value(&block).unwrap();
+        assert_eq!(v["kind"], "spendingReview");
+        assert_eq!(v["months"][0]["spentCents"], 100);
+        let back: AgentResponseBlock = serde_json::from_value(v).unwrap();
+        assert!(matches!(back, AgentResponseBlock::SpendingReview(_)));
     }
 }

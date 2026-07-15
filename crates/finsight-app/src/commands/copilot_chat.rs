@@ -1443,6 +1443,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::RankedOptions(_) => true,
         AgentResponseBlock::ComparisonBars(_) => true,
         AgentResponseBlock::RecategorizationPreview(_) => true,
+        AgentResponseBlock::SpendingReview(_) => true,
     }
 }
 
@@ -1542,6 +1543,23 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             b.rows.len() <= 20
                 && b.rows.iter().all(|r| label_ok(&r.merchant) && label_ok(&r.category_key))
                 && label_ok(&b.bundle_id)
+        }
+        AgentResponseBlock::SpendingReview(b) => {
+            b.months.len() <= 6
+                && b.months.iter().all(|m| {
+                    label_ok(&m.label)
+                        && opt_label_ok(&m.subtitle)
+                        && m.summary
+                            .as_deref()
+                            .map(|s| s.chars().count() <= ARTIFACT_MAX_TEXT)
+                            .unwrap_or(true)
+                        && m.categories.len() <= 10
+                        && m.categories
+                            .iter()
+                            .all(|c| label_ok(&c.label) && opt_label_ok(&c.tag))
+                        && m.actions.len() <= 6
+                        && m.actions.iter().all(|a| label_ok(a))
+                })
         }
     }
 }
