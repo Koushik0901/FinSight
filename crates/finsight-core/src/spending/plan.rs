@@ -27,6 +27,9 @@ pub struct SpendingPlan {
     pub levers: Vec<Driver>,
     /// The one-off drivers that lapse on their own — shown as "leave them".
     pub self_correcting: Vec<Driver>,
+    /// Drivers the user accepted (expected/investment) — kept in the floor,
+    /// surfaced so they can be reviewed and undone; not levers, not self-correcting.
+    pub accepted: Vec<Driver>,
     pub target_monthly_cents: Option<i64>,
     /// Present only with a target BELOW what trimming reaches: the remaining
     /// gap is structural (a floor / fixed commitments), not more trimming.
@@ -77,6 +80,15 @@ pub fn plan_spending_reduction(
         })
         .cloned()
         .collect();
+    let accepted: Vec<Driver> = d
+        .drivers
+        .iter()
+        .filter(|dr| {
+            dr.delta_cents > 0
+                && matches!(dr.user_verdict.as_deref(), Some("expected") | Some("investment"))
+        })
+        .cloned()
+        .collect();
 
     let (structural_gap_cents, note) = match target_monthly_cents {
         Some(t) if t >= projected_after => (
@@ -102,6 +114,7 @@ pub fn plan_spending_reduction(
         projected_after_levers_cents: projected_after,
         levers,
         self_correcting: self_correcting_drivers,
+        accepted,
         target_monthly_cents,
         structural_gap_cents,
         note,
@@ -192,6 +205,7 @@ mod tests {
         let p = plan_spending_reduction(&conn, "2026-01", Some(90_000)).unwrap();
         assert_eq!(p.self_correcting_cents, 0, "a kept cost is NOT self-correcting");
         assert!(p.levers.is_empty(), "a kept cost is not a lever");
+        assert!(p.accepted.iter().any(|d| d.display == "AMAZON"), "the kept driver is surfaced for review/undo");
         // The $500 Amazon rise stays in the floor (not subtracted as if it lapses),
         // so the projection is the full recent spend, not an understated floor.
         assert_eq!(p.projected_after_levers_cents, 160_000);
