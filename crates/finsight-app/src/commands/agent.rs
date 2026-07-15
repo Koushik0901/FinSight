@@ -731,6 +731,60 @@ pub struct AgentAccountsOverviewBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTimelinePoint {
+    pub label: String,
+    pub amount_cents: i64,
+    #[serde(default)]
+    pub highlight: bool,
+    pub annotation: Option<String>,
+    #[serde(default)]
+    pub projected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendTimelineBlock {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub points: Vec<AgentTimelinePoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDriver {
+    pub label: String,
+    /// "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed"
+    pub tag: String,
+    /// Presentational delta string, e.g. "+$213/mo" (bounded short string).
+    pub amount_display: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendingDriversBlock {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub drivers: Vec<AgentDriver>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWatchItem {
+    pub label: String,
+    pub detail: String,
+    pub amount_display: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWatchListBlock {
+    pub title: String,
+    pub items: Vec<AgentWatchItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -756,6 +810,9 @@ pub enum AgentResponseBlock {
     RecategorizationPreview(AgentRecategorizationPreviewBlock),
     SpendingReview(AgentSpendingReviewBlock),
     AccountsOverview(AgentAccountsOverviewBlock),
+    SpendTimeline(AgentSpendTimelineBlock),
+    SpendingDrivers(AgentSpendingDriversBlock),
+    WatchList(AgentWatchListBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -913,6 +970,29 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && b.rows
                     .iter()
                     .all(|r| !r.name.trim().is_empty() && !r.type_label.trim().is_empty())
+        }
+        AgentResponseBlock::SpendTimeline(b) => {
+            b.points.len() >= 2
+                && b.points.len() <= 24
+                && b.points.iter().all(|p| !p.label.trim().is_empty())
+        }
+        AgentResponseBlock::SpendingDrivers(b) => {
+            const DRIVER_TAGS: [&str; 6] =
+                ["planned", "trend", "prices", "anomaly", "creep", "mixed"];
+            !b.title.trim().is_empty()
+                && !b.drivers.is_empty()
+                && b.drivers.len() <= 8
+                && b.drivers.iter().all(|d| {
+                    !d.label.trim().is_empty()
+                        && !d.amount_display.trim().is_empty()
+                        && DRIVER_TAGS.contains(&d.tag.as_str())
+                })
+        }
+        AgentResponseBlock::WatchList(b) => {
+            !b.title.trim().is_empty()
+                && !b.items.is_empty()
+                && b.items.len() <= 8
+                && b.items.iter().all(|it| !it.label.trim().is_empty())
         }
     }
 }
@@ -2595,5 +2675,81 @@ mod tests {
         assert_eq!(v["kind"], "accountsOverview");
         assert_eq!(v["rows"][0]["amountCents"], 1_482_042);
         assert!(v["rows"][1]["amountCents"].is_null());
+    }
+
+    #[test]
+    fn spend_timeline_valid_and_bounds() {
+        let ok = AgentResponseBlock::SpendTimeline(AgentSpendTimelineBlock {
+            title: Some("Monthly spend".into()),
+            subtitle: None,
+            points: vec![
+                AgentTimelinePoint {
+                    label: "Jan".into(),
+                    amount_cents: 360_000,
+                    highlight: false,
+                    annotation: None,
+                    projected: false,
+                },
+                AgentTimelinePoint {
+                    label: "Apr".into(),
+                    amount_cents: 570_000,
+                    highlight: false,
+                    annotation: Some("LISBON".into()),
+                    projected: false,
+                },
+            ],
+        });
+        assert!(valid_response_block(&ok));
+        let too_few = AgentResponseBlock::SpendTimeline(AgentSpendTimelineBlock {
+            title: None,
+            subtitle: None,
+            points: vec![],
+        });
+        assert!(!valid_response_block(&too_few));
+        assert_eq!(serde_json::to_value(&ok).unwrap()["kind"], "spendTimeline");
+    }
+
+    #[test]
+    fn spending_drivers_valid_and_rejects_bad_tag() {
+        let ok = AgentResponseBlock::SpendingDrivers(AgentSpendingDriversBlock {
+            title: "What's driving the +$728/mo".into(),
+            subtitle: Some("vs Jan–Feb".into()),
+            drivers: vec![AgentDriver {
+                label: "Travel".into(),
+                tag: "planned".into(),
+                amount_display: "+$213/mo".into(),
+                note: Some("Italy deposits".into()),
+            }],
+        });
+        assert!(valid_response_block(&ok));
+        let bad = AgentResponseBlock::SpendingDrivers(AgentSpendingDriversBlock {
+            title: "x".into(),
+            subtitle: None,
+            drivers: vec![AgentDriver {
+                label: "y".into(),
+                tag: "bogus".into(),
+                amount_display: "z".into(),
+                note: None,
+            }],
+        });
+        assert!(!valid_response_block(&bad));
+    }
+
+    #[test]
+    fn watch_list_valid_and_rejects_empty() {
+        let ok = AgentResponseBlock::WatchList(AgentWatchListBlock {
+            title: "Watch out for these".into(),
+            items: vec![AgentWatchItem {
+                label: "The Amex balance".into(),
+                detail: "revolving at 24.9%".into(),
+                amount_display: Some("−$50/mo".into()),
+            }],
+        });
+        assert!(valid_response_block(&ok));
+        let empty = AgentResponseBlock::WatchList(AgentWatchListBlock {
+            title: "x".into(),
+            items: vec![],
+        });
+        assert!(!valid_response_block(&empty));
     }
 }

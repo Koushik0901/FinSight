@@ -1445,6 +1445,9 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::RecategorizationPreview(_) => true,
         AgentResponseBlock::SpendingReview(_) => true,
         AgentResponseBlock::AccountsOverview(_) => true,
+        AgentResponseBlock::SpendTimeline(_) => true,
+        AgentResponseBlock::SpendingDrivers(_) => true,
+        AgentResponseBlock::WatchList(_) => true,
     }
 }
 
@@ -1571,6 +1574,34 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                         && opt_label_ok(&r.subtitle)
                         && label_ok(&r.type_label)
                         && opt_label_ok(&r.badge)
+                })
+        }
+        AgentResponseBlock::SpendTimeline(b) => {
+            opt_label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.points.len() <= 24
+                && b.points
+                    .iter()
+                    .all(|p| label_ok(&p.label) && opt_label_ok(&p.annotation))
+        }
+        AgentResponseBlock::SpendingDrivers(b) => {
+            label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.drivers.len() <= 8
+                && b.drivers.iter().all(|d| {
+                    label_ok(&d.label)
+                        && label_ok(&d.tag)
+                        && label_ok(&d.amount_display)
+                        && opt_label_ok(&d.note)
+                })
+        }
+        AgentResponseBlock::WatchList(b) => {
+            label_ok(&b.title)
+                && b.items.len() <= 8
+                && b.items.iter().all(|it| {
+                    label_ok(&it.label)
+                        && it.detail.chars().count() <= ARTIFACT_MAX_TEXT
+                        && opt_label_ok(&it.amount_display)
                 })
         }
     }
