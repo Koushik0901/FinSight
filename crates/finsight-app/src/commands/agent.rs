@@ -1392,8 +1392,101 @@ pub(crate) fn reasoning_result_to_agent_answer(
 /// and its numbers match the answer's snapshot); an unregistered kind passes
 /// through untouched, preserving the existing model-emitted behavior. Populated
 /// per-kind in A2/A3.
-fn hydrate_response_blocks(_conn: &mut rusqlite::Connection, _blocks: &mut [AgentResponseBlock]) {
-    // Registry filled in by the accountsOverview / spendingReview synthesizers.
+fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentResponseBlock]) {
+    for block in blocks.iter_mut() {
+        match block {
+            AgentResponseBlock::AccountsOverview(_) => {
+                if let Some(fresh) = synthesize_accounts_overview(conn) {
+                    *block = AgentResponseBlock::AccountsOverview(fresh);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Human label for an account type (the neutral chip shown on each row).
+fn type_label(t: finsight_core::models::AccountType) -> String {
+    use finsight_core::models::AccountType::*;
+    match t {
+        Checking => "Checking",
+        Savings => "Savings",
+        Credit => "Credit",
+        Investment => "Investment",
+        Cash => "Cash",
+        Loan => "Loan",
+        Other => "Account",
+    }
+    .to_string()
+}
+
+/// Thousands-grouped whole-dollar string, e.g. `-$2,418`. Used only for the
+/// server-computed summary line; per-row amounts stay in cents for the frontend.
+fn dollars(cents: i64) -> String {
+    let whole = cents / 100;
+    let digits = whole.abs().to_string();
+    let mut grouped = String::new();
+    for (i, c) in digits.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    let grouped: String = grouped.chars().rev().collect();
+    format!("{}${grouped}", if whole < 0 { "-" } else { "" })
+}
+
+/// Build a fully-grounded `accountsOverview` from core data. The model's own
+/// row data is ignored entirely — this guarantees the block is valid and its
+/// numbers match the answer's snapshot. An account with no known balance gets a
+/// `None` amount + a "needs a balance set" badge (never a fabricated $0).
+fn synthesize_accounts_overview(
+    conn: &mut rusqlite::Connection,
+) -> Option<AgentAccountsOverviewBlock> {
+    let summaries = finsight_core::repos::accounts::list_summaries(conn).ok()?;
+    if summaries.is_empty() {
+        return None;
+    }
+    let tracked = finsight_core::metrics::balance_breakdown(conn)
+        .ok()
+        .map(|b| format!("{} tracked", dollars(b.net_worth_cents)));
+    let missing = summaries.iter().filter(|s| !s.balance_known).count();
+    let rows = summaries
+        .iter()
+        .map(|s| {
+            let subtitle = match s.mask.as_deref() {
+                Some(m) if !m.is_empty() => Some(format!("{} ····{m}", s.bank)),
+                _ => Some(s.bank.clone()),
+            };
+            AgentAccountRow {
+                name: s.name.clone(),
+                subtitle,
+                type_label: type_label(s.r#type),
+                amount_cents: if s.balance_known {
+                    Some(s.balance_cents)
+                } else {
+                    None
+                },
+                badge: if s.balance_known {
+                    None
+                } else {
+                    Some("needs a balance set".to_string())
+                },
+            }
+        })
+        .collect();
+    let n = summaries.len();
+    let subtitle = match (tracked, missing) {
+        (Some(t), 0) => Some(t),
+        (Some(t), m) => Some(format!("{t} · {m} missing a balance")),
+        (None, 0) => None,
+        (None, m) => Some(format!("{m} missing a balance")),
+    };
+    Some(AgentAccountsOverviewBlock {
+        title: Some(format!("{n} account{}", if n == 1 { "" } else { "s" })),
+        subtitle,
+        rows,
+    })
 }
 
 #[cfg(test)]
@@ -2917,5 +3010,50 @@ mod tests {
             let got = parse_response_blocks(&wrapped).len() == 1;
             assert_eq!(got, expect, "Rust verdict mismatch for kind `{kind}`");
         }
+    }
+
+    #[test]
+    fn accounts_overview_is_hydrated_from_core_ignoring_model_data() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // Account with a known (manual, non-seed) balance.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Mercury','Checking','Joint Checking','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('chk',date('now'),1482042,'manual')", []).unwrap();
+        // Account with NO balance row but a transaction -> balance_known = false.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('inv','You','Vanguard','Investment','Brokerage','USD','#111','manual','invested',0,'investments',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','inv',date('now'),-100,'X',NULL,'posted',datetime('now'))", []).unwrap();
+
+        // Model emits a THIN request with hallucinated rows the server must ignore.
+        let mut blocks = vec![AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![AgentAccountRow {
+                name: "HALLUCINATED".into(),
+                subtitle: None,
+                type_label: "?".into(),
+                amount_cents: Some(999),
+                badge: None,
+            }],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows.len(), 2, "rows come from core, not the model");
+        assert!(
+            b.rows.iter().all(|r| r.name != "HALLUCINATED"),
+            "model-supplied rows are ignored/replaced"
+        );
+        assert!(
+            b.rows.iter().any(|r| r.amount_cents == Some(1482042)),
+            "the known balance is surfaced from core"
+        );
+        assert!(
+            b.rows.iter().any(|r| r.amount_cents.is_none()
+                && r.badge.as_deref() == Some("needs a balance set")),
+            "the unknown-balance account is badged, not fabricated as $0"
+        );
+        assert!(b.title.as_deref().unwrap().contains("2 account"));
     }
 }
