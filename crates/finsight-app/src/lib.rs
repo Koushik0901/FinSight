@@ -108,9 +108,16 @@ pub(crate) fn build_provider_from_config(
             if api_key.is_empty() {
                 return None;
             }
-            Some(Arc::new(OpenAiCompatProvider::new(
-                base_url, api_key, model, preset,
-            )))
+            // Structured output on final-answer turns: probe-validated on
+            // OpenRouter (tools + json_schema coexist there). Only the main
+            // synthesizer gets it, not the fast router (tool-selection only).
+            // The provider falls back to unconstrained on empty/error, so a
+            // non-supporting endpoint is safe.
+            let structured = base_url.contains("openrouter");
+            Some(Arc::new(
+                OpenAiCompatProvider::new(base_url, api_key, model, preset)
+                    .with_structured_final_answer(structured),
+            ))
         }
         "anthropic" => {
             let model = cfg["model"].as_str()?.to_string();
