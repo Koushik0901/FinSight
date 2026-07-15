@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { money } from "../../../utils/format";
+import * as I from "../../Icons";
 
 /**
  * A labeled, colored, proportional-width bar with a trailing amount — shared
@@ -37,6 +39,55 @@ export function SegmentBar({
         />
       </div>
       <span className="cp-bar-amt mono money">{money(amountCents)}</span>
+    </div>
+  );
+}
+
+/** A mono, middot-joined sub-header line (spent stats, account summary, timeline caption). */
+export function StatLine({ parts }: { parts: string[] }) {
+  return <div className="cp-statline mono">{parts.filter(Boolean).join(" · ")}</div>;
+}
+
+/** A small uppercase tag pill whose color comes from a tone token (drivers, category flags). */
+export function TagPill({ label, tone }: { label: string; tone: string }) {
+  return (
+    <span className="cp-tag" data-tone={tone}>
+      {label}
+    </span>
+  );
+}
+
+/**
+ * A presentational next-steps checklist. Checkboxes toggle local-only state
+ * (no persistence, no mutation) — mutating actions stay on the bundle-approval
+ * flow. Shared by SpendingReviewCard month cards and the standalone ActionPlanCard.
+ */
+export function ActionChecklist({ title, items }: { title?: string; items: string[] }) {
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const toggle = (i: number) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  return (
+    <div className="cp-checklist">
+      {title && <p className="cp-checklist-title eyebrow">{title}</p>}
+      {items.map((text, i) => (
+        <button
+          type="button"
+          key={i}
+          className="cp-check-row"
+          onClick={() => toggle(i)}
+          aria-pressed={checked.has(i)}
+        >
+          <span className={`cp-check-box ${checked.has(i) ? "is-on" : ""}`}>
+            {checked.has(i) && <I.Check width={11} height={11} />}
+          </span>
+          <span className="cp-check-txt">{text}</span>
+        </button>
+      ))}
     </div>
   );
 }
