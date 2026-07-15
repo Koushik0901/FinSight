@@ -2863,4 +2863,25 @@ mod tests {
         };
         assert_eq!(b.rows[0].amount_cents, Some(14820));
     }
+
+    /// Rust half of the Rust<->Zod parity corpus. The frontend
+    /// `ui/.../parity.test.ts` loads the SAME fixture file and runs each block
+    /// through `CopilotResponseBlockSchema`. A verdict mismatch on any case means
+    /// the two hand-maintained validations have drifted — fix the field-level
+    /// bound until both sides agree. (Semantic validity only; size bounds live in
+    /// `copilot_chat.rs` and are validated separately.)
+    #[test]
+    fn rust_verdicts_match_the_parity_corpus() {
+        let raw = std::fs::read_to_string("tests/fixtures/response_blocks.json")
+            .expect("read parity fixtures");
+        let cases: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let expect = case["expectValid"].as_bool().unwrap();
+            let kind = case["block"]["kind"].as_str().unwrap_or("?").to_string();
+            let wrapped = serde_json::json!({ "response_blocks": [ case["block"].clone() ] });
+            let got = parse_response_blocks(&wrapped).len() == 1;
+            assert_eq!(got, expect, "Rust verdict mismatch for kind `{kind}`");
+        }
+    }
 }

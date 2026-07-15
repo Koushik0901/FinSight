@@ -1,0 +1,14 @@
+[
+  { "expectValid": true,  "block": { "kind": "accountsOverview", "title": "2 accounts", "subtitle": "$1 tracked", "rows": [{ "name": "Chq", "subtitle": null, "typeLabel": "Checking", "amountCents": 100, "badge": null }, { "name": "Broker", "subtitle": "manual", "typeLabel": "Investment", "amountCents": null, "badge": "needs a balance set" }] } },
+  { "expectValid": false, "block": { "kind": "accountsOverview", "title": null, "subtitle": null, "rows": [] } },
+  { "expectValid": true,  "block": { "kind": "spendingReview", "months": [{ "label": "May 2026", "spentCents": 100, "subtitle": null, "categories": [{ "label": "Housing", "amountCents": 50, "tag": "fixed" }], "summary": null, "actions": [] }] } },
+  { "expectValid": false, "block": { "kind": "spendingReview", "months": [{ "label": "May", "spentCents": 1, "subtitle": null, "categories": [{ "label": "X", "amountCents": 1, "tag": "bogus" }], "summary": null, "actions": [] }] } },
+  { "expectValid": true,  "block": { "kind": "spendTimeline", "title": "Trend", "subtitle": null, "points": [{ "label": "Jan", "amountCents": 1, "highlight": false, "annotation": null, "projected": false }, { "label": "Feb", "amountCents": 2, "highlight": false, "annotation": null, "projected": false }] } },
+  { "expectValid": false, "block": { "kind": "spendTimeline", "title": "Trend", "subtitle": null, "points": [{ "label": "Jan", "amountCents": 1, "highlight": false, "annotation": null, "projected": false }] } },
+  { "expectValid": true,  "block": { "kind": "spendingDrivers", "title": "Drivers", "subtitle": null, "drivers": [{ "label": "Travel", "tag": "planned", "amountDisplay": "+$1/mo", "note": null }] } },
+  { "expectValid": false, "block": { "kind": "spendingDrivers", "title": "Drivers", "subtitle": null, "drivers": [{ "label": "Travel", "tag": "bogus", "amountDisplay": "+$1/mo", "note": null }] } },
+  { "expectValid": true,  "block": { "kind": "watchList", "title": "Watch", "items": [{ "label": "A", "detail": "d", "amountDisplay": null }] } },
+  { "expectValid": false, "block": { "kind": "watchList", "title": "Watch", "items": [] } },
+  { "expectValid": true,  "block": { "kind": "actionPlan", "title": "Plan", "items": ["Do X"] } },
+  { "expectValid": false, "block": { "kind": "actionPlan", "title": "Plan", "items": [] } }
+]
