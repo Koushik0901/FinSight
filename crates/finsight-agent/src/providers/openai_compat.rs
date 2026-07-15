@@ -164,6 +164,9 @@ impl CompletionProvider for OpenAiCompatProvider {
     fn model_id(&self) -> &str {
         &self.model
     }
+    fn supports_structured_output(&self) -> bool {
+        self.structured_final_answer
+    }
 
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
         let body = json!({

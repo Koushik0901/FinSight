@@ -362,6 +362,23 @@ impl ReasoningEngine {
                             usage_acc = usage_acc.saturating_add(u);
                             content
                         }
+                        // Single-model main path: the final answer came from a
+                        // mixed tool/answer turn, which can't carry response_format.
+                        // If the model ATTEMPTED a structured JSON answer but botched
+                        // it AND this provider can constrain output, re-emit through a
+                        // dedicated final-answer turn (which applies response_format).
+                        // Conditional on all three so the happy path and pure-prose
+                        // answers pay no extra round-trip.
+                        _ if tool_calls_made
+                            && provider.supports_structured_output()
+                            && parse_structured_final_answer(&content).is_none()
+                            && looks_like_attempted_structured(&content) =>
+                        {
+                            let (content, u) =
+                                Self::synthesize_final(&provider, &messages, tools, content).await;
+                            usage_acc = usage_acc.saturating_add(u);
+                            content
+                        }
                         _ => content,
                     };
                     let mut result = Self::parse_final_answer(
@@ -717,6 +734,17 @@ fn is_intent_filler(text: &str) -> bool {
         "fetching ",
     ];
     INTENT_STARTS.iter().any(|p| lower.starts_with(p))
+}
+
+/// True when the model's final text looks like it was TRYING to emit the
+/// structured JSON answer (starts with `{`, or mentions `response_blocks`) — as
+/// opposed to a legitimate plain-prose reply. Combined with a failed
+/// `parse_structured_final_answer`, this identifies a botched structured answer
+/// worth re-emitting through a constrained turn, while leaving prose replies
+/// (which need no extra round-trip) alone.
+fn looks_like_attempted_structured(content: &str) -> bool {
+    let t = content.trim();
+    t.starts_with('{') || t.contains("\"response_blocks\"")
 }
 
 fn parse_structured_final_answer(content: &str) -> Option<StructuredFinalAnswer> {
