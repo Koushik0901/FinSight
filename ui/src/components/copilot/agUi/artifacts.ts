@@ -148,6 +148,15 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       .min(1)
       .max(6),
   }),
+  z.object({
+    kind: z.literal("accountsOverview"),
+    title: shortString.nullable(),
+    subtitle: shortString.nullable(),
+    rows: z
+      .array(z.object({ name: shortString, subtitle: shortString.nullable(), typeLabel: shortString, amountCents: z.number().int().nullable(), badge: shortString.nullable() }))
+      .min(1)
+      .max(30),
+  }),
 ]);
 
 /// Strict per-component prop schemas. A component is only allowlisted if it has a

@@ -19,6 +19,7 @@ import { RankedOptionsCard } from "./cards/RankedOptionsCard";
 import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 import { RecategorizationPreviewCard } from "./cards/RecategorizationPreviewCard";
 import { SpendingReviewCard } from "./cards/SpendingReviewCard";
+import { AccountsOverviewCard } from "./cards/AccountsOverviewCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -257,6 +258,8 @@ export function FinSightResponseBlock({
       return <RecategorizationPreviewCard block={block} />;
     case "spendingReview":
       return <SpendingReviewCard block={block} />;
+    case "accountsOverview":
+      return <AccountsOverviewCard block={block} />;
     default:
       return null;
   }

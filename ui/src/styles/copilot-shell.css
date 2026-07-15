@@ -281,3 +281,18 @@
 .cp-review-hd { margin-bottom: 14px; }
 .cp-review-summary { margin-top: 14px; padding: 12px 14px; background: var(--elevated); border: 1px solid var(--line);
   border-radius: var(--radius-md, 8px); font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+
+/* ── accountsOverview ───────────────────────────────────────────────── */
+.cp-accounts-hd { margin-bottom: 14px; }
+.cp-accounts-rows { display: flex; flex-direction: column; }
+.cp-account-row { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center;
+  padding: 12px 0; border-top: 1px solid var(--line); }
+.cp-account-row:first-child { border-top: none; }
+.cp-account-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cp-account-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.cp-account-sub { font-size: 11px; color: var(--ink-faint); }
+.cp-account-type { justify-self: center; }
+.cp-account-bal { font-size: 13px; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.cp-account-bal.is-neg { color: var(--negative); }
+.cp-account-badge { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--warning); border: 1px dashed currentColor; border-radius: 6px; padding: 3px 8px; }
