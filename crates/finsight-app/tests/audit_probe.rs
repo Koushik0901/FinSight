@@ -219,15 +219,22 @@ fn audit_import_samples_and_dump_everything() {
         ids.push((acct.id, spec.name));
     }
 
-    // Operator identity (F0): a real user configures their own name, which
-    // TransferContext loads so is_self_transfer can recognize their own
-    // e-transfers ("INTERAC e-Transfer To/From: <me>"). The samples ARE Koushik's
-    // data — seeding this is the realistic setup, and the production code stays
-    // generic (it matches whatever name is configured, not a hard-coded one).
+    // Household identity (F0): a real user configures their household, which
+    // TransferContext loads so is_self_transfer can recognize e-transfers that
+    // stay WITHIN the household — the owner's own moves ("INTERAC e-Transfer
+    // To/From: <me>") and money to a partner. The samples ARE Koushik's data,
+    // and the ~$19k of e-transfers naming "Swathi" are the classic partner
+    // pattern, so registering both is the realistic setup. Members are named by
+    // the FIRST name the bank stamps in e-transfer descriptors (a single-token
+    // name matches; a friend sharing a first name is still guarded by the
+    // ≥2-token rule on the multi-token account owner). Production stays generic —
+    // it matches whatever names are configured, never a hard-coded one.
     {
         let conn = db.get().unwrap();
         conn.execute(
-            "INSERT INTO household_members(id,name,color,created_at) VALUES('self-koushik','Koushik','#6366F1',datetime('now'))",
+            "INSERT INTO household_members(id,name,color,created_at) VALUES\
+             ('self-koushik','Koushik','#6366F1',datetime('now')),\
+             ('member-swathi','Swathi','#EC4899',datetime('now'))",
             [],
         )
         .unwrap();
