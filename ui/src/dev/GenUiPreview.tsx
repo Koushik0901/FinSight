@@ -127,7 +127,7 @@ const SAMPLES: { title: string; block: CopilotResponseBlock }[] = [
 
 export default function GenUiPreview() {
   return (
-    <div className="copilot-screen" style={{ padding: 24, maxWidth: 760, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 760, margin: "0 auto", background: "var(--bg)", minHeight: "100vh" }}>
       <h1 style={{ color: "var(--ink)", marginBottom: 4 }}>Copilot generative-UI blocks</h1>
       <p className="muted" style={{ marginBottom: 24 }}>
         DEV preview — every block rendered through <code>FinSightResponseBlock</code>.
