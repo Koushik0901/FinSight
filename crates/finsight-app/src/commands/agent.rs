@@ -712,6 +712,25 @@ pub struct AgentSpendingReviewBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountRow {
+    pub name: String,
+    pub subtitle: Option<String>,
+    pub type_label: String,
+    /// None → account has no known balance; renderer shows `badge` instead.
+    pub amount_cents: Option<i64>,
+    pub badge: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountsOverviewBlock {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub rows: Vec<AgentAccountRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -736,6 +755,7 @@ pub enum AgentResponseBlock {
     ComparisonBars(AgentComparisonBarsBlock),
     RecategorizationPreview(AgentRecategorizationPreviewBlock),
     SpendingReview(AgentSpendingReviewBlock),
+    AccountsOverview(AgentAccountsOverviewBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -886,6 +906,13 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                                     .unwrap_or(true)
                         })
                 })
+        }
+        AgentResponseBlock::AccountsOverview(b) => {
+            !b.rows.is_empty()
+                && b.rows.len() <= 30
+                && b.rows
+                    .iter()
+                    .all(|r| !r.name.trim().is_empty() && !r.type_label.trim().is_empty())
         }
     }
 }
@@ -2531,5 +2558,42 @@ mod tests {
         assert_eq!(v["months"][0]["spentCents"], 100);
         let back: AgentResponseBlock = serde_json::from_value(v).unwrap();
         assert!(matches!(back, AgentResponseBlock::SpendingReview(_)));
+    }
+
+    #[test]
+    fn accounts_overview_valid_and_rejects_empty_rows() {
+        let ok = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: Some("7 accounts".into()),
+            subtitle: Some("$137,515 tracked · 1 missing a balance".into()),
+            rows: vec![
+                AgentAccountRow {
+                    name: "Joint Checking".into(),
+                    subtitle: Some("Mercury ····4421".into()),
+                    type_label: "Checking".into(),
+                    amount_cents: Some(1_482_042),
+                    badge: None,
+                },
+                AgentAccountRow {
+                    name: "Vanguard".into(),
+                    subtitle: Some("manual".into()),
+                    type_label: "Investment".into(),
+                    amount_cents: None,
+                    badge: Some("needs a balance set".into()),
+                },
+            ],
+        });
+        assert!(valid_response_block(&ok));
+
+        let empty = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![],
+        });
+        assert!(!valid_response_block(&empty));
+
+        let v = serde_json::to_value(&ok).unwrap();
+        assert_eq!(v["kind"], "accountsOverview");
+        assert_eq!(v["rows"][0]["amountCents"], 1_482_042);
+        assert!(v["rows"][1]["amountCents"].is_null());
     }
 }

@@ -1444,6 +1444,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::ComparisonBars(_) => true,
         AgentResponseBlock::RecategorizationPreview(_) => true,
         AgentResponseBlock::SpendingReview(_) => true,
+        AgentResponseBlock::AccountsOverview(_) => true,
     }
 }
 
@@ -1559,6 +1560,17 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                             .all(|c| label_ok(&c.label) && opt_label_ok(&c.tag))
                         && m.actions.len() <= 6
                         && m.actions.iter().all(|a| label_ok(a))
+                })
+        }
+        AgentResponseBlock::AccountsOverview(b) => {
+            opt_label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.rows.len() <= 30
+                && b.rows.iter().all(|r| {
+                    label_ok(&r.name)
+                        && opt_label_ok(&r.subtitle)
+                        && label_ok(&r.type_label)
+                        && opt_label_ok(&r.badge)
                 })
         }
     }
