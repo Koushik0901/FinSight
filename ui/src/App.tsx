@@ -40,6 +40,8 @@ const Settings = lazy(() => import("./screens/Settings"));
 const Copilot = lazy(() => import("./screens/Copilot"));
 const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
+// DEV-only: gallery of the Copilot generative-UI blocks (never routed in prod builds).
+const GenUiPreview = lazy(() => import("./dev/GenUiPreview"));
 import Onboarding from "./screens/Onboarding";
 
 function recoverRoute() {
@@ -281,6 +283,9 @@ export function App() {
                     <Route path="/copilot" element={<Copilot />} />
                     <Route path="/copilot/ag-ui-spike" element={<CopilotAgUiSpike />} />
                     <Route path="/recipes" element={<Recipes />} />
+                    {import.meta.env.DEV && (
+                      <Route path="/dev/genui-preview" element={<GenUiPreview />} />
+                    )}
                   </Routes>
                 </Suspense>
               </RouteErrorBoundary>
