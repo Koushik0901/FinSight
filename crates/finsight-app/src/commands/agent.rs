@@ -879,14 +879,60 @@ pub(crate) fn enrich_agent_answer(answer: &mut AgentAnswer) {
 }
 
 pub(crate) fn parse_response_blocks(raw: &serde_json::Value) -> Vec<AgentResponseBlock> {
+    // Parse each element INDEPENDENTLY so one structurally-malformed block never
+    // drops its valid neighbors (the old `from_value::<Vec<_>>` was all-or-nothing).
+    // A conservative, logged coercion pass fixes the common quoted-integer foible
+    // before typed deserialize.
     raw.get("response_blocks")
         .or_else(|| raw.get("responseBlocks"))
-        .and_then(|v| serde_json::from_value::<Vec<AgentResponseBlock>>(v.clone()).ok())
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let coerced = coerce_block_value(v.clone());
+                    match serde_json::from_value::<AgentResponseBlock>(coerced) {
+                        Ok(block) => Some(block),
+                        Err(e) => {
+                            eprintln!("copilot: dropping unparseable response block: {e}");
+                            None
+                        }
+                    }
+                })
+                .filter(valid_response_block)
+                .take(8)
+                .collect()
+        })
         .unwrap_or_default()
-        .into_iter()
-        .filter(valid_response_block)
-        .take(8)
-        .collect()
+}
+
+/// Conservative, logged coercion for common model foibles applied before typed
+/// deserialize. Only safe, unambiguous fixes: a quoted integer on any key ending
+/// in `Cents` becomes an integer. No field-name aliasing (guessing intent would
+/// render wrong data); serde already ignores unknown fields and treats missing
+/// `Option`s as `None`. Every coercion is logged so drift stays observable.
+fn coerce_block_value(mut v: serde_json::Value) -> serde_json::Value {
+    fn walk(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, child) in map.iter_mut() {
+                    if k.ends_with("Cents") {
+                        if let serde_json::Value::String(s) = child {
+                            if let Ok(n) = s.parse::<i64>() {
+                                eprintln!("copilot: coerced {k} \"{s}\" -> {n}");
+                                *child = serde_json::Value::from(n);
+                                continue;
+                            }
+                        }
+                    }
+                    walk(child);
+                }
+            }
+            serde_json::Value::Array(arr) => arr.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    walk(&mut v);
+    v
 }
 
 fn valid_response_block(block: &AgentResponseBlock) -> bool {
@@ -2779,5 +2825,42 @@ mod tests {
         });
         assert!(!valid_response_block(&empty));
         assert_eq!(serde_json::to_value(&ok).unwrap()["kind"], "actionPlan");
+    }
+
+    #[test]
+    fn parse_response_blocks_keeps_valid_block_despite_a_malformed_neighbor() {
+        // The second block is STRUCTURALLY broken (metrics must be an array):
+        // the old all-or-nothing `from_value::<Vec<_>>` dropped BOTH. Per-element
+        // parse must keep the valid table.
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "table", "title": "Ok", "columns": ["A","B"], "rows": [["1","2"]] },
+            { "kind": "metricGrid", "metrics": "not-an-array" },
+        ]});
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "the valid block must survive its structurally-malformed neighbor"
+        );
+        assert!(matches!(blocks[0], AgentResponseBlock::Table(_)));
+    }
+
+    #[test]
+    fn parse_response_blocks_coerces_quoted_integer_amounts() {
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "accountsOverview", "title": "1 account", "subtitle": null,
+              "rows": [{ "name":"Chq", "subtitle":null, "typeLabel":"Checking",
+                         "amountCents":"14820", "badge":null }] }
+        ]});
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "a quoted integer amount must be coerced, not dropped"
+        );
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows[0].amount_cents, Some(14820));
     }
 }
