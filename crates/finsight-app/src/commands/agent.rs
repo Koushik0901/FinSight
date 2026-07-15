@@ -1332,6 +1332,7 @@ pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
 pub(crate) fn reasoning_result_to_agent_answer(
     result: ReasoningResult,
     bundle_id: Option<String>,
+    conn: &mut rusqlite::Connection,
 ) -> AgentAnswer {
     let mut data_sources = result.data_sources;
     if data_sources.is_empty() {
@@ -1350,9 +1351,15 @@ pub(crate) fn reasoning_result_to_agent_answer(
     // shape/size and caps the count; the copilot_chat emit path applies artifact
     // bounds on top, so a malformed or oversized block is dropped, never
     // rendered.
-    let response_blocks = parse_response_blocks(&serde_json::json!({
+    let mut response_blocks = parse_response_blocks(&serde_json::json!({
         "response_blocks": result.response_blocks,
     }));
+    // Single hydration funnel: rebuild the data-bearing fields of the marquee
+    // blocks from grounded core data. Requiring `conn` here means every answer
+    // path (stream, stream-fallback, deep-answer, ask_agent) is compiler-forced
+    // through this — no path can ship a model's raw (ungrounded, maybe-malformed)
+    // marquee block.
+    hydrate_response_blocks(conn, &mut response_blocks);
 
     AgentAnswer {
         prose: result.content,
@@ -1378,6 +1385,17 @@ pub(crate) fn reasoning_result_to_agent_answer(
         response_blocks,
     }
 }
+
+/// The ONE place model-requested marquee blocks get their data-bearing fields
+/// rebuilt from grounded core data. A registered kind is fully re-derived from
+/// the DB (the model's numbers are ignored — this guarantees the block is valid
+/// and its numbers match the answer's snapshot); an unregistered kind passes
+/// through untouched, preserving the existing model-emitted behavior. Populated
+/// per-kind in A2/A3.
+fn hydrate_response_blocks(_conn: &mut rusqlite::Connection, _blocks: &mut [AgentResponseBlock]) {
+    // Registry filled in by the accountsOverview / spendingReview synthesizers.
+}
+
 #[cfg(test)]
 fn direct_finance_answer(
     conn: &mut rusqlite::Connection,
@@ -1860,7 +1878,15 @@ pub async fn ask_agent(
                 .await
                 .map_err(AppError::from)?;
 
-                let mut answer = reasoning_result_to_agent_answer(result, Some(bundle_id));
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result,
+                        Some(bundle_id),
+                        conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 validate_finance_answer(&question, &mut answer);
                 enrich_agent_answer(&mut answer);
                 return Ok(answer);
@@ -1885,7 +1911,13 @@ pub async fn ask_agent(
                     return Ok(mapped);
                 }
 
-                let mut answer = reasoning_result_to_agent_answer(result, None);
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result, None, conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 answer.missing_data.push(
                     "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.".to_string(),
                 );
@@ -2252,7 +2284,9 @@ mod tests {
             hit_time_budget: false,
             usage: Default::default(),
         };
-        let answer = reasoning_result_to_agent_answer(result, None);
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let answer = reasoning_result_to_agent_answer(result, None, &mut conn);
         assert_eq!(
             answer.response_blocks.len(),
             1,

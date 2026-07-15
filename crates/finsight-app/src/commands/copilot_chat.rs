@@ -531,7 +531,13 @@ pub async fn stream_copilot_message(
             };
             drop(bundle_lease);
 
-            let mut answer = reasoning_result_to_agent_answer(result, bundle_id);
+            let mut answer = run(&db, move |conn| {
+                Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                    result, bundle_id, conn,
+                ))
+            })
+            .await
+            .map_err(AppError::from)?;
             validate_finance_answer(&enriched_question, &mut answer);
             enrich_agent_answer(&mut answer);
             // Append the recategorization preview AFTER enrich, so its presence
@@ -576,7 +582,13 @@ pub async fn stream_copilot_message(
                 enrich_agent_answer(&mut mapped);
                 mapped
             } else {
-                let mut answer = reasoning_result_to_agent_answer(result, None);
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result, None, conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 answer.missing_data.push(
                     "The tool loop answered without the full schema; treat as provisional."
                         .to_string(),
@@ -1200,7 +1212,13 @@ fn spawn_deep_answer(
         // any drafted change entries (they'd have no bundle to apply against).
         // Captured before `result` is moved into the answer mapping.
         let deep_usage = result.usage;
-        let mut answer = reasoning_result_to_agent_answer(result, None);
+        let Ok(mut answer) = run(&db, move |conn| {
+            Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(result, None, conn))
+        })
+        .await
+        else {
+            return;
+        };
         answer.changes = Vec::new();
         validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
