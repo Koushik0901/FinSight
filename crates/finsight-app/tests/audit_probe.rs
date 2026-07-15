@@ -219,16 +219,22 @@ fn audit_import_samples_and_dump_everything() {
         ids.push((acct.id, spec.name));
     }
 
-    // Household identity (F0): a real user configures their household, which
-    // TransferContext loads so is_self_transfer can recognize e-transfers that
-    // stay WITHIN the household — the owner's own moves ("INTERAC e-Transfer
-    // To/From: <me>") and money to a partner. The samples ARE Koushik's data,
-    // and the ~$19k of e-transfers naming "Swathi" are the classic partner
-    // pattern, so registering both is the realistic setup. Members are named by
-    // the FIRST name the bank stamps in e-transfer descriptors (a single-token
-    // name matches; a friend sharing a first name is still guarded by the
-    // ≥2-token rule on the multi-token account owner). Production stays generic —
-    // it matches whatever names are configured, never a hard-coded one.
+    // Household identity (F0): a user configures their household, which
+    // TransferContext loads so is_self_transfer recognizes e-transfers that stay
+    // WITHIN the household — the owner's own moves ("INTERAC e-Transfer To/From:
+    // <me>") and money to a partner. The samples ARE Koushik's data. Registering
+    // "Swathi" MODELS an ASSUMPTION, not ground truth: the ~$19k of e-transfers
+    // naming her are one-directional OUTflow (11+ rows, $0 back), which is only
+    // an internal move if the user genuinely pools finances with her — her
+    // account is NOT imported, so flagging her side removes that outflow from the
+    // household picture without it landing anywhere. If she is not a pooled
+    // member, that $19k is real spending. This is the USER's config call; the
+    // probe registers her to exercise the detection path and measure the ceiling.
+    // Members are named by the FIRST name the bank stamps in e-transfer
+    // descriptors (single-token name matches on 1 hit; a friend sharing a first
+    // name is still guarded by the ≥2-token rule on the multi-token account
+    // owner). Production stays generic — it matches whatever names are
+    // configured, never a hard-coded one.
     {
         let conn = db.get().unwrap();
         conn.execute(
