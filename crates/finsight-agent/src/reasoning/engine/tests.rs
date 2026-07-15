@@ -1,11 +1,122 @@
 use super::{ReasoningEngine, ReasoningEngineEvent};
 use crate::providers::mock::MockCompletionProvider;
-use crate::reasoning::messages::{AssistantTurn, ToolCall};
+use crate::reasoning::messages::{AssistantTurn, ChatMessage, ToolCall, ToolDefinition};
 use crate::reasoning::tools::{act, read, ToolSet};
+use crate::CompletionProvider;
+use async_trait::async_trait;
 use finsight_core::{db::run_migrations, keychain, Db};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
+
+/// A scripted mock that reports `supports_structured_output = true` (unlike the
+/// default `MockCompletionProvider`), so the single-model structured-repair path
+/// can be exercised. Both tool turns and the dedicated final-answer turn pop from
+/// the same queue.
+struct StructuredMock {
+    turns: Mutex<Vec<AssistantTurn>>,
+}
+
+#[async_trait]
+impl CompletionProvider for StructuredMock {
+    fn provider_id(&self) -> &str {
+        "mock"
+    }
+    fn model_id(&self) -> &str {
+        "test"
+    }
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
+    async fn complete_json(&self, _system: &str, _user: &str) -> anyhow::Result<Value> {
+        Ok(json!({}))
+    }
+    async fn complete_tool_turn(
+        &self,
+        _messages: &[ChatMessage],
+        _tools: &[ToolDefinition],
+    ) -> anyhow::Result<AssistantTurn> {
+        let mut turns = self.turns.lock().unwrap();
+        Ok(if turns.is_empty() {
+            AssistantTurn::FinalAnswer {
+                content: "exhausted".to_string(),
+                reasoning: String::new(),
+            }
+        } else {
+            turns.remove(0)
+        })
+    }
+}
+
+#[tokio::test]
+async fn single_model_botched_json_answer_is_repaired_via_structured_turn() {
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let tools = build_toolset();
+    let provider = Arc::new(StructuredMock {
+        turns: Mutex::new(vec![
+            // 1: a tool call, so tool_calls_made becomes true.
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            // 2: a BOTCHED structured answer — looks structured, doesn't parse.
+            AssistantTurn::FinalAnswer {
+                content: "{\"answer\": \"hi\", \"response_blocks\": [".into(),
+                reasoning: String::new(),
+            },
+            // 3: the structured re-emission returns valid JSON.
+            AssistantTurn::FinalAnswer {
+                content: "{\"answer\": \"Repaired answer\", \"response_blocks\": []}".into(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let result = ReasoningEngine::run(&mut conn, "q", &tools, provider, 5)
+        .await
+        .unwrap();
+    assert_eq!(
+        result.content, "Repaired answer",
+        "a botched structured answer is re-emitted via the constrained final-answer turn"
+    );
+}
+
+#[tokio::test]
+async fn single_model_prose_answer_is_not_re_emitted() {
+    // A legitimate prose reply must NOT trigger the extra structured turn.
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let tools = build_toolset();
+    let provider = Arc::new(StructuredMock {
+        turns: Mutex::new(vec![
+            AssistantTurn::ToolCalls {
+                calls: vec![ToolCall {
+                    id: "1".into(),
+                    name: "get_account_balances".into(),
+                    arguments: json!({}),
+                }],
+                plan: None,
+            },
+            AssistantTurn::FinalAnswer {
+                content: "You have two accounts totalling $50.".into(),
+                reasoning: String::new(),
+            },
+            // A poison turn: if the engine wrongly re-emits, it would surface this.
+            AssistantTurn::FinalAnswer {
+                content: "SHOULD-NOT-APPEAR".into(),
+                reasoning: String::new(),
+            },
+        ]),
+    });
+    let result = ReasoningEngine::run(&mut conn, "q", &tools, provider, 5)
+        .await
+        .unwrap();
+    assert_eq!(result.content, "You have two accounts totalling $50.");
+}
 
 fn fresh_db() -> (TempDir, Db) {
     let dir = TempDir::new().unwrap();

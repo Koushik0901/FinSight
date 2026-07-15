@@ -51,6 +51,13 @@ impl TurnUsage {
 pub trait CompletionProvider: Send + Sync {
     fn provider_id(&self) -> &str;
     fn model_id(&self) -> &str;
+    /// Whether a dedicated final-answer turn (`complete_final_answer_turn*`)
+    /// constrains output with a strict `json_schema` `response_format`. The
+    /// reasoning loop uses this to decide whether a botched main-path answer is
+    /// worth re-emitting through a constrained turn. Default: false.
+    fn supports_structured_output(&self) -> bool {
+        false
+    }
     /// Send a system + user prompt; expect a JSON-parseable response.
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value>;
     /// Return available model names. Returns Ok(vec![]) for providers

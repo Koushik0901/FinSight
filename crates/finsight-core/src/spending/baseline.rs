@@ -194,6 +194,47 @@ pub fn month_total(conn: &Connection, ym: &str) -> CoreResult<i64> {
     Ok(total)
 }
 
+/// A single category's outflow within a month (positive cents).
+#[derive(Debug, Clone)]
+pub struct CategorySpend {
+    pub label: String,
+    pub amount_cents: i64,
+}
+
+/// Top `k` spending categories for one calendar month (`YYYY-MM`). Uses the SAME
+/// transfer/investment exclusion as `month_total`, so a review's category rows
+/// and its month total are computed on one grounded basis (never diverge).
+pub fn month_category_breakdown(
+    conn: &Connection,
+    ym: &str,
+    k: usize,
+) -> CoreResult<Vec<CategorySpend>> {
+    let (y, m) = crate::spending::parse_ym(ym);
+    let start = format!("{y:04}-{m:02}-01");
+    let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+    let end = format!("{ny:04}-{nm:02}-01");
+    let pred = crate::metrics::non_investment_txn_predicate("t");
+    let sql = format!(
+        "SELECT COALESCE(c.label, 'Uncategorized') AS label, SUM(-t.amount_cents) AS spent \
+         FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
+         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
+           AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2 \
+         GROUP BY label ORDER BY spent DESC LIMIT ?3"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params![start, end, k as i64], |r| {
+        Ok(CategorySpend {
+            label: r.get(0)?,
+            amount_cents: r.get(1)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 /// The most recent calendar month (`YYYY-MM`) with any spending activity, or
 /// None if the ledger has none. Lets a caller default "the current period".
 pub fn latest_activity_month(conn: &Connection) -> CoreResult<Option<String>> {

@@ -130,6 +130,62 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     more: z.number().int().nonnegative(),
     bundleId: z.string().min(1).max(MAX_LABEL),
   }),
+  z.object({
+    kind: z.literal("spendingReview"),
+    months: z
+      .array(
+        z.object({
+          label: shortString,
+          spentCents: z.number().int(),
+          subtitle: shortString.nullable(),
+          categories: z
+            .array(z.object({ label: shortString, amountCents: z.number().int(), tag: z.enum(["over", "fixed", "lever"]).nullable() }))
+            .max(10),
+          summary: z.string().max(MAX_TEXT).nullable(),
+          actions: z.array(shortString).max(6),
+          period: shortString.nullish(),
+        }),
+      )
+      .min(1)
+      .max(6),
+  }),
+  z.object({
+    kind: z.literal("accountsOverview"),
+    title: shortString.nullable(),
+    subtitle: shortString.nullable(),
+    rows: z
+      .array(z.object({ name: shortString, subtitle: shortString.nullable(), typeLabel: shortString, amountCents: z.number().int().nullable(), badge: shortString.nullable() }))
+      .min(1)
+      .max(30),
+  }),
+  z.object({
+    kind: z.literal("spendTimeline"),
+    title: shortString.nullable(),
+    subtitle: shortString.nullable(),
+    points: z
+      .array(z.object({ label: shortString, amountCents: z.number().int(), highlight: z.boolean().optional().default(false), annotation: shortString.nullable(), projected: z.boolean().optional().default(false) }))
+      .min(2)
+      .max(24),
+  }),
+  z.object({
+    kind: z.literal("spendingDrivers"),
+    title: shortString,
+    subtitle: shortString.nullable(),
+    drivers: z
+      .array(z.object({ label: shortString, tag: z.enum(["planned", "trend", "prices", "anomaly", "creep", "mixed"]), amountDisplay: shortString, note: shortString.nullable() }))
+      .min(1)
+      .max(8),
+  }),
+  z.object({
+    kind: z.literal("watchList"),
+    title: shortString,
+    items: z.array(z.object({ label: shortString, detail: z.string().max(MAX_TEXT), amountDisplay: shortString.nullable() })).min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal("actionPlan"),
+    title: shortString.nullable(),
+    items: z.array(shortString).min(1).max(8),
+  }),
 ]);
 
 /// Strict per-component prop schemas. A component is only allowlisted if it has a

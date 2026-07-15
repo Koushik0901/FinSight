@@ -686,6 +686,116 @@ pub struct AgentRecategorizationPreviewBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReviewCategory {
+    pub label: String,
+    pub amount_cents: i64,
+    /// Optional flag: "over" | "fixed" | "lever". None = plain bar.
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReviewMonth {
+    pub label: String,
+    pub spent_cents: i64,
+    pub subtitle: Option<String>,
+    pub categories: Vec<AgentReviewCategory>,
+    pub summary: Option<String>,
+    pub actions: Vec<String>,
+    /// `YYYY-MM` join key. The model supplies this (which months to review);
+    /// the server keys on it to compute label/spentCents/categories from core.
+    #[serde(default)]
+    pub period: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendingReviewBlock {
+    pub months: Vec<AgentReviewMonth>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountRow {
+    pub name: String,
+    pub subtitle: Option<String>,
+    pub type_label: String,
+    /// None → account has no known balance; renderer shows `badge` instead.
+    pub amount_cents: Option<i64>,
+    pub badge: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAccountsOverviewBlock {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub rows: Vec<AgentAccountRow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTimelinePoint {
+    pub label: String,
+    pub amount_cents: i64,
+    #[serde(default)]
+    pub highlight: bool,
+    pub annotation: Option<String>,
+    #[serde(default)]
+    pub projected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendTimelineBlock {
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub points: Vec<AgentTimelinePoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentDriver {
+    pub label: String,
+    /// "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed"
+    pub tag: String,
+    /// Presentational delta string, e.g. "+$213/mo" (bounded short string).
+    pub amount_display: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpendingDriversBlock {
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub drivers: Vec<AgentDriver>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWatchItem {
+    pub label: String,
+    pub detail: String,
+    pub amount_display: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWatchListBlock {
+    pub title: String,
+    pub items: Vec<AgentWatchItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActionPlanBlock {
+    pub title: Option<String>,
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
     Markdown {
@@ -709,6 +819,12 @@ pub enum AgentResponseBlock {
     RankedOptions(AgentRankedOptionsBlock),
     ComparisonBars(AgentComparisonBarsBlock),
     RecategorizationPreview(AgentRecategorizationPreviewBlock),
+    SpendingReview(AgentSpendingReviewBlock),
+    AccountsOverview(AgentAccountsOverviewBlock),
+    SpendTimeline(AgentSpendTimelineBlock),
+    SpendingDrivers(AgentSpendingDriversBlock),
+    WatchList(AgentWatchListBlock),
+    ActionPlan(AgentActionPlanBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -767,14 +883,60 @@ pub(crate) fn enrich_agent_answer(answer: &mut AgentAnswer) {
 }
 
 pub(crate) fn parse_response_blocks(raw: &serde_json::Value) -> Vec<AgentResponseBlock> {
+    // Parse each element INDEPENDENTLY so one structurally-malformed block never
+    // drops its valid neighbors (the old `from_value::<Vec<_>>` was all-or-nothing).
+    // A conservative, logged coercion pass fixes the common quoted-integer foible
+    // before typed deserialize.
     raw.get("response_blocks")
         .or_else(|| raw.get("responseBlocks"))
-        .and_then(|v| serde_json::from_value::<Vec<AgentResponseBlock>>(v.clone()).ok())
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let coerced = coerce_block_value(v.clone());
+                    match serde_json::from_value::<AgentResponseBlock>(coerced) {
+                        Ok(block) => Some(block),
+                        Err(e) => {
+                            eprintln!("copilot: dropping unparseable response block: {e}");
+                            None
+                        }
+                    }
+                })
+                .filter(valid_response_block)
+                .take(8)
+                .collect()
+        })
         .unwrap_or_default()
-        .into_iter()
-        .filter(valid_response_block)
-        .take(8)
-        .collect()
+}
+
+/// Conservative, logged coercion for common model foibles applied before typed
+/// deserialize. Only safe, unambiguous fixes: a quoted integer on any key ending
+/// in `Cents` becomes an integer. No field-name aliasing (guessing intent would
+/// render wrong data); serde already ignores unknown fields and treats missing
+/// `Option`s as `None`. Every coercion is logged so drift stays observable.
+fn coerce_block_value(mut v: serde_json::Value) -> serde_json::Value {
+    fn walk(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, child) in map.iter_mut() {
+                    if k.ends_with("Cents") {
+                        if let serde_json::Value::String(s) = child {
+                            if let Ok(n) = s.parse::<i64>() {
+                                eprintln!("copilot: coerced {k} \"{s}\" -> {n}");
+                                *child = serde_json::Value::from(n);
+                                continue;
+                            }
+                        }
+                    }
+                    walk(child);
+                }
+            }
+            serde_json::Value::Array(arr) => arr.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    walk(&mut v);
+    v
 }
 
 fn valid_response_block(block: &AgentResponseBlock) -> bool {
@@ -842,6 +1004,58 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                 && !b.rows.is_empty()
                 && b.rows.len() <= 20
                 && b.rows.iter().all(|r| (0.0..=1.0).contains(&r.confidence))
+        }
+        AgentResponseBlock::SpendingReview(b) => {
+            const REVIEW_TAGS: [&str; 3] = ["over", "fixed", "lever"];
+            !b.months.is_empty()
+                && b.months.len() <= 6
+                && b.months.iter().all(|m| {
+                    !m.label.trim().is_empty()
+                        && m.categories.len() <= 10
+                        && m.actions.len() <= 6
+                        && m.categories.iter().all(|c| {
+                            !c.label.trim().is_empty()
+                                && c.tag
+                                    .as_deref()
+                                    .map(|t| REVIEW_TAGS.contains(&t))
+                                    .unwrap_or(true)
+                        })
+                })
+        }
+        AgentResponseBlock::AccountsOverview(b) => {
+            !b.rows.is_empty()
+                && b.rows.len() <= 30
+                && b.rows
+                    .iter()
+                    .all(|r| !r.name.trim().is_empty() && !r.type_label.trim().is_empty())
+        }
+        AgentResponseBlock::SpendTimeline(b) => {
+            b.points.len() >= 2
+                && b.points.len() <= 24
+                && b.points.iter().all(|p| !p.label.trim().is_empty())
+        }
+        AgentResponseBlock::SpendingDrivers(b) => {
+            const DRIVER_TAGS: [&str; 6] =
+                ["planned", "trend", "prices", "anomaly", "creep", "mixed"];
+            !b.title.trim().is_empty()
+                && !b.drivers.is_empty()
+                && b.drivers.len() <= 8
+                && b.drivers.iter().all(|d| {
+                    !d.label.trim().is_empty()
+                        && !d.amount_display.trim().is_empty()
+                        && DRIVER_TAGS.contains(&d.tag.as_str())
+                })
+        }
+        AgentResponseBlock::WatchList(b) => {
+            !b.title.trim().is_empty()
+                && !b.items.is_empty()
+                && b.items.len() <= 8
+                && b.items.iter().all(|it| !it.label.trim().is_empty())
+        }
+        AgentResponseBlock::ActionPlan(b) => {
+            !b.items.is_empty()
+                && b.items.len() <= 8
+                && b.items.iter().all(|i| !i.trim().is_empty())
         }
     }
 }
@@ -1122,6 +1336,7 @@ pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
 pub(crate) fn reasoning_result_to_agent_answer(
     result: ReasoningResult,
     bundle_id: Option<String>,
+    conn: &mut rusqlite::Connection,
 ) -> AgentAnswer {
     let mut data_sources = result.data_sources;
     if data_sources.is_empty() {
@@ -1140,9 +1355,15 @@ pub(crate) fn reasoning_result_to_agent_answer(
     // shape/size and caps the count; the copilot_chat emit path applies artifact
     // bounds on top, so a malformed or oversized block is dropped, never
     // rendered.
-    let response_blocks = parse_response_blocks(&serde_json::json!({
+    let mut response_blocks = parse_response_blocks(&serde_json::json!({
         "response_blocks": result.response_blocks,
     }));
+    // Single hydration funnel: rebuild the data-bearing fields of the marquee
+    // blocks from grounded core data. Requiring `conn` here means every answer
+    // path (stream, stream-fallback, deep-answer, ask_agent) is compiler-forced
+    // through this — no path can ship a model's raw (ungrounded, maybe-malformed)
+    // marquee block.
+    hydrate_response_blocks(conn, &mut response_blocks);
 
     AgentAnswer {
         prose: result.content,
@@ -1168,6 +1389,168 @@ pub(crate) fn reasoning_result_to_agent_answer(
         response_blocks,
     }
 }
+
+/// The ONE place model-requested marquee blocks get their data-bearing fields
+/// rebuilt from grounded core data. A registered kind is fully re-derived from
+/// the DB (the model's numbers are ignored — this guarantees the block is valid
+/// and its numbers match the answer's snapshot); an unregistered kind passes
+/// through untouched, preserving the existing model-emitted behavior. Populated
+/// per-kind in A2/A3.
+fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentResponseBlock]) {
+    for block in blocks.iter_mut() {
+        match block {
+            AgentResponseBlock::AccountsOverview(_) => {
+                if let Some(fresh) = synthesize_accounts_overview(conn) {
+                    *block = AgentResponseBlock::AccountsOverview(fresh);
+                }
+            }
+            AgentResponseBlock::SpendingReview(model) => {
+                let model = model.clone();
+                if let Some(fresh) = synthesize_spending_review(conn, &model) {
+                    *block = AgentResponseBlock::SpendingReview(fresh);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Human label for an account type (the neutral chip shown on each row).
+fn type_label(t: finsight_core::models::AccountType) -> String {
+    use finsight_core::models::AccountType::*;
+    match t {
+        Checking => "Checking",
+        Savings => "Savings",
+        Credit => "Credit",
+        Investment => "Investment",
+        Cash => "Cash",
+        Loan => "Loan",
+        Other => "Account",
+    }
+    .to_string()
+}
+
+/// Thousands-grouped whole-dollar string, e.g. `-$2,418`. Used only for the
+/// server-computed summary line; per-row amounts stay in cents for the frontend.
+fn dollars(cents: i64) -> String {
+    let whole = cents / 100;
+    let digits = whole.abs().to_string();
+    let mut grouped = String::new();
+    for (i, c) in digits.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(c);
+    }
+    let grouped: String = grouped.chars().rev().collect();
+    format!("{}${grouped}", if whole < 0 { "-" } else { "" })
+}
+
+/// Build a fully-grounded `accountsOverview` from core data. The model's own
+/// row data is ignored entirely — this guarantees the block is valid and its
+/// numbers match the answer's snapshot. An account with no known balance gets a
+/// `None` amount + a "needs a balance set" badge (never a fabricated $0).
+fn synthesize_accounts_overview(
+    conn: &mut rusqlite::Connection,
+) -> Option<AgentAccountsOverviewBlock> {
+    let summaries = finsight_core::repos::accounts::list_summaries(conn).ok()?;
+    if summaries.is_empty() {
+        return None;
+    }
+    let tracked = finsight_core::metrics::balance_breakdown(conn)
+        .ok()
+        .map(|b| format!("{} tracked", dollars(b.net_worth_cents)));
+    let missing = summaries.iter().filter(|s| !s.balance_known).count();
+    let rows = summaries
+        .iter()
+        .map(|s| {
+            let subtitle = match s.mask.as_deref() {
+                Some(m) if !m.is_empty() => Some(format!("{} ····{m}", s.bank)),
+                _ => Some(s.bank.clone()),
+            };
+            AgentAccountRow {
+                name: s.name.clone(),
+                subtitle,
+                type_label: type_label(s.r#type),
+                amount_cents: if s.balance_known {
+                    Some(s.balance_cents)
+                } else {
+                    None
+                },
+                badge: if s.balance_known {
+                    None
+                } else {
+                    Some("needs a balance set".to_string())
+                },
+            }
+        })
+        .collect();
+    let n = summaries.len();
+    let subtitle = match (tracked, missing) {
+        (Some(t), 0) => Some(t),
+        (Some(t), m) => Some(format!("{t} · {m} missing a balance")),
+        (None, 0) => None,
+        (None, m) => Some(format!("{m} missing a balance")),
+    };
+    Some(AgentAccountsOverviewBlock {
+        title: Some(format!("{n} account{}", if n == 1 { "" } else { "s" })),
+        subtitle,
+        rows,
+    })
+}
+
+const MONTH_NAMES: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June", "July", "August",
+    "September", "October", "November", "December",
+];
+
+/// Hybrid synthesis: keep the model's generative `summary`/`actions` per month,
+/// but recompute every number (`label`, `spentCents`, `categories`) from the
+/// spending core, keyed by the model-supplied `period` ("YYYY-MM"). A requested
+/// month with no spending data is dropped. Numbers come from the same
+/// `spending::baseline` basis the snapshot uses, so a review's totals can never
+/// diverge from the answer's prose.
+fn synthesize_spending_review(
+    conn: &mut rusqlite::Connection,
+    model: &AgentSpendingReviewBlock,
+) -> Option<AgentSpendingReviewBlock> {
+    let mut months = Vec::new();
+    for m in &model.months {
+        let Some(period) = m.period.as_deref() else {
+            continue;
+        };
+        let categories = finsight_core::spending::baseline::month_category_breakdown(conn, period, 6)
+            .ok()
+            .filter(|c| !c.is_empty())?;
+        let spent_cents = finsight_core::spending::baseline::month_total(conn, period).unwrap_or(0);
+        let (y, mo) = finsight_core::spending::parse_ym(period);
+        let label = MONTH_NAMES
+            .get(mo.saturating_sub(1) as usize)
+            .map(|name| format!("{name} {y}"))
+            .unwrap_or_else(|| period.to_string());
+        months.push(AgentReviewMonth {
+            label,
+            spent_cents,
+            subtitle: None,
+            categories: categories
+                .into_iter()
+                .map(|c| AgentReviewCategory {
+                    label: c.label,
+                    amount_cents: c.amount_cents,
+                    tag: None,
+                })
+                .collect(),
+            summary: m.summary.clone(),
+            actions: m.actions.clone(),
+            period: m.period.clone(),
+        });
+    }
+    if months.is_empty() {
+        return None;
+    }
+    Some(AgentSpendingReviewBlock { months })
+}
+
 #[cfg(test)]
 fn direct_finance_answer(
     conn: &mut rusqlite::Connection,
@@ -1650,7 +2033,15 @@ pub async fn ask_agent(
                 .await
                 .map_err(AppError::from)?;
 
-                let mut answer = reasoning_result_to_agent_answer(result, Some(bundle_id));
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result,
+                        Some(bundle_id),
+                        conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 validate_finance_answer(&question, &mut answer);
                 enrich_agent_answer(&mut answer);
                 return Ok(answer);
@@ -1675,7 +2066,13 @@ pub async fn ask_agent(
                     return Ok(mapped);
                 }
 
-                let mut answer = reasoning_result_to_agent_answer(result, None);
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result, None, conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 answer.missing_data.push(
                     "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.".to_string(),
                 );
@@ -2042,7 +2439,9 @@ mod tests {
             hit_time_budget: false,
             usage: Default::default(),
         };
-        let answer = reasoning_result_to_agent_answer(result, None);
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let answer = reasoning_result_to_agent_answer(result, None, &mut conn);
         assert_eq!(
             answer.response_blocks.len(),
             1,
@@ -2425,5 +2824,341 @@ mod tests {
             bundle_id: "bundle-abc".to_string(),
         });
         assert!(!valid_response_block(&block));
+    }
+
+    #[test]
+    fn spending_review_valid_and_rejects_empty_and_oversized() {
+        let ok = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May 2026".into(),
+                spent_cents: 408_600,
+                subtitle: Some("8 of 10 envelopes under".into()),
+                categories: vec![AgentReviewCategory {
+                    label: "Housing".into(),
+                    amount_cents: 185_000,
+                    tag: Some("fixed".into()),
+                }],
+                summary: Some("A steady month.".into()),
+                actions: vec!["Glance at the PG&E bill".into()],
+                period: None,
+            }],
+        });
+        assert!(valid_response_block(&ok));
+
+        let no_months =
+            AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock { months: vec![] });
+        assert!(!valid_response_block(&no_months));
+
+        let bad_tag = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May".into(),
+                spent_cents: 1,
+                subtitle: None,
+                categories: vec![AgentReviewCategory {
+                    label: "X".into(),
+                    amount_cents: 1,
+                    tag: Some("bogus".into()),
+                }],
+                summary: None,
+                actions: vec![],
+                period: None,
+            }],
+        });
+        assert!(!valid_response_block(&bad_tag));
+    }
+
+    #[test]
+    fn spending_review_serde_round_trip_is_camel_case() {
+        let block = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "May".into(),
+                spent_cents: 100,
+                subtitle: None,
+                categories: vec![AgentReviewCategory {
+                    label: "Housing".into(),
+                    amount_cents: 50,
+                    tag: None,
+                }],
+                summary: None,
+                actions: vec![],
+                period: None,
+            }],
+        });
+        let v = serde_json::to_value(&block).unwrap();
+        assert_eq!(v["kind"], "spendingReview");
+        assert_eq!(v["months"][0]["spentCents"], 100);
+        let back: AgentResponseBlock = serde_json::from_value(v).unwrap();
+        assert!(matches!(back, AgentResponseBlock::SpendingReview(_)));
+    }
+
+    #[test]
+    fn accounts_overview_valid_and_rejects_empty_rows() {
+        let ok = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: Some("7 accounts".into()),
+            subtitle: Some("$137,515 tracked · 1 missing a balance".into()),
+            rows: vec![
+                AgentAccountRow {
+                    name: "Joint Checking".into(),
+                    subtitle: Some("Mercury ····4421".into()),
+                    type_label: "Checking".into(),
+                    amount_cents: Some(1_482_042),
+                    badge: None,
+                },
+                AgentAccountRow {
+                    name: "Vanguard".into(),
+                    subtitle: Some("manual".into()),
+                    type_label: "Investment".into(),
+                    amount_cents: None,
+                    badge: Some("needs a balance set".into()),
+                },
+            ],
+        });
+        assert!(valid_response_block(&ok));
+
+        let empty = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![],
+        });
+        assert!(!valid_response_block(&empty));
+
+        let v = serde_json::to_value(&ok).unwrap();
+        assert_eq!(v["kind"], "accountsOverview");
+        assert_eq!(v["rows"][0]["amountCents"], 1_482_042);
+        assert!(v["rows"][1]["amountCents"].is_null());
+    }
+
+    #[test]
+    fn spend_timeline_valid_and_bounds() {
+        let ok = AgentResponseBlock::SpendTimeline(AgentSpendTimelineBlock {
+            title: Some("Monthly spend".into()),
+            subtitle: None,
+            points: vec![
+                AgentTimelinePoint {
+                    label: "Jan".into(),
+                    amount_cents: 360_000,
+                    highlight: false,
+                    annotation: None,
+                    projected: false,
+                },
+                AgentTimelinePoint {
+                    label: "Apr".into(),
+                    amount_cents: 570_000,
+                    highlight: false,
+                    annotation: Some("LISBON".into()),
+                    projected: false,
+                },
+            ],
+        });
+        assert!(valid_response_block(&ok));
+        let too_few = AgentResponseBlock::SpendTimeline(AgentSpendTimelineBlock {
+            title: None,
+            subtitle: None,
+            points: vec![],
+        });
+        assert!(!valid_response_block(&too_few));
+        assert_eq!(serde_json::to_value(&ok).unwrap()["kind"], "spendTimeline");
+    }
+
+    #[test]
+    fn spending_drivers_valid_and_rejects_bad_tag() {
+        let ok = AgentResponseBlock::SpendingDrivers(AgentSpendingDriversBlock {
+            title: "What's driving the +$728/mo".into(),
+            subtitle: Some("vs Jan–Feb".into()),
+            drivers: vec![AgentDriver {
+                label: "Travel".into(),
+                tag: "planned".into(),
+                amount_display: "+$213/mo".into(),
+                note: Some("Italy deposits".into()),
+            }],
+        });
+        assert!(valid_response_block(&ok));
+        let bad = AgentResponseBlock::SpendingDrivers(AgentSpendingDriversBlock {
+            title: "x".into(),
+            subtitle: None,
+            drivers: vec![AgentDriver {
+                label: "y".into(),
+                tag: "bogus".into(),
+                amount_display: "z".into(),
+                note: None,
+            }],
+        });
+        assert!(!valid_response_block(&bad));
+    }
+
+    #[test]
+    fn watch_list_valid_and_rejects_empty() {
+        let ok = AgentResponseBlock::WatchList(AgentWatchListBlock {
+            title: "Watch out for these".into(),
+            items: vec![AgentWatchItem {
+                label: "The Amex balance".into(),
+                detail: "revolving at 24.9%".into(),
+                amount_display: Some("−$50/mo".into()),
+            }],
+        });
+        assert!(valid_response_block(&ok));
+        let empty = AgentResponseBlock::WatchList(AgentWatchListBlock {
+            title: "x".into(),
+            items: vec![],
+        });
+        assert!(!valid_response_block(&empty));
+    }
+
+    #[test]
+    fn action_plan_valid_and_rejects_empty() {
+        let ok = AgentResponseBlock::ActionPlan(AgentActionPlanBlock {
+            title: Some("Action plan".into()),
+            items: vec!["Do X".into()],
+        });
+        assert!(valid_response_block(&ok));
+        let empty = AgentResponseBlock::ActionPlan(AgentActionPlanBlock {
+            title: None,
+            items: vec![],
+        });
+        assert!(!valid_response_block(&empty));
+        assert_eq!(serde_json::to_value(&ok).unwrap()["kind"], "actionPlan");
+    }
+
+    #[test]
+    fn parse_response_blocks_keeps_valid_block_despite_a_malformed_neighbor() {
+        // The second block is STRUCTURALLY broken (metrics must be an array):
+        // the old all-or-nothing `from_value::<Vec<_>>` dropped BOTH. Per-element
+        // parse must keep the valid table.
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "table", "title": "Ok", "columns": ["A","B"], "rows": [["1","2"]] },
+            { "kind": "metricGrid", "metrics": "not-an-array" },
+        ]});
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "the valid block must survive its structurally-malformed neighbor"
+        );
+        assert!(matches!(blocks[0], AgentResponseBlock::Table(_)));
+    }
+
+    #[test]
+    fn parse_response_blocks_coerces_quoted_integer_amounts() {
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "accountsOverview", "title": "1 account", "subtitle": null,
+              "rows": [{ "name":"Chq", "subtitle":null, "typeLabel":"Checking",
+                         "amountCents":"14820", "badge":null }] }
+        ]});
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "a quoted integer amount must be coerced, not dropped"
+        );
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows[0].amount_cents, Some(14820));
+    }
+
+    /// Rust half of the Rust<->Zod parity corpus. The frontend
+    /// `ui/.../parity.test.ts` loads the SAME fixture file and runs each block
+    /// through `CopilotResponseBlockSchema`. A verdict mismatch on any case means
+    /// the two hand-maintained validations have drifted — fix the field-level
+    /// bound until both sides agree. (Semantic validity only; size bounds live in
+    /// `copilot_chat.rs` and are validated separately.)
+    #[test]
+    fn rust_verdicts_match_the_parity_corpus() {
+        // Shared with ui/.../parity.test.ts (which imports it as JSON). Path is
+        // relative to the crate dir, which is cargo's CWD during `cargo test`.
+        let raw = std::fs::read_to_string(
+            "../../ui/src/components/copilot/agUi/response_blocks.fixture.json",
+        )
+        .expect("read parity fixtures");
+        let cases: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let expect = case["expectValid"].as_bool().unwrap();
+            let kind = case["block"]["kind"].as_str().unwrap_or("?").to_string();
+            let wrapped = serde_json::json!({ "response_blocks": [ case["block"].clone() ] });
+            let got = parse_response_blocks(&wrapped).len() == 1;
+            assert_eq!(got, expect, "Rust verdict mismatch for kind `{kind}`");
+        }
+    }
+
+    #[test]
+    fn accounts_overview_is_hydrated_from_core_ignoring_model_data() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // Account with a known (manual, non-seed) balance.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Mercury','Checking','Joint Checking','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('chk',date('now'),1482042,'manual')", []).unwrap();
+        // Account with NO balance row but a transaction -> balance_known = false.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('inv','You','Vanguard','Investment','Brokerage','USD','#111','manual','invested',0,'investments',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','inv',date('now'),-100,'X',NULL,'posted',datetime('now'))", []).unwrap();
+
+        // Model emits a THIN request with hallucinated rows the server must ignore.
+        let mut blocks = vec![AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![AgentAccountRow {
+                name: "HALLUCINATED".into(),
+                subtitle: None,
+                type_label: "?".into(),
+                amount_cents: Some(999),
+                badge: None,
+            }],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows.len(), 2, "rows come from core, not the model");
+        assert!(
+            b.rows.iter().all(|r| r.name != "HALLUCINATED"),
+            "model-supplied rows are ignored/replaced"
+        );
+        assert!(
+            b.rows.iter().any(|r| r.amount_cents == Some(1482042)),
+            "the known balance is surfaced from core"
+        );
+        assert!(
+            b.rows.iter().any(|r| r.amount_cents.is_none()
+                && r.badge.as_deref() == Some("needs a balance set")),
+            "the unknown-balance account is badged, not fabricated as $0"
+        );
+        assert!(b.title.as_deref().unwrap().contains("2 account"));
+    }
+
+    #[test]
+    fn spending_review_merges_model_prose_with_core_numbers_by_period() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Bank','Checking','Chq','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        // Two May-2026 expenses (uncategorized -> "Uncategorized" bucket), total $700.
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','chk','2026-05-10',-40000,'Store',NULL,'posted',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t2','chk','2026-05-15',-30000,'Cafe',NULL,'posted',datetime('now'))", []).unwrap();
+
+        // Model emits period + generative prose; the numbers/label are bogus and
+        // must be replaced from core.
+        let mut blocks = vec![AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "IGNORED".into(),
+                spent_cents: 999,
+                subtitle: Some("IGNORED".into()),
+                categories: vec![],
+                summary: Some("My insight".into()),
+                actions: vec!["Do X".into()],
+                period: Some("2026-05".into()),
+            }],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::SpendingReview(b) = &blocks[0] else {
+            panic!("expected spendingReview")
+        };
+        assert_eq!(b.months.len(), 1);
+        let m = &b.months[0];
+        assert_eq!(m.summary.as_deref(), Some("My insight"), "model prose preserved");
+        assert_eq!(m.actions, vec!["Do X".to_string()], "model actions preserved");
+        assert_eq!(m.spent_cents, 70000, "spent recomputed from core, not the model's 999");
+        assert!(!m.categories.is_empty(), "categories recomputed from core");
+        assert_eq!(m.label, "May 2026", "label derived from the period, not the model");
     }
 }

@@ -1503,6 +1503,7 @@ dependencies = [
  "clap",
  "finsight-agent",
  "finsight-core",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",

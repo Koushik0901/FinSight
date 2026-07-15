@@ -18,6 +18,12 @@ pub struct OpenAiCompatProvider {
     /// (thinking tokens + a large final JSON answer); a fast "router" model used
     /// only to pick the next tool can run far smaller (see [`with_max_tokens`]).
     max_tokens: u32,
+    /// When true, dedicated final-answer turns (tool_choice "none") request a
+    /// strict `json_schema` `response_format` so the model is constrained to emit
+    /// the answer envelope. Probe-gated (see finsight-eval `probe_structured`):
+    /// some models (glm) return empty content under it, so the request always
+    /// falls back to an unconstrained retry on empty-or-error. Off by default.
+    structured_final_answer: bool,
     client: reqwest::Client,
 }
 
@@ -34,6 +40,7 @@ impl OpenAiCompatProvider {
             model: model.into(),
             preset: preset.into(),
             max_tokens: 8192,
+            structured_final_answer: false,
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(60))
                 .build()
@@ -46,6 +53,49 @@ impl OpenAiCompatProvider {
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = max_tokens;
         self
+    }
+
+    /// Enable strict `json_schema` structured output on dedicated final-answer
+    /// turns (with unconstrained fallback). See the struct field docs.
+    pub fn with_structured_final_answer(mut self, on: bool) -> Self {
+        self.structured_final_answer = on;
+        self
+    }
+
+    /// Minimal, stable envelope schema for a final answer. Deliberately NOT the
+    /// full 19-variant block union (that would reintroduce hand-maintained
+    /// drift): it constrains the top-level shape (`answer` + a `response_blocks`
+    /// array of `{kind, …}`) so the JSON can't truncate or lose the envelope,
+    /// while leaving block inner fields to the (grounded) synthesizers + the
+    /// tolerant parse/coercion net.
+    fn final_answer_response_format() -> Value {
+        json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": "finsight_answer",
+                "strict": false,
+                "schema": {
+                    "type": "object",
+                    "required": ["answer"],
+                    "properties": {
+                        "answer": { "type": "string" },
+                        "reasoning": { "type": "string" },
+                        "assumptions": { "type": "array", "items": { "type": "string" } },
+                        "data_sources": { "type": "array", "items": { "type": "string" } },
+                        "missing_data": { "type": "array", "items": { "type": "string" } },
+                        "follow_up_questions": { "type": "array", "items": { "type": "string" } },
+                        "response_blocks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["kind"],
+                                "properties": { "kind": { "type": "string" } }
+                            }
+                        }
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -113,6 +163,9 @@ impl CompletionProvider for OpenAiCompatProvider {
     }
     fn model_id(&self) -> &str {
         &self.model
+    }
+    fn supports_structured_output(&self) -> bool {
+        self.structured_final_answer
     }
 
     async fn complete_json(&self, system: &str, user: &str) -> Result<Value> {
@@ -280,6 +333,26 @@ impl OpenAiCompatProvider {
             body["tool_choice"] = json!(choice);
         }
 
+        // Structured output applies ONLY to dedicated final-answer turns
+        // (tool_choice "none"), never the tool-selection turns (which must stay
+        // free to call tools). Constrain the answer envelope with a strict
+        // json_schema; fall back to the unconstrained request on empty content
+        // OR error, since some models return empty under it (probe-gated).
+        if tool_choice == Some("none") && self.structured_final_answer {
+            let mut constrained = body.clone();
+            constrained["response_format"] = Self::final_answer_response_format();
+            if let Ok((turn, usage)) = self.send_body(constrained).await {
+                if !is_empty_final_answer(&turn) {
+                    return Ok((turn, usage));
+                }
+            }
+            // Fell through: empty answer or request error — unconstrained retry.
+        }
+        self.send_body(body).await
+    }
+
+    /// POST a prepared chat/completions body and parse it into a turn + usage.
+    async fn send_body(&self, body: Value) -> Result<(AssistantTurn, TurnUsage)> {
         let resp: OaiRespWithTools = self
             .client
             .post(format!("{}/chat/completions", self.base_url))
@@ -357,6 +430,12 @@ impl OpenAiCompatProvider {
     }
 }
 
+/// True when a turn is a final answer with empty content — the signal that a
+/// strict json_schema request yielded nothing and we should retry unconstrained.
+fn is_empty_final_answer(turn: &AssistantTurn) -> bool {
+    matches!(turn, AssistantTurn::FinalAnswer { content, .. } if content.trim().is_empty())
+}
+
 fn parse_json_response(content: &str) -> Result<Value> {
     let trimmed = content.trim();
     if let Ok(value) = serde_json::from_str(trimmed) {
@@ -411,6 +490,37 @@ mod tests {
     fn parses_json_array_response() {
         let value = parse_json_response(r#"[{"txn_id":"t1"}]"#).unwrap();
         assert_eq!(value[0]["txn_id"], "t1");
+    }
+
+    #[test]
+    fn final_answer_response_format_shape() {
+        let rf = OpenAiCompatProvider::final_answer_response_format();
+        assert_eq!(rf["type"], "json_schema");
+        assert!(rf["json_schema"]["schema"]["properties"]["answer"].is_object());
+        assert!(rf["json_schema"]["schema"]["properties"]["response_blocks"].is_object());
+    }
+
+    #[test]
+    fn is_empty_final_answer_detects_blank_content() {
+        assert!(is_empty_final_answer(&AssistantTurn::FinalAnswer {
+            content: "   ".into(),
+            reasoning: String::new(),
+        }));
+        assert!(!is_empty_final_answer(&AssistantTurn::FinalAnswer {
+            content: "hi".into(),
+            reasoning: String::new(),
+        }));
+        assert!(!is_empty_final_answer(&AssistantTurn::ToolCalls {
+            calls: vec![],
+            plan: None,
+        }));
+    }
+
+    #[test]
+    fn structured_flag_defaults_off_and_builder_sets_it() {
+        let p = OpenAiCompatProvider::new("u", "k", "m", "p");
+        assert!(!p.structured_final_answer);
+        assert!(p.with_structured_final_answer(true).structured_final_answer);
     }
 
     #[test]

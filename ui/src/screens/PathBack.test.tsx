@@ -72,6 +72,7 @@ const VIEW: PathBackView = {
         user_verdict: null,
       },
     ],
+    accepted: [],
     target_monthly_cents: 300000,
     structural_gap_cents: 15000,
     note: "Trimming every lever gets you to $3,400/mo — $150 short of your $3,000 target.",

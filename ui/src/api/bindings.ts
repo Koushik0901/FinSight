@@ -1640,8 +1640,15 @@ badgeCount: number | null;
  * Optional monetary amount in cents (e.g., bill amount).
  */
 amountCents: number | null }
+export type AgentAccountRow = { name: string; subtitle: string | null; typeLabel: string; 
+/**
+ * None → account has no known balance; renderer shows `badge` instead.
+ */
+amountCents: number | null; badge: string | null }
+export type AgentAccountsOverviewBlock = { title: string | null; subtitle: string | null; rows: AgentAccountRow[] }
 export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
+export type AgentActionPlanBlock = { title: string | null; items: string[] }
 export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentAffordabilityVerdictBlock = { canAfford: boolean; headline: string; sub: string; caveat: string | null; fundingSource: AgentFundingSource | null }
 export type AgentAllocationSegment = { label: string; amountCents: number; rationale: string; categoryKey: string }
@@ -1653,6 +1660,15 @@ export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
 export type AgentChartPoint = { label: string; value: number }
 export type AgentComparisonBarsBlock = { title: string; current: AgentMoneyPoint; prior: AgentMoneyPoint }
+export type AgentDriver = { label: string; 
+/**
+ * "planned" | "trend" | "prices" | "anomaly" | "creep" | "mixed"
+ */
+tag: string; 
+/**
+ * Presentational delta string, e.g. "+$213/mo" (bounded short string).
+ */
+amountDisplay: string; note: string | null }
 export type AgentExecutionEntry = { id: string; itemId: string; bundleId: string; actionKind: string; status: string; resultJson: string | null; error: string | null; executedAt: string }
 export type AgentFundingSource = { label: string; detail: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
@@ -1664,11 +1680,26 @@ export type AgentRecatRow = { merchant: string; categoryKey: string; confidence:
 export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock)
+export type AgentReviewCategory = { label: string; amountCents: number; 
+/**
+ * Optional flag: "over" | "fixed" | "lever". None = plain bar.
+ */
+tag: string | null }
+export type AgentReviewMonth = { label: string; spentCents: number; subtitle: string | null; categories: AgentReviewCategory[]; summary: string | null; actions: string[]; 
+/**
+ * `YYYY-MM` join key. The model supplies this (which months to review);
+ * the server keys on it to compute label/spentCents/categories from core.
+ */
+period?: string | null }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
+export type AgentSpendTimelineBlock = { title: string | null; subtitle: string | null; points: AgentTimelinePoint[] }
+export type AgentSpendingDriversBlock = { title: string; subtitle: string | null; drivers: AgentDriver[] }
+export type AgentSpendingReviewBlock = { months: AgentReviewMonth[] }
 export type AgentStatus = { uncategorizedCount: number; anomalyCount: number; overBudgetCount: number; upcomingBillsCount: number; lastScanAt: string | null; lastScanCategorized: number | null }
 export type AgentTableBlock = { title: string | null; columns: string[]; rows: string[][] }
+export type AgentTimelinePoint = { label: string; amountCents: number; highlight?: boolean; annotation: string | null; projected?: boolean }
 export type AgentTransactionTableBlock = { count: number; totalCents: number; rows: AgentTxRow[]; more: number; 
 /**
  * Present when the table came from a `search_transactions` call whose
@@ -1685,6 +1716,8 @@ export type AgentTxRow = { date: string; merchant: string; categoryKey: string; 
  * self-describing and the export never depends on message structure.
  */
 export type AgentTxnSearchQuery = { merchant: string | null; account: string | null; startDate: string | null; endDate: string | null; minAmountCents: number | null; direction: string | null }
+export type AgentWatchItem = { label: string; detail: string; amountDisplay: string | null }
+export type AgentWatchListBlock = { title: string; items: AgentWatchItem[] }
 export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "split_debit_credit"
 /**
  * Frontend-facing error. `code` is machine-readable (e.g. `core.db.locked`);
@@ -2100,7 +2133,12 @@ levers: Driver[];
 /**
  * The one-off drivers that lapse on their own — shown as "leave them".
  */
-self_correcting: Driver[]; target_monthly_cents: number | null; 
+self_correcting: Driver[]; 
+/**
+ * Drivers the user accepted (expected/investment) — kept in the floor,
+ * surfaced so they can be reviewed and undone; not levers, not self-correcting.
+ */
+accepted: Driver[]; target_monthly_cents: number | null; 
 /**
  * Present only with a target BELOW what trimming reaches: the remaining
  * gap is structural (a floor / fixed commitments), not more trimming.

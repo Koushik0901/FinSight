@@ -531,7 +531,13 @@ pub async fn stream_copilot_message(
             };
             drop(bundle_lease);
 
-            let mut answer = reasoning_result_to_agent_answer(result, bundle_id);
+            let mut answer = run(&db, move |conn| {
+                Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                    result, bundle_id, conn,
+                ))
+            })
+            .await
+            .map_err(AppError::from)?;
             validate_finance_answer(&enriched_question, &mut answer);
             enrich_agent_answer(&mut answer);
             // Append the recategorization preview AFTER enrich, so its presence
@@ -576,7 +582,13 @@ pub async fn stream_copilot_message(
                 enrich_agent_answer(&mut mapped);
                 mapped
             } else {
-                let mut answer = reasoning_result_to_agent_answer(result, None);
+                let mut answer = run(&db, move |conn| {
+                    Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(
+                        result, None, conn,
+                    ))
+                })
+                .await
+                .map_err(AppError::from)?;
                 answer.missing_data.push(
                     "The tool loop answered without the full schema; treat as provisional."
                         .to_string(),
@@ -1200,7 +1212,13 @@ fn spawn_deep_answer(
         // any drafted change entries (they'd have no bundle to apply against).
         // Captured before `result` is moved into the answer mapping.
         let deep_usage = result.usage;
-        let mut answer = reasoning_result_to_agent_answer(result, None);
+        let Ok(mut answer) = run(&db, move |conn| {
+            Ok::<_, finsight_core::CoreError>(reasoning_result_to_agent_answer(result, None, conn))
+        })
+        .await
+        else {
+            return;
+        };
         answer.changes = Vec::new();
         validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
@@ -1443,6 +1461,12 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::RankedOptions(_) => true,
         AgentResponseBlock::ComparisonBars(_) => true,
         AgentResponseBlock::RecategorizationPreview(_) => true,
+        AgentResponseBlock::SpendingReview(_) => true,
+        AgentResponseBlock::AccountsOverview(_) => true,
+        AgentResponseBlock::SpendTimeline(_) => true,
+        AgentResponseBlock::SpendingDrivers(_) => true,
+        AgentResponseBlock::WatchList(_) => true,
+        AgentResponseBlock::ActionPlan(_) => true,
     }
 }
 
@@ -1542,6 +1566,65 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             b.rows.len() <= 20
                 && b.rows.iter().all(|r| label_ok(&r.merchant) && label_ok(&r.category_key))
                 && label_ok(&b.bundle_id)
+        }
+        AgentResponseBlock::SpendingReview(b) => {
+            b.months.len() <= 6
+                && b.months.iter().all(|m| {
+                    label_ok(&m.label)
+                        && opt_label_ok(&m.subtitle)
+                        && m.summary
+                            .as_deref()
+                            .map(|s| s.chars().count() <= ARTIFACT_MAX_TEXT)
+                            .unwrap_or(true)
+                        && m.categories.len() <= 10
+                        && m.categories
+                            .iter()
+                            .all(|c| label_ok(&c.label) && opt_label_ok(&c.tag))
+                        && m.actions.len() <= 6
+                        && m.actions.iter().all(|a| label_ok(a))
+                })
+        }
+        AgentResponseBlock::AccountsOverview(b) => {
+            opt_label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.rows.len() <= 30
+                && b.rows.iter().all(|r| {
+                    label_ok(&r.name)
+                        && opt_label_ok(&r.subtitle)
+                        && label_ok(&r.type_label)
+                        && opt_label_ok(&r.badge)
+                })
+        }
+        AgentResponseBlock::SpendTimeline(b) => {
+            opt_label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.points.len() <= 24
+                && b.points
+                    .iter()
+                    .all(|p| label_ok(&p.label) && opt_label_ok(&p.annotation))
+        }
+        AgentResponseBlock::SpendingDrivers(b) => {
+            label_ok(&b.title)
+                && opt_label_ok(&b.subtitle)
+                && b.drivers.len() <= 8
+                && b.drivers.iter().all(|d| {
+                    label_ok(&d.label)
+                        && label_ok(&d.tag)
+                        && label_ok(&d.amount_display)
+                        && opt_label_ok(&d.note)
+                })
+        }
+        AgentResponseBlock::WatchList(b) => {
+            label_ok(&b.title)
+                && b.items.len() <= 8
+                && b.items.iter().all(|it| {
+                    label_ok(&it.label)
+                        && it.detail.chars().count() <= ARTIFACT_MAX_TEXT
+                        && opt_label_ok(&it.amount_display)
+                })
+        }
+        AgentResponseBlock::ActionPlan(b) => {
+            opt_label_ok(&b.title) && b.items.len() <= 8 && b.items.iter().all(|i| label_ok(i))
         }
     }
 }
