@@ -795,14 +795,14 @@ pub async fn stream_copilot_message(
         );
     }
 
-    // 7. Simulated text streaming: emit prose word-by-word at ~25 ms per word.
-    let words: Vec<&str> = answer.prose.split_whitespace().collect();
-    for (i, word) in words.iter().enumerate() {
-        let delta = if i + 1 < words.len() {
-            format!("{} ", word)
-        } else {
-            word.to_string()
-        };
+    // 7. Simulated text streaming: emit prose in word-sized chunks at ~25 ms
+    // each for a natural typing effect. Split on whitespace WITHOUT discarding
+    // it (`split_inclusive`, not `split_whitespace`) so the chunks concatenate
+    // back to the exact prose — newlines included. Using `split_whitespace`
+    // here collapsed every `\n` into a single space, so the answer's markdown
+    // (headings, horizontal rules, GFM tables, lists) arrived as one giant
+    // line and rendered as raw `##` / `---` / `|` text instead of formatting.
+    for chunk in answer.prose.split_inclusive(char::is_whitespace) {
         emit_copilot_frame(
             &app,
             CopilotStreamFrame::Text {
@@ -812,7 +812,7 @@ pub async fn stream_copilot_message(
                 assistant_message_id: assistant_message_id.clone(),
                 parent_message_id: parent_message_id.clone(),
                 sequence_number: next_sequence(),
-                delta,
+                delta: chunk.to_string(),
             },
         );
         tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;

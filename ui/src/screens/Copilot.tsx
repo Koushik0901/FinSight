@@ -32,13 +32,9 @@ import {
   useThread,
 } from "@assistant-ui/react";
 import type { AssistantRuntime } from "@assistant-ui/react";
-import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown";
-import { code } from "@streamdown/code";
-import { cjk } from "@streamdown/cjk";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
-import "katex/dist/katex.min.css";
-import "streamdown/styles.css";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import "../styles/copilot-shell.css";
 import * as I from "../components/Icons";
 import Badge from "../components/Badge";
@@ -444,20 +440,28 @@ function SourcePill({ part }: { part: { title?: string; id: string } }) {
   return <span className="copilot-source-pill">{part.title ?? part.id}</span>;
 }
 
-function CopilotMarkdown() {
+function CopilotMarkdown({ text }: { text: string }) {
   return (
-    <StreamdownTextPrimitive
-      className="aui-md"
-      containerClassName="copilot-streamdown"
-      plugins={{ code, cjk, math, mermaid }}
-      shikiTheme={["github-dark", "github-dark"]}
-      security={{
-        allowedImagePrefixes: ["https://", "data:image/"],
-        allowedLinkPrefixes: ["https://", "http://", "mailto:"],
-        allowedProtocols: ["https", "http", "mailto"],
-        allowDataImages: true,
-      }}
-    />
+    <div className="agent-rich-markdown copilot-answer-md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeSanitize]}
+        components={{
+          table: ({ children }) => (
+            <div className="agent-rich-table-wrap">
+              <table className="tbl">{children}</table>
+            </div>
+          ),
+          a: ({ children, href }) => (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
   );
 }
 
@@ -561,7 +565,7 @@ function AssistantMessage({
                     return isRunning ? (
                       <span style={{ whiteSpace: "pre-wrap" }}>{part.text}</span>
                     ) : (
-                      <CopilotMarkdown />
+                      <CopilotMarkdown text={part.text} />
                     );
                   case "indicator":
                     return <span className="copilot-cursor" aria-hidden="true" />;
