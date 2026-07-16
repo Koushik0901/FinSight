@@ -2,13 +2,15 @@ import { useNavigate } from "react-router-dom";
 import { STEP_ORDER, useOnboardingStore } from "../state/onboarding";
 import { useOnboardingState } from "../api/hooks/onboarding";
 import StepWelcome from "./onboarding/StepWelcome";
-import StepConnect from "./onboarding/StepConnect";
+import StepAccounts from "./onboarding/StepAccounts";
+import StepHistory from "./onboarding/StepHistory";
 import StepCategories from "./onboarding/StepCategories";
 import StepAgent from "./onboarding/StepAgent";
 
 const STEP_TITLES: Record<string, string> = {
   welcome: "Welcome",
-  connect: "Connect",
+  accounts: "Accounts",
+  history: "History",
   categories: "Categories",
   agent: "Agent",
 };
@@ -50,10 +52,11 @@ export default function Onboarding() {
       </header>
 
       <section className="onboarding-step onb-stage" aria-label="Onboarding steps">
-        {step === "welcome"    && <StepWelcome onNext={() => setStep("connect")} onSkipToToday={() => navigate("/")} />}
-        {step === "connect"    && <StepConnect onNext={() => setStep("categories")} />}
+        {step === "welcome"    && <StepWelcome onNext={() => setStep("accounts")} onSkipToToday={() => navigate("/", { replace: true })} />}
+        {step === "accounts"   && <StepAccounts onNext={() => setStep("history")} />}
+        {step === "history"    && <StepHistory onBack={() => setStep("accounts")} onNext={() => setStep("categories")} />}
         {step === "categories" && <StepCategories onNext={() => setStep("agent")} />}
-        {step === "agent"      && <StepAgent onDone={() => navigate("/")} />}
+        {step === "agent"      && <StepAgent onDone={() => navigate("/", { replace: true })} />}
       </section>
     </div>
   );

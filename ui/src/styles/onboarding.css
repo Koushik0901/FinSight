@@ -194,53 +194,200 @@
   gap: 12px;
 }
 
-/* Step: Connect */
-.connect-cards {
+/* Steps: Accounts and History */
+.onb-name-field {
+  max-width: 390px;
+  margin-bottom: 20px;
+}
+
+.onb-action-error {
+  max-width: 390px;
+  margin: 12px 0 0 !important;
+}
+
+.onb-choice-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  margin-bottom: 20px;
 }
 
-.connect-cards .card {
+.onb-choice-card {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 190px;
+}
+
+.onb-choice-card > .card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
 }
 
-.connect-cards .card h3 {
+.onb-choice-card h3 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.connect-cards .card p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-mute);
-  flex: 1;
-}
-
-.connect-cards .button-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.connect-tally {
-  font-size: 13px;
-  color: var(--ink-mute);
-  padding: 12px 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.connect-tally strong {
   color: var(--ink);
+  font-size: 16px;
   font-weight: 620;
 }
 
+.onb-left .onb-choice-card p {
+  flex: 1;
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.onb-runtime-note {
+  margin: 0 0 18px !important;
+  font-size: 12.5px !important;
+}
+
+.onb-roster-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(100%, 640px);
+  max-height: min(640px, calc(100dvh - 160px));
+  overflow: auto;
+}
+
+.onb-roster-card > .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+
+.onb-roster-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.onb-roster-head .h3 {
+  margin-top: 6px;
+}
+
+.onb-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onb-account-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.onb-account-row .cswatch {
+  width: 10px;
+  height: 10px;
+}
+
+.onb-account-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.onb-account-copy strong,
+.onb-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onb-account-copy strong {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.onb-account-copy > span {
+  color: var(--ink-mute);
+  font-size: 12px;
+}
+
+.onb-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 36px 24px;
+  border: 1px dashed var(--line-2);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.onb-empty-state p {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.onb-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 20px;
+}
+
+.onb-history-summary {
+  margin-bottom: 18px;
+}
+
+.onb-inline-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+
+.onb-inline-callout > .card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.onb-inline-callout strong {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.onb-left .onb-inline-callout p {
+  margin: 4px 0 0;
+  color: var(--ink-mute);
+  font-size: 12.5px;
+}
+
+.onb-history-row .btn {
+  white-space: nowrap;
+}
 /* Step: Categories */
 .category-list {
   list-style: none;
@@ -350,7 +497,7 @@
     border-top: 1px solid var(--hairline);
   }
 
-  .connect-cards {
+  .onb-choice-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -366,5 +513,19 @@
 
   .onb-step-pip {
     width: 36px;
+  }
+
+  .onb-inline-callout > .card-body {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .onb-account-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .onb-account-row > :is(.chip, .btn) {
+    grid-column: 2;
+    justify-self: start;
   }
 }

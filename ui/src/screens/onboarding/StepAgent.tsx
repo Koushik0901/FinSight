@@ -118,8 +118,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · AI setup</div>
-          <h1>Choose how to power AI categorization.</h1>
+          <div className="num-step">005 · AI setup</div>          <h1>Choose how to power AI categorization.</h1>
           <p className="lead">Pick local Ollama for private on-device inference or connect a cloud provider.</p>
           <div className="row-md wrap" style={{ marginBottom: 24 }}>
             <Button
@@ -168,8 +167,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Cloud provider</div>
-          <h1>Connect a cloud model.</h1>
+          <div className="num-step">005 · Cloud provider</div>          <h1>Connect a cloud model.</h1>
           <p className="lead">Choose a provider, enter the model id, then test and save.</p>
           <div className="row-sm wrap" style={{ marginBottom: 16 }}>
             {CLOUD_PRESETS.map((p) => (
@@ -235,8 +233,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Local AI</div>
-          <h1>Checking for Ollama…</h1>
+          <div className="num-step">005 · Local AI</div>          <h1>Checking for Ollama…</h1>
           <p className="lead">Looking for a local model runtime on your machine.</p>
         </div>
         <div className="onb-right">
@@ -250,8 +247,7 @@ export default function StepAgent({ onDone }: Props) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">004 · Local AI</div>
-          <h1>Set up Ollama.</h1>
+          <div className="num-step">005 · Local AI</div>          <h1>Set up Ollama.</h1>
           <p className="lead">
             We could not find Ollama. Download it from{" "}
             <a href="#" onClick={(e) => { e.preventDefault(); openUrl("https://ollama.com"); }}>ollama.com</a>.
@@ -279,8 +275,7 @@ export default function StepAgent({ onDone }: Props) {
   return (
     <div className="step-agent onb-split">
       <div className="onb-left">
-        <div className="num-step">004 · Local AI</div>
-        <h1>Ollama is ready.</h1>
+        <div className="num-step">005 · Local AI</div>        <h1>Ollama is ready.</h1>
         <p className="lead">Pick a completion model and finish setup.</p>
         <Select
           label="Completion model"

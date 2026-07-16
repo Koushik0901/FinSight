@@ -30,6 +30,12 @@ describe("AccountDrawer — create mode", () => {
     expect(screen.getByText("Create account")).toBeInTheDocument();
   });
 
+  it("uses a generic owner example", () => {
+    render(<AccountDrawer open={true} onClose={() => {}} />, { wrapper: createWrapper() });
+    expect(screen.getByPlaceholderText("Add a person (e.g. Jane Doe)")).toBeInTheDocument();
+  });
+
+
   it("shows APY field when Savings is selected", () => {
     render(<AccountDrawer open={true} onClose={() => {}} />, { wrapper: createWrapper() });
     expect(screen.queryByLabelText(/apy/i)).not.toBeInTheDocument();
