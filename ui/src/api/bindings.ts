@@ -93,6 +93,30 @@ async setCategoryGuidance(id: string, guidance: string | null) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
+async listCategoryGroups() : Promise<Result<CategoryGroup[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_groups") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createCategoryGroup(label: string, hint: string | null) : Promise<Result<CategoryGroup, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_category_group", { label, hint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCategoryGroup(categoryId: string, groupId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_category_group", { categoryId, groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -1780,13 +1804,19 @@ createdAt: string }
  */
 export type BudgetEnvelope = { categoryId: string; categoryLabel: string; categoryColor: string; groupLabel: string; 
 /**
- * Budget set by user (0 = not budgeted)
+ * Budget set by user for the current month (0 = not budgeted this month)
  */
 budgetCents: number; 
 /**
  * Actual outflow this month (positive = spent)
  */
-spentCents: number; txnCount: number }
+spentCents: number; 
+/**
+ * Running (budgeted − spent) carried in from prior months, anchored at the
+ * category's first-ever budgeted month. Positive = unspent rolling forward,
+ * negative = accumulated overspend.
+ */
+carryoverCents: number; txnCount: number }
 export type Category = { id: string; group_id: string; label: string; color: string; icon: string | null; spending_type: string | null; 
 /**
  * Free-text guidance the user attaches so the categorizer/Copilot know when
@@ -1794,6 +1824,7 @@ export type Category = { id: string; group_id: string; label: string; color: str
  */
 guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
+export type CategoryGroup = { id: string; label: string; hint: string | null; sort_order: number }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
 /**
@@ -1981,6 +2012,26 @@ export type JourneyMilestone = { stage: number; name: string; description: strin
 export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
+/**
+ * A single plain-language fact about how `month` went for a budgeted category,
+ * used to open the Plan Next Month wizard. Deterministic, no LLM — the frontend
+ * composes the sentence (and applies the user's money formatting/privacy mode)
+ * from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
+ * dollar string server-side.
+ */
+export type LookBackFact = { categoryId: string; categoryLabel: string; 
+/**
+ * "over" | "under" | "streak"
+ */
+kind: string; 
+/**
+ * Meaningful for "over" (spent − budgeted) and "under" (budgeted − spent); 0 for "streak".
+ */
+amountCents: number; 
+/**
+ * Meaningful for "streak" (consecutive zero-spend months including `month`); 0 otherwise.
+ */
+streakMonths: number }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
 export type Mechanism = "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat"
@@ -2027,7 +2078,7 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  * Number of transactions this month
  */
 txnCount: number }
-export type MonthlyActual = { month: string; label: string; cents: number }
+export type MonthlyActual = { month: string; label: string; spentCents: number; budgetedCents: number }
 export type MonthlyReview = { id: string; year: number; month: number; monthLabel: string; notes: string | null; snapshot: MonthlyReviewSnapshot; createdAt: string }
 export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
@@ -2068,7 +2119,7 @@ mixed_currency: boolean; note: string }
 export type PeriodClass = "normal" | "episodic_spike" | "regime_shift" | "insufficient_history"
 export type Persistence = "one_off" | "recurring" | "emerging" | "uncertain"
 export type PlanAssignment = { categoryId: string; amountCents: number }
-export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
+export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; sinkingFunds: GoalDto[]; recurringExpenseCents: number; lookBack: LookBackFact[] }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
 export type PlannedTxnFilter = { status: string | null; dueBefore: string | null }

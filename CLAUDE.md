@@ -114,7 +114,9 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 532 Rust tests (+12 ignored live-DB/keychain), 430 frontend tests, 0 TypeScript errors.
+A fresh git worktree is missing the gitignored `samples/` directory (CSV fixtures), so `prepare_csv_cmd`, `prepare_edge`, and `prepare_parity` (6 tests total) fail with a "path not found" error there — copy `samples/` in from the primary checkout to run them; this is an environment gap, not a code regression.
+
+**Green bar:** 546 Rust tests (+12 ignored live-DB/keychain), 430 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 

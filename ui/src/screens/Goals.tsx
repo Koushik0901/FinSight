@@ -10,13 +10,14 @@ import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
 
-type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap";
+type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund";
 
 const TYPE_LABELS: Record<string, string> = {
   "save-by-date": "Save by date",
   "build-balance": "Build balance",
   "debt-payoff": "Pay off debt",
   "spending-cap": "Spending cap",
+  "sinking-fund": "Sinking fund",
 };
 
 function paceLabel(goal: GoalDto) {
@@ -362,7 +363,7 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
 
 function CompoundGrowthProjector({ goals }: { goals: GoalDto[] }) {
   const eligible = useMemo(
-    () => goals.filter((g) => g.goalType !== "spending-cap" && (g.monthlyCents > 0 || g.currentCents > 0)),
+    () => goals.filter((g) => g.goalType !== "spending-cap" && g.goalType !== "sinking-fund" && (g.monthlyCents > 0 || g.currentCents > 0)),
     [goals],
   );
   const [goalId, setGoalId] = useState(eligible[0]?.id ?? "");
@@ -564,6 +565,7 @@ export default function Goals() {
         <button className={filter === "build-balance" ? "on" : ""} type="button" onClick={() => setFilter("build-balance")}>Build balance {counts["build-balance"] ?? 0}</button>
         <button className={filter === "debt-payoff" ? "on" : ""} type="button" onClick={() => setFilter("debt-payoff")}>Debt payoff {counts["debt-payoff"] ?? 0}</button>
         <button className={filter === "spending-cap" ? "on" : ""} type="button" onClick={() => setFilter("spending-cap")}>Spending cap {counts["spending-cap"] ?? 0}</button>
+        <button className={filter === "sinking-fund" ? "on" : ""} type="button" onClick={() => setFilter("sinking-fund")}>Sinking fund {counts["sinking-fund"] ?? 0}</button>
       </div>
 
       {creating && <NewGoalForm onClose={() => setCreating(false)} />}
@@ -600,7 +602,7 @@ export default function Goals() {
 
       {goals.length > 0 && <WhatIfScenario goals={goals} />}
 
-      {goals.some((g) => g.goalType !== "spending-cap" && (g.monthlyCents > 0 || g.currentCents > 0)) && <CompoundGrowthProjector goals={goals} />}
+      {goals.some((g) => g.goalType !== "spending-cap" && g.goalType !== "sinking-fund" && (g.monthlyCents > 0 || g.currentCents > 0)) && <CompoundGrowthProjector goals={goals} />}
     </div>
   );
 }

@@ -12,10 +12,11 @@ import { money } from "../utils/format";
 type SortKey = "group" | "stress" | "size" | "activity";
 
 function envelopeStatus(env: BudgetEnvelope) {
-  if (env.budgetCents <= 0) return { label: "No budget set", tone: "warning" as const, severity: 2 };
-  const pct = (env.spentCents / env.budgetCents) * 100;
-  if (env.spentCents > env.budgetCents) {
-    return { label: `Over by ${money(env.spentCents - env.budgetCents)}`, tone: "negative" as const, severity: 3 };
+  const available = env.budgetCents + env.carryoverCents;
+  if (available <= 0 && env.budgetCents <= 0) return { label: "No budget set", tone: "warning" as const, severity: 2 };
+  const pct = available > 0 ? (env.spentCents / available) * 100 : 100;
+  if (env.spentCents > available) {
+    return { label: `Over by ${money(env.spentCents - available)}`, tone: "negative" as const, severity: 3 };
   }
   if (pct > 90) return { label: "Tight", tone: "warning" as const, severity: 2 };
   if (pct > 60) return { label: "On pace", tone: "accent" as const, severity: 1 };
@@ -64,8 +65,9 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
 
 function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null }) {
   const status = envelopeStatus(env);
-  const remaining = env.budgetCents - env.spentCents;
-  const pct = env.budgetCents > 0 ? Math.min(100, (env.spentCents / env.budgetCents) * 100) : 0;
+  const available = env.budgetCents + env.carryoverCents;
+  const remaining = available - env.spentCents;
+  const pct = available > 0 ? Math.min(100, (env.spentCents / available) * 100) : 0;
   const toneClass = status.tone === "negative" ? "negative" : status.tone === "warning" ? "warning" : status.tone === "positive" ? "positive" : "accent";
   const daysLeft = Math.max(1, new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate());
   const perDay = remaining > 0 ? Math.round(remaining / daysLeft) : 0;
@@ -110,8 +112,17 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
 
       <div className="hero-meta" style={{ justifyContent: "space-between", marginTop: 10 }}>
         <span className="money">{money(env.spentCents)} spent</span>
-        <span className="money">of {money(env.budgetCents)}</span>
+        <span className="money">of {money(available)}</span>
       </div>
+
+      {env.carryoverCents !== 0 && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="muted" style={{ fontSize: 12 }}>Carried from last month</span>
+          <span className="money" style={{ fontSize: 12.5, color: env.carryoverCents > 0 ? "var(--positive)" : "var(--negative)" }}>
+            {env.carryoverCents > 0 ? "+" : ""}{money(env.carryoverCents)}
+          </span>
+        </div>
+      )}
 
       {status.tone === "negative" && (
         <button
@@ -182,12 +193,18 @@ export default function Budget() {
   }), [envelopes, sort]);
 
   const totalBudget = sorted.reduce((sum, env) => sum + env.budgetCents, 0);
+  const totalCarryover = sorted.reduce((sum, env) => sum + env.carryoverCents, 0);
+  const totalAvailable = totalBudget + totalCarryover;
   const totalSpent = sorted.reduce((sum, env) => sum + env.spentCents, 0);
   const projectedEom = today > 0 ? Math.round((totalSpent / today) * totalDays) : 0;
-  const remaining = totalBudget - totalSpent;
+  const remaining = totalAvailable - totalSpent;
   const toBudget = (totals?.incomeCents ?? 0) - totalBudget;
-  const attention = sorted.filter((env) => envelopeStatus(env).severity >= 2);
-  const grouped = Object.entries(sorted.reduce<Record<string, BudgetEnvelope[]>>((acc, env) => {
+  const unbudgeted = sorted.filter((env) => env.budgetCents <= 0 && env.spentCents <= 0 && env.carryoverCents === 0);
+  // Unbudgeted categories aren't "in trouble" (severity>=2 from "No budget
+  // set" is really "unconfigured") — they get their own section below instead
+  // of also cluttering "Needs a glance".
+  const attention = sorted.filter((env) => envelopeStatus(env).severity >= 2 && !unbudgeted.includes(env));
+  const grouped = Object.entries(sorted.filter((env) => !unbudgeted.includes(env)).reduce<Record<string, BudgetEnvelope[]>>((acc, env) => {
     const key = sort === "group" ? env.groupLabel || "Other" : "All envelopes";
     acc[key] ||= [];
     acc[key].push(env);
@@ -255,7 +272,7 @@ export default function Budget() {
             </div>
             <div style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
               <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${monthPct}%`, background: "var(--ink-faint)", opacity: 0.4, borderRadius: 999 }} title="Time elapsed" />
-              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${totalBudget > 0 ? Math.min(100, (totalSpent / totalBudget) * 100) : 0}%`, background: "var(--accent)", borderRadius: 999, boxShadow: "0 0 12px var(--accent-3)" }} title="Spent" />
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${totalAvailable > 0 ? Math.min(100, (totalSpent / totalAvailable) * 100) : 0}%`, background: "var(--accent)", borderRadius: 999, boxShadow: "0 0 12px var(--accent-3)" }} title="Spent" />
             </div>
             <div className="hero-meta" style={{ marginTop: 10 }}>
               <span>{monthPct}% through {now.toLocaleString("en-US", { month: "long" })}</span>
@@ -266,7 +283,7 @@ export default function Budget() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
             <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}/day pace</div></div>
-            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalBudget ? <span className="npill neg">Over by {money(projectedEom - totalBudget)}</span> : <span className="npill pos">Under by {money(totalBudget - projectedEom)}</span>}</div></div>
+            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by {money(projectedEom - totalAvailable)}</span> : <span className="npill pos">Under by {money(totalAvailable - projectedEom)}</span>}</div></div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 18, marginBottom: 0, maxWidth: 900 }}>{insight}</p>
@@ -304,7 +321,70 @@ export default function Budget() {
         })}</div>}
       </section>
 
-      {history.length > 0 && <section className="section"><div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div><div className="card flush"><table className="tbl"><thead><tr><th>Category</th>{history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}</tr></thead><tbody>{history.map((row) => <tr key={row.categoryId}><td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>{row.monthly.map((m) => <td key={m.month} className="right"><span className="money">{money(m.cents)}</span></td>)}</tr>)}</tbody></table></div></section>}
+      {unbudgeted.length > 0 && (
+        <section className="section">
+          <div className="day-hdr" style={{ marginBottom: 14 }}>
+            <div>
+              <div className="eyebrow"><span className="dot" />Not yet budgeted · {unbudgeted.length}</div>
+              <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>These don't have a plan yet.</h2>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+            {unbudgeted.map((env) => (
+              <div key={env.categoryId} className="card tight" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div className="row row-sm" style={{ alignItems: "center" }}>
+                  <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
+                  <strong>{env.categoryLabel}</strong>
+                </div>
+                {editingId === env.categoryId ? (
+                  <BudgetInput envelope={env} onClose={() => setEditingId(null)} />
+                ) : (
+                  <button className="btn outline sm" type="button" onClick={() => setEditingId(env.categoryId)}>Set budget</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {history.length > 0 && (
+        <section className="section">
+          <div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div>
+          <div className="card flush">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  {history[0]?.monthly.map((m) => <th key={m.month} className="right">{m.label}</th>)}
+                  <th className="right">Your typical</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((row) => {
+                  const typicalCents = Math.round(
+                    row.monthly.reduce((sum, m) => sum + m.spentCents, 0) / Math.max(1, row.monthly.length),
+                  );
+                  return (
+                    <tr key={row.categoryId}>
+                      <td><span className="cswatch" style={{ background: row.color || "var(--accent)" }} /> {row.label}</td>
+                      {row.monthly.map((m) => {
+                        const over = m.budgetedCents > 0 && m.spentCents > m.budgetedCents;
+                        return (
+                          <td key={m.month} className="right">
+                            <span className={`money ${over ? "neg" : ""}`}>{money(m.spentCents)}</span>
+                            {m.budgetedCents > 0 && <span className="muted" style={{ fontSize: 11, display: "block" }}>of {money(m.budgetedCents)}</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="right"><span className="money muted">{money(typicalCents)}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
     </div>
