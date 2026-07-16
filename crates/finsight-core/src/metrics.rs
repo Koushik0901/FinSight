@@ -176,8 +176,10 @@ pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreRes
     conn.query_row(
         &format!(
             "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                  WHEN amount_cents < 0 THEN -amount_cents
+                                  ELSE 0 END), 0)
              FROM transactions t
              WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}"
         ),
@@ -198,8 +200,10 @@ pub fn income_expense_between(
     conn.query_row(
         &format!(
             "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                  WHEN amount_cents < 0 THEN -amount_cents
+                                  ELSE 0 END), 0)
              FROM transactions t
              WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0 \
                AND {pred}"
@@ -424,10 +428,12 @@ fn weighted_income_expense(
     // weight subquery and the override.
     let sql = format!(
         "SELECT \
-            COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents * t.mw ELSE 0 END), 0), \
-            COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents * t.mw ELSE 0 END), 0) \
+            COALESCE(SUM(CASE WHEN t.amount_cents > 0 AND t.settle_up = 0 THEN t.amount_cents * t.mw ELSE 0 END), 0), \
+            COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents * t.mw \
+                              WHEN t.amount_cents < 0 THEN -t.amount_cents * t.mw \
+                              ELSE 0 END), 0) \
          FROM ( \
-             SELECT t.amount_cents AS amount_cents, \
+             SELECT t.amount_cents AS amount_cents, t.settle_up AS settle_up, \
                     CASE WHEN t.owner_member_id IS NOT NULL \
                          THEN (CASE WHEN t.owner_member_id = ?1 THEN 1.0 ELSE 0.0 END) \
                          ELSE COALESCE(w.weight, 0.0) END AS mw \
@@ -696,6 +702,34 @@ mod tests {
         assert_eq!(income, 300_000);
         assert_eq!(expense, 100_000);
         assert_eq!(savings_rate_pct(income, expense), 66);
+    }
+
+    #[test]
+    fn settle_up_inflow_nets_against_expense_never_income() {
+        // Settle-up (person-to-person reimbursement) rows never count as income;
+        // an inflow nets back against expense instead. Joe: we paid out $11,475
+        // on his behalf, he paid back $3,000 — net expense $8,475, income $0.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let chk = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        let insert_settle_up = |conn: &Connection, amount: i64| {
+            conn.execute(
+                "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
+                                          status, is_anomaly, is_transfer, created_at, settle_up) \
+                 VALUES(?1, ?2, '2026-05-15T00:00:00Z', ?3, 'e-transfer joe', 'cleared', 0, 0, \
+                        '2026-05-15T00:00:00Z', 1)",
+                params![uuid::Uuid::new_v4().to_string(), chk, amount],
+            )
+            .unwrap();
+        };
+        insert_settle_up(&conn, -1_147_500); // 'o' — we paid out on Joe's behalf
+        insert_settle_up(&conn, 300_000); // 'i' — Joe paid us back
+
+        let (income, expense) = income_expense_since(&conn, "2026-05-01T00:00:00Z").unwrap();
+        assert_eq!(income, 0, "settle-up inflow is never income");
+        assert_eq!(expense, 847_500, "settle-up nets: 11,475 - 3,000 = 8,475");
     }
 
     #[test]
