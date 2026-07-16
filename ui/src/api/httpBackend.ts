@@ -64,7 +64,17 @@ export function installHttpBackend(): void {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(args ?? {}),
     });
-    const body = res.status === 204 ? null : await res.json();
+    // A non-JSON body (reverse-proxy 502 HTML, crash page) must not surface as
+    // a SyntaxError from res.json() — bindings.ts rethrows Error instances
+    // instead of returning {status:"error"}, which would crash the caller.
+    let body: unknown = null;
+    if (res.status !== 204) {
+      try {
+        body = await res.json();
+      } catch {
+        body = { code: "rpc.transport", message: `HTTP ${res.status} with non-JSON body` };
+      }
+    }
     // Throw the plain AppError object so bindings.ts's catch returns
     // {status:"error", error} exactly as it does under real Tauri.
     if (!res.ok) throw body;

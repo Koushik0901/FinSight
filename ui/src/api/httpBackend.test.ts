@@ -40,6 +40,20 @@ describe("httpBackend shim", () => {
     await expect(internals.invoke("list_accounts", {})).rejects.toEqual({ code: "core.db", message: "boom" });
   });
 
+  it("throws a plain rpc.transport object (not a SyntaxError) on non-JSON error bodies", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response("<html>502 Bad Gateway</html>", { status: 502 })));
+    installHttpBackend();
+    const internals = w.__TAURI_INTERNALS__ as { invoke: (c: string, a?: AnyRec) => Promise<unknown> };
+    // A reverse-proxy error page is not JSON; res.json() throwing a SyntaxError
+    // (an Error instance) would crash through bindings.ts instead of returning
+    // {status:"error"}. The shim must synthesize a plain AppError-shaped object.
+    await expect(internals.invoke("list_accounts", {})).rejects.toEqual({
+      code: "rpc.transport",
+      message: "HTTP 502 with non-JSON body",
+    });
+  });
+
   it("dispatches SSE frames to listeners registered via plugin:event|listen", async () => {
     vi.stubGlobal("fetch", vi.fn());
     installHttpBackend();

@@ -1172,6 +1172,7 @@ And a short "Server architecture" paragraph pointing at the spec + finsight-api/
   5. `GET /api/health` returns `{"status":"ok"}`.
   6. An UNSUPPORTED command (Settings → export) surfaces a readable error toast, not a crash.
   7. **Exercise a multi-word-arg command that the parity test guards but the smoke flow above doesn't** — e.g. Goals → contribute to a goal (`contribute_to_goal`), or set an account balance (`set_account_balance`, arg `balanceCents`). Confirm it succeeds (no `rpc.bad_arg`). This is belt-and-suspenders on top of the Task 10 arg-key test.
+  8. **Shim↔server event-contract check (flagged during Task 13):** confirm a real SSE frame from `/api/events` parses as `{event, payload}` and is delivered to a live listener as `{event, id, payload}` — the Copilot stream (step 4) doubles as this check if frames visibly render; otherwise verify via an agent event (e.g. trigger categorization). The shim's non-JSON-error hardening (`rpc.transport`) is unit-tested and needs no E2E step.
 - [ ] **Step 4:** Record results (screenshots/log excerpts) in the PR description; note the deferred items: desktop startup cascade parity (Phase 2), dialog import/export web flows (Phase 3), auth (Phase 2).
 - [ ] **Step 5:** Final commit; use superpowers:finishing-a-development-branch to merge/PR.
 
