@@ -1463,29 +1463,29 @@ mod tests {
         let conn = db.get().unwrap();
         conn.execute(
             "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
-             VALUES('chk','Koushik Sivarama Krishnan','CIBC','Checking','Chq','CAD','#111','manual',datetime('now'))",
+             VALUES('chk','Jordan Michael Avery','CIBC','Checking','Chq','CAD','#111','manual',datetime('now'))",
             [],
         )
         .unwrap();
         conn.execute(
             "INSERT INTO household_members(id,name,color,created_at) \
-             VALUES('m-swathi','Swathi','#abc',datetime('now'))",
+             VALUES('m-partner','Robin','#abc',datetime('now'))",
             [],
         )
         .unwrap();
         let ctx = TransferContext::load(&conn).unwrap();
         assert!(
-            ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Swathi"),
+            ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Robin"),
             "an e-transfer naming a registered household member is an internal move"
         );
         assert!(
-            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Reza"),
+            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Casey"),
             "an e-transfer to a non-member stays real spending"
         );
         // The account owner's full name still needs ≥2 tokens: a friend who
         // merely shares the owner's first name must NOT be swallowed.
         assert!(
-            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Koushik"),
+            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Jordan"),
             "a lone first-name match on a multi-token owner is not enough"
         );
     }

@@ -219,29 +219,26 @@ fn audit_import_samples_and_dump_everything() {
         ids.push((acct.id, spec.name));
     }
 
-    // Household identity (F0): a user configures their household, which
-    // TransferContext loads so is_self_transfer recognizes e-transfers that stay
-    // WITHIN the household — the owner's own moves ("INTERAC e-Transfer To/From:
-    // <me>") and money to a partner. The samples ARE Koushik's data. Registering
-    // "Swathi" MODELS an ASSUMPTION, not ground truth: the ~$19k of e-transfers
-    // naming her are one-directional OUTflow (11+ rows, $0 back), which is only
-    // an internal move if the user genuinely pools finances with her — her
-    // account is NOT imported, so flagging her side removes that outflow from the
-    // household picture without it landing anywhere. If she is not a pooled
-    // member, that $19k is real spending. This is the USER's config call; the
-    // probe registers her to exercise the detection path and measure the ceiling.
-    // Members are named by the FIRST name the bank stamps in e-transfer
-    // descriptors (single-token name matches on 1 hit; a friend sharing a first
-    // name is still guarded by the ≥2-token rule on the multi-token account
-    // owner). Production stays generic — it matches whatever names are
-    // configured, never a hard-coded one.
+    // Operator identity (F0): a real user configures their own name, which
+    // TransferContext loads so is_self_transfer recognizes their OWN e-transfers
+    // ("INTERAC e-Transfer To/From: <me>"). We register only the operator, using
+    // the first token of the account owner already present in the data — no
+    // guessing at who else might be in the household. The household-member
+    // detection itself (money to a partner reading as internal) is validated
+    // GENERICALLY by the categorize unit test
+    // `e_transfer_naming_a_household_member_is_a_self_transfer`, not by baking a
+    // specific person into this real-data probe. Production stays generic — it
+    // matches whatever names are configured, never a hard-coded one.
     {
         let conn = db.get().unwrap();
+        let owner: String = conn
+            .query_row("SELECT owner FROM accounts LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let first = owner.split_whitespace().next().unwrap_or(&owner);
         conn.execute(
-            "INSERT INTO household_members(id,name,color,created_at) VALUES\
-             ('self-koushik','Koushik','#6366F1',datetime('now')),\
-             ('member-swathi','Swathi','#EC4899',datetime('now'))",
-            [],
+            "INSERT INTO household_members(id,name,color,created_at) \
+             VALUES('self', ?1, '#6366F1', datetime('now'))",
+            [first],
         )
         .unwrap();
     }
