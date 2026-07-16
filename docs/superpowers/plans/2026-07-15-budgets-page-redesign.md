@@ -875,9 +875,16 @@ Add a small effect near the top of the component (after the new state above), so
 
 ```tsx
   useEffect(() => {
-    if (!newCatGroupId && groups.length > 0) setNewCatGroupId(groups[0].id);
-  }, [groups, newCatGroupId]);
+    // Only default the picker once the form is actually open — there's no
+    // reason to touch this state on every mount, before the user has any
+    // intention of creating a category.
+    if (!newCatOpen) return;
+    const first = groups[0];
+    if (!newCatGroupId && first) setNewCatGroupId(first.id);
+  }, [groups, newCatGroupId, newCatOpen]);
 ```
+
+Two things fixed from a naive version of this effect: (1) `groups[0]` directly, guarded only by `groups.length > 0`, fails this project's `noUncheckedIndexedAccess` tsconfig — TS doesn't narrow an index access from a separate `.length` check, so bind it to a local `first` and check that instead. (2) Gating on `newCatOpen` isn't just cosmetic — an unconditional version of this effect fires on *every* mount (including when `Categories.test.tsx`'s empty-state test renders with zero categories), causing an extra render that consumes `useCategoriesWithSpending`'s `mockReturnValueOnce` prematurely and breaks that pre-existing test. Gating on `newCatOpen` (false until the user opens the form) keeps the effect inert for every test that never opens it.
 
 Add `useEffect` to the existing `import { Fragment, useMemo, useState } from "react";` line, making it:
 

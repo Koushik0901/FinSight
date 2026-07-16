@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import EmptyState from "../components/EmptyState";
@@ -10,6 +10,9 @@ import {
   useRenameCategory,
   useArchiveCategory,
   useSetCategoryGuidance,
+  useCategoryGroups,
+  useCreateCategoryGroup,
+  useSetCategoryGroup,
 } from "../api/hooks/transactions";
 import type { CategoryWithSpending } from "../api/client";
 import { money } from "../utils/format";
@@ -53,6 +56,9 @@ export default function Categories() {
   const renameCategory = useRenameCategory();
   const archiveCategory = useArchiveCategory();
   const setGuidance = useSetCategoryGuidance();
+  const { data: groups = [] } = useCategoryGroups();
+  const createGroup = useCreateCategoryGroup();
+  const setCategoryGroup = useSetCategoryGroup();
   const [savingId, setSavingId] = useState<string | null>(null);
   const [openColorId, setOpenColorId] = useState<string | null>(null);
   const [manageId, setManageId] = useState<string | null>(null);
@@ -60,6 +66,18 @@ export default function Categories() {
   const [guidanceDraft, setGuidanceDraft] = useState("");
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatLabel, setNewCatLabel] = useState("");
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [newGroupLabel, setNewGroupLabel] = useState("");
+  const [newCatGroupId, setNewCatGroupId] = useState<string>("");
+
+  useEffect(() => {
+    // Only default the picker once the form is actually open — there's no
+    // reason to touch this state on every mount, before the user has any
+    // intention of creating a category.
+    if (!newCatOpen) return;
+    const first = groups[0];
+    if (!newCatGroupId && first) setNewCatGroupId(first.id);
+  }, [groups, newCatGroupId, newCatOpen]);
 
   const openManage = (category: CategoryWithSpending) => {
     if (manageId === category.id) {
@@ -78,7 +96,7 @@ export default function Categories() {
       // Auto-assign the least-used palette color so every category stays
       // visually distinct across charts (user can still change it after).
       const color = nextCategoryColor(categories.map((c) => c.color));
-      await createCategory.mutateAsync({ label, groupId: null, color });
+      await createCategory.mutateAsync({ label, groupId: newCatGroupId || null, color });
       toast.success(`Created "${label}"`);
       setNewCatLabel("");
       setNewCatOpen(false);
@@ -194,8 +212,49 @@ export default function Categories() {
             onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
             style={{ minWidth: 240 }}
           />
+          <select
+            className="control"
+            aria-label="New category's group"
+            value={newCatGroupId}
+            onChange={(e) => setNewCatGroupId(e.target.value)}
+          >
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+          <button className="btn ghost sm" type="button" onClick={() => setNewGroupOpen((v) => !v)}>+ New group</button>
           <button className="btn primary sm" type="button" disabled={createCategory.isPending || !newCatLabel.trim()} onClick={() => void handleCreate()}>{createCategory.isPending ? "Creating…" : "Create"}</button>
           <button className="btn ghost sm" type="button" onClick={() => { setNewCatOpen(false); setNewCatLabel(""); }}>Cancel</button>
+
+          {newGroupOpen && (
+            <div className="row row-sm" style={{ width: "100%", marginTop: 4 }}>
+              <input
+                className="control"
+                placeholder="Group name (e.g. Side Hustle)"
+                value={newGroupLabel}
+                onChange={(e) => setNewGroupLabel(e.target.value)}
+                style={{ minWidth: 200 }}
+              />
+              <button
+                className="btn sm"
+                type="button"
+                disabled={createGroup.isPending || !newGroupLabel.trim()}
+                onClick={async () => {
+                  const label = newGroupLabel.trim();
+                  if (!label) return;
+                  try {
+                    const group = await createGroup.mutateAsync({ label });
+                    setNewCatGroupId(group.id);
+                    setNewGroupLabel("");
+                    setNewGroupOpen(false);
+                    toast.success(`Created group "${label}"`);
+                  } catch {
+                    toast.error("Could not create group");
+                  }
+                }}
+              >
+                Add group
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -308,6 +367,24 @@ export default function Categories() {
                         <input id={`rename-${category.id}`} className="control" value={renameDraft} onChange={(e) => setRenameDraft(e.target.value)} style={{ minWidth: 240 }} />
                         <button className="btn sm" type="button" disabled={renameCategory.isPending || !renameDraft.trim() || renameDraft.trim() === category.label} onClick={() => void handleRename(category.id)}>Save name</button>
                       </div>
+                      <label className="eyebrow" htmlFor={`group-${category.id}`} style={{ marginTop: 8 }}>Group</label>
+                      <select
+                        id={`group-${category.id}`}
+                        className="control"
+                        value={category.groupId}
+                        disabled={setCategoryGroup.isPending}
+                        onChange={async (e) => {
+                          try {
+                            await setCategoryGroup.mutateAsync({ categoryId: category.id, groupId: e.target.value });
+                            toast.success("Moved to group");
+                          } catch {
+                            toast.error("Could not move category");
+                          }
+                        }}
+                        style={{ maxWidth: 240 }}
+                      >
+                        {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+                      </select>
                       <label className="eyebrow" htmlFor={`guidance-${category.id}`} style={{ marginTop: 8 }}>Categorizer &amp; Copilot guidance</label>
                       <div className="muted" style={{ fontSize: 12 }}>Tell the AI when to use this category — merchant hints, exclusions, intent. The categorizer and Copilot follow it.</div>
                       <textarea id={`guidance-${category.id}`} className="control" rows={3} value={guidanceDraft} onChange={(e) => setGuidanceDraft(e.target.value)} placeholder="e.g. Use for coffee shops and cafés; exclude grocery stores and restaurants." style={{ width: "100%", resize: "vertical" }} />
