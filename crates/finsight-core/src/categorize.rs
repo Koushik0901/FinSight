@@ -522,6 +522,31 @@ fn name_tokens(name: &str) -> Vec<String> {
         .collect()
 }
 
+/// True for a *nameless* bank transfer that carries only a numeric reference —
+/// the bank's internal-transfer product ("Internet Banking INTERNET TRANSFER
+/// 000000135957"), never a payment to a named person. It is pairing-eligible
+/// (transfer vocabulary), has a bank reference number, no own-account marker,
+/// and — crucially — no counterparty NAME (every alphabetic ≥3-char token is a
+/// structural transfer word). Each bank stamps its own reference, so the two
+/// legs of one such transfer carry DIFFERENT refs and no account marker: neither
+/// the shared-reference rule nor the own-account rule can pair them. But a
+/// nameless transfer is internal by the bank's product definition, so two
+/// equal-and-opposite such legs are safe to pair (see `pair_transfers` Rule 4).
+fn is_bare_reference_transfer(merchant_raw: &str) -> bool {
+    if !is_pairing_eligible(merchant_raw) || has_own_account_marker(merchant_raw) {
+        return false;
+    }
+    if reference_tokens(merchant_raw).is_empty() {
+        return false; // needs a bank reference number to key on
+    }
+    // No counterparty name: every alphabetic ≥3-char token is a structural
+    // transfer word (bank/product/direction), not a person or payee.
+    merchant_raw
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))
+        .all(|t| TRANSFER_STRUCTURAL_TOKENS.contains(&t.to_lowercase().as_str()))
+}
+
 /// Structural (non-identifying) tokens kept verbatim when redacting a transfer
 /// descriptor for the cloud LLM — bank/product/direction words. Anything else
 /// alphabetic in a named-transfer string is a counterparty NAME and is dropped.
@@ -689,6 +714,7 @@ struct PairCandidate {
     ref_tokens: Vec<String>,
     eligible: bool,
     own_account: bool,
+    bare_ref: bool,
 }
 
 /// Pair the two legs of a cross-account transfer: a withdrawal in one account
@@ -716,7 +742,7 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
              FROM transactions t JOIN accounts a ON a.id = t.account_id \
              WHERE t.transfer_peer_id IS NULL AND t.amount_cents != 0 \
                AND COALESCE(t.transfer_override, 1) != 0 \
-             ORDER BY t.posted_at, t.id",
+             ORDER BY t.posted_at, t.amount_cents, t.merchant_raw, t.id",
         )?;
         let rows = stmt.query_map([], |r| {
             let merchant_raw: String = r.get(5)?;
@@ -730,6 +756,7 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
                 ref_tokens: reference_tokens(&merchant_raw),
                 eligible: is_pairing_eligible(&merchant_raw),
                 own_account: has_own_account_marker(&merchant_raw),
+                bare_ref: is_bare_reference_transfer(&merchant_raw),
                 merchant_raw,
             })
         })?;
@@ -781,11 +808,26 @@ pub fn pair_transfers(conn: &mut Connection) -> CoreResult<u32> {
         if a.eligible && b.eligible && (a.own_account || b.own_account) {
             return true;
         }
+        // Rule 4 — both legs are NAMELESS reference-only transfers (transfer
+        // vocabulary + a numeric bank reference, no counterparty name and no
+        // own-account marker). Each bank stamps its own reference, so their refs
+        // differ (Rule 1 can't match) and there's no account marker (Rule 3
+        // can't) — the real-data gap where bare "INTERNET TRANSFER <ref>" legs
+        // leaked. A nameless transfer is internal by the bank's product
+        // definition, so an equal-and-opposite pair across accounts is safe to
+        // flag; a NAMED e-transfer (rent/income) fails `bare_ref` and is spared.
+        if a.bare_ref && b.bare_ref {
+            return true;
+        }
         false
     };
 
-    // Greedy nearest-date matching. Candidates are in (posted_at, id) order, so
-    // iteration and tie-breaks are deterministic.
+    // Greedy nearest-date matching. Candidates are ordered by stable CONTENT
+    // (posted_at, amount, merchant) before id, so both the iteration order and
+    // the equal-distance tie-break (first-in-order wins) are reproducible even
+    // when row ids are assigned randomly on re-import — id is only a final
+    // tie-break among rows identical in every content field, where the choice
+    // of which leg to flag is immaterial.
     let mut used: HashSet<usize> = HashSet::new();
     let mut pairs: Vec<(String, String)> = Vec::new();
     for i in 0..candidates.len() {
@@ -1300,6 +1342,152 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM transactions WHERE is_transfer=1 AND transfer_peer_id IS NOT NULL", [], |r| r.get(0))
             .unwrap();
         assert_eq!(flagged, 2, "both legs flagged as a transfer once paired");
+    }
+
+    #[test]
+    fn pairs_bare_internet_transfers_with_differing_references() {
+        // F0 real-data leak: each bank stamps its OWN reference, so the two legs
+        // of one INTERNET TRANSFER carry DIFFERENT refs — Rule 1 (shared ref)
+        // can't match, and with no own-account marker Rule 3 can't either. A
+        // nameless INTERNET TRANSFER is an internal move by the bank's product
+        // definition, so an equal-and-opposite pair is safe to flag (Rule 4).
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                   ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('a','chk','2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared',datetime('now')),\
+             ('b','sav','2026-05-02T12:00:00Z', 200000,'Internet Banking INTERNET TRANSFER 000000220329','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let n = pair_transfers(&mut conn).unwrap();
+        assert_eq!(n, 1, "bare equal-and-opposite internet transfers pair despite differing refs");
+        let flagged: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions WHERE is_transfer=1 AND transfer_peer_id IS NOT NULL", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(flagged, 2, "both bare legs flagged once paired");
+    }
+
+    #[test]
+    fn bare_transfer_pairing_does_not_eat_a_named_e_transfer() {
+        // A bare INTERNET TRANSFER out must NOT pair with an equal-and-opposite
+        // e-transfer that NAMES a person — that could be rent/income, not an
+        // internal move. Rule 4 only pairs two NAMELESS reference-only transfers.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_categories(&conn);
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                   ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('a','chk','2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared',datetime('now')),\
+             ('b','sav','2026-05-01T12:00:00Z', 200000,'Internet Banking E-TRANSFER 000000999888 Swathi','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let n = pair_transfers(&mut conn).unwrap();
+        assert_eq!(n, 0, "a nameless transfer does not pair with a NAMED e-transfer of the opposite amount");
+    }
+
+    #[test]
+    fn pairing_is_deterministic_regardless_of_row_id_order() {
+        // The audit probe re-imports with random UUIDs, so pairing must not
+        // depend on which id a row happens to receive. Three same-date
+        // equal-and-opposite bare transfers make the greedy match ambiguous
+        // (the -$2000 leg can pair with either +$2000 leg); the outcome must be
+        // decided by stable content (amount, then merchant), never by row id.
+        fn run(ids: [&str; 3]) -> Vec<String> {
+            let (_d, db) = fresh_db();
+            let mut conn = db.get().unwrap();
+            seed_categories(&conn);
+            conn.execute(
+                "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES\
+                 ('chk','You','CIBC','Checking','Chq','CAD','#111','manual',datetime('now')),\
+                 ('sav','You','CIBC','Savings','Sav','CAD','#222','manual',datetime('now')),\
+                 ('tng','You','Tangerine','Savings','Tng','CAD','#333','manual',datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                &format!(
+                    "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+                     ('{}','chk','2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000000001','cleared',datetime('now')),\
+                     ('{}','sav','2026-05-01T12:00:00Z', 200000,'Internet Banking INTERNET TRANSFER 000000000002','cleared',datetime('now')),\
+                     ('{}','tng','2026-05-01T12:00:00Z', 200000,'Internet Banking INTERNET TRANSFER 000000000003','cleared',datetime('now'))",
+                    ids[0], ids[1], ids[2]
+                ),
+                [],
+            )
+            .unwrap();
+            pair_transfers(&mut conn).unwrap();
+            let mut flagged: Vec<String> = conn
+                .prepare("SELECT merchant_raw FROM transactions WHERE is_transfer=1")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            flagged.sort();
+            flagged
+        }
+        // Same content, opposite id orderings → identical flagged set.
+        let ascending = run(["id-a", "id-b", "id-c"]);
+        let descending = run(["id-z", "id-y", "id-x"]);
+        assert_eq!(ascending.len(), 2, "exactly one pair forms from three ambiguous legs");
+        assert_eq!(
+            ascending, descending,
+            "pairing outcome must be identical regardless of row-id ordering"
+        );
+    }
+
+    #[test]
+    fn e_transfer_naming_a_household_member_is_a_self_transfer() {
+        // Money moving to a household member (e.g. a partner) stays WITHIN the
+        // household, so their e-transfer must read as an internal transfer, not
+        // spending — but ONLY for a registered member. An e-transfer to a friend
+        // who is not in the household stays real spending.
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','Jordan Michael Avery','CIBC','Checking','Chq','CAD','#111','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO household_members(id,name,color,created_at) \
+             VALUES('m-partner','Robin','#abc',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        let ctx = TransferContext::load(&conn).unwrap();
+        assert!(
+            ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Robin"),
+            "an e-transfer naming a registered household member is an internal move"
+        );
+        assert!(
+            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Casey"),
+            "an e-transfer to a non-member stays real spending"
+        );
+        // The account owner's full name still needs ≥2 tokens: a friend who
+        // merely shares the owner's first name must NOT be swallowed.
+        assert!(
+            !ctx.is_self_transfer("Internet Banking E-TRANSFER 011654884429 Jordan"),
+            "a lone first-name match on a multi-token owner is not enough"
+        );
     }
 
     #[test]

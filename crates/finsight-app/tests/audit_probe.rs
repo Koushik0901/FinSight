@@ -220,15 +220,25 @@ fn audit_import_samples_and_dump_everything() {
     }
 
     // Operator identity (F0): a real user configures their own name, which
-    // TransferContext loads so is_self_transfer can recognize their own
-    // e-transfers ("INTERAC e-Transfer To/From: <me>"). The samples ARE Koushik's
-    // data — seeding this is the realistic setup, and the production code stays
-    // generic (it matches whatever name is configured, not a hard-coded one).
+    // TransferContext loads so is_self_transfer recognizes their OWN e-transfers
+    // ("INTERAC e-Transfer To/From: <me>"). We register only the operator, using
+    // the first token of the account owner already present in the data — no
+    // guessing at who else might be in the household. The household-member
+    // detection itself (money to a partner reading as internal) is validated
+    // GENERICALLY by the categorize unit test
+    // `e_transfer_naming_a_household_member_is_a_self_transfer`, not by baking a
+    // specific person into this real-data probe. Production stays generic — it
+    // matches whatever names are configured, never a hard-coded one.
     {
         let conn = db.get().unwrap();
+        let owner: String = conn
+            .query_row("SELECT owner FROM accounts LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let first = owner.split_whitespace().next().unwrap_or(&owner);
         conn.execute(
-            "INSERT INTO household_members(id,name,color,created_at) VALUES('self-koushik','Koushik','#6366F1',datetime('now'))",
-            [],
+            "INSERT INTO household_members(id,name,color,created_at) \
+             VALUES('self', ?1, '#6366F1', datetime('now'))",
+            [first],
         )
         .unwrap();
     }
