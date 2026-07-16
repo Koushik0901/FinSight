@@ -242,7 +242,22 @@ git add -A && git commit -m "refactor(server): introduce tauri-free finsight-api
 
 - [ ] **Step 1: Move sync_scheduler**
 
-The file's only tauri usage is `tauri::async_runtime::spawn` / `JoinHandle` (line ~85–91). Replace with `tokio::spawn` / `tokio::task::JoinHandle<()>` — behavior identical (both run on a Tokio runtime). Add `pub mod sync_scheduler;` to finsight-api's lib.rs; in finsight-app replace the module with `pub use finsight_api::sync_scheduler;`. Move the `sync_scheduler` field from `AppState` into `ApiState` (constructed in `ApiState::new`); finsight-app setup calls `app.state::<AppState>().api.sync_scheduler.start()`.
+The file's only tauri usage is `tauri::async_runtime::spawn` / `JoinHandle` (line ~85–91). Add `pub mod sync_scheduler;` to finsight-api's lib.rs; in finsight-app replace the module with `pub use finsight_api::sync_scheduler;`. Move the `sync_scheduler` field from `AppState` into `ApiState` (constructed in `ApiState::new`).
+
+**⚠️ Do NOT naively swap `tauri::async_runtime::spawn` → bare `tokio::spawn`.** `SyncScheduler::start()` is called from Tauri's synchronous `.setup()` closure, which has **no ambient Tokio runtime entered on that thread** (`src-tauri`'s `main` is a plain `fn main`, not `#[tokio::main]`). Bare `tokio::spawn` there panics at startup with *"there is no reactor running, must be called from the context of a Tokio 1.x runtime"* — and `cargo test --workspace` will NOT catch it (no test drives the real `.setup()` path). `tauri::async_runtime::spawn` avoids this by doing `runtime.enter()` before `tokio::spawn`; the sibling spawns in the same `.setup()` closure keep using it, and `AgentHandle::spawn` spins its own runtime for exactly this reason.
+
+**Correct tauri-free approach:** `start()` takes a runtime handle:
+```rust
+// finsight-api/src/sync_scheduler.rs
+pub fn start(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
+    // ... capture fields ...
+    handle.spawn(async move { /* the loop */ })   // Handle::spawn needs no ambient context
+}
+```
+- **finsight-app** call site passes Tauri's runtime handle: `let rt = tauri::async_runtime::handle(); state.api.sync_scheduler.start(rt.inner());` (`rt.inner()` is `&tokio::runtime::Handle`). Verify the exact accessor against the installed tauri version.
+- **finsight-server** (Task 8, if/when it starts the scheduler) passes `&tokio::runtime::Handle::current()` from its `#[tokio::main]` context.
+
+**Regression test (add it — this class of bug is invisible to the normal suite):** in `sync_scheduler.rs` tests, build a `tokio::runtime::Runtime`, grab its `.handle().clone()`, then from a plain `std::thread` (NO runtime entered) call `scheduler.start(&handle)` and assert it returns a `JoinHandle` without panicking. This locks in that `start` never depends on ambient context.
 
 - [ ] **Step 2: Move the provider-construction helpers**
 
