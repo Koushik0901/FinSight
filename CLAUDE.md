@@ -114,7 +114,7 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 509 Rust tests (+12 ignored live-DB/keychain), 424 frontend tests, 0 TypeScript errors.
+**Green bar:** 532 Rust tests (+12 ignored live-DB/keychain), 430 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 
