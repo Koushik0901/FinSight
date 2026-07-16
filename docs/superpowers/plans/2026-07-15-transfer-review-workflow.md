@@ -157,6 +157,19 @@ For the category-breakdown function, add a test: a `settle_up=1` inflow categori
 git commit -m "feat(core): net settle-up in category/spending expense sums"
 ```
 
+### Task 4b: Netting sweep across agent + command expense surfaces (plan gap found during Task 4)
+
+**Why:** Task 4 revealed the same `WHERE amount_cents < 0` drop-the-inflow risk in ~11 files under `crates/finsight-agent/src` (`context.rs`, `finance.rs`, `reasoning/tools/read.rs`) and `crates/finsight-app/src/commands` (`budget.rs`, `reports.rs`, `insights.rs`, `inbox.rs`, `agent.rs`, `copilot_chat.rs`, …). If Today/spending net settle-up but Budget/Reports/Copilot show gross, the feature is inconsistent and the Copilot answers with wrong numbers.
+
+**Files:** the above (audit each; change only AGGREGATE expense sums, never row-level filters/lists).
+
+- [ ] **Step 1:** `grep -rnE "amount_cents < 0|SUM\(.*amount_cents" crates/finsight-agent/src crates/finsight-app/src/commands`; classify each hit (aggregate expense SUM → net; row-level list/filter/balance/investment → leave).
+- [ ] **Step 2:** Prefer routing a surface through `metrics.rs` cashflow (the canonical, already-netted source) over hand-rolling the CASE, where the surface just needs income/expense totals. Where a bespoke per-category/per-window sum is genuinely needed, apply the same `WHEN settle_up = 1 THEN -amount_cents` netting + broaden `WHERE` to include settle-up inflows.
+- [ ] **Step 3:** TDD each changed aggregate; run the owning crate's tests one cargo invocation at a time.
+- [ ] **Step 4: Commit** `feat(core): net settle-up across agent + command expense surfaces`.
+
+*(Sequenced after Phase 2 — the verdict funnel/UI don't depend on it, and it all lands in one PR — but REQUIRED before finishing the branch.)*
+
 ---
 
 ## Phase 2 — 3-way verdict + grouped review surface
