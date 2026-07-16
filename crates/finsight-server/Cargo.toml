@@ -1,0 +1,27 @@
+[package]
+name = "finsight-server"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+finsight-api = { path = "../finsight-api" }
+finsight-core = { path = "../finsight-core" }
+finsight-agent = { path = "../finsight-agent" }
+axum = { version = "0.8", features = ["json"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+# NOTE: tower-http (fs/trace/cors), tokio-stream (sync), chrono, and regex are
+# intentionally NOT added yet — nothing in this crate uses them until later
+# tasks (tower-http: static file serving in Task 12; tokio-stream: SSE in
+# Task 11; regex: the bindings/dispatch parity test in Task 10). Unused deps
+# are lint noise; add each when its consuming code lands.
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tempfile.workspace = true
