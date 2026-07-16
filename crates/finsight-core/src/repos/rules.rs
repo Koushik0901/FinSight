@@ -145,12 +145,16 @@ pub fn apply_treatment_rules(conn: &mut Connection) -> CoreResult<u32> {
     let mut count = 0u32;
     for (pattern, treatment) in treatment_rules {
         let ids: Vec<String> = {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM transactions \
-                 WHERE lower(merchant_raw) LIKE lower(?1) \
-                   AND transfer_override IS NULL AND transfer_peer_id IS NULL \
-                   AND category_id IS NULL",
-            )?;
+            // Scoped to the transfer-review vocabulary (same predicate the
+            // review card itself uses) so a persisted rule never sweeps rows
+            // that never appeared on the card, e.g. "%joe%" catching Trader
+            // Joe's groceries alongside a Joe e-transfer.
+            let sql = format!(
+                "SELECT id FROM transactions t \
+                 WHERE lower(t.merchant_raw) LIKE lower(?1) AND {}",
+                crate::categorize::transfer_review_predicate("t")
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(params![pattern], |r| r.get::<_, String>(0))?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
@@ -353,6 +357,54 @@ mod tests {
             .unwrap();
         assert_eq!(p1_peer.as_deref(), Some("p2"), "pair link intact on both sides");
         assert_eq!(p2_peer.as_deref(), Some("p1"), "pair link intact on both sides");
+    }
+
+    #[test]
+    fn apply_treatment_rules_does_not_sweep_non_transfer_lookalikes() {
+        // A persisted "%joe%" settle_up rule must only auto-treat rows that
+        // actually look like a transfer (the transfer-review vocabulary) —
+        // not every future uncategorized row whose merchant contains "joe",
+        // e.g. Trader Joe's groceries. Otherwise every import silently
+        // mis-nets Trader Joe's purchases as settled-up.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('chk','You','B','Checking','C','CAD','#111','manual',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at,treatment) \
+             VALUES('r1','%joe%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('e1','chk','2026-07-01T12:00:00Z',-50000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-07-01T12:00:00Z'),\
+             ('g1','chk','2026-07-02T12:00:00Z',-8000,'TRADER JOE''S #123','cleared','2026-07-02T12:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let n = apply_treatment_rules(&mut conn).unwrap();
+        assert_eq!(n, 1, "only the e-transfer-vocab row is treated");
+
+        let e1_settled: i64 = conn
+            .query_row("SELECT settle_up FROM transactions WHERE id = 'e1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(e1_settled, 1, "the e-transfer is settled up");
+
+        let (g1_settled, g1_cat): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT settle_up, category_id FROM transactions WHERE id = 'g1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(g1_settled, 0, "Trader Joe's groceries are left alone");
+        assert!(g1_cat.is_none(), "Trader Joe's groceries stay uncategorized, not settled");
     }
 
     #[test]

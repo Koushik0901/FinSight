@@ -427,7 +427,8 @@ pub async fn get_agent_status(state: tauri::State<'_, AppState>) -> AppResult<Ag
                  AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = transactions.id)
                GROUP BY category_id
                UNION ALL
-               SELECT ts.category_id, SUM(CASE WHEN t.settle_up = 1 THEN -ts.amount_cents
+               SELECT ts.category_id, SUM(CASE WHEN t.settle_up = 1 AND t.amount_cents < 0 THEN ts.amount_cents
+                                                WHEN t.settle_up = 1 THEN -ts.amount_cents
                                                 ELSE ts.amount_cents END) AS cents
                FROM transaction_splits ts
                JOIN transactions t ON t.id = ts.txn_id

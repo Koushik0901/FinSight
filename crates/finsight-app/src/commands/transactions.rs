@@ -220,6 +220,78 @@ pub struct CategoryWithSpending {
     pub guidance: Option<String>,
 }
 
+/// Query logic behind [`list_categories_with_spending`], extracted so it is
+/// directly unit-testable against a raw connection without a Tauri
+/// `AppState`.
+fn categories_with_spending(
+    conn: &rusqlite::Connection,
+    this_month_start: &str,
+    last_month_start: &str,
+    year_start: &str,
+    current_month: &str,
+) -> finsight_core::CoreResult<Vec<CategoryWithSpending>> {
+    let mut stmt = conn.prepare(
+        "WITH spending AS (
+           SELECT t.category_id, t.posted_at,
+                  CASE WHEN t.settle_up = 1 THEN -t.amount_cents ELSE ABS(t.amount_cents) END AS cents
+           FROM transactions t
+           WHERE (t.amount_cents < 0 OR t.settle_up = 1)
+             AND t.category_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
+           UNION ALL
+           SELECT ts.category_id, t.posted_at,
+                  CASE WHEN t.settle_up = 1 AND t.amount_cents < 0 THEN ts.amount_cents
+                       WHEN t.settle_up = 1 THEN -ts.amount_cents
+                       ELSE ts.amount_cents END AS cents
+           FROM transaction_splits ts
+           JOIN transactions t ON t.id = ts.txn_id
+           WHERE (t.amount_cents < 0 OR t.settle_up = 1)
+             AND ts.category_id IS NOT NULL
+         )
+         SELECT
+           c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), c.spending_type,
+           COALESCE(SUM(CASE WHEN s.posted_at >= ?1 THEN s.cents ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN s.posted_at >= ?2 AND s.posted_at < ?1 THEN s.cents ELSE 0 END), 0),
+           COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
+           COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
+           COUNT(CASE WHEN s.posted_at >= ?3 THEN 1 END),
+           COALESCE(MAX(b.amount_cents), 0),
+           c.guidance
+         FROM categories c
+         LEFT JOIN category_groups g ON g.id = c.group_id
+         LEFT JOIN spending s ON s.category_id = c.id
+         LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
+         WHERE c.archived_at IS NULL
+         GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type, c.guidance
+         ORDER BY 7 DESC, g.sort_order, c.sort_order",
+    )?;
+    let rows = stmt.query_map(
+        rusqlite::params![this_month_start, last_month_start, year_start, current_month],
+        |r| {
+            Ok(CategoryWithSpending {
+                id: r.get(0)?,
+                label: r.get(1)?,
+                color: r.get(2)?,
+                group_id: r.get(3)?,
+                group_label: r.get(4)?,
+                spending_type: r.get(5)?,
+                this_month_cents: r.get(6)?,
+                last_month_cents: r.get(7)?,
+                txn_count: r.get(8)?,
+                year_total_cents: r.get(9)?,
+                year_txn_count: r.get(10)?,
+                budget_cents: r.get(11)?,
+                guidance: r.get(12)?,
+            })
+        },
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn list_categories_with_spending(
@@ -240,64 +312,13 @@ pub async fn list_categories_with_spending(
     let current_month = now.format("%Y-%m").to_string();
 
     run(&db, move |conn| {
-        let mut stmt = conn.prepare(
-            "WITH spending AS (
-               SELECT t.category_id, t.posted_at,
-                      CASE WHEN t.settle_up = 1 THEN -t.amount_cents ELSE ABS(t.amount_cents) END AS cents
-               FROM transactions t
-               WHERE (t.amount_cents < 0 OR t.settle_up = 1)
-                 AND t.category_id IS NOT NULL
-                 AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
-               UNION ALL
-               SELECT ts.category_id, t.posted_at,
-                      CASE WHEN t.settle_up = 1 THEN -ts.amount_cents ELSE ts.amount_cents END AS cents
-               FROM transaction_splits ts
-               JOIN transactions t ON t.id = ts.txn_id
-               WHERE (t.amount_cents < 0 OR t.settle_up = 1)
-                 AND ts.category_id IS NOT NULL
-             )
-             SELECT
-               c.id, c.label, COALESCE(c.color,''), c.group_id, COALESCE(g.label,''), c.spending_type,
-               COALESCE(SUM(CASE WHEN s.posted_at >= ?1 THEN s.cents ELSE 0 END), 0),
-               COALESCE(SUM(CASE WHEN s.posted_at >= ?2 AND s.posted_at < ?1 THEN s.cents ELSE 0 END), 0),
-               COUNT(CASE WHEN s.posted_at >= ?1 THEN 1 END),
-               COALESCE(SUM(CASE WHEN s.posted_at >= ?3 THEN s.cents ELSE 0 END), 0),
-               COUNT(CASE WHEN s.posted_at >= ?3 THEN 1 END),
-               COALESCE(MAX(b.amount_cents), 0),
-               c.guidance
-             FROM categories c
-             LEFT JOIN category_groups g ON g.id = c.group_id
-             LEFT JOIN spending s ON s.category_id = c.id
-             LEFT JOIN budgets b ON b.category_id = c.id AND b.month = ?4
-             WHERE c.archived_at IS NULL
-             GROUP BY c.id, c.label, c.color, c.group_id, g.label, c.spending_type, c.guidance
-             ORDER BY 7 DESC, g.sort_order, c.sort_order",
-        )?;
-        let rows = stmt.query_map(
-            rusqlite::params![this_month_start, last_month_start, year_start, current_month],
-            |r| {
-                Ok(CategoryWithSpending {
-                    id: r.get(0)?,
-                    label: r.get(1)?,
-                    color: r.get(2)?,
-                    group_id: r.get(3)?,
-                    group_label: r.get(4)?,
-                    spending_type: r.get(5)?,
-                    this_month_cents: r.get(6)?,
-                    last_month_cents: r.get(7)?,
-                    txn_count: r.get(8)?,
-                    year_total_cents: r.get(9)?,
-                    year_txn_count: r.get(10)?,
-                    budget_cents: r.get(11)?,
-                    guidance: r.get(12)?,
-                })
-            },
-        )?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row?);
-        }
-        Ok(out)
+        categories_with_spending(
+            conn,
+            &this_month_start,
+            &last_month_start,
+            &year_start,
+            &current_month,
+        )
     })
     .await
     .map_err(AppError::from)
@@ -371,7 +392,9 @@ pub async fn get_spending_breakdown(
                   AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
                 UNION ALL
                 SELECT c.spending_type,
-                       CASE WHEN t.settle_up = 1 THEN -ts.amount_cents ELSE ts.amount_cents END AS cents
+                       CASE WHEN t.settle_up = 1 AND t.amount_cents < 0 THEN ts.amount_cents
+                            WHEN t.settle_up = 1 THEN -ts.amount_cents
+                            ELSE ts.amount_cents END AS cents
                 FROM transaction_splits ts
                 JOIN transactions t ON t.id = ts.txn_id
                 JOIN categories c ON c.id = ts.category_id
@@ -854,4 +877,99 @@ pub async fn export_search_transactions_csv(
     let path_str = path.to_string_lossy().to_string();
     std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
     Ok(path_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("txn_cmd.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn seed_account(conn: &rusqlite::Connection) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+    }
+
+    fn seed_category(conn: &rusqlite::Connection, id: &str, label: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('grp', 'Group', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, 'grp', ?2, '#94A3B8', 0)",
+            rusqlite::params![id, label],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn split_settle_up_outflow_nets_as_positive_expense() {
+        // A settle_up=1 outflow parent (you paid $60 on a friend's behalf,
+        // to be paid back) split into two categories must show up as
+        // POSITIVE expense in each category — the split-union arm must not
+        // flip sign to a negative (income-looking) number just because the
+        // parent happens to be settle_up. Only a settle-up INFLOW parent
+        // (a reimbursement) should net negative.
+        let (_dir, db) = fresh_db();
+        let conn = db.get().unwrap();
+        seed_account(&conn);
+        seed_category(&conn, "dining", "Dining");
+        seed_category(&conn, "groceries", "Groceries");
+
+        let now = chrono::Utc::now();
+        let posted_at = now.to_rfc3339();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at,settle_up,is_split) \
+             VALUES('p1','a1',?1,-6000,'DINNER OUT','cleared',0,0,?1,1,1)",
+            rusqlite::params![posted_at],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transaction_splits(id,txn_id,category_id,amount_cents) VALUES \
+             ('sp1','p1','dining',4000),('sp2','p1','groceries',2000)",
+            [],
+        )
+        .unwrap();
+
+        let this_month_start = now.format("%Y-%m-01").to_string();
+        let current_month = now.format("%Y-%m").to_string();
+        let categories = categories_with_spending(
+            &conn,
+            &this_month_start,
+            "1900-01-01",
+            "1900-01-01",
+            &current_month,
+        )
+        .unwrap();
+
+        let dining = categories
+            .iter()
+            .find(|c| c.id == "dining")
+            .expect("dining category present");
+        let groceries = categories
+            .iter()
+            .find(|c| c.id == "groceries")
+            .expect("groceries category present");
+        assert_eq!(
+            dining.this_month_cents, 4000,
+            "settle-up outflow split child nets as positive expense, not negative"
+        );
+        assert_eq!(
+            groceries.this_month_cents, 2000,
+            "settle-up outflow split child nets as positive expense, not negative"
+        );
+    }
 }

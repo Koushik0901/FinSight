@@ -37,7 +37,9 @@ fn over_budget_envelopes(
              AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
            UNION ALL
            SELECT ts.category_id,
-                  CASE WHEN t.settle_up = 1 THEN -ts.amount_cents ELSE ts.amount_cents END AS cents,
+                  CASE WHEN t.settle_up = 1 AND t.amount_cents < 0 THEN ts.amount_cents
+                       WHEN t.settle_up = 1 THEN -ts.amount_cents
+                       ELSE ts.amount_cents END AS cents,
                   t.posted_at
            FROM transaction_splits ts
            JOIN transactions t ON t.id = ts.txn_id

@@ -644,12 +644,16 @@ pub fn apply_verdict_to_matching(
     verdict: Verdict,
 ) -> CoreResult<u32> {
     let ids: Vec<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT id FROM transactions \
-             WHERE lower(merchant_raw) LIKE ?1 \
-               AND transfer_override IS NULL AND transfer_peer_id IS NULL \
-               AND category_id IS NULL",
-        )?;
+        // Scoped to the transfer-review vocabulary — the same predicate that
+        // decides what the review card shows — so a bulk verdict never rules
+        // rows the user never saw (e.g. "%joe%" sweeping uncategorized
+        // Trader Joe's groceries alongside a Joe e-transfer).
+        let sql = format!(
+            "SELECT id FROM transactions t \
+             WHERE lower(t.merchant_raw) LIKE ?1 AND {}",
+            crate::categorize::transfer_review_predicate("t")
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![pattern], |r| r.get::<_, String>(0))?;
         let mut out = Vec::new();
         for r in rows {
@@ -677,45 +681,38 @@ pub fn apply_verdict_to_matching(
     Ok(count)
 }
 
-/// Ensure an enabled `rules` row exists for `pattern` with the given
-/// `treatment`: insert one if none exists (mirrors the rule-existence check
-/// in [`update`]'s `ProposedRule` flow), or flip an existing row's treatment
-/// if it disagrees. `category_id` is `""` — never read for `transfer`/
-/// `settle_up` treatments (only `'categorize'` rules read it; see the V049/
-/// V050 migration comments for why the column has no FK for these rows).
+/// Ensure an enabled `rules` row exists for `pattern`: insert one with the
+/// given `treatment` if NO enabled rule exists for that pattern yet. If one
+/// already exists — regardless of its treatment — it is left untouched: a
+/// bulk counterparty verdict must never flip a pre-existing rule (e.g. a
+/// user's `categorize` rule for a pattern that happens to overlap a
+/// counterparty name) out from under the user. `category_id` is `""` for a
+/// newly-inserted rule — never read for `transfer`/`settle_up` treatments
+/// (only `'categorize'` rules read it; see the V049/V050 migration comments
+/// for why the column has no FK for these rows).
 fn upsert_treatment_rule(conn: &mut Connection, pattern: &str, treatment: &str) -> CoreResult<()> {
-    let existing: Option<(String, String)> = conn
+    let exists: bool = conn
         .query_row(
-            "SELECT id, treatment FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
+            "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
             params![pattern],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            |_| Ok(()),
         )
-        .map(Some)
+        .map(|_| true)
         .or_else(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
             other => Err(other),
         })?;
 
-    match existing {
-        Some((id, existing_treatment)) => {
-            if existing_treatment != treatment {
-                conn.execute(
-                    "UPDATE rules SET treatment = ?1 WHERE id = ?2",
-                    params![treatment, id],
-                )?;
-            }
-        }
-        None => {
-            crate::repos::rules::insert(
-                conn,
-                crate::models::NewRule {
-                    pattern: pattern.to_string(),
-                    category_id: String::new(),
-                    source: "user".to_string(),
-                    treatment: treatment.to_string(),
-                },
-            )?;
-        }
+    if !exists {
+        crate::repos::rules::insert(
+            conn,
+            crate::models::NewRule {
+                pattern: pattern.to_string(),
+                category_id: String::new(),
+                source: "user".to_string(),
+                treatment: treatment.to_string(),
+            },
+        )?;
     }
     Ok(())
 }
@@ -1417,6 +1414,82 @@ mod tests {
             (0, Some("cat1".into())),
             "the categorized sibling is left alone"
         );
+    }
+
+    #[test]
+    fn apply_verdict_does_not_sweep_non_transfer_lookalikes() {
+        // "%joe%" should only rule rows that actually look like a transfer
+        // (the transfer-review vocabulary) — not every uncategorized
+        // transaction whose merchant happens to contain "joe", e.g. Trader
+        // Joe's groceries. Ruling those in would also persist a "%joe%"
+        // treatment rule that mis-nets future Trader Joe's purchases.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('g1',?1,'2026-01-02T12:00:00Z',-8000,'TRADER JOE''S #123','cleared','2026-01-02T12:00:00Z',0,NULL,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let applied = apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        assert_eq!(applied, 1, "only the e-transfer-vocab row is ruled");
+
+        let e1_settled: i64 = conn
+            .query_row("SELECT settle_up FROM transactions WHERE id = 'e1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(e1_settled, 1, "the e-transfer is settled up");
+
+        let (g1_settled, g1_override): (i64, Option<i64>) = conn
+            .query_row(
+                "SELECT settle_up, transfer_override FROM transactions WHERE id = 'g1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(g1_settled, 0, "Trader Joe's groceries are left alone");
+        assert!(g1_override.is_none(), "Trader Joe's groceries are still undecided");
+    }
+
+    #[test]
+    fn apply_verdict_leaves_an_existing_categorize_rule_untouched() {
+        // A pre-existing user rule that categorizes "%joe%" (e.g. a friend
+        // whose name overlaps a merchant pattern) must not be flipped to a
+        // transfer/settle_up treatment by a later bulk counterparty verdict.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        crate::repos::rules::insert(
+            &mut conn,
+            crate::models::NewRule {
+                pattern: "%joe%".to_string(),
+                category_id: "cat1".to_string(),
+                source: "user".to_string(),
+                treatment: "categorize".to_string(),
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+
+        let (treatment, rule_count): (String, i64) = conn
+            .query_row(
+                "SELECT (SELECT treatment FROM rules WHERE lower(pattern) = '%joe%'), \
+                        (SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(treatment, "categorize", "the existing categorize rule is not flipped");
+        assert_eq!(rule_count, 1, "no duplicate rule is created");
     }
 
     #[test]
