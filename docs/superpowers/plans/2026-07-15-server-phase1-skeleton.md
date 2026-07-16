@@ -87,7 +87,7 @@
 ```toml
 [package]
 name = "finsight-api"
-version = "0.1.0"
+version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 
@@ -390,7 +390,7 @@ Also move the remaining copilot_chat commands (`list_conversations`, `get_conver
 ```toml
 [package]
 name = "finsight-server"
-version = "0.1.0"
+version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 
