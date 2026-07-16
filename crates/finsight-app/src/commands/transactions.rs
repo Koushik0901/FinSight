@@ -241,16 +241,18 @@ pub async fn list_categories_with_spending(
     run(&db, move |conn| {
         let mut stmt = conn.prepare(
             "WITH spending AS (
-               SELECT t.category_id, t.posted_at, ABS(t.amount_cents) AS cents
+               SELECT t.category_id, t.posted_at,
+                      CASE WHEN t.settle_up = 1 THEN -t.amount_cents ELSE ABS(t.amount_cents) END AS cents
                FROM transactions t
-               WHERE t.amount_cents < 0
+               WHERE (t.amount_cents < 0 OR t.settle_up = 1)
                  AND t.category_id IS NOT NULL
                  AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
                UNION ALL
-               SELECT ts.category_id, t.posted_at, ts.amount_cents AS cents
+               SELECT ts.category_id, t.posted_at,
+                      CASE WHEN t.settle_up = 1 THEN -ts.amount_cents ELSE ts.amount_cents END AS cents
                FROM transaction_splits ts
                JOIN transactions t ON t.id = ts.txn_id
-               WHERE t.amount_cents < 0
+               WHERE (t.amount_cents < 0 OR t.settle_up = 1)
                  AND ts.category_id IS NOT NULL
              )
              SELECT
@@ -358,19 +360,21 @@ pub async fn get_spending_breakdown(
             i64,
         ) = conn.query_row(
             "WITH spending AS (
-                SELECT c.spending_type, ABS(t.amount_cents) AS cents
+                SELECT c.spending_type,
+                       CASE WHEN t.settle_up = 1 THEN -t.amount_cents ELSE ABS(t.amount_cents) END AS cents
                 FROM transactions t
                 JOIN categories c ON c.id = t.category_id
-                WHERE t.amount_cents < 0
+                WHERE (t.amount_cents < 0 OR t.settle_up = 1)
                   AND t.category_id IS NOT NULL
                   AND t.posted_at >= ?1
                   AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = t.id)
                 UNION ALL
-                SELECT c.spending_type, ts.amount_cents AS cents
+                SELECT c.spending_type,
+                       CASE WHEN t.settle_up = 1 THEN -ts.amount_cents ELSE ts.amount_cents END AS cents
                 FROM transaction_splits ts
                 JOIN transactions t ON t.id = ts.txn_id
                 JOIN categories c ON c.id = ts.category_id
-                WHERE t.amount_cents < 0
+                WHERE (t.amount_cents < 0 OR t.settle_up = 1)
                   AND ts.category_id IS NOT NULL
                   AND t.posted_at >= ?1
              )

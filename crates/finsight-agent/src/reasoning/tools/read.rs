@@ -90,13 +90,14 @@ pub fn get_month_totals() -> Arc<dyn Tool> {
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
             let now = chrono::Utc::now();
             let month_start = now.format("%Y-%m-01").to_string();
-            let (income, expense): (i64, i64) = ctx.conn.query_row(
-                "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0), \
-                        COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0) \
-                 FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0",
-                rusqlite::params![month_start],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
+            // Routed through the shared metrics layer (single-sourced, already
+            // nets a settle_up inflow against expense and never counts it as
+            // income) so the Copilot's month totals agree with Today.
+            let (income, expense) = finsight_core::metrics::income_expense_since(
+                ctx.conn,
+                &month_start,
+            )
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let savings_rate = if income > 0 {
                 ((income - expense) * 100 / income).max(0)
             } else {
@@ -127,9 +128,11 @@ pub fn get_top_spending_categories() -> Arc<dyn Tool> {
             let now = chrono::Utc::now();
             let month_start = now.format("%Y-%m-01").to_string();
             let mut stmt = ctx.conn.prepare(
-                "SELECT c.label, SUM(ABS(t.amount_cents)) AS spent \
+                "SELECT c.label, SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                          WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                          ELSE 0 END) AS spent \
                  FROM transactions t JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ?1 \
                  GROUP BY c.id ORDER BY spent DESC LIMIT ?2",
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, limit], |r| {
@@ -168,9 +171,12 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
             let start_str = start.format("%Y-%m-%d").to_string();
 
             let mut cat_stmt = ctx.conn.prepare(
-                "SELECT COALESCE(c.label, 'Uncategorized') AS label, SUM(ABS(t.amount_cents)) AS spent \
+                "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
+                        SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                 WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                 ELSE 0 END) AS spent \
                  FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ?1 \
                  GROUP BY label ORDER BY spent DESC LIMIT ?2",
             )?;
             let top_categories: Vec<Value> = cat_stmt
@@ -181,9 +187,12 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .collect();
 
             let mut merch_stmt = ctx.conn.prepare(
-                "SELECT t.merchant_raw, SUM(ABS(t.amount_cents)) AS spent \
+                "SELECT t.merchant_raw, \
+                        SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                 WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                 ELSE 0 END) AS spent \
                  FROM transactions t \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ?1 \
                  GROUP BY t.merchant_raw ORDER BY spent DESC LIMIT ?2",
             )?;
             let top_merchants: Vec<Value> = merch_stmt
@@ -194,9 +203,12 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .collect();
 
             let mut month_stmt = ctx.conn.prepare(
-                "SELECT substr(t.posted_at, 1, 7) AS ym, SUM(ABS(t.amount_cents)) AS spent \
+                "SELECT substr(t.posted_at, 1, 7) AS ym, \
+                        SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                 WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                 ELSE 0 END) AS spent \
                  FROM transactions t \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1 \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ?1 \
                  GROUP BY ym ORDER BY ym ASC",
             )?;
             let monthly: Vec<Value> = month_stmt
@@ -321,11 +333,13 @@ pub fn get_member_spending() -> Arc<dyn Tool> {
             // Copilot attributes exactly as the screens do.
             let mut cat_stmt = ctx.conn.prepare(&format!(
                 "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
-                        CAST(ROUND(SUM(ABS(t.amount_cents) * w.weight)) AS INTEGER) AS spent \
+                        CAST(ROUND(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents * w.weight \
+                                            WHEN t.amount_cents < 0 THEN -t.amount_cents * w.weight \
+                                            ELSE 0 END)) AS INTEGER) AS spent \
                  FROM transactions t \
                  LEFT JOIN categories c ON c.id = t.category_id \
                  JOIN ({weight}) w ON w.account_id = t.account_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?2 \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ?2 \
                  GROUP BY label ORDER BY spent DESC LIMIT 8",
                 weight = finsight_core::metrics::MEMBER_WEIGHT_SUBQUERY,
             ))?;
@@ -372,8 +386,11 @@ pub fn get_budgets() -> Arc<dyn Tool> {
             let month_start = now.format("%Y-%m-01").to_string();
             let mut stmt = ctx.conn.prepare(
                 "SELECT c.label, b.amount_cents, \
-                        COALESCE((SELECT SUM(ABS(t.amount_cents)) FROM transactions t \
-                                  WHERE t.category_id = b.category_id AND t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ?1), 0) AS spent \
+                        COALESCE((SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                                   WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                                   ELSE 0 END) FROM transactions t \
+                                  WHERE t.category_id = b.category_id AND (t.amount_cents < 0 OR t.settle_up = 1) \
+                                    AND t.is_transfer = 0 AND t.posted_at >= ?1), 0) AS spent \
                  FROM budgets b JOIN categories c ON c.id = b.category_id WHERE b.month = ?2"
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, month], |r| {
@@ -715,13 +732,14 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
             let now = chrono::Utc::now();
             let month_start = now.format("%Y-%m-01").to_string();
             let day_of_month = now.format("%d").to_string().parse::<i64>().unwrap_or(15);
-            let (income, expense): (i64, i64) = ctx.conn.query_row(
-                "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0), \
-                        COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0) \
-                 FROM transactions WHERE posted_at >= ?1 AND is_transfer = 0",
-                rusqlite::params![month_start],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
+            // Routed through the shared metrics layer (single-sourced, already
+            // nets a settle_up inflow against expense and never counts it as
+            // income) so the projection agrees with Today and get_month_totals.
+            let (income, expense) = finsight_core::metrics::income_expense_since(
+                ctx.conn,
+                &month_start,
+            )
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let balance: i64 = ctx.conn.query_row(
                 "SELECT COALESCE(SUM(balance_cents), 0) FROM accounts WHERE archived_at IS NULL",
                 [],

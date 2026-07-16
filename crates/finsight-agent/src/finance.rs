@@ -524,8 +524,13 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 /// callers fall back to the 90-day average.
 fn robust_monthly_expense_cents(conn: &Connection) -> rusqlite::Result<i64> {
     let this_month = chrono::Utc::now().format("%Y-%m").to_string();
+    // A `settle_up = 1` row nets as `-amount_cents`, matching metrics.rs
+    // cashflow, instead of being silently dropped by an `amount_cents < 0`-only
+    // CASE.
     let mut stmt = conn.prepare(
-        "SELECT SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END) AS spent \
+        "SELECT SUM(CASE WHEN settle_up = 1 THEN -amount_cents \
+                          WHEN amount_cents < 0 THEN -amount_cents \
+                          ELSE 0 END) AS spent \
          FROM transactions \
          WHERE is_transfer = 0 AND substr(posted_at,1,7) < ?1 \
          GROUP BY substr(posted_at,1,7) \
