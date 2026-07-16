@@ -450,7 +450,11 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             }
             app.manage(state);
 
-            let _scheduler = app.state::<AppState>().api.sync_scheduler.start();
+            // Pass Tauri's Tokio runtime handle explicitly: `.setup()` runs with no
+            // ambient runtime entered, so `SyncScheduler::start` must spawn via a
+            // `Handle` rather than the bare `tokio::spawn` (which would panic here).
+            let rt = tauri::async_runtime::handle();
+            let _scheduler = app.state::<AppState>().api.sync_scheduler.start(rt.inner());
 
             let check_agent = app.state::<AppState>().api.agent.tx.clone();
             tauri::async_runtime::spawn(async move {

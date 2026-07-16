@@ -1,6 +1,6 @@
 //! Background + batch SimpleFin sync scheduler.
 //!
-//! Lives on `AppState`. Spawns a background Tokio task that sleeps for
+//! Lives on `ApiState`. Spawns a background Tokio task that sleeps for
 //! the configured interval (default 6 hours) then syncs all linked accounts.
 //! Manual "sync all" calls go through the scheduler to avoid overlapping.
 
@@ -82,13 +82,20 @@ impl SyncScheduler {
     }
 
     /// Start the background sync loop. Must be called once. Returns the JoinHandle.
-    pub fn start(&self) -> tokio::task::JoinHandle<()> {
+    ///
+    /// Takes an explicit runtime `Handle` and spawns via `handle.spawn` rather
+    /// than the bare `tokio::spawn`. The only call site is inside Tauri's
+    /// synchronous `.setup()` closure, which has NO ambient Tokio runtime entered
+    /// (the desktop `main` is a plain `fn main`, not `#[tokio::main]`), so
+    /// `tokio::spawn` there would panic with "there is no reactor running".
+    /// `Handle::spawn` needs no ambient context.
+    pub fn start(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
         let enabled = self.enabled.clone();
         let shutdown = self.shutdown.clone();
         let interval = self.interval_minutes.clone();
         let db = self.db.clone();
         let sync_in_progress = self.sync_in_progress.clone();
-        tokio::spawn(async move {
+        handle.spawn(async move {
             loop {
                 if shutdown.load(Ordering::Relaxed) {
                     return;
@@ -599,4 +606,44 @@ async fn mark_connection_error(
         .map(|_| ())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::keychain;
+
+    /// Regression guard: `SyncScheduler::start` must NOT require an ambient Tokio
+    /// runtime. Its real call site is inside Tauri's synchronous `.setup()` closure,
+    /// which has no runtime entered — a bare `tokio::spawn` there panics with
+    /// "there is no reactor running". We reproduce that exact environment: build a
+    /// runtime, grab its `Handle`, then call `start(&handle)` from a plain
+    /// `std::thread` with NO runtime entered (deliberately not `#[tokio::test]`),
+    /// and assert it returns a JoinHandle without panicking.
+    #[test]
+    fn start_does_not_need_ambient_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("sched.sqlcipher"), &key).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.handle().clone();
+        let scheduler = SyncScheduler::new(db);
+
+        // Run from a bare OS thread: no `#[tokio::test]`, no `Runtime::enter`, so
+        // there is no thread-local runtime context. A bare `tokio::spawn` would
+        // panic here; `handle.spawn` must not.
+        let join = std::thread::spawn(move || {
+            let task = scheduler.start(&handle);
+            // Immediately stop the loop so the spawned task can exit cleanly.
+            scheduler.stop();
+            task
+        })
+        .join()
+        .expect("start must not panic without an ambient runtime");
+
+        // The task was accepted by the runtime; drop the handle without awaiting.
+        drop(join);
+        rt.shutdown_background();
+    }
 }
