@@ -17,7 +17,6 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
   const markComplete = useMarkOnboardingComplete();
   const [skipError, setSkipError] = useState<string | null>(null);
 
-
   // Capturing the operator's name up front (optional) lets FinSight recognize
   // THEIR own e-transfers ("To/From: <you>") as internal moves from the very
   // first import, instead of miscounting them as income/spending until the user
@@ -52,7 +51,8 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         <h1>A quiet way to understand your money.</h1>
         <p className="lead">
           FinSight is local-first and encrypted. Nothing leaves your machine. Start with the accounts you want to track,
-          then bring in history from statements or secure bank sync.        </p>
+          then bring in history from statements or secure bank sync.
+        </p>
         <div className="row row-sm wrap" style={{ marginBottom: 20 }}>
           <span className="chip"><span className="dot" /> Local-first</span>
           <span className="chip">Encrypted</span>
@@ -60,11 +60,11 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         </div>
         <Input
           className="onb-name-field"
-          label={(
+          label={
             <span>
               Your name <span className="muted">(optional)</span>
             </span>
-          )}
+          }
           hint="Helps recognize transfers between your own accounts."
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -73,7 +73,9 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
           autoComplete="name"
         />
         <div className="onb-actions">
-          <Button variant="primary" onClick={() => void handleGetStarted()}>Get started →</Button>
+          <Button variant="primary" onClick={() => void handleGetStarted()}>
+            Get started →
+          </Button>
           <Button
             variant="outline"
             onClick={() => void handleSkip()}
@@ -82,8 +84,12 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
             {markComplete.isPending ? "Skipping…" : "Skip setup"}
           </Button>
         </div>
+        {skipError && (
+          <p role="alert" className="err onb-action-error">
+            {skipError}
+          </p>
+        )}
       </div>
-        {skipError && <p role="alert" className="err onb-action-error">{skipError}</p>}
 
       <div className="onb-right">
         <div className="onb-art-grid">
