@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";import StepAccounts from "./StepAccounts";
+import { fireEvent, render, screen } from "@testing-library/react";
+import StepAccounts from "./StepAccounts";
 import StepHistory from "./StepHistory";
 
 const useAccounts = vi.hoisted(() => vi.fn());
@@ -79,7 +80,8 @@ describe("Onboarding account-first flow", () => {
 
     expect(screen.getByText("Everyday Checking")).toBeInTheDocument();
     expect(screen.getByText("Rainy Day")).toBeInTheDocument();
-    expect(screen.getByText("Manual", { selector: "span" })).toBeInTheDocument();    expect(screen.getByText("SimpleFIN")).toBeInTheDocument();
+    expect(screen.getByText("Manual", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("SimpleFIN")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue to history/i })).toBeInTheDocument();
   });
 
