@@ -14,7 +14,9 @@
 
 ## Ground rules (read first)
 
-- **Worktree gotchas:** run `pnpm install` in `ui/` if `node_modules` is missing; never run two `cargo test` invocations in parallel (Windows link error 1104).
+- **Run every `cargo` command via PowerShell, NOT Git Bash.** rusqlite's vendored-OpenSSL build needs Strawberry Perl (`C:\Strawberry\perl\bin\perl.exe`, on PowerShell's PATH); Git Bash's MSYS perl lacks `Locale::Maketext::Simple` and the build dies with an OpenSSL "perl reported failure" error. `npm`/`npx`/`pnpm` are fine from either shell.
+- **Worktree gotchas:** `node_modules` and `samples/` are already set up in this worktree. Never run two `cargo test` invocations in parallel (Windows link error 1104).
+- **Baseline (controller-verified green):** Rust `cargo test --workspace` and frontend `424 tests / 82 files` + `tsc --noEmit` clean. "Count unchanged" means against these.
 - **Green bar:** the whole plan must keep `cargo test --workspace` and `cd ui && npx vitest run` green after every task. Baseline: 509 Rust / 424 frontend / 0 TS errors.
 - **Bindings invariant:** after any task that touches command wrappers, `cargo run -p finsight-tauri --bin export_bindings` must produce **zero diff** in `ui/src/api/bindings.ts` (`git diff --exit-code ui/src/api/bindings.ts`). Phase 1 changes no command names, signatures, or doc comments.
 - **The signature transformation** (used in Tasks 3–7). Every moved command changes exactly like this:
