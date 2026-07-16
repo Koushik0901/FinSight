@@ -11,6 +11,7 @@ crate-type = ["lib"]
 finsight-core = { path = "../finsight-core" }
 finsight-providers = { path = "../finsight-providers" }
 finsight-agent = { path = "../finsight-agent" }
+finsight-api = { path = "../finsight-api" }
 anyhow.workspace = true
 thiserror.workspace = true
 serde.workspace = true

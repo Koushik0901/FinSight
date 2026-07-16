@@ -203,7 +203,7 @@ pub async fn stream_copilot_message(
             text.chars().count()
         );
     }
-    let provider = state.agent_provider.read().unwrap().clone();
+    let provider = state.api.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         emit_copilot_frame(
             &app,
@@ -225,7 +225,7 @@ pub async fn stream_copilot_message(
         ));
     };
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let conv_id = conversation_id.clone();
 
     // Snapshot the ledger epoch at the start of the turn. The reasoning engine
@@ -968,7 +968,7 @@ pub async fn stream_copilot_message(
 pub async fn list_conversations(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<ConversationSummary>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         conversations::list_conversations(conn)
             .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
@@ -984,7 +984,7 @@ pub async fn get_conversation_messages(
     state: tauri::State<'_, AppState>,
     conversation_id: String,
 ) -> AppResult<Vec<ConversationMessage>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         conversations::list_messages(conn, &conversation_id)
             .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
@@ -997,7 +997,7 @@ pub async fn get_conversation_messages(
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_conversation(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         conversations::delete_conversation(conn, &id)
             .map_err(|e| finsight_core::CoreError::InvalidState(e.to_string()))
@@ -1010,7 +1010,7 @@ pub async fn delete_conversation(state: tauri::State<'_, AppState>, id: String) 
 #[tauri::command]
 #[specta::specta]
 pub async fn create_conversation(state: tauri::State<'_, AppState>) -> AppResult<String> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let id = uuid::Uuid::new_v4().to_string();
     run(&db, move |conn| {
         conversations::create_conversation(conn, &id)
@@ -1029,7 +1029,7 @@ pub async fn edit_conversation_user_message(
     state: tauri::State<'_, AppState>,
     input: EditConversationMessageInput,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let parts_json = serde_json::to_string(&vec![json!({
         "type": "text",
         "text": input.content.clone(),
@@ -1058,7 +1058,7 @@ pub async fn delete_conversation_messages_after(
     conversation_id: String,
     message_id: String,
 ) -> AppResult<u32> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         conversations::delete_messages_after(conn, &conversation_id, &message_id).map(|n| n as u32)
     })

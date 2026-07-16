@@ -49,7 +49,7 @@ pub async fn get_financial_metrics(
     state: tauri::State<'_, AppState>,
     member_id: Option<String>,
 ) -> AppResult<FinancialMetrics> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let month_start = Utc::now().format("%Y-%m-01").to_string();
     run(&db, move |conn| {
         let member = member_id.as_deref();
@@ -114,7 +114,7 @@ pub async fn household_net_worth_breakdown(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<MemberNetWorth>> {
     use finsight_core::repos::household;
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let members = household::list_members(conn)?;
         let household_bd = metrics::balance_breakdown_for(conn, None)?;
@@ -170,7 +170,7 @@ pub async fn set_financial_assumptions(
     state: tauri::State<'_, AppState>,
     input: FinancialAssumptionsInput,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         metrics::set_assumptions(
             conn,

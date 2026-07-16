@@ -149,7 +149,7 @@ pub async fn save_simplefin_setup_token(
     let bridge_id = Uuid::new_v4().to_string();
     keychain::set_key(SIMPLEFIN_ACCESS_SERVICE, &bridge_id, &access_url).map_err(AppError::from)?;
 
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let infos = run(&db, {
         let bridge_id = bridge_id.clone();
         let provider_conns = provider_conns.clone();
@@ -275,7 +275,7 @@ pub async fn save_simplefin_setup_token(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_simplefin_status(state: tauri::State<'_, AppState>) -> AppResult<SimpleFinStatus> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let active = run(&db, |conn| {
         let conns = connections::list(conn)?;
         Ok::<_, finsight_core::CoreError>(conns.into_iter().any(|c| c.status == "active"))
@@ -290,7 +290,7 @@ pub async fn get_simplefin_status(state: tauri::State<'_, AppState>) -> AppResul
 pub async fn list_simplefin_connections(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SimpleFinConnectionInfo>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let infos = run(&db, |conn| {
         let conns = connections::list(conn)?;
         Ok::<_, finsight_core::CoreError>(
@@ -310,7 +310,7 @@ pub async fn list_simplefin_connections(
 pub async fn list_simplefin_accounts(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SimpleFinAccountInfo>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let connection_rows = run(&db, |conn| {
         Ok::<_, finsight_core::CoreError>(connections::list(conn)?)
     })
@@ -432,7 +432,7 @@ pub async fn import_simplefin_accounts(
     state: tauri::State<'_, AppState>,
     accounts: Vec<SimpleFinAccountImportRequest>,
 ) -> AppResult<Vec<String>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
 
     // Snapshot the ledger epoch before the network fetch: importing accounts
     // inserts top-level account rows (no FK guard) that would survive a wipe.
@@ -543,7 +543,7 @@ pub async fn sync_simplefin_account(
     state: tauri::State<'_, AppState>,
     account_id: String,
 ) -> AppResult<SyncSummary> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
 
     let account = run(&db, {
         let account_id = account_id.clone();
@@ -688,7 +688,7 @@ struct SimpleFinImportSummaryWrapper {
 #[tauri::command]
 #[specta::specta]
 pub async fn disconnect_simplefin(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let bridge_ids = run(&db, |conn| {
         let mut stmt = conn.prepare("SELECT DISTINCT access_url_ref FROM simplefin_connections")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -724,7 +724,7 @@ pub async fn disconnect_simplefin(state: tauri::State<'_, AppState>) -> AppResul
 pub async fn purge_simplefin_data(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<SimpleFinPurgeSummary> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let bridge_ids = run(&db, |conn| {
         let mut stmt = conn.prepare("SELECT DISTINCT access_url_ref FROM simplefin_connections")?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
@@ -831,7 +831,7 @@ pub async fn delete_simplefin_connection(
     state: tauri::State<'_, AppState>,
     connection_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let bridge_id = run(&db, {
         let connection_id = connection_id.clone();
         move |conn| {
@@ -912,7 +912,7 @@ pub async fn set_simplefin_sync_settings(
     state
         .sync_scheduler
         .set_enabled(settings.background_sync_enabled);
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, move |conn| {
         finsight_core::settings::set(
             conn,
@@ -936,7 +936,7 @@ pub async fn set_simplefin_sync_settings(
 pub async fn list_simplefin_alerts(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SimpleFinAlert>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let rows = run(&db, |conn| alerts::list_unacknowledged(conn))
         .await
         .map_err(AppError::from)?;
@@ -949,7 +949,7 @@ pub async fn acknowledge_simplefin_alert(
     state: tauri::State<'_, AppState>,
     alert_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, {
         let alert_id = alert_id.clone();
         move |conn| alerts::acknowledge(conn, &alert_id)
@@ -964,7 +964,7 @@ pub async fn acknowledge_simplefin_alert(
 pub async fn list_simplefin_transfer_suggestions(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<TransferSuggestionInfo>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     let rows = run(&db, |conn| transfers::list_suggestions(conn))
         .await
         .map_err(AppError::from)?;
@@ -977,7 +977,7 @@ pub async fn confirm_simplefin_transfer(
     state: tauri::State<'_, AppState>,
     transfer_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, {
         let transfer_id = transfer_id.clone();
         move |conn| transfers::confirm(conn, &transfer_id)
@@ -993,7 +993,7 @@ pub async fn reject_simplefin_transfer(
     state: tauri::State<'_, AppState>,
     transfer_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, {
         let transfer_id = transfer_id.clone();
         move |conn| transfers::reject(conn, &transfer_id)
@@ -1008,7 +1008,7 @@ pub async fn reject_simplefin_transfer(
 pub async fn list_import_review_candidates(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<ImportCandidateWithMatches>> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, |conn| import_candidates::list_pending(conn))
         .await
         .map_err(AppError::from)
@@ -1021,7 +1021,7 @@ pub async fn accept_import_candidate_match(
     candidate_id: String,
     transaction_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, move |conn| {
         import_candidates::resolve_with_match(conn, &candidate_id, &transaction_id)
     })
@@ -1036,7 +1036,7 @@ pub async fn create_import_candidate_transaction(
     state: tauri::State<'_, AppState>,
     candidate_id: String,
 ) -> AppResult<String> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, move |conn| {
         import_candidates::resolve_create_new(conn, &candidate_id)
     })
@@ -1050,7 +1050,7 @@ pub async fn dismiss_import_candidate(
     state: tauri::State<'_, AppState>,
     candidate_id: String,
 ) -> AppResult<()> {
-    let db = state.db.clone();
+    let db = state.api.db.clone();
     run(&db, move |conn| {
         import_candidates::dismiss(conn, &candidate_id)
     })

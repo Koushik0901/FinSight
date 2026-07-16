@@ -9,9 +9,9 @@ use tauri_plugin_dialog::DialogExt;
 #[tauri::command]
 #[specta::specta]
 pub async fn list_accounts(state: tauri::State<'_, AppState>) -> AppResult<Vec<AccountSummary>> {
-    // `state.db` is `Arc<Db>`; deref + clone gives us an owned `Db` (cheap — it's
+    // `state.api.db` is `Arc<Db>`; deref + clone gives us an owned `Db` (cheap — it's
     // an Arc-wrapped pool internally) that we can move into the blocking closure.
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let result = run(&db, accounts::list_summaries)
         .await
         .map_err(AppError::from)?;
@@ -27,7 +27,7 @@ pub async fn create_account(
     // Always force source to "manual" — the frontend cannot create sample accounts.
     // Without this, a caller could mislabel user-created accounts as imported data.
     input.source = "manual".to_string();
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| accounts::insert(conn, input))
         .await
         .map_err(AppError::from)
@@ -40,7 +40,7 @@ pub async fn update_account(
     id: String,
     patch: AccountPatch,
 ) -> AppResult<Account> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| accounts::update(conn, &id, patch))
         .await
         .map_err(AppError::from)
@@ -49,7 +49,7 @@ pub async fn update_account(
 #[tauri::command]
 #[specta::specta]
 pub async fn archive_account(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| accounts::archive(conn, &id))
         .await
         .map_err(AppError::from)
@@ -67,7 +67,7 @@ pub async fn set_account_balance(
     id: String,
     balance_cents: i64,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         accounts::set_current_balance(conn, &id, balance_cents)
     })
@@ -91,7 +91,7 @@ pub async fn export_account_csv(
     account_id: String,
 ) -> AppResult<String> {
     // Get account name for filename
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let account_name = {
         let db2 = db.clone();
         let aid = account_id.clone();
@@ -175,7 +175,7 @@ pub async fn list_account_balance_history(
     account_id: String,
     days: u32,
 ) -> AppResult<Vec<AccountBalancePoint>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         accounts::list_balance_history(conn, &account_id, days)
     })
@@ -189,7 +189,7 @@ pub async fn list_account_balance_sparklines(
     state: tauri::State<'_, AppState>,
     days: u32,
 ) -> AppResult<Vec<AccountSparkline>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         accounts::list_all_balance_sparklines(conn, days)
     })

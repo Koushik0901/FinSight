@@ -66,7 +66,7 @@ pub async fn prepare_csv_import(
     account_id: String,
     mapping: CsvImportMapping,
 ) -> AppResult<PreparedImportPreview> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let path = PathBuf::from(path);
     tokio::task::spawn_blocking(move || build_preview(&db, &path, &account_id, &mapping))
         .await
@@ -114,7 +114,7 @@ pub async fn import_csv(
     account_id: String,
     mapping: CsvImportMapping,
 ) -> AppResult<ImportResult> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let path = PathBuf::from(path);
     let app_emit = app.clone();
     // Coordinate with Delete-All. Snapshot the ledger epoch and hold a writer
@@ -175,7 +175,7 @@ pub async fn import_csv(
         // import itself. The count is surfaced in the result so the cascade's
         // work is visible instead of silent.
         {
-            let cat_db = (*state.db).clone();
+            let cat_db = (*state.api.db).clone();
             builtin_categorized = run(
                 &cat_db,
                 finsight_core::categorize::apply_builtin_categorization,
@@ -187,7 +187,7 @@ pub async fn import_csv(
         // that both sides may exist. Runs after the keyword pass, which supplies
         // the flagged anchors. Best-effort — must not fail the import.
         if !wiped() {
-            let pair_db = (*state.db).clone();
+            let pair_db = (*state.api.db).clone();
             transfers_paired = run(&pair_db, finsight_core::categorize::pair_transfers)
                 .await
                 .unwrap_or(0);
@@ -198,7 +198,7 @@ pub async fn import_csv(
         // (proven equivalent to the full recompute in anomaly.rs tests).
         // Best-effort — must not fail the import.
         if !wiped() {
-            let anom_db = (*state.db).clone();
+            let anom_db = (*state.api.db).clone();
             let acct = cascade_account_id.clone();
             let _ = run(&anom_db, move |conn| {
                 finsight_core::anomaly::recompute_anomalies_for_account(conn, &acct)
@@ -209,7 +209,7 @@ pub async fn import_csv(
         // the Today/Accounts numbers and the net-worth chart populate
         // immediately.
         if !wiped() {
-            let nw_db = (*state.db).clone();
+            let nw_db = (*state.api.db).clone();
             let _ = run(&nw_db, |conn| {
                 finsight_core::repos::net_worth::record_today(conn)?;
                 finsight_core::repos::net_worth::backfill_history_from_transactions(conn)
@@ -229,7 +229,7 @@ pub async fn import_csv(
     // a missing provider or full queue must not fail the import (the user can
     // still re-run the scan manually from Settings / Insights).
     let ai_categorization_started = {
-        let cfg_db = (*state.db).clone();
+        let cfg_db = (*state.api.db).clone();
         let auto = run(&cfg_db, |conn| {
             let v: Option<bool> = finsight_core::settings::get(
                 conn,
@@ -240,6 +240,7 @@ pub async fn import_csv(
         .await
         .unwrap_or(true);
         auto && state
+            .api
             .agent
             .tx
             .try_send(finsight_agent::agent::AgentJob::CategorizeAll)
@@ -249,7 +250,7 @@ pub async fn import_csv(
     // How many rows still have no category after the builtin pass — what an AI
     // run would work on, and what the UI surfaces so the LLM pass is an informed
     // choice, not a silent enqueue.
-    let count_db = (*state.db).clone();
+    let count_db = (*state.api.db).clone();
     let count_acct = cascade_account_id.clone();
     let uncategorized_after = run(&count_db, move |conn| {
         conn.query_row(
@@ -277,7 +278,7 @@ pub async fn import_csv(
     app.emit("import-complete", &result).ok();
 
     let notify_app = app.clone();
-    let notify_db = (*state.db).clone();
+    let notify_db = (*state.api.db).clone();
     tauri::async_runtime::spawn(async move {
         let _ = crate::notifications::check_and_fire(&notify_app, &notify_db).await;
     });
@@ -295,7 +296,7 @@ pub async fn get_saved_csv_mapping(
     state: tauri::State<'_, AppState>,
     account_id: String,
 ) -> AppResult<Option<CsvImportMapping>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.get().map_err(AppError::from)?;
         finsight_providers::csv::mapping::load(&conn, &account_id).map_err(AppError::from)
@@ -309,7 +310,7 @@ pub async fn get_saved_csv_mapping(
 pub async fn list_unfinished_imports(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<imports_repo::Import>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| imports_repo::list_unfinished(conn))
         .await
         .map_err(AppError::from)
@@ -321,7 +322,7 @@ pub async fn discard_unfinished_import(
     state: tauri::State<'_, AppState>,
     import_id: String,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         imports_repo::finish(conn, &import_id, 0, 0, Some("discarded"))
     })

@@ -9,7 +9,7 @@ pub(crate) const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enab
 #[tauri::command]
 #[specta::specta]
 pub async fn get_currency(state: tauri::State<'_, AppState>) -> AppResult<String> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let val: Option<String> = settings::get(conn, CURRENCY_KEY)?;
         Ok(val.unwrap_or_else(|| "USD".to_string()))
@@ -21,7 +21,7 @@ pub async fn get_currency(state: tauri::State<'_, AppState>) -> AppResult<String
 #[tauri::command]
 #[specta::specta]
 pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         settings::set(conn, CURRENCY_KEY, &currency)
     })
@@ -38,7 +38,7 @@ pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_all_data(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     // Begin a reset: advance the ledger epoch (so looping background writers
     // bail promptly) and take the exclusive barrier, which BLOCKS until every
     // in-flight writer lease (import cascade, categorizer commit) has drained.
@@ -72,7 +72,7 @@ pub async fn export_all_data_json(
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let json = run(&db, move |conn| {
         use chrono::Utc;
         use finsight_core::repos::{accounts, goals, rules, transactions};
@@ -131,7 +131,7 @@ const NOTIFICATIONS_ENABLED_KEY: &str = "notifications.enabled";
 #[tauri::command]
 #[specta::specta]
 pub async fn get_notifications_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let val: Option<bool> = settings::get(conn, NOTIFICATIONS_ENABLED_KEY)?;
         Ok(val.unwrap_or(true))
@@ -146,7 +146,7 @@ pub async fn set_notifications_enabled(
     state: tauri::State<'_, AppState>,
     enabled: bool,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         settings::set(conn, NOTIFICATIONS_ENABLED_KEY, &enabled)
     })
@@ -157,7 +157,7 @@ pub async fn set_notifications_enabled(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_auto_categorize_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let val: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
         Ok(val.unwrap_or(true))
@@ -172,7 +172,7 @@ pub async fn set_auto_categorize_enabled(
     state: tauri::State<'_, AppState>,
     enabled: bool,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &enabled)
     })
@@ -207,7 +207,7 @@ pub async fn export_all_data_csv(
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let csv = run(&db, move |conn| {
         use finsight_core::repos::transactions;
         let txns = transactions::list(

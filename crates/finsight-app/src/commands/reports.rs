@@ -120,7 +120,7 @@ pub async fn get_report_data(
     scope: String,
     member_id: Option<String>,
 ) -> AppResult<ReportData> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
 
     run(&db, move |conn| {
         let now = chrono::Utc::now();
@@ -347,7 +347,7 @@ pub struct MonthTotals {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_month_totals(state: tauri::State<'_, AppState>) -> AppResult<MonthTotals> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let this_month_start = Utc::now().format("%Y-%m-01").to_string();
 
     run(&db, move |conn| {
@@ -385,7 +385,7 @@ pub struct SavingsRatePoint {
 pub async fn get_savings_rate_history(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SavingsRatePoint>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(365))
             .format("%Y-%m-01")
@@ -459,7 +459,7 @@ pub async fn create_monthly_review(
     state: tauri::State<'_, AppState>,
     input: CreateMonthlyReviewInput,
 ) -> AppResult<MonthlyReview> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         if !(1..=12).contains(&input.month) {
             return Err(finsight_core::CoreError::InvalidState(
@@ -577,7 +577,7 @@ pub async fn create_monthly_review(
 pub async fn list_monthly_reviews(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<MonthlyReview>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, year, month, notes, snapshot_json, created_at

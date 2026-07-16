@@ -18,7 +18,7 @@ fn main() {
         // WAL never lingers at the size of the whole DB between sessions.
         if let tauri::RunEvent::ExitRequested { .. } = event {
             if let Some(state) = app_handle.try_state::<finsight_app::AppState>() {
-                let _ = state.db.checkpoint();
+                let _ = state.api.db.checkpoint();
             }
         }
     });

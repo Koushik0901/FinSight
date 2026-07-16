@@ -43,7 +43,7 @@ fn kind_str(kind: RecurringKind) -> &'static str {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_recurring(state: tauri::State<'_, AppState>) -> AppResult<Vec<RecurringItem>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
 
     run(&db, |conn| {
         // 13-month window so annual charges are detectable; the detector anchors

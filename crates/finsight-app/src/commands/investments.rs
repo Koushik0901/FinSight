@@ -14,7 +14,7 @@ pub async fn list_account_positions(
     state: tauri::State<'_, AppState>,
     account_id: String,
 ) -> AppResult<Vec<Position>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         investments::positions_for_account(conn, &account_id)
     })
@@ -28,7 +28,7 @@ pub async fn get_investment_summary(
     state: tauri::State<'_, AppState>,
     account_id: String,
 ) -> AppResult<InvestmentSummary> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         investments::summary_for_account(conn, &account_id)
     })

@@ -94,7 +94,7 @@ pub async fn get_data_health(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<DataHealth> {
     let dir = app_data_dir(&app)?;
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let (integrity_status, integrity_checked_at, last_backup_at, startup_warnings, startup_summary) =
         run(&db, |conn| {
             Ok((
@@ -131,13 +131,13 @@ pub async fn create_manual_backup(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<BackupInfo> {
     let dir = app_data_dir(&app)?;
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let backups_dir = dir.join("backups");
     let path = tokio::task::spawn_blocking(move || db.backup(&backups_dir, "manual", 10))
         .await
         .map_err(|e| AppError::new("data.join", e.to_string()))?
         .map_err(AppError::from)?;
-    let db2 = (*state.db).clone();
+    let db2 = (*state.api.db).clone();
     run(&db2, {
         let p = path.to_string_lossy().to_string();
         move |conn| {
@@ -191,7 +191,7 @@ pub async fn stage_restore_backup(
         ));
     }
     // Safety net: snapshot the current DB before staging a restore over it.
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let bdir = backups_dir.clone();
     let _ = tokio::task::spawn_blocking(move || db.backup(&bdir, "pre-restore", 10)).await;
 

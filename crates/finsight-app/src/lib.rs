@@ -6,34 +6,31 @@ pub mod notifications;
 pub mod sync_scheduler;
 
 use finsight_agent::{
-    agent::{AgentEvent, AgentHandle, EventCallback},
+    agent::{AgentEvent, EventCallback},
     providers::{
         anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
     },
     CompletionProvider,
 };
 use finsight_core::{db::run_migrations, settings, Db};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use sync_scheduler::SyncScheduler;
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
-    pub db: Arc<Db>,
-    pub agent: AgentHandle,
-    pub agent_provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
+    /// Shared behind an `Arc` so the future finsight-server can hand the same
+    /// `ApiState` to many concurrent request handlers; the single-window Tauri
+    /// app doesn't strictly need the sharing, but keeps one construction path.
+    pub api: Arc<finsight_api::ApiState>,
     pub sync_scheduler: SyncScheduler,
 }
 
 impl AppState {
-    pub fn new(db: Db, on_event: EventCallback) -> Self {
-        let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
-            Arc::new(RwLock::new(None));
-        let agent = AgentHandle::spawn(db.clone(), Arc::clone(&provider), on_event);
+    pub fn new(db: Db, data_dir: std::path::PathBuf, on_event: EventCallback) -> Self {
         let sync_scheduler = SyncScheduler::new(db.clone());
+        let api = finsight_api::ApiState::new(db, data_dir, on_event);
         Self {
-            db: Arc::new(db),
-            agent,
-            agent_provider: provider,
+            api: Arc::new(api),
             sync_scheduler,
         }
     }
@@ -553,16 +550,16 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 let _ = window.emit(event_name, payload);
             });
 
-            let state = AppState::new(db.clone(), on_event);
+            let state = AppState::new(db.clone(), app_data_dir.clone(), on_event);
             // Load saved provider configuration and wire it into the agent
             if let Some(provider) = load_provider_from_settings(&db) {
-                state.agent.set_provider(provider);
+                state.api.agent.set_provider(provider);
             }
             app.manage(state);
 
             let _scheduler = app.state::<AppState>().sync_scheduler.start();
 
-            let check_agent = app.state::<AppState>().agent.tx.clone();
+            let check_agent = app.state::<AppState>().api.agent.tx.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = check_agent
                     .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
@@ -573,7 +570,7 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             // the app was imported into and then closed before the LLM pass
             // finished, which otherwise leaves those rows uncategorized forever.
             // Best-effort: gated on the setting and on there being real work.
-            let cat_agent = app.state::<AppState>().agent.tx.clone();
+            let cat_agent = app.state::<AppState>().api.agent.tx.clone();
             let cat_db = db.clone();
             tauri::async_runtime::spawn(async move {
                 let should = finsight_core::repos::run(&cat_db, |conn| {

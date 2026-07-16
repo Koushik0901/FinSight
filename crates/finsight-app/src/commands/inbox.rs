@@ -38,7 +38,7 @@ fn fmt_money(cents: i64) -> String {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_action_items(state: tauri::State<'_, AppState>) -> AppResult<Vec<ActionItem>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
 
     run(&db, move |conn| {
         let now = Utc::now();

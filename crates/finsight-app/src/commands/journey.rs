@@ -40,7 +40,7 @@ fn clamp_pct(value: f64) -> u8 {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_journey_status(state: tauri::State<'_, AppState>) -> AppResult<JourneyStatus> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
 
     run(&db, move |conn| {
         let now = Utc::now();

@@ -50,7 +50,7 @@ fn projection_to_result(proj: forecast::Projection) -> ScenarioResult {
 }
 
 async fn build_snapshot(state: &AppState) -> AppResult<Snapshot> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let accts = accounts::list_summaries(conn)?;
         // Runway / "months of expenses" is about spendable cash, so exclude debt
@@ -103,7 +103,7 @@ async fn extract_params_via_llm(
     description: &str,
     snapshot: &Snapshot,
 ) -> AppResult<ScenarioParams> {
-    let provider = state.agent_provider.read().unwrap().clone();
+    let provider = state.api.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         return Err(AppError::new(
             "scenario.no_provider",
@@ -210,7 +210,7 @@ pub async fn save_scenario(
     description: String,
     result: ScenarioResult,
 ) -> AppResult<SavedScenario> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let result_json = serde_json::to_string(&result)
         .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
     let row = run(&db, move |conn| {
@@ -231,7 +231,7 @@ pub async fn save_scenario(
 pub async fn list_scenario_history(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<SavedScenario>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let rows = run(&db, scenarios_repo::list)
         .await
         .map_err(AppError::from)?;
@@ -252,7 +252,7 @@ pub async fn list_scenario_history(
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_scenario(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| scenarios_repo::delete(conn, &id))
         .await
         .map_err(AppError::from)

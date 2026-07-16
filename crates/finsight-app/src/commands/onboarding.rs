@@ -17,7 +17,7 @@ pub struct OnboardingState {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_onboarding_state(state: tauri::State<'_, AppState>) -> AppResult<OnboardingState> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let account_count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM accounts WHERE archived_at IS NULL",
@@ -43,7 +43,7 @@ pub async fn get_onboarding_state(state: tauri::State<'_, AppState>) -> AppResul
 #[tauri::command]
 #[specta::specta]
 pub async fn mark_onboarding_complete(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &true))
         .await
         .map_err(AppError::from)
@@ -52,7 +52,7 @@ pub async fn mark_onboarding_complete(state: tauri::State<'_, AppState>) -> AppR
 #[tauri::command]
 #[specta::specta]
 pub async fn reset_onboarding_completion(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &false))
         .await
         .map_err(AppError::from)
@@ -136,7 +136,7 @@ pub async fn save_llm_provider(
     state: tauri::State<'_, AppState>,
     config: LlmProviderConfig,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         settings::set(conn, "llm_provider", &config)
     })
@@ -158,7 +158,7 @@ pub async fn commit_starter_categories(
     state: tauri::State<'_, AppState>,
     categories: Vec<StarterCategory>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let tx = conn.transaction()?;
         for (gid, label) in [

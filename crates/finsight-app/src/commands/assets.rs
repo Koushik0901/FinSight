@@ -11,7 +11,7 @@ use specta::Type;
 #[tauri::command]
 #[specta::specta]
 pub async fn list_manual_assets(state: tauri::State<'_, AppState>) -> AppResult<Vec<ManualAsset>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, manual_assets::list).await.map_err(AppError::from)
 }
 
@@ -21,7 +21,7 @@ pub async fn create_manual_asset(
     state: tauri::State<'_, AppState>,
     input: NewManualAsset,
 ) -> AppResult<ManualAsset> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| manual_assets::create(conn, input))
         .await
         .map_err(AppError::from)
@@ -34,7 +34,7 @@ pub async fn update_manual_asset(
     id: String,
     patch: ManualAssetPatch,
 ) -> AppResult<ManualAsset> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| manual_assets::update(conn, &id, patch))
         .await
         .map_err(AppError::from)
@@ -43,7 +43,7 @@ pub async fn update_manual_asset(
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_manual_asset(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| manual_assets::delete(conn, &id))
         .await
         .map_err(AppError::from)
@@ -52,7 +52,7 @@ pub async fn delete_manual_asset(state: tauri::State<'_, AppState>, id: String) 
 #[tauri::command]
 #[specta::specta]
 pub async fn record_net_worth_snapshot(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, net_worth::record_today)
         .await
         .map_err(AppError::from)
@@ -64,7 +64,7 @@ pub async fn list_net_worth_history(
     state: tauri::State<'_, AppState>,
     days: u32,
 ) -> AppResult<Vec<NetWorthPoint>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| net_worth::list_history(conn, days))
         .await
         .map_err(AppError::from)
@@ -111,7 +111,7 @@ pub async fn compute_debt_payoff(
     state: tauri::State<'_, AppState>,
     extra_monthly_cents: i64,
 ) -> AppResult<Vec<DebtPayoffResult>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         // Debt is a Credit/Loan-type Account with a negative balance — not a
         // separate liabilities-table row. "Amount owed" is the positive
@@ -258,7 +258,7 @@ pub async fn compute_debt_payoff(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_uncelebrated_milestones(state: tauri::State<'_, AppState>) -> AppResult<Vec<i64>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let milestones = vec![
             1_000_000_i64,

@@ -25,7 +25,7 @@ pub async fn list_transactions(
     state: tauri::State<'_, AppState>,
     filter: TxnFilterInput,
 ) -> AppResult<Vec<Transaction>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let result = run(&db, move |conn| {
         transactions::list(
             conn,
@@ -51,7 +51,7 @@ pub async fn create_transaction(
     state: tauri::State<'_, AppState>,
     input: NewTransaction,
 ) -> AppResult<Transaction> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| transactions::insert(conn, input))
         .await
         .map_err(AppError::from)
@@ -77,7 +77,7 @@ pub async fn update_transaction(
     id: String,
     patch: TxnPatch,
 ) -> AppResult<UpdateTxnResult> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let (txn, rule) = transactions::update(conn, &id, patch)?;
         let proposed_rule = rule.map(|r| ProposedRuleDto {
@@ -97,7 +97,7 @@ pub async fn update_transaction(
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_transaction(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| transactions::delete(conn, &id))
         .await
         .map_err(AppError::from)
@@ -110,7 +110,7 @@ pub async fn create_rule(
     pattern: String,
     category_id: String,
 ) -> AppResult<finsight_core::models::Rule> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let rule = rules::insert(
             conn,
@@ -141,7 +141,7 @@ pub async fn set_transaction_owner(
     transaction_id: String,
     member_id: Option<String>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         conn.execute(
             "UPDATE transactions SET owner_member_id = ?1 WHERE id = ?2",
@@ -166,7 +166,7 @@ pub struct CategoryDto {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_categories(state: tauri::State<'_, AppState>) -> AppResult<Vec<CategoryDto>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.label, c.color, c.group_id, COALESCE(g.label, ''), c.spending_type \
@@ -224,7 +224,7 @@ pub struct CategoryWithSpending {
 pub async fn list_categories_with_spending(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<CategoryWithSpending>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let now = Utc::now();
     let this_month_start = now.format("%Y-%m-01").to_string();
     let last_month_start = {
@@ -328,7 +328,7 @@ pub async fn set_category_spending_type(
         ));
     }
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let updated_at = Utc::now().to_rfc3339();
     run(&db, move |conn| {
         conn.execute(
@@ -346,7 +346,7 @@ pub async fn set_category_spending_type(
 pub async fn get_spending_breakdown(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<SpendingBreakdown> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let this_month_start = Utc::now().format("%Y-%m-01").to_string();
 
     run(&db, move |conn| {
@@ -423,7 +423,7 @@ pub struct RuleWithCategory {
 pub async fn list_rules_with_categories(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<RuleWithCategory>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let mut stmt = conn.prepare(
             "SELECT r.id, r.pattern, r.category_id, \
@@ -462,7 +462,7 @@ pub async fn toggle_rule(
     id: String,
     enabled: bool,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| rules::set_enabled(conn, &id, enabled))
         .await
         .map_err(AppError::from)
@@ -471,7 +471,7 @@ pub async fn toggle_rule(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_transaction_count(state: tauri::State<'_, AppState>) -> AppResult<i64> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         Ok(conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))?)
     })
@@ -487,7 +487,7 @@ pub async fn set_transaction_flags(
     is_reimbursable: bool,
     is_split: bool,
 ) -> AppResult<finsight_core::models::Transaction> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         transactions::set_flags(conn, &id, is_reimbursable, is_split)
     })
@@ -519,7 +519,7 @@ pub async fn set_transaction_transfer(
     id: String,
     is_transfer: bool,
 ) -> AppResult<TransferVerdictResult> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         // Count siblings BEFORE ruling this row so the source row's own state
         // change can't affect the sibling query.
@@ -553,7 +553,7 @@ pub async fn apply_transfer_verdict_to_similar(
     pattern: String,
     is_transfer: bool,
 ) -> AppResult<u32> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         transactions::apply_transfer_override_to_matching(conn, &pattern, is_transfer)
     })
@@ -585,7 +585,7 @@ pub async fn get_transaction_splits(
     state: tauri::State<'_, AppState>,
     transaction_id: String,
 ) -> AppResult<Vec<TransactionSplitDto>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         finsight_core::repos::splits::list(conn, &transaction_id).map(|v| {
             v.into_iter()
@@ -609,7 +609,7 @@ pub async fn set_transaction_splits(
     transaction_id: String,
     splits: Vec<SplitInputDto>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let inputs: Vec<finsight_core::repos::splits::SplitInput> = splits
             .into_iter()
@@ -652,7 +652,7 @@ pub async fn export_transactions_csv(
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let csv = run(&db, move |conn| {
         let txns = transactions::list(
             conn,
@@ -719,7 +719,7 @@ pub async fn export_search_transactions_csv(
         .into_path()
         .map_err(|e| AppError::new("dialog", e.to_string()))?;
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let csv = run(&db, move |conn| {
         let rows = finsight_core::repos::transactions::search(
             conn,

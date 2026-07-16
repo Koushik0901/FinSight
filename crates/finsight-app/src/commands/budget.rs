@@ -27,7 +27,7 @@ pub struct BudgetEnvelope {
 pub async fn list_budget_envelopes(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<BudgetEnvelope>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let now = Utc::now();
     let month = now.format("%Y-%m").to_string();
     let this_month_start = now.format("%Y-%m-01").to_string();
@@ -83,7 +83,7 @@ pub async fn set_budget(
     category_id: String,
     amount_cents: i64,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let month = Utc::now().format("%Y-%m").to_string();
     run(&db, move |conn| {
         budgets::set(conn, &category_id, &month, amount_cents)
@@ -193,7 +193,7 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
 #[tauri::command]
 #[specta::specta]
 pub async fn list_goals(state: tauri::State<'_, AppState>) -> AppResult<Vec<GoalDto>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         goals::list(conn).map(|gs| gs.into_iter().map(goal_to_dto).collect())
     })
@@ -207,7 +207,7 @@ pub async fn create_goal(
     state: tauri::State<'_, AppState>,
     input: NewGoalInput,
 ) -> AppResult<GoalDto> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         goals::insert(
             conn,
@@ -244,7 +244,7 @@ pub async fn project_goal_growth(
     goal_id: String,
     years: i32,
 ) -> AppResult<ProjectedValue> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         use finsight_core::repos::accounts;
         let goal = goals::get_by_id(conn, &goal_id)?;
@@ -339,7 +339,7 @@ pub async fn update_goal_balance(
     id: String,
     current_cents: i64,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         ensure_manual_goal(conn, &id)?;
         let goal = goals::get_by_id(conn, &id)?;
@@ -363,7 +363,7 @@ pub async fn contribute_to_goal(
     note: Option<String>,
     source: Option<String>,
 ) -> AppResult<GoalContributionDto> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         ensure_manual_goal(conn, &id)?;
         goals::add_contribution(
@@ -385,7 +385,7 @@ pub async fn list_goal_contributions(
     state: tauri::State<'_, AppState>,
     goal_id: String,
 ) -> AppResult<Vec<GoalContributionDto>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         goals::list_contributions(conn, &goal_id)
             .map(|list| list.into_iter().map(contribution_to_dto).collect())
@@ -397,7 +397,7 @@ pub async fn list_goal_contributions(
 #[tauri::command]
 #[specta::specta]
 pub async fn archive_goal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| goals::archive(conn, &id))
         .await
         .map_err(AppError::from)
@@ -410,7 +410,7 @@ pub async fn update_goal_monthly(
     id: String,
     monthly_cents: i64,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         goals::set_monthly_cents(conn, &id, monthly_cents)
     })
@@ -425,7 +425,7 @@ pub async fn update_goal_purpose(
     id: String,
     purpose: Option<String>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         goals::set_purpose(conn, &id, purpose.as_deref())
     })
@@ -436,7 +436,7 @@ pub async fn update_goal_purpose(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppResult<PlanData> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let now = Utc::now();
         let m0 = now.format("%Y-%m").to_string();
@@ -572,7 +572,7 @@ pub async fn apply_next_month_plan(
     state: tauri::State<'_, AppState>,
     assignments: Vec<PlanAssignment>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let now = Utc::now();
         // next month
@@ -592,7 +592,7 @@ pub async fn apply_next_month_plan(
     .await
     .map_err(AppError::from)?;
 
-    let notify_db = (*state.db).clone();
+    let notify_db = (*state.api.db).clone();
     tauri::async_runtime::spawn(async move {
         let _ = crate::notifications::check_and_fire(&app, &notify_db).await;
     });
@@ -605,7 +605,7 @@ pub async fn list_budget_history(
     state: tauri::State<'_, AppState>,
     months: u32,
 ) -> AppResult<Vec<CategoryHistory>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let months = months.clamp(1, 24);
     run(&db, move |conn| {
         let now = Utc::now();

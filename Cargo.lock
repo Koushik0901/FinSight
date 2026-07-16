@@ -1440,12 +1440,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "finsight-api"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "finsight-agent",
+ "finsight-core",
+ "finsight-providers",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "specta",
+ "tempfile",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "finsight-app"
 version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
  "finsight-agent",
+ "finsight-api",
  "finsight-core",
  "finsight-providers",
  "keyring",

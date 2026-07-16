@@ -56,7 +56,7 @@ pub async fn set_completion_provider(
     state: tauri::State<'_, AppState>,
     config: CompletionProviderConfig,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let cfg_json =
         serde_json::to_value(&config).map_err(|e| AppError::new("agent", e.to_string()))?;
     run(&db, move |conn| {
@@ -68,9 +68,9 @@ pub async fn set_completion_provider(
     // Also update the live provider in AppState
     let provider = crate::build_provider_from_config(&serde_json::to_value(&config).unwrap());
     if let Some(p) = provider {
-        state.agent.set_provider(p);
+        state.api.agent.set_provider(p);
     } else {
-        *state.agent_provider.write().unwrap() = None;
+        *state.api.agent_provider.write().unwrap() = None;
     }
     Ok(())
 }
@@ -80,7 +80,7 @@ pub async fn set_completion_provider(
 pub async fn get_completion_provider(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<CompletionProviderConfig> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     crate::load_completion_provider_config(&db).map_err(AppError::from)
 }
 
@@ -99,9 +99,9 @@ pub async fn save_provider_api_key(
     // the runtime reads the key from the keychain at provider-construction time,
     // not per request, so without this the agent keeps using the old key until
     // the provider config is re-saved or the app restarts.
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     if let Some(provider) = crate::load_provider_from_settings(&db) {
-        state.agent.set_provider(provider);
+        state.api.agent.set_provider(provider);
     }
     Ok(())
 }
@@ -207,7 +207,7 @@ pub async fn test_completion_provider(
 #[tauri::command]
 #[specta::specta]
 pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppResult<u32> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM transactions \
@@ -228,7 +228,7 @@ pub async fn get_needs_review_count(state: tauri::State<'_, AppState>) -> AppRes
 #[tauri::command]
 #[specta::specta]
 pub async fn recompute_anomalies(state: tauri::State<'_, AppState>) -> AppResult<u32> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         finsight_core::anomaly::recompute_anomalies(conn)
     })
@@ -247,7 +247,7 @@ pub async fn set_anomaly_dismissed(
     txn_id: String,
     dismissed: bool,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         finsight_core::anomaly::set_dismissed(conn, &txn_id, dismissed)
     })
@@ -259,6 +259,7 @@ pub async fn set_anomaly_dismissed(
 #[specta::specta]
 pub async fn trigger_categorize(state: tauri::State<'_, AppState>) -> AppResult<()> {
     state
+        .api
         .agent
         .tx
         .try_send(AgentJob::CategorizeAll)
@@ -275,6 +276,7 @@ pub async fn trigger_recategorize_low_confidence(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<()> {
     state
+        .api
         .agent
         .tx
         .try_send(AgentJob::RecategorizeLowConfidence)
@@ -287,7 +289,7 @@ pub async fn trigger_recategorize_low_confidence(
 pub async fn list_rule_proposals(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<RuleProposal>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| rule_proposals::list(conn, Some("pending")))
         .await
         .map_err(AppError::from)
@@ -296,7 +298,7 @@ pub async fn list_rule_proposals(
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         if let Some(p) = rule_proposals::get(conn, &id)? {
             rules::insert(
@@ -318,7 +320,7 @@ pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String)
 #[tauri::command]
 #[specta::specta]
 pub async fn decline_rule_proposal(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         rule_proposals::set_status(conn, &id, "declined")
     })
@@ -332,7 +334,7 @@ pub async fn list_recent_agent_activity(
     state: tauri::State<'_, AppState>,
     limit: u32,
 ) -> AppResult<Vec<AgentActivity>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let limit = limit as i64;
     run(&db, move |conn| {
         let mut stmt = conn.prepare(
@@ -388,7 +390,7 @@ pub struct AgentStatus {
 #[tauri::command]
 #[specta::specta]
 pub async fn get_agent_status(state: tauri::State<'_, AppState>) -> AppResult<AgentStatus> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, |conn| {
         let this_month = chrono::Utc::now().format("%Y-%m").to_string();
         let this_month_start = chrono::Utc::now().format("%Y-%m-01").to_string();
@@ -1953,7 +1955,7 @@ pub async fn ask_agent(
     question: String,
     mode: Option<String>,
 ) -> AppResult<AgentAnswer> {
-    let provider = state.agent_provider.read().unwrap().clone();
+    let provider = state.api.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         return Err(AppError::new(
             "no_provider",
@@ -1967,7 +1969,7 @@ pub async fn ask_agent(
         _ => router_classify(&provider, &question).await,
     };
 
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
 
     if effective_mode == "deep" {
         let tools = build_toolset();

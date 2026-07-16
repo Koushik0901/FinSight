@@ -11,7 +11,7 @@ pub async fn list_recipes(
     state: State<'_, AppState>,
     include_paused: bool,
 ) -> AppResult<Vec<AgentRecipe>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| recipes::list(conn, include_paused))
         .await
         .map_err(AppError::from)
@@ -29,7 +29,7 @@ pub async fn create_recipe(
     day_of_week: Option<i64>,
     day_of_month: Option<i64>,
 ) -> AppResult<AgentRecipe> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         recipes::insert(
             conn,
@@ -58,7 +58,7 @@ pub async fn update_recipe(
     day_of_week: Option<i64>,
     day_of_month: Option<i64>,
 ) -> AppResult<AgentRecipe> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         recipes::update(
             conn,
@@ -78,7 +78,7 @@ pub async fn update_recipe(
 #[tauri::command]
 #[specta::specta]
 pub async fn pause_recipe(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "paused"))
         .await
         .map_err(AppError::from)
@@ -87,7 +87,7 @@ pub async fn pause_recipe(state: State<'_, AppState>, id: String) -> AppResult<(
 #[tauri::command]
 #[specta::specta]
 pub async fn resume_recipe(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "active"))
         .await
         .map_err(AppError::from)
@@ -96,7 +96,7 @@ pub async fn resume_recipe(state: State<'_, AppState>, id: String) -> AppResult<
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_recipe(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "deleted"))
         .await
         .map_err(AppError::from)
@@ -105,7 +105,7 @@ pub async fn delete_recipe(state: State<'_, AppState>, id: String) -> AppResult<
 #[tauri::command]
 #[specta::specta]
 pub async fn trigger_recipe(state: State<'_, AppState>, id: String) -> AppResult<String> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let recipe_id_for_load = id.clone();
     let recipe = run(&db, move |conn| recipes::get(conn, &recipe_id_for_load))
         .await
@@ -114,7 +114,7 @@ pub async fn trigger_recipe(state: State<'_, AppState>, id: String) -> AppResult
             AppError::new("recipe.not_found", format!("Recipe '{id}' was not found."))
         })?;
 
-    let provider = state.agent_provider.read().unwrap().clone();
+    let provider = state.api.agent_provider.read().unwrap().clone();
     let Some(provider) = provider else {
         return Err(AppError::new(
             "no_provider",
@@ -208,7 +208,7 @@ pub async fn list_recipe_runs(
     recipe_id: String,
     limit: Option<u32>,
 ) -> AppResult<Vec<AgentRecipeRun>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     let limit = limit.unwrap_or(10);
     run(&db, move |conn| recipes::list_runs(conn, &recipe_id, limit))
         .await

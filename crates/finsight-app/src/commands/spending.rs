@@ -22,7 +22,7 @@ pub async fn get_spending_path_back(
     period: Option<String>,
     target_monthly_cents: Option<i64>,
 ) -> AppResult<Option<PathBackView>> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         let period = match period {
             Some(p) if p.len() >= 7 => p,
@@ -46,7 +46,7 @@ pub async fn set_spending_annotation(
     merchant_key: String,
     verdict: String,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
+    let db = (*state.api.db).clone();
     run(&db, move |conn| {
         if verdict == "reset" {
             annotate::clear_annotation(conn, &merchant_key)?;
