@@ -16,12 +16,13 @@ rand.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
-# NOTE: tower-http (fs/trace/cors), tokio-stream (sync), chrono, and regex are
+# NOTE: tower-http (fs/trace/cors), tokio-stream (sync), and chrono are
 # intentionally NOT added yet — nothing in this crate uses them until later
 # tasks (tower-http: static file serving in Task 12; tokio-stream: SSE in
-# Task 11; regex: the bindings/dispatch parity test in Task 10). Unused deps
-# are lint noise; add each when its consuming code lands.
+# Task 11). Unused deps are lint noise; add each when its consuming code lands.
+# regex is a dev-dependency only, added in Task 10 for the parity test parser.
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
+regex = "1"

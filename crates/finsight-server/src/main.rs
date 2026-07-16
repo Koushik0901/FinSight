@@ -1,6 +1,4 @@
-mod dispatch; // Task 9
-mod router;
-mod state;
+use finsight_server::{router, state};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
