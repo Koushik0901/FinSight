@@ -62,6 +62,9 @@ pub async fn list_budget_envelopes(
 
         let mut out = Vec::new();
         for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
+            if !finsight_core::categorize::is_budgetable_category(&cat_id) {
+                continue;
+            }
             let carryover_cents = budgets::carryover_into_month(conn, &cat_id, &month)?;
             // Every active category is shown, budgeted or not — a category with
             // no budget and no spend yet is exactly the one a user needs to see
