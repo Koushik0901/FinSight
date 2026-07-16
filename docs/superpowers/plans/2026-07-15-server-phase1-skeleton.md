@@ -19,6 +19,7 @@
 - **Baseline (controller-verified green):** Rust `cargo test --workspace` and frontend `424 tests / 82 files` + `tsc --noEmit` clean. "Count unchanged" means against these.
 - **Green bar:** the whole plan must keep `cargo test --workspace` and `cd ui && npx vitest run` green after every task. Baseline: 509 Rust / 424 frontend / 0 TS errors.
 - **Bindings invariant:** after any task that touches command wrappers, `cargo run -p finsight-tauri --bin export_bindings` must produce **zero diff** in `ui/src/api/bindings.ts` (`git diff --exit-code ui/src/api/bindings.ts`). Phase 1 changes no command names, signatures, or doc comments.
+- **Standalone-build invariant (guards feature-unification false-greens):** any task that changes `finsight-api` must be verified with an ISOLATED `cargo test -p finsight-api` (not only `cargo test --workspace` or a combined `-p finsight-api -p finsight-app`). Feature unification with finsight-app can hide a missing feature (e.g. specta `serde_json`) that breaks the eventual tauri-free server build. The isolated build/test is the real gate.
 - **The signature transformation** (used in Tasks 3–7). Every moved command changes exactly like this:
 
   Before (in `crates/finsight-app/src/commands/accounts.rs`):
@@ -96,7 +97,10 @@ finsight-agent = { path = "../finsight-agent" }
 finsight-providers = { path = "../finsight-providers" }
 serde.workspace = true
 serde_json.workspace = true
-specta.workspace = true
+# specta MUST enable serde_json here: AppError.details is Option<serde_json::Value>
+# under #[derive(specta::Type)]. Without it, finsight-api only compiles via feature
+# unification with finsight-app and fails to build standalone (breaks the server).
+specta = { workspace = true, features = ["derive", "serde_json"] }
 tokio.workspace = true
 chrono.workspace = true
 uuid.workspace = true
