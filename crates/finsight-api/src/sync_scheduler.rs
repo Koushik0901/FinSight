@@ -82,13 +82,13 @@ impl SyncScheduler {
     }
 
     /// Start the background sync loop. Must be called once. Returns the JoinHandle.
-    pub fn start(&self) -> tauri::async_runtime::JoinHandle<()> {
+    pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let enabled = self.enabled.clone();
         let shutdown = self.shutdown.clone();
         let interval = self.interval_minutes.clone();
         let db = self.db.clone();
         let sync_in_progress = self.sync_in_progress.clone();
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 if shutdown.load(Ordering::Relaxed) {
                     return;

@@ -1457,6 +1457,7 @@ dependencies = [
  "specta",
  "tempfile",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]

@@ -883,7 +883,7 @@ pub async fn delete_simplefin_connection(
 pub async fn sync_all_simplefin_accounts(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<crate::sync_scheduler::AccountSyncResult>> {
-    let results = state.sync_scheduler.sync_all_now().await;
+    let results = state.api.sync_scheduler.sync_all_now().await;
     Ok(results)
 }
 
@@ -892,8 +892,8 @@ pub async fn sync_all_simplefin_accounts(
 pub async fn get_simplefin_sync_settings(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<crate::sync_scheduler::SimpleFinSyncSettings> {
-    let interval = state.sync_scheduler.interval();
-    let enabled = state.sync_scheduler.enabled();
+    let interval = state.api.sync_scheduler.interval();
+    let enabled = state.api.sync_scheduler.enabled();
     Ok(crate::sync_scheduler::SimpleFinSyncSettings {
         background_sync_enabled: enabled,
         background_sync_interval_minutes: interval,
@@ -907,9 +907,11 @@ pub async fn set_simplefin_sync_settings(
     settings: crate::sync_scheduler::SimpleFinSyncSettings,
 ) -> AppResult<()> {
     state
+        .api
         .sync_scheduler
         .set_interval(settings.background_sync_interval_minutes);
     state
+        .api
         .sync_scheduler
         .set_enabled(settings.background_sync_enabled);
     let db = state.api.db.clone();
