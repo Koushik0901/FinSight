@@ -65,8 +65,7 @@ export default function StepCategories({ onNext }: Props) {
   return (
     <div className="step-categories onb-split">
       <div className="onb-left">
-        <div className="num-step">003 · Categories</div>
-        <h1>Confirm your starter categories.</h1>
+        <div className="num-step">004 · Categories</div>        <h1>Confirm your starter categories.</h1>
         <p className="lead">Edit or delete anything that does not fit. We only store what you keep.</p>
         <ul className="category-list">
           {rows.map((row, i) => (

@@ -34,9 +34,7 @@ vi.mock("../api/hooks/simplefin", () => ({
 
 vi.mock("../api/hooks/household", () => ({
   useHouseholdMembers: vi.fn(() => ({ data: [
-    { id: "m1", name: "Koushik", color: "#38BDF8", createdAt: "2026-01-01T00:00:00Z" },
-    { id: "m2", name: "Swathi", color: "#F472B6", createdAt: "2026-01-02T00:00:00Z" },
-  ] })),
+    { id: "m1", name: "Alex Doe", color: "#38BDF8", createdAt: "2026-01-01T00:00:00Z" },    { id: "m2", name: "Jamie Doe", color: "#F472B6", createdAt: "2026-01-02T00:00:00Z" },  ] })),
   useAccountOwners: vi.fn(() => ({ data: [
     // Ally Savings is JOINT (both members); Chase Checking is unassigned.
     { accountId: "acc-2", memberId: "m1" },
@@ -50,9 +48,7 @@ vi.mock("../api/hooks/household", () => ({
   useSetAssetOwners: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useSetSelfMember: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useHouseholdNetWorthBreakdown: vi.fn(() => ({ data: [
-    { memberId: "m1", name: "Koushik", color: "#38BDF8", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },
-    { memberId: "m2", name: "Swathi", color: "#F472B6", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },
-    { memberId: null, name: "Unassigned / shared", color: null, netWorthCents: 10000000, liquidCents: 10000000, investedCents: 0, debtCents: 0 },
+    { memberId: "m1", name: "Alex Doe", color: "#38BDF8", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },    { memberId: "m2", name: "Jamie Doe", color: "#F472B6", netWorthCents: 12500000, liquidCents: 12500000, investedCents: 0, debtCents: 0 },    { memberId: null, name: "Unassigned / shared", color: null, netWorthCents: 10000000, liquidCents: 10000000, investedCents: 0, debtCents: 0 },
   ] })),
 }));
 
@@ -83,8 +79,7 @@ describe("Accounts — navigation", () => {
 
     // Ally Savings (2 owners) gets the Joint badge and both names.
     expect(screen.getByText("Joint")).toBeInTheDocument();
-    expect(screen.getByText(/Koushik & Swathi/)).toBeInTheDocument();
-
+    expect(screen.getByText(/Alex Doe & Jamie Doe/)).toBeInTheDocument();
     // Per-owner net worth comes from the share-aware metrics command (not a
     // client equal-split): each owner $125,000, and the $100,000 unassigned
     // account plus any other-app share sit in the reconciling residual.
@@ -101,9 +96,7 @@ describe("Accounts — navigation", () => {
 
     // The edit drawer opens with the household owner picker.
     expect(screen.getByRole("heading", { name: "Edit Account" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Owner Koushik" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Owner Swathi" })).toBeInTheDocument();
-    expect(screen.getByLabelText("New household member name")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Owner Alex Doe" })).toBeInTheDocument();    expect(screen.getByRole("checkbox", { name: "Owner Jamie Doe" })).toBeInTheDocument();    expect(screen.getByLabelText("New household member name")).toBeInTheDocument();
   });
 
   it("opens the unified Add chooser and routes each choice to its drawer", async () => {
