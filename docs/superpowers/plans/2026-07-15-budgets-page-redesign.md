@@ -493,13 +493,18 @@ Then add the section:
       )}
 ```
 
-Also exclude `unbudgeted` categories from the main "All envelopes" grid so they aren't shown twice — change the `grouped` computation (around line 190):
+Also exclude `unbudgeted` categories from both the "Needs a glance" row and the main "All envelopes" grid so they aren't shown twice. `envelopeStatus` gives a zero-budget category severity 2 ("No budget set"), which otherwise pulls it into `attention` *as well as* the new section below — reorder so `unbudgeted` is computed first and both `attention` and `grouped` exclude it:
 
 ```tsx
+  const unbudgeted = sorted.filter((env) => env.budgetCents <= 0 && env.spentCents <= 0 && env.carryoverCents === 0);
+  // Unbudgeted categories aren't "in trouble" (severity>=2 from "No budget
+  // set" is really "unconfigured") — they get their own section below instead
+  // of also cluttering "Needs a glance".
+  const attention = sorted.filter((env) => envelopeStatus(env).severity >= 2 && !unbudgeted.includes(env));
   const grouped = Object.entries(sorted.filter((env) => !unbudgeted.includes(env)).reduce<Record<string, BudgetEnvelope[]>>((acc, env) => {
 ```
 
-(closing the `reduce` call as before). Note `unbudgeted` must be computed *before* `grouped` now — move the `unbudgeted` line above the `grouped` line.
+(closing the `reduce` call as before). This replaces the *existing* `attention` line (previously `sorted.filter((env) => envelopeStatus(env).severity >= 2)` with no exclusion) as well as adding `unbudgeted` and updating `grouped`.
 
 - [ ] **Step 3: Extend the existing test file**
 
