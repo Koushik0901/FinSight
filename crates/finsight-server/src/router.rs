@@ -1,5 +1,8 @@
 use crate::state::ServerState;
-use axum::{routing::get, Json, Router};
+use axum::{
+    routing::{get, post},
+    Json, Router,
+};
 use std::sync::Arc;
 
 pub fn build_router(state: Arc<ServerState>) -> Router {
@@ -8,6 +11,7 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
             "/api/health",
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
         )
+        .route("/api/rpc/{cmd}", post(crate::dispatch::rpc))
         .with_state(state)
 }
 
