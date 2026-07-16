@@ -43,20 +43,29 @@ struct Row {
     key: String,
     display: String,
     ym: String,
-    amount_abs: i64,
+    /// Net expense contribution in cents (always >= 0 for an ordinary outflow;
+    /// a settle-up inflow nets as `-amount_cents`, so a reimbursement-heavy
+    /// merchant/month can legitimately go negative — mirrors metrics.rs).
+    net_cents: i64,
     category: Option<String>,
     currency: String,
 }
 
 /// Load expense rows in `[start, end)` (YYYY-MM-DD), normalized + clustered.
+/// A `settle_up = 1` row is netted (contributes `-amount_cents`) the same way
+/// metrics.rs cashflow does, instead of being silently dropped by the
+/// `amount_cents < 0` filter.
 fn load_rows(conn: &Connection, start: &str, end: &str) -> CoreResult<Vec<Row>> {
     let pred = crate::metrics::non_investment_txn_predicate("t");
     let sql = format!(
-        "SELECT t.merchant_raw, substr(t.posted_at,1,7) AS ym, t.amount_cents, \
+        "SELECT t.merchant_raw, substr(t.posted_at,1,7) AS ym, \
+                CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                     WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                     ELSE 0 END AS net_cents, \
                 (SELECT label FROM categories c WHERE c.id = t.category_id), \
                 COALESCE(a.currency, 'USD') \
          FROM transactions t JOIN accounts a ON a.id = t.account_id \
-         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred} \
            AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -67,7 +76,7 @@ fn load_rows(conn: &Connection, start: &str, end: &str) -> CoreResult<Vec<Row>> 
                 key: canonical_merchant_key(&raw),
                 display: crate::merchant::split_display(&raw),
                 ym: r.get(1)?,
-                amount_abs: r.get::<_, i64>(2)?.unsigned_abs() as i64,
+                net_cents: r.get(2)?,
                 category: r.get(3)?,
                 currency: r.get(4)?,
             })
@@ -88,7 +97,7 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
     // Dominant currency.
     let mut cur_tot: HashMap<String, i64> = HashMap::new();
     for r in &rows {
-        *cur_tot.entry(r.currency.clone()).or_default() += r.amount_abs;
+        *cur_tot.entry(r.currency.clone()).or_default() += r.net_cents;
     }
     let mixed_currency = cur_tot.len() > 1;
     let currency = cur_tot
@@ -104,11 +113,11 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
     let mut grand: HashMap<String, i64> = HashMap::new(); // ym -> sum
     for r in rows.into_iter().filter(|r| r.currency == currency) {
         let e = m_month.entry(r.key.clone()).or_default().entry(r.ym.clone()).or_insert((0, 0));
-        e.0 += r.amount_abs;
+        e.0 += r.net_cents;
         e.1 += 1;
         m_display.entry(r.key.clone()).or_insert(r.display);
         m_cat.entry(r.key.clone()).or_insert(r.category);
-        *grand.entry(r.ym).or_default() += r.amount_abs;
+        *grand.entry(r.ym).or_default() += r.net_cents;
     }
 
     // Effective history DEPTH: from the first month that actually has spend to
@@ -186,8 +195,10 @@ pub fn month_total(conn: &Connection, ym: &str) -> CoreResult<i64> {
     let end = format!("{ny:04}-{nm:02}-01");
     let pred = crate::metrics::non_investment_txn_predicate("t");
     let sql = format!(
-        "SELECT COALESCE(SUM(-t.amount_cents), 0) FROM transactions t \
-         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
+        "SELECT COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                   WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                   ELSE 0 END), 0) FROM transactions t \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred} \
            AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2"
     );
     let total: i64 = conn.query_row(&sql, rusqlite::params![start, end], |r| r.get(0))?;
@@ -215,9 +226,12 @@ pub fn month_category_breakdown(
     let end = format!("{ny:04}-{nm:02}-01");
     let pred = crate::metrics::non_investment_txn_predicate("t");
     let sql = format!(
-        "SELECT COALESCE(c.label, 'Uncategorized') AS label, SUM(-t.amount_cents) AS spent \
+        "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
+                SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                         WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                         ELSE 0 END) AS spent \
          FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
-         WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND {pred} \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred} \
            AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2 \
          GROUP BY label ORDER BY spent DESC LIMIT ?3"
     );
@@ -270,6 +284,47 @@ mod tests {
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
              VALUES(hex(randomblob(16)),'a',?1,?2,?3,0,'cleared',datetime('now'))",
             rusqlite::params![format!("{ym}-15T12:00:00Z"), cents, merchant],
+        ).unwrap();
+    }
+
+    /// A settle-up (person-to-person reimbursement) row on a given merchant/month.
+    fn ins_settle_up(conn: &Connection, ym: &str, cents: i64, merchant: &str) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at,settle_up) \
+             VALUES(hex(randomblob(16)),'a',?1,?2,?3,0,'cleared',datetime('now'),1)",
+            rusqlite::params![format!("{ym}-15T12:00:00Z"), cents, merchant],
+        ).unwrap();
+    }
+
+    /// Seed a minimal category group + category so `category_id` FK inserts succeed.
+    fn seed_category(conn: &Connection, id: &str, label: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('grp', 'Group', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, 'grp', ?2, '#94A3B8', 0)",
+            rusqlite::params![id, label],
+        )
+        .unwrap();
+    }
+
+    /// An ordinary (non settle-up) expense row categorized to `category_id`.
+    fn ins_categorized(conn: &Connection, ym: &str, cents: i64, merchant: &str, category_id: &str) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,is_transfer,status,created_at) \
+             VALUES(hex(randomblob(16)),'a',?1,?2,?3,?4,0,'cleared',datetime('now'))",
+            rusqlite::params![format!("{ym}-15T12:00:00Z"), cents, merchant, category_id],
+        ).unwrap();
+    }
+
+    /// A settle-up row categorized to `category_id`.
+    fn ins_settle_up_categorized(conn: &Connection, ym: &str, cents: i64, merchant: &str, category_id: &str) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,is_transfer,status,created_at,settle_up) \
+             VALUES(hex(randomblob(16)),'a',?1,?2,?3,?4,0,'cleared',datetime('now'),1)",
+            rusqlite::params![format!("{ym}-15T12:00:00Z"), cents, merchant, category_id],
         ).unwrap();
     }
 
@@ -330,5 +385,47 @@ mod tests {
         ins(&conn, "2025-03", -1000, "A  X, BC");
         ins(&conn, "2026-02", -1000, "B  Y, BC");
         assert_eq!(latest_activity_month(&conn).unwrap().as_deref(), Some("2026-02"));
+    }
+
+    #[test]
+    fn month_category_breakdown_nets_settle_up_inflow() {
+        // A $500 expense and a $200 settle-up reimbursement in the same
+        // category must net to $300 spend, not drop the reimbursement or
+        // double count it as a separate outflow.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_category(&conn, "food", "Food");
+        ins_categorized(&conn, "2026-05", -500_00, "GROCERY STORE", "food");
+        ins_settle_up_categorized(&conn, "2026-05", 200_00, "GROCERY REFUND", "food");
+
+        let rows = month_category_breakdown(&conn, "2026-05", 10).unwrap();
+        let food = rows.iter().find(|r| r.label == "Food").expect("Food category present");
+        assert_eq!(food.amount_cents, 300_00, "500 expense - 200 settle-up = 300 net spend");
+    }
+
+    #[test]
+    fn month_total_nets_settle_up_inflow() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        ins(&conn, "2026-05", -500_00, "GROCERY STORE");
+        ins_settle_up(&conn, "2026-05", 200_00, "GROCERY REFUND");
+
+        assert_eq!(month_total(&conn, "2026-05").unwrap(), 300_00);
+    }
+
+    #[test]
+    fn compute_nets_settle_up_inflow_per_merchant_and_grand_total() {
+        // Same merchant, same month: a $500 expense plus a $200 settle-up
+        // inflow must net to $300 in both the per-merchant baseline and the
+        // grand monthly total feeding the median/MAD band.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        ins(&conn, "2026-05", -500_00, "SAVE ON FOODS  EDMONTON, AB");
+        ins_settle_up(&conn, "2026-05", 200_00, "SAVE ON FOODS  EDMONTON, AB");
+
+        let b = compute(&conn, "2026-05", "2026-06").unwrap();
+        let groceries = b.per_merchant.get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB")).unwrap();
+        assert_eq!(groceries.monthly_cents, 300_00, "500 expense - 200 settle-up = 300 net spend");
+        assert_eq!(b.grand_monthly_median_cents, 300_00);
     }
 }

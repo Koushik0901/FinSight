@@ -92,7 +92,7 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
         let mut stmt = conn.prepare(&format!(
             "SELECT id, merchant_raw, amount_cents, is_anomaly, account_id, \
                     COALESCE(anomaly_dismissed, 0) FROM transactions t \
-             WHERE amount_cents < 0 AND is_transfer = 0 AND {}",
+             WHERE amount_cents < 0 AND is_transfer = 0 AND settle_up = 0 AND {}",
             crate::metrics::non_investment_txn_predicate("t")
         ))?;
         let mapped = stmt.query_map([], |r| {
@@ -346,6 +346,32 @@ mod tests {
         insert(&conn, "Internet Withdrawal to Tangerine", -500000, 1); // huge transfer
         let n = recompute_anomalies(&mut conn).unwrap();
         assert_eq!(n, 0, "transfers are excluded from anomaly detection");
+    }
+
+    #[test]
+    fn recompute_skips_settle_up_rows() {
+        // A settle_up = 1 row is a user-resolved reimbursement leg, just like
+        // a transfer — it must never be (re-)flagged as an anomaly, even if
+        // it is a large outlier against its merchant's own history.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        for _ in 0..8 {
+            insert(&conn, "GROCERY RUN", -1000, 0);
+        }
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,settle_up,status,created_at) \
+             VALUES(hex(randomblob(16)),'a','2026-01-01T00:00:00Z',-500000,'GROCERY RUN',0,1,'cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let mut conn = conn;
+        let n = recompute_anomalies(&mut conn).unwrap();
+        assert_eq!(n, 0, "settle-up rows are never anomalies");
+        let flagged: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(flagged, 0);
     }
 
     #[test]

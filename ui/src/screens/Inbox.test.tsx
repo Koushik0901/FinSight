@@ -6,6 +6,8 @@ import type { ActionItem } from "../api/client";
 
 vi.mock("../api/hooks/inbox", () => ({
   useActionItems: vi.fn(() => ({ data: undefined, isLoading: true, error: null, dataUpdatedAt: 0 })),
+  useUnresolvedCounterparties: vi.fn(() => ({ data: [], isLoading: false })),
+  useApplyCounterpartyVerdict: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("../api/hooks/simplefin", () => ({

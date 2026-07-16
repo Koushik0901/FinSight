@@ -68,6 +68,7 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         is_anomaly: false,
         created_at: now,
         is_reimbursable: false,
+        settle_up: false,
         is_split: false,
         is_transfer,
         transfer_peer_id: None,
@@ -135,7 +136,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, pa.name, t.owner_member_id, \
                 t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
@@ -242,18 +243,19 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                     })?
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
-                is_split: r.get::<_, i64>(19)? != 0,
-                is_transfer: r.get::<_, i64>(26)? != 0,
-                transfer_peer_id: r.get(27)?,
-                transfer_peer_account_name: r.get(28)?,
-                owner_member_id: r.get(29)?,
-                imported_id: r.get(20)?,
-                source: r.get(21)?,
-                raw_synced_data: r.get(22)?,
-                pending: r.get::<_, i64>(23)? != 0,
-                external_tx_id: r.get(24)?,
-                external_account_id: r.get(25)?,
-                activity: read_activity(r, 30)?,
+                settle_up: r.get::<_, i64>(19)? != 0,
+                is_split: r.get::<_, i64>(20)? != 0,
+                is_transfer: r.get::<_, i64>(27)? != 0,
+                transfer_peer_id: r.get(28)?,
+                transfer_peer_account_name: r.get(29)?,
+                owner_member_id: r.get(30)?,
+                imported_id: r.get(21)?,
+                source: r.get(22)?,
+                raw_synced_data: r.get(23)?,
+                pending: r.get::<_, i64>(24)? != 0,
+                external_tx_id: r.get(25)?,
+                external_account_id: r.get(26)?,
+                activity: read_activity(r, 31)?,
             })
         },
     )?;
@@ -577,23 +579,81 @@ pub fn transfer_verdict_siblings(
     Ok(Some((pattern, count)))
 }
 
-/// Apply one transfer verdict to every undecided transaction matching a
-/// counterparty pattern (from [`transfer_verdict_siblings`]). Each row goes
-/// through [`set_transfer_override`] so the full semantics apply (category and
-/// anomaly cleared on mark, peers unlinked on unmark, verdict sticky).
+/// The three treatments a user can rule a transfer-review counterparty as.
+///
+/// - `Transfer`: money moving between the user's own accounts — never
+///   categorized, never an anomaly (delegates to [`set_transfer_override`]).
+/// - `SettleUp`: real spending that gets netted against a person (e.g. rent
+///   split, dinner IOU) — decided, but not a transfer; leaves the undecided
+///   queue via `transfer_override = 0`.
+/// - `Real`: decided, ordinary spending — not a transfer, not settled up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Transfer,
+    SettleUp,
+    Real,
+}
+
+/// Record the user's 3-way verdict on a transfer-review counterparty.
+/// `Transfer` reuses [`set_transfer_override`]'s existing semantics.
+/// `SettleUp` and `Real` both clear `transfer_override` to `0` (decided,
+/// not-a-transfer) and any transfer peer link, so either way the row leaves
+/// the undecided review queue; `SettleUp` additionally sets `settle_up = 1`
+/// so the row nets against the counterparty instead of counting as an
+/// ordinary transaction.
+pub fn set_counterparty_verdict(
+    conn: &mut Connection,
+    id: &str,
+    verdict: Verdict,
+) -> CoreResult<Transaction> {
+    match verdict {
+        Verdict::Transfer => set_transfer_override(conn, id, true),
+        Verdict::SettleUp => {
+            conn.execute(
+                "UPDATE transactions SET settle_up=1, transfer_override=0, is_transfer=0, \
+                 transfer_peer_id=NULL, is_anomaly=0 WHERE id=?1",
+                params![id],
+            )?;
+            get_by_id(conn, id)
+        }
+        Verdict::Real => {
+            conn.execute(
+                "UPDATE transactions SET settle_up=0, transfer_override=0, is_transfer=0, \
+                 transfer_peer_id=NULL WHERE id=?1",
+                params![id],
+            )?;
+            get_by_id(conn, id)
+        }
+    }
+}
+
+/// Apply one counterparty verdict to every undecided transaction matching a
+/// pattern (from [`transfer_verdict_siblings`]). Each row goes through
+/// [`set_counterparty_verdict`] so the full per-verdict semantics apply.
 /// Returns how many rows were ruled.
-pub fn apply_transfer_override_to_matching(
+///
+/// When the verdict is `Transfer` or `SettleUp` AND the pattern is a
+/// generalized `%name%` counterparty (never a bare unique reference), the
+/// verdict is also persisted as a `rules` row (see [`upsert_treatment_rule`])
+/// so future imports of that same counterparty auto-resolve via
+/// `repos::rules::apply_treatment_rules` instead of re-entering the review
+/// queue. `Real` is the default treatment — nothing to persist.
+pub fn apply_verdict_to_matching(
     conn: &mut Connection,
     pattern: &str,
-    is_transfer: bool,
+    verdict: Verdict,
 ) -> CoreResult<u32> {
     let ids: Vec<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT id FROM transactions \
-             WHERE lower(merchant_raw) LIKE ?1 \
-               AND transfer_override IS NULL AND transfer_peer_id IS NULL \
-               AND category_id IS NULL",
-        )?;
+        // Scoped to the transfer-review vocabulary — the same predicate that
+        // decides what the review card shows — so a bulk verdict never rules
+        // rows the user never saw (e.g. "%joe%" sweeping uncategorized
+        // Trader Joe's groceries alongside a Joe e-transfer).
+        let sql = format!(
+            "SELECT id FROM transactions t \
+             WHERE lower(t.merchant_raw) LIKE ?1 AND {}",
+            crate::categorize::transfer_review_predicate("t")
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![pattern], |r| r.get::<_, String>(0))?;
         let mut out = Vec::new();
         for r in rows {
@@ -603,10 +663,163 @@ pub fn apply_transfer_override_to_matching(
     };
     let mut count = 0u32;
     for id in &ids {
-        set_transfer_override(conn, id, is_transfer)?;
+        set_counterparty_verdict(conn, id, verdict)?;
         count += 1;
     }
+
+    let treatment = match verdict {
+        Verdict::Transfer => Some("transfer"),
+        Verdict::SettleUp => Some("settle_up"),
+        Verdict::Real => None,
+    };
+    if let Some(treatment) = treatment {
+        if pattern.starts_with('%') {
+            upsert_treatment_rule(conn, pattern, treatment)?;
+        }
+    }
+
     Ok(count)
+}
+
+/// Ensure an enabled `rules` row exists for `pattern`: insert one with the
+/// given `treatment` if NO enabled rule exists for that pattern yet. If one
+/// already exists — regardless of its treatment — it is left untouched: a
+/// bulk counterparty verdict must never flip a pre-existing rule (e.g. a
+/// user's `categorize` rule for a pattern that happens to overlap a
+/// counterparty name) out from under the user. `category_id` is `""` for a
+/// newly-inserted rule — never read for `transfer`/`settle_up` treatments
+/// (only `'categorize'` rules read it; see the V049/V050 migration comments
+/// for why the column has no FK for these rows).
+fn upsert_treatment_rule(conn: &mut Connection, pattern: &str, treatment: &str) -> CoreResult<()> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
+            params![pattern],
+            |_| Ok(()),
+        )
+        .map(|_| true)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            other => Err(other),
+        })?;
+
+    if !exists {
+        crate::repos::rules::insert(
+            conn,
+            crate::models::NewRule {
+                pattern: pattern.to_string(),
+                category_id: String::new(),
+                source: "user".to_string(),
+                treatment: treatment.to_string(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// Apply one transfer verdict to every undecided transaction matching a
+/// counterparty pattern. Thin wrapper over [`apply_verdict_to_matching`] kept
+/// for the existing binary transfer-review caller.
+pub fn apply_transfer_override_to_matching(
+    conn: &mut Connection,
+    pattern: &str,
+    is_transfer: bool,
+) -> CoreResult<u32> {
+    let verdict = if is_transfer {
+        Verdict::Transfer
+    } else {
+        Verdict::Real
+    };
+    apply_verdict_to_matching(conn, pattern, verdict)
+}
+
+/// One counterparty's undecided transfer-like rows, netted for the grouped
+/// review surface.
+#[derive(Debug, Clone)]
+pub struct UnresolvedCounterparty {
+    /// The `%name%` LIKE pattern (see [`crate::categorize::suggested_rule_pattern`]);
+    /// `None` for the bare-reference bucket, which can't be generalized by name.
+    pub pattern: Option<String>,
+    /// Display label: the pattern with its `%` delimiters trimmed, or
+    /// "Unnamed internal transfers" for the bare-reference bucket.
+    pub label: String,
+    pub txn_count: i64,
+    /// Sum of positive amounts (absolute).
+    pub inflow_cents: i64,
+    /// Sum of |negative amounts|.
+    pub outflow_cents: i64,
+}
+
+/// The undecided transfer-review queue (same predicate as the
+/// `transfer_review` filter preset, plus `settle_up = 0`), grouped by
+/// counterparty for a bulk-decision surface. Grouping is done in Rust over
+/// [`crate::categorize::suggested_rule_pattern`] so the `%name%` logic stays
+/// single-sourced — never reimplemented in SQL. Rows with no generalizable
+/// counterparty (a bare "INTERNET TRANSFER <ref>") fold into one
+/// `pattern: None` "Unnamed internal transfers" bucket. Ordered by net
+/// exposure (`|inflow - outflow|`) descending.
+pub fn list_unresolved_counterparties(conn: &Connection) -> CoreResult<Vec<UnresolvedCounterparty>> {
+    let sql = format!(
+        "SELECT t.merchant_raw, t.amount_cents FROM transactions t \
+         WHERE {} AND t.settle_up = 0",
+        crate::categorize::transfer_review_predicate("t")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+
+    struct Group {
+        label: String,
+        txn_count: i64,
+        inflow_cents: i64,
+        outflow_cents: i64,
+    }
+    let mut groups: std::collections::HashMap<Option<String>, Group> = std::collections::HashMap::new();
+
+    for row in rows {
+        let (merchant_raw, amount_cents) = row?;
+        let suggested = crate::categorize::suggested_rule_pattern(&merchant_raw);
+        // Only a generalized `%name%` pattern identifies a counterparty; a
+        // raw (unchanged) string means no name to group on.
+        let key = if suggested.starts_with('%') {
+            Some(suggested)
+        } else {
+            None
+        };
+        let entry = groups.entry(key.clone()).or_insert_with(|| Group {
+            label: match &key {
+                Some(p) => p.trim_matches('%').to_string(),
+                None => "Unnamed internal transfers".to_string(),
+            },
+            txn_count: 0,
+            inflow_cents: 0,
+            outflow_cents: 0,
+        });
+        entry.txn_count += 1;
+        if amount_cents > 0 {
+            entry.inflow_cents += amount_cents;
+        } else {
+            entry.outflow_cents += amount_cents.abs();
+        }
+    }
+
+    let mut out: Vec<UnresolvedCounterparty> = groups
+        .into_iter()
+        .map(|(pattern, g)| UnresolvedCounterparty {
+            pattern,
+            label: g.label,
+            txn_count: g.txn_count,
+            inflow_cents: g.inflow_cents,
+            outflow_cents: g.outflow_cents,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        let a_net = (a.inflow_cents - a.outflow_cents).abs();
+        let b_net = (b.inflow_cents - b.outflow_cents).abs();
+        b_net.cmp(&a_net)
+    });
+    Ok(out)
 }
 
 /// Fetch a single transaction by id (used internally).
@@ -616,7 +829,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, pa.name, t.owner_member_id, \
                 t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
@@ -666,18 +879,19 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                     })?
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
-                is_split: r.get::<_, i64>(19)? != 0,
-                is_transfer: r.get::<_, i64>(26)? != 0,
-                transfer_peer_id: r.get(27)?,
-                transfer_peer_account_name: r.get(28)?,
-                owner_member_id: r.get(29)?,
-                imported_id: r.get(20)?,
-                source: r.get(21)?,
-                raw_synced_data: r.get(22)?,
-                pending: r.get::<_, i64>(23)? != 0,
-                external_tx_id: r.get(24)?,
-                external_account_id: r.get(25)?,
-                activity: read_activity(r, 30)?,
+                settle_up: r.get::<_, i64>(19)? != 0,
+                is_split: r.get::<_, i64>(20)? != 0,
+                is_transfer: r.get::<_, i64>(27)? != 0,
+                transfer_peer_id: r.get(28)?,
+                transfer_peer_account_name: r.get(29)?,
+                owner_member_id: r.get(30)?,
+                imported_id: r.get(21)?,
+                source: r.get(22)?,
+                raw_synced_data: r.get(23)?,
+                pending: r.get::<_, i64>(24)? != 0,
+                external_tx_id: r.get(25)?,
+                external_account_id: r.get(26)?,
+                activity: read_activity(r, 31)?,
             })
         },
     )
@@ -1076,5 +1290,331 @@ mod tests {
         // Pins the insert-before-count ordering: the just-inserted user
         // categorization must be included, so the tally reads 1×, not 0×.
         assert!(mem[0].description.contains("1×"));
+    }
+
+    #[test]
+    fn settle_up_verdict_marks_and_leaves_the_undecided_queue() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('su1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let t = set_counterparty_verdict(&mut conn, "su1", Verdict::SettleUp).unwrap();
+        assert!(t.settle_up, "settle-up verdict marks the row settled");
+        assert!(!t.is_transfer, "settle-up is real spending, netted — not a transfer");
+
+        let still_undecided: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions \
+                 WHERE id = 'su1' AND transfer_override IS NULL AND settle_up = 0 \
+                   AND category_id IS NULL AND transfer_peer_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_undecided, 0, "settle-up leaves the undecided queue");
+    }
+
+    #[test]
+    fn real_verdict_marks_decided_not_transfer() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('rl1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let t = set_counterparty_verdict(&mut conn, "rl1", Verdict::Real).unwrap();
+        assert!(!t.settle_up, "real verdict is not settled-up");
+        assert!(!t.is_transfer, "real verdict is not a transfer");
+
+        let override_val: i64 = conn
+            .query_row(
+                "SELECT transfer_override FROM transactions WHERE id = 'rl1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(override_val, 0, "real is a decided (non-transfer) verdict");
+
+        let still_undecided: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions \
+                 WHERE id = 'rl1' AND transfer_override IS NULL AND settle_up = 0 \
+                   AND category_id IS NULL AND transfer_peer_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_undecided, 0, "real leaves the undecided queue");
+    }
+
+    #[test]
+    fn transfer_verdict_still_flags() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('tf1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let t = set_counterparty_verdict(&mut conn, "tf1", Verdict::Transfer).unwrap();
+        assert!(t.is_transfer, "transfer verdict delegates to the existing arm");
+    }
+
+    #[test]
+    fn apply_verdict_to_matching_settle_up_covers_a_counterparty() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        // Two undecided "joe" e-transfers, plus one already categorized (decided).
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer joe 001','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer joe 002','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('j3',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer joe 003','cleared','2026-03-01T12:00:00Z',0,NULL,'cat1')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let applied =
+            apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        assert_eq!(applied, 2, "only the two undecided rows are ruled");
+
+        let (j1_settled, j2_settled): (i64, i64) = conn
+            .query_row(
+                "SELECT (SELECT settle_up FROM transactions WHERE id='j1'), \
+                        (SELECT settle_up FROM transactions WHERE id='j2')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((j1_settled, j2_settled), (1, 1), "both undecided rows settled");
+
+        let j3_untouched: (i64, Option<String>) = conn
+            .query_row(
+                "SELECT settle_up, category_id FROM transactions WHERE id = 'j3'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            j3_untouched,
+            (0, Some("cat1".into())),
+            "the categorized sibling is left alone"
+        );
+    }
+
+    #[test]
+    fn apply_verdict_does_not_sweep_non_transfer_lookalikes() {
+        // "%joe%" should only rule rows that actually look like a transfer
+        // (the transfer-review vocabulary) — not every uncategorized
+        // transaction whose merchant happens to contain "joe", e.g. Trader
+        // Joe's groceries. Ruling those in would also persist a "%joe%"
+        // treatment rule that mis-nets future Trader Joe's purchases.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('g1',?1,'2026-01-02T12:00:00Z',-8000,'TRADER JOE''S #123','cleared','2026-01-02T12:00:00Z',0,NULL,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let applied = apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        assert_eq!(applied, 1, "only the e-transfer-vocab row is ruled");
+
+        let e1_settled: i64 = conn
+            .query_row("SELECT settle_up FROM transactions WHERE id = 'e1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(e1_settled, 1, "the e-transfer is settled up");
+
+        let (g1_settled, g1_override): (i64, Option<i64>) = conn
+            .query_row(
+                "SELECT settle_up, transfer_override FROM transactions WHERE id = 'g1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(g1_settled, 0, "Trader Joe's groceries are left alone");
+        assert!(g1_override.is_none(), "Trader Joe's groceries are still undecided");
+    }
+
+    #[test]
+    fn apply_verdict_leaves_an_existing_categorize_rule_untouched() {
+        // A pre-existing user rule that categorizes "%joe%" (e.g. a friend
+        // whose name overlaps a merchant pattern) must not be flipped to a
+        // transfer/settle_up treatment by a later bulk counterparty verdict.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        crate::repos::rules::insert(
+            &mut conn,
+            crate::models::NewRule {
+                pattern: "%joe%".to_string(),
+                category_id: "cat1".to_string(),
+                source: "user".to_string(),
+                treatment: "categorize".to_string(),
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+
+        let (treatment, rule_count): (String, i64) = conn
+            .query_row(
+                "SELECT (SELECT treatment FROM rules WHERE lower(pattern) = '%joe%'), \
+                        (SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%')",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(treatment, "categorize", "the existing categorize rule is not flipped");
+        assert_eq!(rule_count, 1, "no duplicate rule is created");
+    }
+
+    #[test]
+    fn settle_up_verdict_upserts_a_treatment_rule() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer joe 001','cleared','2026-01-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+
+        let rule: (String, bool, String) = conn
+            .query_row(
+                "SELECT pattern, enabled, treatment FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(rule, ("%joe%".to_string(), true, "settle_up".to_string()));
+
+        let rule_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rule_count, 1);
+
+        // A second bulk verdict for the same counterparty must not duplicate
+        // the rule — upsert, not insert-always.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer joe 002','cleared','2026-02-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        let rule_count2: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rule_count2, 1, "second call upserts, doesn't duplicate");
+
+        // Verdict::Real is the default treatment — nothing to persist.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('sw1',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer swathi 001','cleared','2026-03-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+        apply_verdict_to_matching(&mut conn, "%swathi%", Verdict::Real).unwrap();
+        let real_rule_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%swathi%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(real_rule_count, 0, "Real verdicts create no rule");
+    }
+
+    #[test]
+    fn list_unresolved_counterparties_groups_by_counterparty() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('j1',?1,'2026-01-01T12:00:00Z',-30000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('j2',?1,'2026-02-01T12:00:00Z',-20000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('j3',?1,'2026-03-01T12:00:00Z', 10000,'Internet Banking E-TRANSFER 222 Joe','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
+             ('s1',?1,'2026-04-01T12:00:00Z',-40000,'E-TRANSFER 333 Swathi','cleared','2026-04-01T12:00:00Z',0,NULL,NULL),\
+             ('u1',?1,'2026-05-01T12:00:00Z', -5000,'Internet Banking INTERNET TRANSFER 000000999','cleared','2026-05-01T12:00:00Z',0,NULL,NULL),\
+             ('d1',?1,'2026-06-01T12:00:00Z',-10000,'Internet Banking E-TRANSFER 444 Joe','cleared','2026-06-01T12:00:00Z',0,NULL,'cat1')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let groups = list_unresolved_counterparties(&conn).unwrap();
+
+        // The decided (categorized) row must never appear, nor may it inflate
+        // the "joe" group's count.
+        let joe = groups
+            .iter()
+            .find(|g| g.label == "joe")
+            .expect("a joe group exists");
+        assert_eq!(joe.pattern.as_deref(), Some("%joe%"));
+        assert_eq!(joe.txn_count, 3, "j1+j2+j3 only; d1 is decided (categorized)");
+        assert_eq!(joe.inflow_cents, 10000);
+        assert_eq!(joe.outflow_cents, 50000);
+
+        let swathi = groups
+            .iter()
+            .find(|g| g.label == "swathi")
+            .expect("a swathi group exists");
+        assert_eq!(swathi.pattern.as_deref(), Some("%swathi%"));
+        assert_eq!(swathi.txn_count, 1);
+        assert_eq!(swathi.inflow_cents, 0);
+        assert_eq!(swathi.outflow_cents, 40000);
+
+        let unnamed = groups
+            .iter()
+            .find(|g| g.label == "Unnamed internal transfers")
+            .expect("an unnamed-transfers bucket exists for the bare ref row");
+        assert!(unnamed.pattern.is_none());
+        assert_eq!(unnamed.txn_count, 1);
+        assert_eq!(unnamed.outflow_cents, 5000);
+
+        // Only the three expected groups — nothing from the decided row and
+        // nothing from the seeded ordinary AMAZON purchase.
+        assert_eq!(groups.len(), 3);
+
+        // Ordered by net exposure (|inflow - outflow|) descending: swathi
+        // (40000) and joe (40000) tie for largest, both ahead of the unnamed
+        // bucket (5000).
+        let unnamed_pos = groups.iter().position(|g| g.label == "Unnamed internal transfers").unwrap();
+        assert_eq!(unnamed_pos, 2, "smallest net exposure sorts last");
     }
 }

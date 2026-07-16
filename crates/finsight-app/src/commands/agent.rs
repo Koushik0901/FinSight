@@ -305,6 +305,7 @@ pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String)
                     pattern: p.pattern,
                     category_id: p.category_id,
                     source: "agent".to_string(),
+                    treatment: "categorize".to_string(),
                 },
             )?;
             rule_proposals::set_status(conn, &id, "accepted")?;
@@ -416,18 +417,22 @@ pub async fn get_agent_status(state: tauri::State<'_, AppState>) -> AppResult<Ag
         // Count envelopes where spending exceeds budget this month
         let over_budget_count: i64 = conn.query_row(
             "WITH spending AS (
-               SELECT category_id, SUM(ABS(amount_cents)) AS cents
+               SELECT category_id, SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                             WHEN amount_cents < 0 THEN -amount_cents
+                                             ELSE 0 END) AS cents
                FROM transactions
-               WHERE amount_cents < 0
+               WHERE (amount_cents < 0 OR settle_up = 1)
                  AND category_id IS NOT NULL
                  AND posted_at >= ?1
                  AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.txn_id = transactions.id)
                GROUP BY category_id
                UNION ALL
-               SELECT ts.category_id, SUM(ts.amount_cents) AS cents
+               SELECT ts.category_id, SUM(CASE WHEN t.settle_up = 1 AND t.amount_cents < 0 THEN ts.amount_cents
+                                                WHEN t.settle_up = 1 THEN -ts.amount_cents
+                                                ELSE ts.amount_cents END) AS cents
                FROM transaction_splits ts
                JOIN transactions t ON t.id = ts.txn_id
-               WHERE t.amount_cents < 0 AND t.posted_at >= ?1 AND ts.category_id IS NOT NULL
+               WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.posted_at >= ?1 AND ts.category_id IS NOT NULL
                GROUP BY ts.category_id
              )
              SELECT COUNT(*)
@@ -2121,8 +2126,10 @@ pub async fn ask_agent(
             // Month totals
             let (income, expenses): (i64, i64) = conn
                 .query_row(
-                    "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),
-                            COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0)
+                    "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 AND settle_up=0 THEN amount_cents ELSE 0 END),0),
+                            COALESCE(SUM(CASE WHEN settle_up=1 THEN -amount_cents
+                                              WHEN amount_cents<0 THEN -amount_cents
+                                              ELSE 0 END),0)
                      FROM transactions WHERE posted_at >= ?1",
                     rusqlite::params![this_month_start],
                     |r| Ok((r.get(0)?, r.get(1)?)),
@@ -2136,9 +2143,11 @@ pub async fn ask_agent(
 
             // Top 5 spending categories this month
             let mut cats_stmt = conn.prepare(
-                "SELECT c.label, COALESCE(SUM(ABS(t.amount_cents)),0) AS spent
+                "SELECT c.label, COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents
+                                                    WHEN t.amount_cents < 0 THEN -t.amount_cents
+                                                    ELSE 0 END),0) AS spent
                  FROM transactions t JOIN categories c ON c.id = t.category_id
-                 WHERE t.amount_cents < 0 AND t.posted_at >= ?1
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.posted_at >= ?1
                  GROUP BY c.id ORDER BY spent DESC LIMIT 5",
             )?;
             let top_cats: Vec<String> = cats_stmt
@@ -2157,9 +2166,11 @@ pub async fn ask_agent(
                 .query_row(
                     "SELECT COUNT(*) FROM budgets b
                      WHERE b.month = ?1 AND b.amount_cents > 0
-                       AND (SELECT COALESCE(SUM(ABS(amount_cents)),0) FROM transactions
+                       AND (SELECT COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                                      WHEN amount_cents < 0 THEN -amount_cents
+                                                      ELSE 0 END),0) FROM transactions
                             WHERE category_id = b.category_id AND posted_at >= ?2
-                              AND amount_cents < 0) > b.amount_cents",
+                              AND (amount_cents < 0 OR settle_up = 1)) > b.amount_cents",
                     rusqlite::params![this_month, this_month_start],
                     |r| r.get(0),
                 )

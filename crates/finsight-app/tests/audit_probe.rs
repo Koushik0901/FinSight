@@ -606,6 +606,69 @@ fn audit_import_samples_and_dump_everything() {
         println!("{label}: {cf:?}");
     }
 
+    // SETTLE-UP NETTING MEASUREMENT (F0 follow-on): does ruling the biggest
+    // unresolved counterparties as "settle up" (reimbursement/split, nets
+    // against income+expense per `metrics::income_expense_since`) actually
+    // move the aggregate numbers on REAL data? This is discovered ENTIRELY
+    // BY PATTERN from `list_unresolved_counterparties` (net-exposure desc) —
+    // no person's name is hard-coded, so whoever appears in the operator's
+    // real CSVs this month is who gets measured. Skips the `pattern: None`
+    // "Unnamed internal transfers" bucket (bare references can't be ruled by
+    // pattern). This is a MEASUREMENT, not an assertion on dollar figures —
+    // the sample data changes over time; only the monotonic direction
+    // (settling up can only remove money from income/expense, never add) is
+    // asserted.
+    println!("\n== SETTLE-UP NETTING (top unresolved counterparties, by pattern) ==");
+    {
+        use finsight_core::repos::transactions::{
+            apply_verdict_to_matching, list_unresolved_counterparties, Verdict,
+        };
+
+        let (inc_before, exp_before) =
+            metrics::income_expense_since(&conn, "2000-01-01T00:00:00Z").unwrap();
+        println!("BEFORE: income={inc_before}c expense={exp_before}c");
+
+        let groups = list_unresolved_counterparties(&conn).unwrap();
+        println!("unresolved counterparties: {}", groups.len());
+
+        let mut rule_conn = db.get().unwrap();
+        let mut ruled_labels: Vec<String> = Vec::new();
+        for g in groups.iter().take(5) {
+            let Some(pattern) = &g.pattern else {
+                println!(
+                    "  SKIP (unnamed bucket, no pattern): n={:<4} inflow={:>10}c outflow={:>10}c",
+                    g.txn_count, g.inflow_cents, g.outflow_cents
+                );
+                continue;
+            };
+            let n = apply_verdict_to_matching(&mut rule_conn, pattern, Verdict::SettleUp).unwrap();
+            println!(
+                "  RULED settle_up: {:<30} n={:<4} inflow={:>10}c outflow={:>10}c applied_to={}",
+                g.label, g.txn_count, g.inflow_cents, g.outflow_cents, n
+            );
+            ruled_labels.push(g.label.clone());
+        }
+        drop(rule_conn);
+
+        let (inc_after, exp_after) =
+            metrics::income_expense_since(&conn, "2000-01-01T00:00:00Z").unwrap();
+        println!("AFTER:  income={inc_after}c expense={exp_after}c");
+        println!(
+            "DELTA:  income={}c expense={}c  (counterparties ruled settle-up: {:?})",
+            inc_after - inc_before,
+            exp_after - exp_before,
+            ruled_labels
+        );
+        assert!(
+            inc_after <= inc_before,
+            "settling up counterparties can only remove inflow from income, never add"
+        );
+        assert!(
+            exp_after <= exp_before,
+            "settling up counterparties can only net down expense, never add"
+        );
+    }
+
     // 6. Recurring detection.
     println!("\n== RECURRING (window 400d) ==");
     match finsight_core::recurring::detect_recurring(&conn, 400) {
