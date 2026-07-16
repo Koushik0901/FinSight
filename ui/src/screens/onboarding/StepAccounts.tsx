@@ -94,7 +94,8 @@ export default function StepAccounts({ onNext }: Props) {
                     <strong>{account.nickname || account.name}</strong>
                     <span>
                       {account.bank} · {account.type}
-                      {account.mask ? " · •••• " + account.mask : ""}                    </span>
+                      {account.mask ? " · •••• " + account.mask : ""}
+                    </span>
                   </div>
                   <span className={account.simplefin_account_id ? "chip positive" : "chip"}>
                     {account.simplefin_account_id ? "SimpleFIN" : "Manual"}
