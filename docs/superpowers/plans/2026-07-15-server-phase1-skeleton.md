@@ -53,7 +53,21 @@
   - All other params/return types unchanged. Doc comments live on the **wrapper** (that's what specta exports).
   - Types defined in a command module (request/response structs with `#[derive(Type)]`, enums like `CompletionProviderConfig`) move with the module; the finsight-app module re-exports them (`pub use finsight_api::commands::agent::CompletionProviderConfig;`) so `lib.rs`/tests keep compiling.
   - Module-level unit tests (`#[cfg(test)] mod tests`) move with the bodies. Fixture paths like `../../ui/src/...` still resolve (same crate depth).
-  - **Desktop-only commands stay behind:** any command whose signature keeps `tauri::AppHandle` for file dialogs (`DialogExt`) does NOT move in Phase 1. **First action of Tasks 3, 4, and 5:** run `grep -rn "AppHandle" crates/finsight-app/src/commands/` and report the exact list of stay-behind commands (with file:line) back to the controller in the DONE report — do NOT silently decide the set. The controller reconciles that list against the dispatcher's `UNSUPPORTED` const (Task 9); a missed one is a command that should 501 but instead 500s. Known set from the earlier grep (confirm, don't assume): `accounts::export_account_csv`, `transactions::export_transactions_csv`, `transactions::export_search_transactions_csv`, `settings::export_all_data_json`, `settings::export_all_data_csv`, plus the dialog-using command(s) in `import.rs` (line ~111) and `budget.rs` (line ~571) — **identify these two by name and report them**. Stay-behind commands go on `UNSUPPORTED` (Task 9) and get a real browser story (upload/download endpoints) in Phase 3. If a stayed-behind command shares pure helpers (e.g. `csv_escape`) with moved code, move the helper to finsight-api and import it.
+  - **AppHandle commands — the controller has already inventoried these from source (do NOT re-derive; use this table).** Every command taking `tauri::AppHandle`, and its correct disposition:
+
+    | Command | File | AppHandle used for | Phase 1 disposition |
+    |---|---|---|---|
+    | `export_account_csv` | accounts.rs | file-save dialog (`DialogExt`) | **UNSUPPORTED** (501; web flow in P3) |
+    | `export_transactions_csv` | transactions.rs | file-save dialog | **UNSUPPORTED** |
+    | `export_search_transactions_csv` | transactions.rs | file-save dialog | **UNSUPPORTED** |
+    | `export_all_data_json` | settings.rs | file-save dialog | **UNSUPPORTED** |
+    | `export_all_data_csv` | settings.rs | file-save dialog | **UNSUPPORTED** |
+    | `get_data_health`, `create_manual_backup`, `stage_restore_backup`, `cancel_staged_restore` | data_health.rs | only the `app_data_dir(&app)` helper (data dir) | **MOVE** using `state.data_dir` (Task 4) — no dialog |
+    | `apply_next_month_plan` | budget.rs | only `notifications::check_and_fire(&app, …)` after the writes | **MOVE** (Task 4); the fire-and-forget notification stays in the **Tauri wrapper**, not the api fn — the server has no native notifications in P1 |
+    | `import_csv` | import.rs | `app.emit("import-progress")` + `app.emit("import-complete")` progress events | **MOVE via `FrameSink`** (Task 4) — this is the same emit pattern as copilot streaming, NOT a dialog. Its two events must flow over SSE. |
+    | `stream_copilot_message` | copilot_chat.rs | frame emits | **MOVE via `FrameSink`** (Task 6) |
+
+    The **`UNSUPPORTED` set is exactly the 5 export commands above** — nothing else. Tasks 3–5 must still run `grep -rn "AppHandle" crates/finsight-app/src/commands/` and report any command NOT in this table back to the controller before proceeding (guards against a signature that changed since this inventory). If a stayed-behind command shares pure helpers (e.g. `csv_escape`) with moved code, move the helper to finsight-api and import it.
   - **Arg-key convention (load-bearing for the Task 10 guard):** every moved command keeps its exact parameter names. The dispatcher (Task 9) will read each argument via `arg(&p, "<camelCaseKey>")` where the key is the Rust param name camelCased (`balance_cents` → `"balanceCents"`, `import_id` → `"importId"`, single-word names unchanged). This matches what `bindings.ts` emits (`TAURI_INVOKE("set_account_balance", { id, balanceCents })`). Do not rename params during the move.
 
 ---
@@ -119,7 +133,8 @@ Fix every `?` site that relied on `From<tauri::Error>` with `.map_err(crate::err
 ```rust
 pub mod commands; // starts empty; filled by Tasks 3-7
 pub mod error;
-pub mod sink;     // Task 6 fills this; create as empty module now
+pub mod sink;     // FrameSink trait — defined in Step 3b below (import_csv in Task 4
+                  // and copilot_chat in Task 6 both depend on it existing early)
 
 use finsight_agent::{agent::{AgentHandle, EventCallback}, CompletionProvider};
 use finsight_core::Db;
@@ -153,6 +168,53 @@ pub struct AppState {
 }
 ```
 `AppState::new(db, data_dir, on_event)` builds `ApiState::new(...)` + `SyncScheduler::new(db)`. In `configure_app`'s setup, pass `app_data_dir` as `data_dir`. Every existing command body that used `state.db` / `state.agent` / `state.agent_provider` now reads `state.api.db` etc. — do a mechanical find/replace within `crates/finsight-app/src/commands/` (`state.db` → `state.api.db`, `state.agent` → `state.api.agent`, `state.agent_provider` → `state.api.agent_provider`). `state.sync_scheduler` is unchanged.
+
+- [ ] **Step 3b: Define the `FrameSink` trait now** (`crates/finsight-api/src/sink.rs`)
+
+The trait is tiny and standalone, and TWO later tasks depend on it existing (`import_csv` in Task 4, `copilot_chat` in Task 6), so define it here rather than in Task 6:
+```rust
+use std::sync::Arc;
+
+/// Transport-agnostic replacement for `tauri::AppHandle::emit`. The Tauri app
+/// emits window events; finsight-server pushes into a broadcast channel → SSE.
+pub trait FrameSink: Send + Sync {
+    fn emit(&self, event: &str, payload: serde_json::Value);
+}
+
+/// A no-op sink: for command paths that emit but where the caller doesn't care
+/// (and as a safe default). Also handy in unit tests that ignore emissions.
+pub struct NullSink;
+impl FrameSink for NullSink {
+    fn emit(&self, _event: &str, _payload: serde_json::Value) {}
+}
+
+/// Test/collector sink — records every (event, payload) in order.
+pub struct VecSink(pub std::sync::Mutex<Vec<(String, serde_json::Value)>>);
+impl VecSink {
+    pub fn new() -> Arc<Self> { Arc::new(Self(std::sync::Mutex::new(Vec::new()))) }
+}
+impl FrameSink for VecSink {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        self.0.lock().unwrap().push((event.to_string(), payload));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn vec_sink_collects_events_in_order() {
+        let sink = VecSink::new();
+        sink.emit("import-progress", serde_json::json!({"rows_done": 1}));
+        sink.emit("import-complete", serde_json::json!({"ok": true}));
+        let got = sink.0.lock().unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, "import-progress");
+        assert_eq!(got[1].1["ok"], true);
+    }
+}
+```
+Run `cargo test -p finsight-api sink` → PASS.
 
 - [ ] **Step 4: Verify green + zero bindings diff**
 
@@ -203,7 +265,7 @@ Apply the **signature transformation** from Ground Rules to every command listed
 - [ ] categories: `update_category_color`, `create_category`, `rename_category`, `archive_category`, `set_category_guidance`
 - [ ] transactions: `list_transactions`, `create_transaction`, `update_transaction`, `delete_transaction`, `create_rule`, `set_transaction_owner`, `list_categories`, `set_category_spending_type`, `get_spending_breakdown`, `list_categories_with_spending`, `list_rules_with_categories`, `toggle_rule`, `get_transaction_count`, `set_transaction_flags`, `set_transaction_transfer`, `apply_transfer_verdict_to_similar`, `get_transaction_splits`, `set_transaction_splits` — **stays:** `export_transactions_csv`, `export_search_transactions_csv` (dialog)
 - [ ] onboarding: `get_onboarding_state`, `mark_onboarding_complete`, `reset_onboarding_completion`, `commit_starter_categories`, `probe_ollama`, `save_llm_provider`
-- [ ] meta: `app_ready` (if it takes a `tauri::Window`/`AppHandle`, it stays behind and goes on the dispatcher's no-op list — see Task 9)
+- [ ] meta: `app_ready` — **verified:** takes no args, returns `AppReady { version }`. Moves normally; the server dispatcher returns the real value (the UI reads `version`), NOT a no-op.
 - [ ] investments: `list_account_positions`, `get_investment_summary`
 - [ ] Run per-task verification; commit.
 
@@ -211,14 +273,26 @@ Apply the **signature transformation** from Ground Rules to every command listed
 
 **Files:** move bodies from `crates/finsight-app/src/commands/{budget,recurring,reports,spending,metrics,scenarios,journey,inbox,assets,household,insights,planned_transactions,data_health,import,settings}.rs`.
 
-- [ ] budget: `list_budget_envelopes`, `set_budget`, `list_goals`, `create_goal`, `update_goal_balance`, `contribute_to_goal`, `list_goal_contributions`, `archive_goal`, `project_goal_growth`, `update_goal_monthly`, `update_goal_purpose`, `get_plan_next_month_data`, `apply_next_month_plan`, `list_budget_history` — **stays:** whichever command at `budget.rs:571` takes `AppHandle` (identify on contact; add to UNSUPPORTED)
+**Define `TauriFrameSink` in this task** (first user is `import_csv`), in `crates/finsight-app/src/commands/mod.rs`:
+```rust
+pub struct TauriFrameSink(pub tauri::AppHandle);
+impl finsight_api::sink::FrameSink for TauriFrameSink {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        use tauri::Emitter;
+        let _ = self.0.emit(event, payload);
+    }
+}
+```
+Task 6 reuses it for `stream_copilot_message`.
+
+- [ ] budget: `list_budget_envelopes`, `set_budget`, `list_goals`, `create_goal`, `update_goal_balance`, `contribute_to_goal`, `list_goal_contributions`, `archive_goal`, `project_goal_growth`, `update_goal_monthly`, `update_goal_purpose`, `get_plan_next_month_data`, `apply_next_month_plan`, `list_budget_history`. **`apply_next_month_plan` (verified):** its `AppHandle` is used ONLY for a fire-and-forget `notifications::check_and_fire(&app, &db)` after the budget writes. Move the budget-writing body to `apply_next_month_plan(state: &ApiState, assignments)`; the Tauri wrapper calls the api fn and THEN spawns the notification (server has no native notifications in P1, so the server dispatcher just calls the api fn). NOT UNSUPPORTED.
 - [ ] recurring: `list_recurring` · reports: `get_report_data`, `get_month_totals`, `get_savings_rate_history`, `create_monthly_review`, `list_monthly_reviews` · spending: `get_spending_path_back`, `set_spending_annotation` · metrics: `get_financial_metrics`, `household_net_worth_breakdown`, `set_financial_assumptions` · scenarios: `run_scenario`, `save_scenario`, `list_scenario_history`, `delete_scenario` · journey: `get_journey_status` · inbox: `get_action_items`
 - [ ] assets: `list_manual_assets`, `create_manual_asset`, `update_manual_asset`, `delete_manual_asset`, `record_net_worth_snapshot`, `list_net_worth_history`, `compute_debt_payoff`, `get_uncelebrated_milestones`
 - [ ] household: `list_household_members`, `create_household_member`, `set_self_member`, `delete_household_member`, `list_account_owners`, `set_account_owners`, `set_account_owner_shares`, `list_asset_owners`, `set_asset_owners`
 - [ ] insights: `list_agent_memory`, `forget_agent_memory`, `get_financial_health_score` · planned_transactions: all 5
 - [ ] data_health: `get_data_health`, `create_manual_backup`, `stage_restore_backup`, `cancel_staged_restore` — replace the `fn app_data_dir(app: &tauri::AppHandle)` helper with `state.data_dir` (that's why ApiState carries it)
-- [ ] import: `preview_csv_columns`, `prepare_csv_import`, `import_csv`, `get_saved_csv_mapping`, `list_unfinished_imports`, `discard_unfinished_import` — **stays:** the `AppHandle` command at `import.rs:111` (identify; UNSUPPORTED)
-- [ ] settings: `get_currency`, `set_currency`, `delete_all_data`, `get_notifications_enabled`, `set_notifications_enabled`, `get_auto_categorize_enabled`, `set_auto_categorize_enabled` — **stays:** `export_all_data_json`, `export_all_data_csv` (dialog)
+- [ ] import: `preview_csv_columns`, `prepare_csv_import`, `import_csv`, `get_saved_csv_mapping`, `list_unfinished_imports`, `discard_unfinished_import`. **`import_csv` (verified):** its `AppHandle` is used for `app.emit("import-progress", …)` and `app.emit("import-complete", …)` — the SAME emit pattern as copilot streaming, NOT a dialog. Move it to `import_csv(state: &ApiState, sink: Arc<dyn FrameSink>, path, account_id, mapping)` and route both emits through `sink.emit(...)` (keep the exact event names `"import-progress"` / `"import-complete"` and payload shapes so UI listeners and the SSE stream work unchanged). The Tauri wrapper passes `TauriFrameSink(app)`; the server dispatcher passes a `BroadcastSink` (Task 9). NOT UNSUPPORTED. The other import commands are plain moves.
+- [ ] settings: `get_currency`, `set_currency`, `delete_all_data`, `get_notifications_enabled`, `set_notifications_enabled`, `get_auto_categorize_enabled`, `set_auto_categorize_enabled` — **stays UNSUPPORTED (file-save dialog):** `export_all_data_json`, `export_all_data_csv`
 - [ ] Run per-task verification; commit.
 
 ### Task 5: Agent & integrations group
@@ -236,52 +310,15 @@ Apply the **signature transformation** from Ground Rules to every command listed
 
 ### Task 6: `FrameSink` trait + copilot_chat extraction
 
+**Note:** the `FrameSink` trait + `VecSink`/`NullSink` were already defined in Task 1 Step 3b, and `import_csv` was already converted to it in Task 4. This task converts the remaining, larger emit path: `copilot_chat`.
+
 **Files:**
-- Create: `crates/finsight-api/src/sink.rs`
 - Move: `crates/finsight-app/src/commands/copilot_chat.rs` bodies → `crates/finsight-api/src/commands/copilot_chat.rs`
-- Modify: `crates/finsight-app/src/commands/copilot_chat.rs` (wrappers + TauriFrameSink)
+- Modify: `crates/finsight-app/src/commands/copilot_chat.rs` (wrappers + reuse the `TauriFrameSink` created in Task 4)
 
-- [ ] **Step 1: Write the failing test** (in `crates/finsight-api/src/sink.rs`)
+- [ ] **Step 1: Confirm the trait exists** — `cargo test -p finsight-api sink` is already green from Task 1. (No new trait definition here.)
 
-```rust
-use std::sync::Arc;
-
-/// Transport-agnostic replacement for `tauri::AppHandle::emit`. The Tauri app
-/// emits window events; finsight-server pushes into a broadcast channel → SSE.
-pub trait FrameSink: Send + Sync {
-    fn emit(&self, event: &str, payload: serde_json::Value);
-}
-
-/// Test/collector sink.
-pub struct VecSink(pub std::sync::Mutex<Vec<(String, serde_json::Value)>>);
-impl VecSink {
-    pub fn new() -> Arc<Self> { Arc::new(Self(std::sync::Mutex::new(Vec::new()))) }
-}
-impl FrameSink for VecSink {
-    fn emit(&self, event: &str, payload: serde_json::Value) {
-        self.0.lock().unwrap().push((event.to_string(), payload));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn vec_sink_collects_events_in_order() {
-        let sink = VecSink::new();
-        sink.emit("copilot-stream-frame", serde_json::json!({"type":"text","delta":"hi"}));
-        sink.emit("copilot-stream-frame", serde_json::json!({"type":"done"}));
-        let got = sink.0.lock().unwrap();
-        assert_eq!(got.len(), 2);
-        assert_eq!(got[0].0, "copilot-stream-frame");
-        assert_eq!(got[1].1["type"], "done");
-    }
-}
-```
-
-- [ ] **Step 2: Run it** — `cargo test -p finsight-api sink` → PASS (trait + test land together; the *failing* phase here is the copilot_chat compile below).
-
-- [ ] **Step 3: Move copilot_chat onto the sink**
+- [ ] **Step 2 (was Step 3): Move copilot_chat onto the sink**
 
 In the moved `finsight-api/src/commands/copilot_chat.rs`: every `app: tauri::AppHandle` / `app: &tauri::AppHandle` parameter becomes `sink: Arc<dyn FrameSink>` / `sink: &Arc<dyn FrameSink>`, and the single choke point changes:
 ```rust
@@ -291,15 +328,11 @@ fn emit_copilot_frame(sink: &Arc<dyn FrameSink>, frame: CopilotStreamFrame) {
 ```
 (`emit_stream_error` and the fn at old line ~1167 get the same treatment.) All existing copilot_chat tests move; where they constructed a mock AppHandle or asserted on emissions, use `VecSink`.
 
-The finsight-app wrapper keeps the public command signature:
+The finsight-app wrapper keeps the public command signature, reusing the `TauriFrameSink` defined in Task 4 (`crates/finsight-app/src/commands/mod.rs` or wherever Task 4 placed it — do NOT redefine it):
 ```rust
-struct TauriFrameSink(tauri::AppHandle);
-impl finsight_api::sink::FrameSink for TauriFrameSink {
-    fn emit(&self, event: &str, payload: serde_json::Value) {
-        use tauri::Emitter;
-        let _ = self.0.emit(event, payload);
-    }
-}
+// TauriFrameSink already exists from Task 4:
+//   pub struct TauriFrameSink(pub tauri::AppHandle);
+//   impl finsight_api::sink::FrameSink for TauriFrameSink { emit → app.emit }
 
 #[tauri::command]
 #[specta::specta]
@@ -308,14 +341,14 @@ pub async fn stream_copilot_message(
     state: tauri::State<'_, AppState>,
     /* ...original args... */
 ) -> AppResult</* original */> {
-    let sink: Arc<dyn FrameSink> = Arc::new(TauriFrameSink(app));
+    let sink: Arc<dyn finsight_api::sink::FrameSink> = Arc::new(crate::commands::TauriFrameSink(app));
     finsight_api::commands::copilot_chat::stream_copilot_message(&state.api, sink, /* args */).await
 }
 ```
 Also move the remaining copilot_chat commands (`list_conversations`, `get_conversation_messages`, `delete_conversation`, `create_conversation`, `edit_conversation_user_message`, `delete_conversation_messages_after`) with the standard transformation.
 
-- [ ] **Step 4: Verify** — `cargo test --workspace` green; export_bindings zero-diff.
-- [ ] **Step 5: Commit** — `git commit -am "refactor(server): FrameSink abstraction; copilot_chat is transport-agnostic"`
+- [ ] **Step 3: Verify** — `cargo test --workspace` green; export_bindings zero-diff.
+- [ ] **Step 4: Commit** — `git commit -am "refactor(server): copilot_chat is transport-agnostic via FrameSink"`
 
 ---
 
@@ -628,13 +661,14 @@ fn ok<T: serde::Serialize>(v: T) -> Result<serde_json::Value, AppError> {
 /// Desktop-only commands (native file dialogs). Kept explicit so the parity
 /// test (Task 10) proves SUPPORTED ∪ UNSUPPORTED == everything bindings.ts calls.
 /// Phase 3 gives these real upload/download flows.
+// EXACTLY these 5 file-save-dialog exports (controller-verified from source).
+// import_csv and apply_next_month_plan are NOT here — they move (see Task 4).
 pub const UNSUPPORTED: &[&str] = &[
     "export_account_csv",
     "export_transactions_csv",
     "export_search_transactions_csv",
     "export_all_data_json",
     "export_all_data_csv",
-    // + the dialog commands identified in import.rs / budget.rs during Tasks 3-4
 ];
 
 pub async fn rpc(
@@ -666,12 +700,17 @@ async fn dispatch(st: &Arc<ServerState>, cmd: &str, p: serde_json::Value)
         "update_account" => ok(c::accounts::update_account(api, arg(&p, "id")?, arg(&p, "patch")?).await?),
         "archive_account" => ok(c::accounts::archive_account(api, arg(&p, "id")?).await?),
         "set_account_balance" => ok(c::accounts::set_account_balance(api, arg(&p, "id")?, arg(&p, "balanceCents")?).await?),
-        // ── meta: browser boot must succeed even though the desktop impl is a no-op here ──
-        "app_ready" => Ok(serde_json::Value::Null),
-        // ── copilot_chat streaming: construct the broadcast sink ──
+        // ── meta: returns the real AppReady { version } (UI reads it) ──
+        "app_ready" => ok(c::meta::app_ready().await?),
+        // ── emit-path commands: construct a BroadcastSink; note the sink is NOT a
+        //    bindings arg, so the real args below ARE still arg-checked by Task 10 ──
         "stream_copilot_message" => {
             let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(st.events.clone()));
             ok(c::copilot_chat::stream_copilot_message(api, sink, /* arg(&p,"...")? per signature */).await?)
+        }
+        "import_csv" => {
+            let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(st.events.clone()));
+            ok(c::import::import_csv(api, sink, arg(&p, "path")?, arg(&p, "accountId")?, arg(&p, "mapping")?).await?)
         }
         // ── …one arm per remaining SUPPORTED command, same mechanical pattern.
         //    Arg key = Rust param name in camelCase (`balance_cents` → "balanceCents",
@@ -685,7 +724,7 @@ async fn dispatch(st: &Arc<ServerState>, cmd: &str, p: serde_json::Value)
 ```
 Write out ALL remaining arms — every command registered in `build_specta_builder()` (the full list is in `crates/finsight-app/src/lib.rs:174-353`) except the UNSUPPORTED set. This is ~160 one-line arms; tedious, mechanical, enforced complete by Task 10.
 
-**HARD CONVENTION (Task 10 depends on it):** read every argument via `arg(&p, "<key>")` and nothing else — no inline `p.get(...)`, no destructuring, no renamed locals for the key. The key string must be the literal the test can regex out. Commands that legitimately do NOT read a plain arg for one of their bindings keys (only `app_ready`, which takes none, and `stream_copilot_message`, whose sink is server-constructed) are the ONLY entries allowed on the Task 10 `ARG_CHECK_EXEMPT` list. Fill `stream_copilot_message`'s real arms with `arg(&p, "...")` for each non-sink param per its actual signature (check `copilot_chat.rs`), so it too is arg-checked except for the sink.
+**HARD CONVENTION (Task 10 depends on it):** read every argument via `arg(&p, "<key>")` and nothing else — no inline `p.get(...)`, no destructuring, no renamed locals for the key. The key string must be the literal the test can regex out. Sink-constructing commands (`stream_copilot_message`, `import_csv`) build the sink locally but STILL read every one of their bindings args via `arg(&p, "...")` — the sink is not a bindings arg, so these commands are fully arg-checked and need NO exemption. `app_ready` takes no args and reads none → it matches the empty set naturally. **Therefore `ARG_CHECK_EXEMPT` (Task 10) should be empty**; adding any entry requires a written justification and controller sign-off. Fill `stream_copilot_message`'s arm with `arg(&p, "...")` for each non-sink param per its actual signature (check `copilot_chat.rs`).
 
 Wire into `router.rs`:
 ```rust
@@ -712,10 +751,11 @@ This is the plan's most important guard. It turns two otherwise-eyeball correctn
 pub const SUPPORTED: &[&str] = &[ "list_accounts", "create_account", /* …every arm… */ ];
 
 /// Commands whose dispatch legitimately does not read every bindings arg via
-/// `arg(&p, "key")`. ONLY these two are allowed: `app_ready` takes no args;
-/// `stream_copilot_message`'s FrameSink is server-constructed (its other args
-/// ARE arg-checked). Adding anything else here is a red flag in review.
-pub const ARG_CHECK_EXEMPT: &[&str] = &["app_ready", "stream_copilot_message"];
+/// `arg(&p, "key")`. Should be EMPTY: sink-constructing commands
+/// (`stream_copilot_message`, `import_csv`) still arg-check their real args (the
+/// sink is not a bindings arg), and `app_ready` has no args. Any entry here needs
+/// a written justification + controller sign-off.
+pub const ARG_CHECK_EXEMPT: &[&str] = &[];
 ```
 
 - [ ] **Step 3: Write the failing test** (`crates/finsight-server/tests/parity.rs`)
