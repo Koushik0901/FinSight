@@ -44,13 +44,20 @@ function renderApp() {
 // fixture-backed __TAURI_INTERNALS__ so the app renders full data in a plain
 // browser (no Tauri). Tree-shaken from production (import.meta.env.DEV) and
 // never touches a real desktop runtime or the vitest suite. See dev/mockBackend.
+//
+// Outside Tauri and without `?mock`, we're being served by finsight-server
+// (or Vite proxying to it) — install the production HTTP/SSE transport. This
+// branch is NOT gated on DEV: it's the real transport for browser/PWA builds.
 async function boot() {
-  if (import.meta.env.DEV && typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
-    if (params.has("mock") && !w.__TAURI_INTERNALS__) {
+    if (import.meta.env.DEV && params.has("mock") && !w.__TAURI_INTERNALS__) {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
+    } else if (!w.__TAURI_INTERNALS__) {
+      const { installHttpBackend } = await import("./api/httpBackend");
+      installHttpBackend();
     }
   }
   renderApp();
