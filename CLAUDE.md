@@ -116,7 +116,7 @@ The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", i
 
 A fresh git worktree is missing the gitignored `samples/` directory (CSV fixtures), so `prepare_csv_cmd`, `prepare_edge`, and `prepare_parity` (6 tests total) fail with a "path not found" error there — copy `samples/` in from the primary checkout to run them; this is an environment gap, not a code regression.
 
-**Green bar:** 546 Rust tests (+12 ignored live-DB/keychain), 430 frontend tests, 0 TypeScript errors.
+**Green bar:** 548 Rust tests (+12 ignored live-DB/keychain), 436 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 
