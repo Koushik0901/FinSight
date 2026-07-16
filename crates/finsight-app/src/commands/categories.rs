@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use crate::AppState;
-use finsight_core::models::Category;
+use finsight_core::models::{Category, CategoryGroup};
 use finsight_core::repos::{categories, run};
 
 #[tauri::command]
@@ -64,6 +64,47 @@ pub async fn set_category_guidance(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         categories::set_guidance(conn, &id, guidance.as_deref())
+    })
+    .await
+    .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_category_groups(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<CategoryGroup>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| categories::list_groups(conn))
+        .await
+        .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_category_group(
+    state: tauri::State<'_, AppState>,
+    label: String,
+    hint: Option<String>,
+) -> AppResult<CategoryGroup> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::create_group(conn, &label, hint.as_deref())
+    })
+    .await
+    .map_err(crate::error::AppError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_category_group(
+    state: tauri::State<'_, AppState>,
+    category_id: String,
+    group_id: String,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::set_group(conn, &category_id, &group_id)
     })
     .await
     .map_err(crate::error::AppError::from)

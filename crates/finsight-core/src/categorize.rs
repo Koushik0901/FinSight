@@ -954,6 +954,14 @@ fn activity_category(activity_type: &str) -> Option<&'static str> {
     }
 }
 
+/// Investment income is never a user-managed budget envelope — it's pure
+/// income (spending_type stays NULL, see `ensure_investment_categories`), so
+/// it can never carry a sensible "spend" and would otherwise sit permanently
+/// in a Budget page's unbudgeted list with no meaningful action to take.
+pub fn is_budgetable_category(category_id: &str) -> bool {
+    category_id != "investment-income"
+}
+
 /// Seed the standard starter categories, but ONLY when the categories table is
 /// empty — so a user who imports before completing onboarding's category step
 /// still gets their transactions categorized, without ever overwriting a
@@ -1195,6 +1203,17 @@ mod tests {
             params![id, merchant],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn investment_income_is_not_budgetable() {
+        assert!(!is_budgetable_category("investment-income"));
+    }
+
+    #[test]
+    fn withholding_tax_and_ordinary_categories_are_budgetable() {
+        assert!(is_budgetable_category("withholding-tax"));
+        assert!(is_budgetable_category("groceries"));
     }
 
     #[test]

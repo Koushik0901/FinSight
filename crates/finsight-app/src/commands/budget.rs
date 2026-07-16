@@ -15,10 +15,14 @@ pub struct BudgetEnvelope {
     pub category_label: String,
     pub category_color: String,
     pub group_label: String,
-    /// Budget set by user (0 = not budgeted)
+    /// Budget set by user for the current month (0 = not budgeted this month)
     pub budget_cents: i64,
     /// Actual outflow this month (positive = spent)
     pub spent_cents: i64,
+    /// Running (budgeted − spent) carried in from prior months, anchored at the
+    /// category's first-ever budgeted month. Positive = unspent rolling forward,
+    /// negative = accumulated overspend.
+    pub carryover_cents: i64,
     pub txn_count: i64,
 }
 
@@ -53,22 +57,28 @@ pub async fn list_budget_envelopes(
             let cat_id: String = r.get(0)?;
             Ok((cat_id.clone(), r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, budget_map.get(&cat_id).copied().unwrap_or(0)))
         })?;
+        let rows: Vec<_> = rows.collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
 
         let mut out = Vec::new();
-        for row in rows {
-            let (cat_id, label, color, group_label, spent, txn_count, budget) = row?;
-            // Only include categories that have a budget OR have spending
-            if budget > 0 || spent > 0 {
-                out.push(BudgetEnvelope {
-                    category_id: cat_id,
-                    category_label: label,
-                    category_color: color,
-                    group_label,
-                    budget_cents: budget,
-                    spent_cents: spent,
-                    txn_count,
-                });
+        for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
+            if !finsight_core::categorize::is_budgetable_category(&cat_id) {
+                continue;
             }
+            let carryover_cents = budgets::carryover_into_month(conn, &cat_id, &month)?;
+            // Every active category is shown, budgeted or not — a category with
+            // no budget and no spend yet is exactly the one a user needs to see
+            // in order to budget it for the first time.
+            out.push(BudgetEnvelope {
+                category_id: cat_id,
+                category_label: label,
+                category_color: color,
+                group_label,
+                budget_cents: budget,
+                spent_cents: spent,
+                carryover_cents,
+                txn_count,
+            });
         }
         Ok(out)
     })
@@ -131,7 +141,9 @@ pub struct PlanData {
     pub income_cents: i64,
     pub categories: Vec<CategoryPlanRow>,
     pub goals: Vec<GoalDto>,
+    pub sinking_funds: Vec<GoalDto>,
     pub recurring_expense_cents: i64,
+    pub look_back: Vec<budgets::LookBackFact>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, Type)]
@@ -146,7 +158,8 @@ pub struct PlanAssignment {
 pub struct MonthlyActual {
     pub month: String,
     pub label: String,
-    pub cents: i64,
+    pub spent_cents: i64,
+    pub budgeted_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -520,9 +533,13 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
             });
         }
 
-        // Active goals (current < target, not archived)
+        // Sinking funds get their own Plan-wizard step; everything else that's
+        // still open (current < target) is a regular active goal.
         let all_goals = goals::list(conn)?;
-        let active_goals: Vec<GoalDto> = all_goals
+        let (sinking, other): (Vec<_>, Vec<_>) =
+            all_goals.into_iter().partition(|g| g.goal_type == "sinking-fund");
+        let sinking_funds: Vec<GoalDto> = sinking.into_iter().map(goal_to_dto).collect();
+        let active_goals: Vec<GoalDto> = other
             .into_iter()
             .filter(|g| g.current_cents < g.target_cents)
             .map(goal_to_dto)
@@ -554,11 +571,15 @@ pub async fn get_plan_next_month_data(state: tauri::State<'_, AppState>) -> AppR
             |r| r.get(0),
         )?;
 
+        let look_back = budgets::look_back_facts(conn, &m0)?;
+
         Ok(PlanData {
             income_cents,
             categories,
             goals: active_goals,
+            sinking_funds,
             recurring_expense_cents,
+            look_back,
         })
     })
     .await
@@ -651,6 +672,21 @@ pub async fn list_budget_history(
         }
         drop(stmt);
 
+        // Same shape, for budgeted amounts.
+        let mut budget_stmt = conn.prepare(
+            "SELECT category_id, month, amount_cents FROM budgets WHERE month >= ?1",
+        )?;
+        let cutoff_month = month_list.first().unwrap().clone();
+        let mut budget_map: std::collections::HashMap<(String, String), i64> =
+            std::collections::HashMap::new();
+        let budget_rows = budget_stmt.query_map(rusqlite::params![cutoff_month], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        for row in budget_rows.flatten() {
+            budget_map.insert((row.0, row.1), row.2);
+        }
+        drop(budget_stmt);
+
         // Fetch all non-archived categories
         let mut cat_stmt = conn.prepare(
             "SELECT c.id, c.label, COALESCE(c.color,'')
@@ -685,13 +721,17 @@ pub async fn list_budget_history(
                     .map(|(m, lbl)| MonthlyActual {
                         month: m.clone(),
                         label: lbl.clone(),
-                        cents: spend_map
+                        spent_cents: spend_map
+                            .get(&(id.clone(), m.clone()))
+                            .copied()
+                            .unwrap_or(0),
+                        budgeted_cents: budget_map
                             .get(&(id.clone(), m.clone()))
                             .copied()
                             .unwrap_or(0),
                     })
                     .collect();
-                let total: i64 = monthly.iter().map(|m| m.cents).sum();
+                let total: i64 = monthly.iter().map(|m| m.spent_cents).sum();
                 if total == 0 {
                     return None;
                 }
@@ -706,8 +746,8 @@ pub async fn list_budget_history(
 
         // Sort by total spend descending
         result.sort_by(|a, b| {
-            let ta: i64 = a.monthly.iter().map(|m| m.cents).sum();
-            let tb: i64 = b.monthly.iter().map(|m| m.cents).sum();
+            let ta: i64 = a.monthly.iter().map(|m| m.spent_cents).sum();
+            let tb: i64 = b.monthly.iter().map(|m| m.spent_cents).sum();
             tb.cmp(&ta)
         });
 
