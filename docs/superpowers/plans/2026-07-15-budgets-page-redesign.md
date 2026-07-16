@@ -1338,11 +1338,24 @@ Expected: compile error — `look_back_facts` and `LookBackFact` are not defined
 
 - [ ] **Step 3: Implement**
 
-Insert into `crates/finsight-core/src/repos/budgets.rs`, after `carryover_into_month` (before the `#[cfg(test)]` block). This needs `serde::Serialize` and `specta::Type` — add those to the file's imports:
+Insert into `crates/finsight-core/src/repos/budgets.rs`, after `carryover_into_month` (before the `#[cfg(test)]` block). This needs `serde::Serialize`, `specta::Type`, and `rusqlite::OptionalExtension` (for the `.optional()` budgeted-month check in the streak loop) — update the file's top imports from:
 
 ```rust
+use crate::error::CoreResult;
+use chrono::Utc;
+use rusqlite::{params, Connection};
+use uuid::Uuid;
+```
+
+to:
+
+```rust
+use crate::error::CoreResult;
+use chrono::Utc;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use specta::Type;
+use uuid::Uuid;
 ```
 
 ```rust
@@ -1426,6 +1439,21 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
         let mut streak = 1i64;
         for back in 1..12 {
             let m = month_before(month, back);
+            // Stop at the first prior month this category wasn't actually
+            // budgeted for — otherwise a category that has simply never been
+            // budgeted (zero spend forever) would read as an N-month streak
+            // instead of "not applicable." Only a budgeted-but-unspent run counts.
+            let was_budgeted: bool = conn
+                .query_row(
+                    "SELECT 1 FROM budgets WHERE category_id = ?1 AND month = ?2 AND amount_cents > 0",
+                    rusqlite::params![id, m],
+                    |_| Ok(true),
+                )
+                .optional()?
+                .unwrap_or(false);
+            if !was_budgeted {
+                break;
+            }
             let m_start = format!("{m}-01");
             let m_next = month_before(month, back - 1);
             let m_next_start = format!("{m_next}-01");
