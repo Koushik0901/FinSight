@@ -27,12 +27,6 @@ pub async fn set_currency(state: &ApiState, currency: String) -> AppResult<()> {
     .map_err(AppError::from)
 }
 
-/// Factory-reset: wipes every local financial/user-data table (accounts,
-/// transactions, budgets, goals, categories, reports/insight caches,
-/// scenarios, recipes, agent memory/context, review queues, etc.) while
-/// preserving `settings` (provider selection, currency, toggles) and the OS
-/// keychain (API keys, DB encryption key) untouched. The frontend is
-/// responsible for the double-confirmation UX before calling this.
 pub async fn delete_all_data(state: &ApiState) -> AppResult<()> {
     let db = (*state.db).clone();
     // Begin a reset: advance the ledger epoch (so looping background writers

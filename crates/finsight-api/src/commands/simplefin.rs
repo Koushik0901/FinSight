@@ -127,8 +127,6 @@ impl From<finsight_core::repos::transfers::TransferSuggestion> for TransferSugge
     }
 }
 
-/// Claim a SimpleFin setup token and persist the resulting bridge access URL
-/// plus every connection exposed by that access URL.
 pub async fn save_simplefin_setup_token(
     state: &ApiState,
     token: String,

@@ -286,10 +286,6 @@ pub async fn import_csv(
     Ok(result)
 }
 
-/// The CSV import mapping (columns, date format, amount handling) last used for
-/// this account, so a recurring import from the same bank can pre-fill and the
-/// user never re-picks the same settings. `None` when the account has never been
-/// imported into.
 pub async fn get_saved_csv_mapping(
     state: &ApiState,
     account_id: String,

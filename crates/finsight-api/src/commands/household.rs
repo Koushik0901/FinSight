@@ -23,11 +23,6 @@ pub async fn create_household_member(
     .map_err(AppError::from)
 }
 
-/// Mark one member as the operator ("self") of this install, then re-run the
-/// classification cascade so existing data reflects the identity immediately:
-/// the operator's OWN e-transfers become internal moves (out of income/expense
-/// and off the anomaly list), which is what makes the savings rate correct.
-/// Passing a non-existent id clears self.
 pub async fn set_self_member(state: &ApiState, member_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -68,9 +63,6 @@ pub async fn set_account_owners(
     .map_err(AppError::from)
 }
 
-/// Replace an account's owners with explicit per-owner shares (basis points;
-/// null ⇒ equal split). Recomputing metrics is not needed — the weight is read
-/// live from `share_bps` on every query.
 pub async fn set_account_owner_shares(
     state: &ApiState,
     account_id: String,
@@ -91,9 +83,6 @@ pub async fn list_asset_owners(state: &ApiState) -> AppResult<Vec<AssetOwner>> {
         .map_err(AppError::from)
 }
 
-/// Replace a manual asset's owners with explicit per-owner shares (basis points;
-/// null ⇒ equal split), so a jointly-owned house/car folds each owner's share
-/// into their net worth.
 pub async fn set_asset_owners(
     state: &ApiState,
     asset_id: String,

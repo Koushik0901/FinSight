@@ -2,13 +2,13 @@ use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::RuleProposal;
 
-// Types + shared helpers live in finsight-api now; re-exported so existing
-// imports of `finsight_app::commands::agent::*` (lib.rs, copilot_chat.rs,
-// tests) keep resolving.
+// Types live in finsight-api now; re-exported so existing imports of
+// `finsight_app::commands::agent::*` (lib.rs, tests) keep resolving. The
+// shared reasoning-pipeline helpers (build_toolset, enrich_agent_answer, etc.)
+// are pub(crate) in finsight-api since Task 6 moved their only cross-crate
+// consumer (copilot_chat) into the same crate — no longer re-exported here.
 pub use finsight_api::commands::agent::{
-    build_toolset, enrich_agent_answer, is_usable_tool_answer, planner_answer_to_agent_answer,
-    reasoning_result_to_agent_answer, validate_finance_answer, AgentAccountRow,
-    AgentAccountsOverviewBlock, AgentActionPlanBlock, AgentActivity,
+    AgentAccountRow, AgentAccountsOverviewBlock, AgentActionPlanBlock, AgentActivity,
     AgentAffordabilityVerdictBlock, AgentAllocationSegment, AgentAllocationSplitBlock,
     AgentAnswer, AgentCategoryBreakdownBlock, AgentCategoryRow, AgentChange, AgentChartBlock,
     AgentChartPoint, AgentComparisonBarsBlock, AgentDriver, AgentFundingSource,

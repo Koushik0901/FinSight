@@ -38,11 +38,6 @@ pub struct FinancialMetrics {
     pub expected_annual_return_pct: f64,
 }
 
-/// `get_financial_metrics`, optionally scoped to one household member. A `None`
-/// member returns the whole-household numbers (unchanged); `Some(id)` weights
-/// every figure by the member's ownership share (explicit `share_bps`, else an
-/// equal split), so the per-person view reconciles to the household total plus
-/// the unassigned residual.
 pub async fn get_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
@@ -103,9 +98,6 @@ pub struct MemberNetWorth {
     pub debt_cents: i64,
 }
 
-/// Each household member's share of net worth (share-weighted across accounts AND
-/// jointly-owned assets, via the metrics layer — NOT a client-side equal split),
-/// plus an "unassigned" residual so the rows sum to the household total.
 pub async fn household_net_worth_breakdown(state: &ApiState) -> AppResult<Vec<MemberNetWorth>> {
     use finsight_core::repos::household;
     let db = (*state.db).clone();

@@ -964,7 +964,6 @@ pub async fn stream_copilot_message(
     Ok(conv_id)
 }
 
-/// List all conversations for the sidebar, most-recent first.
 pub async fn list_conversations(state: &ApiState) -> AppResult<Vec<ConversationSummary>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -975,7 +974,6 @@ pub async fn list_conversations(state: &ApiState) -> AppResult<Vec<ConversationS
     .map_err(AppError::from)
 }
 
-/// Fetch all messages for a given conversation, ordered oldest-first.
 pub async fn get_conversation_messages(
     state: &ApiState,
     conversation_id: String,
@@ -989,7 +987,6 @@ pub async fn get_conversation_messages(
     .map_err(AppError::from)
 }
 
-/// Delete a conversation and all its messages.
 pub async fn delete_conversation(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -1000,7 +997,6 @@ pub async fn delete_conversation(state: &ApiState, id: String) -> AppResult<()> 
     .map_err(AppError::from)
 }
 
-/// Create a new empty conversation and return its ID.
 pub async fn create_conversation(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     let id = uuid::Uuid::new_v4().to_string();
@@ -1013,8 +1009,6 @@ pub async fn create_conversation(state: &ApiState) -> AppResult<String> {
     .map(|s| s.id)
 }
 
-/// Edit a persisted user message and remove later turns so assistant-ui reload/edit
-/// operations have durable backend semantics.
 pub async fn edit_conversation_user_message(
     state: &ApiState,
     input: EditConversationMessageInput,
@@ -1039,8 +1033,6 @@ pub async fn edit_conversation_user_message(
     .map_err(AppError::from)
 }
 
-/// Delete messages after a selected turn. The frontend then starts a fresh run
-/// from the remaining thread history.
 pub async fn delete_conversation_messages_after(
     state: &ApiState,
     conversation_id: String,

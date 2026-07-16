@@ -211,8 +211,6 @@ pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
-/// Recompute statistical anomaly flags deterministically from transaction
-/// patterns. Returns the number of transactions now flagged.
 pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -222,10 +220,6 @@ pub async fn recompute_anomalies(state: &ApiState) -> AppResult<u32> {
     .map_err(AppError::from)
 }
 
-/// Mark a flagged anomaly as reviewed-and-fine (dismiss) or restore it. A
-/// dismissed charge is cleared and the detector will not re-flag it on the next
-/// recompute; un-dismissing makes it flaggable again. Keeps the Insights anomaly
-/// feed trustworthy without per-transaction drawer edits.
 pub async fn set_anomaly_dismissed(
     state: &ApiState,
     txn_id: String,
@@ -248,9 +242,6 @@ pub async fn trigger_categorize(state: &ApiState) -> AppResult<()> {
     Ok(())
 }
 
-/// Queue a re-categorization pass for all low-confidence LLM assignments.
-/// Runs the rule engine first (picks up any new rules the user created), then
-/// the LLM for whatever remains uncertain.
 pub async fn trigger_recategorize_low_confidence(
     state: &ApiState,
 ) -> AppResult<()> {
@@ -816,7 +807,7 @@ pub struct AgentAnswer {
     pub response_blocks: Vec<AgentResponseBlock>,
 }
 
-pub fn enrich_agent_answer(answer: &mut AgentAnswer) {
+pub(crate) fn enrich_agent_answer(answer: &mut AgentAnswer) {
     if answer.response_blocks.is_empty() {
         if !answer.prose.trim().is_empty() {
             answer.response_blocks.push(AgentResponseBlock::Markdown {
@@ -1030,7 +1021,7 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
     }
 }
 
-pub fn build_toolset() -> ToolSet {
+pub(crate) fn build_toolset() -> ToolSet {
     // Single source of truth in finsight-agent so the shipped app and the
     // offline eval harness exercise the identical toolset.
     finsight_agent::reasoning::tools::standard_toolset()
@@ -1127,7 +1118,7 @@ fn mentions_investing(question: &str) -> bool {
         .any(|term| q.contains(term))
 }
 
-pub fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
+pub(crate) fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
     answer.missing_data.sort();
     answer.missing_data.dedup();
     answer.assumptions.sort();
@@ -1194,7 +1185,7 @@ fn debt_goal_alternatives_to_agent(
         })
         .collect()
 }
-pub fn planner_answer_to_agent_answer(
+pub(crate) fn planner_answer_to_agent_answer(
     answer: planning::StructuredFinanceAnswer,
 ) -> AgentAnswer {
     // Assemble readable Markdown (the UI renders prose as markdown) rather
@@ -1280,7 +1271,7 @@ pub fn planner_answer_to_agent_answer(
         response_blocks: Vec::new(),
     }
 }
-pub fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
+pub(crate) fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
     // Deliberately does NOT require data_sources: the model sometimes leaves
     // that array empty on an otherwise-good answer, and
     // reasoning_result_to_agent_answer backfills sensible defaults for exactly
@@ -1303,7 +1294,7 @@ pub fn is_usable_tool_answer(result: &ReasoningResult) -> bool {
     has_content && (used_tool || result.is_real_answer)
 }
 
-pub fn reasoning_result_to_agent_answer(
+pub(crate) fn reasoning_result_to_agent_answer(
     result: ReasoningResult,
     bundle_id: Option<String>,
     conn: &mut rusqlite::Connection,

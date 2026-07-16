@@ -314,9 +314,6 @@ fn ensure_manual_goal(conn: &mut rusqlite::Connection, id: &str) -> finsight_cor
     Ok(())
 }
 
-/// Set a manual goal's balance to an absolute value by appending the *delta* as a
-/// ledger contribution, keeping `current_cents` a derived total. Existing callers
-/// that pass an absolute balance stay correct without double-counting.
 pub async fn update_goal_balance(
     state: &ApiState,
     id: String,
@@ -336,7 +333,6 @@ pub async fn update_goal_balance(
     .map_err(AppError::from)
 }
 
-/// Append a contribution (positive) or withdrawal (negative) to a goal's ledger.
 pub async fn contribute_to_goal(
     state: &ApiState,
     id: String,

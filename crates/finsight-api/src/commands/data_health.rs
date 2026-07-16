@@ -146,10 +146,6 @@ pub async fn create_manual_backup(state: &ApiState) -> AppResult<BackupInfo> {
     })
 }
 
-/// Stage a restore: copy the chosen backup to `data.pending-restore.sqlcipher`.
-/// The swap into `data.sqlcipher` happens on the NEXT startup, before the DB is
-/// opened, so we never replace a database that has live connections. The
-/// current database is itself backed up first, so a restore is reversible.
 pub async fn stage_restore_backup(state: &ApiState, path: String) -> AppResult<()> {
     let dir = state.data_dir.clone();
     let backups_dir = dir.join("backups");
@@ -178,7 +174,6 @@ pub async fn stage_restore_backup(state: &ApiState, path: String) -> AppResult<(
     Ok(())
 }
 
-/// Cancel a staged restore (delete the pending file) before the next restart.
 pub async fn cancel_staged_restore(state: &ApiState) -> AppResult<()> {
     let dir = state.data_dir.clone();
     let staged = dir.join("data.pending-restore.sqlcipher");
