@@ -249,7 +249,7 @@ fn find_by_imported_id(
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, NULL \
          FROM transactions t \
@@ -306,7 +306,7 @@ fn find_fuzzy_candidates(
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, NULL \
          FROM transactions t \
@@ -357,7 +357,7 @@ fn find_pending_provider_match(
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, NULL \
          FROM transactions t \
@@ -476,18 +476,19 @@ fn map_transaction_row(r: &rusqlite::Row) -> rusqlite::Result<Transaction> {
             })?
             .with_timezone(&Utc),
         is_reimbursable: r.get::<_, i64>(18)? != 0,
-        is_split: r.get::<_, i64>(19)? != 0,
-        is_transfer: r.get::<_, i64>(26)? != 0,
-        transfer_peer_id: r.get(27)?,
-        transfer_peer_account_name: r.get(28)?,
+        settle_up: r.get::<_, i64>(19)? != 0,
+        is_split: r.get::<_, i64>(20)? != 0,
+        is_transfer: r.get::<_, i64>(27)? != 0,
+        transfer_peer_id: r.get(28)?,
+        transfer_peer_account_name: r.get(29)?,
         // Not selected here; import matching doesn't need per-txn ownership.
         owner_member_id: None,
-        imported_id: r.get(20)?,
-        source: r.get(21)?,
-        raw_synced_data: r.get(22)?,
-        pending: r.get::<_, i64>(23)? != 0,
-        external_tx_id: r.get(24)?,
-        external_account_id: r.get(25)?,
+        imported_id: r.get(21)?,
+        source: r.get(22)?,
+        raw_synced_data: r.get(23)?,
+        pending: r.get::<_, i64>(24)? != 0,
+        external_tx_id: r.get(25)?,
+        external_account_id: r.get(26)?,
         // Not selected here; import matching doesn't need activity metadata.
         activity: None,
     })
@@ -520,6 +521,7 @@ mod fuzzy_tests {
             is_anomaly: false,
             created_at: posted,
             is_reimbursable: false,
+            settle_up: false,
             is_split: false,
             is_transfer: false,
             transfer_peer_id: None,

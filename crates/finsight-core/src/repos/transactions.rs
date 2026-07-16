@@ -68,6 +68,7 @@ pub fn insert(conn: &mut Connection, input: NewTransaction) -> CoreResult<Transa
         is_anomaly: false,
         created_at: now,
         is_reimbursable: false,
+        settle_up: false,
         is_split: false,
         is_transfer,
         transfer_peer_id: None,
@@ -135,7 +136,7 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, pa.name, t.owner_member_id, \
                 t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
@@ -242,18 +243,19 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
                     })?
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
-                is_split: r.get::<_, i64>(19)? != 0,
-                is_transfer: r.get::<_, i64>(26)? != 0,
-                transfer_peer_id: r.get(27)?,
-                transfer_peer_account_name: r.get(28)?,
-                owner_member_id: r.get(29)?,
-                imported_id: r.get(20)?,
-                source: r.get(21)?,
-                raw_synced_data: r.get(22)?,
-                pending: r.get::<_, i64>(23)? != 0,
-                external_tx_id: r.get(24)?,
-                external_account_id: r.get(25)?,
-                activity: read_activity(r, 30)?,
+                settle_up: r.get::<_, i64>(19)? != 0,
+                is_split: r.get::<_, i64>(20)? != 0,
+                is_transfer: r.get::<_, i64>(27)? != 0,
+                transfer_peer_id: r.get(28)?,
+                transfer_peer_account_name: r.get(29)?,
+                owner_member_id: r.get(30)?,
+                imported_id: r.get(21)?,
+                source: r.get(22)?,
+                raw_synced_data: r.get(23)?,
+                pending: r.get::<_, i64>(24)? != 0,
+                external_tx_id: r.get(25)?,
+                external_account_id: r.get(26)?,
+                activity: read_activity(r, 31)?,
             })
         },
     )?;
@@ -616,7 +618,7 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                 t.merchant_id, m.canonical_name, m.color, m.initials, \
                 t.category_id, c.label, c.color, t.status, t.notes, \
                 t.ai_confidence, t.ai_explanation, t.is_anomaly, t.created_at, \
-                t.is_reimbursable, t.is_split, t.imported_id, t.source, \
+                t.is_reimbursable, t.settle_up, t.is_split, t.imported_id, t.source, \
                 t.raw_synced_data, t.pending, t.external_tx_id, t.external_account_id, t.is_transfer, \
                 t.transfer_peer_id, pa.name, t.owner_member_id, \
                 t.activity_type, t.activity_sub_type, t.symbol, t.security_name, t.quantity, t.unit_price \
@@ -666,18 +668,19 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
                     })?
                     .with_timezone(&Utc),
                 is_reimbursable: r.get::<_, i64>(18)? != 0,
-                is_split: r.get::<_, i64>(19)? != 0,
-                is_transfer: r.get::<_, i64>(26)? != 0,
-                transfer_peer_id: r.get(27)?,
-                transfer_peer_account_name: r.get(28)?,
-                owner_member_id: r.get(29)?,
-                imported_id: r.get(20)?,
-                source: r.get(21)?,
-                raw_synced_data: r.get(22)?,
-                pending: r.get::<_, i64>(23)? != 0,
-                external_tx_id: r.get(24)?,
-                external_account_id: r.get(25)?,
-                activity: read_activity(r, 30)?,
+                settle_up: r.get::<_, i64>(19)? != 0,
+                is_split: r.get::<_, i64>(20)? != 0,
+                is_transfer: r.get::<_, i64>(27)? != 0,
+                transfer_peer_id: r.get(28)?,
+                transfer_peer_account_name: r.get(29)?,
+                owner_member_id: r.get(30)?,
+                imported_id: r.get(21)?,
+                source: r.get(22)?,
+                raw_synced_data: r.get(23)?,
+                pending: r.get::<_, i64>(24)? != 0,
+                external_tx_id: r.get(25)?,
+                external_account_id: r.get(26)?,
+                activity: read_activity(r, 31)?,
             })
         },
     )

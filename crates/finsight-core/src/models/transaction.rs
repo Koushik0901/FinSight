@@ -67,6 +67,7 @@ pub struct Transaction {
     pub is_anomaly: bool,
     pub created_at: DateTime<Utc>,
     pub is_reimbursable: bool,
+    pub settle_up: bool,
     pub is_split: bool,
     pub is_transfer: bool,
     /// Id of the matching leg in another account when this transaction is one
