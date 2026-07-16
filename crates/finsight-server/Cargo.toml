@@ -10,16 +10,16 @@ finsight-core = { path = "../finsight-core" }
 finsight-agent = { path = "../finsight-agent" }
 axum = { version = "0.8", features = ["json"] }
 tokio.workspace = true
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
-# NOTE: tower-http (fs/trace/cors), tokio-stream (sync), and chrono are
-# intentionally NOT added yet — nothing in this crate uses them until later
-# tasks (tower-http: static file serving in Task 12; tokio-stream: SSE in
-# Task 11). Unused deps are lint noise; add each when its consuming code lands.
+# NOTE: tower-http (fs) is intentionally NOT added yet — nothing in this crate
+# uses it until Task 12 (static file serving with SPA fallback).
 # regex is a dev-dependency only, added in Task 10 for the parity test parser.
 
 [dev-dependencies]

@@ -12,6 +12,7 @@ pub fn build_router(state: Arc<ServerState>) -> Router {
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
         )
         .route("/api/rpc/{cmd}", post(crate::dispatch::rpc))
+        .route("/api/events", get(crate::events::events))
         .with_state(state)
 }
 
