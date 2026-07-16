@@ -35,3 +35,7 @@ samples/
 
 # Git worktrees
 .worktrees/
+
+# finsight-server default data dir (contains plaintext db.key + SQLCipher DB —
+# must never be committed; FINSIGHT_DATA_DIR defaults to ./data)
+/data/

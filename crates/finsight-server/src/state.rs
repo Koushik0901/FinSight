@@ -28,7 +28,21 @@ fn load_or_create_keyfile(data_dir: &Path) -> std::io::Result<String> {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     let key: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    std::fs::write(&path, &key)?;
+    // This key decrypts the whole DB: create owner-read-only (0600) atomically
+    // on Unix so it is never even briefly world-readable (Docker hosts often
+    // run with a permissive umask). `create_new` also removes the exists→write
+    // TOCTOU: a concurrent creator loses with an error instead of clobbering.
+    {
+        use std::io::Write;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        opts.open(&path)?.write_all(key.as_bytes())?;
+    }
     Ok(key)
 }
 
