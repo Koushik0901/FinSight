@@ -1443,6 +1443,7 @@ dependencies = [
 name = "finsight-api"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "chrono",
  "finsight-agent",

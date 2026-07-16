@@ -8,6 +8,7 @@ license.workspace = true
 finsight-core = { path = "../finsight-core" }
 finsight-agent = { path = "../finsight-agent" }
 finsight-providers = { path = "../finsight-providers" }
+anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta = { workspace = true, features = ["derive", "serde_json"] }
