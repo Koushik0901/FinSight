@@ -13,12 +13,12 @@ pub use finsight_api::sync_scheduler;
 /// Re-exported here because integration tests and command modules import them
 /// from `finsight_app`/`crate::` today.
 pub use finsight_api::provider::{
-    build_copilot_router_from_settings, build_provider_from_config, load_provider_from_settings,
-    migrate_provider_settings,
+    build_copilot_router_from_settings, build_provider_from_config, load_completion_provider_config,
+    load_provider_from_settings, migrate_provider_settings,
 };
 
 use finsight_agent::agent::{AgentEvent, EventCallback};
-use finsight_core::{db::run_migrations, settings, Db};
+use finsight_core::{db::run_migrations, Db};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -33,27 +33,6 @@ impl AppState {
     pub fn new(db: Db, data_dir: std::path::PathBuf, on_event: EventCallback) -> Self {
         let api = finsight_api::ApiState::new(db, data_dir, on_event);
         Self { api: Arc::new(api) }
-    }
-}
-
-/// Load the raw CompletionProviderConfig from settings.
-/// Returns Unconfigured when the setting is missing.
-///
-/// NOTE: stays in finsight-app (not moved to finsight-api's `provider` module)
-/// because its return type `commands::agent::CompletionProviderConfig` hasn't
-/// moved out of finsight-app yet — that's Task 5 of the server-phase1-skeleton
-/// plan. finsight-api must stay tauri-free and cannot depend on finsight-app,
-/// so moving this helper now would be circular. Moves alongside `commands::agent`.
-pub fn load_completion_provider_config(
-    db: &Db,
-) -> Result<commands::agent::CompletionProviderConfig, finsight_core::CoreError> {
-    let conn = db.get()?;
-    let cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
-    match cfg {
-        Some(v) => serde_json::from_value(v).map_err(|e| {
-            finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))
-        }),
-        None => Ok(commands::agent::CompletionProviderConfig::Unconfigured),
     }
 }
 

@@ -1,15 +1,8 @@
 //! Provider-construction helpers: turn saved settings into a live
 //! `CompletionProvider`. Tauri-free — used by both the Tauri app's setup and
 //! `finsight-server`'s bootstrap.
-//!
-//! NOTE: `load_completion_provider_config` deliberately stays in
-//! `finsight-app` (not moved here) because its return type
-//! `commands::agent::CompletionProviderConfig` hasn't moved out of
-//! finsight-app yet (that's Task 5 of the server-phase1-skeleton plan).
-//! finsight-api must stay tauri-free and cannot depend on finsight-app, so
-//! moving this one helper now would be circular. It moves alongside the
-//! `agent` command module in Task 5.
 
+use crate::commands::agent::CompletionProviderConfig;
 use finsight_agent::{
     providers::{
         anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
@@ -41,6 +34,21 @@ pub fn migrate_provider_settings(db: &Db) -> Result<(), finsight_core::CoreError
     };
     settings::set(&conn, "completion_provider", &migrated)?;
     Ok(())
+}
+
+/// Load the raw CompletionProviderConfig from settings.
+/// Returns Unconfigured when the setting is missing.
+pub fn load_completion_provider_config(
+    db: &Db,
+) -> Result<CompletionProviderConfig, finsight_core::CoreError> {
+    let conn = db.get()?;
+    let cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
+    match cfg {
+        Some(v) => serde_json::from_value(v).map_err(|e| {
+            finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))
+        }),
+        None => Ok(CompletionProviderConfig::Unconfigured),
+    }
 }
 
 /// Load the saved CompletionProviderConfig from settings and instantiate the provider.

@@ -5,9 +5,11 @@
 //! finsight-app.
 
 pub mod accounts;
+pub mod agent;
 pub mod assets;
 pub mod budget;
 pub mod categories;
+pub mod copilot;
 pub mod data_health;
 pub mod household;
 pub mod import;
@@ -19,9 +21,11 @@ pub mod meta;
 pub mod metrics;
 pub mod onboarding;
 pub mod planned_transactions;
+pub mod recipes;
 pub mod recurring;
 pub mod reports;
 pub mod scenarios;
 pub mod settings;
+pub mod simplefin;
 pub mod spending;
 pub mod transactions;
