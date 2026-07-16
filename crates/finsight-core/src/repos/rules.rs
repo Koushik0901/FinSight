@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 pub fn list_active(conn: &mut Connection) -> CoreResult<Vec<Rule>> {
     let mut stmt = conn.prepare(
-        "SELECT id, pattern, category_id, enabled, source, created_at \
+        "SELECT id, pattern, category_id, enabled, source, created_at, treatment \
          FROM rules WHERE enabled = 1 ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -26,6 +26,7 @@ pub fn list_active(conn: &mut Connection) -> CoreResult<Vec<Rule>> {
                     )
                 })?
                 .with_timezone(&Utc),
+            treatment: r.get(6)?,
         })
     })?;
     let mut out = Vec::new();
@@ -39,14 +40,15 @@ pub fn insert(conn: &mut Connection, rule: NewRule) -> CoreResult<Rule> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     conn.execute(
-        "INSERT INTO rules(id, pattern, category_id, enabled, source, created_at) \
-         VALUES(?1, ?2, ?3, 1, ?4, ?5)",
+        "INSERT INTO rules(id, pattern, category_id, enabled, source, created_at, treatment) \
+         VALUES(?1, ?2, ?3, 1, ?4, ?5, ?6)",
         params![
             id,
             rule.pattern,
             rule.category_id,
             rule.source,
-            now.to_rfc3339()
+            now.to_rfc3339(),
+            rule.treatment
         ],
     )?;
     Ok(Rule {
@@ -56,6 +58,7 @@ pub fn insert(conn: &mut Connection, rule: NewRule) -> CoreResult<Rule> {
         enabled: true,
         source: rule.source,
         created_at: now,
+        treatment: rule.treatment,
     })
 }
 
@@ -172,6 +175,7 @@ mod tests {
             pattern: "%amazon%".to_string(),
             category_id: "cat1".to_string(),
             source: "user".to_string(),
+            treatment: "categorize".to_string(),
         };
         let r = insert(&mut conn, rule).unwrap();
         assert_eq!(r.pattern, "%amazon%");
@@ -182,5 +186,30 @@ mod tests {
         set_enabled(&mut conn, &r.id, false).unwrap();
         let active2 = list_active(&mut conn).unwrap();
         assert_eq!(active2.len(), 0);
+    }
+
+    #[test]
+    fn insert_and_list_active_rule_treatment() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
+
+        let rule = NewRule {
+            pattern: "%joe%".to_string(),
+            category_id: "cat1".to_string(),
+            source: "user".to_string(),
+            treatment: "settle_up".to_string(),
+        };
+        let r = insert(&mut conn, rule).unwrap();
+        assert_eq!(r.treatment, "settle_up");
+
+        let active = list_active(&mut conn).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].treatment, "settle_up");
     }
 }

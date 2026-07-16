@@ -2131,7 +2131,7 @@ reasons: string[]; lastAmountCents: number; minAmountCents: number; maxAmountCen
 isSubscription: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
-export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
+export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string; treatment: string }
 export type RuleProposal = { id: string; whenLabel: string; description: string; pattern: string; categoryId: string; status: string; createdAt: string }
 /**
  * Rule with resolved category label and color.

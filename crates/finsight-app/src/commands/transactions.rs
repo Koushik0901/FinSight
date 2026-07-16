@@ -118,6 +118,7 @@ pub async fn create_rule(
                 pattern: pattern.clone(),
                 category_id: category_id.clone(),
                 source: "user".to_string(),
+                treatment: "categorize".to_string(),
             },
         )?;
         // Apply immediately to existing uncategorized history so the user sees

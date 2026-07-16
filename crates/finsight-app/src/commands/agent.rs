@@ -305,6 +305,7 @@ pub async fn accept_rule_proposal(state: tauri::State<'_, AppState>, id: String)
                     pattern: p.pattern,
                     category_id: p.category_id,
                     source: "agent".to_string(),
+                    treatment: "categorize".to_string(),
                 },
             )?;
             rule_proposals::set_status(conn, &id, "accepted")?;

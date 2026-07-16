@@ -460,6 +460,7 @@ mod tests {
                     pattern: "CHIPOTLE".to_string(),
                     category_id: "cat1".to_string(),
                     source: "user".to_string(),
+                    treatment: "categorize".to_string(),
                 },
             )
             .unwrap();

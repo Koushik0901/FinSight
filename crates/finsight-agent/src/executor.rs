@@ -308,6 +308,7 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                     pattern: payload.pattern.clone(),
                     category_id: payload.category_id.clone(),
                     source: "agent".into(),
+                    treatment: "categorize".to_string(),
                 },
             )?;
             Ok(format!(
