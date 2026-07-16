@@ -561,6 +561,105 @@ pub async fn apply_transfer_verdict_to_similar(
     .map_err(AppError::from)
 }
 
+/// Serializable mirror of `finsight_core::repos::transactions::Verdict` —
+/// the core enum has no serde/specta derives by design (finsight-core has no
+/// Tauri/specta dependency), so this DTO crosses the specta boundary instead.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum CounterpartyVerdict {
+    Transfer,
+    SettleUp,
+    Real,
+}
+
+impl From<CounterpartyVerdict> for finsight_core::repos::transactions::Verdict {
+    fn from(v: CounterpartyVerdict) -> Self {
+        use finsight_core::repos::transactions::Verdict;
+        match v {
+            CounterpartyVerdict::Transfer => Verdict::Transfer,
+            CounterpartyVerdict::SettleUp => Verdict::SettleUp,
+            CounterpartyVerdict::Real => Verdict::Real,
+        }
+    }
+}
+
+/// Record the user's 3-way verdict (transfer / settle-up / real spending) on
+/// a transfer-review counterparty transaction. Sticky: survives re-imports
+/// and categorizer re-runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_counterparty_verdict(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    verdict: CounterpartyVerdict,
+) -> AppResult<finsight_core::models::Transaction> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        transactions::set_counterparty_verdict(conn, &id, verdict.into())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Apply one counterparty verdict to every undecided transaction matching a
+/// counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+/// `TransferVerdictResult::similar_pattern`). One decision clears a whole
+/// person's e-transfer history from the review list.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_counterparty_verdict_to_similar(
+    state: tauri::State<'_, AppState>,
+    pattern: String,
+    verdict: CounterpartyVerdict,
+) -> AppResult<u32> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        transactions::apply_verdict_to_matching(conn, &pattern, verdict.into())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// One counterparty's undecided transfer-like rows, netted for the grouped
+/// review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UnresolvedCounterpartyDto {
+    pub pattern: Option<String>,
+    pub label: String,
+    pub txn_count: i64,
+    pub inflow_cents: i64,
+    pub outflow_cents: i64,
+}
+
+impl From<transactions::UnresolvedCounterparty> for UnresolvedCounterpartyDto {
+    fn from(u: transactions::UnresolvedCounterparty) -> Self {
+        UnresolvedCounterpartyDto {
+            pattern: u.pattern,
+            label: u.label,
+            txn_count: u.txn_count,
+            inflow_cents: u.inflow_cents,
+            outflow_cents: u.outflow_cents,
+        }
+    }
+}
+
+/// The undecided transfer-review queue, grouped by counterparty for a
+/// bulk-decision surface.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_unresolved_counterparties(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<UnresolvedCounterpartyDto>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        transactions::list_unresolved_counterparties(conn)
+    })
+    .await
+    .map_err(AppError::from)
+    .map(|v| v.into_iter().map(UnresolvedCounterpartyDto::from).collect())
+}
+
 // ── Split transaction commands ────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Type)]

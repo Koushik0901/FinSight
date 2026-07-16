@@ -1063,6 +1063,45 @@ async applyTransferVerdictToSimilar(pattern: string, isTransfer: boolean) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Record the user's 3-way verdict (transfer / settle-up / real spending) on
+ * a transfer-review counterparty transaction. Sticky: survives re-imports
+ * and categorizer re-runs.
+ */
+async setCounterpartyVerdict(id: string, verdict: CounterpartyVerdict) : Promise<Result<Transaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_counterparty_verdict", { id, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Apply one counterparty verdict to every undecided transaction matching a
+ * counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+ * `TransferVerdictResult::similar_pattern`). One decision clears a whole
+ * person's e-transfer history from the review list.
+ */
+async applyCounterpartyVerdictToSimilar(pattern: string, verdict: CounterpartyVerdict) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_counterparty_verdict_to_similar", { pattern, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The undecided transfer-review queue, grouped by counterparty for a
+ * bulk-decision surface.
+ */
+async listUnresolvedCounterparties() : Promise<Result<UnresolvedCounterpartyDto[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_unresolved_counterparties") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getTransactionSplits(transactionId: string) : Promise<Result<TransactionSplitDto[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_transaction_splits", { transactionId }) };
@@ -1815,6 +1854,12 @@ agUiMetadataJson: string | null; createdAt: string }
  * Summary of a conversation thread shown in the sidebar.
  */
 export type ConversationSummary = { id: string; title: string; messageCount: number; createdAt: string; updatedAt: string }
+/**
+ * Serializable mirror of `finsight_core::repos::transactions::Verdict` —
+ * the core enum has no serde/specta derives by design (finsight-core has no
+ * Tauri/specta dependency), so this DTO crosses the specta boundary instead.
+ */
+export type CounterpartyVerdict = "transfer" | "settleUp" | "real"
 export type CreateMonthlyReviewInput = { year: number; month: number; notes: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
@@ -2147,7 +2192,7 @@ structural_gap_cents: number | null; note: string }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string; color: string }
 export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }
-export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; is_transfer: boolean; 
+export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; settle_up: boolean; is_split: boolean; is_transfer: boolean; 
 /**
  * Id of the matching leg in another account when this transaction is one
  * half of a paired cross-account transfer (see `categorize::pair_transfers`).
@@ -2198,6 +2243,11 @@ quantity: number | null;
 unitPrice: number | null }
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
+/**
+ * One counterparty's undecided transfer-like rows, netted for the grouped
+ * review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
+ */
+export type UnresolvedCounterpartyDto = { pattern: string | null; label: string; txnCount: number; inflowCents: number; outflowCents: number }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
 
 /** tauri-specta globals **/
