@@ -929,7 +929,7 @@ mod tests {
     #[tokio::test]
     async fn rpc_list_accounts_roundtrip() {
         let state = crate::router::tests::test_state().await;
-        let app = crate::router::build_router(state);
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let res = app
             .oneshot(
                 Request::post("/api/rpc/list_accounts")
@@ -950,7 +950,7 @@ mod tests {
     #[tokio::test]
     async fn rpc_create_then_list_account() {
         let state = crate::router::tests::test_state().await;
-        let app = crate::router::build_router(state);
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let input = serde_json::json!({ "input": {
             // NewAccount's required (non-Option, no #[serde(default)]) fields, per
             // finsight_core::models::NewAccount: owner, bank, r#type, name, currency,
@@ -994,7 +994,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_command_is_404_with_app_error_body() {
         let state = crate::router::tests::test_state().await;
-        let app = crate::router::build_router(state);
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let res = app
             .oneshot(
                 Request::post("/api/rpc/not_a_command")
@@ -1015,7 +1015,7 @@ mod tests {
     #[tokio::test]
     async fn unsupported_command_is_501() {
         let state = crate::router::tests::test_state().await;
-        let app = crate::router::build_router(state);
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let res = app
             .oneshot(
                 Request::post("/api/rpc/export_all_data_csv")

@@ -11,12 +11,15 @@ async fn main() -> anyhow::Result<()> {
     let data_dir = std::path::PathBuf::from(
         std::env::var("FINSIGHT_DATA_DIR").unwrap_or_else(|_| "./data".into()),
     );
+    let ui_dir = std::path::PathBuf::from(
+        std::env::var("FINSIGHT_UI_DIR").unwrap_or_else(|_| "ui/dist".into()),
+    );
     let port: u16 = std::env::var("FINSIGHT_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8674);
     let state = state::ServerState::bootstrap(&data_dir).await?;
-    let app = router::build_router(state);
+    let app = router::build_router(state, &ui_dir);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!("finsight-server listening on http://localhost:{port}");
     axum::serve(listener, app).await?;
