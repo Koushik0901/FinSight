@@ -192,6 +192,19 @@ pub async fn import_csv(
                 .await
                 .unwrap_or(0);
         }
+        // Apply persisted counterparty verdicts (transfer/settle_up-treatment
+        // rules — see repos::transactions::apply_verdict_to_matching) to any
+        // freshly imported rows from that same counterparty, so a verdict the
+        // user ruled once doesn't have to be re-ruled on every future import.
+        // Runs right after pairing so pattern-generalized verdicts land before
+        // the anomaly/net-worth recompute below sees these rows. Best-effort —
+        // must not fail the import; idempotent, so a partial run is safe.
+        if !wiped() {
+            let treatment_db = (*state.db).clone();
+            let _ = run(&treatment_db, finsight_core::repos::rules::apply_treatment_rules)
+                .await
+                .unwrap_or(0);
+        }
         // Recompute statistical anomaly flags from the (now larger) history.
         // Scoped to the imported account's merchants: only those groups can
         // have shifted, and this leaves every other merchant's flags untouched

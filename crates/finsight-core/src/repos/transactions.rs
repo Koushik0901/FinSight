@@ -631,6 +631,13 @@ pub fn set_counterparty_verdict(
 /// pattern (from [`transfer_verdict_siblings`]). Each row goes through
 /// [`set_counterparty_verdict`] so the full per-verdict semantics apply.
 /// Returns how many rows were ruled.
+///
+/// When the verdict is `Transfer` or `SettleUp` AND the pattern is a
+/// generalized `%name%` counterparty (never a bare unique reference), the
+/// verdict is also persisted as a `rules` row (see [`upsert_treatment_rule`])
+/// so future imports of that same counterparty auto-resolve via
+/// `repos::rules::apply_treatment_rules` instead of re-entering the review
+/// queue. `Real` is the default treatment — nothing to persist.
 pub fn apply_verdict_to_matching(
     conn: &mut Connection,
     pattern: &str,
@@ -655,7 +662,62 @@ pub fn apply_verdict_to_matching(
         set_counterparty_verdict(conn, id, verdict)?;
         count += 1;
     }
+
+    let treatment = match verdict {
+        Verdict::Transfer => Some("transfer"),
+        Verdict::SettleUp => Some("settle_up"),
+        Verdict::Real => None,
+    };
+    if let Some(treatment) = treatment {
+        if pattern.starts_with('%') {
+            upsert_treatment_rule(conn, pattern, treatment)?;
+        }
+    }
+
     Ok(count)
+}
+
+/// Ensure an enabled `rules` row exists for `pattern` with the given
+/// `treatment`: insert one if none exists (mirrors the rule-existence check
+/// in [`update`]'s `ProposedRule` flow), or flip an existing row's treatment
+/// if it disagrees. `category_id` is `""` — never read for `transfer`/
+/// `settle_up` treatments (only `'categorize'` rules read it; see the V049/
+/// V050 migration comments for why the column has no FK for these rows).
+fn upsert_treatment_rule(conn: &mut Connection, pattern: &str, treatment: &str) -> CoreResult<()> {
+    let existing: Option<(String, String)> = conn
+        .query_row(
+            "SELECT id, treatment FROM rules WHERE lower(pattern) = lower(?1) AND enabled = 1 LIMIT 1",
+            params![pattern],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+
+    match existing {
+        Some((id, existing_treatment)) => {
+            if existing_treatment != treatment {
+                conn.execute(
+                    "UPDATE rules SET treatment = ?1 WHERE id = ?2",
+                    params![treatment, id],
+                )?;
+            }
+        }
+        None => {
+            crate::repos::rules::insert(
+                conn,
+                crate::models::NewRule {
+                    pattern: pattern.to_string(),
+                    category_id: String::new(),
+                    source: "user".to_string(),
+                    treatment: treatment.to_string(),
+                },
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Apply one transfer verdict to every undecided transaction matching a
@@ -1355,6 +1417,74 @@ mod tests {
             (0, Some("cat1".into())),
             "the categorized sibling is left alone"
         );
+    }
+
+    #[test]
+    fn settle_up_verdict_upserts_a_treatment_rule() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer joe 001','cleared','2026-01-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+
+        let rule: (String, bool, String) = conn
+            .query_row(
+                "SELECT pattern, enabled, treatment FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(rule, ("%joe%".to_string(), true, "settle_up".to_string()));
+
+        let rule_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rule_count, 1);
+
+        // A second bulk verdict for the same counterparty must not duplicate
+        // the rule — upsert, not insert-always.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer joe 002','cleared','2026-02-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        let rule_count2: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rule_count2, 1, "second call upserts, doesn't duplicate");
+
+        // Verdict::Real is the default treatment — nothing to persist.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
+             ('sw1',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer swathi 001','cleared','2026-03-01T12:00:00Z',0,NULL)",
+            params![acc_id],
+        )
+        .unwrap();
+        apply_verdict_to_matching(&mut conn, "%swathi%", Verdict::Real).unwrap();
+        let real_rule_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%swathi%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(real_rule_count, 0, "Real verdicts create no rule");
     }
 
     #[test]
