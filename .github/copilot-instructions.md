@@ -9,6 +9,9 @@ Local-first personal finance app. Rust/Tauri 2 backend · React 18 + TypeScript 
 pnpm install
 
 # Full dev environment (Tauri + Vite hot reload)
+# NOTE: debug builds use an ISOLATED `<identifier>.dev` app-data dir and start
+# EMPTY — they never touch the real production DB. Copy the prod DB into the
+# `.dev` dir, or build --release, to test against real data.
 pnpm tauri:dev
 
 # Frontend only (faster for UI-only work)
@@ -122,7 +125,7 @@ Import from `ui/src/components/Icons.tsx` using the `icon()` factory pattern —
 - axe a11y tests produce jsdom canvas warnings in stderr — expected, non-fatal
 - `keychain::tests::*` are `#[cfg_attr(target_os = "linux", ignore)]` (gnome-keyring unavailable in headless CI); run normally on macOS/Windows
 - `set_key_round_trip` is intermittently flaky under parallel execution on Windows (pre-existing)
-- **Expected green bar:** 103 Rust tests, 105 frontend tests, 0 TypeScript errors
+- **Expected green bar:** 509 Rust tests (+12 ignored live-DB/keychain), 424 frontend tests, 0 TypeScript errors
 
 ## Financial Freedom Framework
 

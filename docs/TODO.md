@@ -36,6 +36,12 @@ evidence; the audit probe
 (`crates/finsight-app/tests/audit_probe.rs`) is the rerunnable acceptance
 harness on `samples/`.
 
+**2026-07-15:** Copilot generative-UI blocks (typed/validated finance cards +
+robustness net), dev/prod DB isolation (recurring-corruption fix), and a further
+transfer-detection pass (F0: bare `INTERNET TRANSFER` pairing, household
+e-transfer flagging, id-order-independent pairing). See the F0 STATUS block in
+`docs/audits/2026-07-10-completeness-and-cross-user-ownership.md`.
+
 ---
 
 ## ✅ Agent rich responses shipped (2026-06-28)

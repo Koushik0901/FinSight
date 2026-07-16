@@ -6,6 +6,10 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ```bash
 # Full dev environment (Tauri backend + Vite frontend with hot reload)
+# NOTE: debug builds use an ISOLATED `<identifier>.dev` app-data dir and start
+# EMPTY — they never touch the real production DB (resolve_app_data_dir in
+# crates/finsight-app/src/lib.rs). Copy the prod DB into the `.dev` dir, or build
+# --release, to test against real data.
 pnpm tauri:dev
 
 # Frontend only (no Tauri, faster for UI-only work)
@@ -105,7 +109,7 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 214 Rust tests (212 + 2 ignored on Linux), 161 frontend tests, 0 TypeScript errors.
+**Green bar:** 509 Rust tests (+12 ignored live-DB/keychain), 424 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 

@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Full dev environment (Tauri backend + Vite frontend with hot reload)
+# NOTE: debug builds use an ISOLATED `<identifier>.dev` app-data dir and start
+# EMPTY — they never touch the real production DB (see resolve_app_data_dir in
+# crates/finsight-app/src/lib.rs). To test against real data, copy the prod DB
+# into the `.dev` dir, or build --release.
 pnpm tauri:dev
 
 # Frontend only (no Tauri, faster for UI-only work)
@@ -79,8 +83,13 @@ ui/src/api/client.ts     ← re-exports bindings (import from here, not bindings
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
 ui/src/screens/          ← one file per screen, consumes hooks
 ui/src/components/       ← shared: Sidebar, CommandPalette, TransactionDrawer, Drawer, Icons
+ui/src/components/copilot ← Copilot generative-UI: cards/ (one per block kind) + agUi/artifacts.ts (Zod validation) + renderers
 ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (persisted to localStorage)
 ```
+
+### Copilot generative-UI blocks
+
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-app/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### TypeScript type field naming
 
@@ -105,7 +114,7 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-**Green bar:** 341 Rust tests (+9 ignored live-DB/keychain), 298 frontend tests, 0 TypeScript errors.
+**Green bar:** 509 Rust tests (+12 ignored live-DB/keychain), 424 frontend tests, 0 TypeScript errors.
 
 ## Financial Freedom Framework
 

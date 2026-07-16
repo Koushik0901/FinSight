@@ -1,5 +1,13 @@
 # FinSight Completeness & Cross-User Ownership Roadmap — 2026-07-10 (v2)
 
+> **UPDATE (2026-07-15):** F0 (transfer detection) got a further pass — bare
+> `INTERNET TRANSFER` cross-account pairing (Rule 4), household-member e-transfer
+> flagging, and a determinism fix so pairing is reproducible regardless of import
+> ids. See the STATUS block under F0 below for the honest impact (pairing is
+> net-neutral by construction; the residual leak is ambiguous friend e-transfers →
+> review workflow). Also this cycle: Copilot generative-UI blocks and dev/prod DB
+> isolation (separate work streams, own commits).
+>
 > **STATUS (2026-07-13): fully resolved.** Part 1 (cross-user ownership, V042–V045)
 > is complete including both optional refinements. Part 2's F0–F5 are all
 > addressed: F0/F1/F3/F5 with concrete new code (this session added the sticky
@@ -225,6 +233,38 @@ high-confidence gaps:
 **Acceptance:** probe expense ≈ real (~$2.5–3.5k/mo), savings rate positive; bare
 INTERNET TRANSFER legs flagged/paired; self e-transfers not income; anomaly top-10
 free of self-transfers; no regression on the INTERAC-purchase non-transfer test.
+
+> **STATUS (2026-07-15): further pass shipped (PR #4, `feat/fix(transfers)` +
+> `refactor(f0)`).** Three mechanisms, all unit-test-proven and general (nothing
+> tuned to `samples/`):
+> - **Rule 4 — bare-transfer pairing** (`pair_transfers`): pairs two *nameless*
+>   reference-only legs (transfer vocab + a numeric ref, no counterparty name, no
+>   own-account marker) that are equal-and-opposite across accounts. A *named*
+>   e-transfer (rent/income) fails `is_bare_reference_transfer` and is spared.
+> - **Household e-transfers**: `is_self_transfer` already loads `household_members`
+>   names — the gap was configuration. A registered member's e-transfer reads as
+>   an internal move; a single-token name matches on one hit, and the ≥2-token
+>   rule guards a friend sharing the owner's first name.
+> - **Determinism fix**: `pair_transfers` now orders candidates by stable content
+>   (`posted_at, amount_cents, merchant_raw`) before id, so the greedy match is
+>   reproducible regardless of random import ids (the probe swung 158↔159 pairs
+>   run-to-run before).
+>
+> **Honest reframe of the acceptance target.** A transfer *pair with both legs
+> imported is net-neutral by construction* — flagging removes +$X income and −$X
+> expense, so the savings *rate* cannot improve from pairing; judge by whether
+> transfer volume still inflates income/expense *separately*. The specific
+> `135957/135006` legs cited above turned out to be **same-account** (their
+> counterpart is in an un-imported account / predates the statement range), so
+> Rule 4 can't pair them — it's a general safety net that pays off when both legs
+> are imported. The dominant residual leak is **genuinely ambiguous bidirectional
+> person-to-person e-transfers** (friends, ~$10k each both directions) — correctly
+> routed to the confirm-once review surface (`suggested_rule_pattern`), NOT
+> auto-detected. The audit's "$2.5–3.5k/mo expense" target was too aggressive;
+> the top rolling-window expenses are mostly genuine merchants (heavy travel). The
+> "Swathi = partner" household assumption was NOT baked into the probe (that would
+> overfit to one user); the probe registers only the operator, and the household
+> feature is validated generically by a unit test.
 
 ### F1 — Investment/brokerage CSV import unsupported (user added a TFSA today)
 `samples/wealthsimple-tfsa-all-time-statement.csv` is a **brokerage activity**

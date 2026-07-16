@@ -31,7 +31,7 @@ FinSight is designed around one goal: helping you become the master of your own 
 | Screen | Status | Notes |
 |--------|--------|-------|
 | Today | ✅ | Net/income/expenses stats, savings rate card (colour-coded), category stream bar, privacy mode |
-| Copilot | ✅ | AI financial planner — goal-aware plans, action bundles, conversational Q&A, nudges |
+| Copilot | ✅ | AI financial planner — goal-aware plans, action bundles, conversational Q&A, nudges, and native **generative-UI blocks** (typed, validated finance cards — spending review, accounts overview, drivers, action plans — rendered in-app, not raw markdown) |
 | Insights | ✅ | AI anomaly cards, spending patterns, agent memory, needs-review feed |
 | Accounts | ✅ | Manual accounts + assets/liabilities, balance history, net worth, CSV import |
 | Transactions | ✅ | Search, filter tabs (needs review / anomalies / no category), drawer edit |
@@ -88,7 +88,7 @@ FinSight/
 
 **Stack:** Rust/Tauri 2 · React 18 + TypeScript + Vite · SQLite/SQLCipher · tanstack-query · sonner toasts · zod + react-hook-form
 
-**Storage:** `~/<app-data>/data.sqlcipher` encrypted with a key stored in the OS keychain.
+**Storage:** `~/<app-data>/data.sqlcipher` encrypted with a key stored in the OS keychain. Debug/dev builds use an isolated `<identifier>.dev` data directory so `pnpm tauri:dev` never touches the real production database; the WAL is checkpointed on clean exit.
 
 ## Adding a Tauri command
 
@@ -116,6 +116,15 @@ item in both documents is resolved and verified — against `samples/` via the
 rerunnable probe (`crates/finsight-app/tests/audit_probe.rs`) and, for the UI
 layer, against the actual compiled Tauri app. New gaps will be added to those
 documents as they're found, not tracked here.
+
+Since then (2026-07-15): the Copilot gained native generative-UI blocks (with a
+server-synthesis + structured-output + heal robustness net); dev/prod databases
+were isolated to stop a recurring corruption; and transfer detection got a
+further pass (F0) — nameless `INTERNET TRANSFER` legs now pair across accounts,
+e-transfers to a configured household member read as internal, and the pairing
+is now reproducible regardless of row-id order. The honest remaining transfer
+gap — genuinely ambiguous bidirectional person-to-person e-transfers — belongs
+to the confirm-once review workflow, not auto-detection.
 
 Longer-horizon ideas beyond the audits:
 
