@@ -674,6 +674,95 @@ pub fn apply_transfer_override_to_matching(
     apply_verdict_to_matching(conn, pattern, verdict)
 }
 
+/// One counterparty's undecided transfer-like rows, netted for the grouped
+/// review surface.
+#[derive(Debug, Clone)]
+pub struct UnresolvedCounterparty {
+    /// The `%name%` LIKE pattern (see [`crate::categorize::suggested_rule_pattern`]);
+    /// `None` for the bare-reference bucket, which can't be generalized by name.
+    pub pattern: Option<String>,
+    /// Display label: the pattern with its `%` delimiters trimmed, or
+    /// "Unnamed internal transfers" for the bare-reference bucket.
+    pub label: String,
+    pub txn_count: i64,
+    /// Sum of positive amounts (absolute).
+    pub inflow_cents: i64,
+    /// Sum of |negative amounts|.
+    pub outflow_cents: i64,
+}
+
+/// The undecided transfer-review queue (same predicate as the
+/// `transfer_review` filter preset, plus `settle_up = 0`), grouped by
+/// counterparty for a bulk-decision surface. Grouping is done in Rust over
+/// [`crate::categorize::suggested_rule_pattern`] so the `%name%` logic stays
+/// single-sourced — never reimplemented in SQL. Rows with no generalizable
+/// counterparty (a bare "INTERNET TRANSFER <ref>") fold into one
+/// `pattern: None` "Unnamed internal transfers" bucket. Ordered by net
+/// exposure (`|inflow - outflow|`) descending.
+pub fn list_unresolved_counterparties(conn: &Connection) -> CoreResult<Vec<UnresolvedCounterparty>> {
+    let sql = format!(
+        "SELECT t.merchant_raw, t.amount_cents FROM transactions t \
+         WHERE {} AND t.settle_up = 0",
+        crate::categorize::transfer_review_predicate("t")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+
+    struct Group {
+        label: String,
+        txn_count: i64,
+        inflow_cents: i64,
+        outflow_cents: i64,
+    }
+    let mut groups: std::collections::HashMap<Option<String>, Group> = std::collections::HashMap::new();
+
+    for row in rows {
+        let (merchant_raw, amount_cents) = row?;
+        let suggested = crate::categorize::suggested_rule_pattern(&merchant_raw);
+        // Only a generalized `%name%` pattern identifies a counterparty; a
+        // raw (unchanged) string means no name to group on.
+        let key = if suggested.starts_with('%') {
+            Some(suggested)
+        } else {
+            None
+        };
+        let entry = groups.entry(key.clone()).or_insert_with(|| Group {
+            label: match &key {
+                Some(p) => p.trim_matches('%').to_string(),
+                None => "Unnamed internal transfers".to_string(),
+            },
+            txn_count: 0,
+            inflow_cents: 0,
+            outflow_cents: 0,
+        });
+        entry.txn_count += 1;
+        if amount_cents > 0 {
+            entry.inflow_cents += amount_cents;
+        } else {
+            entry.outflow_cents += amount_cents.abs();
+        }
+    }
+
+    let mut out: Vec<UnresolvedCounterparty> = groups
+        .into_iter()
+        .map(|(pattern, g)| UnresolvedCounterparty {
+            pattern,
+            label: g.label,
+            txn_count: g.txn_count,
+            inflow_cents: g.inflow_cents,
+            outflow_cents: g.outflow_cents,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        let a_net = (a.inflow_cents - a.outflow_cents).abs();
+        let b_net = (b.inflow_cents - b.outflow_cents).abs();
+        b_net.cmp(&a_net)
+    });
+    Ok(out)
+}
+
 /// Fetch a single transaction by id (used internally).
 fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
     conn.query_row(
@@ -1266,5 +1355,63 @@ mod tests {
             (0, Some("cat1".into())),
             "the categorized sibling is left alone"
         );
+    }
+
+    #[test]
+    fn list_unresolved_counterparties_groups_by_counterparty() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
+             ('j1',?1,'2026-01-01T12:00:00Z',-30000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('j2',?1,'2026-02-01T12:00:00Z',-20000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('j3',?1,'2026-03-01T12:00:00Z', 10000,'Internet Banking E-TRANSFER 222 Joe','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
+             ('s1',?1,'2026-04-01T12:00:00Z',-40000,'E-TRANSFER 333 Swathi','cleared','2026-04-01T12:00:00Z',0,NULL,NULL),\
+             ('u1',?1,'2026-05-01T12:00:00Z', -5000,'Internet Banking INTERNET TRANSFER 000000999','cleared','2026-05-01T12:00:00Z',0,NULL,NULL),\
+             ('d1',?1,'2026-06-01T12:00:00Z',-10000,'Internet Banking E-TRANSFER 444 Joe','cleared','2026-06-01T12:00:00Z',0,NULL,'cat1')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let groups = list_unresolved_counterparties(&conn).unwrap();
+
+        // The decided (categorized) row must never appear, nor may it inflate
+        // the "joe" group's count.
+        let joe = groups
+            .iter()
+            .find(|g| g.label == "joe")
+            .expect("a joe group exists");
+        assert_eq!(joe.pattern.as_deref(), Some("%joe%"));
+        assert_eq!(joe.txn_count, 3, "j1+j2+j3 only; d1 is decided (categorized)");
+        assert_eq!(joe.inflow_cents, 10000);
+        assert_eq!(joe.outflow_cents, 50000);
+
+        let swathi = groups
+            .iter()
+            .find(|g| g.label == "swathi")
+            .expect("a swathi group exists");
+        assert_eq!(swathi.pattern.as_deref(), Some("%swathi%"));
+        assert_eq!(swathi.txn_count, 1);
+        assert_eq!(swathi.inflow_cents, 0);
+        assert_eq!(swathi.outflow_cents, 40000);
+
+        let unnamed = groups
+            .iter()
+            .find(|g| g.label == "Unnamed internal transfers")
+            .expect("an unnamed-transfers bucket exists for the bare ref row");
+        assert!(unnamed.pattern.is_none());
+        assert_eq!(unnamed.txn_count, 1);
+        assert_eq!(unnamed.outflow_cents, 5000);
+
+        // Only the three expected groups — nothing from the decided row and
+        // nothing from the seeded ordinary AMAZON purchase.
+        assert_eq!(groups.len(), 3);
+
+        // Ordered by net exposure (|inflow - outflow|) descending: swathi
+        // (40000) and joe (40000) tie for largest, both ahead of the unnamed
+        // bucket (5000).
+        let unnamed_pos = groups.iter().position(|g| g.label == "Unnamed internal transfers").unwrap();
+        assert_eq!(unnamed_pos, 2, "smallest net exposure sorts last");
     }
 }
