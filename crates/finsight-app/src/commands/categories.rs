@@ -1,7 +1,6 @@
 use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::Category;
-use finsight_core::repos::{categories, run};
 
 #[tauri::command]
 #[specta::specta]
@@ -10,10 +9,7 @@ pub async fn update_category_color(
     id: String,
     color: String,
 ) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| categories::update_color(conn, &id, &color))
-        .await
-        .map_err(crate::error::AppError::from)
+    finsight_api::commands::categories::update_category_color(&state.api, id, color).await
 }
 
 #[tauri::command]
@@ -24,12 +20,7 @@ pub async fn create_category(
     group_id: Option<String>,
     color: String,
 ) -> AppResult<Category> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        categories::create(conn, &label, group_id.as_deref(), &color)
-    })
-    .await
-    .map_err(crate::error::AppError::from)
+    finsight_api::commands::categories::create_category(&state.api, label, group_id, color).await
 }
 
 #[tauri::command]
@@ -39,19 +30,13 @@ pub async fn rename_category(
     id: String,
     label: String,
 ) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| categories::rename(conn, &id, &label))
-        .await
-        .map_err(crate::error::AppError::from)
+    finsight_api::commands::categories::rename_category(&state.api, id, label).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn archive_category(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| categories::archive(conn, &id))
-        .await
-        .map_err(crate::error::AppError::from)
+    finsight_api::commands::categories::archive_category(&state.api, id).await
 }
 
 #[tauri::command]
@@ -61,10 +46,5 @@ pub async fn set_category_guidance(
     id: String,
     guidance: Option<String>,
 ) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        categories::set_guidance(conn, &id, guidance.as_deref())
-    })
-    .await
-    .map_err(crate::error::AppError::from)
+    finsight_api::commands::categories::set_category_guidance(&state.api, id, guidance).await
 }

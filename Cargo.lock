@@ -1441,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-api"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1451,6 +1451,7 @@ dependencies = [
  "rand 0.8.6",
  "reqwest 0.12.28",
  "rstest",
+ "rusqlite",
  "rust_decimal",
  "serde",
  "serde_json",

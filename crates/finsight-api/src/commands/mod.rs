@@ -3,3 +3,10 @@
 //! driven equally by the Tauri command wrappers and by finsight-server's HTTP
 //! dispatcher. Command modules are added here as they are extracted from
 //! finsight-app.
+
+pub mod accounts;
+pub mod categories;
+pub mod investments;
+pub mod meta;
+pub mod onboarding;
+pub mod transactions;
