@@ -15,6 +15,16 @@ pnpm tauri:dev
 # Frontend only (no Tauri, faster for UI-only work)
 cd ui && npm run dev
 
+# Server mode (Immich-style self-hosted; Phase 1): API + SSE + serves ui/dist on :8674.
+# Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override) with a
+# plaintext db.key keyfile — Phase 1 stopgap, replaced by wrapped keys in Phase 2.
+cargo run -p finsight-server
+
+# Browser dev against the server: start the server, then `cd ui && npm run dev`
+# (vite proxies /api → :8674; the HTTP/SSE shim auto-installs when no Tauri and
+# no ?mock). For the served-from-server experience: `cd ui && npm run build`
+# then open http://localhost:8674 directly.
+
 # All Rust tests
 cargo test --workspace
 
@@ -39,7 +49,18 @@ cd ui && npm run build
 
 ## Architecture
 
-### Rust workspace (5 crates)
+FinSight is mid-pivot to an Immich-style self-hosted client/server model (spec:
+`docs/superpowers/specs/2026-07-15-server-architecture-design.md`). Phase 1 is
+in place: every command body lives in the tauri-free **`finsight-api`** crate;
+the Tauri app and the new **`finsight-server`** (axum) are two thin transports
+over it. Server-mode events (Copilot streaming, import progress) flow through
+the `FrameSink` trait → SSE `/api/events`; the browser installs an HTTP shim
+(`ui/src/api/httpBackend.ts`) so the generated bindings work unchanged. The
+bindings↔dispatcher parity tests (`crates/finsight-server/tests/parity.rs`)
+enforce that every command stays routed with exactly the arg keys bindings.ts
+sends — keep the dispatcher's `arg(&p, "…")` convention or they go red.
+
+### Rust workspace (7 crates)
 
 **`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
 
@@ -47,7 +68,11 @@ cd ui && npm run build
 
 **`crates/finsight-agent`** — AI layer: Copilot context engine, planner, executor, recipe runner, categorizer pipeline, anomaly detection. Runs on a background Tokio task via `AgentHandle`.
 
-**`crates/finsight-app`** — Tauri command surface. Commands in `src/commands/` call into `finsight-core` repos via the `run()` helper. `AppState` holds a `Db` clone and an `AgentHandle`. All commands registered in `build_specta_builder()` in `src/lib.rs`.
+**`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
+
+**`crates/finsight-app`** — thin Tauri wrapper layer. Each `#[tauri::command]` in `src/commands/` delegates to the same-named `finsight_api::commands::*` fn via `&state.api`; wrappers own the doc comments (specta exports them into bindings.ts — never add `///` docs that would change bindings) and the few Tauri-only bits (file-save dialogs, native notifications, `TauriFrameSink`). All commands registered in `build_specta_builder()` in `src/lib.rs`.
+
+**`crates/finsight-server`** — axum self-host server (lib+bin, tauri-free): `POST /api/rpc/{cmd}` dispatcher (one match arm per command, strict `arg(&p, "camelCaseKey")` convention), `GET /api/events` SSE fan-out of `FrameSink` emissions + agent events, `/api/health`, static `ui/dist` serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against bindings.ts.
 
 **`src-tauri`** (crate alias `finsight-tauri`) — binary entry point + `export_bindings` binary that writes `ui/src/api/bindings.ts`.
 
