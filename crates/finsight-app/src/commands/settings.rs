@@ -1,32 +1,23 @@
 use crate::error::{AppError, AppResult};
 use crate::AppState;
-use finsight_core::{repos::run, settings};
+use finsight_core::repos::run;
 use tauri_plugin_dialog::DialogExt;
 
-const CURRENCY_KEY: &str = "display_currency";
-pub(crate) const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
+/// Re-exported so `crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY`
+/// (used by `lib.rs`'s startup resume-categorization check) keeps resolving
+/// now that the constant + its owning commands live in finsight-api.
+pub use finsight_api::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY;
 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_currency(state: tauri::State<'_, AppState>) -> AppResult<String> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        let val: Option<String> = settings::get(conn, CURRENCY_KEY)?;
-        Ok(val.unwrap_or_else(|| "USD".to_string()))
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::get_currency(&state.api).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        settings::set(conn, CURRENCY_KEY, &currency)
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::set_currency(&state.api, currency).await
 }
 
 /// Factory-reset: wipes every local financial/user-data table (accounts,
@@ -38,19 +29,7 @@ pub async fn set_currency(state: tauri::State<'_, AppState>, currency: String) -
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_all_data(state: tauri::State<'_, AppState>) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    // Begin a reset: advance the ledger epoch (so looping background writers
-    // bail promptly) and take the exclusive barrier, which BLOCKS until every
-    // in-flight writer lease (import cascade, categorizer commit) has drained.
-    // Holding this guard across the wipe guarantees no operation started against
-    // the previous epoch can commit after this returns success — a straggler
-    // either already committed (and is wiped below) or will observe the advanced
-    // epoch and abort.
-    let _reset = db.reset_barrier().begin_reset().await;
-    run(&db, finsight_core::repos::reset::delete_all_data)
-        .await
-        .map_err(AppError::from)
-    // `_reset` drops here, after the wipe has committed.
+    finsight_api::commands::settings::delete_all_data(&state.api).await
 }
 
 #[tauri::command]
@@ -126,18 +105,10 @@ pub async fn export_all_data_json(
     std::fs::write(&path, json).map_err(|e| AppError::new("io", e.to_string()))
 }
 
-const NOTIFICATIONS_ENABLED_KEY: &str = "notifications.enabled";
-
 #[tauri::command]
 #[specta::specta]
 pub async fn get_notifications_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        let val: Option<bool> = settings::get(conn, NOTIFICATIONS_ENABLED_KEY)?;
-        Ok(val.unwrap_or(true))
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::get_notifications_enabled(&state.api).await
 }
 
 #[tauri::command]
@@ -146,24 +117,13 @@ pub async fn set_notifications_enabled(
     state: tauri::State<'_, AppState>,
     enabled: bool,
 ) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        settings::set(conn, NOTIFICATIONS_ENABLED_KEY, &enabled)
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::set_notifications_enabled(&state.api, enabled).await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn get_auto_categorize_enabled(state: tauri::State<'_, AppState>) -> AppResult<bool> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        let val: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
-        Ok(val.unwrap_or(true))
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::get_auto_categorize_enabled(&state.api).await
 }
 
 #[tauri::command]
@@ -172,12 +132,7 @@ pub async fn set_auto_categorize_enabled(
     state: tauri::State<'_, AppState>,
     enabled: bool,
 ) -> AppResult<()> {
-    let db = (*state.api.db).clone();
-    run(&db, move |conn| {
-        settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &enabled)
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::settings::set_auto_categorize_enabled(&state.api, enabled).await
 }
 
 fn csv_escape(s: &str) -> String {
@@ -238,48 +193,4 @@ pub async fn export_all_data_csv(
     .map_err(AppError::from)?;
 
     std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use finsight_core::{db::run_migrations, keychain, repos::run, Db};
-    use tempfile::TempDir;
-
-    fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("settings.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
-        (dir, db)
-    }
-
-    #[tokio::test]
-    async fn auto_categorize_enabled_defaults_true() {
-        let (_dir, db) = fresh_db();
-        let val: bool = run(&db, |conn| {
-            let v: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
-            Ok(v.unwrap_or(true))
-        })
-        .await
-        .unwrap();
-        assert!(val);
-    }
-
-    #[tokio::test]
-    async fn auto_categorize_enabled_round_trips() {
-        let (_dir, db) = fresh_db();
-        run(&db, |conn| {
-            settings::set(conn, AUTO_CATEGORIZE_ENABLED_KEY, &false)
-        })
-        .await
-        .unwrap();
-        let val: bool = run(&db, |conn| {
-            let v: Option<bool> = settings::get(conn, AUTO_CATEGORIZE_ENABLED_KEY)?;
-            Ok(v.unwrap_or(true))
-        })
-        .await
-        .unwrap();
-        assert!(!val);
-    }
 }
