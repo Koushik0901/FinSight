@@ -53,7 +53,8 @@
   - All other params/return types unchanged. Doc comments live on the **wrapper** (that's what specta exports).
   - Types defined in a command module (request/response structs with `#[derive(Type)]`, enums like `CompletionProviderConfig`) move with the module; the finsight-app module re-exports them (`pub use finsight_api::commands::agent::CompletionProviderConfig;`) so `lib.rs`/tests keep compiling.
   - Module-level unit tests (`#[cfg(test)] mod tests`) move with the bodies. Fixture paths like `../../ui/src/...` still resolve (same crate depth).
-  - **Desktop-only commands stay behind:** any command whose signature keeps `tauri::AppHandle` for file dialogs (`DialogExt`) does NOT move in Phase 1. Known set (verify by `grep -n "AppHandle" crates/finsight-app/src/commands/*.rs` as you go): `accounts::export_account_csv`, `transactions::export_transactions_csv`, `transactions::export_search_transactions_csv`, `settings::export_all_data_json`, `settings::export_all_data_csv`, plus the dialog-using command(s) in `import.rs` (line ~111) and `budget.rs` (line ~571). These go on the server's `UNSUPPORTED` list (Task 9) and get a real browser story (upload/download endpoints) in Phase 3. If a stayed-behind command shares pure helpers (e.g. `csv_escape`) with moved code, move the helper to finsight-api and import it.
+  - **Desktop-only commands stay behind:** any command whose signature keeps `tauri::AppHandle` for file dialogs (`DialogExt`) does NOT move in Phase 1. **First action of Tasks 3, 4, and 5:** run `grep -rn "AppHandle" crates/finsight-app/src/commands/` and report the exact list of stay-behind commands (with file:line) back to the controller in the DONE report — do NOT silently decide the set. The controller reconciles that list against the dispatcher's `UNSUPPORTED` const (Task 9); a missed one is a command that should 501 but instead 500s. Known set from the earlier grep (confirm, don't assume): `accounts::export_account_csv`, `transactions::export_transactions_csv`, `transactions::export_search_transactions_csv`, `settings::export_all_data_json`, `settings::export_all_data_csv`, plus the dialog-using command(s) in `import.rs` (line ~111) and `budget.rs` (line ~571) — **identify these two by name and report them**. Stay-behind commands go on `UNSUPPORTED` (Task 9) and get a real browser story (upload/download endpoints) in Phase 3. If a stayed-behind command shares pure helpers (e.g. `csv_escape`) with moved code, move the helper to finsight-api and import it.
+  - **Arg-key convention (load-bearing for the Task 10 guard):** every moved command keeps its exact parameter names. The dispatcher (Task 9) will read each argument via `arg(&p, "<camelCaseKey>")` where the key is the Rust param name camelCased (`balance_cents` → `"balanceCents"`, `import_id` → `"importId"`, single-word names unchanged). This matches what `bindings.ts` emits (`TAURI_INVOKE("set_account_balance", { id, balanceCents })`). Do not rename params during the move.
 
 ---
 
@@ -674,14 +675,17 @@ async fn dispatch(st: &Arc<ServerState>, cmd: &str, p: serde_json::Value)
         }
         // ── …one arm per remaining SUPPORTED command, same mechanical pattern.
         //    Arg key = Rust param name in camelCase (`balance_cents` → "balanceCents",
-        //    single-word params unchanged). The Task 10 parity test enumerates
-        //    every command bindings.ts can send, so a missed arm = red test, and
-        //    a wrong arg key = the Task 15 end-to-end sweep catches it. ──
+        //    single-word params unchanged). Task 10 enforces BOTH: (a) a missed
+        //    arm = red parity test, and (b) every `arg(&p, "key")` matches the
+        //    camelCase key bindings.ts actually sends — so a typo'd key is a red
+        //    test at `cargo test`, NOT a latent 500 discovered in production. ──
         _ => Err(AppError::new("rpc.unknown_command", format!("unknown command `{cmd}`"))),
     }
 }
 ```
 Write out ALL remaining arms — every command registered in `build_specta_builder()` (the full list is in `crates/finsight-app/src/lib.rs:174-353`) except the UNSUPPORTED set. This is ~160 one-line arms; tedious, mechanical, enforced complete by Task 10.
+
+**HARD CONVENTION (Task 10 depends on it):** read every argument via `arg(&p, "<key>")` and nothing else — no inline `p.get(...)`, no destructuring, no renamed locals for the key. The key string must be the literal the test can regex out. Commands that legitimately do NOT read a plain arg for one of their bindings keys (only `app_ready`, which takes none, and `stream_copilot_message`, whose sink is server-constructed) are the ONLY entries allowed on the Task 10 `ARG_CHECK_EXEMPT` list. Fill `stream_copilot_message`'s real arms with `arg(&p, "...")` for each non-sink param per its actual signature (check `copilot_chat.rs`), so it too is arg-checked except for the sink.
 
 Wire into `router.rs`:
 ```rust
@@ -693,39 +697,120 @@ Wire into `router.rs`:
 
 ---
 
-### Task 10: Bindings↔dispatcher parity test
+### Task 10: Bindings↔dispatcher parity test (routing AND arg-keys)
 
-**Files:** Create `crates/finsight-server/tests/parity.rs`; Modify `dispatch.rs` (export `SUPPORTED` list)
+This is the plan's most important guard. It turns two otherwise-eyeball correctness surfaces — "is every command routed?" and "is every one of ~160 camelCase arg-keys right?" — into red-bar-on-drift invariants at `cargo test` time. Neither the compiler, the zero-diff-bindings check, nor human review covers the arg-keys; only this test does.
 
-- [ ] **Step 1:** In `dispatch.rs`, add `pub const SUPPORTED: &[&str] = &[ "list_accounts", ... ];` (every match arm, same order as the match — keep the match and this list adjacent so drift is visible in review).
+**Files:** Create `crates/finsight-server/src/lib.rs` (expose modules), `crates/finsight-server/tests/parity.rs`; Modify `dispatch.rs` (export `SUPPORTED` + `ARG_CHECK_EXEMPT`), `main.rs` (use the lib).
 
-- [ ] **Step 2: Write the test**
+- [ ] **Step 1: lib+bin restructure.** Add `crates/finsight-server/src/lib.rs` with `pub mod dispatch; pub mod router; pub mod state; pub mod events;`. Change `main.rs` to `use finsight_server::{router, state};` (drop the `mod` decls). Integration tests under `tests/` can now `use finsight_server::...`. `cargo test -p finsight-server` still green.
+
+- [ ] **Step 2:** In `dispatch.rs`, add adjacent to the match:
 ```rust
-use std::collections::BTreeSet;
+/// Every command with a match arm in `dispatch()`. Keep in the SAME ORDER as the
+/// match so review sees drift. The parity test proves this == (bindings − UNSUPPORTED).
+pub const SUPPORTED: &[&str] = &[ "list_accounts", "create_account", /* …every arm… */ ];
 
-/// Every command the generated bindings can invoke must be either dispatched
-/// or explicitly UNSUPPORTED — same spirit as the Rust↔Zod parity corpus test.
+/// Commands whose dispatch legitimately does not read every bindings arg via
+/// `arg(&p, "key")`. ONLY these two are allowed: `app_ready` takes no args;
+/// `stream_copilot_message`'s FrameSink is server-constructed (its other args
+/// ARE arg-checked). Adding anything else here is a red flag in review.
+pub const ARG_CHECK_EXEMPT: &[&str] = &["app_ready", "stream_copilot_message"];
+```
+
+- [ ] **Step 3: Write the failing test** (`crates/finsight-server/tests/parity.rs`)
+```rust
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Parse `bindings.ts` into cmd → set(camelCase arg keys). Matches the two shapes
+/// tauri-specta emits: `TAURI_INVOKE("cmd")` and `TAURI_INVOKE("cmd", { a, b })`.
+fn parse_bindings() -> BTreeMap<String, BTreeSet<String>> {
+    let src = include_str!("../../../ui/src/api/bindings.ts");
+    let mut out = BTreeMap::new();
+    for chunk in src.split("TAURI_INVOKE(\"").skip(1) {
+        let cmd = chunk.split('"').next().unwrap().to_string();
+        // Args object (if any) is the `{ ... }` before the first `)` after the name.
+        let head = &chunk[..chunk.find(')').unwrap_or(chunk.len())];
+        let mut keys = BTreeSet::new();
+        if let (Some(o), Some(c)) = (head.find('{'), head.rfind('}')) {
+            for raw in head[o + 1..c].split(',') {
+                // shorthand `{ id, balanceCents }` OR `{ id: id }` — take the key.
+                let k = raw.split(':').next().unwrap().trim();
+                if !k.is_empty() { keys.insert(k.to_string()); }
+            }
+        }
+        out.insert(cmd, keys);
+    }
+    out
+}
+
+/// Parse `dispatch.rs` into cmd → set(keys read via `arg(&p, "key")`) by walking
+/// each `"cmd" =>` match arm up to the next arm.
+fn parse_dispatch_arg_keys() -> BTreeMap<String, BTreeSet<String>> {
+    let src = include_str!("../src/dispatch.rs");
+    // Everything after `match cmd {` (skip the const arrays above it).
+    let body = &src[src.find("match cmd {").expect("match cmd block")..];
+    let mut out = BTreeMap::new();
+    // Arm headers look like:  "list_accounts" =>
+    let arm_re = regex::Regex::new(r#""([a-z0-9_]+)"\s*=>"#).unwrap();
+    let key_re = regex::Regex::new(r#"arg\(&p,\s*"([A-Za-z0-9_]+)"\)"#).unwrap();
+    let arms: Vec<(usize, String)> = arm_re
+        .captures_iter(body)
+        .map(|c| (c.get(0).unwrap().start(), c[1].to_string()))
+        .collect();
+    for (i, (start, cmd)) in arms.iter().enumerate() {
+        let end = arms.get(i + 1).map(|(s, _)| *s).unwrap_or(body.len());
+        let mut keys = BTreeSet::new();
+        for k in key_re.captures_iter(&body[*start..end]) {
+            keys.insert(k[1].to_string());
+        }
+        out.insert(cmd.clone(), keys);
+    }
+    out
+}
+
 #[test]
 fn every_binding_command_is_routed_or_explicitly_unsupported() {
-    let bindings = include_str!("../../../ui/src/api/bindings.ts");
-    let mut wanted = BTreeSet::new();
-    for chunk in bindings.split("TAURI_INVOKE(\"").skip(1) {
-        wanted.insert(chunk.split('"').next().unwrap().to_string());
-    }
+    let wanted: BTreeSet<String> = parse_bindings().keys().cloned().collect();
     assert!(wanted.len() > 100, "bindings parse looks broken: {}", wanted.len());
     let routed: BTreeSet<String> = finsight_server::dispatch::SUPPORTED
         .iter().chain(finsight_server::dispatch::UNSUPPORTED)
         .map(|s| s.to_string()).collect();
     let missing: Vec<_> = wanted.difference(&routed).collect();
     let stale: Vec<_> = routed.difference(&wanted).collect();
-    assert!(missing.is_empty(), "commands in bindings.ts with no server route: {missing:?}");
+    assert!(missing.is_empty(), "bindings.ts commands with no server route: {missing:?}");
     assert!(stale.is_empty(), "server routes for commands not in bindings.ts: {stale:?}");
 }
-```
-This requires `finsight-server` to be a lib+bin (add `src/lib.rs` exposing `pub mod dispatch; pub mod router; pub mod state;`, `main.rs` uses the lib) — restructure if needed.
 
-- [ ] **Step 3:** `cargo test -p finsight-server parity` → PASS only when the dispatcher is complete. Fix gaps it finds.
-- [ ] **Step 4: Commit** — `git commit -am "test(server): bindings↔dispatcher parity gate"`
+/// THE arg-key guard: for every SUPPORTED command (minus exemptions), the keys the
+/// dispatcher reads via `arg(&p, "…")` must EXACTLY equal the keys bindings.ts sends.
+/// Catches `balance_cents` vs `balanceCents`, missing args, and typos — at test time.
+#[test]
+fn dispatcher_arg_keys_match_bindings_exactly() {
+    let bindings = parse_bindings();
+    let dispatch = parse_dispatch_arg_keys();
+    let exempt: BTreeSet<&str> = finsight_server::dispatch::ARG_CHECK_EXEMPT.iter().copied().collect();
+    let mut problems = Vec::new();
+    for cmd in finsight_server::dispatch::SUPPORTED {
+        if exempt.contains(cmd) { continue; }
+        let want = bindings.get(*cmd)
+            .unwrap_or_else(|| panic!("SUPPORTED command `{cmd}` absent from bindings.ts"));
+        let got = dispatch.get(*cmd).cloned().unwrap_or_default();
+        if &got != want {
+            problems.push(format!(
+                "  {cmd}: bindings sends {want:?} but dispatcher reads {got:?}"
+            ));
+        }
+    }
+    assert!(problems.is_empty(),
+        "dispatcher arg-key mismatches (fix the arg(&p, \"…\") keys):\n{}", problems.join("\n"));
+}
+```
+Add `regex = "1"` to `finsight-server` `[dev-dependencies]`.
+
+- [ ] **Step 4:** `cargo test -p finsight-server --test parity` → run it. Both tests must pass ONLY when the dispatcher is complete AND every arg-key is correct. Fix every mismatch it reports (these are real bugs — a red bar here means a command would have 500'd in production). Re-run until green.
+- [ ] **Step 5: Controller checkpoint (do not skip):** the implementer reports the final `UNSUPPORTED` list; the controller reconciles it against the AppHandle grep results collected in Tasks 3–5 before accepting the task.
+- [ ] **Step 6: Commit** — `git commit -am "test(server): bindings↔dispatcher parity + arg-key guard"`
 
 ---
 
@@ -1025,6 +1110,7 @@ And a short "Server architecture" paragraph pointing at the spec + finsight-api/
   4. Open Copilot, send a message → **SSE streaming frames render** (requires configuring an LLM provider via Settings first; if no key available, verify the frames error path renders gracefully and note it).
   5. `GET /api/health` returns `{"status":"ok"}`.
   6. An UNSUPPORTED command (Settings → export) surfaces a readable error toast, not a crash.
+  7. **Exercise a multi-word-arg command that the parity test guards but the smoke flow above doesn't** — e.g. Goals → contribute to a goal (`contribute_to_goal`), or set an account balance (`set_account_balance`, arg `balanceCents`). Confirm it succeeds (no `rpc.bad_arg`). This is belt-and-suspenders on top of the Task 10 arg-key test.
 - [ ] **Step 4:** Record results (screenshots/log excerpts) in the PR description; note the deferred items: desktop startup cascade parity (Phase 2), dialog import/export web flows (Phase 3), auth (Phase 2).
 - [ ] **Step 5:** Final commit; use superpowers:finishing-a-development-branch to merge/PR.
 
@@ -1037,3 +1123,4 @@ And a short "Server architecture" paragraph pointing at the spec + finsight-api/
 - Web upload/download flows for CSV import/export dialog commands (Phase 3).
 - PWA manifest/service worker/offline cache, Docker, deployment docs (Phase 3).
 - Thin Tauri shell; deleting the wrapper command surface (Phase 4).
+- **Long-held `stream_copilot_message` POST:** in Phase 1 the RPC POST stays open for the whole Copilot run (up to the 180s agent loop ceiling) while frames arrive on the side-channel SSE. Fine on localhost. Reverse proxies (Caddy/Traefik) commonly cut idle requests at 30–60s, so **before Phase 3 goes behind a proxy**, revisit this — either return immediately and let the client rely purely on SSE + conversation-refetch (matches the spec's "runs survive disconnects" rule), or stream the HTTP response in chunks. Flag in the Phase 1 PR notes.
