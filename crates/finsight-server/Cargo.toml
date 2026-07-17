@@ -9,6 +9,7 @@ finsight-api = { path = "../finsight-api" }
 finsight-core = { path = "../finsight-core" }
 finsight-agent = { path = "../finsight-agent" }
 axum = { version = "0.8", features = ["json"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
 tokio.workspace = true
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"

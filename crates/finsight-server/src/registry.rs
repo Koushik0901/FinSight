@@ -75,19 +75,49 @@ impl Registry {
             });
         });
 
-        let api = Arc::new(ApiState::new(db.clone(), user_dir, on_event));
+        let api = Arc::new(ApiState::new(db.clone(), user_dir.clone(), on_event));
         if let Some(p) = finsight_api::provider::load_provider_from_settings(&db) {
             api.agent.set_provider(p);
         }
 
-        // Task 6: run_startup_cascade here (finsight_api::startup — login
-        // catch-up for jobs missed while this user's DB key was out of
-        // memory) + `agent.tx.send(CheckDueRecipes)`.
+        // Login catch-up: refresh derived state (integrity check, pending
+        // migrations, categorization/transfer-pairing/balances/net-worth/
+        // anomaly recompute) — the same cascade the desktop app runs on
+        // launch, extracted to `finsight_api::startup` so both callers share
+        // it. This does real (blocking) DB work, so it runs on a blocking
+        // thread rather than tying up an async worker; no lock is held
+        // across this `.await` (the map lock was already released above).
+        let cascade_db = db.clone();
+        let backups_dir = user_dir.join("backups");
+        let uid_for_log = user_id.to_string();
+        match tokio::task::spawn_blocking(move || {
+            finsight_api::startup::run_startup_cascade(&cascade_db, &backups_dir)
+        })
+        .await
+        {
+            Ok(report) => {
+                if !report.warnings.is_empty() {
+                    tracing::warn!(
+                        user_id = %uid_for_log,
+                        warnings = ?report.warnings,
+                        "login catch-up cascade reported warnings"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!(user_id = %uid_for_log, "login catch-up cascade task panicked: {e}");
+            }
+        }
+        let _ = api
+            .agent
+            .tx
+            .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
+            .await;
 
-        // Task 6: sync_scheduler.start(&tokio::runtime::Handle::current())
-        // here, storing its real JoinHandle below. Trivial placeholder task
-        // for now so `evict`'s `sync_task.abort()` has something to abort.
-        let sync_task = tokio::spawn(async {});
+        // Start this user's background SimpleFin sync loop on the current
+        // Tokio runtime (we're inside an axum handler, so a runtime is
+        // always entered here — unlike the desktop `.setup()` closure).
+        let sync_task = api.sync_scheduler.start(&tokio::runtime::Handle::current());
 
         let runtime = Arc::new(UserRuntime {
             api,
@@ -99,8 +129,15 @@ impl Registry {
         // --- Insert-if-absent, lock held only for this ---
         let mut map = self.0.lock().unwrap();
         if let Some(existing) = map.get(user_id) {
-            // Another request raced us and won; use theirs, drop ours.
-            return Ok(Arc::clone(existing));
+            // Another request raced us and won; use theirs. Abort OUR
+            // sync_task before dropping our runtime — a dropped JoinHandle
+            // does NOT cancel the task it points to, it just detaches it,
+            // which would otherwise leave a second, orphaned background
+            // sync loop running forever for this user.
+            let existing = Arc::clone(existing);
+            drop(map);
+            runtime.sync_task.abort();
+            return Ok(existing);
         }
         map.insert(user_id.to_string(), Arc::clone(&runtime));
         Ok(runtime)
@@ -137,6 +174,22 @@ impl Registry {
         }
         idle_ids
     }
+}
+
+/// Compile-time guard: `get_or_bootstrap`'s returned future must be `Send` —
+/// axum handlers require it. A `std::sync::MutexGuard` (from `self.0.lock()`)
+/// held across the `spawn_blocking().await` inside the bootstrap path would
+/// make this future `!Send` and break the build at the router, not here;
+/// this function fails to compile instead, right next to the code it guards.
+#[allow(dead_code)]
+fn _assert_send() {
+    fn assert_send<T: Send>(_: T) {}
+    assert_send(async {
+        let registry = Registry::default();
+        let _ = registry
+            .get_or_bootstrap(std::path::Path::new("."), "user", "key")
+            .await;
+    });
 }
 
 #[cfg(test)]

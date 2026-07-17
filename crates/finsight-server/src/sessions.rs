@@ -5,13 +5,17 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use zeroize::Zeroizing;
 
 pub const SESSION_COOKIE: &str = "finsight_session";
 const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600); // 30d sliding
 
 pub struct SessionEntry {
     pub user_id: String,
-    pub db_key_hex: String, // 64-hex SQLCipher key
+    /// 64-hex SQLCipher key, unwrapped at login. `Zeroizing` so this in-memory
+    /// copy is wiped the moment the entry is dropped (session removed,
+    /// expired, or the store itself is torn down).
+    pub db_key_hex: Zeroizing<String>,
     pub is_admin: bool,
     pub expires: Instant,
 }
@@ -38,7 +42,7 @@ impl SessionStore {
             token.clone(),
             SessionEntry {
                 user_id: user_id.to_string(),
-                db_key_hex,
+                db_key_hex: Zeroizing::new(db_key_hex),
                 is_admin,
                 expires: Instant::now() + ttl,
             },
@@ -50,14 +54,20 @@ impl SessionStore {
         self.create_with_ttl(user_id, db_key_hex, is_admin, SESSION_TTL)
     }
 
-    /// Sliding expiry: touch on every successful lookup.
-    pub fn get(&self, token: &str) -> Option<(String, String, bool)> {
+    /// Sliding expiry: touch on every successful lookup. Returns a fresh
+    /// `Zeroizing` clone of the key so the caller's copy also wipes on drop;
+    /// callers that need a plain `&str` (e.g. `Db::open`) can deref it.
+    pub fn get(&self, token: &str) -> Option<(String, Zeroizing<String>, bool)> {
         let mut map = self.0.lock().unwrap();
         let now = Instant::now();
         match map.get_mut(token) {
             Some(entry) if entry.expires > now => {
                 entry.expires = now + SESSION_TTL;
-                Some((entry.user_id.clone(), entry.db_key_hex.clone(), entry.is_admin))
+                Some((
+                    entry.user_id.clone(),
+                    Zeroizing::new(entry.db_key_hex.to_string()),
+                    entry.is_admin,
+                ))
             }
             Some(_) => {
                 // Expired: purge it so it doesn't linger in the map forever.
@@ -88,7 +98,7 @@ mod tests {
         let token = store.create("user-1", "deadbeef".repeat(8), true);
         let (user_id, db_key_hex, is_admin) = store.get(&token).unwrap();
         assert_eq!(user_id, "user-1");
-        assert_eq!(db_key_hex, "deadbeef".repeat(8));
+        assert_eq!(db_key_hex.as_str(), "deadbeef".repeat(8));
         assert!(is_admin);
     }
 
@@ -124,7 +134,7 @@ mod tests {
             token.clone(),
             SessionEntry {
                 user_id: "user-1".to_string(),
-                db_key_hex: "k".repeat(64),
+                db_key_hex: Zeroizing::new("k".repeat(64)),
                 is_admin: false,
                 expires: Instant::now() - Duration::from_secs(1),
             },

@@ -1,6 +1,7 @@
 //! RPC dispatcher: `POST /api/rpc/{cmd}` over the shared `finsight-api` command
 //! surface.
 
+use crate::auth::AuthedUser;
 use crate::state::{OutboundEvent, ServerState};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -8,7 +9,9 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use finsight_api::error::AppError;
 use finsight_api::sink::FrameSink;
+use finsight_api::ApiState;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 /// Sink that fans command-emitted events out to every SSE subscriber.
 pub struct BroadcastSink(pub tokio::sync::broadcast::Sender<OutboundEvent>);
@@ -47,6 +50,7 @@ pub const UNSUPPORTED: &[&str] = &[
 
 pub async fn rpc(
     State(st): State<Arc<ServerState>>,
+    user: AuthedUser,
     Path(cmd): Path<String>,
     Json(p): Json<serde_json::Value>,
 ) -> Response {
@@ -60,7 +64,22 @@ pub async fn rpc(
         )
             .into_response();
     }
-    match dispatch(&st, &cmd, p).await {
+    let rt = match st
+        .registry
+        .get_or_bootstrap(&st.data_dir, &user.user_id, &user.db_key_hex)
+        .await
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(AppError::new("auth.runtime", e.to_string())),
+            )
+                .into_response()
+        }
+    };
+    st.registry.touch(&user.user_id);
+    match dispatch(&rt.api, &rt.events, &cmd, p).await {
         Ok(v) => (StatusCode::OK, Json(v)).into_response(),
         Err(e) if e.code == "rpc.unknown_command" => (StatusCode::NOT_FOUND, Json(e)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e)).into_response(),
@@ -68,12 +87,12 @@ pub async fn rpc(
 }
 
 async fn dispatch(
-    st: &Arc<ServerState>,
+    api: &Arc<ApiState>,
+    events: &broadcast::Sender<OutboundEvent>,
     cmd: &str,
     p: serde_json::Value,
 ) -> Result<serde_json::Value, AppError> {
     use finsight_api::commands as c;
-    let api = &st.api;
     match cmd {
         // ── accounts ──
         "list_accounts" => ok(c::accounts::list_accounts(api).await?),
@@ -290,7 +309,7 @@ async fn dispatch(
         //    sink is NOT a bindings arg, so the real args below ARE still
         //    arg-checked by Task 10 ──
         "stream_copilot_message" => {
-            let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(st.events.clone()));
+            let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(events.clone()));
             ok(c::copilot_chat::stream_copilot_message(
                 api,
                 sink,
@@ -379,7 +398,7 @@ async fn dispatch(
         )
         .await?),
         "import_csv" => {
-            let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(st.events.clone()));
+            let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(events.clone()));
             ok(c::import::import_csv(
                 api,
                 sink,
@@ -964,12 +983,14 @@ mod tests {
 
     #[tokio::test]
     async fn rpc_list_accounts_roundtrip() {
-        let state = crate::router::tests::test_state().await;
+        let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
         let res = app
             .oneshot(
                 Request::post("/api/rpc/list_accounts")
                     .header("content-type", "application/json")
+                    .header("cookie", cookie)
                     .body(Body::from("{}"))
                     .unwrap(),
             )
@@ -985,8 +1006,9 @@ mod tests {
 
     #[tokio::test]
     async fn rpc_create_then_list_account() {
-        let state = crate::router::tests::test_state().await;
+        let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
         let input = serde_json::json!({ "input": {
             // NewAccount's required (non-Option, no #[serde(default)]) fields, per
             // finsight_core::models::NewAccount: owner, bank, r#type, name, currency,
@@ -1005,6 +1027,7 @@ mod tests {
             .oneshot(
                 Request::post("/api/rpc/create_account")
                     .header("content-type", "application/json")
+                    .header("cookie", cookie.clone())
                     .body(Body::from(input.to_string()))
                     .unwrap(),
             )
@@ -1015,6 +1038,7 @@ mod tests {
             .oneshot(
                 Request::post("/api/rpc/list_accounts")
                     .header("content-type", "application/json")
+                    .header("cookie", cookie)
                     .body(Body::from("{}"))
                     .unwrap(),
             )
@@ -1029,12 +1053,14 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_command_is_404_with_app_error_body() {
-        let state = crate::router::tests::test_state().await;
+        let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
         let res = app
             .oneshot(
                 Request::post("/api/rpc/not_a_command")
                     .header("content-type", "application/json")
+                    .header("cookie", cookie)
                     .body(Body::from("{}"))
                     .unwrap(),
             )
@@ -1050,12 +1076,14 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_command_is_501() {
-        let state = crate::router::tests::test_state().await;
+        let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
         let res = app
             .oneshot(
                 Request::post("/api/rpc/export_all_data_csv")
                     .header("content-type", "application/json")
+                    .header("cookie", cookie)
                     .body(Body::from("{}"))
                     .unwrap(),
             )

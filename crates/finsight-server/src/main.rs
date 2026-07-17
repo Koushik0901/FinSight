@@ -18,7 +18,28 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8674);
-    let state = state::ServerState::bootstrap(&data_dir).await?;
+    let state = state::ServerState::bootstrap(&data_dir)?;
+
+    // Idle-eviction sweep: drop per-user runtimes (DB pool, agent, sync loop)
+    // that have had no request in 30 minutes. The session itself (and its
+    // unwrapped key) is untouched — the next request just rebuilds the
+    // runtime. Never logs key material, only user ids.
+    {
+        let registry_state = state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop {
+                ticker.tick().await;
+                let evicted = registry_state
+                    .registry
+                    .evict_idle(std::time::Duration::from_secs(1800));
+                if !evicted.is_empty() {
+                    tracing::info!(user_ids = ?evicted, "evicted idle per-user runtimes");
+                }
+            }
+        });
+    }
+
     let app = router::build_router(state, &ui_dir);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     tracing::info!("finsight-server listening on http://localhost:{port}");
