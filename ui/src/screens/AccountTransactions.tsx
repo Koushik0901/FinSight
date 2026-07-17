@@ -19,6 +19,7 @@ import { money } from "../utils/format";
 import { prettyMerchant } from "../utils/merchant";
 import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
+import { downloadBlob } from "../lib/downloadBlob";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -153,7 +154,10 @@ export default function AccountTransactions() {
   const handleExport = async () => {
     try {
       const result = await commands.exportTransactionsCsv(filterValue);
-      if (result.status === "ok" && result.data) toast.success("Exported", { description: result.data });
+      if (result.status === "ok" && result.data) {
+        downloadBlob(result.data, "text/csv", "transactions.csv");
+        toast.success("Exported");
+      }
     } catch (exportError) {
       toast.error("Export failed", { description: userErrorMessage(exportError, "Try again.") });
     }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../client";
 import { useTweaks } from "../../state/tweaks";
 import { isTauriRuntime } from "../../utils/runtime";
+import { downloadBlob } from "../../lib/downloadBlob";
 
 export function useDefaultCurrency() {
   return useQuery<string>({
@@ -85,9 +86,9 @@ export function useSetAutoCategorizeEnabled() {
 export function useExportJson() {
   return useMutation({
     mutationFn: async () => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataJson();
       if (result.status === "error") throw new Error(result.error.message);
+      downloadBlob(result.data, "application/json", "finsight-export.json");
     },
   });
 }
@@ -95,9 +96,9 @@ export function useExportJson() {
 export function useExportCsv() {
   return useMutation({
     mutationFn: async () => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataCsv();
       if (result.status === "error") throw new Error(result.error.message);
+      downloadBlob(result.data, "text/csv", "finsight-transactions.csv");
     },
   });
 }

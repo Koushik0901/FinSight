@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import AccountTransactions from "./AccountTransactions";
+import { downloadBlob } from "../lib/downloadBlob";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -109,10 +110,14 @@ vi.mock("../api/client", async () => {
   return {
     ...actual,
     commands: {
-      exportTransactionsCsv: vi.fn(() => Promise.resolve({ status: "ok", data: "/path/to/export.csv" })),
+      exportTransactionsCsv: vi.fn(() => Promise.resolve({ status: "ok", data: "date,amount\n2026-06-28,-84.32\n" })),
     },
   };
 });
+
+vi.mock("../lib/downloadBlob", () => ({
+  downloadBlob: vi.fn(),
+}));
 
 describe("AccountTransactions", () => {
   it("renders account header and transactions", async () => {
@@ -155,6 +160,21 @@ describe("AccountTransactions", () => {
     fireEvent.click(importBtn);
     await waitFor(() => {
       expect(screen.getByText("Map CSV columns for /path/to/export.csv")).toBeInTheDocument();
+    });
+  });
+
+  it("downloads exported CSV content instead of showing it in a toast", async () => {
+    render(
+      <MemoryRouter initialEntries={["/accounts/acc-1/transactions"]}>
+        <Routes>
+          <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const exportBtn = await screen.findByRole("button", { name: /Export/i });
+    fireEvent.click(exportBtn);
+    await waitFor(() => {
+      expect(downloadBlob).toHaveBeenCalledWith("date,amount\n2026-06-28,-84.32\n", "text/csv", "transactions.csv");
     });
   });
 
