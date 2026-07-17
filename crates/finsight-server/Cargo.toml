@@ -23,6 +23,9 @@ thiserror.workspace = true
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
 hex = "0.4"
+rusqlite.workspace = true
+uuid.workspace = true
+chrono.workspace = true
 # regex is a dev-dependency only, added in Task 10 for the parity test parser.
 
 [dev-dependencies]

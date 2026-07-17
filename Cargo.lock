@@ -1685,6 +1685,7 @@ dependencies = [
  "argon2",
  "axum",
  "chacha20poly1305",
+ "chrono",
  "finsight-agent",
  "finsight-api",
  "finsight-core",
@@ -1692,6 +1693,7 @@ dependencies = [
  "hex",
  "rand 0.8.6",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
@@ -1702,6 +1704,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
