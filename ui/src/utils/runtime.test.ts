@@ -54,4 +54,21 @@ describe("isTauriRuntime — origin awareness (Phase 4)", () => {
     setLocation("tauri://localhost");
     expect(isTauriRuntime()).toBe(false);
   });
+  it("true in DEV when the bridge is present and on Vite's dev-server origin " +
+     "(pnpm tauri:dev navigates the real desktop webview there for HMR)", () => {
+    vi.stubEnv("DEV", true);
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    setLocation("http://localhost:5173");
+    expect(isTauriRuntime()).toBe(true);
+  });
+  it("false on localhost:5173 outside DEV — a production build must not false-positive " +
+     "just because a user's self-hosted server happens to run on that port", () => {
+    // Vitest's own import.meta.env.DEV defaults to true (it runs in a
+    // dev-like mode), so this test must explicitly simulate a production
+    // build's DEV=false to exercise the branch a real prod bundle takes.
+    vi.stubEnv("DEV", false);
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    setLocation("http://localhost:5173");
+    expect(isTauriRuntime()).toBe(false);
+  });
 });
