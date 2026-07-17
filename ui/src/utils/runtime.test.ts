@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { isTauriRuntime } from "./runtime";
+import { isTauriRuntime, isBackendAvailable } from "./runtime";
 
 const realLocation = window.location;
 
@@ -22,6 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Object.defineProperty(window, "location", { value: realLocation, configurable: true });
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  delete (window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__;
 });
 
 function setLocation(origin: string) {
@@ -70,5 +71,31 @@ describe("isTauriRuntime — origin awareness (Phase 4)", () => {
     (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     setLocation("http://localhost:5173");
     expect(isTauriRuntime()).toBe(false);
+  });
+});
+
+// isBackendAvailable() is the "may I make an RPC call" predicate — true for a
+// real Tauri desktop-IPC context OR the HTTP/SSE shim (server/PWA/thin shell
+// after navigate). The same beforeEach env/navigator stubs apply, so
+// isTauriRuntime() only returns true here via the bridge+internal-origin path.
+describe("isBackendAvailable — RPC transport availability", () => {
+  it("true when it's a real Tauri desktop-IPC context (bridge + internal origin)", () => {
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    setLocation("tauri://localhost");
+    expect(isBackendAvailable()).toBe(true);
+  });
+  it("true when isTauriRuntime() is false but the HTTP shim is installed — " +
+     "THE server-mode regression case (bridge present at a remote origin, so " +
+     "isTauriRuntime() is false, yet RPC still works over HTTP)", () => {
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    setLocation("https://myhost.ts.net");
+    expect(isTauriRuntime()).toBe(false);
+    (window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__ = true;
+    expect(isBackendAvailable()).toBe(true);
+  });
+  it("false when neither a Tauri desktop-IPC context nor the HTTP shim is present", () => {
+    setLocation("https://myhost.ts.net");
+    expect(isTauriRuntime()).toBe(false);
+    expect(isBackendAvailable()).toBe(false);
   });
 });

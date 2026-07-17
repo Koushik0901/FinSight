@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type DataHealth, type BackupInfo } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 /** Database integrity, WAL size, and the backup set (P0-4 durability panel). */
 export function useDataHealth() {
@@ -11,7 +11,7 @@ export function useDataHealth() {
       if (r.status === "error") throw new Error(r.error.message);
       return r.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
     staleTime: 30_000,
   });
 }

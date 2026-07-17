@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type FinancialMetrics, type FinancialAssumptionsInput } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 /**
  * Canonical financial numbers from the shared `finsight-core::metrics` layer —
@@ -20,7 +20,7 @@ export function useFinancialMetrics(memberId?: string | null) {
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 

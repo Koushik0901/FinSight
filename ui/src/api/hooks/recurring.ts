@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type RecurringItem } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 export function useRecurring() {
   return useQuery<RecurringItem[]>({
@@ -11,6 +11,6 @@ export function useRecurring() {
       return result.data;
     },
     staleTime: 5 * 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }

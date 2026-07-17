@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { commands, type NetWorthPoint } from "../client";
 import { useManualAssets } from "./assets";
 import { useAccounts } from "./accounts";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 /** Net-worth snapshot history for the §3a chart. */
 export function useNetWorthHistory(days: number) {
@@ -13,7 +13,7 @@ export function useNetWorthHistory(days: number) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 

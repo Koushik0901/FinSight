@@ -6,7 +6,7 @@ import {
   type MonthlyReview,
   type SavingsRatePoint,
 } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 export function useMonthTotals() {
   return useQuery<MonthTotals>({
@@ -18,7 +18,7 @@ export function useMonthTotals() {
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -31,7 +31,7 @@ export function useSavingsRateHistory() {
       return result.data;
     },
     staleTime: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -43,7 +43,7 @@ export function useMonthlyReviews() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 

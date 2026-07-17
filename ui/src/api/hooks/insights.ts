@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type HealthScore } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 export function useRecentAgentActivity(limit: number) {
   return useQuery({
@@ -24,6 +24,6 @@ export function useHealthScore() {
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }

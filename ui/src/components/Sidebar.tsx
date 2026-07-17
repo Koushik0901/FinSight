@@ -8,7 +8,7 @@ import { useResetOnboarding } from "../api/hooks/onboarding";
 import { useAccounts } from "../api/hooks/accounts";
 import { useGoals } from "../api/hooks/budget";
 import { commands } from "../api/client";
-import { isTauriRuntime } from "../utils/runtime";
+import { isBackendAvailable } from "../utils/runtime";
 
 interface NavEntry {
   id: string;
@@ -74,7 +74,7 @@ export function Sidebar({ onOpenCmd }: Props) {
   const { data: goals = [] } = useGoals();
   const navigate = useNavigate();
   const resetOnboarding = useResetOnboarding();
-  const canUseDesktopApi = isTauriRuntime();
+  const hasBackend = isBackendAvailable();
   const qc = useQueryClient();
   // Warm a route's summary queries the moment the user signals intent (hover /
   // keyboard focus), so the click paints from a warm cache. Idempotent + reads
@@ -89,7 +89,7 @@ export function Sidebar({ onOpenCmd }: Props) {
       return result.data;
     },
     staleTime: 60_000,
-    enabled: canUseDesktopApi,
+    enabled: hasBackend,
   });
 
   const pendingBundleCount = pendingBundles.length;

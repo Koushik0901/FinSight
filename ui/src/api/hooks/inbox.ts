@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type ActionItem, type CounterpartyVerdict, type UnresolvedCounterpartyDto } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
 export function useActionItems() {
@@ -13,7 +13,7 @@ export function useActionItems() {
     },
     staleTime: 30_000,
     refetchInterval: 30_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -27,7 +27,7 @@ export function useUnresolvedCounterparties() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -38,7 +38,7 @@ export function useApplyCounterpartyVerdict() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ pattern, verdict }: { pattern: string; verdict: CounterpartyVerdict }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.applyCounterpartyVerdictToSimilar(pattern, verdict);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
