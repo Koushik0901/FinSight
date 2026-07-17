@@ -35,18 +35,11 @@ fn ok<T: serde::Serialize>(v: T) -> Result<serde_json::Value, AppError> {
     serde_json::to_value(v).map_err(|e| AppError::new("rpc.serialize", e.to_string()))
 }
 
-/// Desktop-only commands (native file dialogs). Kept explicit so the parity
-/// test (Task 10) proves SUPPORTED ∪ UNSUPPORTED == everything bindings.ts calls.
-/// Phase 3 gives these real upload/download flows.
-// EXACTLY these 5 file-save-dialog exports (controller-verified from source).
-// import_csv and apply_next_month_plan are NOT here — they move (see Task 4).
-pub const UNSUPPORTED: &[&str] = &[
-    "export_account_csv",
-    "export_transactions_csv",
-    "export_search_transactions_csv",
-    "export_all_data_json",
-    "export_all_data_csv",
-];
+/// No desktop-only commands remain as of Phase 4 — the 5 former file-dialog
+/// exports now return content directly (see Task 1-3 of the Phase 4 plan).
+/// Kept as an empty list (not deleted) so the 501/UNSUPPORTED code path stays
+/// wired for any future genuinely-desktop-only command.
+pub const UNSUPPORTED: &[&str] = &[];
 
 pub async fn rpc(
     State(st): State<Arc<ServerState>>,
@@ -115,6 +108,9 @@ async fn dispatch(
         .await?),
         "list_account_balance_sparklines" => {
             ok(c::accounts::list_account_balance_sparklines(api, arg(&p, "days")?).await?)
+        }
+        "export_account_csv" => {
+            ok(c::accounts::export_account_csv(api, arg(&p, "accountId")?).await?)
         }
 
         // ── agent ──
@@ -572,6 +568,8 @@ async fn dispatch(
         "set_auto_categorize_enabled" => {
             ok(c::settings::set_auto_categorize_enabled(api, arg(&p, "enabled")?).await?)
         }
+        "export_all_data_json" => ok(c::settings::export_all_data_json(api).await?),
+        "export_all_data_csv" => ok(c::settings::export_all_data_csv(api).await?),
 
         // ── simplefin ──
         "save_simplefin_setup_token" => {
@@ -740,6 +738,12 @@ async fn dispatch(
             arg(&p, "splits")?,
         )
         .await?),
+        "export_transactions_csv" => {
+            ok(c::transactions::export_transactions_csv(api, arg(&p, "filter")?).await?)
+        }
+        "export_search_transactions_csv" => {
+            ok(c::transactions::export_search_transactions_csv(api, arg(&p, "query")?).await?)
+        }
 
         // Every SUPPORTED command above has exactly one arm. Task 10's parity test
         // enforces BOTH: (a) a missed arm is a red test, and (b) every argument
@@ -769,6 +773,7 @@ pub const SUPPORTED: &[&str] = &[
     "set_account_balance",
     "list_account_balance_history",
     "list_account_balance_sparklines",
+    "export_account_csv",
     // agent
     "set_completion_provider",
     "get_completion_provider",
@@ -919,6 +924,8 @@ pub const SUPPORTED: &[&str] = &[
     "set_notifications_enabled",
     "get_auto_categorize_enabled",
     "set_auto_categorize_enabled",
+    "export_all_data_json",
+    "export_all_data_csv",
     // simplefin
     "save_simplefin_setup_token",
     "get_simplefin_status",
@@ -966,6 +973,8 @@ pub const SUPPORTED: &[&str] = &[
     "list_unresolved_counterparties",
     "get_transaction_splits",
     "set_transaction_splits",
+    "export_transactions_csv",
+    "export_search_transactions_csv",
 ];
 
 /// Commands whose dispatch legitimately does not read every bindings arg through
@@ -1074,21 +1083,18 @@ mod tests {
         assert_eq!(v["code"], "rpc.unknown_command");
     }
 
-    #[tokio::test]
-    async fn unsupported_command_is_501() {
-        let state = crate::router::tests::test_state();
-        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
-        let cookie = crate::router::tests::setup_and_login(&app).await;
-        let res = app
-            .oneshot(
-                Request::post("/api/rpc/export_all_data_csv")
-                    .header("content-type", "application/json")
-                    .header("cookie", cookie)
-                    .body(Body::from("{}"))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+    // `unsupported_command_is_501` (a full HTTP-round-trip test asserting a 501
+    // for a real command name) was removed in Phase 4: `UNSUPPORTED` is now
+    // empty (see its doc comment above), so no real command name can exercise
+    // that branch any more. The 501 code path in `rpc()` is still wired and
+    // compiles against `UNSUPPORTED`; when a future genuinely-desktop-only
+    // command is added to that list, re-add a test here asserting 501 for it.
+    #[test]
+    fn unsupported_is_currently_empty() {
+        assert!(
+            super::UNSUPPORTED.is_empty(),
+            "if this fails because a command was added to UNSUPPORTED, also \
+             add back an HTTP-level 501 test for that command name"
+        );
     }
 }
