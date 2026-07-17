@@ -105,7 +105,7 @@ export function installHttpBackend(): void {
     return body;
   };
 
-  w.__TAURI_INTERNALS__ = {
+  const shim = {
     invoke,
     transformCallback: (cb: unknown) => {
       const id = ++cbSeq;
@@ -119,5 +119,24 @@ export function installHttpBackend(): void {
       currentWebview: { windowLabel: "main", label: "main" },
     },
   };
+  // In a plain browser / PWA / server the property is absent or writable, so
+  // this simple assignment installs the shim. Guarded because a REAL Tauri
+  // webview defines window.__TAURI_INTERNALS__ as a read-only, non-configurable
+  // property (and its `invoke` is a locked own property) — assigning to it
+  // THROWS in strict mode and would white-screen boot(). This shouldn't be
+  // reached now that isTauriRuntime() is true on Tauri's own origins (so the
+  // shim isn't installed there) and remote server origins get no injected
+  // bridge; the try/catch is defense-in-depth so a stray locked bridge degrades
+  // (native IPC stays in place) instead of crashing the whole app.
+  try {
+    w.__TAURI_INTERNALS__ = shim;
+  } catch {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "installHttpBackend: __TAURI_INTERNALS__ is read-only (real Tauri webview); " +
+        "leaving the native bridge in place. RPC over HTTP is unavailable at this origin.",
+    );
+    return;
+  }
   w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 }

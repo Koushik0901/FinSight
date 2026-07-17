@@ -27,13 +27,22 @@ const TAURI_INTERNAL_ORIGINS = new Set([
 const TAURI_DEV_ORIGIN = "http://localhost:5173";
 
 export function isTauriRuntime() {
-  const meta = import.meta as { env?: { MODE?: string; VITEST?: string; DEV?: boolean } };
-  if (meta.env?.MODE === "test" || meta.env?.VITEST) return true;
+  // Access `import.meta.env.KEY` as DIRECT literal member expressions. Vite
+  // statically replaces those at build; an ALIASED read
+  // (`const m = import.meta; m.env.DEV`) is NOT replaced and reads a runtime
+  // `import.meta.env` object that — in the dev-server browser (a real Tauri
+  // webview on `pnpm tauri:dev`) — lacks DEV/MODE, so it returns undefined.
+  // That silently disabled the localhost:5173 dev-origin allowance below and
+  // white-screened the desktop shell (the HTTP shim then tried to install over
+  // the read-only native __TAURI_INTERNALS__ and threw). Vitest keeps these
+  // runtime-stubbable, so `vi.stubEnv` in the tests still works.
+  const vitest = (import.meta.env as { VITEST?: unknown }).VITEST;
+  if (import.meta.env.MODE === "test" || vitest) return true;
   if (typeof window === "undefined") return false;
   if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom")) return true;
   const w = window as TauriWindow;
   if (!(w.__TAURI__ || w.__TAURI_INTERNALS__)) return false;
-  if (meta.env?.DEV && window.location.origin === TAURI_DEV_ORIGIN) return true;
+  if (import.meta.env.DEV && window.location.origin === TAURI_DEV_ORIGIN) return true;
   return TAURI_INTERNAL_ORIGINS.has(window.location.origin);
 }
 
