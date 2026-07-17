@@ -18,6 +18,7 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             "/api/health",
             get(|| async { Json(serde_json::json!({"status":"ok"})) }),
         )
+        .route("/api/server/about", get(crate::server_info::about))
         .route("/api/auth/status", get(crate::auth::status))
         .route("/api/auth/setup", post(crate::auth::setup))
         .route("/api/auth/login", post(crate::auth::login))
