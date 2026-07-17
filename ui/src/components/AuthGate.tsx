@@ -67,7 +67,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       // Session ended (explicit logout or a 401 mid-use) — the persisted
       // IndexedDB cache must not outlive the session on a shared device.
       queryClient.clear();
-      void purgePersistedCache();
+      // Failure here (quota/blocked-DB in private browsing) must not be silent:
+      // a swallowed rejection would leave stale financial data in IndexedDB
+      // past the session that's supposed to purge it.
+      purgePersistedCache().catch((err) => console.error("purgePersistedCache failed", err));
       setState({ kind: "needsLogin" });
     };
     window.addEventListener("finsight:auth-required", onAuthRequired);
