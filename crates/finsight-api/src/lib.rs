@@ -1,6 +1,9 @@
 pub mod commands; // transport-agnostic command surface: each command is a plain
                   // `async fn(&ApiState, args) -> AppResult<T>`, shared by the Tauri
                   // wrappers and finsight-server. See commands/mod.rs.
+pub mod csv; // shared csv_escape helper for the export commands (accounts,
+             // transactions, settings) — dedupes what used to be triplicated
+             // private copies in finsight-app.
 pub mod error;
 pub mod provider; // provider-construction helpers (settings → live CompletionProvider).
 pub mod sink; // FrameSink: transport-agnostic event emission (progress/streaming).
