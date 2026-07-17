@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { AuthGate } from "./components/AuthGate";
 import { instrumentQueryCache } from "./utils/perf";
 import "./styles/reset.css";
 import "./styles/tokens.css";
@@ -32,9 +33,11 @@ function renderApp() {
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <AuthGate>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </AuthGate>
       </QueryClientProvider>
     </React.StrictMode>
   );

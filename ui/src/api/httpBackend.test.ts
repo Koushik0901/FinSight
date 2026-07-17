@@ -14,7 +14,17 @@ describe("httpBackend shim", () => {
       close() {}
     });
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete w.__FINSIGHT_HTTP__;
+  });
+
+  it("sets window.__FINSIGHT_HTTP__ = true on install", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    expect(w.__FINSIGHT_HTTP__).toBeUndefined();
+    installHttpBackend();
+    expect(w.__FINSIGHT_HTTP__).toBe(true);
+  });
 
   it("routes invoke to POST /api/rpc/{cmd} and returns parsed JSON", async () => {
     vi.stubGlobal("fetch", vi.fn(async () =>
@@ -70,5 +80,74 @@ describe("httpBackend shim", () => {
     es.onmessage({ data: JSON.stringify({ event: "copilot-stream-frame", payload: { type: "text", delta: "hi" } }) });
     expect(received).toHaveLength(1);
     expect((received[0] as AnyRec).payload).toEqual({ type: "text", delta: "hi" });
+  });
+
+  it("dispatches finsight:auth-required and closes the shared EventSource on an RPC 401 auth.required", async () => {
+    const closeSpy = vi.fn();
+    vi.stubGlobal("EventSource", class {
+      static last: unknown;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      constructor(public url: string) { (this.constructor as unknown as AnyRec).last = this; }
+      close() { closeSpy(); }
+    });
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ code: "auth.required", message: "no session" }), { status: 401 })));
+    installHttpBackend();
+    const internals = w.__TAURI_INTERNALS__ as {
+      invoke: (c: string, a?: AnyRec) => Promise<unknown>;
+      transformCallback: (cb: unknown) => number;
+    };
+    // Establish the shared EventSource first, via a normal listener registration.
+    const handler = internals.transformCallback(() => {});
+    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    await expect(internals.invoke("list_accounts", {})).rejects.toEqual({
+      code: "auth.required",
+      message: "no session",
+    });
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }));
+  });
+
+  it("reopens the EventSource on the next listen after a 401 closed it (listener map is preserved)", async () => {
+    let constructed = 0;
+    vi.stubGlobal("EventSource", class {
+      static last: unknown;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      constructor(public url: string) { constructed += 1; (this.constructor as unknown as AnyRec).last = this; }
+      close() {}
+    });
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ code: "auth.required", message: "no session" }), { status: 401 })));
+    installHttpBackend();
+    const internals = w.__TAURI_INTERNALS__ as {
+      invoke: (c: string, a?: AnyRec) => Promise<unknown>;
+      transformCallback: (cb: unknown) => number;
+    };
+    const handler = internals.transformCallback(() => {});
+    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    expect(constructed).toBe(1);
+
+    await expect(internals.invoke("list_accounts", {})).rejects.toEqual({
+      code: "auth.required",
+      message: "no session",
+    });
+
+    // A fresh listen (e.g. after re-login remounts the app) opens a new ES.
+    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    expect(constructed).toBe(2);
+  });
+
+  it("does not dispatch finsight:auth-required for non-auth 401/other errors", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ code: "core.not_found", message: "nope" }), { status: 404 })));
+    installHttpBackend();
+    const internals = w.__TAURI_INTERNALS__ as { invoke: (c: string, a?: AnyRec) => Promise<unknown> };
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    await expect(internals.invoke("list_accounts", {})).rejects.toEqual({ code: "core.not_found", message: "nope" });
+    expect(dispatchSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }));
   });
 });

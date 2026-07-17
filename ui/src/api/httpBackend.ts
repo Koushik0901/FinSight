@@ -24,6 +24,10 @@ type AnyRec = Record<string, unknown>;
 export function installHttpBackend(): void {
   const w = window as unknown as AnyRec;
   if (w.__TAURI_INTERNALS__) return; // never shadow a real Tauri runtime
+  // Marks this as the server-mode transport; ui/src/api/auth.ts's isServerMode()
+  // gates all auth-screen/fetch behavior off this flag so the desktop/Tauri
+  // path (which never calls installHttpBackend) is completely unaffected.
+  w.__FINSIGHT_HTTP__ = true;
 
   let cbSeq = 0;
   // event name → callback ids; SSE frames fan out to window[`_${id}`]
@@ -77,7 +81,21 @@ export function installHttpBackend(): void {
     }
     // Throw the plain AppError object so bindings.ts's catch returns
     // {status:"error", error} exactly as it does under real Tauri.
-    if (!res.ok) throw body;
+    if (!res.ok) {
+      // The session cookie is missing/expired: notify the app (AuthGate
+      // listens for this to route back to the login screen from anywhere)
+      // and close the shared EventSource so the browser stops silently
+      // auto-reconnecting it against a now-401'ing endpoint. `listeners`
+      // stays intact — the next `plugin:event|listen` call (naturally fired
+      // when the app remounts after re-login) calls ensureEventSource()
+      // again and reopens it.
+      if (res.status === 401 && typeof body === "object" && body !== null && (body as AnyRec).code === "auth.required") {
+        window.dispatchEvent(new CustomEvent("finsight:auth-required"));
+        es?.close();
+        es = null;
+      }
+      throw body;
+    }
     return body;
   };
 

@@ -1,9 +1,15 @@
 import React from "react";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
+import { logout } from "../api/auth";
+
+vi.mock("../api/auth", async () => {
+  const actual = await vi.importActual<typeof import("../api/auth")>("../api/auth");
+  return { ...actual, logout: vi.fn() };
+});
 
 vi.mock("react-router-dom", () => ({
   useNavigate: vi.fn(() => vi.fn()),
@@ -185,5 +191,53 @@ describe("Settings — AI Provider panel", () => {
       const setOrder = setProvider.mock.invocationCallOrder[0] ?? Infinity;
       expect(saveOrder).toBeLessThan(setOrder);
     });
+  });
+});
+
+describe("Settings — server-mode Account section", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    delete (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__;
+  });
+
+  it("desktop mode: no Account section, no Sign out button", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.queryByRole("heading", { name: "Account" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull();
+  });
+
+  it("server mode: renders the Account section with a Sign out button", () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Account" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it("Sign out calls logout() and dispatches finsight:auth-required", async () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    vi.mocked(logout).mockResolvedValue(undefined);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(<Settings />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
+    );
+  });
+
+  it("still dispatches finsight:auth-required even if the logout request fails", async () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    vi.mocked(logout).mockRejectedValue({ code: "rpc.transport", message: "network down" });
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(<Settings />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+
+    await waitFor(() =>
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
+    );
   });
 });
