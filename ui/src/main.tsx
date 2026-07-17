@@ -5,6 +5,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthGate } from "./components/AuthGate";
+import DesktopConnectGate from "./components/DesktopConnectGate";
 import VersionBanner from "./components/VersionBanner";
 import OfflineBanner from "./components/OfflineBanner";
 import { createIdbPersister } from "./pwa/persist";
@@ -52,16 +53,18 @@ function renderApp() {
 
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      {isServerMode() ? (
-        <PersistQueryClientProvider
-          client={queryClient}
-          persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
-        >
-          {tree}
-        </PersistQueryClientProvider>
-      ) : (
-        <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
-      )}
+      <DesktopConnectGate>
+        {isServerMode() ? (
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
+          >
+            {tree}
+          </PersistQueryClientProvider>
+        ) : (
+          <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+        )}
+      </DesktopConnectGate>
     </React.StrictMode>
   );
 }
