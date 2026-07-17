@@ -3,7 +3,7 @@ import { useAccounts } from "../../api/hooks/accounts";
 import AccountDrawer from "../../components/AccountDrawer";
 import Button from "../../components/Button";
 import Card from "../../components/Card";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props {
@@ -43,7 +43,7 @@ export default function StepAccounts({ onNext }: Props) {
           </Card>
         </div>
 
-        {!isTauriRuntime() && (
+        {!isBackendAvailable() && (
           <p className="muted onb-runtime-note">
             Browser preview mode: creating or connecting accounts requires the desktop app.
           </p>

@@ -5,7 +5,7 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import FilePicker from "../../components/FilePicker";
 import ImportMappingDialog from "../../components/ImportMappingDialog";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props {
@@ -64,7 +64,7 @@ export default function StepHistory({ onBack, onNext }: Props) {
           </Card>
         )}
 
-        {!isTauriRuntime() && (
+        {!isBackendAvailable() && (
           <p className="muted onb-runtime-note">
             Browser preview mode: importing and syncing require the desktop app.
           </p>
