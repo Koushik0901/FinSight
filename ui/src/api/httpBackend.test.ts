@@ -4,6 +4,17 @@ import { installHttpBackend } from "./httpBackend";
 type AnyRec = Record<string, unknown>;
 const w = window as unknown as AnyRec;
 
+// installHttpBackend() now gates on isTauriRuntime() (Phase 4 Task 6) rather
+// than raw window.__TAURI_INTERNALS__ presence. isTauriRuntime() itself
+// short-circuits to `true` under vitest (untouched by Task 6, see
+// utils/runtime.test.ts), which would make every test below wrongly bail out
+// before doing anything. This suite is about the browser/server-mode
+// transport, not about isTauriRuntime()'s own bridge/origin logic (that's
+// covered separately in utils/runtime.test.ts) — so it mocks the module to
+// behave like a real non-Tauri browser (false) by default, matching exactly
+// what the raw `w.__TAURI_INTERNALS__` check used to do here before Task 6.
+vi.mock("../utils/runtime", () => ({ isTauriRuntime: vi.fn(() => false) }));
+
 describe("httpBackend shim", () => {
   beforeEach(() => {
     delete w.__TAURI_INTERNALS__;
@@ -149,5 +160,29 @@ describe("httpBackend shim", () => {
     const dispatchSpy = vi.spyOn(window, "dispatchEvent");
     await expect(internals.invoke("list_accounts", {})).rejects.toEqual({ code: "core.not_found", message: "nope" });
     expect(dispatchSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }));
+  });
+
+  it("installs over a stale __TAURI_INTERNALS__ bridge when isTauriRuntime() says false " +
+     "(the Phase 4 shell-navigated-to-a-remote-server scenario)", async () => {
+    // Simulate a Tauri webview that has navigated to a remote self-hosted
+    // server: the IPC bridge object is still present (Tauri injects it on
+    // any origin) but isTauriRuntime() (origin-aware per Task 6, mocked here
+    // to reflect that) correctly reports false. The old raw
+    // `if (w.__TAURI_INTERNALS__) return;` guard would have wrongly bailed
+    // out here and left the stale/inert bridge in place; the fixed guard
+    // must install the real HTTP shim over it instead.
+    const staleInvoke = vi.fn();
+    w.__TAURI_INTERNALS__ = { invoke: staleInvoke };
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify([{ id: "a1" }]), { status: 200 })));
+
+    installHttpBackend();
+
+    const internals = w.__TAURI_INTERNALS__ as { invoke: (c: string, a?: AnyRec) => Promise<unknown> };
+    expect(internals.invoke).not.toBe(staleInvoke);
+    const out = await internals.invoke("list_accounts", {});
+    expect(fetch).toHaveBeenCalledWith("/api/rpc/list_accounts", expect.anything());
+    expect(staleInvoke).not.toHaveBeenCalled();
+    expect(out).toEqual([{ id: "a1" }]);
   });
 });

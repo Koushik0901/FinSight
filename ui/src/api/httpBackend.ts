@@ -19,11 +19,17 @@
  * - The real Tauri backend calls registered callbacks with `{event, id, payload}`
  *   (an `Event<T>`), which this shim mirrors when dispatching SSE frames.
  */
+import { isTauriRuntime } from "../utils/runtime";
+
 type AnyRec = Record<string, unknown>;
 
 export function installHttpBackend(): void {
   const w = window as unknown as AnyRec;
-  if (w.__TAURI_INTERNALS__) return; // never shadow a real Tauri runtime
+  // never shadow a real Tauri runtime (origin-aware, Phase 4) — a Tauri
+  // webview navigated to a remote server no longer passes isTauriRuntime()
+  // even though window.__TAURI_INTERNALS__ is still present, so the shim
+  // correctly installs there instead of bailing out on stale bridge presence.
+  if (isTauriRuntime()) return;
   // Marks this as the server-mode transport; ui/src/api/auth.ts's isServerMode()
   // gates all auth-screen/fetch behavior off this flag so the desktop/Tauri
   // path (which never calls installHttpBackend) is completely unaffected.
