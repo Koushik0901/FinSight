@@ -10,6 +10,7 @@ import VersionBanner from "./components/VersionBanner";
 import OfflineBanner from "./components/OfflineBanner";
 import { createIdbPersister } from "./pwa/persist";
 import { isServerMode } from "./api/auth";
+import { selectBackend } from "./api/selectBackend";
 import { instrumentQueryCache } from "./utils/perf";
 import "./styles/reset.css";
 import "./styles/tokens.css";
@@ -69,22 +70,23 @@ function renderApp() {
   );
 }
 
-// DEV-ONLY design harness: `?mock=rich|empty|partial|large|multi` installs a
-// fixture-backed __TAURI_INTERNALS__ so the app renders full data in a plain
-// browser (no Tauri). Tree-shaken from production (import.meta.env.DEV) and
-// never touches a real desktop runtime or the vitest suite. See dev/mockBackend.
-//
-// Outside Tauri and without `?mock`, we're being served by finsight-server
-// (or Vite proxying to it) — install the production HTTP/SSE transport. This
-// branch is NOT gated on DEV: it's the real transport for browser/PWA builds.
+// Transport selection lives in selectBackend() (api/selectBackend.ts) so the
+// bridge/origin decision is unit-testable. In short:
+// - DEV `?mock=…` → fixture backend (plain-browser design harness);
+// - not a real desktop-IPC context (isTauriRuntime(), origin-aware) → the
+//   production HTTP/SSE shim — this is the transport for the browser, the PWA,
+//   AND the thin desktop shell once it has navigated to a remote server (the
+//   Tauri bridge persists at the remote origin, so we must gate on the origin-
+//   aware check, not raw bridge presence);
+// - otherwise → leave the native Tauri bridge in place (shell pre-navigation).
 async function boot() {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
-    if (import.meta.env.DEV && params.has("mock") && !w.__TAURI_INTERNALS__) {
+    const backend = selectBackend(params);
+    if (backend === "mock") {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
-    } else if (!w.__TAURI_INTERNALS__) {
+    } else if (backend === "http") {
       const { installHttpBackend } = await import("./api/httpBackend");
       installHttpBackend();
     }
