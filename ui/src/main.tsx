@@ -1,10 +1,14 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthGate } from "./components/AuthGate";
 import VersionBanner from "./components/VersionBanner";
+import OfflineBanner from "./components/OfflineBanner";
+import { createIdbPersister } from "./pwa/persist";
+import { isServerMode } from "./api/auth";
 import { instrumentQueryCache } from "./utils/perf";
 import "./styles/reset.css";
 import "./styles/tokens.css";
@@ -30,17 +34,34 @@ const queryClient = new QueryClient({
 // real-desktop before/after measurement. Zero overhead when off.
 instrumentQueryCache(queryClient.getQueryCache());
 
+// IndexedDB-backed persister for the query cache — server/PWA mode only (see
+// pwa/persist.ts). Constructed unconditionally (cheap, no I/O until used) so
+// renderApp() can pick the provider without re-creating it per render.
+const persister = createIdbPersister();
+
 function renderApp() {
+  const tree = (
+    <AuthGate>
+      <VersionBanner />
+      <OfflineBanner />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AuthGate>
+  );
+
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <AuthGate>
-          <VersionBanner />
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </AuthGate>
-      </QueryClientProvider>
+      {isServerMode() ? (
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
+        >
+          {tree}
+        </PersistQueryClientProvider>
+      ) : (
+        <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+      )}
     </React.StrictMode>
   );
 }

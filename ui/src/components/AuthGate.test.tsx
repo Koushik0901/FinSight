@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthGate } from "./AuthGate";
 import { fetchAuthStatus } from "../api/auth";
+import { purgePersistedCache } from "../pwa/persist";
 
 type AnyRec = Record<string, unknown>;
 
@@ -13,6 +14,10 @@ vi.mock("../api/auth", async () => {
     fetchAuthStatus: vi.fn(),
   };
 });
+
+vi.mock("../pwa/persist", () => ({
+  purgePersistedCache: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../screens/server/SetupScreen", () => ({
   default: ({ onComplete }: { onComplete: () => void }) => (
@@ -136,7 +141,7 @@ describe("AuthGate — boot gating", () => {
     expect(await screen.findByText("APP_CONTENT")).toBeInTheDocument();
   });
 
-  it("routes back to LoginScreen on a finsight:auth-required event fired from anywhere", async () => {
+  it("routes back to LoginScreen on a finsight:auth-required event fired from anywhere, clearing and purging the cache", async () => {
     (window as unknown as AnyRec).__FINSIGHT_HTTP__ = true;
     vi.mocked(fetchAuthStatus).mockResolvedValue({
       needsSetup: false,
@@ -144,7 +149,7 @@ describe("AuthGate — boot gating", () => {
       username: "koushik",
       isAdmin: false,
     });
-    renderGate();
+    const { clearSpy } = renderGate();
     await screen.findByText("APP_CONTENT");
 
     act(() => {
@@ -153,6 +158,8 @@ describe("AuthGate — boot gating", () => {
 
     expect(await screen.findByText("LOGIN_SCREEN")).toBeInTheDocument();
     expect(screen.queryByText("APP_CONTENT")).toBeNull();
+    expect(clearSpy).toHaveBeenCalled();
+    expect(purgePersistedCache).toHaveBeenCalledTimes(1);
   });
 
   it("desktop mode never registers a finsight:auth-required listener that changes rendered content", async () => {
@@ -166,6 +173,7 @@ describe("AuthGate — boot gating", () => {
     // Give any stray microtask/listener a tick, then assert nothing changed.
     await waitFor(() => expect(screen.getByText("APP_CONTENT")).toBeInTheDocument());
     expect(fetchAuthStatus).not.toHaveBeenCalled();
+    expect(purgePersistedCache).not.toHaveBeenCalled();
   });
 
   it("shows a retry option when fetchAuthStatus fails, and re-checks on retry", async () => {
