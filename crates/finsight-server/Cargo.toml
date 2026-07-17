@@ -26,6 +26,7 @@ hex = "0.4"
 rusqlite.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+zeroize.workspace = true
 # regex is a dev-dependency only, added in Task 10 for the parity test parser.
 
 [dev-dependencies]

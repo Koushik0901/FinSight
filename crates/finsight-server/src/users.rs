@@ -3,10 +3,11 @@
 //! plaintext keys or passwords. Uses rusqlite directly (no SQLCipher PRAGMA).
 
 use rusqlite::{params, Connection, Row};
+use std::fmt;
 use std::path::Path;
 use std::sync::Mutex;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UserRecord {
     pub id: String,
     pub username: String,
@@ -16,6 +17,29 @@ pub struct UserRecord {
     pub wrapped_key_recovery: Vec<u8>,
     pub is_admin: bool,
     pub created_at: String,
+}
+
+// Manual Debug: makes the no-secrets-in-logs invariant structural — a stray
+// `{:?}` on a UserRecord can never leak the verifier or wrapped key material.
+impl fmt::Debug for UserRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UserRecord")
+            .field("id", &self.id)
+            .field("username", &self.username)
+            .field("password_phc", &"<redacted>")
+            .field("kek_salt", &format_args!("<redacted {} bytes>", self.kek_salt.len()))
+            .field(
+                "wrapped_key_pw",
+                &format_args!("<redacted {} bytes>", self.wrapped_key_pw.len()),
+            )
+            .field(
+                "wrapped_key_recovery",
+                &format_args!("<redacted {} bytes>", self.wrapped_key_recovery.len()),
+            )
+            .field("is_admin", &self.is_admin)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 fn row_to_user(r: &Row) -> rusqlite::Result<UserRecord> {

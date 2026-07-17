@@ -13,6 +13,7 @@ use argon2::Argon2;
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use rand::RngCore;
+use zeroize::Zeroizing;
 
 pub const DB_KEY_LEN: usize = 32;
 pub const SALT_LEN: usize = 16;
@@ -22,12 +23,18 @@ const NONCE_LEN: usize = 24; // XChaCha20
 pub enum CryptoError {
     #[error("password hashing failed: {0}")]
     Hash(String),
+    #[error("key wrapping failed")]
+    Wrap,
     #[error("wrong password or corrupted wrapped key")]
     Unwrap,
     #[error("malformed recovery key")]
     BadRecoveryKey,
 }
 
+// NOTE: hash_password/verify_password deliberately stay on Argon2::default() —
+// the PHC string is self-describing (params travel with the hash), so verifier
+// params CAN evolve safely across argon2 upgrades. The KEK derivation below
+// cannot: its params are pinned (see kek_argon2).
 pub fn hash_password(password: &str) -> Result<String, CryptoError> {
     let salt = SaltString::generate(&mut PasswordHashOsRng);
     Argon2::default()
@@ -58,9 +65,21 @@ pub fn db_key_to_hex(key: &[u8; DB_KEY_LEN]) -> String {
     hex::encode(key)
 }
 
+fn kek_argon2() -> Argon2<'static> {
+    // PINNED: these parameters are part of the on-disk key-wrapping format.
+    // Changing ANY of them breaks unwrapping of every existing wrapped key —
+    // never change without a re-wrap migration. (Argon2id v19, m=19456 KiB,
+    // t=2, p=1, 32-byte output — the argon2 0.5 defaults, frozen explicitly.)
+    Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        argon2::Params::new(19_456, 2, 1, Some(32)).expect("valid pinned params"),
+    )
+}
+
 fn derive_kek(password: &str, salt: &[u8]) -> Result<[u8; 32], CryptoError> {
     let mut kek = [0u8; 32];
-    Argon2::default()
+    kek_argon2()
         .hash_password_into(password.as_bytes(), salt, &mut kek)
         .map_err(|e| CryptoError::Hash(e.to_string()))?;
     Ok(kek)
@@ -72,19 +91,22 @@ fn wrap_with_kek(kek: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, CryptoErro
     rand::thread_rng().fill_bytes(&mut nonce);
     let ct = cipher
         .encrypt(XNonce::from_slice(&nonce), plaintext)
-        .map_err(|_| CryptoError::Unwrap)?;
+        .map_err(|_| CryptoError::Wrap)?;
     let mut out = nonce.to_vec();
     out.extend(ct);
     Ok(out)
 }
 
-fn unwrap_with_kek(kek: &[u8; 32], wrapped: &[u8]) -> Result<Vec<u8>, CryptoError> {
+/// Returns the decrypted plaintext in a `Zeroizing` buffer so intermediate
+/// key material is wiped when the caller's copy-out completes.
+fn unwrap_with_kek(kek: &[u8; 32], wrapped: &[u8]) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
     if wrapped.len() < NONCE_LEN + 16 {
         return Err(CryptoError::Unwrap);
     }
     let (nonce, ct) = wrapped.split_at(NONCE_LEN);
     XChaCha20Poly1305::new(kek.into())
         .decrypt(XNonce::from_slice(nonce), ct)
+        .map(Zeroizing::new)
         .map_err(|_| CryptoError::Unwrap)
 }
 
@@ -93,7 +115,8 @@ pub fn wrap_key_with_password(
     kek_salt: &[u8],
     dbkey: &[u8; DB_KEY_LEN],
 ) -> Result<Vec<u8>, CryptoError> {
-    wrap_with_kek(&derive_kek(password, kek_salt)?, dbkey)
+    let kek = Zeroizing::new(derive_kek(password, kek_salt)?);
+    wrap_with_kek(&kek, dbkey)
 }
 
 pub fn unwrap_key_with_password(
@@ -101,8 +124,9 @@ pub fn unwrap_key_with_password(
     kek_salt: &[u8],
     wrapped: &[u8],
 ) -> Result<[u8; DB_KEY_LEN], CryptoError> {
-    let v = unwrap_with_kek(&derive_kek(password, kek_salt)?, wrapped)?;
-    v.try_into().map_err(|_| CryptoError::Unwrap)
+    let kek = Zeroizing::new(derive_kek(password, kek_salt)?);
+    let v = unwrap_with_kek(&kek, wrapped)?;
+    v.as_slice().try_into().map_err(|_| CryptoError::Unwrap)
 }
 
 /// Recovery key: 32 random bytes, shown once as 8 dash-separated hex groups.
@@ -141,9 +165,9 @@ pub fn unwrap_key_with_recovery_display(
     display: &str,
     wrapped: &[u8],
 ) -> Result<[u8; DB_KEY_LEN], CryptoError> {
-    let bytes = recovery_display_to_bytes(display)?;
+    let bytes = Zeroizing::new(recovery_display_to_bytes(display)?);
     let v = unwrap_with_kek(&bytes, wrapped)?;
-    v.try_into().map_err(|_| CryptoError::Unwrap)
+    v.as_slice().try_into().map_err(|_| CryptoError::Unwrap)
 }
 
 #[cfg(test)]
