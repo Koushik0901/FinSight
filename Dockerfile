@@ -39,5 +39,8 @@ ENV FINSIGHT_DATA_DIR=/data \
     RUST_LOG=info
 VOLUME /data
 EXPOSE 8674
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["/bin/sh","-c","exec 3<>/dev/tcp/127.0.0.1/8674 && printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"ok\"' <&3"]
+# /dev/tcp is a bash extension, not POSIX — /bin/sh on bookworm-slim is dash,
+# which would make this healthcheck fail forever. bash ships as a required
+# Debian package (present without an explicit install), just not wired as sh.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["/bin/bash","-c","exec 3<>/dev/tcp/127.0.0.1/8674 && printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"ok\"' <&3"]
 ENTRYPOINT ["/usr/local/bin/finsight-server"]
