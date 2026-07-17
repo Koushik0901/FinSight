@@ -15,11 +15,76 @@ pub struct BudgetEnvelope {
     pub category_label: String,
     pub category_color: String,
     pub group_label: String,
-    /// Budget set by user (0 = not budgeted)
+    /// Budget set by user for the current month (0 = not budgeted this month)
     pub budget_cents: i64,
     /// Actual outflow this month (positive = spent)
     pub spent_cents: i64,
+    /// Running (budgeted − spent) carried in from prior months, anchored at the
+    /// category's first-ever budgeted month. Positive = unspent rolling forward,
+    /// negative = accumulated overspend.
+    pub carryover_cents: i64,
     pub txn_count: i64,
+}
+
+/// Budgets joined with actual spend per category for `month`/`month_start`
+/// (`month_start` = `"{month}-01"`). A `settle_up = 1` reimbursement inflow
+/// nets against the category's spend (matching metrics.rs cashflow) instead of
+/// being silently dropped by an `amount_cents < 0`-only filter. Extracted from
+/// [`list_budget_envelopes`] so it's directly unit-testable without a Tauri
+/// `AppState`.
+fn budget_envelopes_for_month(
+    conn: &mut rusqlite::Connection,
+    month: &str,
+    month_start: &str,
+) -> finsight_core::CoreResult<Vec<BudgetEnvelope>> {
+    // Get budgets for the month
+    let budget_map: std::collections::HashMap<String, i64> =
+        budgets::list_for_month(conn, month)?.into_iter().collect();
+
+    // Get spending per category this month
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.label, COALESCE(c.color,''), COALESCE(g.label,''), \
+                COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                                  WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                                  ELSE 0 END), 0), \
+                COUNT(t.id) \
+         FROM categories c \
+         LEFT JOIN category_groups g ON g.id = c.group_id \
+         LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?1 \
+         WHERE c.archived_at IS NULL \
+         GROUP BY c.id, c.label, c.color, c.group_id, g.label \
+         ORDER BY g.sort_order, c.sort_order",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![month_start], |r| {
+        let cat_id: String = r.get(0)?;
+        Ok((cat_id.clone(), r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, budget_map.get(&cat_id).copied().unwrap_or(0)))
+    })?;
+    // Collect + drop the statement before the loop: carryover_into_month needs
+    // the connection, which `stmt` borrows.
+    let rows: Vec<_> = rows.collect::<rusqlite::Result<_>>()?;
+    drop(stmt);
+
+    let mut out = Vec::new();
+    for (cat_id, label, color, group_label, spent, txn_count, budget) in rows {
+        if !finsight_core::categorize::is_budgetable_category(&cat_id) {
+            continue;
+        }
+        let carryover_cents = budgets::carryover_into_month(conn, &cat_id, month)?;
+        // Every active budgetable category is shown, budgeted or not — a category
+        // with no budget and no spend yet is exactly the one a user needs to see
+        // in order to budget it for the first time.
+        out.push(BudgetEnvelope {
+            category_id: cat_id,
+            category_label: label,
+            category_color: color,
+            group_label,
+            budget_cents: budget,
+            spent_cents: spent,
+            carryover_cents,
+            txn_count,
+        });
+    }
+    Ok(out)
 }
 
 pub async fn list_budget_envelopes(state: &ApiState) -> AppResult<Vec<BudgetEnvelope>> {
@@ -29,44 +94,7 @@ pub async fn list_budget_envelopes(state: &ApiState) -> AppResult<Vec<BudgetEnve
     let this_month_start = now.format("%Y-%m-01").to_string();
 
     run(&db, move |conn| {
-        // Get budgets for the month
-        let budget_map: std::collections::HashMap<String, i64> =
-            budgets::list_for_month(conn, &month)?.into_iter().collect();
-
-        // Get spending per category this month
-        let mut stmt = conn.prepare(
-            "SELECT c.id, c.label, COALESCE(c.color,''), COALESCE(g.label,''), \
-                    COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END), 0), \
-                    COUNT(t.id) \
-             FROM categories c \
-             LEFT JOIN category_groups g ON g.id = c.group_id \
-             LEFT JOIN transactions t ON t.category_id = c.id AND t.posted_at >= ?1 \
-             WHERE c.archived_at IS NULL \
-             GROUP BY c.id, c.label, c.color, c.group_id, g.label \
-             ORDER BY g.sort_order, c.sort_order",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![this_month_start], |r| {
-            let cat_id: String = r.get(0)?;
-            Ok((cat_id.clone(), r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, budget_map.get(&cat_id).copied().unwrap_or(0)))
-        })?;
-
-        let mut out = Vec::new();
-        for row in rows {
-            let (cat_id, label, color, group_label, spent, txn_count, budget) = row?;
-            // Only include categories that have a budget OR have spending
-            if budget > 0 || spent > 0 {
-                out.push(BudgetEnvelope {
-                    category_id: cat_id,
-                    category_label: label,
-                    category_color: color,
-                    group_label,
-                    budget_cents: budget,
-                    spent_cents: spent,
-                    txn_count,
-                });
-            }
-        }
-        Ok(out)
+        budget_envelopes_for_month(conn, &month, &this_month_start)
     })
     .await
     .map_err(AppError::from)
@@ -125,7 +153,9 @@ pub struct PlanData {
     pub income_cents: i64,
     pub categories: Vec<CategoryPlanRow>,
     pub goals: Vec<GoalDto>,
+    pub sinking_funds: Vec<GoalDto>,
     pub recurring_expense_cents: i64,
+    pub look_back: Vec<budgets::LookBackFact>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, Type)]
@@ -140,7 +170,8 @@ pub struct PlanAssignment {
 pub struct MonthlyActual {
     pub month: String,
     pub label: String,
-    pub cents: i64,
+    pub spent_cents: i64,
+    pub budgeted_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -425,12 +456,15 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
         let m2_start = format!("{}-01", m2);
 
         // Average monthly income over last 3 months
+        // settle_up = 0 excludes a reimbursement inflow from income (it nets
+        // against expense instead — see metrics.rs income_expense_since).
         let income_cents: i64 = conn.query_row(
             &format!(
                 "SELECT CAST(COALESCE(AVG(mi), 0) AS INTEGER)
                  FROM (SELECT SUM(amount_cents) AS mi
                        FROM transactions t
                        WHERE amount_cents > 0
+                         AND settle_up = 0
                          AND is_transfer = 0
                          AND {}
                          AND strftime('%Y-%m', posted_at) IN (?1, ?2, ?3)
@@ -447,9 +481,15 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
 
         let mut stmt = conn.prepare(
             "SELECT c.id, c.label, COALESCE(c.color,''), COALESCE(g.label,''),
-                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?1 AND t.amount_cents<0 THEN -t.amount_cents ELSE 0 END),0),
-                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?2 AND t.amount_cents<0 THEN -t.amount_cents ELSE 0 END),0),
-                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?3 AND t.amount_cents<0 THEN -t.amount_cents ELSE 0 END),0)
+                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?1 AND t.settle_up=1 THEN -t.amount_cents
+                                      WHEN strftime('%Y-%m',t.posted_at)=?1 AND t.amount_cents<0 THEN -t.amount_cents
+                                      ELSE 0 END),0),
+                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?2 AND t.settle_up=1 THEN -t.amount_cents
+                                      WHEN strftime('%Y-%m',t.posted_at)=?2 AND t.amount_cents<0 THEN -t.amount_cents
+                                      ELSE 0 END),0),
+                    COALESCE(SUM(CASE WHEN strftime('%Y-%m',t.posted_at)=?3 AND t.settle_up=1 THEN -t.amount_cents
+                                      WHEN strftime('%Y-%m',t.posted_at)=?3 AND t.amount_cents<0 THEN -t.amount_cents
+                                      ELSE 0 END),0)
              FROM categories c
              LEFT JOIN category_groups g ON g.id = c.group_id
              LEFT JOIN transactions t ON t.category_id = c.id
@@ -487,9 +527,13 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
             });
         }
 
-        // Active goals (current < target, not archived)
+        // Sinking funds get their own Plan-wizard step; everything else that's
+        // still open (current < target) is a regular active goal.
         let all_goals = goals::list(conn)?;
-        let active_goals: Vec<GoalDto> = all_goals
+        let (sinking, other): (Vec<_>, Vec<_>) =
+            all_goals.into_iter().partition(|g| g.goal_type == "sinking-fund");
+        let sinking_funds: Vec<GoalDto> = sinking.into_iter().map(goal_to_dto).collect();
+        let active_goals: Vec<GoalDto> = other
             .into_iter()
             .filter(|g| g.current_cents < g.target_cents)
             .map(goal_to_dto)
@@ -521,11 +565,15 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
             |r| r.get(0),
         )?;
 
+        let look_back = budgets::look_back_facts(conn, &m0)?;
+
         Ok(PlanData {
             income_cents,
             categories,
             goals: active_goals,
+            sinking_funds,
             recurring_expense_cents,
+            look_back,
         })
     })
     .await
@@ -587,12 +635,16 @@ pub async fn list_budget_history(
 
         let cutoff = format!("{}-01", month_list.first().unwrap());
 
-        // Aggregate per-category per-month outflows
+        // Aggregate per-category per-month outflows. A `settle_up = 1` row nets
+        // as `-amount_cents` (a reimbursement inflow reduces reported spend)
+        // instead of being silently dropped by an `amount_cents < 0`-only filter.
         let mut stmt = conn.prepare(
             "SELECT t.category_id, strftime('%Y-%m', t.posted_at) AS mo,
-                    SUM(-t.amount_cents) AS cents
+                    SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents
+                             WHEN t.amount_cents < 0 THEN -t.amount_cents
+                             ELSE 0 END) AS cents
              FROM transactions t
-             WHERE t.amount_cents < 0
+             WHERE (t.amount_cents < 0 OR t.settle_up = 1)
                AND t.posted_at >= ?1
                AND t.category_id IS NOT NULL
              GROUP BY t.category_id, mo",
@@ -610,6 +662,21 @@ pub async fn list_budget_history(
             spend_map.insert((row.0, row.1), row.2);
         }
         drop(stmt);
+
+        // Same shape, for budgeted amounts.
+        let mut budget_stmt = conn.prepare(
+            "SELECT category_id, month, amount_cents FROM budgets WHERE month >= ?1",
+        )?;
+        let cutoff_month = month_list.first().unwrap().clone();
+        let mut budget_map: std::collections::HashMap<(String, String), i64> =
+            std::collections::HashMap::new();
+        let budget_rows = budget_stmt.query_map(rusqlite::params![cutoff_month], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        for row in budget_rows.flatten() {
+            budget_map.insert((row.0, row.1), row.2);
+        }
+        drop(budget_stmt);
 
         // Fetch all non-archived categories
         let mut cat_stmt = conn.prepare(
@@ -645,13 +712,17 @@ pub async fn list_budget_history(
                     .map(|(m, lbl)| MonthlyActual {
                         month: m.clone(),
                         label: lbl.clone(),
-                        cents: spend_map
+                        spent_cents: spend_map
+                            .get(&(id.clone(), m.clone()))
+                            .copied()
+                            .unwrap_or(0),
+                        budgeted_cents: budget_map
                             .get(&(id.clone(), m.clone()))
                             .copied()
                             .unwrap_or(0),
                     })
                     .collect();
-                let total: i64 = monthly.iter().map(|m| m.cents).sum();
+                let total: i64 = monthly.iter().map(|m| m.spent_cents).sum();
                 if total == 0 {
                     return None;
                 }
@@ -666,8 +737,8 @@ pub async fn list_budget_history(
 
         // Sort by total spend descending
         result.sort_by(|a, b| {
-            let ta: i64 = a.monthly.iter().map(|m| m.cents).sum();
-            let tb: i64 = b.monthly.iter().map(|m| m.cents).sum();
+            let ta: i64 = a.monthly.iter().map(|m| m.spent_cents).sum();
+            let tb: i64 = b.monthly.iter().map(|m| m.spent_cents).sum();
             tb.cmp(&ta)
         });
 
@@ -675,4 +746,91 @@ pub async fn list_budget_history(
     })
     .await
     .map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("budget.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn seed_account(conn: &rusqlite::Connection) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+    }
+
+    fn seed_category(conn: &rusqlite::Connection, id: &str, label: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('grp', 'Group', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, 'grp', ?2, '#94A3B8', 0)",
+            rusqlite::params![id, label],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn budget_envelope_spend_nets_settle_up_inflow() {
+        // A settle_up = 1 reimbursement inflow must reduce the envelope's
+        // reported spend (e.g. a roommate paying back their share of groceries)
+        // instead of being silently dropped by an `amount_cents < 0`-only CASE,
+        // and must not push the envelope into "over budget".
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_account(&conn);
+        seed_category(&conn, "food", "Food");
+
+        let month = "2026-05";
+        let month_start = "2026-05-01";
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES('b1','food',?1,4000,datetime('now'),datetime('now'))",
+            rusqlite::params![month],
+        )
+        .unwrap();
+
+        // Ordinary $50 grocery expense.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1','a1','2026-05-10T00:00:00Z',-5000,'GROCERY','food','cleared',0,0,'2026-05-10T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // A $20 settle-up reimbursement for the same category.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at,settle_up) \
+             VALUES('su1','a1','2026-05-12T00:00:00Z',2000,'FRIEND REFUND','food','cleared',0,0,'2026-05-12T00:00:00Z',1)",
+            [],
+        )
+        .unwrap();
+
+        let envelopes = budget_envelopes_for_month(&mut conn, month, month_start).unwrap();
+        let food = envelopes
+            .iter()
+            .find(|e| e.category_id == "food")
+            .expect("food envelope present");
+        assert_eq!(
+            food.spent_cents, 3000,
+            "settle-up inflow nets against expense: 5000 - 2000 = 3000"
+        );
+        assert!(
+            food.spent_cents < food.budget_cents,
+            "netted spend (3000) is under the 4000 budget"
+        );
+    }
 }

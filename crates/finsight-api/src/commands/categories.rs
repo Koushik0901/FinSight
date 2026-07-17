@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
-use finsight_core::models::Category;
+use finsight_core::models::{Category, CategoryGroup};
 use finsight_core::repos::{categories, run};
 
 pub async fn update_category_color(state: &ApiState, id: String, color: String) -> AppResult<()> {
@@ -46,6 +46,39 @@ pub async fn set_category_guidance(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         categories::set_guidance(conn, &id, guidance.as_deref())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn list_category_groups(state: &ApiState) -> AppResult<Vec<CategoryGroup>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| categories::list_groups(conn))
+        .await
+        .map_err(AppError::from)
+}
+
+pub async fn create_category_group(
+    state: &ApiState,
+    label: String,
+    hint: Option<String>,
+) -> AppResult<CategoryGroup> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::create_group(conn, &label, hint.as_deref())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn set_category_group(
+    state: &ApiState,
+    category_id: String,
+    group_id: String,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        categories::set_group(conn, &category_id, &group_id)
     })
     .await
     .map_err(AppError::from)

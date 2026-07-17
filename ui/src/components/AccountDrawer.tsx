@@ -482,7 +482,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
           )}
           <div className="row row-sm" style={{ marginTop: 8 }}>
             <input
-              placeholder="Add a person (e.g. Swathi)"
+              placeholder="Add a person (e.g. Jane Doe)"
               value={newPersonName}
               onChange={(e) => setNewPersonName(e.target.value)}
               onKeyDown={(e) => {

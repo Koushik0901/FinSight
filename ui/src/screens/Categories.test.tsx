@@ -21,6 +21,16 @@ vi.mock("../api/hooks/transactions", () => ({
   useRenameCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useArchiveCategory: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useSetCategoryGuidance: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useCategoryGroups: vi.fn(() => ({
+    data: [
+      { id: "g1", label: "Food", hint: null, sort_order: 0 },
+      { id: "g2", label: "Lifestyle", hint: null, sort_order: 1 },
+    ],
+    isLoading: false,
+    error: null,
+  })),
+  useCreateCategoryGroup: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({ id: "g3", label: "New Group", hint: null, sort_order: 2 }), isPending: false })),
+  useSetCategoryGroup: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 
 describe("Categories — empty state", () => {
@@ -124,6 +134,20 @@ describe("Categories — management", () => {
     const panelIndex = rows.indexOf(panelRow);
     const diningRow = screen.getByRole("button", { name: "Manage Dining Out" }).closest("tr")!;
     expect(rows.indexOf(diningRow)).toBeGreaterThan(panelIndex);
+  });
+
+  it("lets the user pick a group when creating a category", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /New category/i }));
+    expect(screen.getByLabelText("New category's group")).toBeInTheDocument();
+  });
+
+  it("shows a Move to group control in the Manage panel, defaulted to the category's current group", () => {
+    render(<Categories />, { wrapper: createWrapper() });
+    // Manage Groceries — its fixture groupId is "g1" ("Food").
+    fireEvent.click(screen.getByRole("button", { name: "Manage Groceries" }));
+    const groupSelect = screen.getByLabelText("Group") as HTMLSelectElement;
+    expect(groupSelect.value).toBe("g1");
   });
 });
 

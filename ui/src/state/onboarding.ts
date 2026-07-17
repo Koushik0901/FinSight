@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { CsvImportMapping } from "../api/bindings";
 
-export type OnboardingStep = "welcome" | "connect" | "categories" | "agent";
+export type OnboardingStep = "welcome" | "accounts" | "history" | "categories" | "agent";
 
 interface OnboardingStore {
   step: OnboardingStep;
@@ -13,7 +13,7 @@ interface OnboardingStore {
   reset: () => void;
 }
 
-const ORDER: OnboardingStep[] = ["welcome", "connect", "categories", "agent"];
+const ORDER: OnboardingStep[] = ["welcome", "accounts", "history", "categories", "agent"];
 
 export const useOnboardingStore = create<OnboardingStore>((set) => ({
   step: "welcome",

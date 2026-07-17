@@ -242,6 +242,19 @@ async fn dispatch(
             arg(&p, "guidance")?,
         )
         .await?),
+        "list_category_groups" => ok(c::categories::list_category_groups(api).await?),
+        "create_category_group" => ok(c::categories::create_category_group(
+            api,
+            arg(&p, "label")?,
+            arg(&p, "hint")?,
+        )
+        .await?),
+        "set_category_group" => ok(c::categories::set_category_group(
+            api,
+            arg(&p, "categoryId")?,
+            arg(&p, "groupId")?,
+        )
+        .await?),
 
         // ── copilot (action bundles / sessions) ──
         "list_agent_sessions" => ok(c::copilot::list_agent_sessions(api).await?),
@@ -682,6 +695,23 @@ async fn dispatch(
             )
             .await?)
         }
+        "set_counterparty_verdict" => ok(c::transactions::set_counterparty_verdict(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "verdict")?,
+        )
+        .await?),
+        "apply_counterparty_verdict_to_similar" => {
+            ok(c::transactions::apply_counterparty_verdict_to_similar(
+                api,
+                arg(&p, "pattern")?,
+                arg(&p, "verdict")?,
+            )
+            .await?)
+        }
+        "list_unresolved_counterparties" => {
+            ok(c::transactions::list_unresolved_counterparties(api).await?)
+        }
         "get_transaction_splits" => {
             ok(c::transactions::get_transaction_splits(api, arg(&p, "transactionId")?).await?)
         }
@@ -767,6 +797,9 @@ pub const SUPPORTED: &[&str] = &[
     "rename_category",
     "archive_category",
     "set_category_guidance",
+    "list_category_groups",
+    "create_category_group",
+    "set_category_group",
     // copilot
     "list_agent_sessions",
     "create_agent_session",
@@ -909,6 +942,9 @@ pub const SUPPORTED: &[&str] = &[
     "set_transaction_flags",
     "set_transaction_transfer",
     "apply_transfer_verdict_to_similar",
+    "set_counterparty_verdict",
+    "apply_counterparty_verdict_to_similar",
+    "list_unresolved_counterparties",
     "get_transaction_splits",
     "set_transaction_splits",
 ];

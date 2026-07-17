@@ -112,8 +112,10 @@ pub async fn get_financial_health_score(state: &ApiState) -> AppResult<HealthSco
         let unbudgeted_cents: i64 = conn
             .query_row(
                 &format!(
-                    "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions t \
-                     WHERE category_id IS NULL AND amount_cents < 0 AND is_transfer = 0 \
+                    "SELECT COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents \
+                                              WHEN amount_cents < 0 THEN -amount_cents \
+                                              ELSE 0 END), 0) FROM transactions t \
+                     WHERE category_id IS NULL AND (amount_cents < 0 OR settle_up = 1) AND is_transfer = 0 \
                        AND posted_at >= ?1 AND {}",
                     finsight_core::metrics::non_investment_txn_predicate("t")
                 ),

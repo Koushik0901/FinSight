@@ -330,7 +330,9 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
         let mut over_stmt = conn
             .prepare(
                 "SELECT c.label, e.budget_cents,
-                        COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents ELSE 0 END), 0) AS spent
+                        COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents
+                                          WHEN t.amount_cents < 0 THEN -t.amount_cents
+                                          ELSE 0 END), 0) AS spent
                  FROM budget_envelopes e
                  JOIN categories c ON c.id = e.category_id
                  LEFT JOIN transactions t ON t.category_id = e.category_id

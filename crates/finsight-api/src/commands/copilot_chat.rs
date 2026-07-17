@@ -1766,11 +1766,13 @@ fn top_spending_categories_this_month(
 ) -> rusqlite::Result<Vec<SpendingCategoryRow>> {
     let mut stmt = conn.prepare(
         "SELECT COALESCE(c.label, 'Uncategorized') AS category,
-                CAST(SUM(-t.amount_cents) AS INTEGER) AS spent_cents,
+                CAST(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents
+                              WHEN t.amount_cents < 0 THEN -t.amount_cents
+                              ELSE 0 END) AS INTEGER) AS spent_cents,
                 COUNT(*) AS txn_count
          FROM transactions t
          LEFT JOIN categories c ON c.id = t.category_id
-         WHERE t.amount_cents < 0
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1)
            AND COALESCE(t.pending, 0) = 0
            AND date(t.posted_at) >= date('now', 'start of month')
            AND date(t.posted_at) < date('now', 'start of month', '+1 month')

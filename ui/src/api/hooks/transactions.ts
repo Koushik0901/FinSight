@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportResult, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type RuleWithCategory, type SplitInputDto } from "../client";
+import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportResult, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type CategoryGroup, type RuleWithCategory, type SplitInputDto } from "../client";
 import { isTauriRuntime } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -268,6 +268,45 @@ export function useUpdateCategoryColor() {
     onSuccess: () => {
       invalidateDomains(qc, "categories");
     },
+  });
+}
+
+export function useCategoryGroups() {
+  return useQuery<CategoryGroup[]>({
+    queryKey: ["category-groups"],
+    queryFn: async () => {
+      const result = await commands.listCategoryGroups();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isTauriRuntime(),
+  });
+}
+
+export function useCreateCategoryGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ label, hint }: { label: string; hint?: string | null }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.createCategoryGroup(label, hint ?? null);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["category-groups"] });
+    },
+  });
+}
+
+export function useSetCategoryGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ categoryId, groupId }: { categoryId: string; groupId: string }) => {
+      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.setCategoryGroup(categoryId, groupId);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => invalidateCategoryQueries(qc),
   });
 }
 

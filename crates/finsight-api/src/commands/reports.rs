@@ -113,6 +113,64 @@ fn month_short_label(ym: &str) -> String {
     names[(month_num.saturating_sub(1)) as usize].to_string()
 }
 
+/// Per-category expense totals over `[start, end)`, optionally weighted to one
+/// household member's ownership share. A `settle_up = 1` reimbursement inflow
+/// nets against the category's total (matching metrics.rs cashflow) instead of
+/// being silently dropped by an `amount_cents < 0`-only filter. Extracted from
+/// [`get_report_data`] so it's directly unit-testable without a Tauri
+/// `AppState`.
+fn category_totals_for_window(
+    conn: &rusqlite::Connection,
+    member: Option<&str>,
+    start: &str,
+    end: &str,
+) -> finsight_core::CoreResult<Vec<CategoryTotal>> {
+    let owner_join: &str = if member.is_some() {
+        " JOIN (SELECT ao.account_id, 1.0 / oc.n AS weight FROM account_owners ao \
+          JOIN (SELECT account_id, COUNT(*) AS n FROM account_owners GROUP BY account_id) oc \
+          ON oc.account_id = ao.account_id WHERE ao.member_id = ?) w ON w.account_id = t.account_id"
+    } else {
+        ""
+    };
+    let wmul: &str = if member.is_some() { "* w.weight" } else { "" };
+
+    let mut cat_binds: Vec<String> = Vec::new();
+    if let Some(m) = member {
+        cat_binds.push(m.to_string());
+    }
+    cat_binds.push(start.to_string());
+    cat_binds.push(end.to_string());
+
+    let sql = format!(
+        "SELECT c.id, c.label, COALESCE(c.color,''), \
+                CAST(ROUND(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents {wmul} \
+                                    WHEN t.amount_cents < 0 THEN -t.amount_cents {wmul} \
+                                    ELSE 0 END)) AS INTEGER) AS total, COUNT(t.id) \
+         FROM transactions t{owner_join} \
+         LEFT JOIN categories c ON c.id = t.category_id \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
+         GROUP BY c.id, c.label, c.color \
+         ORDER BY total DESC \
+         LIMIT 10"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
+        Ok(CategoryTotal {
+            // Uncategorized spending groups on a NULL category id via the
+            // LEFT JOIN; represent it with an empty id rather than
+            // failing the whole report on the NULL.
+            category_id: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+            label: r
+                .get::<_, Option<String>>(1)?
+                .unwrap_or_else(|| "Uncategorized".to_string()),
+            color: r.get(2)?,
+            total_cents: r.get(3)?,
+            txn_count: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, rusqlite::Error>>()?)
+}
+
 pub async fn get_report_data(
     state: &ApiState,
     scope: String,
@@ -189,8 +247,10 @@ pub async fn get_report_data(
                 let last = &month_list[month_list.len() - 1];
                 let sql = format!(
                     "SELECT strftime('%Y-%m', t.posted_at) AS mo, \
-                        CAST(ROUND(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents {wmul} ELSE 0 END)) AS INTEGER), \
-                        CAST(ROUND(SUM(CASE WHEN t.amount_cents < 0 THEN -t.amount_cents {wmul} ELSE 0 END)) AS INTEGER) \
+                        CAST(ROUND(SUM(CASE WHEN t.amount_cents > 0 AND t.settle_up = 0 THEN t.amount_cents {wmul} ELSE 0 END)) AS INTEGER), \
+                        CAST(ROUND(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents {wmul} \
+                                            WHEN t.amount_cents < 0 THEN -t.amount_cents {wmul} \
+                                            ELSE 0 END)) AS INTEGER) \
                      FROM transactions t{owner_join} \
                      WHERE strftime('%Y-%m', t.posted_at) >= ? \
                        AND strftime('%Y-%m', t.posted_at) <= ? \
@@ -260,54 +320,30 @@ pub async fn get_report_data(
             })
             .unwrap_or_default();
 
-        let mut cat_binds: Vec<String> = Vec::new();
-        if let Some(m) = member.as_ref() {
-            cat_binds.push(m.clone());
-        }
-        cat_binds.push(scope_start.clone());
-        cat_binds.push(scope_end.clone());
-        let top_categories = {
-            let sql = format!(
-                "SELECT c.id, c.label, COALESCE(c.color,''), \
-                        CAST(ROUND(SUM(-t.amount_cents {wmul})) AS INTEGER) AS total, COUNT(t.id) \
-                 FROM transactions t{owner_join} \
-                 LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
-                 GROUP BY c.id, c.label, c.color \
-                 ORDER BY total DESC \
-                 LIMIT 10"
-            );
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
-                Ok(CategoryTotal {
-                    // Uncategorized spending groups on a NULL category id via the
-                    // LEFT JOIN; represent it with an empty id rather than
-                    // failing the whole report on the NULL.
-                    category_id: r.get::<_, Option<String>>(0)?.unwrap_or_default(),
-                    label: r
-                        .get::<_, Option<String>>(1)?
-                        .unwrap_or_else(|| "Uncategorized".to_string()),
-                    color: r.get(2)?,
-                    total_cents: r.get(3)?,
-                    txn_count: r.get(4)?,
-                })
-            })?;
-            rows.collect::<Result<Vec<_>, rusqlite::Error>>()?
-        };
+        let top_categories =
+            category_totals_for_window(conn, member.as_deref(), &scope_start, &scope_end)?;
 
         let top_merchants = {
+            let mut binds: Vec<String> = Vec::new();
+            if let Some(m) = member.as_ref() {
+                binds.push(m.clone());
+            }
+            binds.push(scope_start.clone());
+            binds.push(scope_end.clone());
             let sql = format!(
                 "SELECT t.merchant_raw, COALESCE(c.label,''), COALESCE(c.color,''), \
-                        CAST(ROUND(SUM(-t.amount_cents {wmul})) AS INTEGER) AS total, COUNT(t.id) \
+                        CAST(ROUND(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents {wmul} \
+                                            WHEN t.amount_cents < 0 THEN -t.amount_cents {wmul} \
+                                            ELSE 0 END)) AS INTEGER) AS total, COUNT(t.id) \
                  FROM transactions t{owner_join} \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE t.amount_cents < 0 AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
                  GROUP BY t.merchant_raw \
                  ORDER BY total DESC \
                  LIMIT 10"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
+            let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {
                 Ok(MerchantTotal {
                     merchant_raw: r.get(0)?,
                     category_label: r.get(1)?,
@@ -385,8 +421,10 @@ pub async fn get_savings_rate_history(state: &ApiState) -> AppResult<Vec<Savings
         let mut stmt = conn.prepare(&format!(
             "SELECT
                 strftime('%Y-%m', posted_at) AS month,
-                COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS income,
-                COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS expense
+                COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0) AS income,
+                COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                  WHEN amount_cents < 0 THEN -amount_cents
+                                  ELSE 0 END), 0) AS expense
              FROM transactions t
              WHERE posted_at >= ?1 AND is_transfer = 0 AND {}
              GROUP BY month
@@ -475,9 +513,11 @@ pub async fn create_monthly_review(
         let over_budget_categories: Vec<String> = {
             let mut stmt = conn.prepare(
                 "WITH actuals AS (
-                   SELECT category_id, SUM(ABS(amount_cents)) AS spent
+                   SELECT category_id, SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                                 WHEN amount_cents < 0 THEN -amount_cents
+                                                 ELSE 0 END) AS spent
                    FROM transactions
-                   WHERE posted_at >= ?1 AND posted_at < ?2 AND amount_cents < 0 AND is_transfer = 0
+                   WHERE posted_at >= ?1 AND posted_at < ?2 AND (amount_cents < 0 OR settle_up = 1) AND is_transfer = 0
                    GROUP BY category_id
                  )
                  SELECT c.label FROM budgets b
@@ -622,7 +662,76 @@ pub async fn list_monthly_reviews(state: &ApiState) -> AppResult<Vec<MonthlyRevi
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_month, scope_month_list};
+    use super::{category_totals_for_window, normalize_month, scope_month_list};
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn fresh_db() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("reports.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        (dir, db)
+    }
+
+    fn seed_account(conn: &rusqlite::Connection) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('a1','Me','Bank','Checking','Checking','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+    }
+
+    fn seed_category(conn: &rusqlite::Connection, id: &str, label: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('grp', 'Group', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, 'grp', ?2, '#94A3B8', 0)",
+            rusqlite::params![id, label],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn category_totals_net_settle_up_inflow() {
+        // A settle_up = 1 reimbursement inflow must reduce the category's
+        // reported total instead of being silently dropped by an
+        // `amount_cents < 0`-only filter.
+        let (_dir, db) = fresh_db();
+        let conn = db.get().unwrap();
+        seed_account(&conn);
+        seed_category(&conn, "food", "Food");
+
+        // Ordinary $50 grocery expense.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1','a1','2026-05-10T00:00:00Z',-5000,'GROCERY','food','cleared',0,0,'2026-05-10T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // A $20 settle-up reimbursement for the same category.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at,settle_up) \
+             VALUES('su1','a1','2026-05-12T00:00:00Z',2000,'FRIEND REFUND','food','cleared',0,0,'2026-05-12T00:00:00Z',1)",
+            [],
+        )
+        .unwrap();
+
+        let totals =
+            category_totals_for_window(&conn, None, "2026-05-01", "2026-06-01").unwrap();
+        let food = totals
+            .iter()
+            .find(|c| c.category_id == "food")
+            .expect("food category present");
+        assert_eq!(
+            food.total_cents, 3000,
+            "settle-up inflow nets against expense: 5000 - 2000 = 3000"
+        );
+    }
 
     #[test]
     fn normalize_month_carries_across_year_boundaries() {

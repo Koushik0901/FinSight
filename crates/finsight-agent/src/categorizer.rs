@@ -87,6 +87,16 @@ pub async fn run_job(
             return Ok(());
         }
         let matched = active_rules.iter().find(|r| {
+            // 'transfer'/'settle_up' rules (see repos::transactions::
+            // apply_verdict_to_matching) persist a counterparty verdict, not a
+            // category — their category_id is "" and must never be written
+            // to a transaction's category_id (empty string, and it would
+            // violate transactions.category_id's FK to categories(id) besides
+            // being semantically wrong). Only 'categorize' rules apply here;
+            // repos::rules::apply_treatment_rules handles the other two.
+            if r.treatment != "categorize" {
+                return false;
+            }
             let pat = r.pattern.to_lowercase();
             let merch = merchant_raw.to_lowercase();
             // Simple LIKE: leading/trailing % = contains, otherwise exact
@@ -460,6 +470,7 @@ mod tests {
                     pattern: "CHIPOTLE".to_string(),
                     category_id: "cat1".to_string(),
                     source: "user".to_string(),
+                    treatment: "categorize".to_string(),
                 },
             )
             .unwrap();

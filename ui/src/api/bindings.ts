@@ -93,6 +93,30 @@ async setCategoryGuidance(id: string, guidance: string | null) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
+async listCategoryGroups() : Promise<Result<CategoryGroup[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_groups") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createCategoryGroup(label: string, hint: string | null) : Promise<Result<CategoryGroup, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_category_group", { label, hint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCategoryGroup(categoryId: string, groupId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_category_group", { categoryId, groupId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -1063,6 +1087,45 @@ async applyTransferVerdictToSimilar(pattern: string, isTransfer: boolean) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Record the user's 3-way verdict (transfer / settle-up / real spending) on
+ * a transfer-review counterparty transaction. Sticky: survives re-imports
+ * and categorizer re-runs.
+ */
+async setCounterpartyVerdict(id: string, verdict: CounterpartyVerdict) : Promise<Result<Transaction, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_counterparty_verdict", { id, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Apply one counterparty verdict to every undecided transaction matching a
+ * counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+ * `TransferVerdictResult::similar_pattern`). One decision clears a whole
+ * person's e-transfer history from the review list.
+ */
+async applyCounterpartyVerdictToSimilar(pattern: string, verdict: CounterpartyVerdict) : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_counterparty_verdict_to_similar", { pattern, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The undecided transfer-review queue, grouped by counterparty for a
+ * bulk-decision surface.
+ */
+async listUnresolvedCounterparties() : Promise<Result<UnresolvedCounterpartyDto[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_unresolved_counterparties") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getTransactionSplits(transactionId: string) : Promise<Result<TransactionSplitDto[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_transaction_splits", { transactionId }) };
@@ -1741,13 +1804,19 @@ createdAt: string }
  */
 export type BudgetEnvelope = { categoryId: string; categoryLabel: string; categoryColor: string; groupLabel: string; 
 /**
- * Budget set by user (0 = not budgeted)
+ * Budget set by user for the current month (0 = not budgeted this month)
  */
 budgetCents: number; 
 /**
  * Actual outflow this month (positive = spent)
  */
-spentCents: number; txnCount: number }
+spentCents: number; 
+/**
+ * Running (budgeted − spent) carried in from prior months, anchored at the
+ * category's first-ever budgeted month. Positive = unspent rolling forward,
+ * negative = accumulated overspend.
+ */
+carryoverCents: number; txnCount: number }
 export type Category = { id: string; group_id: string; label: string; color: string; icon: string | null; spending_type: string | null; 
 /**
  * Free-text guidance the user attaches so the categorizer/Copilot know when
@@ -1755,6 +1824,7 @@ export type Category = { id: string; group_id: string; label: string; color: str
  */
 guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
+export type CategoryGroup = { id: string; label: string; hint: string | null; sort_order: number }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
 /**
@@ -1815,6 +1885,12 @@ agUiMetadataJson: string | null; createdAt: string }
  * Summary of a conversation thread shown in the sidebar.
  */
 export type ConversationSummary = { id: string; title: string; messageCount: number; createdAt: string; updatedAt: string }
+/**
+ * Serializable mirror of `finsight_core::repos::transactions::Verdict` —
+ * the core enum has no serde/specta derives by design (finsight-core has no
+ * Tauri/specta dependency), so this DTO crosses the specta boundary instead.
+ */
+export type CounterpartyVerdict = "transfer" | "settleUp" | "real"
 export type CreateMonthlyReviewInput = { year: number; month: number; notes: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
@@ -1936,6 +2012,26 @@ export type JourneyMilestone = { stage: number; name: string; description: strin
 export type JourneyStatus = { milestones: JourneyMilestone[]; currentStage: number; completedCount: number }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LlmProviderConfig = { kind: "ollama"; base_url: string; completion_model: string; embedding_model: string } | { kind: "unconfigured" }
+/**
+ * A single plain-language fact about how `month` went for a budgeted category,
+ * used to open the Plan Next Month wizard. Deterministic, no LLM — the frontend
+ * composes the sentence (and applies the user's money formatting/privacy mode)
+ * from `kind` + `amount_cents`/`streak_months`; this never bakes a formatted
+ * dollar string server-side.
+ */
+export type LookBackFact = { categoryId: string; categoryLabel: string; 
+/**
+ * "over" | "under" | "streak"
+ */
+kind: string; 
+/**
+ * Meaningful for "over" (spent − budgeted) and "under" (budgeted − spent); 0 for "streak".
+ */
+amountCents: number; 
+/**
+ * Meaningful for "streak" (consecutive zero-spend months including `month`); 0 otherwise.
+ */
+streakMonths: number }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
 export type Mechanism = "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat"
@@ -1982,7 +2078,7 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  * Number of transactions this month
  */
 txnCount: number }
-export type MonthlyActual = { month: string; label: string; cents: number }
+export type MonthlyActual = { month: string; label: string; spentCents: number; budgetedCents: number }
 export type MonthlyReview = { id: string; year: number; month: number; monthLabel: string; notes: string | null; snapshot: MonthlyReviewSnapshot; createdAt: string }
 export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
@@ -2023,7 +2119,7 @@ mixed_currency: boolean; note: string }
 export type PeriodClass = "normal" | "episodic_spike" | "regime_shift" | "insufficient_history"
 export type Persistence = "one_off" | "recurring" | "emerging" | "uncertain"
 export type PlanAssignment = { categoryId: string; amountCents: number }
-export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; recurringExpenseCents: number }
+export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; sinkingFunds: GoalDto[]; recurringExpenseCents: number; lookBack: LookBackFact[] }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
 export type PlannedTxnFilter = { status: string | null; dueBefore: string | null }
@@ -2086,7 +2182,7 @@ reasons: string[]; lastAmountCents: number; minAmountCents: number; maxAmountCen
 isSubscription: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
-export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string }
+export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string; treatment: string }
 export type RuleProposal = { id: string; whenLabel: string; description: string; pattern: string; categoryId: string; status: string; createdAt: string }
 /**
  * Rule with resolved category label and color.
@@ -2147,7 +2243,7 @@ structural_gap_cents: number | null; note: string }
 export type SplitInputDto = { categoryId: string | null; amountCents: number }
 export type StarterCategory = { id: string; label: string; group_id: string; color: string }
 export type SyncSummary = { added: number; updated: number; skipped: number; queuedForReview: number }
-export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; is_split: boolean; is_transfer: boolean; 
+export type Transaction = { id: string; account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; merchant_id: string | null; merchant_label: string | null; merchant_color: string | null; merchant_initials: string | null; category_id: string | null; category_label: string | null; category_color: string | null; status: TransactionStatus; notes: string | null; ai_confidence: number | null; ai_explanation: string | null; is_anomaly: boolean; created_at: string; is_reimbursable: boolean; settle_up: boolean; is_split: boolean; is_transfer: boolean; 
 /**
  * Id of the matching leg in another account when this transaction is one
  * half of a paired cross-account transfer (see `categorize::pair_transfers`).
@@ -2198,6 +2294,11 @@ quantity: number | null;
 unitPrice: number | null }
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
+/**
+ * One counterparty's undecided transfer-like rows, netted for the grouped
+ * review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
+ */
+export type UnresolvedCounterpartyDto = { pattern: string | null; label: string; txnCount: number; inflowCents: number; outflowCents: number }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
 
 /** tauri-specta globals **/

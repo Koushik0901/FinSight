@@ -1,7 +1,7 @@
 use crate::error::CoreResult;
 use crate::models::{Category, CategoryGroup};
 use chrono::{DateTime, Utc};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 pub fn list_groups(conn: &mut Connection) -> CoreResult<Vec<CategoryGroup>> {
     let mut stmt = conn.prepare(
@@ -20,6 +20,74 @@ pub fn list_groups(conn: &mut Connection) -> CoreResult<Vec<CategoryGroup>> {
         out.push(row?);
     }
     Ok(out)
+}
+
+/// Create a new category group. Returns the generated group (a slug of the
+/// label, de-duplicated the same way `create()` de-duplicates category ids).
+pub fn create_group(
+    conn: &mut Connection,
+    label: &str,
+    hint: Option<&str>,
+) -> CoreResult<CategoryGroup> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Err(crate::error::CoreError::InvalidState(
+            "group label must not be empty".into(),
+        ));
+    }
+    let base: String = label
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    let base = if base.is_empty() { "group".to_string() } else { base };
+    let mut id = base.clone();
+    let mut n = 1;
+    while conn
+        .query_row("SELECT 1 FROM category_groups WHERE id = ?1", [&id], |_| Ok(()))
+        .is_ok()
+    {
+        n += 1;
+        id = format!("{base}-{n}");
+    }
+
+    let next_sort: i32 = conn
+        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM category_groups", [], |r| r.get(0))
+        .unwrap_or(0);
+    let hint = hint.map(str::trim).filter(|s| !s.is_empty());
+    conn.execute(
+        "INSERT INTO category_groups(id, label, hint, sort_order) VALUES(?1, ?2, ?3, ?4)",
+        rusqlite::params![id, label, hint, next_sort],
+    )?;
+    Ok(CategoryGroup {
+        id,
+        label: label.to_string(),
+        hint: hint.map(str::to_string),
+        sort_order: next_sort,
+    })
+}
+
+/// Move a category to a different (existing) group.
+pub fn set_group(conn: &mut Connection, category_id: &str, group_id: &str) -> CoreResult<()> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM category_groups WHERE id = ?1",
+            [group_id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !exists {
+        return Err(crate::error::CoreError::InvalidState(
+            "category group not found".into(),
+        ));
+    }
+    conn.execute(
+        "UPDATE categories SET group_id = ?1 WHERE id = ?2",
+        rusqlite::params![group_id, category_id],
+    )?;
+    Ok(())
 }
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Category>> {
@@ -295,5 +363,44 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_group(&mut conn);
         assert!(create(&mut conn, "   ", None, "#111").is_err());
+    }
+
+    #[test]
+    fn create_group_slugs_and_dedups_like_create() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let a = create_group(&mut conn, "Side Hustle", Some("freelance income and costs")).unwrap();
+        assert_eq!(a.id, "side-hustle");
+        assert_eq!(a.hint.as_deref(), Some("freelance income and costs"));
+        let b = create_group(&mut conn, "Side Hustle", None).unwrap();
+        assert_eq!(b.id, "side-hustle-2");
+    }
+
+    #[test]
+    fn create_group_rejects_empty_label() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        assert!(create_group(&mut conn, "   ", None).is_err());
+    }
+
+    #[test]
+    fn set_group_moves_a_category() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_group(&mut conn);
+        let cat = create(&mut conn, "Coffee", Some("daily"), "#111").unwrap();
+        let new_group = create_group(&mut conn, "Lifestyle", None).unwrap();
+        set_group(&mut conn, &cat.id, &new_group.id).unwrap();
+        let moved = list(&mut conn).unwrap().into_iter().find(|c| c.id == cat.id).unwrap();
+        assert_eq!(moved.group_id, new_group.id);
+    }
+
+    #[test]
+    fn set_group_rejects_nonexistent_group() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_group(&mut conn);
+        let cat = create(&mut conn, "Coffee", Some("daily"), "#111").unwrap();
+        assert!(set_group(&mut conn, &cat.id, "does-not-exist").is_err());
     }
 }

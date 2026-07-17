@@ -65,8 +65,10 @@ async fn build_snapshot(state: &ApiState) -> AppResult<Snapshot> {
         // the window (not just months that had activity), so a single high-spend
         // import doesn't become the "typical" month. Capped to the 12-month window.
         let (sum_income, sum_expense, span_months): (i64, i64, i64) = conn.query_row(
-            "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 THEN amount_cents ELSE 0 END),0),\
-                    COALESCE(SUM(CASE WHEN amount_cents<0 THEN -amount_cents ELSE 0 END),0),\
+            "SELECT COALESCE(SUM(CASE WHEN amount_cents>0 AND settle_up=0 THEN amount_cents ELSE 0 END),0),\
+                    COALESCE(SUM(CASE WHEN settle_up=1 THEN -amount_cents \
+                                      WHEN amount_cents<0 THEN -amount_cents \
+                                      ELSE 0 END),0),\
                     COALESCE(\
                       (CAST(strftime('%Y','now') AS INTEGER) - CAST(strftime('%Y', MIN(posted_at)) AS INTEGER)) * 12\
                       + (CAST(strftime('%m','now') AS INTEGER) - CAST(strftime('%m', MIN(posted_at)) AS INTEGER)) + 1,\

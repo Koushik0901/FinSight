@@ -19,11 +19,11 @@ vi.mock("../api/hooks/budget", () => ({
         label: "Groceries",
         color: "#27ae60",
         monthly: [
-          { month: "2026-01", label: "Jan", cents: 45000 },
-          { month: "2026-02", label: "Feb", cents: 42000 },
-          { month: "2026-03", label: "Mar", cents: 48000 },
-          { month: "2026-04", label: "Apr", cents: 44000 },
-          { month: "2026-05", label: "May", cents: 46000 },
+          { month: "2026-01", label: "Jan", spentCents: 45000, budgetedCents: 50000 },
+          { month: "2026-02", label: "Feb", spentCents: 42000, budgetedCents: 50000 },
+          { month: "2026-03", label: "Mar", spentCents: 48000, budgetedCents: 50000 },
+          { month: "2026-04", label: "Apr", spentCents: 44000, budgetedCents: 50000 },
+          { month: "2026-05", label: "May", spentCents: 46000, budgetedCents: 50000 },
         ],
       },
     ],
@@ -69,8 +69,10 @@ describe("Budget history section", () => {
 
   it("shows formatted amounts in the history table", () => {
     render(<Budget />, { wrapper: createWrapper() });
-    // 45000 cents → $450, 42000 cents → $420 (maximumFractionDigits: 0)
-    expect(screen.getByText("$450")).toBeInTheDocument();
+    // 45000 cents → $450, 42000 cents → $420 (maximumFractionDigits: 0).
+    // $450 also happens to be the 5-month average, so it legitimately appears
+    // twice (the Jan cell and the "Your typical" column) — getAllByText, not getByText.
+    expect(screen.getAllByText("$450").length).toBeGreaterThan(0);
     expect(screen.getByText("$420")).toBeInTheDocument();
   });
 
@@ -99,5 +101,59 @@ describe("Budget history section", () => {
     });
     render(<Budget />, { wrapper: createWrapper() });
     expect(screen.getByRole("button", { name: /park in house fund/i })).toBeInTheDocument();
+  });
+
+  it("shows a carryover line when carryoverCents is non-zero", () => {
+    (budgetHooks.useBudgetEnvelopes as any).mockReturnValueOnce({
+      data: [
+        {
+          categoryId: "c1",
+          categoryLabel: "Utilities",
+          categoryColor: "#FACC15",
+          groupLabel: "Fixed costs",
+          budgetCents: 35000,
+          spentCents: 30000,
+          carryoverCents: 4200,
+          txnCount: 3,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.getByText("Carried from last month")).toBeInTheDocument();
+    expect(screen.getByText("+$42")).toBeInTheDocument();
+  });
+
+  it("groups zero-budget, zero-spend, zero-carryover categories under 'Not yet budgeted'", () => {
+    (budgetHooks.useBudgetEnvelopes as any).mockReturnValueOnce({
+      data: [
+        {
+          categoryId: "c1",
+          categoryLabel: "Utilities",
+          categoryColor: "#FACC15",
+          groupLabel: "Fixed costs",
+          budgetCents: 35000,
+          spentCents: 30000,
+          carryoverCents: 0,
+          txnCount: 3,
+        },
+        {
+          categoryId: "c2",
+          categoryLabel: "Hobbies",
+          categoryColor: "#818CF8",
+          groupLabel: "Lifestyle",
+          budgetCents: 0,
+          spentCents: 0,
+          carryoverCents: 0,
+          txnCount: 0,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.getByText("Not yet budgeted · 1")).toBeInTheDocument();
+    expect(screen.getByText("Set budget")).toBeInTheDocument();
   });
 });

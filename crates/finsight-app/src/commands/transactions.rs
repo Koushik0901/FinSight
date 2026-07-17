@@ -5,8 +5,9 @@ use finsight_core::repos::transactions;
 use tauri_plugin_dialog::DialogExt;
 
 pub use finsight_api::commands::transactions::{
-    CategoryDto, CategoryWithSpending, ProposedRuleDto, RuleWithCategory, SpendingBreakdown,
-    SplitInputDto, TransactionSplitDto, TransferVerdictResult, TxnFilterInput, UpdateTxnResult,
+    CategoryDto, CategoryWithSpending, CounterpartyVerdict, ProposedRuleDto, RuleWithCategory,
+    SpendingBreakdown, SplitInputDto, TransactionSplitDto, TransferVerdictResult, TxnFilterInput,
+    UnresolvedCounterpartyDto, UpdateTxnResult,
 };
 
 #[tauri::command]
@@ -179,6 +180,46 @@ pub async fn apply_transfer_verdict_to_similar(
         is_transfer,
     )
     .await
+}
+
+/// Record the user's 3-way verdict (transfer / settle-up / real spending) on
+/// a transfer-review counterparty transaction. Sticky: survives re-imports
+/// and categorizer re-runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_counterparty_verdict(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    verdict: CounterpartyVerdict,
+) -> AppResult<Transaction> {
+    finsight_api::commands::transactions::set_counterparty_verdict(&state.api, id, verdict).await
+}
+
+/// Apply one counterparty verdict to every undecided transaction matching a
+/// counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
+/// `TransferVerdictResult::similar_pattern`). One decision clears a whole
+/// person's e-transfer history from the review list.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_counterparty_verdict_to_similar(
+    state: tauri::State<'_, AppState>,
+    pattern: String,
+    verdict: CounterpartyVerdict,
+) -> AppResult<u32> {
+    finsight_api::commands::transactions::apply_counterparty_verdict_to_similar(
+        &state.api, pattern, verdict,
+    )
+    .await
+}
+
+/// The undecided transfer-review queue, grouped by counterparty for a
+/// bulk-decision surface.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_unresolved_counterparties(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<UnresolvedCounterpartyDto>> {
+    finsight_api::commands::transactions::list_unresolved_counterparties(&state.api).await
 }
 
 #[tauri::command]

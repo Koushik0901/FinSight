@@ -10,6 +10,7 @@ pub struct Rule {
     pub enabled: bool,
     pub source: String,
     pub created_at: DateTime<Utc>,
+    pub treatment: String,
 }
 
 #[derive(Debug, Clone)]
@@ -17,4 +18,5 @@ pub struct NewRule {
     pub pattern: String,
     pub category_id: String,
     pub source: String,
+    pub treatment: String,
 }

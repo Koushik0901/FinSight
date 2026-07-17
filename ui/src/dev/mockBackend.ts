@@ -127,6 +127,10 @@ interface Dataset {
   onboarding: AnyRec;
   netWorthEnd: number;
   netWorthStart: number;
+  budgetEnvelopes: AnyRec[];
+  budgetHistory: AnyRec[];
+  categoryGroups: AnyRec[];
+  planNextMonthData: AnyRec;
 }
 
 function cat(id: string, label: string, color: string, thisM: number, lastM: number, type: string | null): AnyRec {
@@ -179,6 +183,27 @@ function goal(id: string, name: string, target: number, current: number, monthly
     accountId,
   };
 }
+
+function envelope(categoryId: string, categoryLabel: string, categoryColor: string, groupLabel: string, budgetCents: number, spentCents: number, carryoverCents: number): AnyRec {
+  return { categoryId, categoryLabel, categoryColor, groupLabel, budgetCents, spentCents, carryoverCents, txnCount: Math.max(0, Math.round(spentCents / 4000)) };
+}
+
+const monthAbbrev = (mk: string) => new Date(`${mk}-01`).toLocaleDateString("en-US", { month: "short" });
+
+function history(categoryId: string, label: string, color: string, spentByMonth: number[], budgetedCents: number): AnyRec {
+  return {
+    categoryId,
+    label,
+    color,
+    monthly: spentByMonth.map((spentCents, i) => {
+      const month = monthKey(spentByMonth.length - 1 - i);
+      return { month, label: monthAbbrev(month), spentCents, budgetedCents };
+    }),
+  };
+}
+
+/** Safe, non-crashing default — every screen.tsx that reads PlanData assumes these arrays exist. */
+const EMPTY_PLAN_DATA: AnyRec = { incomeCents: 0, categories: [], goals: [], sinkingFunds: [], recurringExpenseCents: 0, lookBack: [] };
 
 function baseMetrics(o: AnyRec): AnyRec {
   return {
@@ -248,6 +273,10 @@ function buildDataset(kind: Kind): Dataset {
       onboarding: { account_count: 0, category_count: 0, completion_marked: true },
       netWorthStart: 0,
       netWorthEnd: 0,
+      budgetEnvelopes: [],
+      budgetHistory: [],
+      categoryGroups: [],
+      planNextMonthData: EMPTY_PLAN_DATA,
     };
   }
 
@@ -302,6 +331,14 @@ function buildDataset(kind: Kind): Dataset {
       onboarding: { account_count: 2, category_count: 6, completion_marked: true },
       netWorthStart: 180000,
       netWorthEnd: 231400,
+      budgetEnvelopes: [
+        envelope("c-groc", "Groceries", C.groceries, "Daily life", 70000, 62000, 0),
+        envelope("c-dining", "Dining", C.dining, "Daily life", 40000, 41000, 0),
+        envelope("c-transport", "Transport", C.transport, "Daily life", 30000, 24000, 0),
+      ],
+      budgetHistory: [],
+      categoryGroups: [{ id: "g1", label: "Spending", hint: null, sort_order: 0 }],
+      planNextMonthData: EMPTY_PLAN_DATA,
     };
   }
 
@@ -386,6 +423,38 @@ function buildDataset(kind: Kind): Dataset {
       onboarding: { account_count: 8, category_count: 18, completion_marked: true },
       netWorthStart: 12800000,
       netWorthEnd: 19726000,
+      budgetEnvelopes: [
+        envelope("c-housing", "Housing", C.housing, "Fixed costs", 210000, 210000, 0),
+        envelope("c-groc", "Groceries", C.groceries, "Daily life", 82000, 78000, 4000),
+        envelope("c-dining", "Dining", C.dining, "Daily life", 55000, 52000, -6000),
+        envelope("c-travel", "Travel", C.travel, "Lifestyle", 50000, 68000, 50000),
+      ],
+      budgetHistory: [
+        history("c-groc", "Groceries", C.groceries, [71000, 74000, 69000, 71000, 78000], 82000),
+        history("c-dining", "Dining", C.dining, [61000, 58000, 55000, 49000, 52000], 55000),
+      ],
+      categoryGroups: [
+        { id: "g1", label: "Spending", hint: null, sort_order: 0 },
+        { id: "fixed", label: "Fixed costs", hint: "predictable, mostly recurring", sort_order: 1 },
+        { id: "lifestyle", label: "Lifestyle", hint: "things you choose to spend on", sort_order: 2 },
+      ],
+      planNextMonthData: {
+        incomeCents: 1120000,
+        categories: [
+          { categoryId: "c-housing", label: "Housing", color: C.housing, groupLabel: "Fixed costs", budgetCents: 210000, m0Cents: 210000, m1Cents: 210000, m2Cents: 210000 },
+          { categoryId: "c-dining", label: "Dining", color: C.dining, groupLabel: "Daily life", budgetCents: 55000, m0Cents: 52000, m1Cents: 58000, m2Cents: 61000 },
+        ],
+        goals: [
+          goal("g-ef", "Emergency Fund", 4800000, 4400000, 40000, "#34D399", null, "safety"),
+          goal("g-vac", "Japan 2027", 900000, 340000, 30000, "#818CF8", null, "travel"),
+        ],
+        sinkingFunds: [goal("g-ins", "Car insurance", 48000, 20000, 8000, "#FACC15", null, "sinking-fund")],
+        recurringExpenseCents: 42000,
+        lookBack: [
+          { categoryId: "c-dining", categoryLabel: "Dining", kind: "under", amountCents: 3000, streakMonths: 0 },
+          { categoryId: "c-travel", categoryLabel: "Travel", kind: "streak", amountCents: 0, streakMonths: 3 },
+        ],
+      },
     };
   }
 
@@ -487,6 +556,44 @@ function buildDataset(kind: Kind): Dataset {
     onboarding: { account_count: 4, category_count: 12, completion_marked: true },
     netWorthStart: 5100000,
     netWorthEnd: 7428000,
+    budgetEnvelopes: [
+      envelope("c-housing", "Housing", C.housing, "Fixed costs", 180000, 180000, 0),
+      envelope("c-groc", "Groceries", C.groceries, "Daily life", 70000, 62000, 3000),
+      envelope("c-dining", "Dining", C.dining, "Daily life", 40000, 41000, -2000),
+      envelope("c-shopping", "Shopping", C.shopping, "Lifestyle", 35000, 33000, 0),
+      envelope("c-transport", "Transport", C.transport, "Daily life", 25000, 24000, 0),
+      envelope("c-utilities", "Utilities", C.utilities, "Fixed costs", 16000, 15400, 1200),
+      envelope("c-subs", "Subscriptions", C.subs, "Fixed costs", 9000, 8600, 0),
+      envelope("c-gifts", "Gifts", "#FDE68A", "Lifestyle", 0, 0, 0),
+    ],
+    budgetHistory: [
+      history("c-groc", "Groceries", C.groceries, [58000, 65000, 61000, 59000, 62000], 70000),
+      history("c-dining", "Dining", C.dining, [38000, 44000, 47000, 39000, 41000], 40000),
+      history("c-utilities", "Utilities", C.utilities, [16200, 15800, 14900, 15100, 15400], 16000),
+    ],
+    categoryGroups: [
+      { id: "g1", label: "Spending", hint: null, sort_order: 0 },
+      { id: "fixed", label: "Fixed costs", hint: "predictable, mostly recurring", sort_order: 1 },
+      { id: "lifestyle", label: "Lifestyle", hint: "things you choose to spend on", sort_order: 2 },
+    ],
+    planNextMonthData: {
+      incomeCents: 700000,
+      categories: [
+        { categoryId: "c-housing", label: "Housing", color: C.housing, groupLabel: "Fixed costs", budgetCents: 180000, m0Cents: 180000, m1Cents: 180000, m2Cents: 180000 },
+        { categoryId: "c-utilities", label: "Utilities", color: C.utilities, groupLabel: "Fixed costs", budgetCents: 16000, m0Cents: 15400, m1Cents: 15800, m2Cents: 16200 },
+        { categoryId: "c-dining", label: "Dining", color: C.dining, groupLabel: "Daily life", budgetCents: 40000, m0Cents: 41000, m1Cents: 44000, m2Cents: 39000 },
+      ],
+      goals: [
+        goal("g-ef", "Emergency Fund", 3000000, 1840000, 40000, "#34D399", null, "safety"),
+        goal("g-vac", "Vacation Fund", 500000, 220000, 25000, "#818CF8", null, "travel"),
+      ],
+      sinkingFunds: [goal("g-ins", "Car insurance", 48000, 20000, 8000, "#FACC15", null, "sinking-fund")],
+      recurringExpenseCents: 38000,
+      lookBack: [
+        { categoryId: "c-dining", categoryLabel: "Dining", kind: "over", amountCents: 1000, streakMonths: 0 },
+        { categoryId: "c-groc", categoryLabel: "Groceries", kind: "under", amountCents: 8000, streakMonths: 0 },
+      ],
+    },
   };
 }
 
@@ -519,9 +626,18 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     get_onboarding_state: () => ds.onboarding,
     list_action_bundles: () => [],
     list_account_balance_sparklines: () => [],
+    list_budget_envelopes: () => ds.budgetEnvelopes,
+    list_budget_history: () => ds.budgetHistory,
+    list_category_groups: () => ds.categoryGroups,
+    get_plan_next_month_data: () => ds.planNextMonthData,
     // mutations — echo a plausible success so optimistic flows don't throw
     create_monthly_review: () => ({ id: "mr-1", year: new Date().getFullYear(), month: new Date().getMonth() + 1, monthLabel: "This month", notes: null, snapshot: {}, createdAt: new Date().toISOString() }),
     contribute_to_goal: () => ({ id: "gc-1" }),
+    set_budget: () => null,
+    create_category_group: (a) => ({ id: String(a.label ?? "group").toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: a.label, hint: a.hint ?? null, sort_order: ds.categoryGroups.length }),
+    set_category_group: () => null,
+    apply_next_month_plan: () => null,
+    update_goal_monthly: () => null,
   };
 }
 

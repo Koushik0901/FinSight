@@ -1,6 +1,6 @@
 use crate::error::AppResult;
 use crate::AppState;
-use finsight_core::models::Category;
+use finsight_core::models::{Category, CategoryGroup};
 
 #[tauri::command]
 #[specta::specta]
@@ -47,4 +47,33 @@ pub async fn set_category_guidance(
     guidance: Option<String>,
 ) -> AppResult<()> {
     finsight_api::commands::categories::set_category_guidance(&state.api, id, guidance).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_category_groups(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<CategoryGroup>> {
+    finsight_api::commands::categories::list_category_groups(&state.api).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_category_group(
+    state: tauri::State<'_, AppState>,
+    label: String,
+    hint: Option<String>,
+) -> AppResult<CategoryGroup> {
+    finsight_api::commands::categories::create_category_group(&state.api, label, hint).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_category_group(
+    state: tauri::State<'_, AppState>,
+    category_id: String,
+    group_id: String,
+) -> AppResult<()> {
+    finsight_api::commands::categories::set_category_group(&state.api, category_id, group_id)
+        .await
 }

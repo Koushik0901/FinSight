@@ -457,9 +457,14 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
     let this_month_expense_cents = this_month.expense_cents;
 
     let (total_budget_cents, overages, near_limit) = budget_details(conn, &month, &month_start);
+    // A `settle_up = 1` row nets as `-amount_cents` (a reimbursement inflow
+    // reduces reported spend) the same way metrics.rs cashflow does, instead of
+    // being silently dropped by the old `amount_cents < 0`-only CASE.
     let total_spent_cents: i64 = conn
         .query_row(
-            "SELECT COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0)
+            "SELECT COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                       WHEN amount_cents < 0 THEN -amount_cents
+                                       ELSE 0 END), 0)
              FROM transactions
              WHERE posted_at >= ?1 AND is_transfer = 0",
             params![month_start],
@@ -592,7 +597,9 @@ fn budget_details(
     let mut stmt = match conn.prepare(
         "WITH actuals AS (
             SELECT category_id,
-                   COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents ELSE 0 END), 0) AS spent_cents
+                   COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                      WHEN amount_cents < 0 THEN -amount_cents
+                                      ELSE 0 END), 0) AS spent_cents
             FROM transactions
             WHERE posted_at >= ?2 AND is_transfer = 0
             GROUP BY category_id
@@ -1149,6 +1156,69 @@ mod tests {
         assert!(ctx.goals.is_empty());
         assert!(ctx.transactions.top_merchants_this_month.is_empty());
         assert!(ctx.memory.is_empty());
+    }
+
+    #[test]
+    fn total_spent_and_budget_actuals_net_settle_up_inflow() {
+        // A settle_up = 1 reimbursement inflow must reduce reported spend — both
+        // the headline total_spent_cents and the per-category budget actuals —
+        // instead of being silently dropped by an `amount_cents < 0`-only CASE.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = seed_account(&mut conn, 0);
+
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id, label, sort_order) VALUES('grp', 'Group', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES('food', 'grp', 'Food', '#94A3B8', 0)",
+            [],
+        )
+        .unwrap();
+
+        let now = Utc::now();
+        let month = now.format("%Y-%m").to_string();
+        let posted = now.format("%Y-%m-15T12:00:00Z").to_string();
+
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES('b1','food',?1,4000,datetime('now'),datetime('now'))",
+            params![month],
+        )
+        .unwrap();
+
+        // Ordinary $50 grocery expense, categorized.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at) \
+             VALUES('e1',?1,?2,-5000,'GROCERY','food','cleared',0,0,?2)",
+            params![acct, posted],
+        )
+        .unwrap();
+        // A $20 settle-up reimbursement for the same category (e.g. a friend paid
+        // back their share).
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,is_transfer,created_at,settle_up) \
+             VALUES('su1',?1,?2,2000,'FRIEND REFUND','food','cleared',0,0,?2,1)",
+            params![acct, posted],
+        )
+        .unwrap();
+
+        let ctx = build_context(&mut conn);
+
+        assert_eq!(
+            ctx.budget.total_spent_cents, 3000,
+            "settle-up inflow nets against expense: 5000 - 2000 = 3000"
+        );
+        assert!(
+            ctx.budget.overages.is_empty(),
+            "netted spend (3000) is under the 4000 budget — must not be flagged as an overage"
+        );
+        assert!(
+            ctx.budget.near_limit.is_empty(),
+            "netted spend is 75% of budget, under the 80% near-limit threshold"
+        );
     }
 
     #[test]
