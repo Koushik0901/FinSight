@@ -13,7 +13,7 @@ axum-extra = { version = "0.10", features = ["cookie"] }
 tokio.workspace = true
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true

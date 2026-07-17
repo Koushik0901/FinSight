@@ -5,6 +5,7 @@ use axum::{
 };
 use std::path::Path;
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 /// `ui_dir` is the built frontend (`ui/dist` in production). The fallback
@@ -14,9 +15,19 @@ use tower_http::services::{ServeDir, ServeFile};
 pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
     let index = ui_dir.join("index.html");
     Router::new()
+        // CORS on the public health probe only: the thin desktop shell's
+        // ConnectScreen runs at its OWN origin (tauri://localhost, or Vite's
+        // localhost:5173 under `tauri:dev`) and does a cross-origin
+        // `fetch(<server>/api/health)` to check reachability BEFORE navigating
+        // the window to the server. WebView2/browsers enforce CORS on that
+        // cross-origin request, so the endpoint must opt in. Safe: /api/health
+        // is unauthenticated and returns only `{"status":"ok"}` — no data, no
+        // credentials (permissive() disallows credentialed requests). Every
+        // other route stays same-origin-only.
         .route(
             "/api/health",
-            get(|| async { Json(serde_json::json!({"status":"ok"})) }),
+            get(|| async { Json(serde_json::json!({"status":"ok"})) })
+                .layer(CorsLayer::permissive()),
         )
         .route("/api/server/about", get(crate::server_info::about))
         .route("/api/auth/status", get(crate::auth::status))
@@ -93,6 +104,30 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn health_sends_cors_header_for_cross_origin_probe() {
+        // The thin desktop shell's ConnectScreen fetches /api/health cross-origin
+        // before navigating; without an Access-Control-Allow-Origin header the
+        // browser/WebView2 blocks it ("Failed to fetch").
+        let app = build_router(test_state(), &test_ui_dir());
+        let res = app
+            .oneshot(
+                Request::get("/api/health")
+                    .header("origin", "http://localhost:5173")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(
+            res.headers()
+                .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_some(),
+            "health probe must send a CORS allow-origin header for the shell's pre-navigation check",
+        );
     }
 
     #[tokio::test]
