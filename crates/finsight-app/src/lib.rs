@@ -18,7 +18,7 @@ pub use finsight_api::provider::{
 };
 
 use finsight_agent::agent::{AgentEvent, EventCallback};
-use finsight_core::{db::run_migrations, Db};
+use finsight_core::Db;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
@@ -280,140 +280,12 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 format!("db open error: {e}").into()
             })?;
 
-            // ── Durability guards (P0-4) ──────────────────────────────────────
-            // 1. Verify the database is not corrupt. Record the result so the
-            //    Settings → Data & backups panel can show it; a failure does NOT
-            //    block startup (the user needs the app open to restore a backup).
+            // Refresh derived state (integrity check, pre-migration backup,
+            // migrations, provider-settings migration, categorization/transfer
+            // pairing/balances/net-worth/anomaly recompute). Shared with the
+            // server's per-user login catch-up — see finsight_api::startup.
             let backups_dir = app_data_dir.join("backups");
-            let integrity = db.integrity_check().unwrap_or_else(|e| format!("check failed: {e}"));
-            if integrity.trim() != "ok" {
-                eprintln!("⚠ database integrity check: {integrity}");
-            }
-            // 2. Take a consistent encrypted backup BEFORE applying any pending
-            //    migration, so a failed/again-corrupting migration is always
-            //    recoverable. Only when migrations are actually pending (keeps
-            //    the backup set meaningful and avoids a copy on every launch).
-            let pending = db.pending_migration_count().unwrap_or(0);
-            let mut startup_warnings: Vec<String> = Vec::new();
-            let mut last_backup: Option<String> = None;
-            if pending > 0 {
-                match db.backup(&backups_dir, "pre-migration", 10) {
-                    Ok(p) => last_backup = Some(p.to_string_lossy().to_string()),
-                    Err(e) => startup_warnings.push(format!("pre-migration backup failed: {e}")),
-                }
-            }
-            run_migrations(&db).map_err(|e| -> Box<dyn std::error::Error> {
-                format!("migrations: {e}").into()
-            })?;
-            migrate_provider_settings(&db).map_err(|e| -> Box<dyn std::error::Error> {
-                format!("provider migration: {e}").into()
-            })?;
-            if let Ok(conn) = db.get() {
-                let _ = finsight_core::settings::set(&conn, "data.integrity_status", &integrity);
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.integrity_checked_at",
-                    &chrono::Utc::now().to_rfc3339(),
-                );
-                if let Some(p) = &last_backup {
-                    let _ = finsight_core::settings::set(&conn, "data.last_backup_path", p);
-                    let _ = finsight_core::settings::set(
-                        &conn,
-                        "data.last_backup_at",
-                        &chrono::Utc::now().to_rfc3339(),
-                    );
-                }
-            }
-            // Best-effort: derive balances for existing imported accounts (so the
-            // "$0 after import" state resolves without a re-import), record today's
-            // net-worth snapshot, and recompute statistical anomaly flags so
-            // existing imported data populates without waiting for a re-import.
-            // Each cascade step is best-effort, but a FAILURE is recorded (not
-            // silently swallowed) so the user can see that derived data may be
-            // stale, instead of the old `let _ =` that hid real problems.
-            if let Ok(mut conn) = db.get() {
-                macro_rules! step {
-                    ($label:expr, $e:expr) => {
-                        if let Err(err) = $e {
-                            startup_warnings.push(format!("{}: {err}", $label));
-                        }
-                    };
-                }
-                // Re-run the deterministic builtin pass so transfer flags reflect
-                // the current keyword list (idempotent; fixes stale is_transfer),
-                // then pair cross-account transfer legs so existing imports gain
-                // pairing without a re-import. Positive outcomes are summarized
-                // (P3: startup mutation transparency) — the user can see WHAT
-                // launch changed, not just whether something failed.
-                let mut startup_summary_parts: Vec<String> = Vec::new();
-                match finsight_core::categorize::apply_builtin_categorization(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!("categorized {n}"));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup categorization: {err}")),
-                }
-                match finsight_core::categorize::pair_transfers(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!(
-                            "matched {n} transfer pair{}",
-                            if n == 1 { "" } else { "s" }
-                        ));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup transfer pairing: {err}")),
-                }
-                if let Ok(ids) = conn
-                    .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
-                    .and_then(|mut s| {
-                        s.query_map([], |r| r.get::<_, String>(0))
-                            .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
-                    })
-                {
-                    for id in ids {
-                        step!(
-                            "startup balance recompute",
-                            finsight_core::repos::accounts::recompute_balance_if_linked(&mut conn, &id)
-                        );
-                    }
-                }
-                step!(
-                    "startup net-worth snapshot",
-                    finsight_core::repos::net_worth::record_today(&mut conn)
-                );
-                step!(
-                    "startup net-worth backfill",
-                    finsight_core::repos::net_worth::backfill_history_from_transactions(&mut conn)
-                );
-                match finsight_core::anomaly::recompute_anomalies(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!(
-                            "flagged {n} unusual charge{}",
-                            if n == 1 { "" } else { "s" }
-                        ));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup anomaly recompute: {err}")),
-                }
-                let startup_summary = if startup_summary_parts.is_empty() {
-                    String::new()
-                } else {
-                    format!("Refreshed on launch: {}", startup_summary_parts.join(" · "))
-                };
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.startup_summary",
-                    &startup_summary,
-                );
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.startup_warnings",
-                    &startup_warnings,
-                );
-            }
-            // Truncate the WAL now that the startup write burst is done, so it
-            // doesn't linger at the size of the whole database between sessions.
-            let _ = db.checkpoint();
+            let _startup_report = finsight_api::startup::run_startup_cascade(&db, &backups_dir);
 
             let window = app.get_webview_window("main").expect("main window");
             let on_event: EventCallback = Arc::new(move |event| {

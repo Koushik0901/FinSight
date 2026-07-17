@@ -5,6 +5,7 @@ pub mod error;
 pub mod provider; // provider-construction helpers (settings → live CompletionProvider).
 pub mod sink; // FrameSink: transport-agnostic event emission (progress/streaming).
               // See sink.rs. Consumed by import_csv and copilot_chat once they move here.
+pub mod startup; // shared desktop-boot / server-login-catchup derived-state refresh cascade.
 pub mod sync_scheduler; // background + batch SimpleFin sync scheduler.
 
 use finsight_agent::{
