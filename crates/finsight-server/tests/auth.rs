@@ -369,3 +369,47 @@ async fn delete_user_removes_dir_and_sessions() {
     let res = app.oneshot(rpc_req("list_accounts", &bob_cookie)).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
+
+/// Legacy-migration failure must fail LOUD and RETRYABLE, never silently orphan
+/// the user's real Phase 1 data behind a fresh empty DB. Injection: place a
+/// Phase 1-style `data.sqlcipher` + valid 64-hex `db.key`, then pre-create
+/// `<data>/users` as a plain FILE so the migration's `create_dir_all(users/<id>)`
+/// fails deterministically (independent of the random admin UUID). Assert setup
+/// returns 500 `auth.migration_failed`, issues NO session cookie, and leaves the
+/// registry empty so the operator can retry after fixing the cause.
+#[tokio::test]
+async fn migration_failure_is_loud_and_retryable() {
+    let (state, data_dir) = fresh_state();
+
+    // A Phase 1 single-user install: an (opaque) encrypted DB file plus its
+    // plaintext hex keyfile (must be 64 hex chars = 32 bytes to parse).
+    std::fs::write(data_dir.join("data.sqlcipher"), b"legacy-db-bytes").unwrap();
+    std::fs::write(data_dir.join("db.key"), "aa".repeat(32)).unwrap();
+    // Break the migration destination: `users` as a file, so create_dir_all
+    // of `users/<admin-uuid>` cannot succeed for ANY generated id.
+    std::fs::write(data_dir.join("users"), b"not a directory").unwrap();
+
+    let app = build_router(state.clone(), &test_ui_dir());
+
+    let res = app
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
+
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    // No session cookie handed out on a failed setup.
+    assert!(
+        res.headers().get(header::SET_COOKIE).is_none(),
+        "a failed migration must not issue a session cookie"
+    );
+    let body = json_body(res).await;
+    assert_eq!(body["code"], "auth.migration_failed");
+
+    // Retryable: the admin row was rolled back, so setup can run again.
+    assert!(
+        state.users.is_empty().unwrap(),
+        "admin account must be rolled back so users.is_empty() stays true (retryable)"
+    );
+    // The user's real DB was NOT deleted — it's still at the old path.
+    assert!(data_dir.join("data.sqlcipher").exists());
+}

@@ -108,7 +108,10 @@ fn set_cookie_header(token: &str) -> (header::HeaderName, String) {
 fn clear_cookie_header() -> (header::HeaderName, String) {
     (
         header::SET_COOKIE,
-        format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"),
+        format!(
+            "{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/{}; Max-Age=0",
+            cookie_secure_flag()
+        ),
     )
 }
 
@@ -188,19 +191,68 @@ fn read_legacy_key(data_dir: &FsPath) -> Option<[u8; 32]> {
     bytes.try_into().ok()
 }
 
+/// `rename(2)` reports EXDEV (Unix errno 18) / ERROR_NOT_SAME_DEVICE (Windows
+/// 17) when source and destination straddle filesystems. Matched by raw code
+/// rather than `ErrorKind::CrossesDevices` so this stays within the crate's
+/// declared MSRV (that variant only stabilized in Rust 1.85).
+fn is_cross_device(e: &std::io::Error) -> bool {
+    match e.raw_os_error() {
+        #[cfg(unix)]
+        Some(code) => code == 18, // EXDEV
+        #[cfg(windows)]
+        Some(code) => code == 17, // ERROR_NOT_SAME_DEVICE
+        #[cfg(not(any(unix, windows)))]
+        Some(_) => false,
+        None => false,
+    }
+}
+
+/// Move a single file, tolerant of cross-filesystem boundaries. `std::fs::rename`
+/// fails outright when `src` and `dst` live on different mounts — a real case
+/// for this project's Docker deploy target, where `<data>` is often a bind
+/// mount and `users/<id>/` may resolve to a different device. On that specific
+/// error, fall back to copy-then-remove.
+fn move_file(src: &FsPath, dst: &FsPath) -> std::io::Result<()> {
+    match std::fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) if is_cross_device(&e) => {
+            std::fs::copy(src, dst)?;
+            std::fs::remove_file(src)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Moves `data.sqlcipher{,-wal,-shm}` into `users/<admin_id>/` and deletes
 /// the now-unnecessary `db.key`. Called only after the admin's wrapped keys
 /// have been derived from the SAME key these files are encrypted with.
+///
+/// Returns `Err` if any DB file move fails — the caller MUST treat that as a
+/// setup failure (the user's real data would otherwise be silently orphaned
+/// at the old path behind a fresh empty admin DB). The `db.key` unlink is
+/// best-effort but NOT silent: a lingering plaintext key that still decrypts
+/// the now-moved database is a security regression, so a failure to remove it
+/// is logged loudly rather than swallowed.
 fn migrate_legacy_files(data_dir: &FsPath, admin_id: &str) -> std::io::Result<()> {
     let user_dir = crate::registry::user_data_dir(data_dir, admin_id);
     std::fs::create_dir_all(&user_dir)?;
     for suffix in ["", "-wal", "-shm"] {
         let src = data_dir.join(format!("data.sqlcipher{suffix}"));
         if src.exists() {
-            std::fs::rename(&src, user_dir.join(format!("data.sqlcipher{suffix}")))?;
+            move_file(&src, &user_dir.join(format!("data.sqlcipher{suffix}")))?;
         }
     }
-    let _ = std::fs::remove_file(data_dir.join("db.key"));
+    let key_path = data_dir.join("db.key");
+    if let Err(e) = std::fs::remove_file(&key_path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(
+                path = %key_path.display(),
+                "legacy db.key could not be deleted after migration — a plaintext DB key \
+                 that decrypts the migrated database still exists on disk and must be \
+                 removed manually: {e}"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -256,7 +308,34 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
                 );
             }
             Err(e) => {
-                tracing::error!(admin_id = %rec.id, "legacy database migration failed: {e}");
+                // The migration failed AFTER the admin row was created. Left
+                // as-is, `users.is_empty()` would now be false — so setup
+                // could never re-run — while the user's real Phase 1 data
+                // sits orphaned at the old path behind a fresh empty DB, and
+                // we'd hand back a working session to that empty DB. Instead:
+                // roll back the admin row (making setup retryable once the
+                // operator fixes the cause), issue NO session cookie, and
+                // return a distinct, path-naming error.
+                let legacy_path = st.data_dir.join("data.sqlcipher");
+                tracing::error!(
+                    admin_id = %rec.id,
+                    legacy_path = %legacy_path.display(),
+                    "legacy database migration failed; rolling back admin account so setup can be retried: {e}"
+                );
+                if let Err(del_err) = st.users.delete_user(&rec.id) {
+                    tracing::error!(
+                        admin_id = %rec.id,
+                        "failed to roll back admin account after migration failure — setup may be stuck; delete the user row in users.db manually: {del_err}"
+                    );
+                }
+                return err_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "auth.migration_failed",
+                    format!(
+                        "could not migrate the existing database at {} into the new account: {e}",
+                        legacy_path.display()
+                    ),
+                );
             }
         }
     }
@@ -416,5 +495,39 @@ async fn remove_dir_with_retry(dir: &FsPath) {
         if e.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!(dir = %dir.display(), "failed to remove user data dir after delete: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_file_relocates_within_the_same_filesystem() {
+        // The copy-then-remove fallback needs two real filesystems to trigger,
+        // which a unit test can't stage portably — so this covers the common
+        // `rename` path (a tempdir is always same-device) and proves the
+        // helper actually moves: dst gains the bytes, src is gone.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("data.sqlcipher");
+        let dst_dir = dir.path().join("users").join("some-id");
+        std::fs::create_dir_all(&dst_dir).unwrap();
+        let dst = dst_dir.join("data.sqlcipher");
+        std::fs::write(&src, b"encrypted-bytes").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists(), "source should be gone after a move");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"encrypted-bytes");
+    }
+
+    #[test]
+    fn move_file_surfaces_non_cross_device_errors() {
+        // A missing source is not EXDEV, so it must propagate as-is (not get
+        // silently retried through the copy fallback).
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("does-not-exist");
+        let dst = dir.path().join("dst");
+        assert!(move_file(&src, &dst).is_err());
     }
 }
