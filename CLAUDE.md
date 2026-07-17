@@ -25,6 +25,8 @@ cargo run -p finsight-server
 # no ?mock). For the served-from-server experience: `cd ui && npm run build`
 # then open http://localhost:8674 directly.
 
+# Self-hosting (Docker + Tailscale/Caddy/LAN): see docs/self-hosting.md
+
 # All Rust tests
 cargo test --workspace
 
