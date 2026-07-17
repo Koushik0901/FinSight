@@ -23,7 +23,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 finsight-app = { path = "../crates/finsight-app" }
 finsight-core = { path = "../crates/finsight-core" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
