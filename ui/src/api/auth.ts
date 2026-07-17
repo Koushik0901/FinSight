@@ -22,6 +22,13 @@ export type AuthStatus = {
   isAdmin: boolean | null;
 };
 
+export type AdminUser = {
+  id: string;
+  username: string;
+  isAdmin: boolean;
+  createdAt: string;
+};
+
 async function throwParsedError(res: Response): Promise<never> {
   let body: unknown;
   try {
@@ -64,4 +71,24 @@ export async function logout(): Promise<void> {
 /** True once the httpBackend shim has installed the production HTTP/SSE transport. */
 export function isServerMode(): boolean {
   return Boolean((window as unknown as AnyRec).__FINSIGHT_HTTP__);
+}
+
+// ------------------------------------------------------- admin: users ---
+// Admin-only user management. The backend 403s with `auth.admin_required`
+// for non-admin callers; screens should gate visibility on
+// `fetchAuthStatus().isAdmin` rather than relying on that 403 for UX.
+
+export async function listUsers(): Promise<AdminUser[]> {
+  const res = await fetch("/api/auth/users");
+  if (!res.ok) return throwParsedError(res);
+  return (await res.json()) as AdminUser[];
+}
+
+export async function createUser(username: string, password: string): Promise<{ recoveryKey: string }> {
+  return (await postJson("/api/auth/users", { username, password })) as { recoveryKey: string };
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  const res = await fetch(`/api/auth/users/${id}`, { method: "DELETE" });
+  if (!res.ok) return throwParsedError(res);
 }

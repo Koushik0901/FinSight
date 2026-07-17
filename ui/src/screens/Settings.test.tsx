@@ -4,15 +4,25 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
-import { logout } from "../api/auth";
+import { fetchAuthStatus, logout } from "../api/auth";
 
 vi.mock("../api/auth", async () => {
   const actual = await vi.importActual<typeof import("../api/auth")>("../api/auth");
-  return { ...actual, logout: vi.fn() };
+  return {
+    ...actual,
+    logout: vi.fn(),
+    fetchAuthStatus: vi.fn().mockResolvedValue({
+      needsSetup: false,
+      authenticated: true,
+      username: "koushik",
+      isAdmin: false,
+    }),
+  };
 });
 
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
 vi.mock("react-router-dom", () => ({
-  useNavigate: vi.fn(() => vi.fn()),
+  useNavigate: () => mockNavigate,
   MemoryRouter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
@@ -239,5 +249,37 @@ describe("Settings — server-mode Account section", () => {
     await waitFor(() =>
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
     );
+  });
+
+  it("does not show a Manage users entry for a non-admin session", async () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    vi.mocked(fetchAuthStatus).mockResolvedValue({
+      needsSetup: false,
+      authenticated: true,
+      username: "sam",
+      isAdmin: false,
+    });
+
+    render(<Settings />, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /manage users/i })).toBeNull();
+  });
+
+  it("shows a Manage users entry for an admin session and navigates to /settings/users on click", async () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    vi.mocked(fetchAuthStatus).mockResolvedValue({
+      needsSetup: false,
+      authenticated: true,
+      username: "koushik",
+      isAdmin: true,
+    });
+
+    render(<Settings />, { wrapper: createWrapper() });
+
+    const manageUsers = await screen.findByRole("button", { name: /manage users/i });
+    fireEvent.click(manageUsers);
+
+    expect(mockNavigate).toHaveBeenCalledWith("/settings/users");
   });
 });

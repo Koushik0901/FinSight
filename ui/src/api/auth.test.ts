@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchAuthStatus, isServerMode, login, logout, setup } from "./auth";
+import { createUser, deleteUser, fetchAuthStatus, isServerMode, listUsers, login, logout, setup } from "./auth";
 
 type AnyRec = Record<string, unknown>;
 
@@ -115,6 +115,87 @@ describe("auth.ts — server-mode auth API client", () => {
 
       await expect(logout()).resolves.toBeUndefined();
       expect(fetchMock).toHaveBeenCalledWith("/api/auth/logout", expect.objectContaining({ method: "POST" }));
+    });
+  });
+
+  describe("listUsers", () => {
+    it("GETs /api/auth/users and returns the parsed list", async () => {
+      const users = [
+        { id: "u1", username: "koushik", isAdmin: true, createdAt: "2026-07-01T00:00:00Z" },
+        { id: "u2", username: "sam", isAdmin: false, createdAt: "2026-07-02T00:00:00Z" },
+      ];
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify(users), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await listUsers();
+
+      expect(fetchMock).toHaveBeenCalledWith("/api/auth/users");
+      expect(result).toEqual(users);
+    });
+
+    it("throws {code: 'auth.admin_required'} on 403", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          new Response(JSON.stringify({ code: "auth.admin_required", message: "Admin access required." }), {
+            status: 403,
+          })
+        )
+      );
+
+      await expect(listUsers()).rejects.toEqual({
+        code: "auth.admin_required",
+        message: "Admin access required.",
+      });
+    });
+  });
+
+  describe("createUser", () => {
+    it("POSTs username/password and returns the recovery key", async () => {
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ recoveryKey: "aaaaaaaa-bbbbbbbb-cccccccc-dddddddd-eeeeeeee-ffffffff-11111111-22222222" }), {
+          status: 200,
+        })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await createUser("sam", "hunter2hunter2");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/auth/users",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({ "content-type": "application/json" }),
+          body: JSON.stringify({ username: "sam", password: "hunter2hunter2" }),
+        })
+      );
+      expect(result.recoveryKey.split("-")).toHaveLength(8);
+    });
+  });
+
+  describe("deleteUser", () => {
+    it("DELETEs /api/auth/users/{id} and resolves on 200", async () => {
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(deleteUser("u2")).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledWith("/api/auth/users/u2", expect.objectContaining({ method: "DELETE" }));
+    });
+
+    it("throws {code: 'auth.cannot_delete_self'} on 400", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          new Response(JSON.stringify({ code: "auth.cannot_delete_self", message: "cannot delete your own account" }), {
+            status: 400,
+          })
+        )
+      );
+
+      await expect(deleteUser("u1")).rejects.toEqual({
+        code: "auth.cannot_delete_self",
+        message: "cannot delete your own account",
+      });
     });
   });
 });

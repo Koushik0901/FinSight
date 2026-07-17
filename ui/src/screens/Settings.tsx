@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { isServerMode, logout } from "../api/auth";
+import { fetchAuthStatus, isServerMode, logout } from "../api/auth";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
 import {
   useCompletionProvider,
@@ -351,6 +351,25 @@ export default function Settings() {
   const sectionIds = useMemo(() => sections.map(([id]) => id), [sections]);
   const activeSection = useActiveSection(sectionIds);
   const [signingOut, setSigningOut] = useState(false);
+  // Admin-only "Manage users" link in the Account section — resolved once at
+  // mount from /api/auth/status. Failures are swallowed: the link simply
+  // stays hidden (desktop builds never fetch this at all, serverMode guards
+  // it above).
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!serverMode) return;
+    let cancelled = false;
+    fetchAuthStatus()
+      .then((status) => {
+        if (!cancelled) setIsAdmin(Boolean(status.isAdmin));
+      })
+      .catch(() => {
+        /* link stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode]);
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -502,6 +521,18 @@ export default function Settings() {
 
           {serverMode && (
             <Section id="account" title="Account" description="You're signed in on this FinSight server.">
+              {isAdmin && (
+                <div className="s-row">
+                  <div>
+                    <div className="label">Users</div>
+                    <div className="desc">Add or remove accounts on this server.</div>
+                  </div>
+                  <div />
+                  <button className="btn outline sm" type="button" onClick={() => navigate("/settings/users")}>
+                    Manage users
+                  </button>
+                </div>
+              )}
               <div className="s-row">
                 <div>
                   <div className="label">Sign out</div>
