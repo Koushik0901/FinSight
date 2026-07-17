@@ -1,13 +1,11 @@
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::{NewTransaction, Rule, Transaction, TxnPatch};
-use finsight_core::repos::transactions;
-use tauri_plugin_dialog::DialogExt;
 
 pub use finsight_api::commands::transactions::{
     CategoryDto, CategoryWithSpending, CounterpartyVerdict, ProposedRuleDto, RuleWithCategory,
-    SpendingBreakdown, SplitInputDto, TransactionSplitDto, TransferVerdictResult, TxnFilterInput,
-    UnresolvedCounterpartyDto, UpdateTxnResult,
+    SearchTxnQueryInput, SpendingBreakdown, SplitInputDto, TransactionSplitDto,
+    TransferVerdictResult, TxnFilterInput, UnresolvedCounterpartyDto, UpdateTxnResult,
 };
 
 #[tauri::command]
@@ -246,130 +244,27 @@ pub async fn set_transaction_splits(
     .await
 }
 
-fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
+/// Returns CSV content for transactions matching a filter; the caller
+/// downloads it client-side (Blob + `<a download>`). No native file dialog
+/// since Phase 4 — the desktop shell has no local command surface to host one.
 #[tauri::command]
 #[specta::specta]
 pub async fn export_transactions_csv(
     state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
     filter: TxnFilterInput,
 ) -> AppResult<String> {
-    let maybe_path = app
-        .dialog()
-        .file()
-        .set_file_name("transactions.csv")
-        .blocking_save_file();
-
-    let Some(file_path) = maybe_path else {
-        return Ok(String::new());
-    };
-    let path = file_path
-        .into_path()
-        .map_err(|e| AppError::new("dialog", e.to_string()))?;
-
-    let db = (*state.api.db).clone();
-    let csv = finsight_core::repos::run(&db, move |conn| {
-        let txns = transactions::list(
-            conn,
-            transactions::TxnFilter {
-                account_id: filter.account_id,
-                limit: i64::MAX,
-                offset: 0,
-                search: filter.search,
-                filter_preset: filter.filter_preset,
-                start_date: filter.start_date,
-                end_date: filter.end_date,
-            },
-        )?;
-        let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
-        for t in txns {
-            let date = t.posted_at.format("%Y-%m-%d").to_string();
-            let merchant = csv_escape(&t.merchant_raw);
-            let category = csv_escape(t.category_label.as_deref().unwrap_or(""));
-            let amount = format!("{:.2}", t.amount_cents as f64 / 100.0);
-            let notes = csv_escape(t.notes.as_deref().unwrap_or(""));
-            out.push_str(&format!("{date},{merchant},{category},{amount},{notes}\n"));
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(AppError::from)?;
-
-    let path_str = path.to_string_lossy().to_string();
-    std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
-    Ok(path_str)
+    finsight_api::commands::transactions::export_transactions_csv(&state.api, filter).await
 }
 
-#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchTxnQueryInput {
-    pub merchant: Option<String>,
-    pub account: Option<String>,
-    pub start_date: Option<String>,
-    pub end_date: Option<String>,
-    pub min_amount_cents: Option<i64>,
-    pub direction: Option<String>,
-}
-
-/// Re-run the Copilot `search_transactions` query and export the matching
-/// rows as CSV via a native save dialog. Shares `transactions::search` with the
-/// Copilot tool so the exported rows match exactly what the card displayed.
+/// Re-run the Copilot `search_transactions` query and return the matching
+/// rows as CSV content; the caller downloads it client-side. Shares
+/// `transactions::search` with the Copilot tool so the exported rows match
+/// exactly what the card displayed. No native file dialog since Phase 4.
 #[tauri::command]
 #[specta::specta]
 pub async fn export_search_transactions_csv(
     state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle,
     query: SearchTxnQueryInput,
 ) -> AppResult<String> {
-    let maybe_path = app
-        .dialog()
-        .file()
-        .set_file_name("transactions.csv")
-        .blocking_save_file();
-
-    let Some(file_path) = maybe_path else {
-        return Ok(String::new());
-    };
-    let path = file_path
-        .into_path()
-        .map_err(|e| AppError::new("dialog", e.to_string()))?;
-
-    let db = (*state.api.db).clone();
-    let csv = finsight_core::repos::run(&db, move |conn| {
-        let rows = finsight_core::repos::transactions::search(
-            conn,
-            &finsight_core::repos::transactions::SearchTxnQuery {
-                merchant: query.merchant,
-                account: query.account,
-                start_date: query.start_date,
-                end_date: query.end_date,
-                min_amount_cents: query.min_amount_cents,
-                direction: query.direction,
-            },
-            i64::MAX,
-        )?;
-        let mut out = String::from("date,merchant,category,amount_dollars,account\n");
-        for r in rows {
-            let date = &r.date[..10.min(r.date.len())];
-            let merchant = csv_escape(&r.merchant);
-            let category = csv_escape(&r.category);
-            let amount = format!("{:.2}", r.amount_cents as f64 / 100.0);
-            let account = csv_escape(&r.account);
-            out.push_str(&format!("{date},{merchant},{category},{amount},{account}\n"));
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(AppError::from)?;
-
-    let path_str = path.to_string_lossy().to_string();
-    std::fs::write(&path, csv).map_err(|e| AppError::new("io", e.to_string()))?;
-    Ok(path_str)
+    finsight_api::commands::transactions::export_search_transactions_csv(&state.api, query).await
 }

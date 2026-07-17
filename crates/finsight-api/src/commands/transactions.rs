@@ -688,6 +688,95 @@ pub async fn set_transaction_splits(
     .map_err(AppError::from)
 }
 
+/// Returns the CSV content for transactions matching a filter (caller
+/// downloads it client-side — no server-side file I/O). Real implementation
+/// as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+pub async fn export_transactions_csv(
+    state: &ApiState,
+    filter: TxnFilterInput,
+) -> AppResult<String> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let txns = transactions::list(
+            conn,
+            transactions::TxnFilter {
+                account_id: filter.account_id,
+                limit: i64::MAX,
+                offset: 0,
+                search: filter.search,
+                filter_preset: filter.filter_preset,
+                start_date: filter.start_date,
+                end_date: filter.end_date,
+            },
+        )?;
+        let mut out = String::from("date,merchant,category,amount_dollars,notes\n");
+        for t in txns {
+            let date = t.posted_at.format("%Y-%m-%d").to_string();
+            let merchant = crate::csv::csv_escape(&t.merchant_raw);
+            let category = crate::csv::csv_escape(t.category_label.as_deref().unwrap_or(""));
+            let amount = format!("{:.2}", t.amount_cents as f64 / 100.0);
+            let notes = crate::csv::csv_escape(t.notes.as_deref().unwrap_or(""));
+            out.push_str(&format!("{date},{merchant},{category},{amount},{notes}\n"));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Input for [`export_search_transactions_csv`] — mirrors the Copilot
+/// `search_transactions` tool's query shape so the exported rows match
+/// exactly what the card displayed. Moved here from finsight-app in Phase 4
+/// (was finsight-app-only before the export commands became transport-agnostic).
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchTxnQueryInput {
+    pub merchant: Option<String>,
+    pub account: Option<String>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub min_amount_cents: Option<i64>,
+    pub direction: Option<String>,
+}
+
+/// Re-run the Copilot `search_transactions` query and return the matching
+/// rows as CSV content (caller downloads it client-side). Shares
+/// `transactions::search` with the Copilot tool so the exported rows match
+/// exactly what the card displayed. Real implementation as of Phase 4;
+/// previously 501'd behind a native-dialog-only Tauri command.
+pub async fn export_search_transactions_csv(
+    state: &ApiState,
+    query: SearchTxnQueryInput,
+) -> AppResult<String> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        let rows = finsight_core::repos::transactions::search(
+            conn,
+            &finsight_core::repos::transactions::SearchTxnQuery {
+                merchant: query.merchant,
+                account: query.account,
+                start_date: query.start_date,
+                end_date: query.end_date,
+                min_amount_cents: query.min_amount_cents,
+                direction: query.direction,
+            },
+            i64::MAX,
+        )?;
+        let mut out = String::from("date,merchant,category,amount_dollars,account\n");
+        for r in rows {
+            let date = &r.date[..10.min(r.date.len())];
+            let merchant = crate::csv::csv_escape(&r.merchant);
+            let category = crate::csv::csv_escape(&r.category);
+            let amount = format!("{:.2}", r.amount_cents as f64 / 100.0);
+            let account = crate::csv::csv_escape(&r.account);
+            out.push_str(&format!("{date},{merchant},{category},{amount},{account}\n"));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
