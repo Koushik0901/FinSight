@@ -1,4 +1,14 @@
 //! FinSight Tauri app — command surface + lifecycle.
+//!
+//! **Codegen-only as of Phase 4.** This crate's ~199 `#[tauri::command]`
+//! wrappers are consumed SOLELY by `src-tauri`'s `export_bindings` binary
+//! (via `build_specta_builder()`) to generate `ui/src/api/bindings.ts`.
+//! Nothing in this crate is linked into the SHIPPED desktop binary anymore —
+//! that's `src-tauri/src/main.rs`, a thin webview shell with no local
+//! command surface and no local database (see
+//! docs/superpowers/plans/2026-07-17-server-phase4-thin-desktop-shell.md).
+//! If you're reading this wondering why 27 files of Tauri commands exist
+//! with nothing calling `configure_app()` in the shipped app: this is why.
 
 pub mod commands;
 pub mod error;
