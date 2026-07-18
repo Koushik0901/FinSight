@@ -5,6 +5,7 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use finsight_server::router::build_router;
+use finsight_server::sessions::LoginThrottle;
 use finsight_server::state::ServerState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,6 +56,20 @@ fn login_req(username: &str, password: &str) -> Request<Body> {
         .header("content-type", "application/json")
         .body(Body::from(
             serde_json::json!({"username": username, "password": password}).to_string(),
+        ))
+        .unwrap()
+}
+
+fn recover_req(username: &str, recovery_key: &str, new_password: &str) -> Request<Body> {
+    Request::post("/api/auth/recover")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "username": username,
+                "recoveryKey": recovery_key,
+                "newPassword": new_password,
+            })
+            .to_string(),
         ))
         .unwrap()
 }
@@ -370,6 +385,321 @@ async fn delete_user_removes_dir_and_sessions() {
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
+// ------------------------------------------------- recovery redemption ---
+
+/// The headline flow: a user who forgot their password redeems their recovery
+/// key, lands logged in with a new password, and gets a REPLACEMENT key. The
+/// four things that must all hold afterwards are asserted together because
+/// each on its own is satisfiable by a broken implementation.
+#[tokio::test]
+async fn recover_resets_password_rotates_key_and_logs_in() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+    let setup_cookie = cookie_from(&res);
+    let old_recovery = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+
+    // Prove the account owns real data, so we can prove recovery preserves it
+    // (the db key is re-wrapped, never regenerated).
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/rpc/create_account")
+                .header("content-type", "application/json")
+                .header("cookie", setup_cookie)
+                .body(Body::from(new_account_payload("Pre-Recovery Acct").to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Redeem.
+    let res = app
+        .clone()
+        .oneshot(recover_req("alice", &old_recovery, "brand-new-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let recovered_cookie = cookie_from(&res);
+    let new_recovery = json_body(res).await["recoveryKey"]
+        .as_str()
+        .expect("recovery returns a replacement key")
+        .to_string();
+    assert_eq!(new_recovery.split('-').count(), 8);
+    assert_ne!(new_recovery, old_recovery, "the recovery key must ROTATE");
+
+    // 1. The session handed back is live AND opens the SAME database — the
+    //    pre-existing account is still there, so the db key survived intact.
+    let res = app
+        .clone()
+        .oneshot(rpc_req("list_accounts", &recovered_cookie))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let accounts = json_body(res).await;
+    assert_eq!(
+        accounts.as_array().unwrap().len(),
+        1,
+        "recovery must re-wrap the existing db key, not mint a fresh empty database"
+    );
+    assert_eq!(accounts[0]["name"], "Pre-Recovery Acct");
+
+    // 2. The new password works.
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "brand-new-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 3. The old password does not.
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(json_body(res).await["code"], "auth.bad_credentials");
+
+    // 4. The OLD recovery key is spent — replaying it must not work.
+    let res = app
+        .oneshot(recover_req("alice", &old_recovery, "third-password-here"))
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::UNAUTHORIZED,
+        "a redeemed recovery key must stop working"
+    );
+    assert_eq!(json_body(res).await["code"], "auth.bad_recovery_key");
+}
+
+/// Wrong key and unknown username must be INDISTINGUISHABLE — same status,
+/// same code, same message. Otherwise recover becomes the username oracle that
+/// login is careful not to be.
+#[tokio::test]
+async fn recover_wrong_key_and_unknown_user_are_identical_401s() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    app.clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+
+    let wrong_key = "deadbeef-".repeat(7) + "deadbeef";
+    let res = app
+        .clone()
+        .oneshot(recover_req("alice", &wrong_key, "brand-new-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    let wrong_key_body = json_body(res).await;
+    assert_eq!(wrong_key_body["code"], "auth.bad_recovery_key");
+
+    let res = app
+        .oneshot(recover_req("nobody-here", &wrong_key, "brand-new-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    let unknown_user_body = json_body(res).await;
+
+    assert_eq!(
+        unknown_user_body, wrong_key_body,
+        "unknown username must be byte-identical to a wrong key — no username oracle"
+    );
+}
+
+/// Recovery must not be a side door around the password policy.
+#[tokio::test]
+async fn weak_password_rejected_on_setup_create_user_and_recover() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+
+    // setup
+    let res = app.clone().oneshot(setup_req("alice", "short-pw")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body = json_body(res).await;
+    assert_eq!(body["code"], "auth.weak_password");
+    assert!(
+        body["message"].as_str().unwrap().contains("10"),
+        "the error must state the minimum, got: {}",
+        body["message"]
+    );
+
+    // A compliant setup succeeds, giving us an admin + a recovery key.
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let admin_cookie = cookie_from(&res);
+    let recovery = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+
+    // create_user
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/users")
+                .header("content-type", "application/json")
+                .header("cookie", admin_cookie)
+                .body(Body::from(r#"{"username":"bob","password":"short-pw"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json_body(res).await["code"], "auth.weak_password");
+
+    // recover — checked BEFORE the key is consumed, so a rejected attempt
+    // leaves the recovery key still usable.
+    let res = app
+        .clone()
+        .oneshot(recover_req("alice", &recovery, "short-pw"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json_body(res).await["code"], "auth.weak_password");
+
+    let res = app
+        .oneshot(recover_req("alice", &recovery, "a-compliant-password"))
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "a policy rejection must not burn the recovery key"
+    );
+}
+
+// ------------------------------------------------------ login throttle ---
+
+/// Five consecutive failures lock the username; the lock lifts on its own once
+/// the cooldown elapses. Built on a 250ms cooldown via `bootstrap_with_throttle`
+/// so the expiry half is testable without a 60-second sleep.
+#[tokio::test]
+async fn login_locks_out_after_five_failures_then_recovers() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.keep();
+    let state = ServerState::bootstrap_with_throttle(
+        &path,
+        LoginThrottle::new(std::time::Duration::from_millis(250)),
+    )
+    .unwrap();
+    let app = build_router(state, &test_ui_dir());
+
+    app.clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+
+    // Failures 1..=4 stay 401 — the budget isn't spent yet.
+    for i in 1..5 {
+        let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "attempt {i} should be 401");
+    }
+
+    // The 5th trips the lock.
+    let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+    // Now even the CORRECT password is refused, with 429 — proving it's a
+    // lockout and not just another credential rejection.
+    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(json_body(res).await["code"], "auth.too_many_attempts");
+
+    // Recovery is locked out on the same budget.
+    let res = app
+        .clone()
+        .oneshot(recover_req("alice", "whatever-key", "a-new-password-x"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // After the window, the correct password works again.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "the lock must lift once the cooldown elapses"
+    );
+}
+
+/// The lockout must key on the submitted string whether or not the account
+/// exists — an existence-dependent lockout would leak account existence
+/// through the very mechanism added to protect it.
+#[tokio::test]
+async fn lockout_does_not_reveal_whether_the_account_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.keep();
+    let state = ServerState::bootstrap_with_throttle(
+        &path,
+        LoginThrottle::new(std::time::Duration::from_millis(250)),
+    )
+    .unwrap();
+    let app = build_router(state, &test_ui_dir());
+    app.clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+
+    for _ in 0..5 {
+        app.clone()
+            .oneshot(login_req("ghost-account", "wrong-password"))
+            .await
+            .unwrap();
+    }
+
+    let res = app
+        .clone()
+        .oneshot(login_req("ghost-account", "wrong-password"))
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "a nonexistent username must lock out exactly like a real one"
+    );
+
+    // And a real account is unaffected by another name's exhausted budget.
+    let res = app.oneshot(login_req("alice", "original-password")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+/// A success mid-streak must clear the budget, or a user who mistypes a few
+/// times, logs in, then mistypes once more would be locked out unexpectedly.
+#[tokio::test]
+async fn successful_login_clears_the_failure_budget() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    app.clone()
+        .oneshot(setup_req("alice", "original-password"))
+        .await
+        .unwrap();
+
+    for _ in 0..4 {
+        app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+    }
+    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Budget reset: four more failures still don't lock.
+    for _ in 0..4 {
+        let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+    let res = app.oneshot(login_req("alice", "original-password")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
 /// Legacy-migration failure must fail LOUD and RETRYABLE, never silently orphan
 /// the user's real Phase 1 data behind a fresh empty DB. Injection: place a
 /// Phase 1-style `data.sqlcipher` + valid 64-hex `db.key`, then pre-create
@@ -412,4 +742,66 @@ async fn migration_failure_is_loud_and_retryable() {
     );
     // The user's real DB was NOT deleted — it's still at the old path.
     assert!(data_dir.join("data.sqlcipher").exists());
+}
+
+/// The end of the story the previous test starts: after the operator clears
+/// the fault, a RETRY must find the original ledger and migrate it — not
+/// create an empty database over it. This is the user-visible half of the
+/// partial-migration fix.
+///
+/// The multi-file sidecar case (main DB moves, `-wal` then fails, both get
+/// restored) is covered by `move_all_or_rollback_restores_earlier_moves_when_a_later_one_fails`
+/// in `auth.rs`. It cannot be injected here: the destination is
+/// `users/<random-uuid>/`, so no path a test can pre-create will break
+/// specifically the second move for an unknown UUID.
+#[tokio::test]
+async fn setup_retry_after_a_failed_migration_still_migrates_the_original_data() {
+    let (state, data_dir) = fresh_state();
+
+    // Distinctive bytes so we can prove THE ORIGINAL file arrived, rather than
+    // a fresh empty DB that merely occupies the right path.
+    std::fs::write(data_dir.join("data.sqlcipher"), b"ORIGINAL-LEDGER-BYTES").unwrap();
+    std::fs::write(data_dir.join("data.sqlcipher-wal"), b"ORIGINAL-WAL-BYTES").unwrap();
+    std::fs::write(data_dir.join("db.key"), "aa".repeat(32)).unwrap();
+    std::fs::write(data_dir.join("users"), b"not a directory").unwrap();
+
+    let app = build_router(state.clone(), &test_ui_dir());
+
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(state.users.is_empty().unwrap());
+
+    // Nothing was consumed by the failed attempt: both DB files AND the
+    // keyfile are still where a retry needs them. (The keyfile matters — it is
+    // deleted only after every move commits; losing it would leave the legacy
+    // DB unreadable forever.)
+    assert!(data_dir.join("data.sqlcipher").exists());
+    assert!(data_dir.join("data.sqlcipher-wal").exists());
+    assert!(data_dir.join("db.key").exists(), "the legacy keyfile must survive a failed migration");
+
+    // Operator clears the fault and retries.
+    std::fs::remove_file(data_dir.join("users")).unwrap();
+
+    let res = app.oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK, "the retry must succeed");
+    let admin_id = state.users.list_users().unwrap()[0].id.clone();
+
+    let user_dir = data_dir.join("users").join(&admin_id);
+    assert_eq!(
+        std::fs::read(user_dir.join("data.sqlcipher")).unwrap(),
+        b"ORIGINAL-LEDGER-BYTES",
+        "the retry must migrate the ORIGINAL ledger, not create an empty database"
+    );
+    assert_eq!(
+        std::fs::read(user_dir.join("data.sqlcipher-wal")).unwrap(),
+        b"ORIGINAL-WAL-BYTES",
+        "the -wal sidecar must travel with its main DB file"
+    );
+    // Old locations are cleared, including the now-redundant plaintext keyfile.
+    assert!(!data_dir.join("data.sqlcipher").exists());
+    assert!(!data_dir.join("db.key").exists());
 }

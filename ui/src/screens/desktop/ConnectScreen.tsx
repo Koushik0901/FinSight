@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Button from "../../components/Button";
+import Input from "../../components/Input";
 
 /** First-run screen for the Phase 4 thin desktop shell: ask for the
  *  self-hosted FinSight server URL, verify it's reachable, store it in the
@@ -47,18 +49,22 @@ export default function ConnectScreen({ onConnected }: { onConnected: (url: stri
           Tailscale hostname, a local network address, or a domain name.
         </p>
         <form onSubmit={(e) => void handleConnect(e)} style={{ marginTop: 20 }}>
-          <input
+          <Input
+            label="Server address"
+            id="connect-server-url"
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://finsight.example.ts.net"
+            autoComplete="url"
+            spellCheck={false}
+            error={error}
             autoFocus
             style={{ width: "100%" }}
           />
-          {error && <p role="alert" style={{ color: "var(--negative)", marginTop: 8 }}>{error}</p>}
-          <button className="btn primary" type="submit" disabled={checking} style={{ marginTop: 16 }}>
+          <Button variant="primary" type="submit" disabled={checking} style={{ marginTop: 16 }}>
             {checking ? "Connecting…" : "Connect"}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

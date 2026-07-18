@@ -6,6 +6,8 @@ pub mod csv; // shared csv_escape helper for the export commands (accounts,
              // private copies in finsight-app.
 pub mod error;
 pub mod provider; // provider-construction helpers (settings → live CompletionProvider).
+pub mod secrets; // per-user secret storage in the user's own encrypted DB (settings KV)
+                 // rather than the process-global / Docker-absent OS keychain.
 pub mod sink; // FrameSink: transport-agnostic event emission (progress/streaming).
               // See sink.rs. Consumed by import_csv and copilot_chat once they move here.
 pub mod startup; // shared desktop-boot / server-login-catchup derived-state refresh cascade.

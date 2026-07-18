@@ -16,48 +16,183 @@ pub struct UserRuntime {
     pub api: Arc<ApiState>,
     pub events: broadcast::Sender<OutboundEvent>,
     pub last_active: Mutex<Instant>,
-    /// Handle for this runtime's background sync loop; aborted on eviction.
+    /// Handle for this runtime's background sync loop; aborted on eviction
+    /// and, as a backstop, whenever the runtime itself is dropped (see `Drop`).
     pub sync_task: tokio::task::JoinHandle<()>,
 }
 
+/// Dropping a `JoinHandle` DETACHES its task rather than cancelling it, so a
+/// runtime that dies without going through `evict` would leave its sync loop
+/// running — holding a `Db` clone — until the process exits. That is reachable:
+/// `evict` (logout, user deletion) can remove a still-initializing cell while a
+/// bootstrap is in flight, and the resulting runtime is never in the map for
+/// `evict` to abort. Tying cancellation to the runtime's lifetime closes that
+/// race for every path, present and future. `evict` still aborts explicitly so
+/// eviction is prompt rather than waiting on the last `Arc` to drop.
+impl Drop for UserRuntime {
+    fn drop(&mut self) {
+        self.sync_task.abort();
+    }
+}
+
+/// Map value: a lazily-initialized cell, NOT a built runtime. Concurrent
+/// callers that miss share one cell and join a single bootstrap (see
+/// `get_or_bootstrap`), so an uninitialized cell is a normal, observable state
+/// — `touch`/`evict`/`evict_idle` must all tolerate `cell.get() == None`.
+type RuntimeCell = Arc<tokio::sync::OnceCell<Arc<UserRuntime>>>;
+
 #[derive(Default)]
-pub struct Registry(Mutex<HashMap<String, Arc<UserRuntime>>>);
+pub struct Registry(Mutex<HashMap<String, RuntimeCell>>);
 
 pub fn user_data_dir(data_dir: &Path, user_id: &str) -> PathBuf {
     data_dir.join("users").join(user_id)
 }
 
+/// Apply a staged restore (P0-4) BEFORE opening the DB, so we never swap a
+/// database that has live connections. Moves `data.pending-restore.sqlcipher`
+/// over `data.sqlcipher` and drops the stale WAL/SHM so the restored snapshot
+/// is authoritative.
+///
+/// This is the server-side half of Settings → Restore from backup:
+/// `stage_restore_backup` only writes the pending file, and something must
+/// swap it in before the next `Db::open` or the restore is a silent no-op
+/// while `get_data_health` reports `pendingRestore: true` forever. On the
+/// desktop that caller was `configure_app`; here it is the per-user bootstrap,
+/// and "restart FinSight" becomes "this user's runtime is (re)built".
+pub(crate) fn apply_staged_restore(user_dir: &Path) {
+    let pending_restore = user_dir.join("data.pending-restore.sqlcipher");
+    if !pending_restore.exists() {
+        return;
+    }
+    let db_path = user_dir.join("data.sqlcipher");
+    let _ = std::fs::remove_file(user_dir.join("data.sqlcipher-wal"));
+    let _ = std::fs::remove_file(user_dir.join("data.sqlcipher-shm"));
+
+    // Retry briefly. Unlike the desktop app — where this ran in a fresh
+    // process with nothing holding the file — a server-side restore swaps the
+    // DB of a runtime that was just evicted, and eviction is not synchronous:
+    // the agent runs on its own OS thread holding a `Db` clone and only winds
+    // down once its channel sender drops. On Windows `rename` fails outright
+    // while any handle to the destination is open, so an evict-then-rebuild
+    // would silently no-op the restore — exactly the bug this function exists
+    // to fix. A second is far more than the wind-down needs; on Unix the
+    // first attempt always succeeds.
+    let mut last_err = None;
+    for attempt in 0..10 {
+        match std::fs::rename(&pending_restore, &db_path) {
+            Ok(()) => {
+                tracing::info!("applied staged restore over the live database");
+                return;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < 9 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+    }
+    // Loud on purpose: the staged file survives, so `get_data_health` keeps
+    // reporting `pendingRestore: true` and the next bootstrap tries again.
+    tracing::error!(
+        "failed to apply staged restore (database still in use?): {}",
+        last_err.map(|e| e.to_string()).unwrap_or_default()
+    );
+}
+
 impl Registry {
     /// Get or lazily bootstrap the runtime for `user_id`. Mirrors Phase 1's
-    /// `ServerState::bootstrap` but per-user: open Db with `db_key_hex`, run
-    /// migrations + provider migration, wire AgentEvent→broadcast (the same
-    /// names `configure_app`/Phase 1's `state.rs` use), `ApiState::new`,
-    /// load+set provider.
+    /// `ServerState::bootstrap` but per-user: apply any staged restore, open
+    /// Db with `db_key_hex`, run the startup cascade (which owns the
+    /// pre-migration backup, migrations and the provider-settings migration),
+    /// wire AgentEvent→broadcast (the same names `configure_app`/Phase 1's
+    /// `state.rs` use), `ApiState::new`, load+set provider.
     ///
-    /// Locking shape: the map lock is held ONLY for the initial lookup and
-    /// the final insert-if-absent — never across the bootstrap itself, which
-    /// does real I/O (DB open, migrations, agent spawn) and must not block
-    /// other users' lookups. If two requests race to bootstrap the same user,
-    /// both do the (wasted) I/O, but only the first to re-acquire the lock
-    /// wins the insert; the loser's freshly-built runtime is dropped and its
-    /// caller uses the winner's Arc instead — so callers never observe two
-    /// live runtimes for one user.
+    /// **Single-flight.** A cold page load fires ~14 queries before the first
+    /// insert lands, so without a guard ~14 callers each miss the map and
+    /// independently open + migrate the SAME SQLite file, throwing 13 results
+    /// away; concurrent `run_migrations` on one file is a correctness risk,
+    /// not merely waste. So the map holds a `OnceCell` per user rather than a
+    /// built runtime: racing callers insert/find the same cell and all join
+    /// ONE `get_or_init`, and the losers wait on the winner instead of
+    /// duplicating its work. (This also retires the old "loser aborts its own
+    /// orphaned sync_task" dance — only the winner ever starts one.)
+    ///
+    /// **Locking shape.** The map lock is held ONLY for the cell lookup /
+    /// insert and is dropped before the `.await` — the bootstrap itself does
+    /// real blocking I/O and must not block other users' lookups, and holding
+    /// a `std::sync::MutexGuard` across an await would make this future
+    /// `!Send` (see `_assert_send` below).
+    ///
+    /// A failed bootstrap leaves the cell uninitialized, so the next request
+    /// retries rather than caching the failure.
     pub async fn get_or_bootstrap(
         &self,
         data_dir: &Path,
         user_id: &str,
         db_key_hex: &str,
     ) -> anyhow::Result<Arc<UserRuntime>> {
-        if let Some(rt) = self.0.lock().unwrap().get(user_id) {
-            return Ok(Arc::clone(rt));
-        }
+        // --- Lock held for the cell lookup/insert ONLY, never across await ---
+        let cell: RuntimeCell = {
+            let mut map = self.0.lock().unwrap();
+            Arc::clone(map.entry(user_id.to_string()).or_default())
+        };
 
-        // --- Bootstrap outside the lock ---
+        let runtime = cell
+            .get_or_try_init(|| self.bootstrap(data_dir, user_id, db_key_hex))
+            .await?;
+        Ok(Arc::clone(runtime))
+    }
+
+    /// The actual per-user bootstrap. Runs exactly once per cell (see
+    /// `get_or_bootstrap`); never call it directly.
+    async fn bootstrap(
+        &self,
+        data_dir: &Path,
+        user_id: &str,
+        db_key_hex: &str,
+    ) -> anyhow::Result<Arc<UserRuntime>> {
         let user_dir = user_data_dir(data_dir, user_id);
-        std::fs::create_dir_all(&user_dir)?;
-        let db = finsight_core::Db::open(&user_dir.join("data.sqlcipher"), db_key_hex)?;
-        finsight_core::db::run_migrations(&db)?;
-        finsight_api::provider::migrate_provider_settings(&db)?;
+
+        // Directory creation, the staged-restore swap, `Db::open` and the
+        // login catch-up cascade (integrity check, pre-migration backup,
+        // migrations, provider migration, categorization/transfer-pairing/
+        // balances/net-worth/anomaly recompute) are all blocking I/O, so they
+        // run on a blocking thread rather than stalling an async worker.
+        //
+        // The cascade OWNS migrations and must therefore run before anything
+        // else touches the schema: its pre-migration backup is gated on
+        // `pending_migration_count() > 0`, so migrating here first would read
+        // 0 and silently skip the snapshot that makes a data-corrupting
+        // migration recoverable. Same order as the desktop `configure_app`.
+        let dir = user_dir.clone();
+        let key = db_key_hex.to_string();
+        let (db, report) = tokio::task::spawn_blocking(
+            move || -> anyhow::Result<(finsight_core::Db, finsight_api::startup::StartupReport)> {
+                std::fs::create_dir_all(&dir)?;
+                apply_staged_restore(&dir);
+                let db = finsight_core::Db::open(&dir.join("data.sqlcipher"), &key)?;
+                let report = finsight_api::startup::run_startup_cascade(&db, &dir.join("backups"));
+                Ok((db, report))
+            },
+        )
+        .await??;
+
+        // Migrations are the one cascade step that is NOT best-effort here: a
+        // schema that does not match the code must not be served. Failing this
+        // one user's bootstrap yields a 500 for them and leaves the process
+        // (and every other user) up — and the pre-migration backup taken just
+        // above is still on disk to restore from.
+        if let Some(e) = &report.migration_error {
+            anyhow::bail!("migrations failed for user {user_id}: {e}");
+        }
+        if !report.warnings.is_empty() {
+            tracing::warn!(
+                user_id = %user_id,
+                warnings = ?report.warnings,
+                "login catch-up cascade reported warnings"
+            );
+        }
 
         let (tx, _) = broadcast::channel::<OutboundEvent>(256);
         let etx = tx.clone();
@@ -79,35 +214,6 @@ impl Registry {
         if let Some(p) = finsight_api::provider::load_provider_from_settings(&db) {
             api.agent.set_provider(p);
         }
-
-        // Login catch-up: refresh derived state (integrity check, pending
-        // migrations, categorization/transfer-pairing/balances/net-worth/
-        // anomaly recompute) — the same cascade the desktop app runs on
-        // launch, extracted to `finsight_api::startup` so both callers share
-        // it. This does real (blocking) DB work, so it runs on a blocking
-        // thread rather than tying up an async worker; no lock is held
-        // across this `.await` (the map lock was already released above).
-        let cascade_db = db.clone();
-        let backups_dir = user_dir.join("backups");
-        let uid_for_log = user_id.to_string();
-        match tokio::task::spawn_blocking(move || {
-            finsight_api::startup::run_startup_cascade(&cascade_db, &backups_dir)
-        })
-        .await
-        {
-            Ok(report) => {
-                if !report.warnings.is_empty() {
-                    tracing::warn!(
-                        user_id = %uid_for_log,
-                        warnings = ?report.warnings,
-                        "login catch-up cascade reported warnings"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::error!(user_id = %uid_for_log, "login catch-up cascade task panicked: {e}");
-            }
-        }
         let _ = api
             .agent
             .tx
@@ -119,52 +225,51 @@ impl Registry {
         // always entered here — unlike the desktop `.setup()` closure).
         let sync_task = api.sync_scheduler.start(&tokio::runtime::Handle::current());
 
-        let runtime = Arc::new(UserRuntime {
+        Ok(Arc::new(UserRuntime {
             api,
             events: tx,
             last_active: Mutex::new(Instant::now()),
             sync_task,
-        });
-
-        // --- Insert-if-absent, lock held only for this ---
-        let mut map = self.0.lock().unwrap();
-        if let Some(existing) = map.get(user_id) {
-            // Another request raced us and won; use theirs. Abort OUR
-            // sync_task before dropping our runtime — a dropped JoinHandle
-            // does NOT cancel the task it points to, it just detaches it,
-            // which would otherwise leave a second, orphaned background
-            // sync loop running forever for this user.
-            let existing = Arc::clone(existing);
-            drop(map);
-            runtime.sync_task.abort();
-            return Ok(existing);
-        }
-        map.insert(user_id.to_string(), Arc::clone(&runtime));
-        Ok(runtime)
+        }))
     }
 
     pub fn touch(&self, user_id: &str) {
-        if let Some(rt) = self.0.lock().unwrap().get(user_id) {
+        if let Some(rt) = self.0.lock().unwrap().get(user_id).and_then(|c| c.get()) {
             *rt.last_active.lock().unwrap() = Instant::now();
         }
     }
 
     /// Removes the runtime and aborts its background sync task.
     pub fn evict(&self, user_id: &str) {
-        if let Some(rt) = self.0.lock().unwrap().remove(user_id) {
-            rt.sync_task.abort();
+        if let Some(cell) = self.0.lock().unwrap().remove(user_id) {
+            if let Some(rt) = cell.get() {
+                rt.sync_task.abort();
+            }
         }
     }
 
     /// Called by a background interval task: evict runtimes idle > `max_idle`.
     /// Returns the evicted user ids for logging.
+    ///
+    /// A runtime with live SSE subscribers is NEVER idle, regardless of its
+    /// `last_active`: `touch()` only fires on SSE connect and on RPC dispatch,
+    /// so a backgrounded PWA tab holding an open EventSource (TanStack pauses
+    /// polling while hidden) would otherwise be evicted on the dot every 30
+    /// minutes — killing the stream, triggering an EventSource reconnect and
+    /// replaying the whole cascade, forever.
     pub fn evict_idle(&self, max_idle: Duration) -> Vec<String> {
         let now = Instant::now();
         let idle_ids: Vec<String> = {
             let map = self.0.lock().unwrap();
             map.iter()
-                .filter(|(_, rt)| {
-                    now.duration_since(*rt.last_active.lock().unwrap()) >= max_idle
+                .filter(|(_, cell)| match cell.get() {
+                    // Still bootstrapping — not idle, and evicting the cell
+                    // mid-flight would strand the in-flight callers' result.
+                    None => false,
+                    Some(rt) => {
+                        rt.events.receiver_count() == 0
+                            && now.duration_since(*rt.last_active.lock().unwrap()) >= max_idle
+                    }
                 })
                 .map(|(id, _)| id.clone())
                 .collect()
@@ -244,6 +349,217 @@ mod tests {
             .unwrap();
 
         assert!(!Arc::ptr_eq(&rt1, &rt2), "post-eviction call must rebuild");
+    }
+
+    /// Regression: `stage_restore_backup` only writes the pending file — if the
+    /// bootstrap does not swap it in before `Db::open`, Restore from backup is
+    /// a silent no-op while the UI keeps promising it will apply "next restart".
+    #[test]
+    fn apply_staged_restore_swaps_the_pending_file_over_the_live_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let user_dir = dir.path();
+        let key = test_key();
+
+        // A "live" DB holding the value the restore is meant to roll back.
+        {
+            let live = finsight_core::Db::open(&user_dir.join("data.sqlcipher"), &key).unwrap();
+            finsight_core::db::run_migrations(&live).unwrap();
+            let conn = live.get().unwrap();
+            finsight_core::settings::set(&conn, "marker", &"live").unwrap();
+        }
+        // A staged restore holding the value the user wants back.
+        {
+            let staged =
+                finsight_core::Db::open(&user_dir.join("data.pending-restore.sqlcipher"), &key)
+                    .unwrap();
+            finsight_core::db::run_migrations(&staged).unwrap();
+            let conn = staged.get().unwrap();
+            finsight_core::settings::set(&conn, "marker", &"restored").unwrap();
+        }
+        // Stale sidecars from the live DB must not survive the swap.
+        std::fs::write(user_dir.join("data.sqlcipher-wal"), b"stale").unwrap();
+        std::fs::write(user_dir.join("data.sqlcipher-shm"), b"stale").unwrap();
+
+        apply_staged_restore(user_dir);
+
+        // Sidecars are checked BEFORE reopening — opening the DB legitimately
+        // recreates a WAL, which would mask whether the stale one was dropped.
+        assert!(!user_dir.join("data.sqlcipher-wal").exists(), "stale WAL survived");
+        assert!(!user_dir.join("data.sqlcipher-shm").exists(), "stale SHM survived");
+        assert!(
+            !user_dir.join("data.pending-restore.sqlcipher").exists(),
+            "pending file must be consumed, or get_data_health reports pendingRestore forever"
+        );
+
+        let db = finsight_core::Db::open(&user_dir.join("data.sqlcipher"), &key).unwrap();
+        let conn = db.get().unwrap();
+        let marker: Option<String> = finsight_core::settings::get(&conn, "marker").unwrap();
+        assert_eq!(marker.as_deref(), Some("restored"), "restore was not applied");
+    }
+
+    #[test]
+    fn apply_staged_restore_is_a_no_op_without_a_pending_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = test_key();
+        let path = dir.path().join("data.sqlcipher");
+        {
+            let live = finsight_core::Db::open(&path, &key).unwrap();
+            finsight_core::db::run_migrations(&live).unwrap();
+            let conn = live.get().unwrap();
+            finsight_core::settings::set(&conn, "marker", &"live").unwrap();
+        }
+
+        apply_staged_restore(dir.path());
+
+        let db = finsight_core::Db::open(&path, &key).unwrap();
+        let conn = db.get().unwrap();
+        let marker: Option<String> = finsight_core::settings::get(&conn, "marker").unwrap();
+        assert_eq!(marker.as_deref(), Some("live"), "live db must be untouched");
+    }
+
+    /// End-to-end: a restore staged between two bootstraps is live afterwards.
+    #[tokio::test]
+    async fn bootstrap_applies_a_restore_staged_since_the_last_bootstrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Registry::default();
+        let key = test_key();
+
+        registry
+            .get_or_bootstrap(dir.path(), "user-1", &key)
+            .await
+            .unwrap();
+        let user_dir = user_data_dir(dir.path(), "user-1");
+        {
+            let staged =
+                finsight_core::Db::open(&user_dir.join("data.pending-restore.sqlcipher"), &key)
+                    .unwrap();
+            finsight_core::db::run_migrations(&staged).unwrap();
+            let conn = staged.get().unwrap();
+            finsight_core::settings::set(&conn, "marker", &"restored").unwrap();
+        }
+
+        // Runtime rebuild is the server's equivalent of "restart FinSight".
+        registry.evict("user-1");
+        let staged_path = user_dir.join("data.pending-restore.sqlcipher");
+        let rt = registry
+            .get_or_bootstrap(dir.path(), "user-1", &key)
+            .await
+            .unwrap();
+
+        assert!(
+            !staged_path.exists(),
+            "bootstrap did not consume the staged file (rename failed?)"
+        );
+        let conn = rt.api.db.get().unwrap();
+        let marker: Option<String> = finsight_core::settings::get(&conn, "marker").unwrap();
+        assert_eq!(marker.as_deref(), Some("restored"));
+    }
+
+    /// Migrations are the one cascade step that must NOT degrade to a warning:
+    /// serving a schema that does not match the code is worse than a 500 for
+    /// this one user. Guards the deliberate strictness of `migration_error`,
+    /// and confirms the pre-migration snapshot lands BEFORE the failing
+    /// migration — that backup is the whole point of the guard.
+    #[tokio::test]
+    async fn bootstrap_fails_when_migrations_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Registry::default();
+        let key = test_key();
+
+        // Poison the schema: a table a migration will try to create.
+        let user_dir = user_data_dir(dir.path(), "user-1");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        {
+            let db = finsight_core::Db::open(&user_dir.join("data.sqlcipher"), &key).unwrap();
+            let conn = db.get().unwrap();
+            conn.execute("CREATE TABLE accounts(not_the_real_schema TEXT)", [])
+                .unwrap();
+        }
+
+        // (`expect_err` would need `UserRuntime: Debug`, which it isn't.)
+        let err = match registry.get_or_bootstrap(dir.path(), "user-1", &key).await {
+            Ok(_) => panic!("a failed migration must not yield a usable runtime"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("migrations failed"),
+            "unexpected error: {err}"
+        );
+
+        // The pre-migration backup was still taken, so the user is recoverable.
+        let backups = user_dir.join("backups");
+        assert_eq!(
+            std::fs::read_dir(&backups).map(|d| d.count()).unwrap_or(0),
+            1,
+            "pre-migration snapshot must exist even when the migration fails"
+        );
+
+        // The failure was not cached: a later attempt re-runs the bootstrap.
+        assert!(registry
+            .get_or_bootstrap(dir.path(), "user-1", &key)
+            .await
+            .is_err());
+    }
+
+    /// Regression: without single-flight, the ~14 queries of a cold page load
+    /// each miss the map and independently open + migrate the same file.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_cold_callers_join_a_single_bootstrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Arc::new(Registry::default());
+        let key = test_key();
+
+        let mut tasks = Vec::new();
+        for _ in 0..12 {
+            let registry = Arc::clone(&registry);
+            let path = dir.path().to_path_buf();
+            let key = key.clone();
+            tasks.push(tokio::spawn(async move {
+                registry.get_or_bootstrap(&path, "user-1", &key).await.unwrap()
+            }));
+        }
+        let mut runtimes: Vec<Arc<UserRuntime>> = Vec::new();
+        for task in tasks {
+            runtimes.push(task.await.unwrap());
+        }
+
+        for rt in &runtimes {
+            assert!(
+                Arc::ptr_eq(&runtimes[0], rt),
+                "all concurrent callers must observe ONE runtime"
+            );
+        }
+        // The load-bearing assertion: the cascade's pre-migration backup runs
+        // once per bootstrap of an unmigrated DB, so a duplicated bootstrap
+        // leaves a second snapshot behind.
+        let backups = user_data_dir(dir.path(), "user-1").join("backups");
+        let snapshots = std::fs::read_dir(&backups).unwrap().count();
+        assert_eq!(snapshots, 1, "bootstrap ran more than once");
+    }
+
+    /// Regression: a backgrounded PWA tab holding an open EventSource stops
+    /// issuing RPCs (so `touch()` goes quiet) but is emphatically still alive.
+    #[tokio::test]
+    async fn evict_idle_spares_runtimes_with_live_sse_subscribers() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = Registry::default();
+        let key = test_key();
+
+        let rt = registry
+            .get_or_bootstrap(dir.path(), "user-1", &key)
+            .await
+            .unwrap();
+        let subscriber = rt.events.subscribe();
+
+        assert!(
+            registry.evict_idle(Duration::ZERO).is_empty(),
+            "a runtime with a live SSE subscriber must never be evicted"
+        );
+        assert!(registry.0.lock().unwrap().contains_key("user-1"));
+
+        // Once the stream closes, normal idle eviction resumes.
+        drop(subscriber);
+        assert_eq!(registry.evict_idle(Duration::ZERO), vec!["user-1".to_string()]);
     }
 
     #[tokio::test]

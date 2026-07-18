@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import Button from "../../components/Button";
 import Input from "../../components/Input";
+import RecoverScreen from "./RecoverScreen";
 import { login } from "../../api/auth";
 import { userErrorMessage } from "../../utils/runtime";
 
@@ -14,6 +15,7 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [recovering, setRecovering] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,6 +35,13 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
       setSubmitting(false);
     }
   };
+
+  // Recovery reuses this screen's mount point (AuthGate renders LoginScreen
+  // directly; there's no router at the gate) and shares its onComplete — a
+  // successful recovery leaves the user signed in, exactly like a login.
+  if (recovering) {
+    return <RecoverScreen onComplete={onComplete} onCancel={() => setRecovering(false)} />;
+  }
 
   return (
     <div className="screen server-auth-screen">
@@ -68,6 +77,16 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
 
         <Button type="submit" variant="primary" style={{ marginTop: 18, width: "100%" }} disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
+        </Button>
+
+        <Button
+          type="button"
+          variant="text"
+          style={{ marginTop: 10, width: "100%" }}
+          onClick={() => setRecovering(true)}
+          disabled={submitting}
+        >
+          Forgot your password?
         </Button>
       </form>
     </div>

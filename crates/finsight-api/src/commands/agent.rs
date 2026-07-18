@@ -64,7 +64,8 @@ pub async fn set_completion_provider(
     .map_err(AppError::from)?;
 
     // Also update the live provider in ApiState
-    let provider = crate::provider::build_provider_from_config(&serde_json::to_value(&config).unwrap());
+    let provider =
+        crate::provider::build_provider_from_config(&db, &serde_json::to_value(&config).unwrap());
     if let Some(p) = provider {
         state.agent.set_provider(p);
     } else {
@@ -87,13 +88,22 @@ pub async fn save_provider_api_key(
 ) -> AppResult<()> {
     // Trim defensively: a pasted key with a trailing newline/space must not be
     // stored verbatim and later corrupt the Authorization header.
-    finsight_core::keychain::set_key("com.finsight.llm", &provider_id, key.trim())
-        .map_err(AppError::from)?;
-    // Rebuild the live provider so a key-only change takes effect immediately —
-    // the runtime reads the key from the keychain at provider-construction time,
-    // not per request, so without this the agent keeps using the old key until
-    // the provider config is re-saved or the app restarts.
+    //
+    // Stored in THIS user's encrypted database, not the OS keychain: the
+    // keychain has no user component, so on a multi-user server every account
+    // shared one slot per provider id (the last save won, and everyone's calls
+    // were billed to it). It is also unavailable in the Docker image.
     let db = (*state.db).clone();
+    let trimmed = key.trim().to_string();
+    run(&db, move |conn| {
+        crate::secrets::set_secret(conn, &crate::secrets::llm_key(&provider_id), &trimmed)
+    })
+    .await
+    .map_err(AppError::from)?;
+    // Rebuild the live provider so a key-only change takes effect immediately —
+    // the runtime reads the key at provider-construction time, not per request,
+    // so without this the agent keeps using the old key until the provider
+    // config is re-saved or the app restarts.
     if let Some(provider) = crate::provider::load_provider_from_settings(&db) {
         state.agent.set_provider(provider);
     }
@@ -117,10 +127,25 @@ pub async fn list_provider_models(
 }
 
 pub async fn test_completion_provider(
-    _state: &ApiState,
+    state: &ApiState,
     config: CompletionProviderConfig,
     api_key: Option<String>,
 ) -> AppResult<ProviderTestResult> {
+    // An empty `api_key` means "test the STORED key". That fallback reads from
+    // the caller's own database, so one user can no longer test-drive (and
+    // spend) another user's key the way the shared keychain slot allowed.
+    let db = (*state.db).clone();
+    let stored_key = |provider_id: &str| -> Option<String> {
+        let conn = db.get().ok()?;
+        crate::secrets::get_secret_migrating(
+            &conn,
+            &crate::secrets::llm_key(provider_id),
+            crate::secrets::LEGACY_LLM_SERVICE,
+            provider_id,
+        )
+        .ok()?
+        .map(|k| k.trim().to_string())
+    };
     let provider: Arc<dyn CompletionProvider> = match &config {
         CompletionProviderConfig::Ollama { base_url, model } => {
             Arc::new(OllamaProvider::new(base_url.clone(), model.clone()))
@@ -135,12 +160,7 @@ pub async fn test_completion_provider(
                 .map(str::trim)
                 .filter(|k| !k.is_empty())
                 .map(String::from)
-                .or_else(|| {
-                    finsight_core::keychain::get_key("com.finsight.llm", preset)
-                        .ok()
-                        .flatten()
-                        .map(|k| k.trim().to_string())
-                })
+                .or_else(|| stored_key(preset))
                 .unwrap_or_default();
             Arc::new(OpenAiCompatProvider::new(
                 base_url.clone(),
@@ -155,12 +175,7 @@ pub async fn test_completion_provider(
                 .map(str::trim)
                 .filter(|k| !k.is_empty())
                 .map(String::from)
-                .or_else(|| {
-                    finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
-                        .ok()
-                        .flatten()
-                        .map(|k| k.trim().to_string())
-                })
+                .or_else(|| stored_key("anthropic"))
                 .unwrap_or_default();
             Arc::new(AnthropicProvider::new(key, model.clone()))
         }

@@ -158,6 +158,32 @@ impl UsersDb {
         rows.collect()
     }
 
+    /// Rotate every credential column in one statement: the password verifier,
+    /// the KEK salt, the password-wrapped key, AND the recovery-wrapped key.
+    ///
+    /// All four move together on purpose. Recovery redemption re-wraps the SAME
+    /// db key under a new password (fresh salt) and issues a NEW recovery key —
+    /// leaving `wrapped_key_recovery` untouched would keep the just-used (and
+    /// possibly exposed) recovery key valid forever, which is the whole reason
+    /// redemption rotates it.
+    pub fn update_credentials(
+        &self,
+        id: &str,
+        password_phc: &str,
+        kek_salt: &[u8],
+        wrapped_key_pw: &[u8],
+        wrapped_key_recovery: &[u8],
+    ) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE users
+                SET password_phc = ?2, kek_salt = ?3, wrapped_key_pw = ?4, wrapped_key_recovery = ?5
+              WHERE id = ?1",
+            params![id, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_user(&self, id: &str) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
         conn.execute("DELETE FROM users WHERE id = ?1", params![id])?;
@@ -195,6 +221,28 @@ mod tests {
         let (_d, db) = open_temp();
         db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
         assert!(db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], false).is_err());
+    }
+
+    #[test]
+    fn update_credentials_rotates_all_four_columns() {
+        let (_d, db) = open_temp();
+        let rec = db
+            .create_user("a", "old-phc", &[1; 16], &[2; 60], &[3; 60], false)
+            .unwrap();
+
+        db.update_credentials(&rec.id, "new-phc", &[9; 16], &[8; 60], &[7; 60])
+            .unwrap();
+
+        let got = db.get_by_id(&rec.id).unwrap().unwrap();
+        assert_eq!(got.password_phc, "new-phc");
+        assert_eq!(got.kek_salt, vec![9; 16]);
+        assert_eq!(got.wrapped_key_pw, vec![8; 60]);
+        // The recovery wrapper MUST move too — otherwise a redeemed recovery
+        // key would stay valid after rotation.
+        assert_eq!(got.wrapped_key_recovery, vec![7; 60]);
+        // Untouched identity columns survive.
+        assert_eq!(got.username, "a");
+        assert!(!got.is_admin);
     }
 
     #[test]

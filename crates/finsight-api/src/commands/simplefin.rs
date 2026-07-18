@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::secrets;
 use crate::ApiState;
 use chrono::{DateTime, Utc};
 use finsight_core::models::{
@@ -9,7 +10,7 @@ use finsight_core::models::{
 use finsight_core::repos::{
     accounts, alerts, connections, import_candidates, institutions, run, transfers,
 };
-use finsight_core::{keychain, settings};
+use finsight_core::settings;
 use finsight_providers::simplefin::models::SimpleFinConnection as ProviderConnection;
 use finsight_providers::simplefin::{
     classify_account, commit_simplefin_import, fetch_simplefin_data, SimpleFinClient,
@@ -18,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
-const SIMPLEFIN_ACCESS_SERVICE: &str = "com.finsight.simplefin.access";
+/// Legacy OS-keychain address for access URLs. Only read now, as the one-time
+/// migration source — new values go into the user's own encrypted DB.
+const SIMPLEFIN_ACCESS_SERVICE: &str = secrets::LEGACY_SIMPLEFIN_ACCESS_SERVICE;
 const ONBOARDING_COMPLETION_KEY: &str = "onboarding_completion_marked";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -143,9 +146,18 @@ pub async fn save_simplefin_setup_token(
         .map_err(AppError::from)?;
 
     let bridge_id = Uuid::new_v4().to_string();
-    keychain::set_key(SIMPLEFIN_ACCESS_SERVICE, &bridge_id, &access_url).map_err(AppError::from)?;
-
     let db = state.db.clone();
+    // Stored in THIS user's encrypted database rather than the OS keychain,
+    // which has no user component (so server tenants shared one slot) and does
+    // not exist at all in the Docker image.
+    run(&db, {
+        let bridge_id = bridge_id.clone();
+        let access_url = access_url.clone();
+        move |conn| secrets::set_secret(conn, &secrets::simplefin_key(&bridge_id), &access_url)
+    })
+    .await
+    .map_err(AppError::from)?;
+
     let infos = run(&db, {
         let bridge_id = bridge_id.clone();
         let provider_conns = provider_conns.clone();
@@ -321,14 +333,25 @@ pub async fn list_simplefin_accounts(
     let mut failed_connections: Vec<(String, String)> = Vec::new();
 
     for (bridge_id, conns) in by_bridge {
-        let access_url = match keychain::get_key(SIMPLEFIN_ACCESS_SERVICE, &bridge_id)
-            .map_err(AppError::from)?
+        let access_url = match run(&db, {
+            let bridge_id = bridge_id.clone();
+            move |conn| {
+                secrets::get_secret_migrating(
+                    conn,
+                    &secrets::simplefin_key(&bridge_id),
+                    SIMPLEFIN_ACCESS_SERVICE,
+                    &bridge_id,
+                )
+            }
+        })
+        .await
+        .map_err(AppError::from)?
         {
             Some(url) => url,
             None => {
                 let ids: Vec<String> = conns.iter().map(|c| c.id.clone()).collect();
                 for id in ids {
-                    failed_connections.push((id, "missing access url in keychain".to_string()));
+                    failed_connections.push((id, "missing stored access url".to_string()));
                 }
                 continue;
             }
@@ -587,14 +610,25 @@ async fn sync_local_account(
     .await
     .map_err(AppError::from)?;
 
-    let access_url = keychain::get_key(SIMPLEFIN_ACCESS_SERVICE, &connection.access_url_ref)
-        .map_err(AppError::from)?
-        .ok_or_else(|| {
-            AppError::new(
-                "simplefin.not_configured",
-                "Access URL missing for this connection",
+    let access_url = run(db, {
+        let bridge_id = connection.access_url_ref.clone();
+        move |conn| {
+            secrets::get_secret_migrating(
+                conn,
+                &secrets::simplefin_key(&bridge_id),
+                SIMPLEFIN_ACCESS_SERVICE,
+                &bridge_id,
             )
-        })?;
+        }
+    })
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| {
+        AppError::new(
+            "simplefin.not_configured",
+            "Access URL missing for this connection",
+        )
+    })?;
 
     let pending = match fetch_simplefin_data(
         &access_url,
@@ -686,7 +720,16 @@ pub async fn disconnect_simplefin(state: &ApiState) -> AppResult<()> {
     .map_err(AppError::from)?;
 
     for id in bridge_ids {
-        keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &id).map_err(AppError::from)?;
+        run(&db, {
+            let id = id.clone();
+            move |conn| secrets::delete_secret(conn, &secrets::simplefin_key(&id))
+        })
+        .await
+        .map_err(AppError::from)?;
+        // Also clear any not-yet-migrated legacy desktop entry, so a disconnect
+        // really removes the credential everywhere. Best-effort: the Docker
+        // image has no keychain to clear.
+        let _ = finsight_core::keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &id);
     }
 
     run(&db, |conn| {
@@ -720,7 +763,16 @@ pub async fn purge_simplefin_data(
     .map_err(AppError::from)?;
 
     for id in bridge_ids {
-        keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &id).map_err(AppError::from)?;
+        run(&db, {
+            let id = id.clone();
+            move |conn| secrets::delete_secret(conn, &secrets::simplefin_key(&id))
+        })
+        .await
+        .map_err(AppError::from)?;
+        // Also clear any not-yet-migrated legacy desktop entry, so a disconnect
+        // really removes the credential everywhere. Best-effort: the Docker
+        // image has no keychain to clear.
+        let _ = finsight_core::keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &id);
     }
 
     run(&db, |conn| {
@@ -822,7 +874,7 @@ pub async fn delete_simplefin_connection(
     .await
     .map_err(AppError::from)?;
 
-    // Only delete the keychain entry if no other connection references it.
+    // Only delete the stored access URL if no other connection references it.
     let remaining = run(&db, {
         let bridge_id = bridge_id.clone();
         move |conn| {
@@ -852,7 +904,13 @@ pub async fn delete_simplefin_connection(
     .map_err(AppError::from)?;
 
     if remaining <= 1 {
-        keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &bridge_id).map_err(AppError::from)?;
+        run(&db, {
+            let bridge_id = bridge_id.clone();
+            move |conn| secrets::delete_secret(conn, &secrets::simplefin_key(&bridge_id))
+        })
+        .await
+        .map_err(AppError::from)?;
+        let _ = finsight_core::keychain::delete_key(SIMPLEFIN_ACCESS_SERVICE, &bridge_id);
     }
 
     Ok(())

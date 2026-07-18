@@ -34,6 +34,7 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         .route("/api/auth/setup", post(crate::auth::setup))
         .route("/api/auth/login", post(crate::auth::login))
         .route("/api/auth/logout", post(crate::auth::logout))
+        .route("/api/auth/recover", post(crate::auth::recover))
         .route(
             "/api/auth/users",
             get(crate::auth::list_users).post(crate::auth::create_user),
@@ -79,7 +80,9 @@ pub(crate) mod tests {
             .oneshot(
                 Request::post("/api/auth/setup")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"username":"tester","password":"hunter22"}"#))
+                    // >= auth::MIN_PASSWORD_LEN: the old "hunter22" was 8 chars
+                    // and is now rejected as auth.weak_password.
+                    .body(Body::from(r#"{"username":"tester","password":"hunter22-plus"}"#))
                     .unwrap(),
             )
             .await

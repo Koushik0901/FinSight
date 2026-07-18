@@ -56,6 +56,30 @@ describe("ConnectScreen", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  // Regression guard: the field used to be a raw <input> carrying only a
+  // placeholder — no label, no id, no aria-label — and the error was a
+  // detached <p> that screen readers never associated with it.
+  it("exposes the server-URL field with a real label", () => {
+    render(<ConnectScreen onConnected={vi.fn()} />);
+
+    const field = screen.getByLabelText(/server address/i);
+    expect(field).toBeInTheDocument();
+    expect(field.id).toBeTruthy();
+    expect(field).toHaveAttribute("aria-invalid", "false");
+  });
+
+  it("wires the error to the field via aria-describedby / aria-invalid", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ConnectScreen onConnected={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
+
+    const alert = await screen.findByRole("alert");
+    const field = screen.getByLabelText(/server address/i);
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field.getAttribute("aria-describedby")).toBe(alert.id);
+  });
+
   it("empty URL: shows an error without hitting fetch", async () => {
     vi.stubGlobal("fetch", vi.fn());
     const onConnected = vi.fn();

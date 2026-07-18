@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import LoginScreen from "./LoginScreen";
 import { login } from "../../api/auth";
 
+// LoginScreen now renders RecoverScreen in place, which pulls `recoverAccount`
+// from this same module — it must exist on the mock or the import throws.
 vi.mock("../../api/auth", () => ({
   login: vi.fn(),
+  recoverAccount: vi.fn(),
 }));
 
 describe("LoginScreen", () => {
@@ -47,5 +50,16 @@ describe("LoginScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(await screen.findByText("HTTP 502 with non-JSON body")).toBeInTheDocument();
+  });
+
+  it("'Forgot your password?' opens the recovery screen, and it can be backed out of", () => {
+    render(<LoginScreen onComplete={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /forgot your password/i }));
+    expect(screen.getByRole("button", { name: /^reset password$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^recovery key$/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /back to sign in/i }));
+    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
   });
 });

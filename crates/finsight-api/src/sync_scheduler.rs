@@ -4,7 +4,6 @@
 //! the configured interval (default 6 hours) then syncs all linked accounts.
 //! Manual "sync all" calls go through the scheduler to avoid overlapping.
 
-use finsight_core::keychain;
 use finsight_core::models::{SimpleFinAlert, SimpleFinConnectionPatch};
 use finsight_core::repos::{accounts, alerts, connections, run, sync_runs};
 use finsight_core::settings;
@@ -21,7 +20,6 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
-const SIMPLEFIN_ACCESS_SERVICE: &str = "com.finsight.simplefin.access";
 const DEFAULT_INTERVAL_MINUTES: u32 = 360;
 const BRIDGE_CALL_STAGGER_SECS: u64 = 1;
 const MAX_FETCH_ATTEMPTS: usize = 5;
@@ -269,12 +267,31 @@ async fn sync_all_accounts_inner(db: &Db, sync_run_id: Option<&str>) -> Vec<Acco
 
     let mut results = Vec::new();
     for conn_row in &active {
-        let access_url = match keychain::get_key(SIMPLEFIN_ACCESS_SERVICE, &conn_row.access_url_ref)
+        // Read through the secrets module, not the OS keychain directly.
+        // SimpleFIN access URLs now live in the user's own encrypted DB (the
+        // keychain is process-global, so on a multi-user server every user
+        // shared one slot, and it is absent entirely in the Docker image).
+        // `get_secret_migrating` still falls back to the legacy keychain
+        // address once and moves the value into the DB — without this the
+        // background scheduler would keep reading an address that foreground
+        // code has already migrated away, and sync would silently stop.
+        let key = crate::secrets::simplefin_key(&conn_row.access_url_ref);
+        let legacy_user = conn_row.access_url_ref.clone();
+        let access_url = match run(db, move |conn| {
+            crate::secrets::get_secret_migrating(
+                conn,
+                &key,
+                crate::secrets::LEGACY_SIMPLEFIN_ACCESS_SERVICE,
+                &legacy_user,
+            )
+        })
+        .await
         {
             Ok(Some(url)) => url,
             Ok(None) => {
                 let _ =
-                    mark_connection_error(db, &conn_row.id, "missing access url in keychain").await;
+                    mark_connection_error(db, &conn_row.id, "missing access url for connection")
+                        .await;
                 continue;
             }
             Err(e) => {

@@ -17,6 +17,14 @@ use std::path::Path;
 pub struct StartupReport {
     pub summary: String,
     pub warnings: Vec<String>,
+    /// Set when `run_migrations` itself failed. Every other step here is
+    /// best-effort, but a failed migration means the schema does not match the
+    /// code: callers that can refuse to serve the database (the server's
+    /// per-user bootstrap, which turns this into a 500 for that one user)
+    /// should check this and bail rather than run on a broken schema. The
+    /// desktop caller stays lenient — the user needs the app open to restore
+    /// the pre-migration backup that was just taken below.
+    pub migration_error: Option<String>,
 }
 
 /// Everything FinSight refreshes when a database "wakes up": desktop app
@@ -48,8 +56,10 @@ pub fn run_startup_cascade(db: &Db, backups_dir: &Path) -> StartupReport {
             Err(e) => startup_warnings.push(format!("pre-migration backup failed: {e}")),
         }
     }
+    let mut migration_error: Option<String> = None;
     if let Err(e) = finsight_core::db::run_migrations(db) {
         startup_warnings.push(format!("migrations: {e}"));
+        migration_error = Some(e.to_string());
     }
     if let Err(e) = crate::provider::migrate_provider_settings(db) {
         startup_warnings.push(format!("provider migration: {e}"));
@@ -157,6 +167,7 @@ pub fn run_startup_cascade(db: &Db, backups_dir: &Path) -> StartupReport {
     StartupReport {
         summary: startup_summary,
         warnings: startup_warnings,
+        migration_error,
     }
 }
 
@@ -164,14 +175,51 @@ pub fn run_startup_cascade(db: &Db, backups_dir: &Path) -> StartupReport {
 mod tests {
     use super::*;
     use finsight_core::{db::run_migrations, keychain, settings};
+    use rusqlite::{params, Connection};
     use tempfile::TempDir;
 
-    fn fresh_db() -> (TempDir, Db) {
+    /// An opened-but-NOT-migrated database — the state a real cold start is in,
+    /// and the only state in which the pre-migration backup guard can fire.
+    fn unmigrated_db() -> (TempDir, Db) {
         let dir = TempDir::new().unwrap();
         let key = keychain::generate_random_key();
         let db = Db::open(&dir.path().join("startup.sqlcipher"), &key).unwrap();
+        (dir, db)
+    }
+
+    fn fresh_db() -> (TempDir, Db) {
+        let (dir, db) = unmigrated_db();
         run_migrations(&db).unwrap();
         (dir, db)
+    }
+
+    /// Minimal fixture the builtin categorization pass can actually act on: one
+    /// category the keyword map targets, one account, one uncategorized txn
+    /// whose merchant matches a builtin keyword.
+    fn seed_categorizable_txn(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('daily','Daily',0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id,group_id,label,color,sort_order) \
+             VALUES('dining','daily','Dining','#fff',0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('a1','Me','Bank','Credit','Card','USD','#000','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+             VALUES('t1','a1','2024-01-01T00:00:00Z',-1500,?1,'cleared',0,'2024-01-01T00:00:00Z')",
+            params!["STARBUCKS #1234"],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -189,13 +237,110 @@ mod tests {
             "unexpected warnings on fresh db: {:?}",
             report.warnings
         );
+        assert!(report.migration_error.is_none());
 
+        // Assert the ACTUAL values written, not merely that the keys exist —
+        // every one of these is `Some("")`-able, so `is_some()` would pass even
+        // if the cascade body were deleted.
         let conn = db.get().unwrap();
         let integrity_status: Option<String> =
             settings::get(&conn, "data.integrity_status").unwrap();
-        assert!(integrity_status.is_some(), "integrity status should be recorded");
+        assert_eq!(integrity_status.as_deref(), Some("ok"));
+        let checked_at: Option<String> =
+            settings::get(&conn, "data.integrity_checked_at").unwrap();
+        assert!(
+            checked_at.is_some_and(|t| chrono::DateTime::parse_from_rfc3339(&t).is_ok()),
+            "integrity_checked_at should be a parseable rfc3339 timestamp"
+        );
+        // Already migrated → no pending migrations → deliberately no backup.
+        let last_backup: Option<String> = settings::get(&conn, "data.last_backup_path").unwrap();
+        assert!(
+            last_backup.is_none(),
+            "no backup should be taken when nothing is pending"
+        );
+        let warnings: Option<Vec<String>> = settings::get(&conn, "data.startup_warnings").unwrap();
+        assert_eq!(warnings, Some(Vec::new()), "warnings persisted as a JSON array");
+    }
 
-        let startup_summary: Option<String> = settings::get(&conn, "data.startup_summary").unwrap();
-        assert!(startup_summary.is_some(), "startup summary setting should exist");
+    /// The summary is a real report of work done, not a constant. Deleting the
+    /// summary-building block must fail this test.
+    #[test]
+    fn summary_reports_the_work_the_cascade_actually_did() {
+        let (_dir, db) = fresh_db();
+        let backups_dir = TempDir::new().unwrap();
+        {
+            let conn = db.get().unwrap();
+            seed_categorizable_txn(&conn);
+        }
+
+        let report = run_startup_cascade(&db, backups_dir.path());
+
+        assert!(
+            report.summary.contains("categorized 1"),
+            "summary should report the one categorized txn, got {:?}",
+            report.summary
+        );
+        // …and the transaction really was categorized, not just counted.
+        let conn = db.get().unwrap();
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("dining"));
+        // The summary is mirrored into settings verbatim for the UI.
+        let persisted: Option<String> = settings::get(&conn, "data.startup_summary").unwrap();
+        assert_eq!(persisted.as_deref(), Some(report.summary.as_str()));
+
+        // A second run has nothing left to do → empty summary. (Proves the
+        // summary tracks real work rather than being emitted unconditionally.)
+        let report2 = run_startup_cascade(&db, backups_dir.path());
+        assert_eq!(report2.summary, "");
+    }
+
+    /// Regression: the pre-migration backup guard must fire BEFORE migrations
+    /// run. If a caller migrates first and only then invokes the cascade, the
+    /// `pending > 0` gate reads 0 and the snapshot is silently never taken.
+    #[test]
+    fn takes_a_pre_migration_backup_before_migrating() {
+        let (_dir, db) = unmigrated_db();
+        let backups_dir = TempDir::new().unwrap();
+
+        assert!(
+            db.pending_migration_count().unwrap() > 0,
+            "fixture must start unmigrated or this test is vacuous"
+        );
+
+        let report = run_startup_cascade(&db, backups_dir.path());
+        assert!(report.migration_error.is_none(), "migrations should succeed");
+        assert!(
+            report.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            report.warnings
+        );
+
+        // A snapshot file actually landed on disk…
+        let snapshots: Vec<_> = std::fs::read_dir(backups_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("pre-migration"))
+            .collect();
+        assert_eq!(
+            snapshots.len(),
+            1,
+            "exactly one pre-migration backup expected, found {snapshots:?}"
+        );
+        assert!(snapshots[0].metadata().unwrap().len() > 0, "backup is empty");
+
+        // …and it was recorded for the Settings → Data & backups panel.
+        let conn = db.get().unwrap();
+        let path: Option<String> = settings::get(&conn, "data.last_backup_path").unwrap();
+        assert_eq!(
+            path.as_deref(),
+            Some(snapshots[0].path().to_string_lossy().as_ref())
+        );
+        let at: Option<String> = settings::get(&conn, "data.last_backup_at").unwrap();
+        assert!(at.is_some(), "last_backup_at should be recorded");
+
+        // Migrations did run after the snapshot was safely on disk.
+        assert_eq!(db.pending_migration_count().unwrap(), 0);
     }
 }

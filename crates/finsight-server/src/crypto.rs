@@ -170,9 +170,90 @@ pub fn unwrap_key_with_recovery_display(
     v.as_slice().try_into().map_err(|_| CryptoError::Unwrap)
 }
 
+// ------------------------------------------------- off-runtime wrappers ---
+//
+// Every function below runs Argon2id at the PINNED cost (m=19456 KiB, t=2) —
+// tens of milliseconds of solid CPU per call. Called inline from an async
+// handler that work sits on a tokio WORKER thread, so a handful of concurrent
+// logins starve the whole runtime: RPC dispatch and the SSE event stream stall
+// behind them on a 1–2 core self-host box. These wrappers hand the work to
+// `spawn_blocking` so only the blocking pool feels it.
+//
+// They take owned arguments because the closure must be `'static`. The
+// `expect` on the join handle only fires if the closure panicked (Argon2id on
+// valid pinned params doesn't) or the runtime is shutting down.
+
+const BLOCKING_PANIC: &str = "argon2 blocking task panicked";
+
+pub async fn hash_password_async(password: String) -> Result<String, CryptoError> {
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .expect(BLOCKING_PANIC)
+}
+
+pub async fn verify_password_async(password: String, phc: String) -> bool {
+    tokio::task::spawn_blocking(move || verify_password(&password, &phc))
+        .await
+        .expect(BLOCKING_PANIC)
+}
+
+pub async fn wrap_key_with_password_async(
+    password: String,
+    kek_salt: Vec<u8>,
+    dbkey: [u8; DB_KEY_LEN],
+) -> Result<Vec<u8>, CryptoError> {
+    tokio::task::spawn_blocking(move || wrap_key_with_password(&password, &kek_salt, &dbkey))
+        .await
+        .expect(BLOCKING_PANIC)
+}
+
+pub async fn unwrap_key_with_password_async(
+    password: String,
+    kek_salt: Vec<u8>,
+    wrapped: Vec<u8>,
+) -> Result<[u8; DB_KEY_LEN], CryptoError> {
+    tokio::task::spawn_blocking(move || unwrap_key_with_password(&password, &kek_salt, &wrapped))
+        .await
+        .expect(BLOCKING_PANIC)
+}
+
+/// `/api/auth/recover` is unauthenticated, exactly like `login`, so its Argon2id
+/// work is the same DoS surface and must not run on a runtime worker either —
+/// including the unknown-user dummy unwrap, which otherwise both blocks the
+/// runtime AND makes the guard path measurably cheaper than the real one.
+pub async fn unwrap_key_with_recovery_display_async(
+    display: String,
+    wrapped: Vec<u8>,
+) -> Result<[u8; DB_KEY_LEN], CryptoError> {
+    tokio::task::spawn_blocking(move || unwrap_key_with_recovery_display(&display, &wrapped))
+        .await
+        .expect(BLOCKING_PANIC)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn async_wrappers_match_their_blocking_counterparts() {
+        // The spawn_blocking hop must be behaviour-preserving: same PHC
+        // semantics, same wrap/unwrap round trip.
+        let phc = hash_password_async("hunter2-and-more".to_string()).await.unwrap();
+        assert!(verify_password_async("hunter2-and-more".to_string(), phc.clone()).await);
+        assert!(!verify_password_async("wrong".to_string(), phc).await);
+
+        let dbkey = generate_db_key();
+        let salt = generate_salt();
+        let wrapped =
+            wrap_key_with_password_async("hunter2-and-more".to_string(), salt.to_vec(), dbkey)
+                .await
+                .unwrap();
+        let back =
+            unwrap_key_with_password_async("hunter2-and-more".to_string(), salt.to_vec(), wrapped)
+                .await
+                .unwrap();
+        assert_eq!(back, dbkey);
+    }
 
     #[test]
     fn password_verify_round_trip() {
