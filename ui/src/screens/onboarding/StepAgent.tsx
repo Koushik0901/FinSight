@@ -10,7 +10,7 @@ import {
   useTestCompletionProvider,
   useListProviderModels,
 } from "../../api/hooks/agent";
-import { isTauriRuntime, userErrorMessage } from "../../utils/runtime";
+import { isBackendAvailable, userErrorMessage } from "../../utils/runtime";
 import Button from "../../components/Button";
 import Card from "../../components/Card";
 import Input from "../../components/Input";
@@ -43,7 +43,12 @@ export default function StepAgent({ onDone }: Props) {
       return result.data;
     },
     staleTime: 0,
-    enabled: path === "local" && isTauriRuntime(),
+    // probe_ollama is a plain RPC executed server-side, so it works over HTTP —
+    // gating it on the (narrowed) isTauriRuntime() left the local-AI onboarding
+    // path permanently stuck on "could not find Ollama" in server/PWA/shell
+    // mode, with the "refresh" button inert because refetch() no-ops on a
+    // disabled query.
+    enabled: path === "local" && isBackendAvailable(),
   });
 
   // Cloud path state

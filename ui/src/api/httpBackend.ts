@@ -23,6 +23,12 @@ import { isTauriRuntime } from "../utils/runtime";
 
 type AnyRec = Record<string, unknown>;
 
+/// Plugin namespaces that are genuinely fire-and-forget on the web: there is
+/// nothing to do and nothing to report, so resolving null is honest. Anything
+/// NOT listed here throws (see the invoke handler) so an un-ported native call
+/// surfaces instead of silently pretending to succeed.
+const NOOP_PLUGINS = ["plugin:notification"];
+
 export function installHttpBackend(): void {
   const w = window as unknown as AnyRec;
   // never shadow a real Tauri runtime (origin-aware, Phase 4) — a Tauri
@@ -30,10 +36,10 @@ export function installHttpBackend(): void {
   // even though window.__TAURI_INTERNALS__ is still present, so the shim
   // correctly installs there instead of bailing out on stale bridge presence.
   if (isTauriRuntime()) return;
-  // Marks this as the server-mode transport; ui/src/api/auth.ts's isServerMode()
-  // gates all auth-screen/fetch behavior off this flag so the desktop/Tauri
-  // path (which never calls installHttpBackend) is completely unaffected.
-  w.__FINSIGHT_HTTP__ = true;
+  // NOTE: `__FINSIGHT_HTTP__` is set at the END of this function, only once the
+  // shim is actually installed — setting it up here left a half-applied state
+  // on the read-only-bridge failure path below (the app claimed server mode
+  // while the native bridge was still the transport).
 
   let cbSeq = 0;
   // event name → callback ids; SSE frames fan out to window[`_${id}`]
@@ -41,8 +47,17 @@ export function installHttpBackend(): void {
   let es: EventSource | null = null;
 
   function ensureEventSource() {
-    if (es) return;
+    // A CLOSED EventSource must be replaced, not reused: per spec the browser
+    // does NOT auto-reconnect when the response is non-200 (e.g. /api/events
+    // 401s after a server restart drops the in-memory session), it fires
+    // `error` and closes for good. Guarding on `es` alone left a dead object in
+    // place, so every later listen() silently no-op'd and Copilot streaming /
+    // import progress stayed broken until a full page reload.
+    if (es && es.readyState !== EventSource.CLOSED) return;
     es = new EventSource("/api/events");
+    es.onerror = () => {
+      if (es && es.readyState === EventSource.CLOSED) es = null;
+    };
     es.onmessage = (msg) => {
       const { event, payload } = JSON.parse(msg.data) as { event: string; payload: unknown };
       for (const id of listeners.get(event) ?? []) {
@@ -65,9 +80,24 @@ export function installHttpBackend(): void {
       if (cmd === "plugin:event|unlisten") {
         const { event, eventId } = (args ?? {}) as { event: string; eventId: number };
         listeners.get(event)?.delete(eventId);
+        // Drop the callback too — the real bridge's unregisterCallback does
+        // this. Without it every listen→unlisten cycle leaked the closure (and
+        // its whole React/AG-UI scope) on `window` for the page's lifetime;
+        // TauriAgUiAgent re-listens per Copilot run, so it accumulated per
+        // message sent.
+        delete w[`_${eventId}`];
         return null;
       }
-      return null; // other plugin traffic (dialog, notification) resolves harmlessly
+      // Fire-and-forget plugins we deliberately no-op in server mode.
+      if (NOOP_PLUGINS.some((p) => cmd.startsWith(p))) return null;
+      // Everything else (notably `plugin:dialog|open`, the native file picker)
+      // has NO server-mode implementation. Resolving null here made those calls
+      // look like "user cancelled", which turned CSV import into a silent dead
+      // button. Fail loudly so an un-ported native path is visible instead.
+      throw {
+        code: "rpc.unsupported_plugin",
+        message: `${cmd} has no server-mode implementation`,
+      };
     }
     const res = await fetch(`/api/rpc/${cmd}`, {
       method: "POST",
@@ -139,4 +169,9 @@ export function installHttpBackend(): void {
     return;
   }
   w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+  // Set LAST: this flag means "the HTTP shim is installed and is the
+  // transport". isServerMode()/isBackendAvailable() and isTauriRuntime() all
+  // key off it, so setting it before the assignment above could succeed left
+  // the app claiming server mode over a native bridge on the failure path.
+  w.__FINSIGHT_HTTP__ = true;
 }

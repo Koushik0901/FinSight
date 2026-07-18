@@ -50,10 +50,14 @@ fn main() {
                         // ConnectScreen again since get_server_url() is now
                         // None. Simpler and more robust than navigating the
                         // live window back to the app's own origin by hand.
-                        let _ = finsight_core::keychain::delete_key(
-                            "com.finsight.desktop",
-                            "server_url",
-                        );
+                        // Go through config::clear_server_url() rather than
+                        // re-stating the keychain (service, user) literals — it
+                        // owns those consts, and a duplicated copy here would
+                        // silently stop matching if they ever change, leaving
+                        // "Change Server…" deleting a key nobody writes (the
+                        // shell would just navigate back to the stale server
+                        // with no other UI to clear it).
+                        let _ = config::clear_server_url();
                         app.restart();
                     }
                     "quit" => std::process::exit(0),

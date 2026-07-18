@@ -17,9 +17,11 @@ pnpm tauri:dev
 # Frontend only (no Tauri, faster for UI-only work)
 cd ui && npm run dev
 
-# Server mode (Immich-style self-hosted; Phase 1): API + SSE + serves ui/dist on :8674.
-# Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override) with a
-# plaintext db.key keyfile — Phase 1 stopgap, replaced by wrapped keys in Phase 2.
+# Server mode (Immich-style self-hosted): API + SSE + serves ui/dist on :8674.
+# Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override):
+# users.db (account/session registry) + one SQLCipher DB per user, each under a
+# random key wrapped by Argon2id(password) and by a printable recovery key.
+# A legacy Phase-1 plaintext `db.key` is migrated and deleted on first setup.
 cargo run -p finsight-server
 
 # Browser dev against the server: start the server, then `cd ui && npm run dev`
@@ -95,10 +97,16 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Adding a Tauri command
 
-1. Write `pub async fn my_cmd(...) -> AppResult<T>` in `crates/finsight-app/src/commands/`
-2. Add `#[tauri::command]` and `#[specta::specta]` attributes
+1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
+   `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
+2. Add a thin wrapper in `crates/finsight-app/src/commands/` that delegates to it via
+   `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
 3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-app/src/lib.rs`
-4. `cargo run -p finsight-tauri --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
+4. **Add a `finsight-server` route**: one match arm in `crates/finsight-server/src/dispatch.rs`
+   using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
+   `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
+   client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
+5. `cargo run -p finsight-tauri --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
 
 ### Database migrations
 
@@ -118,7 +126,7 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-app/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-app` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### TypeScript type field naming
 

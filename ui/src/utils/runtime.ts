@@ -41,6 +41,14 @@ export function isTauriRuntime() {
   if (typeof window === "undefined") return false;
   if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom")) return true;
   const w = window as TauriWindow;
+  // Our OWN HTTP shim also assigns `__TAURI_INTERNALS__` (that's how the
+  // generated bindings keep working over HTTP), so bridge-presence alone would
+  // make this predicate flip false→true the moment installHttpBackend() runs —
+  // at the Vite dev origin that turned a plain `npm run dev` browser into a
+  // self-reported desktop shell and let DesktopConnectGate hijack the app.
+  // `__FINSIGHT_HTTP__` means "the shim is installed", i.e. definitively NOT a
+  // native runtime, so check it before looking at the bridge.
+  if ((w as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__) return false;
   if (!(w.__TAURI__ || w.__TAURI_INTERNALS__)) return false;
   if (import.meta.env.DEV && window.location.origin === TAURI_DEV_ORIGIN) return true;
   return TAURI_INTERNAL_ORIGINS.has(window.location.origin);

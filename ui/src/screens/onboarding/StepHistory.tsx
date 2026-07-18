@@ -5,7 +5,7 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import FilePicker from "../../components/FilePicker";
 import ImportMappingDialog from "../../components/ImportMappingDialog";
-import { isBackendAvailable } from "../../utils/runtime";
+import { isTauriRuntime } from "../../utils/runtime";
 import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props {
@@ -64,9 +64,16 @@ export default function StepHistory({ onBack, onNext }: Props) {
           </Card>
         )}
 
-        {!isBackendAvailable() && (
+        {/* Deliberately isTauriRuntime(), NOT isBackendAvailable(): CSV import
+            needs the native file dialog, which only a real desktop runtime has.
+            Gating this on backend-availability hid the note in exactly the modes
+            where the Import button below is a dead control. SimpleFIN sync is a
+            plain RPC and DOES work in server mode, so the note only mentions
+            importing. */}
+        {!isTauriRuntime() && (
           <p className="muted onb-runtime-note">
-            Browser preview mode: importing and syncing require the desktop app.
+            Importing a CSV needs the desktop app. You can still connect a bank
+            with SimpleFIN, or add accounts manually.
           </p>
         )}
         {hasError && (

@@ -35,11 +35,32 @@ fn ok<T: serde::Serialize>(v: T) -> Result<serde_json::Value, AppError> {
     serde_json::to_value(v).map_err(|e| AppError::new("rpc.serialize", e.to_string()))
 }
 
-/// No desktop-only commands remain as of Phase 4 — the 5 former file-dialog
-/// exports now return content directly (see Task 1-3 of the Phase 4 plan).
-/// Kept as an empty list (not deleted) so the 501/UNSUPPORTED code path stays
-/// wired for any future genuinely-desktop-only command.
-pub const UNSUPPORTED: &[&str] = &[];
+/// Commands that take a **server-side filesystem path** supplied by the client.
+///
+/// These were safe on the desktop, where `path` came from a native file dialog
+/// on the user's OWN machine and the "server" was the same trust domain. Over
+/// HTTP that assumption inverts: `path` is attacker-controlled and is opened on
+/// the SERVER's filesystem with no confinement, so routing them would give any
+/// authenticated user an arbitrary server-side file read — e.g.
+/// `POST /api/rpc/preview_csv_columns {"path":"<data>/db.key"}` returns the
+/// plaintext SQLCipher key (the CSV decoder falls back to Windows-1252 and so
+/// decodes arbitrary bytes), and pointing it at `users.db` returns every
+/// account's Argon2 verifier.
+///
+/// Scoped deliberately to these three: each does a bare `PathBuf::from(path)`
+/// with no confinement (`preview_csv_columns` doesn't even take `&ApiState`).
+/// `stage_restore_backup` is NOT here — it canonicalizes and requires
+/// `starts_with(<data_dir>/backups)`, so it is already confined.
+///
+/// They lose nothing real by 501'ing: server mode has no file-picker entry
+/// point for import at all. Re-enabling them needs a multipart upload endpoint
+/// that writes into a per-user directory the server chooses — not a
+/// client-supplied path.
+pub const UNSUPPORTED: &[&str] = &[
+    "preview_csv_columns",
+    "prepare_csv_import",
+    "import_csv",
+];
 
 pub async fn rpc(
     State(st): State<Arc<ServerState>>,
@@ -858,9 +879,8 @@ pub const SUPPORTED: &[&str] = &[
     "list_asset_owners",
     "set_asset_owners",
     // import
-    "preview_csv_columns",
-    "prepare_csv_import",
-    "import_csv",
+    // "preview_csv_columns" / "prepare_csv_import" / "import_csv" — see
+    // UNSUPPORTED: each takes a client-supplied server-side filesystem path.
     "get_saved_csv_mapping",
     "list_unfinished_imports",
     "discard_unfinished_import",
@@ -1083,18 +1103,39 @@ mod tests {
         assert_eq!(v["code"], "rpc.unknown_command");
     }
 
-    // `unsupported_command_is_501` (a full HTTP-round-trip test asserting a 501
-    // for a real command name) was removed in Phase 4: `UNSUPPORTED` is now
-    // empty (see its doc comment above), so no real command name can exercise
-    // that branch any more. The 501 code path in `rpc()` is still wired and
-    // compiles against `UNSUPPORTED`; when a future genuinely-desktop-only
-    // command is added to that list, re-add a test here asserting 501 for it.
+    /// Security guard: the three CSV-import commands take a client-supplied
+    /// SERVER-side filesystem path with no confinement, so routing them would
+    /// be an arbitrary file read for any authenticated user (e.g. reading the
+    /// data dir's `db.key` or `users.db`). They must stay 501, not dispatched.
     #[test]
-    fn unsupported_is_currently_empty() {
-        assert!(
-            super::UNSUPPORTED.is_empty(),
-            "if this fails because a command was added to UNSUPPORTED, also \
-             add back an HTTP-level 501 test for that command name"
-        );
+    fn path_taking_import_commands_are_not_routed() {
+        for cmd in ["preview_csv_columns", "prepare_csv_import", "import_csv"] {
+            assert!(
+                super::UNSUPPORTED.contains(&cmd),
+                "{cmd} takes a client-supplied server-side path and must stay in UNSUPPORTED"
+            );
+            assert!(
+                !super::SUPPORTED.contains(&cmd),
+                "{cmd} must not be dispatched — it would be an arbitrary server-side file read"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_command_is_501() {
+        let state = crate::router::tests::test_state();
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
+        let res = app
+            .oneshot(
+                Request::post("/api/rpc/preview_csv_columns")
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(Body::from(r#"{"path":"/etc/passwd","skipHeaderRows":0}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
     }
 }

@@ -86,6 +86,14 @@ impl SessionStore {
     pub fn remove_user(&self, user_id: &str) {
         self.0.lock().unwrap().retain(|_, e| e.user_id != user_id);
     }
+
+    /// Does this user still hold at least one live session? Used by `logout` to
+    /// decide whether the user's runtime may be torn down: the DB key must not
+    /// outlive the last session that holds it, but a sign-out on ONE device
+    /// must not evict a runtime another device is still using.
+    pub fn has_user_sessions(&self, user_id: &str) -> bool {
+        self.0.lock().unwrap().values().any(|e| e.user_id == user_id)
+    }
 }
 
 #[cfg(test)]

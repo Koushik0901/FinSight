@@ -380,7 +380,22 @@ pub(crate) async fn login(State(st): State<Arc<ServerState>>, Json(body): Json<C
 
 pub(crate) async fn logout(State(st): State<Arc<ServerState>>, jar: CookieJar) -> Response {
     if let Some(c) = jar.get(SESSION_COOKIE) {
+        // Note the user BEFORE dropping the session so we can tear their
+        // runtime down once their last session is gone. Without this the
+        // runtime survived until the 30-minute idle sweep, keeping the
+        // unwrapped SQLCipher key resident in the r2d2 pool and letting the
+        // background SimpleFin sync keep writing to a signed-out user's DB —
+        // contradicting the invariant that background work is only possible
+        // while a session holds the key. (`delete_user` already evicts; this
+        // path was the omission.) Multi-device safe: only the LAST session out
+        // evicts, and any surviving session simply re-bootstraps on demand.
+        let user_id = st.sessions.get(c.value()).map(|(uid, _, _)| uid);
         st.sessions.remove(c.value());
+        if let Some(uid) = user_id {
+            if !st.sessions.has_user_sessions(&uid) {
+                st.registry.evict(&uid);
+            }
+        }
     }
     (StatusCode::OK, [clear_cookie_header()], Json(serde_json::json!({}))).into_response()
 }
