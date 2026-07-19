@@ -9,6 +9,7 @@ import DesktopConnectGate from "./components/DesktopConnectGate";
 import VersionBanner from "./components/VersionBanner";
 import OfflineBanner from "./components/OfflineBanner";
 import { createIdbPersister } from "./pwa/persist";
+import { sweepStaleSharedFiles } from "./pwa/shareTarget";
 import { isServerMode } from "./api/auth";
 import { selectBackend } from "./api/selectBackend";
 import { instrumentQueryCache } from "./utils/perf";
@@ -90,6 +91,13 @@ async function boot() {
       const { installHttpBackend } = await import("./api/httpBackend");
       installHttpBackend();
     }
+
+    // Discard a stale CSV parked by the OS share sheet. Deliberately here and
+    // not inside AuthGate: a share received while signed out never reaches the
+    // app tree at all (AuthGate renders the login screen instead of children),
+    // so this is the only place guaranteed to run and clean it up. Fire-and-
+    // forget — nothing about rendering depends on it.
+    void sweepStaleSharedFiles();
   }
   renderApp();
 }

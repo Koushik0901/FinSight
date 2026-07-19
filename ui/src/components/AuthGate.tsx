@@ -13,6 +13,7 @@ import {
 } from "../api/auth";
 import { purgePersistedCache } from "../pwa/persist";
 import { clearAppBadge } from "../pwa/badge";
+import { purgeSharedFiles } from "../pwa/shareTarget";
 import SetupScreen from "../screens/server/SetupScreen";
 import LoginScreen from "../screens/server/LoginScreen";
 
@@ -116,6 +117,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
       // App's unmount cleanup also clears it — this is the explicit path, not a
       // duplicate of it, because logout must not depend on unmount ordering.
       void clearAppBadge();
+      // A CSV parked by the OS share sheet is raw financial data and is NOT
+      // part of the query cache, so purgePersistedCache does not reach it.
+      void purgeSharedFiles();
       setState({ kind: "needsLogin" });
     };
     window.addEventListener("finsight:auth-required", onAuthRequired);
@@ -163,6 +167,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // failure still lets the app through rather than trapping the user.
   const handleAuthenticated = () => {
     queryClient.clear();
+    // Same shared-device reasoning as the cache purge below, applied to a file
+    // parked by the share sheet: someone can share a statement, abandon the
+    // login screen, and a DIFFERENT person can then sign in. Without this, that
+    // second person's session would silently import the first person's bank
+    // statement. ShareTargetImport then reports "no longer available", which is
+    // exactly right — re-sharing while signed in works normally.
+    void purgeSharedFiles();
     purgePersistedCache()
       .catch((err) => console.error("purgePersistedCache failed", err))
       .finally(() => setState({ kind: "ready" }));

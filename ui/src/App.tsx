@@ -21,6 +21,7 @@ import { useOnboardingState } from "./api/hooks/onboarding";
 import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
+import ShareTargetImport from "./components/ShareTargetImport";
 import { useAppBadge } from "./pwa/useAppBadge";
 import * as I from "./components/Icons";
 
@@ -267,6 +268,8 @@ export function App() {
             <div className="main-inner">
               <UnfinishedImportBanner />
               <ImportProgress />
+              {/* Renders nothing unless this launch came from the OS share sheet. */}
+              <ShareTargetImport />
               <RouteErrorBoundary resetKey={location.key}>
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
