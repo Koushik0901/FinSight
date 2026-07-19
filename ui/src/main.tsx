@@ -1,8 +1,16 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { AuthGate } from "./components/AuthGate";
+import DesktopConnectGate from "./components/DesktopConnectGate";
+import VersionBanner from "./components/VersionBanner";
+import OfflineBanner from "./components/OfflineBanner";
+import { createIdbPersister } from "./pwa/persist";
+import { isServerMode } from "./api/auth";
+import { selectBackend } from "./api/selectBackend";
 import { instrumentQueryCache } from "./utils/perf";
 import "./styles/reset.css";
 import "./styles/tokens.css";
@@ -28,29 +36,59 @@ const queryClient = new QueryClient({
 // real-desktop before/after measurement. Zero overhead when off.
 instrumentQueryCache(queryClient.getQueryCache());
 
+// IndexedDB-backed persister for the query cache — server/PWA mode only (see
+// pwa/persist.ts). Constructed unconditionally (cheap, no I/O until used) so
+// renderApp() can pick the provider without re-creating it per render.
+const persister = createIdbPersister();
+
 function renderApp() {
+  const tree = (
+    <AuthGate>
+      <VersionBanner />
+      <OfflineBanner />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AuthGate>
+  );
+
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </QueryClientProvider>
+      <DesktopConnectGate>
+        {isServerMode() ? (
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
+          >
+            {tree}
+          </PersistQueryClientProvider>
+        ) : (
+          <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+        )}
+      </DesktopConnectGate>
     </React.StrictMode>
   );
 }
 
-// DEV-ONLY design harness: `?mock=rich|empty|partial|large|multi` installs a
-// fixture-backed __TAURI_INTERNALS__ so the app renders full data in a plain
-// browser (no Tauri). Tree-shaken from production (import.meta.env.DEV) and
-// never touches a real desktop runtime or the vitest suite. See dev/mockBackend.
+// Transport selection lives in selectBackend() (api/selectBackend.ts) so the
+// bridge/origin decision is unit-testable. In short:
+// - DEV `?mock=…` → fixture backend (plain-browser design harness);
+// - not a real desktop-IPC context (isTauriRuntime(), origin-aware) → the
+//   production HTTP/SSE shim — this is the transport for the browser, the PWA,
+//   AND the thin desktop shell once it has navigated to a remote server (the
+//   Tauri bridge persists at the remote origin, so we must gate on the origin-
+//   aware check, not raw bridge presence);
+// - otherwise → leave the native Tauri bridge in place (shell pre-navigation).
 async function boot() {
-  if (import.meta.env.DEV && typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
-    if (params.has("mock") && !w.__TAURI_INTERNALS__) {
+    const backend = selectBackend(params);
+    if (backend === "mock") {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
+    } else if (backend === "http") {
+      const { installHttpBackend } = await import("./api/httpBackend");
+      installHttpBackend();
     }
   }
   renderApp();

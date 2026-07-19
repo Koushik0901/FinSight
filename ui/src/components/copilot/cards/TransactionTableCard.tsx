@@ -5,6 +5,7 @@ import { commands } from "../../../api/client";
 import { money } from "../../../utils/format";
 import { colorForCategoryLabel } from "../../../utils/categoryColor";
 import Button from "../../Button";
+import { downloadBlob } from "../../../lib/downloadBlob";
 
 type Block = Extract<CopilotResponseBlock, { kind: "transactionTable" }>;
 
@@ -30,7 +31,8 @@ export function TransactionTableCard({ block }: { block: Block }) {
       });
       if (result.status === "ok") {
         if (result.data) {
-          toast.success("Exported CSV", { description: result.data });
+          downloadBlob(result.data, "text/csv", "transactions.csv");
+          toast.success("Exported CSV");
         }
       } else {
         toast.error("Export failed", { description: result.error.message });

@@ -7,7 +7,7 @@ import {
   type AccountBalancePoint,
   type AccountSparkline,
 } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
 export function useAccounts() {
@@ -18,7 +18,7 @@ export function useAccounts() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -26,7 +26,7 @@ export function useCreateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewAccount) => {
-      if (!isTauriRuntime()) {
+      if (!isBackendAvailable()) {
         throw new Error("This action needs the desktop app runtime.");
       }
       const result = await commands.createAccount(input);
@@ -46,7 +46,7 @@ export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: AccountPatch }) => {
-      if (!isTauriRuntime()) {
+      if (!isBackendAvailable()) {
         throw new Error("This action needs the desktop app runtime.");
       }
       const result = await commands.updateAccount(id, patch);
@@ -68,7 +68,7 @@ export function useAccountBalanceHistory(accountId: string | undefined, days: nu
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: !!accountId && isTauriRuntime(),
+    enabled: !!accountId && isBackendAvailable(),
   });
 }
 
@@ -80,7 +80,7 @@ export function useAccountBalanceSparklines(days: number) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -88,7 +88,7 @@ export function useArchiveAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isTauriRuntime()) {
+      if (!isBackendAvailable()) {
         throw new Error("This action needs the desktop app runtime.");
       }
       const result = await commands.archiveAccount(id);
@@ -107,7 +107,7 @@ export function useSetAccountBalance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, balanceCents }: { id: string; balanceCents: number }) => {
-      if (!isTauriRuntime()) {
+      if (!isBackendAvailable()) {
         throw new Error("This action needs the desktop app runtime.");
       }
       const result = await commands.setAccountBalance(id, balanceCents);

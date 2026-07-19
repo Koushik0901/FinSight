@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { toast } from "sonner";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAccounts } from "../api/hooks/accounts";
 import { useInfiniteTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useNeedsReviewCount, useAgentStatus } from "../api/hooks/agent";
@@ -10,6 +9,7 @@ import { commands } from "../api/client";
 import type { Transaction, TxnFilterInput } from "../api/client";
 import TransactionFilter from "../components/TransactionFilter";
 import TransactionDrawer from "../components/TransactionDrawer";
+import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "../components/ImportMappingDialog";
 import SetBalanceDialog from "../components/SetBalanceDialog";
 import HoldingsCard from "../components/HoldingsCard";
@@ -17,8 +17,9 @@ import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
 import { prettyMerchant } from "../utils/merchant";
-import { isTauriRuntime, userErrorMessage } from "../utils/runtime";
+import { userErrorMessage } from "../utils/runtime";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
+import { downloadBlob } from "../lib/downloadBlob";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -153,7 +154,10 @@ export default function AccountTransactions() {
   const handleExport = async () => {
     try {
       const result = await commands.exportTransactionsCsv(filterValue);
-      if (result.status === "ok" && result.data) toast.success("Exported", { description: result.data });
+      if (result.status === "ok" && result.data) {
+        downloadBlob(result.data, "text/csv", "transactions.csv");
+        toast.success("Exported");
+      }
     } catch (exportError) {
       toast.error("Export failed", { description: userErrorMessage(exportError, "Try again.") });
     }
@@ -248,24 +252,7 @@ export default function AccountTransactions() {
               }}>Sync now</button>
             )}
             <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
-            <button
-              className="btn outline sm"
-              type="button"
-              onClick={async () => {
-                if (!isTauriRuntime()) {
-                  toast.error("CSV import requires the desktop app.");
-                  return;
-                }
-                const selected = await openDialog({
-                  multiple: false,
-                  directory: false,
-                  filters: [{ name: "CSV", extensions: ["csv"] }],
-                });
-                if (typeof selected === "string") setCsvPath(selected);
-              }}
-            >
-              Import
-            </button>
+            <FilePicker className="btn outline sm" label="Import" onPicked={setCsvPath} />
             <button className="btn primary sm" type="button" onClick={() => setAddOpen(true)}>Add manual</button>
           </div>
         </div>

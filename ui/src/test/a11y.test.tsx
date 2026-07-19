@@ -10,6 +10,7 @@ import TransactionDrawer from "../components/TransactionDrawer";
 import CategoryPicker from "../components/CategoryPicker";
 import AgentActivityFeed from "../components/AgentActivityFeed";
 import Onboarding from "../screens/Onboarding";
+import ConnectScreen from "../screens/desktop/ConnectScreen";
 
 vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -69,6 +70,10 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async () => undefined),
+}));
+
 function wrap(node: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
@@ -112,6 +117,14 @@ describe("a11y sweep", () => {
         <CategoryPicker value={null} onChange={() => {}} />
       </QueryClientProvider>
     );
+    const results = await axe(container);
+    expect(results.violations).toEqual([]);
+  });
+
+  // The desktop shell's first-run screen. It was NOT in this sweep until
+  // 2026-07-18, which is why its unlabelled raw <input> went uncaught.
+  it("ConnectScreen has no axe violations", async () => {
+    const { container } = render(<ConnectScreen onConnected={() => {}} />);
     const results = await axe(container);
     expect(results.violations).toEqual([]);
   });

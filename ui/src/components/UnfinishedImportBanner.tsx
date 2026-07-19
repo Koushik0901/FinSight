@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Import } from "../api/client";
-import { isTauriRuntime } from "../utils/runtime";
+import { isBackendAvailable } from "../utils/runtime";
 
 export default function UnfinishedImportBanner() {
   const qc = useQueryClient();
@@ -12,7 +12,7 @@ export default function UnfinishedImportBanner() {
       return result.data;
     },
     staleTime: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 
   if (unfinished.length === 0) return null;

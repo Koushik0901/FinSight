@@ -1,0 +1,23 @@
+services:
+  finsight:
+    build: .
+    # image: finsight-server:latest   # or pull a published tag
+    restart: unless-stopped
+    ports:
+      - "8674:8674"
+    volumes:
+      - finsight-data:/data
+    environment:
+      # Set to 0 ONLY if you are NOT behind an HTTPS reverse proxy (bare http LAN).
+      FINSIGHT_COOKIE_SECURE: "1"
+    # Optional local LLM for the Copilot — uncomment + point the app's provider at http://ollama:11434
+    # depends_on: [ollama]
+
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   volumes: [ ollama:/root/.ollama ]
+
+volumes:
+  finsight-data:
+  # ollama:

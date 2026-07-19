@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { usePathBack, useSetSpendingAnnotation } from "../api/hooks/spending";
 import { useDebouncedValue } from "../utils/useDebouncedValue";
-import { isTauriRuntime } from "../utils/runtime";
+import { isBackendAvailable } from "../utils/runtime";
 import { money } from "../utils/format";
 import type { Driver, PeriodClass } from "../api/client";
 import Card from "../components/Card";
@@ -94,7 +94,7 @@ export default function PathBack() {
   const annotate = useSetSpendingAnnotation();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
 
-  if (!isTauriRuntime()) {
+  if (!isBackendAvailable()) {
     return <div className="stub">Open the desktop app to see your path back.</div>;
   }
   if (isLoading) {

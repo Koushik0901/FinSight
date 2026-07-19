@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { isTauriRuntime } from "../utils/runtime";
+import { isBackendAvailable } from "../utils/runtime";
 
 interface ProgressPayload {
   import_id: string;
@@ -12,7 +12,10 @@ export default function ImportProgress() {
   const [active, setActive] = useState<ProgressPayload | null>(null);
 
   useEffect(() => {
-    if (!isTauriRuntime()) return;
+    // The server emits import-progress/import-complete through BroadcastSink →
+    // SSE, and the shim routes those frames, so this listener works in server
+    // mode too; the old isTauriRuntime() gate silently dropped every frame.
+    if (!isBackendAvailable()) return;
     const u1 = listen<ProgressPayload>("import-progress", (e) => setActive(e.payload));
     const u2 = listen<unknown>("import-complete", () => setActive(null));
     return () => {

@@ -3,7 +3,7 @@ import { render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Force the desktop runtime gate on so hooks + prefetch actually run.
-vi.mock("../utils/runtime", () => ({ isTauriRuntime: () => true }));
+vi.mock("../utils/runtime", () => ({ isTauriRuntime: () => true, isBackendAvailable: () => true }));
 
 // Spy-able command surface. `vi.hoisted` so the spies exist when the hoisted
 // vi.mock factory runs. Each returns the ok-Result shape the hooks unwrap.

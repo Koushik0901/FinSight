@@ -7,12 +7,17 @@ vi.mock("../../../api/client", async (importOriginal) => {
   return {
     ...actual,
     commands: {
-      exportSearchTransactionsCsv: vi.fn().mockResolvedValue({ status: "ok", data: "C:/tmp/transactions.csv" }),
+      exportSearchTransactionsCsv: vi.fn().mockResolvedValue({ status: "ok", data: "date,amount\n2026-01-01,10.00\n" }),
     },
   };
 });
 
+vi.mock("../../../lib/downloadBlob", () => ({
+  downloadBlob: vi.fn(),
+}));
+
 import { commands } from "../../../api/client";
+import { downloadBlob } from "../../../lib/downloadBlob";
 
 describe("TransactionTableCard", () => {
   beforeEach(() => {
@@ -93,6 +98,9 @@ describe("TransactionTableCard", () => {
         minAmountCents: 6000,
         direction: "expense",
       });
+    });
+    await waitFor(() => {
+      expect(downloadBlob).toHaveBeenCalledWith("date,amount\n2026-01-01,10.00\n", "text/csv", "transactions.csv");
     });
   });
 });

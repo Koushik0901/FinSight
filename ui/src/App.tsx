@@ -37,6 +37,9 @@ const Reports = lazy(() => import("./screens/Reports"));
 const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
 const Settings = lazy(() => import("./screens/Settings"));
+// Server-mode-only admin surface; the route resolves for everyone but the
+// screen itself renders nothing outside server mode / for non-admins.
+const UsersAdmin = lazy(() => import("./screens/server/UsersAdmin"));
 const Copilot = lazy(() => import("./screens/Copilot"));
 const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
@@ -280,6 +283,7 @@ export function App() {
                     <Route path="/path-back" element={<PathBack />} />
                     <Route path="/rules" element={<Rules />} />
                     <Route path="/settings" element={<Settings />} />
+                    <Route path="/settings/users" element={<UsersAdmin />} />
                     <Route path="/copilot" element={<Copilot />} />
                     <Route path="/copilot/ag-ui-spike" element={<CopilotAgUiSpike />} />
                     <Route path="/recipes" element={<Recipes />} />

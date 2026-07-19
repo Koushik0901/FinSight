@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 
-vi.mock("../utils/runtime", () => ({ isTauriRuntime: () => true }));
+vi.mock("../utils/runtime", () => ({ isTauriRuntime: () => true, isBackendAvailable: () => true }));
 
 const { listAccounts, listTransactions, listCategoriesWithSpending } = vi.hoisted(() => ({
   listAccounts: vi.fn(async () => ({ status: "ok", data: [] })),

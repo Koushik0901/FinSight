@@ -1,10 +1,9 @@
 //! Background + batch SimpleFin sync scheduler.
 //!
-//! Lives on `AppState`. Spawns a background Tokio task that sleeps for
+//! Lives on `ApiState`. Spawns a background Tokio task that sleeps for
 //! the configured interval (default 6 hours) then syncs all linked accounts.
 //! Manual "sync all" calls go through the scheduler to avoid overlapping.
 
-use finsight_core::keychain;
 use finsight_core::models::{SimpleFinAlert, SimpleFinConnectionPatch};
 use finsight_core::repos::{accounts, alerts, connections, run, sync_runs};
 use finsight_core::settings;
@@ -21,7 +20,6 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
-const SIMPLEFIN_ACCESS_SERVICE: &str = "com.finsight.simplefin.access";
 const DEFAULT_INTERVAL_MINUTES: u32 = 360;
 const BRIDGE_CALL_STAGGER_SECS: u64 = 1;
 const MAX_FETCH_ATTEMPTS: usize = 5;
@@ -82,13 +80,20 @@ impl SyncScheduler {
     }
 
     /// Start the background sync loop. Must be called once. Returns the JoinHandle.
-    pub fn start(&self) -> tauri::async_runtime::JoinHandle<()> {
+    ///
+    /// Takes an explicit runtime `Handle` and spawns via `handle.spawn` rather
+    /// than the bare `tokio::spawn`. The only call site is inside Tauri's
+    /// synchronous `.setup()` closure, which has NO ambient Tokio runtime entered
+    /// (the desktop `main` is a plain `fn main`, not `#[tokio::main]`), so
+    /// `tokio::spawn` there would panic with "there is no reactor running".
+    /// `Handle::spawn` needs no ambient context.
+    pub fn start(&self, handle: &tokio::runtime::Handle) -> tokio::task::JoinHandle<()> {
         let enabled = self.enabled.clone();
         let shutdown = self.shutdown.clone();
         let interval = self.interval_minutes.clone();
         let db = self.db.clone();
         let sync_in_progress = self.sync_in_progress.clone();
-        tauri::async_runtime::spawn(async move {
+        handle.spawn(async move {
             loop {
                 if shutdown.load(Ordering::Relaxed) {
                     return;
@@ -262,12 +267,31 @@ async fn sync_all_accounts_inner(db: &Db, sync_run_id: Option<&str>) -> Vec<Acco
 
     let mut results = Vec::new();
     for conn_row in &active {
-        let access_url = match keychain::get_key(SIMPLEFIN_ACCESS_SERVICE, &conn_row.access_url_ref)
+        // Read through the secrets module, not the OS keychain directly.
+        // SimpleFIN access URLs now live in the user's own encrypted DB (the
+        // keychain is process-global, so on a multi-user server every user
+        // shared one slot, and it is absent entirely in the Docker image).
+        // `get_secret_migrating` still falls back to the legacy keychain
+        // address once and moves the value into the DB — without this the
+        // background scheduler would keep reading an address that foreground
+        // code has already migrated away, and sync would silently stop.
+        let key = crate::secrets::simplefin_key(&conn_row.access_url_ref);
+        let legacy_user = conn_row.access_url_ref.clone();
+        let access_url = match run(db, move |conn| {
+            crate::secrets::get_secret_migrating(
+                conn,
+                &key,
+                crate::secrets::LEGACY_SIMPLEFIN_ACCESS_SERVICE,
+                &legacy_user,
+            )
+        })
+        .await
         {
             Ok(Some(url)) => url,
             Ok(None) => {
                 let _ =
-                    mark_connection_error(db, &conn_row.id, "missing access url in keychain").await;
+                    mark_connection_error(db, &conn_row.id, "missing access url for connection")
+                        .await;
                 continue;
             }
             Err(e) => {
@@ -599,4 +623,44 @@ async fn mark_connection_error(
         .map(|_| ())
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::keychain;
+
+    /// Regression guard: `SyncScheduler::start` must NOT require an ambient Tokio
+    /// runtime. Its real call site is inside Tauri's synchronous `.setup()` closure,
+    /// which has no runtime entered — a bare `tokio::spawn` there panics with
+    /// "there is no reactor running". We reproduce that exact environment: build a
+    /// runtime, grab its `Handle`, then call `start(&handle)` from a plain
+    /// `std::thread` with NO runtime entered (deliberately not `#[tokio::test]`),
+    /// and assert it returns a JoinHandle without panicking.
+    #[test]
+    fn start_does_not_need_ambient_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("sched.sqlcipher"), &key).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = rt.handle().clone();
+        let scheduler = SyncScheduler::new(db);
+
+        // Run from a bare OS thread: no `#[tokio::test]`, no `Runtime::enter`, so
+        // there is no thread-local runtime context. A bare `tokio::spawn` would
+        // panic here; `handle.spawn` must not.
+        let join = std::thread::spawn(move || {
+            let task = scheduler.start(&handle);
+            // Immediately stop the loop so the spawned task can exit cleanly.
+            scheduler.stop();
+            task
+        })
+        .join()
+        .expect("start must not panic without an ambient runtime");
+
+        // The task was accepted by the runtime; drop the handle without awaiting.
+        drop(join);
+        rt.shutdown_background();
+    }
 }

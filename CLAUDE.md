@@ -5,15 +5,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Full dev environment (Tauri backend + Vite frontend with hot reload)
-# NOTE: debug builds use an ISOLATED `<identifier>.dev` app-data dir and start
-# EMPTY — they never touch the real production DB (see resolve_app_data_dir in
-# crates/finsight-app/src/lib.rs). To test against real data, copy the prod DB
-# into the `.dev` dir, or build --release.
+# Thin desktop shell (Phase 4) + Vite frontend with hot reload.
+# NOTE: as of Phase 4 the desktop app is a THIN WEBVIEW SHELL with no local
+# database and no local command surface — it shows a ConnectScreen asking for a
+# self-hosted server URL, then navigates the window there and behaves exactly
+# like the browser/PWA. So `tauri:dev` launches that shell; point it at a
+# running `cargo run -p finsight-server` instance to see real data. (The old
+# `.dev`-isolated local-DB behavior is gone — the shell owns no DB to isolate.)
 pnpm tauri:dev
 
 # Frontend only (no Tauri, faster for UI-only work)
 cd ui && npm run dev
+
+# Server mode (Immich-style self-hosted): API + SSE + serves ui/dist on :8674.
+# Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override):
+# users.db (account/session registry) + one SQLCipher DB per user, each under a
+# random key wrapped by Argon2id(password) and by a printable recovery key.
+# A legacy Phase-1 plaintext `db.key` is migrated and deleted on first setup.
+cargo run -p finsight-server
+
+# Browser dev against the server: start the server, then `cd ui && npm run dev`
+# (vite proxies /api → :8674; the HTTP/SSE shim auto-installs when no Tauri and
+# no ?mock). For the served-from-server experience: `cd ui && npm run build`
+# then open http://localhost:8674 directly.
+
+# Self-hosting (Docker + Tailscale/Caddy/LAN): see docs/self-hosting.md
 
 # All Rust tests
 cargo test --workspace
@@ -39,7 +55,18 @@ cd ui && npm run build
 
 ## Architecture
 
-### Rust workspace (5 crates)
+FinSight is mid-pivot to an Immich-style self-hosted client/server model (spec:
+`docs/superpowers/specs/2026-07-15-server-architecture-design.md`). Phase 1 is
+in place: every command body lives in the tauri-free **`finsight-api`** crate;
+the Tauri app and the new **`finsight-server`** (axum) are two thin transports
+over it. Server-mode events (Copilot streaming, import progress) flow through
+the `FrameSink` trait → SSE `/api/events`; the browser installs an HTTP shim
+(`ui/src/api/httpBackend.ts`) so the generated bindings work unchanged. The
+bindings↔dispatcher parity tests (`crates/finsight-server/tests/parity.rs`)
+enforce that every command stays routed with exactly the arg keys bindings.ts
+sends — keep the dispatcher's `arg(&p, "…")` convention or they go red.
+
+### Rust workspace (7 crates)
 
 **`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
 
@@ -47,7 +74,11 @@ cd ui && npm run build
 
 **`crates/finsight-agent`** — AI layer: Copilot context engine, planner, executor, recipe runner, categorizer pipeline, anomaly detection. Runs on a background Tokio task via `AgentHandle`.
 
-**`crates/finsight-app`** — Tauri command surface. Commands in `src/commands/` call into `finsight-core` repos via the `run()` helper. `AppState` holds a `Db` clone and an `AgentHandle`. All commands registered in `build_specta_builder()` in `src/lib.rs`.
+**`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
+
+**`crates/finsight-app`** — thin Tauri wrapper layer. Each `#[tauri::command]` in `src/commands/` delegates to the same-named `finsight_api::commands::*` fn via `&state.api`; wrappers own the doc comments (specta exports them into bindings.ts — never add `///` docs that would change bindings) and the few Tauri-only bits (file-save dialogs, native notifications, `TauriFrameSink`). All commands registered in `build_specta_builder()` in `src/lib.rs`. **As of Phase 4 this crate is codegen-only — never shipped.** Its wrappers are consumed solely by `src-tauri`'s `export_bindings` bin to regenerate `bindings.ts`; the actual desktop binary is `src-tauri/src/main.rs`, a thin webview shell with no local command surface (it never calls `configure_app()`).
+
+**`crates/finsight-server`** — axum self-host server (lib+bin, tauri-free): `POST /api/rpc/{cmd}` dispatcher (one match arm per command, strict `arg(&p, "camelCaseKey")` convention), `GET /api/events` SSE fan-out of `FrameSink` emissions + agent events, `/api/health`, static `ui/dist` serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against bindings.ts.
 
 **`src-tauri`** (crate alias `finsight-tauri`) — binary entry point + `export_bindings` binary that writes `ui/src/api/bindings.ts`.
 
@@ -66,10 +97,16 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 ### Adding a Tauri command
 
-1. Write `pub async fn my_cmd(...) -> AppResult<T>` in `crates/finsight-app/src/commands/`
-2. Add `#[tauri::command]` and `#[specta::specta]` attributes
+1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
+   `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
+2. Add a thin wrapper in `crates/finsight-app/src/commands/` that delegates to it via
+   `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
 3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-app/src/lib.rs`
-4. `cargo run -p finsight-tauri --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
+4. **Add a `finsight-server` route**: one match arm in `crates/finsight-server/src/dispatch.rs`
+   using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
+   `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
+   client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
+5. `cargo run -p finsight-tauri --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
 
 ### Database migrations
 
@@ -89,7 +126,7 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-app/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-app` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### TypeScript type field naming
 

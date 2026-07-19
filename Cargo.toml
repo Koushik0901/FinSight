@@ -4,8 +4,10 @@ members = [
   "crates/finsight-core",
   "crates/finsight-providers",
   "crates/finsight-agent",
+  "crates/finsight-api",
   "crates/finsight-app",
   "crates/finsight-eval",
+  "crates/finsight-server",
   "src-tauri",
 ]
 default-members = ["src-tauri"]

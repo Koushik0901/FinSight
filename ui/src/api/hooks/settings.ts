@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../client";
 import { useTweaks } from "../../state/tweaks";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
+import { downloadBlob } from "../../lib/downloadBlob";
 
 export function useDefaultCurrency() {
   return useQuery<string>({
@@ -12,7 +13,7 @@ export function useDefaultCurrency() {
       return result.data;
     },
     staleTime: Infinity,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -21,7 +22,7 @@ export function useSetCurrency() {
   const setCurrencyTweak = useTweaks((s) => s.setCurrency);
   return useMutation({
     mutationFn: async (currency: string) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setCurrency(currency);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -41,7 +42,7 @@ export function useNotificationsEnabled() {
       return result.data;
     },
     staleTime: Infinity,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -49,7 +50,7 @@ export function useSetNotificationsEnabled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setNotificationsEnabled(enabled);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -66,7 +67,7 @@ export function useAutoCategorizeEnabled() {
       return result.data;
     },
     staleTime: Infinity,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -74,7 +75,7 @@ export function useSetAutoCategorizeEnabled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setAutoCategorizeEnabled(enabled);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -85,9 +86,9 @@ export function useSetAutoCategorizeEnabled() {
 export function useExportJson() {
   return useMutation({
     mutationFn: async () => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataJson();
       if (result.status === "error") throw new Error(result.error.message);
+      downloadBlob(result.data, "application/json", "finsight-export.json");
     },
   });
 }
@@ -95,9 +96,9 @@ export function useExportJson() {
 export function useExportCsv() {
   return useMutation({
     mutationFn: async () => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.exportAllDataCsv();
       if (result.status === "error") throw new Error(result.error.message);
+      downloadBlob(result.data, "text/csv", "finsight-transactions.csv");
     },
   });
 }
@@ -106,7 +107,7 @@ export function useDeleteAllData() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.deleteAllData();
       if (result.status === "error") throw new Error(result.error.message);
     },

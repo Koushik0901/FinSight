@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { commands } from "./client";
-import { isTauriRuntime } from "../utils/runtime";
+import { isBackendAvailable } from "../utils/runtime";
 import { TXN_PAGE_SIZE } from "./hooks/transactions";
 import type { TxnFilterInput } from "./client";
 
@@ -91,9 +91,9 @@ const ROUTE_PREFETCH: Record<string, readonly Descriptor[]> = {
   "/inbox": [D.needsReview],
 };
 
-/** Prefetch a route's summary queries. No-op off the desktop runtime or for an unmapped path. */
+/** Prefetch a route's summary queries. No-op when no backend is available or for an unmapped path. */
 export function prefetchRoute(qc: QueryClient, path: string): void {
-  if (!isTauriRuntime()) return;
+  if (!isBackendAvailable()) return;
   const descriptors = ROUTE_PREFETCH[path];
   if (!descriptors) return;
   for (const d of descriptors) {
@@ -122,7 +122,7 @@ function defaultAccountFilter(accountId: string): Omit<TxnFilterInput, "limit" |
  * `useInfiniteTransactions` uses, plus the account list the screen also needs.
  */
 export function prefetchAccountTransactions(qc: QueryClient, accountId: string): void {
-  if (!isTauriRuntime()) return;
+  if (!isBackendAvailable()) return;
   const filter = defaultAccountFilter(accountId);
   void qc.prefetchInfiniteQuery({
     queryKey: ["transactions-infinite", filter],

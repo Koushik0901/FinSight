@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
 // ── Budget ────────────────────────────────────────────────────────────────
@@ -13,7 +13,7 @@ export function useBudgetEnvelopes() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -21,7 +21,7 @@ export function useSetBudget() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ categoryId, amountCents }: { categoryId: string; amountCents: number }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.setBudget(categoryId, amountCents);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -40,7 +40,7 @@ export function useBudgetHistory(months: number) {
       return result.data;
     },
     staleTime: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -54,7 +54,7 @@ export function useGoals() {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -62,7 +62,7 @@ export function useCreateGoal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewGoalInput) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.createGoal(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -77,7 +77,7 @@ export function useUpdateGoalBalance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, currentCents }: { id: string; currentCents: number }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateGoalBalance(id, currentCents);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -91,7 +91,7 @@ export function useContributeToGoal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, amountCents, note, source }: { id: string; amountCents: number; note?: string | null; source?: string | null }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.contributeToGoal(id, amountCents, note ?? null, source ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -112,7 +112,7 @@ export function useGoalContributions(goalId: string | undefined) {
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime() && !!goalId,
+    enabled: isBackendAvailable() && !!goalId,
   });
 }
 
@@ -120,7 +120,7 @@ export function useArchiveGoal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.archiveGoal(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -134,7 +134,7 @@ export function useUpdateGoalMonthly() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, monthlyCents }: { id: string; monthlyCents: number }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateGoalMonthly(id, monthlyCents);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -153,7 +153,7 @@ export function useProjectGoalGrowth(goalId: string | undefined, years: number) 
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    enabled: isTauriRuntime() && !!goalId,
+    enabled: isBackendAvailable() && !!goalId,
   });
 }
 
@@ -161,7 +161,7 @@ export function useUpdateGoalPurpose() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, purpose }: { id: string; purpose: string | null }) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.updateGoalPurpose(id, purpose);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -182,7 +182,7 @@ export function usePlanNextMonthData() {
       return result.data;
     },
     staleTime: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 
@@ -190,7 +190,7 @@ export function useApplyNextMonthPlan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (assignments: PlanAssignment[]) => {
-      if (!isTauriRuntime()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
       const result = await commands.applyNextMonthPlan(assignments);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;

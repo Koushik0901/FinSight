@@ -1,170 +1,49 @@
 //! FinSight Tauri app — command surface + lifecycle.
+//!
+//! **Codegen-only as of Phase 4.** This crate's ~199 `#[tauri::command]`
+//! wrappers are consumed SOLELY by `src-tauri`'s `export_bindings` binary
+//! (via `build_specta_builder()`) to generate `ui/src/api/bindings.ts`.
+//! Nothing in this crate is linked into the SHIPPED desktop binary anymore —
+//! that's `src-tauri/src/main.rs`, a thin webview shell with no local
+//! command surface and no local database (see
+//! docs/superpowers/plans/2026-07-17-server-phase4-thin-desktop-shell.md).
+//! If you're reading this wondering why 27 files of Tauri commands exist
+//! with nothing calling `configure_app()` in the shipped app: this is why.
 
 pub mod commands;
 pub mod error;
 pub mod notifications;
-pub mod sync_scheduler;
 
-use finsight_agent::{
-    agent::{AgentEvent, AgentHandle, EventCallback},
-    providers::{
-        anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
-    },
-    CompletionProvider,
+/// Re-exported from finsight-api: the background + batch SimpleFin sync
+/// scheduler now lives on `ApiState`, not `AppState`. Kept as `crate::sync_scheduler`
+/// so existing call sites (e.g. `commands::simplefin`) don't churn.
+pub use finsight_api::sync_scheduler;
+
+/// Provider-construction helpers, moved to finsight-api (tauri-free already).
+/// Re-exported here because integration tests and command modules import them
+/// from `finsight_app`/`crate::` today.
+pub use finsight_api::provider::{
+    build_copilot_router_from_settings, build_provider_from_config, load_completion_provider_config,
+    load_provider_from_settings, migrate_provider_settings,
 };
-use finsight_core::{db::run_migrations, settings, Db};
-use std::sync::{Arc, RwLock};
-use sync_scheduler::SyncScheduler;
+
+use finsight_agent::agent::{AgentEvent, EventCallback};
+use finsight_core::Db;
+use std::sync::Arc;
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
-    pub db: Arc<Db>,
-    pub agent: AgentHandle,
-    pub agent_provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>>,
-    pub sync_scheduler: SyncScheduler,
+    /// Shared behind an `Arc` so the future finsight-server can hand the same
+    /// `ApiState` to many concurrent request handlers; the single-window Tauri
+    /// app doesn't strictly need the sharing, but keeps one construction path.
+    pub api: Arc<finsight_api::ApiState>,
 }
 
 impl AppState {
-    pub fn new(db: Db, on_event: EventCallback) -> Self {
-        let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
-            Arc::new(RwLock::new(None));
-        let agent = AgentHandle::spawn(db.clone(), Arc::clone(&provider), on_event);
-        let sync_scheduler = SyncScheduler::new(db.clone());
-        Self {
-            db: Arc::new(db),
-            agent,
-            agent_provider: provider,
-            sync_scheduler,
-        }
+    pub fn new(db: Db, data_dir: std::path::PathBuf, on_event: EventCallback) -> Self {
+        let api = finsight_api::ApiState::new(db, data_dir, on_event);
+        Self { api: Arc::new(api) }
     }
-}
-
-/// Migrate legacy `llm_provider` key → `completion_provider`.
-/// Called from `configure_app` setup before managing AppState.
-/// Exported for integration tests.
-pub fn migrate_provider_settings(db: &Db) -> Result<(), finsight_core::CoreError> {
-    let conn = db.get()?;
-    // Only migrate if completion_provider is absent
-    let new_cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
-    if new_cfg.is_some() {
-        return Ok(());
-    }
-    let old_cfg: Option<serde_json::Value> = settings::get(&conn, "llm_provider")?;
-    let Some(old) = old_cfg else { return Ok(()) };
-    let migrated = match old.get("kind").and_then(|k| k.as_str()) {
-        Some("ollama") => serde_json::json!({
-            "kind": "ollama",
-            "base_url": old["base_url"],
-            "model": old["completion_model"]
-        }),
-        _ => serde_json::json!({ "kind": "unconfigured" }),
-    };
-    settings::set(&conn, "completion_provider", &migrated)?;
-    Ok(())
-}
-
-/// Load the saved CompletionProviderConfig from settings and instantiate the provider.
-/// Returns None if unconfigured or key absent.
-pub fn load_provider_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider>> {
-    let conn = db.get().ok()?;
-    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").ok()??;
-    build_provider_from_config(&cfg)
-}
-
-/// Load the raw CompletionProviderConfig from settings.
-/// Returns Unconfigured when the setting is missing.
-pub fn load_completion_provider_config(
-    db: &Db,
-) -> Result<commands::agent::CompletionProviderConfig, finsight_core::CoreError> {
-    let conn = db.get()?;
-    let cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider")?;
-    match cfg {
-        Some(v) => serde_json::from_value(v).map_err(|e| {
-            finsight_core::CoreError::InvalidState(format!("completion_provider parse: {e}"))
-        }),
-        None => Ok(commands::agent::CompletionProviderConfig::Unconfigured),
-    }
-}
-
-pub(crate) fn build_provider_from_config(
-    cfg: &serde_json::Value,
-) -> Option<Arc<dyn CompletionProvider>> {
-    match cfg.get("kind")?.as_str()? {
-        "ollama" => {
-            let base_url = cfg["base_url"].as_str()?.to_string();
-            let model = cfg["model"].as_str()?.to_string();
-            Some(Arc::new(OllamaProvider::new(base_url, model)))
-        }
-        "openai_compat" => {
-            let base_url = cfg["base_url"].as_str()?.to_string();
-            let model = cfg["model"].as_str()?.to_string();
-            let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
-            // Trim defensively: a key stored with stray whitespace (e.g. a
-            // paste with a trailing newline) must not corrupt the auth header.
-            let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
-                .ok()??
-                .trim()
-                .to_string();
-            if api_key.is_empty() {
-                return None;
-            }
-            // Structured output on final-answer turns: probe-validated on
-            // OpenRouter (tools + json_schema coexist there). Only the main
-            // synthesizer gets it, not the fast router (tool-selection only).
-            // The provider falls back to unconstrained on empty/error, so a
-            // non-supporting endpoint is safe.
-            let structured = base_url.contains("openrouter");
-            Some(Arc::new(
-                OpenAiCompatProvider::new(base_url, api_key, model, preset)
-                    .with_structured_final_answer(structured),
-            ))
-        }
-        "anthropic" => {
-            let model = cfg["model"].as_str()?.to_string();
-            let api_key = finsight_core::keychain::get_key("com.finsight.llm", "anthropic")
-                .ok()??
-                .trim()
-                .to_string();
-            if api_key.is_empty() {
-                return None;
-            }
-            Some(Arc::new(AnthropicProvider::new(api_key, model)))
-        }
-        _ => None,
-    }
-}
-
-/// Optional fast "router" model for the Copilot tool loop. When the user sets a
-/// `copilot.router_model` in settings AND the main provider is OpenAI-compatible
-/// (OpenRouter etc.), build a cheap, small-budget router that drives the many
-/// tool-selection turns while the configured (strong) model writes the final
-/// answer. Returns None when unset or not applicable → single-model loop.
-pub(crate) fn build_copilot_router_from_settings(db: &Db) -> Option<Arc<dyn CompletionProvider>> {
-    let conn = db.get().ok()?;
-    let router_model: String = settings::get(&conn, "copilot.router_model").ok()??;
-    let router_model = router_model.trim().to_string();
-    if router_model.is_empty() {
-        return None;
-    }
-    let cfg: serde_json::Value = settings::get(&conn, "completion_provider").ok()??;
-    // Only OpenAI-compatible endpoints can serve a cheap sibling model on the
-    // same base URL + key.
-    if cfg.get("kind")?.as_str()? != "openai_compat" {
-        return None;
-    }
-    let base_url = cfg["base_url"].as_str()?.to_string();
-    let preset = cfg["preset"].as_str().unwrap_or("custom").to_string();
-    let api_key = finsight_core::keychain::get_key("com.finsight.llm", &preset)
-        .ok()??
-        .trim()
-        .to_string();
-    if api_key.is_empty() {
-        return None;
-    }
-    // Small completion budget: a routing turn only emits a short tool call.
-    Some(Arc::new(
-        OpenAiCompatProvider::new(base_url, api_key, router_model, preset).with_max_tokens(1024),
-    ))
 }
 
 /// Build the tauri-specta builder with all commands registered.
@@ -411,140 +290,12 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 format!("db open error: {e}").into()
             })?;
 
-            // ── Durability guards (P0-4) ──────────────────────────────────────
-            // 1. Verify the database is not corrupt. Record the result so the
-            //    Settings → Data & backups panel can show it; a failure does NOT
-            //    block startup (the user needs the app open to restore a backup).
+            // Refresh derived state (integrity check, pre-migration backup,
+            // migrations, provider-settings migration, categorization/transfer
+            // pairing/balances/net-worth/anomaly recompute). Shared with the
+            // server's per-user login catch-up — see finsight_api::startup.
             let backups_dir = app_data_dir.join("backups");
-            let integrity = db.integrity_check().unwrap_or_else(|e| format!("check failed: {e}"));
-            if integrity.trim() != "ok" {
-                eprintln!("⚠ database integrity check: {integrity}");
-            }
-            // 2. Take a consistent encrypted backup BEFORE applying any pending
-            //    migration, so a failed/again-corrupting migration is always
-            //    recoverable. Only when migrations are actually pending (keeps
-            //    the backup set meaningful and avoids a copy on every launch).
-            let pending = db.pending_migration_count().unwrap_or(0);
-            let mut startup_warnings: Vec<String> = Vec::new();
-            let mut last_backup: Option<String> = None;
-            if pending > 0 {
-                match db.backup(&backups_dir, "pre-migration", 10) {
-                    Ok(p) => last_backup = Some(p.to_string_lossy().to_string()),
-                    Err(e) => startup_warnings.push(format!("pre-migration backup failed: {e}")),
-                }
-            }
-            run_migrations(&db).map_err(|e| -> Box<dyn std::error::Error> {
-                format!("migrations: {e}").into()
-            })?;
-            migrate_provider_settings(&db).map_err(|e| -> Box<dyn std::error::Error> {
-                format!("provider migration: {e}").into()
-            })?;
-            if let Ok(conn) = db.get() {
-                let _ = finsight_core::settings::set(&conn, "data.integrity_status", &integrity);
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.integrity_checked_at",
-                    &chrono::Utc::now().to_rfc3339(),
-                );
-                if let Some(p) = &last_backup {
-                    let _ = finsight_core::settings::set(&conn, "data.last_backup_path", p);
-                    let _ = finsight_core::settings::set(
-                        &conn,
-                        "data.last_backup_at",
-                        &chrono::Utc::now().to_rfc3339(),
-                    );
-                }
-            }
-            // Best-effort: derive balances for existing imported accounts (so the
-            // "$0 after import" state resolves without a re-import), record today's
-            // net-worth snapshot, and recompute statistical anomaly flags so
-            // existing imported data populates without waiting for a re-import.
-            // Each cascade step is best-effort, but a FAILURE is recorded (not
-            // silently swallowed) so the user can see that derived data may be
-            // stale, instead of the old `let _ =` that hid real problems.
-            if let Ok(mut conn) = db.get() {
-                macro_rules! step {
-                    ($label:expr, $e:expr) => {
-                        if let Err(err) = $e {
-                            startup_warnings.push(format!("{}: {err}", $label));
-                        }
-                    };
-                }
-                // Re-run the deterministic builtin pass so transfer flags reflect
-                // the current keyword list (idempotent; fixes stale is_transfer),
-                // then pair cross-account transfer legs so existing imports gain
-                // pairing without a re-import. Positive outcomes are summarized
-                // (P3: startup mutation transparency) — the user can see WHAT
-                // launch changed, not just whether something failed.
-                let mut startup_summary_parts: Vec<String> = Vec::new();
-                match finsight_core::categorize::apply_builtin_categorization(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!("categorized {n}"));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup categorization: {err}")),
-                }
-                match finsight_core::categorize::pair_transfers(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!(
-                            "matched {n} transfer pair{}",
-                            if n == 1 { "" } else { "s" }
-                        ));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup transfer pairing: {err}")),
-                }
-                if let Ok(ids) = conn
-                    .prepare("SELECT id FROM accounts WHERE archived_at IS NULL")
-                    .and_then(|mut s| {
-                        s.query_map([], |r| r.get::<_, String>(0))
-                            .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
-                    })
-                {
-                    for id in ids {
-                        step!(
-                            "startup balance recompute",
-                            finsight_core::repos::accounts::recompute_balance_if_linked(&mut conn, &id)
-                        );
-                    }
-                }
-                step!(
-                    "startup net-worth snapshot",
-                    finsight_core::repos::net_worth::record_today(&mut conn)
-                );
-                step!(
-                    "startup net-worth backfill",
-                    finsight_core::repos::net_worth::backfill_history_from_transactions(&mut conn)
-                );
-                match finsight_core::anomaly::recompute_anomalies(&mut conn) {
-                    Ok(n) if n > 0 => {
-                        startup_summary_parts.push(format!(
-                            "flagged {n} unusual charge{}",
-                            if n == 1 { "" } else { "s" }
-                        ));
-                    }
-                    Ok(_) => {}
-                    Err(err) => startup_warnings.push(format!("startup anomaly recompute: {err}")),
-                }
-                let startup_summary = if startup_summary_parts.is_empty() {
-                    String::new()
-                } else {
-                    format!("Refreshed on launch: {}", startup_summary_parts.join(" · "))
-                };
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.startup_summary",
-                    &startup_summary,
-                );
-                let _ = finsight_core::settings::set(
-                    &conn,
-                    "data.startup_warnings",
-                    &startup_warnings,
-                );
-            }
-            // Truncate the WAL now that the startup write burst is done, so it
-            // doesn't linger at the size of the whole database between sessions.
-            let _ = db.checkpoint();
+            let _startup_report = finsight_api::startup::run_startup_cascade(&db, &backups_dir);
 
             let window = app.get_webview_window("main").expect("main window");
             let on_event: EventCallback = Arc::new(move |event| {
@@ -559,16 +310,20 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
                 let _ = window.emit(event_name, payload);
             });
 
-            let state = AppState::new(db.clone(), on_event);
+            let state = AppState::new(db.clone(), app_data_dir.clone(), on_event);
             // Load saved provider configuration and wire it into the agent
             if let Some(provider) = load_provider_from_settings(&db) {
-                state.agent.set_provider(provider);
+                state.api.agent.set_provider(provider);
             }
             app.manage(state);
 
-            let _scheduler = app.state::<AppState>().sync_scheduler.start();
+            // Pass Tauri's Tokio runtime handle explicitly: `.setup()` runs with no
+            // ambient runtime entered, so `SyncScheduler::start` must spawn via a
+            // `Handle` rather than the bare `tokio::spawn` (which would panic here).
+            let rt = tauri::async_runtime::handle();
+            let _scheduler = app.state::<AppState>().api.sync_scheduler.start(rt.inner());
 
-            let check_agent = app.state::<AppState>().agent.tx.clone();
+            let check_agent = app.state::<AppState>().api.agent.tx.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = check_agent
                     .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
@@ -579,7 +334,7 @@ pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
             // the app was imported into and then closed before the LLM pass
             // finished, which otherwise leaves those rows uncategorized forever.
             // Best-effort: gated on the setting and on there being real work.
-            let cat_agent = app.state::<AppState>().agent.tx.clone();
+            let cat_agent = app.state::<AppState>().api.agent.tx.clone();
             let cat_db = db.clone();
             tauri::async_runtime::spawn(async move {
                 let should = finsight_core::repos::run(&cat_db, |conn| {

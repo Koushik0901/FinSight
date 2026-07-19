@@ -1190,7 +1190,7 @@ async deleteAllData() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async exportAllDataJson() : Promise<Result<null, AppError>> {
+async exportAllDataJson() : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_all_data_json") };
 } catch (e) {
@@ -1198,7 +1198,7 @@ async exportAllDataJson() : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async exportAllDataCsv() : Promise<Result<null, AppError>> {
+async exportAllDataCsv() : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_all_data_csv") };
 } catch (e) {
@@ -1310,6 +1310,11 @@ async deletePlannedTransaction(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Returns CSV content for transactions matching a filter; the caller
+ * downloads it client-side (Blob + `<a download>`). No native file dialog
+ * since Phase 4 — the desktop shell has no local command surface to host one.
+ */
 async exportTransactionsCsv(filter: TxnFilterInput) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_transactions_csv", { filter }) };
@@ -1319,9 +1324,10 @@ async exportTransactionsCsv(filter: TxnFilterInput) : Promise<Result<string, App
 }
 },
 /**
- * Re-run the Copilot `search_transactions` query and export the matching
- * rows as CSV via a native save dialog. Shares `transactions::search` with the
- * Copilot tool so the exported rows match exactly what the card displayed.
+ * Re-run the Copilot `search_transactions` query and return the matching
+ * rows as CSV content; the caller downloads it client-side. Shares
+ * `transactions::search` with the Copilot tool so the exported rows match
+ * exactly what the card displayed. No native file dialog since Phase 4.
  */
 async exportSearchTransactionsCsv(query: SearchTxnQueryInput) : Promise<Result<string, AppError>> {
     try {
@@ -1331,6 +1337,11 @@ async exportSearchTransactionsCsv(query: SearchTxnQueryInput) : Promise<Result<s
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Returns CSV content for one account's transactions; the caller downloads
+ * it client-side (Blob + `<a download>`). No native file dialog since Phase 4
+ * — the desktop shell has no local command surface to host one.
+ */
 async exportAccountCsv(accountId: string) : Promise<Result<string, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("export_account_csv", { accountId }) };
@@ -2192,6 +2203,12 @@ export type SavedScenario = { id: string; description: string; result: ScenarioR
 export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
+/**
+ * Input for [`export_search_transactions_csv`] — mirrors the Copilot
+ * `search_transactions` tool's query shape so the exported rows match
+ * exactly what the card displayed. Moved here from finsight-app in Phase 4
+ * (was finsight-app-only before the export commands became transport-agnostic).
+ */
 export type SearchTxnQueryInput = { merchant: string | null; account: string | null; startDate: string | null; endDate: string | null; minAmountCents: number | null; direction: string | null }
 export type SimpleFinAccountImportRequest = { simplefinId: string; connectionId: string; nickname: string | null }
 export type SimpleFinAccountInfo = { id: string; name: string; connectionName: string; connectionId: string; currency: string; balance: string; accountType: AccountType; accountGroup: string }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type PathBackView } from "../client";
-import { isTauriRuntime } from "../../utils/runtime";
+import { isBackendAvailable } from "../../utils/runtime";
 
 /**
  * The "path back" verdict for a period: how it compares to the user's normal,
@@ -17,7 +17,7 @@ export function usePathBack(period: string | null, targetMonthlyCents: number | 
       return result.data;
     },
     staleTime: 60_000,
-    enabled: isTauriRuntime(),
+    enabled: isBackendAvailable(),
   });
 }
 

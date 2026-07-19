@@ -5,7 +5,6 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import FilePicker from "../../components/FilePicker";
 import ImportMappingDialog from "../../components/ImportMappingDialog";
-import { isTauriRuntime } from "../../utils/runtime";
 import SimpleFinDialog from "./SimpleFinDialog";
 
 interface Props {
@@ -64,11 +63,6 @@ export default function StepHistory({ onBack, onNext }: Props) {
           </Card>
         )}
 
-        {!isTauriRuntime() && (
-          <p className="muted onb-runtime-note">
-            Browser preview mode: importing and syncing require the desktop app.
-          </p>
-        )}
         {hasError && (
           <p role="alert" className="err">
             We could not read all local activity. You can continue and import later from Accounts.

@@ -1,17 +1,13 @@
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
-use finsight_core::repos::{household, run};
 
 #[tauri::command]
 #[specta::specta]
 pub async fn list_household_members(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<HouseholdMember>> {
-    let db = (*state.db).clone();
-    run(&db, household::list_members)
-        .await
-        .map_err(AppError::from)
+    finsight_api::commands::household::list_household_members(&state.api).await
 }
 
 #[tauri::command]
@@ -21,12 +17,7 @@ pub async fn create_household_member(
     name: String,
     color: Option<String>,
 ) -> AppResult<HouseholdMember> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        household::create_member(conn, &name, color.as_deref())
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::household::create_household_member(&state.api, name, color).await
 }
 
 /// Mark one member as the operator ("self") of this install, then re-run the
@@ -37,16 +28,7 @@ pub async fn create_household_member(
 #[tauri::command]
 #[specta::specta]
 pub async fn set_self_member(state: tauri::State<'_, AppState>, member_id: String) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        household::set_self_member(conn, &member_id)?;
-        finsight_core::categorize::apply_builtin_categorization(conn)?;
-        finsight_core::categorize::pair_transfers(conn)?;
-        finsight_core::anomaly::recompute_anomalies(conn)?;
-        Ok::<_, finsight_core::CoreError>(())
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::household::set_self_member(&state.api, member_id).await
 }
 
 #[tauri::command]
@@ -55,10 +37,7 @@ pub async fn delete_household_member(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| household::delete_member(conn, &id))
-        .await
-        .map_err(AppError::from)
+    finsight_api::commands::household::delete_household_member(&state.api, id).await
 }
 
 #[tauri::command]
@@ -66,10 +45,7 @@ pub async fn delete_household_member(
 pub async fn list_account_owners(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<AccountOwner>> {
-    let db = (*state.db).clone();
-    run(&db, household::list_account_owners)
-        .await
-        .map_err(AppError::from)
+    finsight_api::commands::household::list_account_owners(&state.api).await
 }
 
 #[tauri::command]
@@ -79,12 +55,7 @@ pub async fn set_account_owners(
     account_id: String,
     member_ids: Vec<String>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        household::set_account_owners(conn, &account_id, &member_ids)
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::household::set_account_owners(&state.api, account_id, member_ids).await
 }
 
 /// Replace an account's owners with explicit per-owner shares (basis points;
@@ -97,21 +68,14 @@ pub async fn set_account_owner_shares(
     account_id: String,
     owners: Vec<OwnerShare>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| {
-        household::set_account_owner_shares(conn, &account_id, &owners)
-    })
-    .await
-    .map_err(AppError::from)
+    finsight_api::commands::household::set_account_owner_shares(&state.api, account_id, owners)
+        .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn list_asset_owners(state: tauri::State<'_, AppState>) -> AppResult<Vec<AssetOwner>> {
-    let db = (*state.db).clone();
-    run(&db, household::list_asset_owners)
-        .await
-        .map_err(AppError::from)
+    finsight_api::commands::household::list_asset_owners(&state.api).await
 }
 
 /// Replace a manual asset's owners with explicit per-owner shares (basis points;
@@ -124,8 +88,5 @@ pub async fn set_asset_owners(
     asset_id: String,
     owners: Vec<OwnerShare>,
 ) -> AppResult<()> {
-    let db = (*state.db).clone();
-    run(&db, move |conn| household::set_asset_owners(conn, &asset_id, &owners))
-        .await
-        .map_err(AppError::from)
+    finsight_api::commands::household::set_asset_owners(&state.api, asset_id, owners).await
 }
