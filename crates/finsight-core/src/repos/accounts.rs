@@ -494,6 +494,52 @@ struct OpeningAnchor {
     fold_all_activity: bool,
 }
 
+/// The point a reconstructed curve is pinned to.
+///
+/// Prefers the LATEST user-confirmed or bank-reported balance, because that is
+/// the most trustworthy thing known about the account and pinning to it keeps
+/// the curve consistent with the balance every other screen displays. Only when
+/// no confirmed balance exists does it fall back to the opening anchor.
+///
+/// Anchoring on the *earliest* row instead would ignore a later confirmation
+/// entirely while still reporting the curve as calibrated against it.
+struct CurveAnchor {
+    balance_cents: i64,
+    date: String,
+    /// The anchor is the creation seed, which sits conceptually BEFORE all
+    /// history — so no activity precedes it.
+    fold_all_activity: bool,
+    /// The anchor is a real confirmed balance, not an assumed opening.
+    confirmed: bool,
+}
+
+fn curve_anchor(conn: &Connection, account_id: &str) -> CurveAnchor {
+    let confirmed: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT COALESCE(balance_cents, 0), as_of_date FROM account_balances \
+             WHERE account_id = ?1 AND source NOT IN ('seed', 'derived') \
+             ORDER BY as_of_date DESC, rowid DESC LIMIT 1",
+            params![account_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .ok();
+    if let Some((balance_cents, date)) = confirmed {
+        return CurveAnchor {
+            balance_cents,
+            date,
+            fold_all_activity: false,
+            confirmed: true,
+        };
+    }
+    let opening = opening_anchor(conn, account_id);
+    CurveAnchor {
+        balance_cents: opening.balance_cents,
+        date: opening.date,
+        fold_all_activity: opening.fold_all_activity,
+        confirmed: false,
+    }
+}
+
 fn opening_anchor(conn: &Connection, account_id: &str) -> OpeningAnchor {
     let (balance_cents, date, source): (i64, String, Option<String>) = conn
         .query_row(
@@ -977,64 +1023,52 @@ pub fn balance_timeline(
         });
     }
 
-    let anchor = opening_anchor(conn, account_id);
-    // Only activity the curve actually folds in. Behind a real (non-seed) anchor
-    // the curve drops anything dated on-or-before it, so reporting the account's
-    // true earliest transaction here would overstate the coverage callers are
-    // told they have.
-    let earliest_txn_date: Option<String> = if anchor.fold_all_activity {
-        conn.query_row(
-            "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
-            params![account_id],
-            |r| r.get::<_, Option<String>>(0),
-        )?
-    } else {
-        conn.query_row(
-            "SELECT MIN(date(posted_at)) FROM transactions \
-             WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
-            params![account_id, anchor.date],
-            |r| r.get::<_, Option<String>>(0),
-        )?
-    };
+    let anchor = curve_anchor(conn, account_id);
+    let earliest_txn_date: Option<String> = conn.query_row(
+        "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
+        params![account_id],
+        |r| r.get::<_, Option<String>>(0),
+    )?;
 
-    // Where the curve starts. Behind a creation seed the opening is conceptually
-    // PRE-history even though the seed row is dated at account creation, so the
-    // curve has to open before the earliest transaction — otherwise the series
-    // would run backwards from its own anchor.
-    let curve_start = if anchor.fold_all_activity {
-        earliest_txn_date
-            .as_deref()
-            .and_then(day_before)
-            .unwrap_or_else(|| anchor.date.clone())
-    } else {
-        anchor.date.clone()
-    };
-
-    let mut sql = String::from(
+    // Every cleared day's net movement, oldest first. ALL of it — activity
+    // before the anchor is walked backward rather than dropped.
+    let mut stmt = conn.prepare(
         "SELECT date(posted_at) AS d, COALESCE(SUM(amount_cents), 0) FROM transactions \
-         WHERE account_id = ?1 AND pending = 0",
-    );
-    if !anchor.fold_all_activity {
-        sql.push_str(" AND date(posted_at) > ?2");
-    }
-    sql.push_str(" GROUP BY d ORDER BY d ASC");
+         WHERE account_id = ?1 AND pending = 0 GROUP BY d ORDER BY d ASC",
+    )?;
+    let deltas: Vec<(String, i64)> = stmt
+        .query_map(params![account_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
 
-    let mut stmt = conn.prepare(&sql)?;
-    let mut args: Vec<&dyn rusqlite::ToSql> = vec![&account_id];
-    if !anchor.fold_all_activity {
-        args.push(&anchor.date);
-    }
-    let rows = stmt.query_map(args.as_slice(), |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-    })?;
+    // Solve for the balance before ANY activity, such that the curve passes
+    // through the anchor: `balance(t) = base + Σ(activity ≤ t)`, so
+    // `base = anchor − Σ(activity ≤ anchor_date)`. A creation seed is
+    // conceptually pre-history, so nothing precedes it and the offset is zero.
+    let offset: i64 = if anchor.fold_all_activity {
+        0
+    } else {
+        deltas
+            .iter()
+            .filter(|(d, _)| d.as_str() <= anchor.date.as_str())
+            .map(|(_, delta)| delta)
+            .sum()
+    };
+    let base = anchor.balance_cents - offset;
 
-    let mut running = anchor.balance_cents;
+    let curve_start = earliest_txn_date
+        .as_deref()
+        .and_then(day_before)
+        .unwrap_or_else(|| anchor.date.clone());
+
+    let mut running = base;
     let mut all_points = vec![AccountBalancePoint {
         date: curve_start,
         balance_cents: running,
     }];
-    for row in rows {
-        let (date, delta) = row?;
+    for (date, delta) in deltas {
         running += delta;
         // Activity landing on the curve's own start date updates that point
         // rather than appending a duplicate date.
@@ -1090,13 +1124,9 @@ pub fn balance_timeline(
         }
     }
 
-    let confirmed_balance: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM account_balances \
-         WHERE account_id = ?1 AND source NOT IN ('seed', 'derived'))",
-        params![account_id],
-        |r| r.get(0),
-    )?;
-    let anchor_quality = if confirmed_balance {
+    // Calibrated only when the curve is actually PINNED to a confirmed balance —
+    // not merely when one exists somewhere on the account.
+    let anchor_quality = if anchor.confirmed {
         BalanceAnchorQuality::Calibrated
     } else if anchor.balance_cents != 0 {
         // Either an opening the user entered at creation, or one back-solved by
@@ -1534,6 +1564,43 @@ mod tests {
         assert!(tl.peak.is_none());
     }
 
+    /// In production the creation seed is dated in the PAST, so a later
+    /// confirmed balance is newer than it — and picking the earliest row as the
+    /// anchor would ignore the confirmed one entirely while still labelling the
+    /// result `Calibrated`. The curve has to be pinned to the confirmed balance
+    /// it claims to be calibrated against.
+    #[test]
+    fn balance_timeline_anchors_on_the_confirmed_balance_not_the_older_seed() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        // Backdate creation + seed so the seed is genuinely older than the pin.
+        conn.execute(
+            "UPDATE accounts SET created_at = '2023-12-01T00:00:00+00:00' WHERE id = ?1",
+            params![acc.id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE account_balances SET as_of_date = '2023-12-01' \
+             WHERE account_id = ?1 AND source = 'seed'",
+            params![acc.id],
+        )
+        .unwrap();
+        insert_txn(&conn, &acc.id, 900_000, "2024-01-01");
+        // A confirmed balance the user reconciled to, AFTER the seed.
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-06-01", 250_000, None, Some("manual"))
+            .unwrap();
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert_eq!(tl.anchor, BalanceAnchorQuality::Calibrated);
+        // Nothing happened after the pin, so today's balance IS the pin.
+        assert_eq!(
+            tl.current_cents, 250_000,
+            "curve must be pinned to the confirmed balance, not the stale seed"
+        );
+    }
+
     /// A linked account accumulates a real bank-reported balance row per sync.
     /// Anchoring on the OLDEST of those and folding later transactions onto it
     /// drifts away from the NEWEST — which is the balance the rest of the app
@@ -1563,26 +1630,37 @@ mod tests {
         assert!(tl.peak.is_none(), "must not report a peak it cannot stand behind");
     }
 
-    /// Behind a REAL anchor the curve drops activity dated on-or-before it, so
-    /// the reported coverage must not claim history the curve doesn't contain.
+    /// Activity BEFORE the confirmed anchor is walked backward rather than
+    /// dropped, so the curve covers the account's whole history and still passes
+    /// exactly through the confirmed balance.
     #[test]
-    fn balance_timeline_reports_coverage_it_actually_has() {
+    fn balance_timeline_walks_backward_through_pre_anchor_activity() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let acc = sample_account(&mut conn);
-        // A real (non-seed) anchor mid-history.
+        conn.execute(
+            "UPDATE account_balances SET as_of_date = '2022-12-01' \
+             WHERE account_id = ?1 AND source = 'seed'",
+            params![acc.id],
+        )
+        .unwrap();
+        insert_txn(&conn, &acc.id, 100_000, "2023-01-01"); // BEFORE the anchor
         upsert_balance_snapshot(&mut conn, &acc.id, "2024-03-01", 500_000, None, Some("manual"))
             .unwrap();
-        insert_txn(&conn, &acc.id, 100_000, "2023-01-01"); // behind the anchor
-        insert_txn(&conn, &acc.id, 50_000, "2024-06-01"); // inside the curve
+        insert_txn(&conn, &acc.id, 50_000, "2024-06-01"); // after the anchor
 
         let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
 
+        assert_eq!(tl.anchor, BalanceAnchorQuality::Calibrated);
+        assert_eq!(tl.earliest_txn_date.as_deref(), Some("2023-01-01"));
+        // Back-solved: $5,000 at the pin minus the $1,000 that preceded it.
+        assert_eq!(tl.points[0].balance_cents, 400_000);
+        // The curve passes through the pin, then tracks activity after it.
         assert_eq!(
-            tl.earliest_txn_date.as_deref(),
-            Some("2024-06-01"),
-            "must not claim coverage back to 2023 when the curve starts at the anchor"
+            tl.points.iter().find(|p| p.date == "2023-01-01").unwrap().balance_cents,
+            500_000
         );
+        assert_eq!(tl.current_cents, 550_000);
     }
 
     /// Windowing trims the returned points but must not restart the arithmetic,
