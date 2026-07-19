@@ -8,9 +8,18 @@
  * - The badge is only VISIBLE for an **installed** PWA. In a normal browser tab
  *   the calls succeed and paint nothing. There is no way to detect installed-ness
  *   reliably, so we always call and let the OS decide.
- * - Support is real but partial: Chromium desktop (Windows/macOS/Linux) and
- *   Chromium Android; Safari/iOS honours it only for a Home-Screen-added app
- *   with notification permission. Firefox does not implement it at all.
+ * - Support is narrower than "Chromium" (verified against MDN browser-compat-data,
+ *   2026-07):
+ *     Chrome/Edge 81+   Windows and macOS only. ChromeOS since 91.
+ *                       LINUX HAS NO OS-LEVEL BADGING — the promise resolves and
+ *                       nothing is ever painted.
+ *     Chrome Android 81+
+ *     Safari 17+        installed web apps, macOS Sonoma and later.
+ *     Safari iOS 16.4+  web apps saved to the home screen.
+ *     Firefox           not implemented, any platform.
+ *     Opera             not implemented, despite being Chromium.
+ *   So "it silently does nothing" is the NORMAL case on a Linux desktop or in
+ *   Opera, not a bug to chase.
  * - Updates only happen while a page (or service worker) of ours is RUNNING.
  *   With the app fully closed, the last-set value simply persists — refreshing
  *   it in that state needs a push event to wake the service worker, which is a

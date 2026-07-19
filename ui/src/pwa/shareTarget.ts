@@ -9,6 +9,16 @@
  * The constants below are a CONTRACT with that service-worker file, which is
  * plain JS outside the bundle and so cannot import them. `shareTarget.test.ts`
  * pins both sides.
+ *
+ * Reach (verified against MDN browser-compat-data, 2026-07):
+ *   Chrome 89+ desktop, Chrome Android 76+, Opera 76+, Samsung Internet.
+ *   Firefox: the manifest member parses but has NO effect.
+ *   SAFARI AND SAFARI iOS: not supported, at all.
+ *
+ * That last line is the one worth remembering: FinSight can never appear in an
+ * iPhone's share sheet, no matter how the app is installed. This feature is
+ * Android and desktop-Chromium only. Everything here still degrades quietly on
+ * an unsupported browser — the flag simply never arrives.
  */
 
 export const SHARE_DB_NAME = "finsight-share-target";

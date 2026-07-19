@@ -5,13 +5,20 @@
  * what gets the browser to hand us a subscription in the first place and keeps
  * the server's copy of it current.
  *
- * Platform notes that shape the API below:
+ * Platform notes that shape the API below (verified against MDN
+ * browser-compat-data, 2026-07):
  * - Push requires an ACTIVE service worker, so every call awaits
  *   `serviceWorker.ready` rather than assuming registration finished.
- * - `Notification.requestPermission()` must be triggered by a user gesture on
- *   most browsers, which is why permission is requested in `enablePush` (called
- *   from a click) and never on app boot.
- * - iOS/Safari supports this only for a Home-Screen-installed app.
+ * - Firefox REQUIRES a user gesture for `subscribe` (desktop 72+, Android 79+),
+ *   which is why permission is requested inside `enablePush` — called from a
+ *   click — and never on app boot.
+ * - `applicationServerKey` is mandatory in Chrome/Edge, hence the VAPID key.
+ * - Reach is wider than the Badging API, and differently shaped:
+ *     Chrome/Edge 42+/17+, Chrome Android 42+
+ *     Firefox 44+, Firefox Android 48+   (Firefox has push but NOT badging)
+ *     Safari 16+        macOS Ventura and later.
+ *     Safari iOS 16.4+  web apps saved to the HOME SCREEN only — a normal
+ *                       Safari tab can never subscribe.
  * - Subscriptions expire and rotate on the browser's own schedule, so the
  *   server upserts by endpoint and the client re-syncs on load.
  */
