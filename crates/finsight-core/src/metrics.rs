@@ -256,20 +256,41 @@ pub fn cashflow_between(
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RollingAverages {
     pub window_days: i64,
+    /// Months actually averaged over — the span of real history inside the
+    /// window, not the window's nominal length. A user with six weeks of data
+    /// gets 1.5, not 3.
     pub months: i64,
     pub avg_monthly_income_cents: i64,
     pub avg_monthly_expense_cents: i64,
     pub net_monthly_cents: i64,
     pub savings_rate_pct: i64,
+    /// Days from the earliest transaction in the window to today. Below ~30 any
+    /// monthly figure is an extrapolation from a partial month, so consumers of
+    /// the SAFETY metrics (runway, emergency-fund coverage) should hedge or
+    /// withhold rather than state a number — being wrong high there tells
+    /// someone they are safer than they are.
+    pub data_span_days: i64,
 }
 
 /// Average monthly income and expense over the last `days`, transfers excluded.
-/// The window is divided into whole months (`days / 30`, min 1) — matching the
-/// long-standing 90-day-÷-3 convention, generalized.
+///
+/// Divides by the months of history that ACTUALLY EXIST in the window, not by
+/// the window's nominal length. Dividing a new user's single month of activity
+/// by a fixed three understated their burn threefold, which in turn overstated
+/// every safety metric built on it — a $6,000 fund against $2,000/mo read as
+/// nine months of cover instead of three. Overstating safety is the dangerous
+/// direction, and it landed on brand-new users, who are least equipped to
+/// notice.
+///
+/// Sub-month histories are floored at one month rather than extrapolated: a
+/// single large purchase three days in would otherwise imply an absurd monthly
+/// burn. That floor understates instead, so `data_span_days` is reported
+/// alongside and safety-metric consumers are expected to hedge below ~30 days.
 pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAverages> {
-    let months = (days / 30).max(1);
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
     let (income_total, expense_total) = income_expense_since(conn, &cutoff)?;
+    let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
+    let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
     let avg_expense = expense_total / months;
     Ok(RollingAverages {
@@ -279,7 +300,52 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
         avg_monthly_expense_cents: avg_expense,
         net_monthly_cents: avg_income - avg_expense,
         savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
+        data_span_days,
     })
+}
+
+/// How much history the window actually holds: the number of distinct calendar
+/// months containing activity, and the days from the earliest transaction to
+/// today. Returns `(0, 0)` for an empty window.
+///
+/// Counting distinct CALENDAR months — not elapsed days — is what makes a
+/// monthly average mean what people expect it to. Three monthly paychecks span
+/// only ~72 days from first to last, so an elapsed-days divisor would call that
+/// 2.4 months and inflate monthly income by half. Three paychecks land in three
+/// calendar months, which is also how a user would describe it: "I have three
+/// months of data."
+fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
+    let pred = non_investment_txn_predicate("t");
+    let (months, earliest): (i64, Option<String>) = conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT strftime('%Y-%m', t.posted_at)), MIN(t.posted_at) \
+             FROM transactions t \
+             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}"
+        ),
+        params![cutoff],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let span_days = earliest
+        .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e).ok())
+        .map(|first| {
+            (chrono::Utc::now() - first.with_timezone(&chrono::Utc))
+                .num_days()
+                .max(0)
+        })
+        .unwrap_or(0);
+    Ok((months, span_days))
+}
+
+/// Months to divide by: the calendar months that actually hold activity, capped
+/// at the window and floored at one. An empty window falls back to the window's
+/// nominal length so a zero-activity account reports a $0 average rather than
+/// dividing by zero.
+fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
+    let window_months = (window_days / 30).max(1);
+    if months_with_data <= 0 {
+        return window_months;
+    }
+    months_with_data.clamp(1, window_months)
 }
 
 // ── Balance breakdown ───────────────────────────────────────────────────────
@@ -514,9 +580,13 @@ pub fn rolling_averages_for(
     days: i64,
     member_id: Option<&str>,
 ) -> CoreResult<RollingAverages> {
-    let months = (days / 30).max(1);
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
     let (income_total, expense_total) = income_expense_since_for(conn, &cutoff, member_id)?;
+    // Household-wide span deliberately, not the member's own first transaction:
+    // a member who joined recently should not have their averages inflated by a
+    // short personal span when the household has months of history behind it.
+    let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
+    let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
     let avg_expense = expense_total / months;
     Ok(RollingAverages {
@@ -526,6 +596,7 @@ pub fn rolling_averages_for(
         avg_monthly_expense_cents: avg_expense,
         net_monthly_cents: avg_income - avg_expense,
         savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
+        data_span_days,
     })
 }
 
@@ -879,9 +950,13 @@ mod tests {
         assert_eq!(a_inc + b_inc + u_inc, h_inc, "income reconciles with residual");
         assert_eq!(a_exp + b_exp + u_exp, h_exp, "expense reconciles with residual");
 
-        // rolling_averages_for threads the same filter.
+        // rolling_averages_for threads the same filter. This fixture's activity
+        // sits in ONE calendar month, so Alice's $3,500 is $3,500/month — the
+        // old `/ 3` here was the fixed-divisor bug baked into an assertion,
+        // which is how it survived: it reported her month as a third of itself.
         let r_alice = rolling_averages_for(&conn, 90, Some(&alice.id)).unwrap();
-        assert_eq!(r_alice.avg_monthly_income_cents, 350_000 / 3);
+        assert_eq!(r_alice.months, 1, "the fixture spans a single calendar month");
+        assert_eq!(r_alice.avg_monthly_income_cents, 350_000);
     }
 
     #[test]
@@ -1132,6 +1207,101 @@ mod tests {
         assert_eq!(avg.avg_monthly_expense_cents, 100_000);
         assert_eq!(avg.net_monthly_cents, 200_000);
         assert!(avg.savings_rate_pct >= 66);
+    }
+
+    /// A brand-new user has less history than the window. Dividing by a fixed
+    /// 3 months understates their burn, which OVERSTATES every safety metric
+    /// derived from it — runway and emergency-fund coverage both come out ~3x
+    /// too generous. This is the dangerous direction: the app tells someone
+    /// they are safer than they are, on day one, when they are least able to
+    /// spot it.
+    #[test]
+    fn rolling_averages_do_not_dilute_a_short_history() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // ONE month of history: $3,000 in, $2,000 out. The user's real monthly
+        // burn is $2,000 — not $666.
+        insert_txn(&mut conn, &acct, 300_000, 10, false);
+        insert_txn(&mut conn, &acct, -200_000, 12, false);
+
+        let avg = rolling_averages(&conn, 90).unwrap();
+
+        assert_eq!(
+            avg.avg_monthly_expense_cents, 200_000,
+            "one month of data must read as one month of burn, not a third of it"
+        );
+        // A $6,000 emergency fund is 3 months at $2,000/mo — not 9.
+        let months = emergency_fund_months(600_000, avg.avg_monthly_expense_cents);
+        assert!(
+            (months - 3.0).abs() < 0.01,
+            "EF coverage came out {months} months; diluted burn overstates safety"
+        );
+    }
+
+    /// Monthly cadence is why the divisor counts calendar months rather than
+    /// elapsed days: N monthly paychecks span only ~(N-1)x30 days, so an
+    /// elapsed-days divisor would inflate monthly income by roughly half.
+    #[test]
+    fn rolling_averages_count_calendar_months_not_elapsed_days() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // Three monthly paychecks: ~72 days from first to last, but three
+        // calendar months of activity.
+        for m in 0..3 {
+            insert_txn(&mut conn, &acct, 300_000, 10 + m * 30, false);
+        }
+
+        let avg = rolling_averages(&conn, 90).unwrap();
+
+        assert_eq!(avg.months, 3, "three monthly paychecks are three months");
+        assert_eq!(
+            avg.avg_monthly_income_cents, 300_000,
+            "a $3,000 monthly paycheck must not read as $4,500"
+        );
+    }
+
+    /// Under a month there is no honest monthly figure. Extrapolating a single
+    /// early purchase would imply an absurd burn, so the divisor floors at one
+    /// month — which understates. `data_span_days` is what lets the safety
+    /// metrics hedge instead of stating a number they cannot support.
+    #[test]
+    fn rolling_averages_report_a_thin_span_rather_than_extrapolating() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        insert_txn(&mut conn, &acct, -50_000, 5, false);
+
+        let avg = rolling_averages(&conn, 90).unwrap();
+
+        assert_eq!(avg.months, 1, "a 5-day span must not divide by a fraction");
+        assert_eq!(avg.avg_monthly_expense_cents, 50_000);
+        assert!(
+            avg.data_span_days <= 6,
+            "the thin span must be visible to callers, got {}",
+            avg.data_span_days
+        );
+    }
+
+    /// An empty window must not claim a zero-day span — there is no history to
+    /// be thin about, and callers keying on `data_span_days` would misread it.
+    #[test]
+    fn rolling_averages_on_an_empty_window_fall_back_to_the_window() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+
+        let avg = rolling_averages(&conn, 90).unwrap();
+
+        assert_eq!(avg.months, 3);
+        assert_eq!(avg.avg_monthly_expense_cents, 0);
+        assert_eq!(avg.data_span_days, 0);
     }
 
     #[test]
