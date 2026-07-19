@@ -700,6 +700,10 @@ export function installMockBackend(kindRaw: string | null) {
   // Some @tauri-apps/api/event builds route unlisten through a dedicated
   // plugin-internals global — provide a no-op so cleanup is silent.
   w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+  // Marks this as the mock harness (not a real Tauri bridge) so gates like
+  // DesktopConnectGate, which otherwise key off isTauriRuntime(), don't treat
+  // the mock as a pre-navigation desktop shell — mirrors __FINSIGHT_HTTP__.
+  w.__FINSIGHT_MOCK__ = true;
 
   // eslint-disable-next-line no-console
   console.info(

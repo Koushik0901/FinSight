@@ -3,6 +3,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "../utils/runtime";
 import ConnectScreen from "../screens/desktop/ConnectScreen";
 
+// The dev-only `?mock=` harness (see dev/mockBackend.ts) fakes __TAURI_INTERNALS__
+// so commands.* resolve against fixtures, which makes isTauriRuntime() true at
+// the Vite dev origin too. Without this check, this gate treats the mock
+// harness as a real pre-navigation desktop shell and calls the (unfixtured)
+// get_server_url command, which — like any unfixtured mock command — falls
+// back to `[]`; `[]` is truthy, so `window.location.href = []` coerces to ""
+// and reloads the identical URL forever.
+function isMockHarness(): boolean {
+  return Boolean((window as unknown as { __FINSIGHT_MOCK__?: boolean }).__FINSIGHT_MOCK__);
+}
+
 /** Only relevant to the bundled desktop shell (isTauriRuntime() — which is
  *  now origin-aware, see Phase 4 Task 6 — so this correctly stops rendering
  *  once the window has navigated to a real server, since at that point the
@@ -25,11 +36,11 @@ export default function DesktopConnectGate({ children }: { children: ReactNode }
   const [state, setState] = useState<"checking" | "needsConnect" | "connecting">("checking");
 
   useEffect(() => {
-    if (!isTauriRuntime()) { setState("connecting"); return; }
+    if (isMockHarness() || !isTauriRuntime()) { setState("connecting"); return; }
     let alive = true;
     invoke<string | null>("get_server_url").then((url) => {
       if (!alive) return;
-      if (url) {
+      if (typeof url === "string" && url) {
         setState("connecting");
         window.location.href = url;
       } else {
@@ -39,7 +50,7 @@ export default function DesktopConnectGate({ children }: { children: ReactNode }
     return () => { alive = false; };
   }, []);
 
-  if (!isTauriRuntime() || state === "connecting") return <>{children}</>;
+  if (isMockHarness() || !isTauriRuntime() || state === "connecting") return <>{children}</>;
   if (state === "checking") return null; // avoid a flash of ConnectScreen while checking
   return <ConnectScreen onConnected={(url) => { window.location.href = url; }} />;
 }

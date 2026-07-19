@@ -41,6 +41,7 @@ describe("DesktopConnectGate", () => {
   afterEach(() => {
     vi.clearAllMocks();
     Object.defineProperty(window, "location", { value: realLocation, configurable: true });
+    delete (window as unknown as { __FINSIGHT_MOCK__?: boolean }).__FINSIGHT_MOCK__;
   });
 
   it("get_server_url resolves a URL: navigates the window there, ConnectScreen never renders", async () => {
@@ -101,6 +102,35 @@ describe("DesktopConnectGate", () => {
 
     expect(screen.getByText("APP_CONTENT")).toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("__FINSIGHT_MOCK__ marker set: renders children immediately, never calls get_server_url", () => {
+    (window as unknown as { __FINSIGHT_MOCK__?: boolean }).__FINSIGHT_MOCK__ = true;
+    mockLocation();
+
+    render(
+      <DesktopConnectGate>
+        <div>APP_CONTENT</div>
+      </DesktopConnectGate>
+    );
+
+    expect(screen.getByText("APP_CONTENT")).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("get_server_url resolves a non-string truthy value (e.g. []): renders ConnectScreen, never navigates", async () => {
+    const loc = mockLocation();
+    vi.mocked(invoke).mockResolvedValue([]);
+
+    render(
+      <DesktopConnectGate>
+        <div>APP_CONTENT</div>
+      </DesktopConnectGate>
+    );
+
+    expect(await screen.findByText("CONNECT_SCREEN")).toBeInTheDocument();
+    expect(screen.queryByText("APP_CONTENT")).toBeNull();
+    expect(loc.href).toBe("");
   });
 
   it("renders nothing while the initial check is in flight (avoids a ConnectScreen flash)", () => {
