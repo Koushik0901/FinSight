@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import ShareTargetImport from "./ShareTargetImport";
-import { SHARE_DB_NAME, SHARE_STORE, SHARE_KEY, SHARE_MAX_AGE_MS } from "../pwa/shareTarget";
+import {
+  SHARE_DB_NAME,
+  SHARE_STORE,
+  SHARE_KEY,
+  SHARE_CRYPTO_KEY,
+  SHARE_MAX_AGE_MS,
+} from "../pwa/shareTarget";
 
 // The real mapping dialog pulls a CSV preview over RPC; this test is about the
 // hand-off, so stub it down to "did it open, and with which upload token".
@@ -27,31 +33,46 @@ vi.mock("sonner", () => ({
 
 const originalHref = window.location.href;
 
-/** Park a CSV the way the service worker does on a real share.
- *  `receivedAt` must be recent — shareTarget.ts refuses records older than
- *  SHARE_MAX_AGE_MS so an abandoned share cannot linger as plaintext. */
+/**
+ * Park a CSV the way the service worker does on a real share: encrypted under a
+ * non-extractable key, in the worker's envelope layout. `receivedAt` must be
+ * recent — shareTarget.ts refuses records past SHARE_MAX_AGE_MS.
+ */
 async function stashSharedCsv(name = "statement.csv", receivedAt = Date.now()) {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(SHARE_DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(SHARE_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(SHARE_STORE, "readwrite");
-    tx.objectStore(SHARE_STORE).put(
-      {
-        name,
-        type: "text/csv",
-        buffer: new TextEncoder().encode("Date,Merchant,Amount\n").buffer,
-        receivedAt,
-      },
-      SHARE_KEY
-    );
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
+  const open = () =>
+    new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open(SHARE_DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(SHARE_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  const put = async (value: unknown, key: string) => {
+    const db = await open();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SHARE_STORE, "readwrite");
+      tx.objectStore(SHARE_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  };
+
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+  await put(key, SHARE_CRYPTO_KEY);
+
+  const header = new TextEncoder().encode(JSON.stringify({ name, type: "text/csv" }));
+  const body = new TextEncoder().encode("Date,Merchant,Amount\n");
+  const plain = new Uint8Array(4 + header.length + body.length);
+  new DataView(plain.buffer).setUint32(0, header.length, false);
+  plain.set(header, 4);
+  plain.set(body, 4 + header.length);
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  await put({ v: 1, iv, ct, receivedAt }, SHARE_KEY);
 }
 
 beforeEach(() => {

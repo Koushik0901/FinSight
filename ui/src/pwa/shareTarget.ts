@@ -14,6 +14,9 @@
 export const SHARE_DB_NAME = "finsight-share-target";
 export const SHARE_STORE = "incoming";
 export const SHARE_KEY = "pending";
+/** Non-extractable AES-GCM key the worker writes, in the same store. */
+export const SHARE_CRYPTO_KEY = "key";
+const SHARE_ENVELOPE_VERSION = 1;
 
 /**
  * How long a parked share may sit unclaimed before it is thrown away.
@@ -27,14 +30,25 @@ export const SHARE_KEY = "pending";
  * encrypted query cache exists to prevent.
  *
  * A hand-off that works takes seconds, so fifteen minutes is generous.
+ *
+ * The TTL bounds the window; it is not the only protection. The parked file is
+ * also ENCRYPTED at rest (see the service worker), so even inside that window,
+ * and even if the sweep never gets to run because the app is never opened
+ * again, a dump of browser storage yields ciphertext rather than a statement.
  */
 export const SHARE_MAX_AGE_MS = 15 * 60 * 1000;
 
-/** What the service worker writes; `buffer` rather than a Blob — see the SW. */
-export type SharedFileRecord = {
-  name: string;
-  type: string;
-  buffer: ArrayBuffer;
+/**
+ * What the service worker writes: an AES-GCM envelope.
+ *
+ * `receivedAt` is deliberately OUTSIDE the ciphertext so the TTL sweep can
+ * discard a stale share without holding the key — the sweep must work even
+ * when decryption would not.
+ */
+export type StoredShare = {
+  v: number;
+  iv: Uint8Array;
+  ct: ArrayBuffer;
   receivedAt: number;
 };
 
@@ -104,18 +118,81 @@ function openShareDb(): Promise<IDBDatabase> {
  */
 export async function takeSharedFile(): Promise<File | null> {
   const record = await claimRecord();
-  if (!record?.buffer) return null;
+  if (!record) return null;
 
   // Defence in depth alongside the boot-time sweep: never hand a caller a file
   // that has been sitting around, even if the sweep did not get to run.
+  // Checked BEFORE decrypting — a stale share should not even be unwrapped.
   if (isExpired(record)) return null;
 
-  return new File([record.buffer], record.name || "shared.csv", {
-    type: record.type || "text/csv",
-  });
+  return decryptShare(record);
 }
 
-function isExpired(record: SharedFileRecord): boolean {
+/**
+ * Unwrap the worker's envelope back into a File.
+ *
+ * Returns null on every failure — wrong/rotated key, tampered bytes, an
+ * envelope from another version — which the caller already treats as "nothing
+ * was shared". Never fall back to trusting the bytes.
+ */
+async function decryptShare(record: StoredShare): Promise<File | null> {
+  if (record.v !== SHARE_ENVELOPE_VERSION) return null;
+  if (typeof crypto === "undefined" || !crypto.subtle) return null;
+
+  const key = await readShareKey();
+  if (!key) return null;
+
+  try {
+    // Copy into this realm's views first: binary crossing a structured clone
+    // (or a test runner's realm boundary) fails `instanceof` but is valid.
+    const plainBuf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: new Uint8Array(record.iv) },
+      key,
+      new Uint8Array(record.ct)
+    );
+    const plain = new Uint8Array(plainBuf);
+
+    // [4-byte BE header length][UTF-8 JSON {name,type}][raw file bytes]
+    const headerLen = new DataView(plain.buffer, plain.byteOffset, plain.byteLength).getUint32(
+      0,
+      false
+    );
+    if (headerLen <= 0 || headerLen + 4 > plain.length) return null;
+
+    const header = JSON.parse(
+      new TextDecoder().decode(plain.subarray(4, 4 + headerLen))
+    ) as { name?: string; type?: string };
+    const body = plain.subarray(4 + headerLen);
+
+    return new File([body], header.name || "shared.csv", {
+      type: header.type || "text/csv",
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** The worker's key. The app only ever READS it — it never creates one. */
+async function readShareKey(): Promise<CryptoKey | null> {
+  let db: IDBDatabase | null = null;
+  try {
+    db = await openShareDb();
+    const handle = db;
+    return await new Promise<CryptoKey | null>((resolve, reject) => {
+      const tx = handle.transaction(SHARE_STORE, "readonly");
+      const req = tx.objectStore(SHARE_STORE).get(SHARE_CRYPTO_KEY);
+      req.onsuccess = () => resolve((req.result as CryptoKey | undefined) ?? null);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
+function isExpired(record: StoredShare): boolean {
   // A missing/garbled timestamp is treated as expired: we cannot prove the file
   // is fresh, and refusing it costs one re-share while keeping it costs a
   // plaintext statement on disk.
@@ -130,19 +207,19 @@ function isExpired(record: SharedFileRecord): boolean {
  * imported twice. The importer dedupes, but a second silent import of a bank
  * statement is not something to risk on transaction timing.
  */
-async function claimRecord(): Promise<SharedFileRecord | undefined> {
+async function claimRecord(): Promise<StoredShare | undefined> {
   let db: IDBDatabase | null = null;
   try {
     db = await openShareDb();
     const handle = db;
-    return await new Promise<SharedFileRecord | undefined>((resolve, reject) => {
+    return await new Promise<StoredShare | undefined>((resolve, reject) => {
       const tx = handle.transaction(SHARE_STORE, "readwrite");
       const store = tx.objectStore(SHARE_STORE);
       const getReq = store.get(SHARE_KEY);
       getReq.onsuccess = () => {
         if (getReq.result) store.delete(SHARE_KEY);
       };
-      tx.oncomplete = () => resolve(getReq.result as SharedFileRecord | undefined);
+      tx.oncomplete = () => resolve(getReq.result as StoredShare | undefined);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
@@ -161,9 +238,32 @@ async function claimRecord(): Promise<SharedFileRecord | undefined> {
  * login screen, and someone else can then sign in — without this, that second
  * person's app would silently import the first person's bank statement. This
  * mirrors why `purgePersistedCache` already runs on both transitions.
+ *
+ * Destroys the encryption key alongside the file — crypto-shredding, same as
+ * `purgeCacheKey`. Any ciphertext that outlives the delete (a browser-internal
+ * copy, an unflushed page of the LevelDB log) becomes permanently
+ * undecryptable rather than merely unlinked. The worker simply mints a new key
+ * for the next share.
  */
 export async function purgeSharedFiles(): Promise<void> {
   await claimRecord();
+
+  let db: IDBDatabase | null = null;
+  try {
+    db = await openShareDb();
+    const handle = db;
+    await new Promise<void>((resolve, reject) => {
+      const tx = handle.transaction(SHARE_STORE, "readwrite");
+      tx.objectStore(SHARE_STORE).delete(SHARE_CRYPTO_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } catch {
+    // The file itself is already gone; losing the key delete is not fatal.
+  } finally {
+    db?.close();
+  }
 }
 
 /**
@@ -181,7 +281,9 @@ export async function sweepStaleSharedFiles(): Promise<void> {
       const store = tx.objectStore(SHARE_STORE);
       const getReq = store.get(SHARE_KEY);
       getReq.onsuccess = () => {
-        const record = getReq.result as SharedFileRecord | undefined;
+        // Reads only `receivedAt`, which the worker leaves outside the
+        // ciphertext — the sweep must work without holding the key.
+        const record = getReq.result as StoredShare | undefined;
         if (record && isExpired(record)) store.delete(SHARE_KEY);
       };
       tx.oncomplete = () => resolve();

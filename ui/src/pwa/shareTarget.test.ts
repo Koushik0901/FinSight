@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 // `?raw` gives us the service worker's source as a string. It doubles as an
 // existence check: if public/share-target-sw.js is ever deleted or renamed this
@@ -11,36 +11,87 @@ import {
   SHARE_DB_NAME,
   SHARE_STORE,
   SHARE_KEY,
+  SHARE_CRYPTO_KEY,
   SHARE_MAX_AGE_MS,
   clearShareFlag,
   purgeSharedFiles,
   readShareFlag,
   sweepStaleSharedFiles,
   takeSharedFile,
-  type SharedFileRecord,
+  type StoredShare,
 } from "./shareTarget";
+
+// jsdom ships no SubtleCrypto, but vitest exposes the platform's real
+// WebCrypto — so these exercise actual AES-GCM, not a stub.
+const realCrypto = globalThis.crypto;
 
 // jsdom has no IndexedDB; fake-indexeddb gives real transaction semantics, so
 // the read-and-delete-in-one-transaction behaviour is genuinely exercised.
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
+  vi.stubGlobal("crypto", realCrypto);
 });
 
-/** Write a record the way the service worker would. */
-async function stash(record: SharedFileRecord): Promise<void> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+async function openDb(): Promise<IDBDatabase> {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(SHARE_DB_NAME, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(SHARE_STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+async function put(value: unknown, key: string): Promise<void> {
+  const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(SHARE_STORE, "readwrite");
-    tx.objectStore(SHARE_STORE).put(record, SHARE_KEY);
+    tx.objectStore(SHARE_STORE).put(value, key);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
   db.close();
+}
+
+/**
+ * Park a share exactly the way the service worker does: a non-extractable key
+ * in the store, and the file sealed in the same envelope layout. If this and
+ * share-target-sw.js ever disagree, these tests break — which is the point.
+ */
+async function stash(
+  file: { name: string; type: string; text: string },
+  receivedAt = Date.now()
+): Promise<void> {
+  let key = await readKey();
+  if (!key) {
+    key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, [
+      "encrypt",
+      "decrypt",
+    ]);
+    await put(key, SHARE_CRYPTO_KEY);
+  }
+
+  const header = new TextEncoder().encode(JSON.stringify({ name: file.name, type: file.type }));
+  const body = new TextEncoder().encode(file.text);
+  const plain = new Uint8Array(4 + header.length + body.length);
+  new DataView(plain.buffer).setUint32(0, header.length, false);
+  plain.set(header, 4);
+  plain.set(body, 4 + header.length);
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  await put({ v: 1, iv, ct, receivedAt }, SHARE_KEY);
+}
+
+async function readKey(): Promise<CryptoKey | null> {
+  const db = await openDb();
+  const key = await new Promise<CryptoKey | null>((resolve, reject) => {
+    const tx = db.transaction(SHARE_STORE, "readonly");
+    const req = tx.objectStore(SHARE_STORE).get(SHARE_CRYPTO_KEY);
+    req.onsuccess = () => resolve((req.result as CryptoKey | undefined) ?? null);
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+  return key;
 }
 
 /** jsdom's Blob implements neither `.text()` nor `.arrayBuffer()`; FileReader
@@ -55,28 +106,17 @@ function readText(file: File): Promise<string> {
   });
 }
 
-function csvRecord(text = "Date,Merchant,Amount\n2026-01-02,LOBLAWS,-42.10\n"): SharedFileRecord {
-  return {
-    name: "statement.csv",
-    type: "text/csv",
-    buffer: new TextEncoder().encode(text).buffer as ArrayBuffer,
-    // "just arrived" — the realistic case, since a hand-off takes seconds.
-    receivedAt: Date.now(),
-  };
+function csvFile(text = "Date,Merchant,Amount\n2026-01-02,LOBLAWS,-42.10\n") {
+  return { name: "statement.csv", type: "text/csv", text };
 }
 
 /** Look at the parked record WITHOUT consuming it. */
-async function peek(): Promise<SharedFileRecord | undefined> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(SHARE_DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(SHARE_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  const record = await new Promise<SharedFileRecord | undefined>((resolve, reject) => {
+async function peek(): Promise<StoredShare | undefined> {
+  const db = await openDb();
+  const record = await new Promise<StoredShare | undefined>((resolve, reject) => {
     const tx = db.transaction(SHARE_STORE, "readonly");
     const req = tx.objectStore(SHARE_STORE).get(SHARE_KEY);
-    req.onsuccess = () => resolve(req.result as SharedFileRecord | undefined);
+    req.onsuccess = () => resolve(req.result as StoredShare | undefined);
     tx.onerror = () => reject(tx.error);
   });
   db.close();
@@ -123,7 +163,7 @@ describe("clearShareFlag", () => {
 
 describe("takeSharedFile", () => {
   it("returns the shared CSV as a File with its name and type intact", async () => {
-    await stash(csvRecord());
+    await stash(csvFile());
     const file = await takeSharedFile();
     expect(file).not.toBeNull();
     expect(file!.name).toBe("statement.csv");
@@ -133,7 +173,7 @@ describe("takeSharedFile", () => {
 
   // The one that protects against a double import of a bank statement.
   it("consumes the record, so a second call finds nothing", async () => {
-    await stash(csvRecord());
+    await stash(csvFile());
     expect(await takeSharedFile()).not.toBeNull();
     expect(await takeSharedFile()).toBeNull();
   });
@@ -143,7 +183,7 @@ describe("takeSharedFile", () => {
   });
 
   it("falls back to a sensible filename when the OS supplied none", async () => {
-    await stash({ ...csvRecord(), name: "", type: "" });
+    await stash({ name: "", type: "", text: "a,b\n" });
     const file = await takeSharedFile();
     expect(file!.name).toBe("shared.csv");
     expect(file!.type).toBe("text/csv");
@@ -156,14 +196,14 @@ describe("takeSharedFile", () => {
   });
 
   it("refuses a record older than the TTL, and still consumes it", async () => {
-    await stash({ ...csvRecord(), receivedAt: Date.now() - SHARE_MAX_AGE_MS - 1 });
+    await stash(csvFile(), Date.now() - SHARE_MAX_AGE_MS - 1);
     expect(await takeSharedFile()).toBeNull();
     // Must not be left behind for a later caller to pick up.
     expect(await peek()).toBeUndefined();
   });
 
   it("refuses a record with no usable timestamp rather than trusting it", async () => {
-    await stash({ ...csvRecord(), receivedAt: Number.NaN });
+    await stash(csvFile(), Number.NaN);
     expect(await takeSharedFile()).toBeNull();
   });
 });
@@ -172,11 +212,80 @@ describe("takeSharedFile", () => {
 // is signed in. If it lands while logged out, ShareTargetImport never mounts
 // (AuthGate renders the login screen instead of the app), so nothing claims the
 // file — these are what stop a bank statement living in cleartext forever.
+// The reason this feature encrypts at all: a share can sit unclaimed (parked
+// while signed out, then the login screen is abandoned), and it is a whole bank
+// statement. These are the assertions that would fail if it went back to
+// storing raw bytes.
+describe("the parked file is encrypted at rest", () => {
+  it("stores no recognisable plaintext — not the rows, not the filename", async () => {
+    await stash({
+      name: "RBC-chequing-2026.csv",
+      type: "text/csv",
+      text: "Date,Merchant,Amount\n2026-01-02,LOBLAWS,-42.10\n",
+    });
+
+    const record = (await peek())!;
+    const asText = new TextDecoder().decode(new Uint8Array(record.ct));
+    expect(asText).not.toContain("LOBLAWS");
+    expect(asText).not.toContain("42.10");
+    // The filename is itself a disclosure, so it goes inside the envelope too.
+    expect(asText).not.toContain("RBC-chequing");
+    expect(JSON.stringify(record)).not.toContain("RBC-chequing");
+  });
+
+  it("keeps the key non-extractable, so a storage dump cannot yield its bytes", async () => {
+    await stash(csvFile());
+    const key = (await readKey())!;
+    expect(key.extractable).toBe(false);
+    await expect(realCrypto.subtle.exportKey("raw", key)).rejects.toThrow();
+  });
+
+  it("leaves receivedAt outside the ciphertext so the sweep works without the key", async () => {
+    const when = Date.now() - 1000;
+    await stash(csvFile(), when);
+    expect((await peek())!.receivedAt).toBe(when);
+  });
+
+  it("returns null on tampered ciphertext rather than trusting it", async () => {
+    await stash(csvFile());
+    const record = (await peek())!;
+    const bytes = new Uint8Array(record.ct);
+    bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+    await put({ ...record, ct: bytes.buffer }, SHARE_KEY);
+
+    expect(await takeSharedFile()).toBeNull();
+  });
+
+  it("returns null once the key is destroyed, even if ciphertext survives", async () => {
+    await stash(csvFile());
+    const record = (await peek())!;
+    await purgeSharedFiles();
+    // Put the ciphertext back; without its key it must stay unreadable.
+    await put(record, SHARE_KEY);
+
+    expect(await takeSharedFile()).toBeNull();
+  });
+
+  it("returns null for an envelope from another version", async () => {
+    await stash(csvFile());
+    const record = (await peek())!;
+    await put({ ...record, v: 99 }, SHARE_KEY);
+    expect(await takeSharedFile()).toBeNull();
+  });
+});
+
 describe("purging unclaimed shares", () => {
   it("purgeSharedFiles removes a parked file even while it is still fresh", async () => {
-    await stash(csvRecord());
+    await stash(csvFile());
     await purgeSharedFiles();
     expect(await peek()).toBeUndefined();
+  });
+
+  it("purgeSharedFiles crypto-shreds the key alongside the file", async () => {
+    await stash(csvFile());
+    expect(await readKey()).not.toBeNull();
+    await purgeSharedFiles();
+    expect(await readKey()).toBeNull();
   });
 
   it("purgeSharedFiles is a no-op when nothing is parked", async () => {
@@ -184,7 +293,7 @@ describe("purging unclaimed shares", () => {
   });
 
   it("sweepStaleSharedFiles drops an expired file", async () => {
-    await stash({ ...csvRecord(), receivedAt: Date.now() - SHARE_MAX_AGE_MS - 1 });
+    await stash(csvFile(), Date.now() - SHARE_MAX_AGE_MS - 1);
     await sweepStaleSharedFiles();
     expect(await peek()).toBeUndefined();
   });
@@ -192,7 +301,7 @@ describe("purging unclaimed shares", () => {
   // The sweep runs at every app boot, including the boot that is about to
   // legitimately consume the share — it must not eat it.
   it("sweepStaleSharedFiles leaves a fresh file alone", async () => {
-    await stash(csvRecord());
+    await stash(csvFile());
     await sweepStaleSharedFiles();
     expect(await peek()).toBeDefined();
     expect(await takeSharedFile()).not.toBeNull();
@@ -208,10 +317,31 @@ describe("purging unclaimed shares", () => {
 // The service worker is plain JS outside the bundle and cannot import the
 // constants above, so the two files agree only by convention. Pin it.
 describe("service worker contract", () => {
-  it("uses the same IndexedDB database, store, and key as this module", () => {
+  it("uses the same IndexedDB database, store, and record keys as this module", () => {
     expect(swSource).toContain(`"${SHARE_DB_NAME}"`);
     expect(swSource).toContain(`"${SHARE_STORE}"`);
     expect(swSource).toContain(`"${SHARE_KEY}"`);
+    expect(swSource).toContain(`"${SHARE_CRYPTO_KEY}"`);
+  });
+
+  // If the worker ever stops encrypting, the app would still "work" — it would
+  // just be storing bank statements in the clear again. Pin it at the source.
+  it("encrypts before storing, with a non-extractable AES-GCM key", () => {
+    // Whitespace-tolerant: the property is the call and its arguments, not how
+    // the formatter happened to break the lines.
+    expect(swSource).toMatch(/crypto\.subtle\s*\.\s*encrypt\(/);
+    expect(swSource).toMatch(/crypto\.subtle\s*\.\s*generateKey\(/);
+    // `false` is the non-extractability argument — the load-bearing part.
+    expect(swSource).toMatch(
+      /generateKey\(\s*\{\s*name:\s*"AES-GCM",\s*length:\s*256\s*\}\s*,\s*false/
+    );
+    // A fresh 12-byte IV per share.
+    expect(swSource).toMatch(/getRandomValues\(\s*new Uint8Array\(12\)\s*\)/);
+  });
+
+  it("never writes the raw file buffer to storage", () => {
+    // The pre-encryption implementation stashed `buffer: await file.arrayBuffer()`.
+    expect(swSource).not.toMatch(/buffer:\s*await file\.arrayBuffer\(\)/);
   });
 
   it("reads the same multipart field name the manifest declares and the API expects", () => {
