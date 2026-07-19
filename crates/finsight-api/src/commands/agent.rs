@@ -776,6 +776,41 @@ pub struct AgentActionPlanBlock {
     pub items: Vec<String>,
 }
 
+/// One grounded choice in a clarification. Filled by the SERVER from real data
+/// — never by the model, which may only choose the question. A model-invented
+/// option could name an account the user does not have, and clicking it would
+/// produce a confidently wrong answer.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentClarificationOption {
+    /// Stable identifier (e.g. an account id) so the answer resolves to a real
+    /// entity rather than being re-matched from its label.
+    pub id: String,
+    pub label: String,
+    /// Optional secondary line — a balance, a date, whatever disambiguates two
+    /// similarly-named entities.
+    pub hint: Option<String>,
+}
+
+/// A question the Copilot must have answered before it can continue.
+///
+/// One block covers all three shapes deliberately, so the interaction reads as a
+/// single feature rather than two: `options` empty means free text only; with
+/// options, `multi_select` picks single- vs multi-choice. Free text stays
+/// available either way, so the user is never trapped by an option set that
+/// lacks their answer.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentClarificationBlock {
+    /// Correlates an answer back to the question that prompted it.
+    pub clarification_id: String,
+    pub question: String,
+    /// Ignored when `options` is empty.
+    pub multi_select: bool,
+    pub options: Vec<AgentClarificationOption>,
+    pub text_placeholder: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentResponseBlock {
@@ -806,6 +841,7 @@ pub enum AgentResponseBlock {
     SpendingDrivers(AgentSpendingDriversBlock),
     WatchList(AgentWatchListBlock),
     ActionPlan(AgentActionPlanBlock),
+    Clarification(AgentClarificationBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -1037,6 +1073,19 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
             !b.items.is_empty()
                 && b.items.len() <= 8
                 && b.items.iter().all(|i| !i.trim().is_empty())
+        }
+        AgentResponseBlock::Clarification(b) => {
+            // No minimum on `options`: empty is the free-text mode, not a
+            // malformed picker. The cap is a usability bound — past a handful of
+            // choices a text box beats a list. Blank ids/labels are rejected
+            // because an unlabelled option is unclickable, and an option whose
+            // id does not resolve cannot be answered.
+            !b.clarification_id.trim().is_empty()
+                && !b.question.trim().is_empty()
+                && b.options.len() <= 8
+                && b.options
+                    .iter()
+                    .all(|o| !o.id.trim().is_empty() && !o.label.trim().is_empty())
         }
     }
 }

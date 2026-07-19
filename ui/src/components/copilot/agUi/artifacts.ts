@@ -12,8 +12,18 @@ const MAX_METRICS = 50;
 const MAX_CHART_POINTS = 200;
 const MAX_TEXT = 20_000;
 const MAX_LABEL = 400;
+// A clarification is a question the user must read and act on. Past a handful of
+// choices a picker is worse than a text box, so the cap is a usability bound
+// rather than a payload-size one.
+const MAX_CLARIFICATION_OPTIONS = 8;
 
 const shortString = z.string().max(MAX_LABEL);
+/// Mirrors Rust's `!s.trim().is_empty()` checks — plain `.min(1)` would accept a
+/// whitespace-only string that the Rust validator rejects, which is exactly the
+/// kind of silent drift the parity corpus exists to catch.
+const requiredString = shortString.refine((s) => s.trim().length > 0, {
+  message: "must not be blank",
+});
 
 /// Discriminated union mirroring the Rust `AgentResponseBlock` — the only shape
 /// the backend ever puts inside a `FinSightResponseBlock` artifact. Every branch
@@ -185,6 +195,31 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     kind: z.literal("actionPlan"),
     title: shortString.nullable(),
     items: z.array(shortString).min(1).max(8),
+  }),
+  // A question the Copilot needs answered before it can continue. One shape
+  // covers all three modes so the interaction reads as a single feature: no
+  // `options` means free text only; with options, `multiSelect` picks single-
+  // vs multi-choice. Options are SERVER-grounded from real data — the model
+  // only chooses the question — so a hallucinated option can never become a
+  // clickable answer.
+  z.object({
+    kind: z.literal("clarification"),
+    clarificationId: requiredString,
+    question: requiredString,
+    multiSelect: z.boolean(),
+    // No `.min(1)`: an empty array is the free-text mode, not a malformed
+    // picker. Blank id/label are rejected — an unlabelled option is unclickable,
+    // and an option whose id does not resolve cannot be answered.
+    options: z
+      .array(
+        z.object({
+          id: requiredString,
+          label: requiredString,
+          hint: shortString.nullable(),
+        }),
+      )
+      .max(MAX_CLARIFICATION_OPTIONS),
+    textPlaceholder: shortString.nullable(),
   }),
 ]);
 

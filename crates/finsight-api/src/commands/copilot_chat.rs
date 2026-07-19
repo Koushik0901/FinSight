@@ -1452,6 +1452,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::SpendingDrivers(_) => true,
         AgentResponseBlock::WatchList(_) => true,
         AgentResponseBlock::ActionPlan(_) => true,
+        AgentResponseBlock::Clarification(_) => true,
     }
 }
 
@@ -1610,6 +1611,15 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::ActionPlan(b) => {
             opt_label_ok(&b.title) && b.items.len() <= 8 && b.items.iter().all(|i| label_ok(i))
+        }
+        AgentResponseBlock::Clarification(b) => {
+            label_ok(&b.clarification_id)
+                && label_ok(&b.question)
+                && b.options.len() <= 8
+                && opt_label_ok(&b.text_placeholder)
+                && b.options
+                    .iter()
+                    .all(|o| label_ok(&o.id) && label_ok(&o.label) && opt_label_ok(&o.hint))
         }
     }
 }
