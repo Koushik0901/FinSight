@@ -15,7 +15,11 @@ type RangeKey = (typeof RANGES)[number]["key"];
 function isoDaysAgo(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  // Format from LOCAL fields. `toISOString()` reports the UTC calendar date, so
+  // west of Greenwich it lands a day late — the same trap `prettyDate` guards
+  // against, just in the other direction.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function prettyDate(iso: string) {
@@ -46,14 +50,21 @@ export default function BalanceHistoryCard({ account }: { account: AccountSummar
     return days === null ? null : isoDaysAgo(days);
   }, [range]);
 
-  const { data: timeline, isLoading, isError } = useAccountBalanceTimeline(account.id, since);
+  const { data: timeline, isError } = useAccountBalanceTimeline(account.id, since);
 
-  if (isLoading || isError || !timeline || !timeline.reconstructable) return null;
+  // Hide the card outright only when the balance can't be honestly derived —
+  // a verdict that doesn't change with the range, so it never yanks the chrome
+  // out from under a click. A range whose data is still loading keeps the header
+  // and chips mounted and swaps only the body; otherwise the buttons the user
+  // just pressed would vanish and reappear on every uncached range.
+  if (isError || (timeline && !timeline.reconstructable)) return null;
 
-  const { points, peak, trough, anchor } = timeline;
+  const points = timeline?.points ?? [];
+  const peak = timeline?.peak;
+  const trough = timeline?.trough;
   // The reconstruction's SHAPE is always right, so the dates hold regardless.
   // Only the LEVEL depends on the opening figure being real.
-  const amountsUnanchored = anchor === "assumedZero";
+  const amountsUnanchored = timeline?.anchor === "assumedZero";
 
   const chartPoints = points.map((p) => ({ date: p.date, totalCents: p.balanceCents }));
   const rangeLabel = RANGES.find((r) => r.key === range)?.label ?? "";
@@ -83,7 +94,11 @@ export default function BalanceHistoryCard({ account }: { account: AccountSummar
         </div>
       </div>
 
-      {points.length < 2 ? (
+      {!timeline ? (
+        // Distinct from the empty case below: claiming "not enough activity"
+        // while the fetch is still in flight would assert something unknown.
+        <div className="stub">Rebuilding this account&rsquo;s balance history&hellip;</div>
+      ) : points.length < 2 ? (
         <div className="stub">
           Not enough activity in this range to draw a curve. Import more history, or widen the range.
         </div>
@@ -117,7 +132,7 @@ export default function BalanceHistoryCard({ account }: { account: AccountSummar
           amount. Set this account&rsquo;s current balance to anchor them.
         </div>
       )}
-      {timeline.earliestTxnDate && (
+      {timeline?.earliestTxnDate && (
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
           History starts {prettyDate(timeline.earliestTxnDate)} &mdash; anything before that
           isn&rsquo;t imported.

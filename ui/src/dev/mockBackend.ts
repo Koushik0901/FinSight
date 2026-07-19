@@ -650,10 +650,15 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       const accountId = String(a?.accountId ?? "");
       const account = ds.accounts.find((x) => x.id === accountId);
       if (!account) return null;
-      // Investment accounts hold market value, not summed cash flow, so the real
-      // backend refuses them — mirror that here or the card looks universally
-      // available in the harness when it isn't.
-      if (account.type === "Investment") {
+      // The real backend refuses both of these, so mirror them or the card looks
+      // universally available in the harness when it isn't.
+      const refusal =
+        account.type === "Investment"
+          ? "an investment account's value is its market value, not the sum of its cash flows, so it cannot be reconstructed from transactions"
+          : account.simplefin_account_id
+            ? "this account is linked to a bank feed, so its balances are bank-reported rather than derived — its recorded balance history is the source of truth"
+            : null;
+      if (refusal) {
         return {
           accountId,
           accountName: account.name,
@@ -664,14 +669,17 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
           anchor: "assumedZero",
           earliestTxnDate: null,
           reconstructable: false,
-          skipReason:
-            "an investment account's value is its market value, not the sum of its cash flows, so it cannot be reconstructed from transactions",
+          skipReason: refusal,
         };
       }
-      const end = Number(account.balanceCents ?? 0);
+      // `AccountSummary` is one of the snake_case binding types — `balanceCents`
+      // here would silently read undefined and flatten every curve to $0.
+      const end = Number(account.balance_cents ?? 0);
       const since = a?.since ? String(a.since) : null;
-      const months = since ? 12 : 24;
-      const points = balanceSeries(months, end);
+      // The full history is range-INDEPENDENT; `since` only trims what's
+      // returned. Deriving it from the window (as the real backend does not)
+      // would make "history starts …" drift with the selected chip.
+      const points = balanceSeries(24, end);
       const windowed = since ? points.filter((p) => p.date >= since) : points;
       const series = windowed.length >= 2 ? windowed : points.slice(-2);
       let peak = series[0]!;
@@ -680,6 +688,10 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
         if (p.balanceCents > peak.balanceCents) peak = p;
         if (p.balanceCents < trough.balanceCents) trough = p;
       }
+      // An account with no confirmed balance is exactly the `assumedZero` case:
+      // history imported behind a zero opening. Mirroring it here keeps the
+      // "dates exact, amounts aren't" caveat visible in the design harness.
+      const anchored = account.balance_known !== false;
       return {
         accountId,
         accountName: account.name,
@@ -687,8 +699,8 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
         peak,
         trough,
         currentCents: series[series.length - 1]!.balanceCents,
-        anchor: "anchoredOpening",
-        earliestTxnDate: series[0]!.date,
+        anchor: anchored ? "anchoredOpening" : "assumedZero",
+        earliestTxnDate: points[0]!.date,
         reconstructable: true,
         skipReason: null,
       };

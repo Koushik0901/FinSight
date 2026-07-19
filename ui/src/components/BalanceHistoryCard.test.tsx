@@ -72,10 +72,12 @@ describe("BalanceHistoryCard", () => {
     );
     const { container } = render(wrap(<BalanceHistoryCard account={account} />));
 
-    // Nothing to await on — assert the card never appears rather than racing it.
-    await waitFor(() => expect(getAccountBalanceTimeline).toHaveBeenCalled());
-    expect(container.querySelector(".card")).toBeNull();
+    // The refusal is only knowable once the backend answers, so the card mounts
+    // its chrome first and then withdraws. What matters is that it never shows a
+    // number for an account whose balance can't be honestly derived.
+    await waitFor(() => expect(container.querySelector(".card")).toBeNull());
     expect(screen.queryByText("Balance history")).not.toBeInTheDocument();
+    expect(screen.queryByText("Highest")).not.toBeInTheDocument();
   });
 
   it("re-queries with a since date when the range changes", async () => {
@@ -88,6 +90,31 @@ describe("BalanceHistoryCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "All" }));
     await waitFor(() =>
       expect(getAccountBalanceTimeline).toHaveBeenCalledWith("sav1", null),
+    );
+  });
+
+  it("keeps the range chips mounted while a new range loads", async () => {
+    // Never resolving: the card must not yank its own controls out from under
+    // the click that triggered the fetch.
+    getAccountBalanceTimeline.mockReturnValue(new Promise(() => {}));
+    render(wrap(<BalanceHistoryCard account={account} />));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument());
+    expect(screen.getByText("Balance history")).toBeInTheDocument();
+    // And it must not claim there's no activity when it simply doesn't know yet.
+    expect(screen.queryByText(/Not enough activity/i)).not.toBeInTheDocument();
+  });
+
+  it("derives the since date from local time, not UTC", async () => {
+    render(wrap(<BalanceHistoryCard account={account} />));
+    await waitFor(() => expect(getAccountBalanceTimeline).toHaveBeenCalled());
+
+    const since = getAccountBalanceTimeline.mock.calls[0]![1] as string;
+    const expected = new Date();
+    expected.setDate(expected.getDate() - 365);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    expect(since).toBe(
+      `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`,
     );
   });
 
