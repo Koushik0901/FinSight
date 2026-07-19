@@ -735,8 +735,32 @@ fn is_intent_filler(text: &str) -> bool {
     }
     // Same for a stated information gap: "I'll need X before I can answer" is a
     // decline, not intent to act.
+    //
+    // "I'll need TO <verb>" splits both ways — "to know your retirement age" is
+    // still asking the user, while "to fetch your accounts" is the model
+    // announcing its own work. Only a data-gathering verb marks the latter, and
+    // the list is deliberately the discriminator rather than a list of asking
+    // verbs: an unrecognised verb then falls through as a real answer. Erring
+    // toward keeping the reply ships an unhelpful sentence at worst, whereas
+    // erring the other way resurrects the bug this whole guard exists to fix —
+    // silently discarding a correct decline.
+    const SELF_DIRECTED: [&str; 10] = [
+        "fetch", "pull", "check", "look", "run", "gather", "retrieve", "query", "calculate",
+        "compute",
+    ];
     const NEEDS_FROM_USER: [&str; 4] = ["let me know", "i'll need", "i will need", "i'd need"];
-    if NEEDS_FROM_USER.iter().any(|p| lower.starts_with(p)) {
+    let asks_the_user = NEEDS_FROM_USER.iter().any(|p| {
+        let Some(rest) = lower.strip_prefix(p) else {
+            return false;
+        };
+        match rest.trim_start().strip_prefix("to ") {
+            Some(after) => !SELF_DIRECTED
+                .iter()
+                .any(|v| after.trim_start().starts_with(v)),
+            None => true,
+        }
+    });
+    if asks_the_user {
         return false;
     }
 

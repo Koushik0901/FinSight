@@ -775,6 +775,14 @@ fn clarifying_questions_and_declines_are_not_intent_filler() {
     assert!(!is_intent_filler("I will need to know your target retirement age first."));
     assert!(!is_intent_filler("Let me know if you meant last month or last year?"));
 
+    // "I'll need to <verb>" splits on the VERB, not on the infinitive: asking
+    // the user for something they alone know is still a real answer...
+    assert!(!is_intent_filler("I will need to know your target retirement age first."));
+    assert!(!is_intent_filler("I'll need to have your APR before I can rank those."));
+    // ...while a data-gathering verb is the model narrating its own work.
+    assert!(is_intent_filler("I'll need to fetch your accounts first."));
+    assert!(is_intent_filler("I'll need to pull your transactions."));
+
     // Still filler: the model announcing it is about to go do the work.
     assert!(is_intent_filler("Let me pull that data now."));
     assert!(is_intent_filler("I'll check your accounts."));
