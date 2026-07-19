@@ -21,8 +21,8 @@ mod transaction;
 mod transfer;
 
 pub use account::{
-    Account, AccountBalancePoint, AccountPatch, AccountSparkline, AccountSummary, AccountType,
-    NewAccount,
+    Account, AccountBalancePoint, AccountBalanceTimeline, AccountPatch, AccountSparkline,
+    AccountSummary, AccountType, BalanceAnchorQuality, NewAccount,
 };
 pub use agent_memory::AgentMemory;
 pub use alert::SimpleFinAlert;

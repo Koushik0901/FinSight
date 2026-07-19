@@ -13,6 +13,7 @@ import FilePicker from "../components/FilePicker";
 import ImportMappingDialog from "../components/ImportMappingDialog";
 import SetBalanceDialog from "../components/SetBalanceDialog";
 import HoldingsCard from "../components/HoldingsCard";
+import BalanceHistoryCard from "../components/BalanceHistoryCard";
 import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import { money } from "../utils/format";
@@ -260,6 +261,8 @@ export default function AccountTransactions() {
       </div>
 
       {account && account.type === "Investment" && <HoldingsCard account={account} />}
+
+      {account && <BalanceHistoryCard account={account} />}
 
       <div style={{ marginTop: 14 }}>
         <TransactionFilter

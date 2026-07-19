@@ -723,6 +723,7 @@ fn is_intent_filler(text: &str) -> bool {
         return false;
     }
     let lower = t.to_lowercase();
+
     const INTENT_STARTS: [&str; 8] = [
         "let me",
         "i'll ",
@@ -733,7 +734,72 @@ fn is_intent_filler(text: &str) -> bool {
         "pulling ",
         "fetching ",
     ];
+    const NEEDS_FROM_USER: [&str; 4] = ["let me know", "i'll need", "i will need", "i'd need"];
+
+    // Order matters, and each rule exists because the previous one over-reached.
+    //
+    // 1. Asking for something only the USER has ("I'll need YOUR mortgage
+    //    balance") is a decline, not intent — a correct answer to an
+    //    under-specified request. This is checked first because it is the most
+    //    specific signal, and because the object of "need" is what separates it
+    //    from "I'll need a moment to pull the numbers", which is pure narration.
+    let asks_the_user = NEEDS_FROM_USER.iter().any(|p| {
+        let Some(rest) = lower.strip_prefix(p) else {
+            return false;
+        };
+        let rest = rest.trim_start();
+        // "…your APR", "…you to confirm" — the object belongs to the user.
+        if rest.starts_with("your ") || rest.starts_with("you ") {
+            return true;
+        }
+        // "…to know X" asks; "…to (quickly) pull X" narrates. The verb decides,
+        // and it may sit behind an adverb, so scan the clause rather than only
+        // the next token.
+        match rest.strip_prefix("to ") {
+            Some(after) => !mentions_self_directed(after),
+            None => false,
+        }
+    });
+    if asks_the_user {
+        return false;
+    }
+
+    // 2. An intent opener PLUS a data-gathering verb is the model narrating its
+    //    own next step. Checked before the question mark so a tag question
+    //    ("Let me pull that up, okay?") cannot launder filler into an answer.
+    let announces_own_work =
+        INTENT_STARTS.iter().any(|p| lower.starts_with(p)) && mentions_self_directed(&lower);
+    if announces_own_work {
+        return true;
+    }
+
+    // 3. Otherwise a question is directed at the user — "Let me confirm, did you
+    //    mean May or June?" is a clarifying question, not an announcement.
+    if t.contains('?') {
+        return false;
+    }
+
+    // 4. A bare opener with no gathering verb and no question is still filler.
     INTENT_STARTS.iter().any(|p| lower.starts_with(p))
+}
+
+/// Whether the text names an action the AGENT would take to gather data, as
+/// opposed to something it is asking the user for. Matched on whole words so a
+/// noun like "runway" is not read as the verb "run".
+fn mentions_self_directed(text: &str) -> bool {
+    const SELF_DIRECTED: [&str; 10] = [
+        "fetch", "pull", "check", "look", "run", "gather", "retrieve", "query", "calculate",
+        "compute",
+    ];
+    text.split_whitespace().any(|raw| {
+        let word = raw.trim_matches(|c: char| !c.is_alphanumeric());
+        let stem = word
+            .strip_suffix("ing")
+            .or_else(|| word.strip_suffix("es"))
+            .or_else(|| word.strip_suffix('s'))
+            .unwrap_or(word);
+        SELF_DIRECTED.contains(&word) || SELF_DIRECTED.contains(&stem)
+    })
 }
 
 /// True when the model's final text looks like it was TRYING to emit the

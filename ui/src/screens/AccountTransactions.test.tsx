@@ -30,6 +30,9 @@ vi.mock("../api/hooks/accounts", () => ({
     ],
   }),
   useSetAccountBalance: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false }),
+  // BalanceHistoryCard renders on this screen; it hides itself when there's no
+  // timeline, keeping these transaction-focused assertions unaffected.
+  useAccountBalanceTimeline: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 
 const { infiniteSpy } = vi.hoisted(() => ({ infiniteSpy: vi.fn() }));

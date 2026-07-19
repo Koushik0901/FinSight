@@ -5,6 +5,7 @@ import {
   type NewAccount,
   type AccountPatch,
   type AccountBalancePoint,
+  type AccountBalanceTimeline,
   type AccountSparkline,
 } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
@@ -65,6 +66,27 @@ export function useAccountBalanceHistory(accountId: string | undefined, days: nu
     queryFn: async () => {
       if (!accountId) return [];
       const result = await commands.listAccountBalanceHistory(accountId, days);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: !!accountId && isBackendAvailable(),
+  });
+}
+
+/**
+ * An account's balance curve reconstructed from its ledger, with the peak and
+ * trough over the window.
+ *
+ * Distinct from `useAccountBalanceHistory`, which reads the STORED balance
+ * snapshots — those are written opportunistically, so they are a sparse scatter
+ * and the true peak usually falls on a day none of them covers. Pass `since` as
+ * an ISO date, or null for all-time.
+ */
+export function useAccountBalanceTimeline(accountId: string | undefined, since: string | null) {
+  return useQuery<AccountBalanceTimeline>({
+    queryKey: ["account-balance-timeline", accountId, since],
+    queryFn: async () => {
+      const result = await commands.getAccountBalanceTimeline(accountId!, since);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },

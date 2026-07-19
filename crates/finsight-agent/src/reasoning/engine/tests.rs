@@ -759,6 +759,68 @@ fn content_after_plan_detects_plan_only_vs_real_answer() {
     assert_eq!(content_after_plan("Just a plain answer."), "Just a plain answer.");
 }
 
+/// A clarifying question and a missing-data decline are CORRECT no-tool answers,
+/// but they open with the same words as intent filler ("Let me…", "I'll…").
+/// Treating them as filler empties the content, which drops `is_real_answer` and
+/// makes `is_usable_tool_answer` discard the turn — replacing the right response
+/// with the canned planner fallback. That is the failure mode in issue #18: the
+/// Copilot cannot cleanly say "which one did you mean?" or "I need X first".
+#[test]
+fn clarifying_questions_and_declines_are_not_intent_filler() {
+    use super::is_intent_filler;
+
+    // Asking the USER for something — not announcing work.
+    assert!(!is_intent_filler("Let me know which account you mean — chequing or savings?"));
+    assert!(!is_intent_filler("I'll need your mortgage balance before I can answer that."));
+    assert!(!is_intent_filler("I will need to know your target retirement age first."));
+    assert!(!is_intent_filler("Let me know if you meant last month or last year?"));
+
+    // "I'll need to <verb>" splits on the VERB, not on the infinitive: asking
+    // the user for something they alone know is still a real answer...
+    assert!(!is_intent_filler("I will need to know your target retirement age first."));
+    assert!(!is_intent_filler("I'll need to have your APR before I can rank those."));
+    // ...while a data-gathering verb is the model narrating its own work.
+    assert!(is_intent_filler("I'll need to fetch your accounts first."));
+    assert!(is_intent_filler("I'll need to pull your transactions."));
+
+    // A tag question must not launder filler into an answer: the announcement
+    // is decided before the question mark is consulted.
+    assert!(is_intent_filler("Let me pull that up for you, okay?"));
+    assert!(is_intent_filler("Let me check that real quick, sound good?"));
+    // But a clarifying question that merely OPENS like filler still survives,
+    // because it names no data-gathering action.
+    assert!(!is_intent_filler("Let me confirm — did you mean May or June?"));
+
+    // The gathering verb may sit behind an adverb or an intervening noun.
+    assert!(is_intent_filler("I'll need a moment to pull the numbers."));
+    assert!(is_intent_filler("I'll need to quickly pull your latest statement."));
+    // ...yet an object the user owns still marks a genuine ask, even when a
+    // gathering verb appears later in the sentence.
+    assert!(!is_intent_filler("I'll need your income figure to calculate this."));
+
+    // Whole-word matching: "runway" is a noun, not the verb "run".
+    assert!(!is_intent_filler("I'll need your expenses to know your runway."));
+
+    // Still filler: the model announcing it is about to go do the work.
+    assert!(is_intent_filler("Let me pull that data now."));
+    assert!(is_intent_filler("I'll check your accounts."));
+    assert!(is_intent_filler("Now let me fetch the balances."));
+    assert!(is_intent_filler("Fetching your transactions."));
+    assert!(is_intent_filler(""));
+}
+
+/// End-to-end through the gate: a clarifying question with no tool call must
+/// survive as a usable answer.
+#[test]
+fn a_no_tool_clarifying_question_survives_as_a_real_answer() {
+    use super::content_after_plan;
+    let reply = "PLAN:\n1. Identify the account\n\nLet me know which account you mean — chequing or savings?";
+    assert!(
+        !content_after_plan(reply).is_empty(),
+        "a clarifying question after a plan must read as a real answer"
+    );
+}
+
 #[test]
 fn finance_snapshot_block_matches_the_shared_metrics_layer() {
     use super::finance_snapshot_block;

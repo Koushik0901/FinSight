@@ -195,6 +195,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::rank_debt_payoff());
     tools.register(read::compare_debt_vs_goal());
     tools.register(read::get_account_balances());
+    tools.register(read::get_account_balance_history());
     tools.register(read::get_net_worth());
     tools.register(read::get_month_totals());
     tools.register(read::get_top_spending_categories());
