@@ -1,7 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::{
-    Account, AccountBalancePoint, AccountPatch, AccountSparkline, AccountSummary, NewAccount,
+    Account, AccountBalancePoint, AccountBalanceTimeline, AccountPatch, AccountSparkline,
+    AccountSummary, NewAccount,
 };
 use finsight_core::repos::{accounts, run};
 
@@ -64,6 +65,26 @@ pub async fn list_account_balance_history(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         accounts::list_balance_history(conn, &account_id, days)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Reconstruct an account's balance curve from its ledger, with the peak and
+/// trough over the requested window. `since` is an ISO `YYYY-MM-DD` date; omit
+/// it for all-time.
+///
+/// Unlike [`list_account_balance_history`], which reads the sparse stored
+/// snapshots, this derives every point — so it can answer "when was this account
+/// at its highest" rather than "which recorded day was highest".
+pub async fn get_account_balance_timeline(
+    state: &ApiState,
+    account_id: String,
+    since: Option<String>,
+) -> AppResult<AccountBalanceTimeline> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        accounts::balance_timeline(conn, &account_id, since.as_deref())
     })
     .await
     .map_err(AppError::from)

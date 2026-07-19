@@ -1,7 +1,8 @@
 use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::{
-    Account, AccountBalancePoint, AccountPatch, AccountSparkline, AccountSummary, NewAccount,
+    Account, AccountBalancePoint, AccountBalanceTimeline, AccountPatch, AccountSparkline,
+    AccountSummary, NewAccount,
 };
 
 #[tauri::command]
@@ -70,6 +71,17 @@ pub async fn list_account_balance_history(
     days: u32,
 ) -> AppResult<Vec<AccountBalancePoint>> {
     finsight_api::commands::accounts::list_account_balance_history(&state.api, account_id, days)
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_account_balance_timeline(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    since: Option<String>,
+) -> AppResult<AccountBalanceTimeline> {
+    finsight_api::commands::accounts::get_account_balance_timeline(&state.api, account_id, since)
         .await
 }
 

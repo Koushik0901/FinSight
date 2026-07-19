@@ -1,9 +1,9 @@
 use crate::error::CoreResult;
 use crate::models::{
-    Account, AccountBalancePoint, AccountPatch, AccountSparkline, AccountSummary, AccountType,
-    NewAccount,
+    Account, AccountBalancePoint, AccountBalanceTimeline, AccountPatch, AccountSparkline,
+    AccountSummary, AccountType, BalanceAnchorQuality, NewAccount,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
@@ -433,14 +433,7 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
     }
 
     // The earliest balance snapshot is the "opening" baseline for this account.
-    let (opening_balance, opening_date, opening_source): (i64, String, Option<String>) = conn
-        .query_row(
-            "SELECT COALESCE(balance_cents, 0), as_of_date, source FROM account_balances \
-             WHERE account_id = ?1 ORDER BY as_of_date ASC, rowid ASC LIMIT 1",
-            params![account_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .unwrap_or((0, "1970-01-01".to_string(), None));
+    let anchor = opening_anchor(conn, account_id);
 
     // With no activity, the seed value is itself the balance — leave it alone.
     let txn_count: i64 = conn.query_row(
@@ -452,15 +445,10 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         return Ok(());
     }
 
-    // Derive the current balance (YNAB/Actual model): the entered opening balance
-    // is the anchor *before* the account's history. When the only baseline is the
-    // account-creation seed (dated at creation, typically *after* an imported
-    // back-history), treat the opening as pre-history and fold in ALL activity.
-    // When there's a real prior baseline, only add activity dated after it so we
-    // don't double-count. Written as a distinct 'derived' snapshot so it reads as
-    // known but a later user-set balance still wins.
-    let only_seed_baseline = opening_source.as_deref() == Some("seed");
-    let txn_sum: i64 = if only_seed_baseline {
+    // Derive the current balance (YNAB/Actual model) by folding activity onto the
+    // opening anchor per `OpeningAnchor::fold_all_activity`. Written as a distinct
+    // 'derived' snapshot so it reads as known but a later user-set balance still wins.
+    let txn_sum: i64 = if anchor.fold_all_activity {
         conn.query_row(
             "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
              WHERE account_id = ?1 AND pending = 0",
@@ -471,7 +459,7 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         conn.query_row(
             "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions \
              WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
-            params![account_id, opening_date],
+            params![account_id, anchor.date],
             |r| r.get(0),
         )?
     };
@@ -481,11 +469,45 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
         conn,
         account_id,
         &today,
-        opening_balance + txn_sum,
+        anchor.balance_cents + txn_sum,
         None,
         Some("derived"),
     )?;
     Ok(())
+}
+
+/// The opening anchor a derived balance is built on: the earliest recorded
+/// balance snapshot for an account.
+///
+/// The anchor's SOURCE decides how activity folds onto it. When the only
+/// baseline is the account-creation seed (dated at creation, typically *after*
+/// an imported back-history), the opening is treated as pre-history and ALL
+/// activity is folded in. When a real prior baseline exists, only activity dated
+/// after it counts, so nothing is double-counted.
+///
+/// Shared by [`recompute_balance_if_linked`] and [`balance_timeline`] so the
+/// derived current balance and the reconstructed curve can never disagree about
+/// where the account started.
+struct OpeningAnchor {
+    balance_cents: i64,
+    date: String,
+    fold_all_activity: bool,
+}
+
+fn opening_anchor(conn: &Connection, account_id: &str) -> OpeningAnchor {
+    let (balance_cents, date, source): (i64, String, Option<String>) = conn
+        .query_row(
+            "SELECT COALESCE(balance_cents, 0), as_of_date, source FROM account_balances \
+             WHERE account_id = ?1 ORDER BY as_of_date ASC, rowid ASC LIMIT 1",
+            params![account_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap_or((0, "1970-01-01".to_string(), None));
+    OpeningAnchor {
+        fold_all_activity: source.as_deref() == Some("seed"),
+        balance_cents,
+        date,
+    }
 }
 
 /// Set an account's CURRENT balance by BACK-SOLVING its opening anchor.
@@ -884,6 +906,193 @@ pub fn list_all_balance_sparklines(
     Ok(out)
 }
 
+/// Reconstruct an account's balance over time from its opening anchor plus
+/// cleared transaction activity: `balance(t) = opening + Σ(cleared ≤ t)`.
+///
+/// This is the per-account, per-activity-day counterpart to
+/// `net_worth::backfill_history_from_transactions`, and it exists because stored
+/// `account_balances` rows are written opportunistically rather than on a
+/// schedule — they are a sparse scatter, so `MAX(balance_cents)` over them would
+/// confidently report a peak that is merely the highest day someone happened to
+/// record, not the highest the account actually reached.
+///
+/// Points are END-OF-DAY: intra-day ordering isn't recoverable from `posted_at`
+/// alone, so a day with several transactions yields one point carrying the net.
+///
+/// `since` (ISO `YYYY-MM-DD`) trims the RETURNED points only — the running
+/// balance is always accumulated from the account's true beginning, and the
+/// window's first point carries the balance as of that date so the series never
+/// starts mid-air. `peak`/`trough` describe the returned window.
+pub fn balance_timeline(
+    conn: &mut Connection,
+    account_id: &str,
+    since: Option<&str>,
+) -> CoreResult<AccountBalanceTimeline> {
+    let (account_name, account_type, created_date): (String, String, String) = conn.query_row(
+        "SELECT name, type, substr(created_at, 1, 10) FROM accounts WHERE id = ?1",
+        params![account_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+
+    // An investment account's value is its MARKET value, not the sum of its cash
+    // flows — the same reason `recompute_balance_if_linked` refuses to derive one.
+    // A fully-invested account nets ~$0 cash, so reconstructing a curve from its
+    // ledger would produce a confident, meaningless answer.
+    if account_type == "Investment" {
+        return Ok(AccountBalanceTimeline {
+            account_id: account_id.to_string(),
+            account_name,
+            points: Vec::new(),
+            peak: None,
+            trough: None,
+            current_cents: 0,
+            anchor: BalanceAnchorQuality::AssumedZero,
+            earliest_txn_date: None,
+            reconstructable: false,
+        });
+    }
+
+    let anchor = opening_anchor(conn, account_id);
+    let earliest_txn_date: Option<String> = conn.query_row(
+        "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
+        params![account_id],
+        |r| r.get::<_, Option<String>>(0),
+    )?;
+
+    // Where the curve starts. Behind a creation seed the opening is conceptually
+    // PRE-history even though the seed row is dated at account creation, so the
+    // curve has to open before the earliest transaction — otherwise the series
+    // would run backwards from its own anchor.
+    let curve_start = if anchor.fold_all_activity {
+        earliest_txn_date
+            .as_deref()
+            .and_then(day_before)
+            .unwrap_or_else(|| anchor.date.clone())
+    } else {
+        anchor.date.clone()
+    };
+
+    let mut sql = String::from(
+        "SELECT date(posted_at) AS d, COALESCE(SUM(amount_cents), 0) FROM transactions \
+         WHERE account_id = ?1 AND pending = 0",
+    );
+    if !anchor.fold_all_activity {
+        sql.push_str(" AND date(posted_at) > ?2");
+    }
+    sql.push_str(" GROUP BY d ORDER BY d ASC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut args: Vec<&dyn rusqlite::ToSql> = vec![&account_id];
+    if !anchor.fold_all_activity {
+        args.push(&anchor.date);
+    }
+    let rows = stmt.query_map(args.as_slice(), |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })?;
+
+    let mut running = anchor.balance_cents;
+    let mut all_points = vec![AccountBalancePoint {
+        date: curve_start,
+        balance_cents: running,
+    }];
+    for row in rows {
+        let (date, delta) = row?;
+        running += delta;
+        // Activity landing on the curve's own start date updates that point
+        // rather than appending a duplicate date.
+        match all_points.last_mut() {
+            Some(last) if last.date == date => last.balance_cents = running,
+            _ => all_points.push(AccountBalancePoint {
+                date,
+                balance_cents: running,
+            }),
+        }
+    }
+
+    let points = match since {
+        None => all_points,
+        Some(since) => {
+            let mut carried: Option<i64> = None;
+            let mut kept: Vec<AccountBalancePoint> = Vec::new();
+            for p in all_points {
+                if p.date.as_str() < since {
+                    carried = Some(p.balance_cents);
+                } else {
+                    kept.push(p);
+                }
+            }
+            if let Some(balance_cents) = carried {
+                kept.insert(
+                    0,
+                    AccountBalancePoint {
+                        date: since.to_string(),
+                        balance_cents,
+                    },
+                );
+            }
+            kept
+        }
+    };
+
+    // Strict comparisons keep the EARLIEST date on ties, since points ascend.
+    let mut peak: Option<&AccountBalancePoint> = None;
+    let mut trough: Option<&AccountBalancePoint> = None;
+    for p in &points {
+        if peak.map_or(true, |c| p.balance_cents > c.balance_cents) {
+            peak = Some(p);
+        }
+        if trough.map_or(true, |c| p.balance_cents < c.balance_cents) {
+            trough = Some(p);
+        }
+    }
+
+    let confirmed_balance: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM account_balances \
+         WHERE account_id = ?1 AND source NOT IN ('seed', 'derived'))",
+        params![account_id],
+        |r| r.get(0),
+    )?;
+    let anchor_quality = if confirmed_balance {
+        BalanceAnchorQuality::Calibrated
+    } else if anchor.balance_cents != 0 {
+        // Either an opening the user entered at creation, or one back-solved by
+        // `set_current_balance` — which rewrites the seed row in place and leaves
+        // no separate marker behind. Both are real anchors.
+        BalanceAnchorQuality::AnchoredOpening
+    } else if earliest_txn_date
+        .as_deref()
+        .is_some_and(|d| d < created_date.as_str())
+    {
+        // Zero opening with history imported behind it: the anchor never
+        // accounted for that history, so every absolute figure is off by an
+        // unknown constant. Movement and timing are still correct.
+        BalanceAnchorQuality::AssumedZero
+    } else {
+        BalanceAnchorQuality::AnchoredOpening
+    };
+
+    Ok(AccountBalanceTimeline {
+        account_id: account_id.to_string(),
+        account_name,
+        current_cents: points
+            .last()
+            .map_or(anchor.balance_cents, |p| p.balance_cents),
+        peak: peak.cloned(),
+        trough: trough.cloned(),
+        points,
+        anchor: anchor_quality,
+        earliest_txn_date,
+        reconstructable: true,
+    })
+}
+
+fn day_before(date: &str) -> Option<String> {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.format("%Y-%m-%d").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -899,13 +1108,21 @@ mod tests {
     }
 
     fn sample_account(conn: &mut rusqlite::Connection) -> Account {
+        sample_account_typed(conn, AccountType::Checking, "Checking")
+    }
+
+    fn sample_account_typed(
+        conn: &mut rusqlite::Connection,
+        r#type: AccountType,
+        name: &str,
+    ) -> Account {
         insert(
             conn,
             NewAccount {
                 owner: "Me".into(),
                 bank: "Bank".into(),
-                r#type: AccountType::Checking,
-                name: "Checking".into(),
+                r#type,
+                name: name.into(),
                 last4: None,
                 currency: "USD".into(),
                 color: "#fff".into(),
@@ -1167,6 +1384,147 @@ mod tests {
             ],
         )
         .unwrap();
+    }
+
+    /// The premise of the feature: stored `account_balances` rows are written
+    /// opportunistically, so the true peak lands on a day nobody recorded. The
+    /// reconstruction has to find it where `MAX(balance_cents)` over stored rows
+    /// cannot.
+    #[test]
+    fn balance_timeline_finds_a_peak_no_stored_snapshot_holds() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn); // seed: $0 @ today
+        insert_txn(&conn, &acc.id, 500_000, "2024-01-10");
+        insert_txn(&conn, &acc.id, 300_000, "2024-02-10"); // peak: $8,000
+        insert_txn(&conn, &acc.id, -600_000, "2024-03-10");
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        let peak = tl.peak.expect("a peak");
+        assert_eq!(peak.balance_cents, 800_000);
+        assert_eq!(peak.date, "2024-02-10");
+        assert_eq!(tl.current_cents, 200_000);
+
+        // The peak exists nowhere in the stored snapshots — querying those would
+        // have missed it entirely, which is the whole reason this fn exists.
+        let stored_max: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(balance_cents), 0) FROM account_balances WHERE account_id = ?1",
+                params![acc.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_ne!(stored_max, 800_000);
+    }
+
+    /// The date is trustworthy even when the amount isn't, so the caveat has to
+    /// ride along with the answer rather than being inferred by callers.
+    #[test]
+    fn balance_timeline_flags_a_zero_anchor_with_history_behind_it() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn); // seed: $0 @ today
+        insert_txn(&conn, &acc.id, 100_000, "2020-01-01"); // predates creation
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert_eq!(tl.anchor, BalanceAnchorQuality::AssumedZero);
+        // Shape is still right: the rise is real, only the level is unanchored.
+        assert_eq!(tl.peak.unwrap().date, "2020-01-01");
+    }
+
+    #[test]
+    fn balance_timeline_reports_calibrated_once_a_balance_is_confirmed() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account_typed(&mut conn, AccountType::Savings, "Savings");
+        insert_txn(&conn, &acc.id, 100_000, "2024-01-01");
+        // A bank-reported balance is a confirmed anchor.
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-06-01", 250_000, None, Some("simplefin"))
+            .unwrap();
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert_eq!(tl.anchor, BalanceAnchorQuality::Calibrated);
+    }
+
+    /// An account whose opening was entered is anchored even though the app
+    /// cannot tell an entered opening from one back-solved by
+    /// `set_current_balance` — both rewrite the same seed row.
+    #[test]
+    fn balance_timeline_treats_a_nonzero_opening_as_anchored() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        conn.execute(
+            "UPDATE account_balances SET balance_cents = ?1 \
+             WHERE account_id = ?2 AND source = 'seed'",
+            params![400_000, acc.id],
+        )
+        .unwrap();
+        insert_txn(&conn, &acc.id, -50_000, "2024-05-01");
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert_eq!(tl.anchor, BalanceAnchorQuality::AnchoredOpening);
+        assert_eq!(tl.current_cents, 350_000);
+    }
+
+    /// An investment account holds market value, not the sum of its cash flows —
+    /// the same reason `recompute_balance_if_linked` refuses to derive one. A
+    /// reconstruction here would be confidently meaningless, so it must refuse
+    /// rather than return a number.
+    #[test]
+    fn balance_timeline_refuses_investment_accounts() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account_typed(&mut conn, AccountType::Investment, "Brokerage");
+        insert_txn(&conn, &acc.id, 500_000, "2024-01-01");
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert!(!tl.reconstructable);
+        assert!(tl.points.is_empty());
+        assert!(tl.peak.is_none());
+    }
+
+    /// Windowing trims the returned points but must not restart the arithmetic,
+    /// or the curve would begin at the opening balance instead of wherever the
+    /// account actually stood on that date.
+    #[test]
+    fn balance_timeline_window_carries_the_running_balance_in() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, 900_000, "2024-01-01");
+        insert_txn(&conn, &acc.id, -100_000, "2024-06-01");
+
+        let tl = balance_timeline(&mut conn, &acc.id, Some("2024-05-01")).unwrap();
+
+        // First point is the window edge carrying January's balance forward.
+        assert_eq!(tl.points[0].date, "2024-05-01");
+        assert_eq!(tl.points[0].balance_cents, 900_000);
+        assert_eq!(tl.current_cents, 800_000);
+        // The pre-window peak is excluded; peak/trough describe the window.
+        assert_eq!(tl.peak.unwrap().date, "2024-05-01");
+    }
+
+    /// Intra-day ordering isn't recoverable from `posted_at`, so a day collapses
+    /// to one end-of-day point carrying the net.
+    #[test]
+    fn balance_timeline_nets_same_day_activity_into_one_point() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, 100_000, "2024-04-01");
+        insert_txn(&conn, &acc.id, -30_000, "2024-04-01");
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        let on_day = tl.points.iter().filter(|p| p.date == "2024-04-01").count();
+        assert_eq!(on_day, 1);
+        assert_eq!(tl.current_cents, 70_000);
     }
 
     #[test]

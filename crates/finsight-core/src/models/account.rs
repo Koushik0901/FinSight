@@ -174,6 +174,53 @@ pub struct AccountSparkline {
     pub points: Vec<AccountBalancePoint>,
 }
 
+/// How trustworthy the *level* of a reconstructed balance curve is.
+///
+/// A reconstruction is `opening + Σ(cleared activity)`, so its SHAPE (when the
+/// balance rose and fell, and therefore when it peaked) is correct regardless of
+/// the anchor. Its LEVEL is only as good as that opening figure.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BalanceAnchorQuality {
+    /// A real balance was confirmed for this account — bank-reported, or pinned
+    /// by the user — so the curve is calibrated to a known value.
+    Calibrated,
+    /// The opening anchor is meaningful: either a non-zero opening balance, or a
+    /// zero opening on an account with no history predating it (it really did
+    /// start empty).
+    AnchoredOpening,
+    /// The opening is zero AND transactions predate it, so the account's history
+    /// was imported behind an anchor that never accounted for it. Movement and
+    /// timing are right; every absolute figure is off by an unknown constant.
+    AssumedZero,
+}
+
+/// A reconstructed balance curve for one account, derived from its opening
+/// anchor plus cleared transaction activity.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountBalanceTimeline {
+    pub account_id: String,
+    pub account_name: String,
+    /// End-of-day balance for each day the account saw activity, ascending.
+    /// Empty when the account is not reconstructable.
+    pub points: Vec<AccountBalancePoint>,
+    /// Highest and lowest end-of-day balance within the requested window.
+    /// Ties resolve to the earliest date. `None` when there are no points.
+    pub peak: Option<AccountBalancePoint>,
+    pub trough: Option<AccountBalancePoint>,
+    /// Balance at the end of the series — the reconstruction's answer for today.
+    pub current_cents: i64,
+    pub anchor: BalanceAnchorQuality,
+    /// Earliest cleared transaction on the account. History cannot reach back
+    /// further than this, so a peak before it would be invisible.
+    pub earliest_txn_date: Option<String>,
+    /// False when the balance cannot be derived from the ledger at all — an
+    /// investment account holds market value, not the sum of its cash flows, so
+    /// reconstructing one from transactions would be meaningless.
+    pub reconstructable: bool,
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Type)]
 pub struct AccountPatch {
     pub name: Option<String>,

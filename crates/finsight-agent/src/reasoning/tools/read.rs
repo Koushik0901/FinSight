@@ -54,6 +54,132 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn get_account_balance_history() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "get_account_balance_history"
+        }
+        fn description(&self) -> &str {
+            "The highest and lowest balance an account has ever reached, and the \
+             dates. Reconstructs the balance from transaction history rather than \
+             reading recorded snapshots, so it finds the TRUE peak instead of \
+             whichever recorded day happened to be highest. Use for 'the most I've \
+             ever had in X', 'when was my savings highest', 'when did this account \
+             bottom out'. Omit `account` to cover every account. \
+             CRITICAL: when a result has amount_reliable=false, its DATES are still \
+             correct but every dollar figure is off by an unknown constant — give \
+             the timing and say the amount cannot be pinned down. Never present an \
+             unreliable amount as if it were established."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Account name or part of one, e.g. 'savings'. Omit for all accounts."
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "Optional ISO date (YYYY-MM-DD). Restricts the window to on/after this date."
+                    }
+                }
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let account = args["account"].as_str().filter(|s| !s.is_empty());
+            let since = args["since"].as_str().filter(|s| !s.is_empty());
+
+            let pattern = account.map(|a| format!("%{a}%"));
+            let mut sql = String::from("SELECT id FROM accounts WHERE archived_at IS NULL");
+            if pattern.is_some() {
+                sql.push_str(" AND lower(name) LIKE lower(?1)");
+            }
+            sql.push_str(" ORDER BY name");
+
+            let ids: Vec<String> = {
+                let mut stmt = ctx.conn.prepare(&sql)?;
+                match &pattern {
+                    Some(p) => stmt
+                        .query_map(rusqlite::params![p], |r| r.get::<_, String>(0))?
+                        .filter_map(|r| r.ok())
+                        .collect(),
+                    None => stmt
+                        .query_map([], |r| r.get::<_, String>(0))?
+                        .filter_map(|r| r.ok())
+                        .collect(),
+                }
+            };
+
+            if ids.is_empty() {
+                return Ok(json!({
+                    "accounts": [],
+                    "note": match account {
+                        Some(a) => format!(
+                            "No account matches '{a}'. Call again with no account to see them all, \
+                             then ask which one they meant — do not guess."
+                        ),
+                        None => "There are no accounts yet.".to_string(),
+                    }
+                }));
+            }
+
+            let mut accounts = Vec::new();
+            let mut unreliable = Vec::new();
+            let mut skipped = Vec::new();
+            for id in &ids {
+                let tl = finsight_core::repos::accounts::balance_timeline(ctx.conn, id, since)?;
+                if !tl.reconstructable {
+                    skipped.push(tl.account_name);
+                    continue;
+                }
+                let amount_reliable = tl.anchor
+                    != finsight_core::models::BalanceAnchorQuality::AssumedZero;
+                if !amount_reliable {
+                    unreliable.push(tl.account_name.clone());
+                }
+                accounts.push(json!({
+                    "account": tl.account_name,
+                    "peak_cents": tl.peak.as_ref().map(|p| p.balance_cents),
+                    "peak_date": tl.peak.as_ref().map(|p| p.date.as_str()),
+                    "trough_cents": tl.trough.as_ref().map(|p| p.balance_cents),
+                    "trough_date": tl.trough.as_ref().map(|p| p.date.as_str()),
+                    "current_cents": tl.current_cents,
+                    "amount_reliable": amount_reliable,
+                    "history_starts": tl.earliest_txn_date,
+                }));
+            }
+
+            let mut notes: Vec<String> = Vec::new();
+            if !unreliable.is_empty() {
+                notes.push(format!(
+                    "Balance amounts for {} are NOT reliable: the account's history was imported \
+                     behind a zero opening balance, so every figure is off by the same unknown \
+                     amount. The DATES are correct. Report when the peak happened and say the \
+                     dollar amount can't be pinned down until an opening or current balance is set.",
+                    unreliable.join(", ")
+                ));
+            }
+            if !skipped.is_empty() {
+                notes.push(format!(
+                    "Skipped {}: an investment account's value is its market value, not the sum of \
+                     its cash flows, so its balance cannot be reconstructed from transactions.",
+                    skipped.join(", ")
+                ));
+            }
+            notes.push(
+                "History only reaches back to the earliest imported transaction (history_starts); \
+                 a higher balance before that date would be invisible."
+                    .to_string(),
+            );
+
+            Ok(json!({ "accounts": accounts, "note": notes.join(" ") }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn get_net_worth() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
@@ -1107,6 +1233,120 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    /// A savings account with a REAL opening anchor and a clear rise-then-fall,
+    /// so the peak sits on a day no stored snapshot records.
+    fn seed_savings_with_a_peak(conn: &mut Connection) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('sav','Me','Bank','Savings','Car Savings','USD','#fff','2023-12-01T00:00:00+00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+             VALUES('sav','2023-12-01',100000,'seed')",
+            [],
+        )
+        .unwrap();
+        for (date, amt) in [
+            ("2024-02-01", 500_000),
+            ("2024-05-01", 400_000),  // peak: $10,000
+            ("2024-08-01", -700_000), // back down to $3,000
+        ] {
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                 VALUES(hex(randomblob(16)),'sav',?1,?2,'Transfer','cleared',datetime('now'))",
+                rusqlite::params![date, amt],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn balance_history_tool_answers_the_peak_question_by_partial_name() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_savings_with_a_peak(&mut conn);
+
+        // "savings" is how someone would actually refer to "Car Savings".
+        let out = call(
+            &mut conn,
+            get_account_balance_history(),
+            json!({"account": "savings"}),
+        );
+
+        let acct = &out["accounts"][0];
+        assert_eq!(acct["account"], "Car Savings");
+        assert_eq!(acct["peak_cents"], 1_000_000);
+        assert_eq!(acct["peak_date"], "2024-05-01");
+        assert_eq!(acct["current_cents"], 300_000);
+        assert_eq!(acct["amount_reliable"], true);
+    }
+
+    /// The caveat has to reach the model as data, not be left for it to infer:
+    /// an account whose history was imported behind a zero opening has correct
+    /// DATES and meaningless AMOUNTS.
+    #[test]
+    fn balance_history_tool_marks_an_unanchored_account_unreliable() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_txns(&mut conn); // accounts created with no opening balance row
+
+        let out = call(
+            &mut conn,
+            get_account_balance_history(),
+            json!({"account": "Everyday Checking"}),
+        );
+
+        let acct = &out["accounts"][0];
+        assert_eq!(acct["amount_reliable"], false);
+        assert!(acct["peak_date"].is_string(), "the date is still reported");
+        let note = out["note"].as_str().unwrap();
+        assert!(note.contains("NOT reliable"), "note was: {note}");
+        assert!(note.contains("DATES are correct"), "note was: {note}");
+    }
+
+    /// A miss must tell the model to ask rather than silently returning nothing,
+    /// which reads as "you have no such account".
+    #[test]
+    fn balance_history_tool_tells_the_model_to_ask_when_no_account_matches() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_savings_with_a_peak(&mut conn);
+
+        let out = call(
+            &mut conn,
+            get_account_balance_history(),
+            json!({"account": "chequing"}),
+        );
+
+        assert_eq!(out["accounts"].as_array().unwrap().len(), 0);
+        assert!(out["note"].as_str().unwrap().contains("do not guess"));
+    }
+
+    /// Investment accounts hold market value, not summed cash flow — the tool has
+    /// to say so rather than quietly omitting them.
+    #[test]
+    fn balance_history_tool_explains_why_investment_accounts_are_skipped() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('inv','Me','Broker','Investment','TFSA','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let out = call(
+            &mut conn,
+            get_account_balance_history(),
+            json!({"account": "TFSA"}),
+        );
+
+        assert_eq!(out["accounts"].as_array().unwrap().len(), 0);
+        assert!(out["note"].as_str().unwrap().contains("market value"));
     }
 
     fn seed_household(conn: &mut Connection) {

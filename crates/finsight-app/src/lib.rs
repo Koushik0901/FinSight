@@ -204,6 +204,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::export_search_transactions_csv,
         commands::accounts::export_account_csv,
         commands::accounts::list_account_balance_history,
+        commands::accounts::get_account_balance_timeline,
         commands::accounts::list_account_balance_sparklines,
         commands::journey::get_journey_status,
         commands::inbox::get_action_items,
