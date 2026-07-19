@@ -1689,16 +1689,20 @@ peak: AccountBalancePoint | null; trough: AccountBalancePoint | null;
  */
 currentCents: number; anchor: BalanceAnchorQuality; 
 /**
- * Earliest cleared transaction on the account. History cannot reach back
- * further than this, so a peak before it would be invisible.
+ * Earliest cleared transaction *included in this curve*. History cannot
+ * reach back further, so a peak before it would be invisible.
  */
 earliestTxnDate: string | null; 
 /**
- * False when the balance cannot be derived from the ledger at all — an
- * investment account holds market value, not the sum of its cash flows, so
- * reconstructing one from transactions would be meaningless.
+ * False when the balance cannot be honestly derived from the ledger. See
+ * [`AccountBalanceTimeline::skip_reason`] for which case applies.
  */
-reconstructable: boolean }
+reconstructable: boolean; 
+/**
+ * Why reconstruction was refused, phrased for a human (or a model) to
+ * relay. `None` when `reconstructable` is true.
+ */
+skipReason: string | null }
 /**
  * One (account, member) ownership pair with the member's explicit share, if
  * any. The full list lets the UI derive sole/joint badges and per-member

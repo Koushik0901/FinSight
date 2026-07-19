@@ -70,7 +70,10 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
              CRITICAL: when a result has amount_reliable=false, its DATES are still \
              correct but every dollar figure is off by an unknown constant — give \
              the timing and say the amount cannot be pinned down. Never present an \
-             unreliable amount as if it were established."
+             unreliable amount as if it were established. \
+             Credit and Loan balances are stored NEGATIVE, so for those accounts \
+             `trough` is when the most was OWED and `peak` is when the least was \
+             owed — check account_type before describing which is which."
         }
         fn parameters(&self) -> Value {
             json!({
@@ -92,23 +95,21 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
             let since = args["since"].as_str().filter(|s| !s.is_empty());
 
             let pattern = account.map(|a| format!("%{a}%"));
-            let mut sql = String::from("SELECT id FROM accounts WHERE archived_at IS NULL");
+            let mut sql = String::from("SELECT id, type FROM accounts WHERE archived_at IS NULL");
             if pattern.is_some() {
                 sql.push_str(" AND lower(name) LIKE lower(?1)");
             }
             sql.push_str(" ORDER BY name");
 
-            let ids: Vec<String> = {
+            let ids: Vec<(String, String)> = {
                 let mut stmt = ctx.conn.prepare(&sql)?;
+                let row = |r: &rusqlite::Row| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?));
                 match &pattern {
                     Some(p) => stmt
-                        .query_map(rusqlite::params![p], |r| r.get::<_, String>(0))?
+                        .query_map(rusqlite::params![p], row)?
                         .filter_map(|r| r.ok())
                         .collect(),
-                    None => stmt
-                        .query_map([], |r| r.get::<_, String>(0))?
-                        .filter_map(|r| r.ok())
-                        .collect(),
+                    None => stmt.query_map([], row)?.filter_map(|r| r.ok()).collect(),
                 }
             };
 
@@ -128,19 +129,21 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
             let mut accounts = Vec::new();
             let mut unreliable = Vec::new();
             let mut skipped = Vec::new();
-            for id in &ids {
+            for (id, account_type) in &ids {
                 let tl = finsight_core::repos::accounts::balance_timeline(ctx.conn, id, since)?;
                 if !tl.reconstructable {
-                    skipped.push(tl.account_name);
+                    let reason = tl.skip_reason.unwrap_or_else(|| "unavailable".to_string());
+                    skipped.push(format!("{} ({reason})", tl.account_name));
                     continue;
                 }
-                let amount_reliable = tl.anchor
-                    != finsight_core::models::BalanceAnchorQuality::AssumedZero;
+                let amount_reliable =
+                    tl.anchor != finsight_core::models::BalanceAnchorQuality::AssumedZero;
                 if !amount_reliable {
                     unreliable.push(tl.account_name.clone());
                 }
                 accounts.push(json!({
                     "account": tl.account_name,
+                    "account_type": account_type,
                     "peak_cents": tl.peak.as_ref().map(|p| p.balance_cents),
                     "peak_date": tl.peak.as_ref().map(|p| p.date.as_str()),
                     "trough_cents": tl.trough.as_ref().map(|p| p.balance_cents),
@@ -163,9 +166,9 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
             }
             if !skipped.is_empty() {
                 notes.push(format!(
-                    "Skipped {}: an investment account's value is its market value, not the sum of \
-                     its cash flows, so its balance cannot be reconstructed from transactions.",
-                    skipped.join(", ")
+                    "Could not reconstruct {}. Say so and give the reason — do not substitute the \
+                     current balance or leave the account out silently.",
+                    skipped.join("; ")
                 ));
             }
             notes.push(
@@ -1347,6 +1350,52 @@ mod tests {
 
         assert_eq!(out["accounts"].as_array().unwrap().len(), 0);
         assert!(out["note"].as_str().unwrap().contains("market value"));
+    }
+
+    /// Credit balances are stored negative, so "when did I owe the most" is the
+    /// TROUGH, not the peak. The account type has to reach the model as data or
+    /// it can only guess which end of the range answers the question.
+    #[test]
+    fn balance_history_tool_surfaces_account_type_so_debt_reads_correctly() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('cc','Me','Amex','Credit','Amex Card','USD','#fff','2024-01-01T00:00:00+00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+             VALUES('cc','2024-01-01',0,'seed')",
+            [],
+        )
+        .unwrap();
+        for (date, amt) in [
+            ("2024-02-01", -100_000),
+            ("2024-03-01", -200_000), // owes the most here: -$3,000
+            ("2024-04-01", 250_000),  // paid most of it off
+        ] {
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
+                 VALUES(hex(randomblob(16)),'cc',?1,?2,'Card','cleared',datetime('now'))",
+                rusqlite::params![date, amt],
+            )
+            .unwrap();
+        }
+
+        let out = call(
+            &mut conn,
+            get_account_balance_history(),
+            json!({"account": "Amex"}),
+        );
+
+        let acct = &out["accounts"][0];
+        assert_eq!(acct["account_type"], "Credit");
+        assert_eq!(acct["trough_cents"], -300_000);
+        assert_eq!(acct["trough_date"], "2024-03-01");
+        // A card that genuinely opened at zero is anchored, not assumed.
+        assert_eq!(acct["amount_reliable"], true);
     }
 
     fn seed_household(conn: &mut Connection) {

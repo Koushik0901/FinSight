@@ -212,13 +212,15 @@ pub struct AccountBalanceTimeline {
     /// Balance at the end of the series — the reconstruction's answer for today.
     pub current_cents: i64,
     pub anchor: BalanceAnchorQuality,
-    /// Earliest cleared transaction on the account. History cannot reach back
-    /// further than this, so a peak before it would be invisible.
+    /// Earliest cleared transaction *included in this curve*. History cannot
+    /// reach back further, so a peak before it would be invisible.
     pub earliest_txn_date: Option<String>,
-    /// False when the balance cannot be derived from the ledger at all — an
-    /// investment account holds market value, not the sum of its cash flows, so
-    /// reconstructing one from transactions would be meaningless.
+    /// False when the balance cannot be honestly derived from the ledger. See
+    /// [`AccountBalanceTimeline::skip_reason`] for which case applies.
     pub reconstructable: bool,
+    /// Why reconstruction was refused, phrased for a human (or a model) to
+    /// relay. `None` when `reconstructable` is true.
+    pub skip_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Type)]

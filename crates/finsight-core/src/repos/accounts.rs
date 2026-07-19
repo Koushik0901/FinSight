@@ -934,11 +934,35 @@ pub fn balance_timeline(
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
 
-    // An investment account's value is its MARKET value, not the sum of its cash
-    // flows — the same reason `recompute_balance_if_linked` refuses to derive one.
-    // A fully-invested account nets ~$0 cash, so reconstructing a curve from its
-    // ledger would produce a confident, meaningless answer.
-    if account_type == "Investment" {
+    // Both refusals below mirror `recompute_balance_if_linked`, which declines to
+    // derive a balance for exactly these two cases. Reconstructing anyway would
+    // not merely be imprecise — it would contradict the balance the rest of the
+    // app shows for the same account, while carrying a confident label.
+    let skip_reason = if account_type == "Investment" {
+        // Market value, not summed cash flow. A fully-invested account nets ~$0
+        // cash, so a ledger reconstruction is meaningless rather than merely off.
+        Some(
+            "an investment account's value is its market value, not the sum of its cash flows, \
+             so it cannot be reconstructed from transactions"
+                .to_string(),
+        )
+    } else {
+        let is_linked: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1 AND simplefin_account_id IS NOT NULL)",
+            params![account_id],
+            |r| r.get(0),
+        )?;
+        // Every sync writes a fresh bank-dated snapshot, so a linked account
+        // accumulates real balance readings over time. Those ARE the history —
+        // and folding transactions onto the OLDEST of them would drift away from
+        // the newest, which is what the rest of the app displays.
+        is_linked.then(|| {
+            "this account is linked to a bank feed, so its balances are bank-reported rather than \
+             derived — its recorded balance history is the source of truth"
+                .to_string()
+        })
+    };
+    if let Some(reason) = skip_reason {
         return Ok(AccountBalanceTimeline {
             account_id: account_id.to_string(),
             account_name,
@@ -949,15 +973,29 @@ pub fn balance_timeline(
             anchor: BalanceAnchorQuality::AssumedZero,
             earliest_txn_date: None,
             reconstructable: false,
+            skip_reason: Some(reason),
         });
     }
 
     let anchor = opening_anchor(conn, account_id);
-    let earliest_txn_date: Option<String> = conn.query_row(
-        "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
-        params![account_id],
-        |r| r.get::<_, Option<String>>(0),
-    )?;
+    // Only activity the curve actually folds in. Behind a real (non-seed) anchor
+    // the curve drops anything dated on-or-before it, so reporting the account's
+    // true earliest transaction here would overstate the coverage callers are
+    // told they have.
+    let earliest_txn_date: Option<String> = if anchor.fold_all_activity {
+        conn.query_row(
+            "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
+            params![account_id],
+            |r| r.get::<_, Option<String>>(0),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT MIN(date(posted_at)) FROM transactions \
+             WHERE account_id = ?1 AND pending = 0 AND date(posted_at) > ?2",
+            params![account_id, anchor.date],
+            |r| r.get::<_, Option<String>>(0),
+        )?
+    };
 
     // Where the curve starts. Behind a creation seed the opening is conceptually
     // PRE-history even though the seed row is dated at account creation, so the
@@ -1021,14 +1059,20 @@ pub fn balance_timeline(
                     kept.push(p);
                 }
             }
+            // Only synthesise the carry-in point when the window doesn't already
+            // open on a real one. Activity landing exactly ON `since` would
+            // otherwise emit that date twice — once pre-activity, once post —
+            // and the stale first copy could win peak/trough.
             if let Some(balance_cents) = carried {
-                kept.insert(
-                    0,
-                    AccountBalancePoint {
-                        date: since.to_string(),
-                        balance_cents,
-                    },
-                );
+                if kept.first().map_or(true, |p| p.date != since) {
+                    kept.insert(
+                        0,
+                        AccountBalancePoint {
+                            date: since.to_string(),
+                            balance_cents,
+                        },
+                    );
+                }
             }
             kept
         }
@@ -1083,6 +1127,7 @@ pub fn balance_timeline(
         anchor: anchor_quality,
         earliest_txn_date,
         reconstructable: true,
+        skip_reason: None,
     })
 }
 
@@ -1489,6 +1534,57 @@ mod tests {
         assert!(tl.peak.is_none());
     }
 
+    /// A linked account accumulates a real bank-reported balance row per sync.
+    /// Anchoring on the OLDEST of those and folding later transactions onto it
+    /// drifts away from the NEWEST — which is the balance the rest of the app
+    /// displays — so the reconstruction would contradict the account's own
+    /// screen while claiming a calibrated anchor. It has to refuse instead.
+    #[test]
+    fn balance_timeline_refuses_bank_linked_accounts() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account_typed(&mut conn, AccountType::Savings, "Linked Savings");
+        conn.execute(
+            "UPDATE accounts SET simplefin_account_id = 'sf-123' WHERE id = ?1",
+            params![acc.id],
+        )
+        .unwrap();
+        // Two bank readings that don't reconcile with local activity alone.
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-01-01", 100_000, None, Some("simplefin"))
+            .unwrap();
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-02-01", 150_000, None, Some("simplefin"))
+            .unwrap();
+        insert_txn(&conn, &acc.id, -20_000, "2024-01-15");
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert!(!tl.reconstructable);
+        assert!(tl.skip_reason.unwrap().contains("bank-reported"));
+        assert!(tl.peak.is_none(), "must not report a peak it cannot stand behind");
+    }
+
+    /// Behind a REAL anchor the curve drops activity dated on-or-before it, so
+    /// the reported coverage must not claim history the curve doesn't contain.
+    #[test]
+    fn balance_timeline_reports_coverage_it_actually_has() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        // A real (non-seed) anchor mid-history.
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-03-01", 500_000, None, Some("manual"))
+            .unwrap();
+        insert_txn(&conn, &acc.id, 100_000, "2023-01-01"); // behind the anchor
+        insert_txn(&conn, &acc.id, 50_000, "2024-06-01"); // inside the curve
+
+        let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
+
+        assert_eq!(
+            tl.earliest_txn_date.as_deref(),
+            Some("2024-06-01"),
+            "must not claim coverage back to 2023 when the curve starts at the anchor"
+        );
+    }
+
     /// Windowing trims the returned points but must not restart the arithmetic,
     /// or the curve would begin at the opening balance instead of wherever the
     /// account actually stood on that date.
@@ -1508,6 +1604,26 @@ mod tests {
         assert_eq!(tl.current_cents, 800_000);
         // The pre-window peak is excluded; peak/trough describe the window.
         assert_eq!(tl.peak.unwrap().date, "2024-05-01");
+    }
+
+    /// A window opening exactly on an active day must not emit that date twice —
+    /// once carried in pre-activity, once real post-activity — or the stale copy
+    /// can win peak/trough.
+    #[test]
+    fn balance_timeline_window_opening_on_an_active_day_emits_it_once() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        insert_txn(&conn, &acc.id, 900_000, "2024-01-01");
+        insert_txn(&conn, &acc.id, -200_000, "2024-05-01"); // ON the window edge
+
+        let tl = balance_timeline(&mut conn, &acc.id, Some("2024-05-01")).unwrap();
+
+        let on_edge = tl.points.iter().filter(|p| p.date == "2024-05-01").count();
+        assert_eq!(on_edge, 1, "window edge duplicated: {:?}", tl.points);
+        // The surviving point is post-activity, not the carried-in balance.
+        assert_eq!(tl.points[0].balance_cents, 700_000);
+        assert_eq!(tl.peak.unwrap().balance_cents, 700_000);
     }
 
     /// Intra-day ordering isn't recoverable from `posted_at`, so a day collapses
