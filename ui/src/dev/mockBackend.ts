@@ -93,6 +93,26 @@ function monthKey(monthsAgo: number): string {
 }
 
 /** Rising net-worth series: `months` monthly points ending near `endCents`. */
+/** Monthly balance points landing on `endCents`, with a mid-series high so the
+ *  peak callout has something non-trivial to find. */
+function balanceSeries(months: number, endCents: number): { date: string; balanceCents: number }[] {
+  const pts: { date: string; balanceCents: number }[] = [];
+  const start = Math.round(endCents * 0.35);
+  for (let i = 0; i < months; i++) {
+    const t = months <= 1 ? 1 : i / (months - 1);
+    // A hump peaking around two-thirds through, then easing back to `end`.
+    const hump = Math.sin(t * Math.PI) * Math.abs(endCents) * 0.45;
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - (months - 1 - i));
+    pts.push({
+      date: d.toISOString().slice(0, 10),
+      balanceCents: Math.round(start + (endCents - start) * t + hump),
+    });
+  }
+  return pts;
+}
+
 function netWorthSeries(months: number, startCents: number, endCents: number): AnyRec[] {
   const pts: AnyRec[] = [];
   for (let i = 0; i < months; i++) {
@@ -626,6 +646,53 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     get_onboarding_state: () => ds.onboarding,
     list_action_bundles: () => [],
     list_account_balance_sparklines: () => [],
+    get_account_balance_timeline: (a) => {
+      const accountId = String(a?.accountId ?? "");
+      const account = ds.accounts.find((x) => x.id === accountId);
+      if (!account) return null;
+      // Investment accounts hold market value, not summed cash flow, so the real
+      // backend refuses them — mirror that here or the card looks universally
+      // available in the harness when it isn't.
+      if (account.type === "Investment") {
+        return {
+          accountId,
+          accountName: account.name,
+          points: [],
+          peak: null,
+          trough: null,
+          currentCents: 0,
+          anchor: "assumedZero",
+          earliestTxnDate: null,
+          reconstructable: false,
+          skipReason:
+            "an investment account's value is its market value, not the sum of its cash flows, so it cannot be reconstructed from transactions",
+        };
+      }
+      const end = Number(account.balanceCents ?? 0);
+      const since = a?.since ? String(a.since) : null;
+      const months = since ? 12 : 24;
+      const points = balanceSeries(months, end);
+      const windowed = since ? points.filter((p) => p.date >= since) : points;
+      const series = windowed.length >= 2 ? windowed : points.slice(-2);
+      let peak = series[0]!;
+      let trough = series[0]!;
+      for (const p of series) {
+        if (p.balanceCents > peak.balanceCents) peak = p;
+        if (p.balanceCents < trough.balanceCents) trough = p;
+      }
+      return {
+        accountId,
+        accountName: account.name,
+        points: series,
+        peak,
+        trough,
+        currentCents: series[series.length - 1]!.balanceCents,
+        anchor: "anchoredOpening",
+        earliestTxnDate: series[0]!.date,
+        reconstructable: true,
+        skipReason: null,
+      };
+    },
     list_budget_envelopes: () => ds.budgetEnvelopes,
     list_budget_history: () => ds.budgetHistory,
     list_category_groups: () => ds.categoryGroups,
