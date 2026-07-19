@@ -13,6 +13,7 @@ import { useIsFetching } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 import { markRouteStart, markRouteContent, perf } from "./utils/perf";
 import { Sidebar } from "./components/Sidebar";
+import { BottomNav } from "./components/BottomNav";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { useTweaks } from "./state/tweaks";
@@ -295,6 +296,7 @@ export function App() {
               </RouteErrorBoundary>
             </div>
           </main>
+          <BottomNav />
         </div>
       )}
 

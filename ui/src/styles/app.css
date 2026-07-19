@@ -51,6 +51,13 @@
   z-index: 1;
 }
 
+/* Fixed mobile bottom-tab bar — hidden on desktop, shown ≤900px (see
+   Responsive shell below), where it replaces the sidebar entirely instead of
+   the old collapsed-top-bar treatment. */
+.bottom-nav {
+  display: none;
+}
+
 /* Skip link */
 .skip-link {
   position: fixed;
@@ -2759,57 +2766,94 @@ body::-webkit-scrollbar-track,
     min-height: 100%;
   }
 
+  /* Replaced by the fixed bottom-tab bar below — no more collapsed top bar. */
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    height: auto;
-    max-height: 46vh;
-    width: 100%;
-    padding: 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    display: none;
   }
 
-  .brand {
-    padding: 0 4px 10px;
-  }
-
-  .nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  /* Collapse the section wrappers so their section label + items flow
-     directly into the 2-column mobile menu grid. */
-  .nav-group {
-    display: contents;
-  }
-
-  .nav-section {
-    grid-column: 1 / -1;
-    padding: 12px 7px 4px;
-  }
-
-  .nav-item {
-    min-height: 44px;
-    padding: 9px 10px;
-  }
-
-  .nav-item.active::before,
-  .nav-item[aria-current="page"]::before {
+  .bottom-nav {
+    display: flex;
+    position: fixed;
     left: 0;
-    top: auto;
     right: 0;
     bottom: 0;
-    width: auto;
-    height: 2px;
-    border-radius: 2px 2px 0 0;
+    z-index: 70;
+    gap: 2px;
+    background: var(--bg-2);
+    border-top: 1px solid var(--line);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
   }
 
-  .sidebar .foot {
-    margin-top: 8px;
+  .bottom-nav-item {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 48px;
+    padding: 6px 2px;
+    border-radius: 9px;
+    color: var(--ink-mute);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-decoration: none;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+
+  .bottom-nav-item:hover,
+  .bottom-nav-item:focus-visible {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .bottom-nav-item.active,
+  .bottom-nav-item[aria-current="page"] {
+    color: var(--accent);
+  }
+
+  .bottom-nav-ico-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+  }
+
+  .bottom-nav-ico-wrap .ico {
+    width: 18px;
+    height: 18px;
+  }
+
+  .bottom-nav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bottom-nav .pulse {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    animation: pulse-dot 2.2s ease-out infinite;
+  }
+
+  .bottom-nav .pulse::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1px solid var(--accent);
+    animation: pulse-ring 2.2s ease-out infinite;
   }
 
   .main {
@@ -2899,20 +2943,16 @@ body::-webkit-scrollbar-track,
 }
 
 @media (max-width: 520px) {
-  .sidebar {
-    max-height: 42vh;
-  }
-
   .search-trigger .kbd {
     display: none;
   }
 
-  .nav {
-    grid-template-columns: 1fr;
-  }
-
   .main-inner {
     padding: 20px 14px 88px;
+  }
+
+  .bottom-nav-label {
+    display: none;
   }
 
   .btn,
