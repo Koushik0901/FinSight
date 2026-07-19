@@ -101,16 +101,21 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
             }
             sql.push_str(" ORDER BY name");
 
+            // Propagate rather than `filter_map(ok)`: silently dropping an account
+            // here would answer "your highest balance" from a subset of accounts
+            // without ever saying one was missing.
             let ids: Vec<(String, String)> = {
                 let mut stmt = ctx.conn.prepare(&sql)?;
                 let row = |r: &rusqlite::Row| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?));
-                match &pattern {
-                    Some(p) => stmt
-                        .query_map(rusqlite::params![p], row)?
-                        .filter_map(|r| r.ok())
-                        .collect(),
-                    None => stmt.query_map([], row)?.filter_map(|r| r.ok()).collect(),
-                }
+                let rows = match &pattern {
+                    Some(p) => stmt.query_map(rusqlite::params![p], row)?.collect::<
+                        std::result::Result<Vec<_>, _>,
+                    >(),
+                    None => stmt
+                        .query_map([], row)?
+                        .collect::<std::result::Result<Vec<_>, _>>(),
+                };
+                rows?
             };
 
             if ids.is_empty() {

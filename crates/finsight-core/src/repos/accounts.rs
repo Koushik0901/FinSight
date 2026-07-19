@@ -4,7 +4,7 @@ use crate::models::{
     AccountSummary, AccountType, BalanceAnchorQuality, NewAccount,
 };
 use chrono::{DateTime, NaiveDate, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 /// Insert a new account and seed today's `account_balances` row with the
@@ -433,7 +433,7 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
     }
 
     // The earliest balance snapshot is the "opening" baseline for this account.
-    let anchor = opening_anchor(conn, account_id);
+    let anchor = opening_anchor(conn, account_id)?;
 
     // With no activity, the seed value is itself the balance — leave it alone.
     let txn_count: i64 = conn.query_row(
@@ -465,6 +465,19 @@ pub fn recompute_balance_if_linked(conn: &mut Connection, account_id: &str) -> C
     };
 
     let today = Utc::now().date_naive().to_string();
+
+    // A 'derived' row is the CURRENT balance at compute time, not a reading for
+    // the date it carries — it folds in all activity regardless of date. Leaving
+    // an earlier run's row behind would present it to the balance-history
+    // readers as "the balance on that day", which it never was, and a stale row
+    // dated before the opening would even be picked up as the anchor. Only the
+    // newest derived value means anything, so retire the rest.
+    conn.execute(
+        "DELETE FROM account_balances \
+         WHERE account_id = ?1 AND source = 'derived' AND as_of_date <> ?2",
+        params![account_id, today],
+    )?;
+
     upsert_balance_snapshot(
         conn,
         account_id,
@@ -513,7 +526,7 @@ struct CurveAnchor {
     confirmed: bool,
 }
 
-fn curve_anchor(conn: &Connection, account_id: &str) -> CurveAnchor {
+fn curve_anchor(conn: &Connection, account_id: &str) -> CoreResult<CurveAnchor> {
     let confirmed: Option<(i64, String)> = conn
         .query_row(
             "SELECT COALESCE(balance_cents, 0), as_of_date FROM account_balances \
@@ -522,25 +535,29 @@ fn curve_anchor(conn: &Connection, account_id: &str) -> CurveAnchor {
             params![account_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .ok();
+        .optional()?;
     if let Some((balance_cents, date)) = confirmed {
-        return CurveAnchor {
+        return Ok(CurveAnchor {
             balance_cents,
             date,
             fold_all_activity: false,
             confirmed: true,
-        };
+        });
     }
-    let opening = opening_anchor(conn, account_id);
-    CurveAnchor {
+    let opening = opening_anchor(conn, account_id)?;
+    Ok(CurveAnchor {
         balance_cents: opening.balance_cents,
         date: opening.date,
         fold_all_activity: opening.fold_all_activity,
         confirmed: false,
-    }
+    })
 }
 
-fn opening_anchor(conn: &Connection, account_id: &str) -> OpeningAnchor {
+fn opening_anchor(conn: &Connection, account_id: &str) -> CoreResult<OpeningAnchor> {
+    // Only "no snapshot at all" may fall back to the epoch default. A genuine
+    // failure (locked or corrupt DB, unexpected column type) must propagate —
+    // swallowing it here would silently anchor the account at $0 and misreport
+    // every balance derived from it.
     let (balance_cents, date, source): (i64, String, Option<String>) = conn
         .query_row(
             "SELECT COALESCE(balance_cents, 0), as_of_date, source FROM account_balances \
@@ -548,12 +565,13 @@ fn opening_anchor(conn: &Connection, account_id: &str) -> OpeningAnchor {
             params![account_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
+        .optional()?
         .unwrap_or((0, "1970-01-01".to_string(), None));
-    OpeningAnchor {
+    Ok(OpeningAnchor {
         fold_all_activity: source.as_deref() == Some("seed"),
         balance_cents,
         date,
-    }
+    })
 }
 
 /// Set an account's CURRENT balance by BACK-SOLVING its opening anchor.
@@ -1023,7 +1041,7 @@ pub fn balance_timeline(
         });
     }
 
-    let anchor = curve_anchor(conn, account_id);
+    let anchor = curve_anchor(conn, account_id)?;
     let earliest_txn_date: Option<String> = conn.query_row(
         "SELECT MIN(date(posted_at)) FROM transactions WHERE account_id = ?1 AND pending = 0",
         params![account_id],
@@ -1036,12 +1054,15 @@ pub fn balance_timeline(
         "SELECT date(posted_at) AS d, COALESCE(SUM(amount_cents), 0) FROM transactions \
          WHERE account_id = ?1 AND pending = 0 GROUP BY d ORDER BY d ASC",
     )?;
-    let deltas: Vec<(String, i64)> = stmt
-        .query_map(params![account_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+    // Every row must survive: silently dropping one on a mapping error would
+    // shift the whole curve by that day's movement and report the wrong balance
+    // with no indication anything went missing.
+    let mut deltas: Vec<(String, i64)> = Vec::new();
+    for row in stmt.query_map(params![account_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+    })? {
+        deltas.push(row?);
+    }
 
     // Solve for the balance before ANY activity, such that the curve passes
     // through the anchor: `balance(t) = base + Σ(activity ≤ t)`, so
@@ -1719,6 +1740,39 @@ mod tests {
         let on_day = tl.points.iter().filter(|p| p.date == "2024-04-01").count();
         assert_eq!(on_day, 1);
         assert_eq!(tl.current_cents, 70_000);
+    }
+
+    /// A derived row records the balance at COMPUTE time, folding in all
+    /// activity whatever its date — so an older one is not "the balance on that
+    /// date" and must not survive to be read as history (or picked up as the
+    /// opening anchor).
+    #[test]
+    fn recompute_retires_stale_derived_snapshots() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acc = sample_account(&mut conn);
+        conn.execute(
+            "UPDATE account_balances SET as_of_date = '2023-01-01' \
+             WHERE account_id = ?1 AND source = 'seed'",
+            params![acc.id],
+        )
+        .unwrap();
+        insert_txn(&conn, &acc.id, 100_000, "2024-01-01");
+        // Left behind by an earlier recompute, frozen at a total that no longer holds.
+        upsert_balance_snapshot(&mut conn, &acc.id, "2024-02-01", 999_999, None, Some("derived"))
+            .unwrap();
+
+        recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
+
+        let stale: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account_balances \
+                 WHERE account_id = ?1 AND source = 'derived' AND as_of_date <> date('now')",
+                params![acc.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stale, 0, "stale derived rows must not survive as fake history");
     }
 
     #[test]
