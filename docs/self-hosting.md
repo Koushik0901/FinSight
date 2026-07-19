@@ -1,8 +1,8 @@
 # Self-hosting FinSight
 
 FinSight's server mode (`finsight-server`) is an Immich-style self-hosted
-service: it runs on hardware you control, stores every account's data in a
-per-user encrypted SQLCipher database under a single data directory, and
+service: it runs on hardware you control, stores each user's data in a
+separate encrypted SQLCipher database under a single data directory, and
 serves the same UI you'd get from the desktop app — reachable from your
 phone, laptop, or anyone else's device on your account, without a cloud
 subscription in between. This guide gets you from "nothing running" to a
@@ -24,10 +24,12 @@ picked.
   installable PWAs and service workers), you put a reverse proxy in front of
   it. Section 3–5 below cover three ways to do that, from easiest to most
   manual.
-- **All state lives under one directory, mounted as `/data` inside the
-  container.** That includes `users.db` (the account/session registry) and
-  one encrypted SQLCipher database per user. Back this directory up; there is
-  nothing else to back up.
+- **All durable state lives under one directory, mounted as `/data` inside
+  the container.** That includes `users.db` (the account registry, password
+  verifiers, and wrapped database keys) plus `users/<uuid>/data.sqlcipher`,
+  backups, and import staging for each user. Sessions are held only in memory
+  and are intentionally not persisted. Back up the whole directory; there is
+  nothing else on the server to back up.
 - **Prerequisites on the host:**
   - [Docker Engine](https://docs.docker.com/engine/install/) and the
     `docker compose` CLI (bundled with recent Docker installs; standalone
@@ -46,7 +48,7 @@ picked.
 From the repo root (where `docker-compose.yml` lives):
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 ```
 
 The first run builds the image from the included `Dockerfile` (a few minutes
@@ -70,6 +72,21 @@ generates a **recovery key**.
 > account if a password is lost; FinSight cannot reset it for you, by design
 > (that's what makes the per-user encryption meaningful).
 
+The first account is the only administrator. After signing in, it can use
+**Settings → Account → Manage users** to add or delete non-admin users. Every
+new user receives a separate SQLCipher database and a one-time recovery key;
+the administrator must give that key to the user securely. Deleting a user
+revokes their sessions and removes their entire `users/<uuid>/` directory.
+
+Passwords must contain at least 10 characters. Login and recovery share a
+per-username throttle: five consecutive failures trigger a 60-second cooldown,
+with the same behavior for unknown usernames. Sessions use a sliding 30-day
+in-memory lifetime, so restarting the server signs everyone out.
+
+LLM API keys and SimpleFIN access URLs are stored inside each user's encrypted
+database. They are not shared between users and do not depend on an OS
+keychain or Linux Secret Service inside the Docker container.
+
 **About `FINSIGHT_COOKIE_SECURE`:** `docker-compose.yml` ships with this set
 to `"1"` (secure cookies, `Set-Cookie: ... Secure`), which requires the
 browser to see the connection as HTTPS. That's correct once you're behind
@@ -86,6 +103,16 @@ environment:
 
 Revert it to `"1"` once you're on HTTPS. Never leave it at `"0"` on anything
 reachable outside your own LAN.
+
+The container sets the supported runtime variables for you:
+
+| Variable | Docker default | Purpose |
+|---|---:|---|
+| `FINSIGHT_DATA_DIR` | `/data` | Root for `users.db` and all per-user directories |
+| `FINSIGHT_UI_DIR` | `/app/ui/dist` | Built SPA/PWA assets served by the server |
+| `FINSIGHT_PORT` | `8674` | HTTP listen port |
+| `FINSIGHT_COOKIE_SECURE` | `1` | Adds the `Secure` attribute to session cookies when exactly `1` |
+| `RUST_LOG` | `info` | Server log filter |
 
 ---
 
@@ -269,9 +296,11 @@ installable Progressive Web App — no app store, no separate binary.
   evicts site data (including the offline IndexedDB cache) after roughly a
   week of the PWA not being opened. FinSight's offline cache is designed as
   a convenience — it shows your last-synced balances and transactions when
-  you're offline — never as your data's source of truth. The server, and
-  its `/data` volume, is always the source of truth; the offline cache is
-  just a read-through window into what it last saw.
+  you're offline — never as your data's source of truth. Offline boot is
+  enabled only after a successful prior session on that device. Logout, an
+  authentication failure, or switching users clears both the in-memory and
+  IndexedDB caches. The server and its `/data` volume remain the source of
+  truth.
 
 ---
 
@@ -310,25 +339,36 @@ state stays on your self-hosted server exactly as with any other client.
 
 ## 8. Backups & upgrades
 
-**Backups:** everything that matters is the `/data` volume (`users.db` +
-each user's encrypted database). Snapshot it however suits your setup:
+**Per-user snapshots:** Settings → Data & backups creates encrypted snapshots
+inside that user's `backups/` directory. FinSight also creates a snapshot before
+applying pending database migrations and keeps the ten newest snapshots in
+that user's backup directory. Restoring from the UI stages a replacement
+database and takes a
+pre-restore safety snapshot. Restart the server/container to apply the staged
+restore before opening the account again.
+
+**Whole-server disaster recovery:** back up the complete `/data` volume,
+including `users.db` and every `users/<uuid>/` directory. Stop the service while
+copying so the SQLite database, WAL, and wrapped-key registry form one
+consistent snapshot:
 
 ```bash
-# Named-volume backup to a local tarball
-docker run --rm -v finsight-data:/data -v "$(pwd)":/backup debian:bookworm-slim \
-  tar czf /backup/finsight-backup-$(date +%Y%m%d).tar.gz -C /data .
+docker compose stop finsight
+docker compose cp finsight:/data ./finsight-data-backup
+docker compose start finsight
 ```
 
-Restore by extracting that tarball back into a fresh `finsight-data` volume
-before starting the container. Keep backups off the host itself (another
-disk, another machine, a small offsite/cloud copy of the encrypted archive)
-— the whole point of the per-user encryption is that a copy of the archive
-alone isn't useful without the corresponding password/recovery key, so it's
-safe to store it somewhere less trusted than the live server.
+Restore into a fresh volume before starting the replacement container. Keep a
+copy off the Docker host, and protect it like other sensitive account data.
+Although financial records and integration secrets are SQLCipher-encrypted,
+`users.db` contains password verifiers and wrapped keys that can be attacked
+offline; use strong passwords and encrypt or tightly restrict the backup
+destination.
 
 **Upgrades:** pull or rebuild a newer image, then recreate the container —
-the database schema migrates automatically on startup, and the volume is
-untouched:
+the server takes a per-user pre-migration snapshot and then applies schema
+migrations automatically when that user's runtime opens. The volume itself is
+preserved:
 
 ```bash
 git pull                 # if building locally from this repo
@@ -342,9 +382,16 @@ docker compose up -d`. Already-open browser tabs (including installed PWAs)
 detect the version mismatch via the server's `/api/server/about` handshake
 and show a "refresh to update" banner — no manual cache-busting needed.
 
+If you used the early single-user server preview, first-run setup also recognizes
+a root-level `/data/data.sqlcipher` + `/data/db.key` pair. It moves the database
+and any WAL/SHM sidecars into the new administrator's user directory as one
+rollback-safe operation, then deletes the obsolete plaintext key file. An
+incomplete pair is treated as a migration error instead of creating an empty
+replacement database.
+
 ---
 
-## 9. Known limits (Phase 3)
+## 9. Current limits
 
 - **Long-lived Copilot streaming requests.** Chat answers stream over a
   single held-open HTTP request. Some reverse proxies cut idle connections

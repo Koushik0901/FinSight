@@ -19,8 +19,9 @@ cd ui && npm run dev
 
 # Server mode (Immich-style self-hosted): API + SSE + serves ui/dist on :8674.
 # Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override):
-# users.db (account/session registry) + one SQLCipher DB per user, each under a
-# random key wrapped by Argon2id(password) and by a printable recovery key.
+# users.db (account registry + wrapped keys) + one SQLCipher DB per user.
+# Sessions are in memory; each DB key is wrapped by Argon2id(password) and by
+# a printable recovery key.
 # A legacy Phase-1 plaintext `db.key` is migrated and deleted on first setup.
 cargo run -p finsight-server
 
@@ -46,7 +47,7 @@ cd ui && npx vitest run src/screens/Settings.test.tsx
 # TypeScript type-check (no emit)
 cd ui && npx tsc --noEmit
 
-# Regenerate TypeScript bindings after ANY Rust command change (run from repo root)
+# Regenerate TypeScript bindings after changing the shared command contract
 cargo run -p finsight-tauri --bin export_bindings
 
 # Build for production
@@ -55,18 +56,18 @@ cd ui && npm run build
 
 ## Architecture
 
-FinSight is mid-pivot to an Immich-style self-hosted client/server model (spec:
-`docs/superpowers/specs/2026-07-15-server-architecture-design.md`). Phase 1 is
-in place: every command body lives in the tauri-free **`finsight-api`** crate;
-the Tauri app and the new **`finsight-server`** (axum) are two thin transports
-over it. Server-mode events (Copilot streaming, import progress) flow through
-the `FrameSink` trait → SSE `/api/events`; the browser installs an HTTP shim
-(`ui/src/api/httpBackend.ts`) so the generated bindings work unchanged. The
-bindings↔dispatcher parity tests (`crates/finsight-server/tests/parity.rs`)
-enforce that every command stays routed with exactly the arg keys bindings.ts
-sends — keep the dispatcher's `arg(&p, "…")` convention or they go red.
+FinSight has completed the self-hosted client/server architecture described in
+`docs/superpowers/specs/2026-07-15-server-architecture-design.md`. Every shared
+command body lives in the Tauri-free **`finsight-api`** crate. The browser, PWA,
+and navigated desktop shell use **`finsight-server`** over HTTP/SSE; the shipped
+Tauri binary is only a server-URL webview shell. Server events (Copilot
+streaming, import progress) flow through `FrameSink` to SSE `/api/events`, and
+`ui/src/api/httpBackend.ts` preserves the generated bindings' invoke/event
+contract. The parity tests in `crates/finsight-server/tests/parity.rs` enforce
+that every generated command is routed with exactly the camelCase argument keys
+sent by `bindings.ts`.
 
-### Rust workspace (7 crates)
+### Rust workspace (8 crates)
 
 **`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
 
@@ -76,9 +77,11 @@ sends — keep the dispatcher's `arg(&p, "…")` convention or they go red.
 
 **`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-app`** — thin Tauri wrapper layer. Each `#[tauri::command]` in `src/commands/` delegates to the same-named `finsight_api::commands::*` fn via `&state.api`; wrappers own the doc comments (specta exports them into bindings.ts — never add `///` docs that would change bindings) and the few Tauri-only bits (file-save dialogs, native notifications, `TauriFrameSink`). All commands registered in `build_specta_builder()` in `src/lib.rs`. **As of Phase 4 this crate is codegen-only — never shipped.** Its wrappers are consumed solely by `src-tauri`'s `export_bindings` bin to regenerate `bindings.ts`; the actual desktop binary is `src-tauri/src/main.rs`, a thin webview shell with no local command surface (it never calls `configure_app()`).
+**`crates/finsight-app`** — codegen-only Tauri wrapper layer. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract used by `export_bindings`. This crate is not linked into the shipped desktop binary. The real desktop entry point is `src-tauri/src/main.rs`, which exposes only the three local server-URL commands.
 
-**`crates/finsight-server`** — axum self-host server (lib+bin, tauri-free): `POST /api/rpc/{cmd}` dispatcher (one match arm per command, strict `arg(&p, "camelCaseKey")` convention), `GET /api/events` SSE fan-out of `FrameSink` emissions + agent events, `/api/health`, static `ui/dist` serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against bindings.ts.
+**`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against `bindings.ts`.
+
+**`crates/finsight-eval`** — evaluation fixtures and runners for Copilot/provider quality checks. Live-provider tests remain opt-in.
 
 **`src-tauri`** (crate alias `finsight-tauri`) — binary entry point + `export_bindings` binary that writes `ui/src/api/bindings.ts`.
 
@@ -95,7 +98,7 @@ run(&db, move |conn| {
 ```
 This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
-### Adding a Tauri command
+### Adding or changing a shared command
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
    `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
@@ -117,7 +120,10 @@ SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. R
 ```
 ui/src/api/bindings.ts   ← generated, never edit
 ui/src/api/client.ts     ← re-exports bindings (import from here, not bindings directly)
+ui/src/api/httpBackend.ts← server-mode invoke/event shim over HTTP + SSE
+ui/src/api/auth.ts       ← plain REST client for `/api/auth/*`
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
+ui/src/pwa/              ← seven-day IndexedDB query persistence + online state
 ui/src/screens/          ← one file per screen, consumes hooks
 ui/src/components/       ← shared: Sidebar, CommandPalette, TransactionDrawer, Drawer, Icons
 ui/src/components/copilot ← Copilot generative-UI: cards/ (one per block kind) + agUi/artifacts.ts (Zod validation) + renderers
@@ -143,7 +149,9 @@ The Copilot renders **typed, validated finance blocks** natively (not just markd
 - **Toasts:** `import { toast } from "sonner"` → `toast.success()`, `toast.error()`, `toast("text", { description, action })`
 - **Slide-in panels:** reuse `ui/src/components/Drawer.tsx`
 - **Privacy mode:** `useTweaks().privacy` — screens must blur amounts with `className="money"` (CSS handles blurring)
-- **Tauri commands must be async** even if the underlying work is synchronous; specta requires `pub async fn`
+- **Tauri codegen wrappers must be async** even if the underlying work is synchronous; specta requires `pub async fn`
+- **Server auth state:** the prior-session marker contains no credential; logout/401 must clear it and purge both the in-memory QueryClient and IndexedDB cache
+- **Server secrets:** LLM keys and SimpleFIN access URLs belong in the authenticated user's SQLCipher settings through `finsight-api::secrets`, never in a process-global keychain slot
 
 ## Testing
 
@@ -153,7 +161,7 @@ The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", i
 
 A fresh git worktree is missing the gitignored `samples/` directory (CSV fixtures), so `prepare_csv_cmd`, `prepare_edge`, and `prepare_parity` (6 tests total) fail with a "path not found" error there — copy `samples/` in from the primary checkout to run them; this is an environment gap, not a code regression.
 
-**Green bar:** 548 Rust tests (+12 ignored live-DB/keychain), 436 frontend tests, 0 TypeScript errors.
+**Green bar:** run `cargo test --workspace`, `pnpm --filter ui test`, `pnpm typecheck`, and `pnpm build`. Test counts change as coverage grows; ignored tests must remain limited to the explicitly marked live-provider/live-DB/keychain cases.
 
 ## Financial Freedom Framework
 
