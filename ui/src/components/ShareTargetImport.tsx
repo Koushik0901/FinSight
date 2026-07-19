@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import ImportMappingDialog from "./ImportMappingDialog";
 import { uploadCsv } from "../api/csvUpload";
 import { isServerMode } from "../api/auth";
-import { clearShareFlag, readShareFlag, takeSharedFile } from "../pwa/shareTarget";
+import { clearShareFlag, readShareFlag, takeSharedFile, MAX_SHARE_MB } from "../pwa/shareTarget";
 import { userErrorMessage } from "../utils/runtime";
 
 /**
@@ -37,7 +37,20 @@ export default function ShareTargetImport() {
 
     if (outcome === "empty") {
       toast.error("Nothing to import", {
-        description: "That share didn't include a file. Share a CSV statement to import it.",
+        description: "That share didn't include a file, or the file was empty.",
+      });
+      return;
+    }
+    if (outcome === "toolarge") {
+      toast.error("That file is too large", {
+        description: `FinSight imports statements up to ${MAX_SHARE_MB} MB. Try exporting a shorter date range.`,
+      });
+      return;
+    }
+    if (outcome === "unsupported") {
+      toast.error("FinSight imports CSV statements", {
+        description:
+          "That file isn't a CSV. Most banks offer a CSV or spreadsheet export alongside the PDF.",
       });
       return;
     }

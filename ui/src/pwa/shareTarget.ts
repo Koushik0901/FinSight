@@ -19,6 +19,14 @@ export const SHARE_CRYPTO_KEY = "key";
 const SHARE_ENVELOPE_VERSION = 1;
 
 /**
+ * Size ceiling shown to the user, in MB. Mirrors `FINSIGHT_MAX_SHARE_BYTES` in
+ * the service worker, which in turn mirrors `MAX_CSV_UPLOAD_BYTES` in
+ * crates/finsight-server/src/uploads.rs — the authority. Kept as a plain number
+ * so the message reads naturally in any locale.
+ */
+export const MAX_SHARE_MB = 25;
+
+/**
  * How long a parked share may sit unclaimed before it is thrown away.
  *
  * This matters more than it looks. The service worker answers the share POST
@@ -53,19 +61,33 @@ export type StoredShare = {
 };
 
 /** Outcome encoded in the redirect URL by the service worker. */
-export type ShareOutcome = "file" | "empty" | "error" | "none";
+export type ShareOutcome =
+  | "file"
+  | "empty"
+  | "toolarge"
+  | "unsupported"
+  | "error"
+  | "none";
 
 /**
  * Read `?shared=` from the current URL.
  *
- * `1` means a file is waiting in IndexedDB; `empty` means the share carried no
- * file (someone shared a URL or plain text); `error` means the worker failed to
- * park it. Anything else is a normal app launch.
+ * `1` — a file is waiting in IndexedDB.
+ * `empty` — the share carried no file, or a zero-byte one.
+ * `toolarge` — over the server's upload limit; rejected before being read.
+ * `unsupported` — not a CSV (a PDF statement, most likely).
+ * `error` — the worker failed to park it.
+ *
+ * Anything else, including a value from a NEWER worker this build does not
+ * know about, is treated as a normal launch rather than a crash. A stale page
+ * and a fresh service worker can coexist during an update.
  */
 export function readShareFlag(search: string = window.location.search): ShareOutcome {
   const value = new URLSearchParams(search).get("shared");
   if (value === "1") return "file";
   if (value === "empty") return "empty";
+  if (value === "toolarge") return "toolarge";
+  if (value === "unsupported") return "unsupported";
   if (value === "error") return "error";
   return "none";
 }

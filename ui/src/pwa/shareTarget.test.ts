@@ -13,6 +13,7 @@ import {
   SHARE_KEY,
   SHARE_CRYPTO_KEY,
   SHARE_MAX_AGE_MS,
+  MAX_SHARE_MB,
   clearShareFlag,
   purgeSharedFiles,
   readShareFlag,
@@ -61,6 +62,16 @@ async function stash(
   file: { name: string; type: string; text: string },
   receivedAt = Date.now()
 ): Promise<void> {
+  return stashBytes(file.name, new TextEncoder().encode(file.text), receivedAt, file.type);
+}
+
+/** Byte-level variant, for content that is not valid UTF-8. */
+async function stashBytes(
+  name: string,
+  body: Uint8Array,
+  receivedAt = Date.now(),
+  type = "text/csv"
+): Promise<void> {
   let key = await readKey();
   if (!key) {
     key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, [
@@ -70,8 +81,7 @@ async function stash(
     await put(key, SHARE_CRYPTO_KEY);
   }
 
-  const header = new TextEncoder().encode(JSON.stringify({ name: file.name, type: file.type }));
-  const body = new TextEncoder().encode(file.text);
+  const header = new TextEncoder().encode(JSON.stringify({ name, type }));
   const plain = new Uint8Array(4 + header.length + body.length);
   new DataView(plain.buffer).setUint32(0, header.length, false);
   plain.set(header, 4);
@@ -106,9 +116,61 @@ function readText(file: File): Promise<string> {
   });
 }
 
-function csvFile(text = "Date,Merchant,Amount\n2026-01-02,LOBLAWS,-42.10\n") {
+function readArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function csvFile(text = "Date,Merchant,Amount\n2026-01-02,SYNTHETIC MERCHANT,-42.10\n") {
   return { name: "statement.csv", type: "text/csv", text };
 }
+
+/**
+ * Deliberately varied shapes a brand-new user could hand us. Names, currencies,
+ * separators, scripts, and column orders here are all invented — nothing in the
+ * implementation may depend on any of them, and these exist to prove that.
+ */
+const SYNTHETIC_SHARES = [
+  {
+    label: "comma-separated, negative amounts",
+    name: "export.csv",
+    text: "Date,Description,Amount\n2026-03-01,MERCHANT A,-12.34\n",
+  },
+  {
+    label: "semicolon-separated with comma decimals (common in the EU)",
+    name: "kontoauszug.csv",
+    text: "Datum;Beschreibung;Betrag\n01.03.2026;HÄNDLER;-1.234,56\n",
+  },
+  {
+    label: "non-Latin script and a unicode filename",
+    name: "取引明細.csv",
+    text: "日付,摘要,金額\n2026-03-01,店舗,-1200\n",
+  },
+  {
+    label: "separate debit/credit columns, no sign",
+    name: "statement.CSV",
+    text: "Posted,Payee,Debit,Credit\n2026/03/01,PAYEE,50.00,\n",
+  },
+  {
+    label: "quoted fields containing commas and newlines",
+    name: "quoted.csv",
+    text: 'Date,Description,Amount\n2026-03-01,"MERCHANT, INC.\nSUITE 2",-9.99\n',
+  },
+  {
+    label: "single header row and no transactions at all",
+    name: "empty-but-valid.csv",
+    text: "Date,Description,Amount\n",
+  },
+  {
+    label: "very long single field",
+    name: "long.csv",
+    text: `Date,Description,Amount\n2026-03-01,${"X".repeat(5000)},-1.00\n`,
+  },
+] as const;
 
 /** Look at the parked record WITHOUT consuming it. */
 async function peek(): Promise<StoredShare | undefined> {
@@ -130,10 +192,23 @@ describe("readShareFlag", () => {
     expect(readShareFlag("?shared=error")).toBe("error");
   });
 
+  it("maps the rejection outcomes the worker screens for", () => {
+    expect(readShareFlag("?shared=toolarge")).toBe("toolarge");
+    expect(readShareFlag("?shared=unsupported")).toBe("unsupported");
+  });
+
   it("is 'none' for a normal launch", () => {
     expect(readShareFlag("")).toBe("none");
     expect(readShareFlag("?tab=budget")).toBe("none");
+  });
+
+  // A page from an older build can be live while a newer service worker is
+  // already active, so unknown values must degrade to "nothing happened"
+  // rather than throwing on a launch the user did not initiate.
+  it("treats an unrecognised value as a normal launch", () => {
     expect(readShareFlag("?shared=bogus")).toBe("none");
+    expect(readShareFlag("?shared=")).toBe("none");
+    expect(readShareFlag("?shared=1&shared=empty")).toBe("file");
   });
 });
 
@@ -168,7 +243,7 @@ describe("takeSharedFile", () => {
     expect(file).not.toBeNull();
     expect(file!.name).toBe("statement.csv");
     expect(file!.type).toBe("text/csv");
-    expect(await readText(file!)).toContain("LOBLAWS");
+    expect(await readText(file!)).toContain("SYNTHETIC MERCHANT");
   });
 
   // The one that protects against a double import of a bank statement.
@@ -195,6 +270,31 @@ describe("takeSharedFile", () => {
     expect(await takeSharedFile()).toBeNull();
   });
 
+  // The hand-off must be format-agnostic: it moves bytes, it does not parse.
+  // Anything here that failed would mean the transport had opinions about
+  // delimiters, encodings, or column layouts that it has no business having.
+  describe.each(SYNTHETIC_SHARES)("round-trips $label", (sample) => {
+    it("preserves the filename and every byte", async () => {
+      await stash({ name: sample.name, type: "text/csv", text: sample.text });
+
+      const file = await takeSharedFile();
+      expect(file).not.toBeNull();
+      expect(file!.name).toBe(sample.name);
+      expect(await readText(file!)).toBe(sample.text);
+    });
+  });
+
+  // A CSV is not guaranteed to be UTF-8 — Windows-1252 and UTF-16 exports are
+  // both real. The transport must not corrupt bytes it cannot interpret.
+  it("preserves bytes that are not valid UTF-8", async () => {
+    const raw = new Uint8Array([0x44, 0x61, 0x74, 0x65, 0x0a, 0xff, 0xfe, 0x80, 0x00, 0x41]);
+    await stashBytes("legacy-encoding.csv", raw);
+
+    const file = await takeSharedFile();
+    const out = new Uint8Array(await readArrayBuffer(file!));
+    expect(Array.from(out)).toEqual(Array.from(raw));
+  });
+
   it("refuses a record older than the TTL, and still consumes it", async () => {
     await stash(csvFile(), Date.now() - SHARE_MAX_AGE_MS - 1);
     expect(await takeSharedFile()).toBeNull();
@@ -219,18 +319,18 @@ describe("takeSharedFile", () => {
 describe("the parked file is encrypted at rest", () => {
   it("stores no recognisable plaintext — not the rows, not the filename", async () => {
     await stash({
-      name: "RBC-chequing-2026.csv",
+      name: "acct-1234-chequing.csv",
       type: "text/csv",
-      text: "Date,Merchant,Amount\n2026-01-02,LOBLAWS,-42.10\n",
+      text: "Date,Merchant,Amount\n2026-01-02,SYNTHETIC MERCHANT,-42.10\n",
     });
 
     const record = (await peek())!;
     const asText = new TextDecoder().decode(new Uint8Array(record.ct));
-    expect(asText).not.toContain("LOBLAWS");
+    expect(asText).not.toContain("SYNTHETIC MERCHANT");
     expect(asText).not.toContain("42.10");
     // The filename is itself a disclosure, so it goes inside the envelope too.
-    expect(asText).not.toContain("RBC-chequing");
-    expect(JSON.stringify(record)).not.toContain("RBC-chequing");
+    expect(asText).not.toContain("acct-1234");
+    expect(JSON.stringify(record)).not.toContain("acct-1234");
   });
 
   it("keeps the key non-extractable, so a storage dump cannot yield its bytes", async () => {
@@ -337,6 +437,21 @@ describe("service worker contract", () => {
     );
     // A fresh 12-byte IV per share.
     expect(swSource).toMatch(/getRandomValues\(\s*new Uint8Array\(12\)\s*\)/);
+  });
+
+  // These screens run before anything is read into memory or parked, so an
+  // unusable share fails immediately instead of after an upload round trip.
+  it("screens size and file type before parking anything", () => {
+    expect(swSource).toContain("/?shared=toolarge");
+    expect(swSource).toContain("/?shared=unsupported");
+    // Mirrors MAX_CSV_UPLOAD_BYTES in crates/finsight-server/src/uploads.rs.
+    expect(swSource).toContain("25 * 1024 * 1024");
+    expect(swSource).toContain(`${MAX_SHARE_MB} * 1024 * 1024`);
+    // Extension, not MIME — MIME for .csv is unreliable across platforms, and
+    // the server's own check is on the extension too.
+    expect(swSource).toMatch(/\\\.csv\$\/i/);
+    // Size is checked against file.size, i.e. before arrayBuffer() is called.
+    expect(swSource).toContain("file.size > FINSIGHT_MAX_SHARE_BYTES");
   });
 
   it("never writes the raw file buffer to storage", () => {

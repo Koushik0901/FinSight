@@ -38,6 +38,37 @@
 const FINSIGHT_SHARE_DB = "finsight-share-target";
 const FINSIGHT_SHARE_STORE = "incoming";
 const FINSIGHT_SHARE_KEY = "pending";
+
+/**
+ * Largest share we will park. MIRRORS `MAX_CSV_UPLOAD_BYTES` in
+ * crates/finsight-server/src/uploads.rs, which is the authority — this is a
+ * guard rail, not the real check.
+ *
+ * It exists because the OS hands us whatever the user picked. Without it, a
+ * mis-shared video or a decade-long export would be read fully into memory,
+ * encrypted (a second copy), and written to IndexedDB, only to be rejected by
+ * the server afterwards. Rejecting up front turns that into an immediate,
+ * explainable "too large" instead of a stall followed by a vague failure.
+ */
+const FINSIGHT_MAX_SHARE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Whether the OS-supplied filename looks like a CSV.
+ *
+ * Extension, not MIME, deliberately: MIME for `.csv` is wildly inconsistent
+ * across platforms and file managers (text/csv, application/vnd.ms-excel,
+ * application/octet-stream, text/plain all occur), and the server's own check
+ * is on the extension too — so this agrees with the authority rather than
+ * inventing a second rule.
+ *
+ * A share with NO filename is allowed through: we cannot prove it is wrong,
+ * and refusing it would break pickers that omit the name. The import preview
+ * is the backstop there.
+ */
+function finsightLooksLikeCsv(name) {
+  if (!name) return true;
+  return /\.csv$/i.test(name);
+}
 /** Non-extractable AES-GCM key, in the SAME store — no schema version bump. */
 const FINSIGHT_SHARE_CRYPTO_KEY = "key";
 const FINSIGHT_SHARE_ENVELOPE_VERSION = 1;
@@ -201,6 +232,22 @@ self.addEventListener("fetch", function (event) {
         const file = form.get("file");
         if (!file || typeof file.arrayBuffer !== "function") {
           return Response.redirect("/?shared=empty", 303);
+        }
+        // A zero-byte file is as useless as no file, and the server rejects it
+        // too — say so now rather than after an upload round trip.
+        if (file.size === 0) {
+          return Response.redirect("/?shared=empty", 303);
+        }
+        // Reject before reading the bytes: the whole point is not to pull a
+        // huge file into memory.
+        if (typeof file.size === "number" && file.size > FINSIGHT_MAX_SHARE_BYTES) {
+          return Response.redirect("/?shared=toolarge", 303);
+        }
+        // Bank statements are very often shared as PDFs. Catch that here
+        // instead of encrypting, parking, and uploading something the server
+        // will certainly refuse.
+        if (!finsightLooksLikeCsv(file.name)) {
+          return Response.redirect("/?shared=unsupported", 303);
         }
         // Encrypted before it ever touches disk. Bytes rather than the Blob
         // itself: an ArrayBuffer round-trips through IndexedDB identically

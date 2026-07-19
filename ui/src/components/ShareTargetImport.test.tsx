@@ -8,6 +8,7 @@ import {
   SHARE_KEY,
   SHARE_CRYPTO_KEY,
   SHARE_MAX_AGE_MS,
+  MAX_SHARE_MB,
 } from "../pwa/shareTarget";
 
 // The real mapping dialog pulls a CSV preview over RPC; this test is about the
@@ -125,6 +126,34 @@ describe("ShareTargetImport", () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(toastError.mock.calls[0]![0]).toBe("Nothing to import");
+    expect(uploadCsv).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("mapping-dialog")).toBeNull();
+  });
+
+  // Both of these are rejected by the worker before anything is parked, so the
+  // app's only job is to explain what happened in terms the user can act on.
+  it("explains an over-sized file with the actual limit", async () => {
+    window.history.replaceState(null, "", "/?shared=toolarge");
+
+    render(<ShareTargetImport />);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError.mock.calls[0]![0]).toBe("That file is too large");
+    expect(String((toastError.mock.calls[0]![1] as { description: string }).description)).toContain(
+      String(MAX_SHARE_MB)
+    );
+    expect(uploadCsv).not.toHaveBeenCalled();
+  });
+
+  // Banks very commonly hand out PDF statements, so this is a first-run path,
+  // not an exotic one.
+  it("points a non-CSV share (e.g. a PDF statement) at the CSV export", async () => {
+    window.history.replaceState(null, "", "/?shared=unsupported");
+
+    render(<ShareTargetImport />);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError.mock.calls[0]![0]).toBe("FinSight imports CSV statements");
     expect(uploadCsv).not.toHaveBeenCalled();
     expect(screen.queryByTestId("mapping-dialog")).toBeNull();
   });

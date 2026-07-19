@@ -35,14 +35,21 @@ export default defineConfig({
             files: [
               {
                 name: "file",
-                // Android in particular is inconsistent about the MIME type it
-                // reports for a .csv — list the aliases it actually sends, plus
-                // the extension, or the share sheet omits FinSight entirely.
+                // MIME for a .csv is wildly inconsistent across platforms and
+                // file managers, so this list is deliberately WIDE. The two
+                // failure modes are not symmetric: a type we forgot means
+                // FinSight silently never appears in the share sheet, with
+                // nothing to debug, whereas a file we accept but cannot use
+                // now gets an immediate, specific message (the worker checks
+                // the extension and the size before parking anything). Prefer
+                // the loud failure.
                 accept: [
                   "text/csv",
                   "text/comma-separated-values",
                   "application/csv",
                   "application/vnd.ms-excel",
+                  // Several Android pickers report a .csv as plain text.
+                  "text/plain",
                   ".csv",
                 ],
               },
