@@ -1,7 +1,16 @@
 # FinSight Product Audit — 2026-07-10
 
 > **STATUS (2026-07-13): all 15 ranked findings + all 6 P3 items + Appendix B
-> are ✅ DONE.** Each section below carries its own resolving commit(s) and a
+> are ✅ DONE.**
+>
+> ⚠️ **Correction (2026-07-19, issue #17): P1-3 was over-claimed — see its
+> section.** Two of its sub-items were still live nine days after being marked
+> resolved: the EF-months double definition (fixed 2026-07-19) and the
+> one-off-distorted headline expense basis (now tracked in #27). Treat the ✅
+> marks below as "a fix was written", not "the behavior was verified" — the
+> claims that survived are the ones with a regression test behind them.
+>
+> Each section below carries its own resolving commit(s) and a
 > one-line summary of what changed (P0-1 ×1, P0-2 ×1, P0-3 ×1, P0-4 ×1, P1-1
 > ×1, P1-2 ×1, P1-3 ×1, P1-4 ×1, P1-5 ×1, P2-1 ×1, P2-2 ×1, P2-3 ×1, P2-4 ×1,
 > P2-5 ×1, P2-6 ×1 — 15 distinct fixes across the commits tagged `P0-*`/
@@ -311,13 +320,35 @@ Claude/Anthropic series (monthly), Amex membership fee = Subscription/Bill with
 monthly cadence; no regression on the 17 hand-computed monthly candidates from
 the ground-truth script.
 
-### P1-3. Copilot residuals from the eval loop (documented, unfixed) — ✅ DONE
+### P1-3. Copilot residuals from the eval loop (documented, unfixed) — ⚠️ PARTLY DONE (was marked ✅)
 
 **Resolved** (`62d6d5d`): `get_spending_breakdown` now returns `data_range`
 (earliest/latest transaction) plus a note instructing the model to widen
 `months` (up to 60) before concluding data is missing; EF/liquid definitions
 aligned to one source; surplus made robust to one-off purchases. The eval
 harness (`cd eval && run_eval.py`) remains the regression gate per item 4.
+
+> **Re-verified 2026-07-19 (issue #17) — the ✅ above overstated items 2 and 3.**
+> This banner directly contradicted `eval/FINDINGS.md`, which still listed both
+> as open; the contradiction went untriaged for nine days. Checking the code
+> rather than the claim:
+>
+> - **Item 2, `run_cashflow_timeline`** — genuinely fixed. It starts from
+>   `liquid_balance_cents` (finance.rs ~1302), as the audit said.
+> - **Item 2, EF months** — **NOT fixed.** `run_emergency_fund_scenarios` was
+>   still measuring against total liquid while reporting the EF-eligible balance,
+>   so a $5,000 fund was reported as 4.5 months when its own numbers give 2.5.
+>   Fixed 2026-07-19; regression test
+>   `emergency_fund_scenarios_measure_the_same_pool_they_report`.
+> - **Item 3, surplus** — fixed only for the *projection* path
+>   (`typical_monthly_expense_cents`, median-month basis).
+>   `metrics::rolling_averages` still takes a raw 90-day mean, so the headline
+>   savings rate, runway, and EF months on every screen remain one-off-distorted.
+>   Still open.
+>
+> Lesson for future audit passes: "resolved" claims are evidence of intent, not
+> of behavior. A ✅ that no test enforces will drift. Both surviving items are
+> the kind a regression test would have caught the day they regressed.
 
 Carried from `eval/FINDINGS.md` (v10):
 1. **Temporal blindness:** `get_spending_breakdown` defaults `months=6` (max 60);

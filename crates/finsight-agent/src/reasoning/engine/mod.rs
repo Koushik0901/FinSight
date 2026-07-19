@@ -723,6 +723,23 @@ fn is_intent_filler(text: &str) -> bool {
         return false;
     }
     let lower = t.to_lowercase();
+
+    // A question is directed at the USER, not an announcement of work. Asking
+    // "which account did you mean?" is a correct answer to an ambiguous request,
+    // and it opens with the same words as filler ("Let me know…"). Emptying it
+    // here would drop `is_real_answer` and let `is_usable_tool_answer` discard
+    // the turn in favour of the canned fallback — so the Copilot could never
+    // cleanly ask for clarification or say what it still needs.
+    if t.contains('?') {
+        return false;
+    }
+    // Same for a stated information gap: "I'll need X before I can answer" is a
+    // decline, not intent to act.
+    const NEEDS_FROM_USER: [&str; 4] = ["let me know", "i'll need", "i will need", "i'd need"];
+    if NEEDS_FROM_USER.iter().any(|p| lower.starts_with(p)) {
+        return false;
+    }
+
     const INTENT_STARTS: [&str; 8] = [
         "let me",
         "i'll ",
