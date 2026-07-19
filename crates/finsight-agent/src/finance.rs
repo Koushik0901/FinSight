@@ -237,6 +237,9 @@ pub struct GoalAllocationItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmergencyFundScenarios {
+    /// The emergency-fund pool — accounts flagged `emergency_fund_eligible`, NOT
+    /// total liquid cash. Named `liquid_*` historically; every figure in this
+    /// struct is measured against it so they cannot contradict each other.
     pub liquid_balance_cents: i64,
     pub avg_monthly_expense_cents: i64,
     pub current_months: f64,
@@ -1191,6 +1194,12 @@ pub fn run_emergency_fund_scenarios(
 ) -> rusqlite::Result<EmergencyFundScenarios> {
     let snapshot = build_snapshot(conn)?;
     let expense = snapshot.avg_monthly_expense_90d_cents.max(0);
+    // THE emergency-fund pool: accounts actually earmarked for emergencies, the
+    // same pool `metrics::emergency_fund_months` measures and every screen shows.
+    // Measuring coverage against total liquid instead would overstate it by
+    // whatever sits in non-earmarked savings, and contradict the balance this
+    // very response reports.
+    let fund_balance = snapshot.emergency_fund_balance_cents;
     // Default the savings rate to the current monthly surplus so "when will my
     // emergency fund be full?" is answerable without the user quoting a number.
     // Uses the one-off-proof typical expense so a single big purchase in the
@@ -1207,7 +1216,7 @@ pub fn run_emergency_fund_scenarios(
         .into_iter()
         .map(|target_months| {
             let target_cents = expense * target_months;
-            let gap_cents = (target_cents - snapshot.liquid_balance_cents).max(0);
+            let gap_cents = (target_cents - fund_balance).max(0);
             let months_to_target = if gap_cents == 0 {
                 Some(0)
             } else if effective_monthly_contribution_cents > 0 {
@@ -1226,11 +1235,9 @@ pub fn run_emergency_fund_scenarios(
             }
         })
         .collect();
-    let current_months = if expense > 0 {
-        snapshot.liquid_balance_cents.max(0) as f64 / expense as f64
-    } else {
-        0.0
-    };
+    // Through the shared metrics layer so this matches the snapshot and every
+    // screen exactly — including the cap — rather than re-deriving the ratio.
+    let current_months = finsight_core::metrics::emergency_fund_months(fund_balance, expense);
 
     let mut assumptions = vec![
         "Emergency fund targets use the 90-day average monthly expense from local transactions."
@@ -1245,7 +1252,7 @@ pub fn run_emergency_fund_scenarios(
     }
 
     Ok(EmergencyFundScenarios {
-        liquid_balance_cents: snapshot.emergency_fund_balance_cents,
+        liquid_balance_cents: fund_balance,
         avg_monthly_expense_cents: expense,
         current_months,
         monthly_surplus_cents,
@@ -2320,6 +2327,61 @@ mod tests {
         assert_eq!(scenario.safe_contribution_now_cents, 0);
         assert_eq!(scenario.alternatives.len(), 3);
         assert!(scenario.recommendation.contains("Delay or reduce"));
+    }
+
+    /// Issue #17 / eval FINDINGS #3: the EF scenarios reported a balance from the
+    /// EF-ELIGIBLE pool but derived `current_months` and every target gap from
+    /// TOTAL LIQUID. With a liquid account that isn't earmarked for emergencies,
+    /// the two pools diverge and the same response contradicts itself — and
+    /// contradicts `emergency_fund_months`, which every screen shows.
+    #[test]
+    fn emergency_fund_scenarios_measure_the_same_pool_they_report() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn); // 'a1' checking, $5,000, EF-eligible by default
+        // A liquid but NOT emergency-fund-earmarked account — e.g. a vacation
+        // pot. It lifts total liquid without lifting emergency coverage.
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) \
+             VALUES('vac','Me','Bank','Savings','Vacation','USD','#fff','manual','liquid',0,datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+             VALUES('vac',date('now'),400000,'manual')",
+            [],
+        )
+        .unwrap();
+
+        let snapshot = build_snapshot(&mut conn).unwrap();
+        assert!(
+            snapshot.liquid_balance_cents > snapshot.emergency_fund_balance_cents,
+            "fixture must make the two pools differ"
+        );
+
+        let scenarios = run_emergency_fund_scenarios(&mut conn, 50_000).unwrap();
+
+        // The reported months must follow from the reported balance, using the
+        // one shared definition — not a second, larger pool.
+        let expected = finsight_core::metrics::emergency_fund_months(
+            scenarios.liquid_balance_cents,
+            scenarios.avg_monthly_expense_cents,
+        );
+        assert!(
+            (scenarios.current_months - expected).abs() < 0.001,
+            "current_months {} should follow from the reported balance ({} → {})",
+            scenarios.current_months,
+            scenarios.liquid_balance_cents,
+            expected
+        );
+        // And the snapshot the rest of the app shows must agree.
+        assert!(
+            (scenarios.current_months - snapshot.emergency_fund_months).abs() < 0.001,
+            "scenarios say {} months, snapshot says {}",
+            scenarios.current_months,
+            snapshot.emergency_fund_months
+        );
     }
 
     #[test]

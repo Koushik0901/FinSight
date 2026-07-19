@@ -204,7 +204,7 @@ is consistently good (tool_use ~4.0).
    model echoed it — contradicting the app's own "never report unknown as $0" rule
    (which `get_net_worth` already followed). Now returns `balance_known=false` / null
    and excludes it from the total.
-2. **[REAL — follow-up] Monthly surplus is distorted by the 90-day window.** Surplus
+2. **[REAL — PARTLY FIXED] Monthly surplus is distorted by the 90-day window.** Surplus
    is `income_90d − expense_90d`. A large one-off/anomalous charge (e.g. the $2,500
    Apple Store charge) inflates `expense_90d` and can crush the reported surplus
    (we measured $163 vs a true ~$1,900). A user who makes one big purchase, or asks
@@ -212,15 +212,45 @@ is consistently good (tool_use ~4.0).
    excluding flagged anomalies / using a median or recurring-based expense for
    surplus. (Worked around in the benchmark by spreading one-offs out of the window;
    the underlying behavior remains.)
-3. **[REAL — follow-up] Two inconsistent "emergency-fund months" numbers.**
+
+   > **Adjudicated 2026-07-19 (issue #17).** Both this doc and the product audit
+   > were partly right. A one-off-proof `typical_monthly_expense_cents`
+   > (median-month basis, `robust_monthly_expense_cents`) DOES exist and is what
+   > every *surplus projection* uses — `run_emergency_fund_scenarios`,
+   > `run_goal_allocation_scenarios`, and purchase affordability — covered by
+   > `typical_monthly_expense_ignores_one_off_spike`. So the audit's fix claim
+   > holds for projections. But `metrics::rolling_averages` still takes a raw
+   > 90-day mean with no outlier handling, and that is what feeds the headline
+   > savings rate, runway, EF months, and the screens. **Still open for the
+   > display path**; fixed for the projection path.
+3. **[REAL — FIXED 2026-07-19] Two inconsistent "emergency-fund months" numbers.**
    `build_snapshot.emergency_fund_months` divides the *EF-eligible* balance by
    expenses, while `run_emergency_fund_scenarios` divides *total liquid* cash — so
    the same household yields ~2.4 vs ~3.3 months depending on which tool answers.
    Pick one definition.
-4. **[REAL — follow-up] `is_usable` gate suppresses correct no-tool answers.** The
+
+   > **Adjudicated (issue #17): this doc was right, the audit's fix claim was
+   > wrong.** Confirmed still broken and worse than described — the contradiction
+   > was *inside a single response*. `EmergencyFundScenarios` reported a balance
+   > from the EF-eligible pool while deriving `current_months` and every target
+   > gap from total liquid: a $5,000 fund was reported as **4.5 months** when its
+   > own numbers give 2.5. Fixed by measuring every figure in that struct against
+   > the EF-eligible pool and routing `current_months` through
+   > `metrics::emergency_fund_months`. Regression test:
+   > `emergency_fund_scenarios_measure_the_same_pool_they_report`.
+4. **[REAL — FIXED 2026-07-19] `is_usable` gate suppresses correct no-tool answers.** The
    production `is_usable_tool_answer` gate requires a tool call, so a correct
    *decline* or *clarification* (which legitimately calls no tool) is replaced by the
    canned fallback. Relax the gate to treat a substantive decline/clarify as usable.
+
+   > **Fixed (issue #18).** The gate itself had already been relaxed to
+   > `has_content && (used_tool || is_real_answer)`. The remaining leak was
+   > upstream in `is_intent_filler`, which classified any short text opening with
+   > "Let me…" / "I'll…" as filler — emptying the content, clearing
+   > `is_real_answer`, and so still discarding the turn. "Let me know which
+   > account you mean — chequing or savings?" was suppressed. Questions and
+   > stated information gaps are now exempt. Regression test:
+   > `clarifying_questions_and_declines_are_not_intent_filler`.
 5. **[MODEL] Hard multi-step planning is the weakest area.** The upper-bound
    questions (3-month work break, job-offer net-benefit, 3-way debt/EF/invest) are
    where glm-5.2 most often drops a constraint (e.g. forgets the upcoming insurance

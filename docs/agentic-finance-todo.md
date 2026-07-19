@@ -2,6 +2,27 @@
 
 This document tracks the work needed for FinSight Copilot to become a robust personal-finance planning agent with strong reasoning depth, tool orchestration, and nuanced local-data analysis.
 
+## Tracked on GitHub
+
+This file stays the source of truth for full detail and current status. The
+distinct, pickable items also have issues so they can be scheduled, linked to a
+PR, and seen without opening this file (issue #12):
+
+| Item | Issue |
+|---|---|
+| Conversational categorization of uncategorized transactions | [#28](https://github.com/Koushik0901/FinSight/issues/28) |
+| Agent-triggered navigation after an approved action | [#29](https://github.com/Koushik0901/FinSight/issues/29) |
+| Goal priority and deadline strictness | [#30](https://github.com/Koushik0901/FinSight/issues/30) |
+| Confidence scoring for recurring detection | [#31](https://github.com/Koushik0901/FinSight/issues/31) |
+| User risk tolerance / financial philosophy | [#32](https://github.com/Koushik0901/FinSight/issues/32) |
+| Hybrid and custom debt-payoff strategies | [#33](https://github.com/Koushik0901/FinSight/issues/33) |
+| Promotional APR expiry modeling | [#34](https://github.com/Koushik0901/FinSight/issues/34) |
+| Dedicated sinking-fund planning | [#35](https://github.com/Koushik0901/FinSight/issues/35) |
+| Actionable missing-data prompts | [#36](https://github.com/Koushik0901/FinSight/issues/36) |
+
+When an item here becomes concrete enough to pick up, open an issue and add it
+to this table — a `[ ]` that exists only in this file is one nobody schedules.
+
 ## Status Legend
 
 - `[x]` Implemented in the current app.
