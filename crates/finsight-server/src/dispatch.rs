@@ -10,6 +10,7 @@ use axum::Json;
 use finsight_api::error::AppError;
 use finsight_api::sink::FrameSink;
 use finsight_api::ApiState;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -35,32 +36,44 @@ fn ok<T: serde::Serialize>(v: T) -> Result<serde_json::Value, AppError> {
     serde_json::to_value(v).map_err(|e| AppError::new("rpc.serialize", e.to_string()))
 }
 
-/// Commands that take a **server-side filesystem path** supplied by the client.
-///
-/// These were safe on the desktop, where `path` came from a native file dialog
-/// on the user's OWN machine and the "server" was the same trust domain. Over
-/// HTTP that assumption inverts: `path` is attacker-controlled and is opened on
-/// the SERVER's filesystem with no confinement, so routing them would give any
-/// authenticated user an arbitrary server-side file read — e.g.
-/// `POST /api/rpc/preview_csv_columns {"path":"<data>/db.key"}` returns the
-/// plaintext SQLCipher key (the CSV decoder falls back to Windows-1252 and so
-/// decodes arbitrary bytes), and pointing it at `users.db` returns every
-/// account's Argon2 verifier.
-///
-/// Scoped deliberately to these three: each does a bare `PathBuf::from(path)`
-/// with no confinement (`preview_csv_columns` doesn't even take `&ApiState`).
-/// `stage_restore_backup` is NOT here — it canonicalizes and requires
-/// `starts_with(<data_dir>/backups)`, so it is already confined.
-///
-/// They lose nothing real by 501'ing: server mode has no file-picker entry
-/// point for import at all. Re-enabling them needs a multipart upload endpoint
-/// that writes into a per-user directory the server chooses — not a
-/// client-supplied path.
-pub const UNSUPPORTED: &[&str] = &[
-    "preview_csv_columns",
-    "prepare_csv_import",
-    "import_csv",
-];
+/// Commands intentionally unavailable over HTTP. CSV import is supported via
+/// `/api/import/csv`; its opaque upload token is resolved and confined below.
+pub const UNSUPPORTED: &[&str] = &[];
+
+async fn uploaded_csv_path(api: &ApiState, token: String) -> Result<String, AppError> {
+    let candidate = PathBuf::from(&token);
+    let valid_name = candidate.file_name().and_then(|name| name.to_str()) == Some(token.as_str())
+        && candidate.extension().and_then(|ext| ext.to_str()) == Some("csv")
+        && candidate
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| uuid::Uuid::parse_str(stem).is_ok());
+    if !valid_name {
+        return Err(AppError::new(
+            "rpc.invalid_import_upload",
+            "CSV import requires a valid browser upload token",
+        ));
+    }
+
+    let imports_dir = api.data_dir.join("imports");
+    tokio::task::spawn_blocking(move || {
+        let root = std::fs::canonicalize(&imports_dir).map_err(|_| {
+            AppError::new("rpc.invalid_import_upload", "CSV upload was not found")
+        })?;
+        let path = std::fs::canonicalize(imports_dir.join(candidate)).map_err(|_| {
+            AppError::new("rpc.invalid_import_upload", "CSV upload was not found")
+        })?;
+        if !path.starts_with(&root) || !path.is_file() {
+            return Err(AppError::new(
+                "rpc.invalid_import_upload",
+                "CSV upload is outside the authenticated user's staging directory",
+            ));
+        }
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| AppError::new("internal", format!("join: {e}")))?
+}
 
 pub async fn rpc(
     State(st): State<Arc<ServerState>>,
@@ -96,6 +109,9 @@ pub async fn rpc(
     match dispatch(&rt.api, &rt.events, &cmd, p).await {
         Ok(v) => (StatusCode::OK, Json(v)).into_response(),
         Err(e) if e.code == "rpc.unknown_command" => (StatusCode::NOT_FOUND, Json(e)).into_response(),
+        Err(e) if e.code == "rpc.bad_arg" || e.code == "rpc.invalid_import_upload" => {
+            (StatusCode::BAD_REQUEST, Json(e)).into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e)).into_response(),
     }
 }
@@ -403,27 +419,32 @@ async fn dispatch(
 
         // ── import (import_csv is the other emit-path command) ──
         "preview_csv_columns" => ok(c::import::preview_csv_columns(
-            arg(&p, "path")?,
+            uploaded_csv_path(api, arg(&p, "path")?).await?,
             arg(&p, "skipHeaderRows")?,
         )
         .await?),
         "prepare_csv_import" => ok(c::import::prepare_csv_import(
             api,
-            arg(&p, "path")?,
+            uploaded_csv_path(api, arg(&p, "path")?).await?,
             arg(&p, "accountId")?,
             arg(&p, "mapping")?,
         )
         .await?),
         "import_csv" => {
             let sink: Arc<dyn FrameSink> = Arc::new(BroadcastSink(events.clone()));
-            ok(c::import::import_csv(
+            let path = uploaded_csv_path(api, arg(&p, "path")?).await?;
+            let result = c::import::import_csv(
                 api,
                 sink,
-                arg(&p, "path")?,
+                path.clone(),
                 arg(&p, "accountId")?,
                 arg(&p, "mapping")?,
             )
-            .await?)
+            .await?;
+            if let Err(e) = tokio::fs::remove_file(&path).await {
+                tracing::warn!(path, "could not remove completed CSV upload: {e}");
+            }
+            ok(result)
         }
         "get_saved_csv_mapping" => {
             ok(c::import::get_saved_csv_mapping(api, arg(&p, "accountId")?).await?)
@@ -879,8 +900,9 @@ pub const SUPPORTED: &[&str] = &[
     "list_asset_owners",
     "set_asset_owners",
     // import
-    // "preview_csv_columns" / "prepare_csv_import" / "import_csv" — see
-    // UNSUPPORTED: each takes a client-supplied server-side filesystem path.
+    "preview_csv_columns",
+    "prepare_csv_import",
+    "import_csv",
     "get_saved_csv_mapping",
     "list_unfinished_imports",
     "discard_unfinished_import",
@@ -1103,26 +1125,16 @@ mod tests {
         assert_eq!(v["code"], "rpc.unknown_command");
     }
 
-    /// Security guard: the three CSV-import commands take a client-supplied
-    /// SERVER-side filesystem path with no confinement, so routing them would
-    /// be an arbitrary file read for any authenticated user (e.g. reading the
-    /// data dir's `db.key` or `users.db`). They must stay 501, not dispatched.
     #[test]
-    fn path_taking_import_commands_are_not_routed() {
+    fn import_commands_are_routed_through_upload_tokens() {
         for cmd in ["preview_csv_columns", "prepare_csv_import", "import_csv"] {
-            assert!(
-                super::UNSUPPORTED.contains(&cmd),
-                "{cmd} takes a client-supplied server-side path and must stay in UNSUPPORTED"
-            );
-            assert!(
-                !super::SUPPORTED.contains(&cmd),
-                "{cmd} must not be dispatched — it would be an arbitrary server-side file read"
-            );
+            assert!(!super::UNSUPPORTED.contains(&cmd));
+            assert!(super::SUPPORTED.contains(&cmd));
         }
     }
 
     #[tokio::test]
-    async fn unsupported_command_is_501() {
+    async fn arbitrary_server_path_is_rejected() {
         let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let cookie = crate::router::tests::setup_and_login(&app).await;
@@ -1136,6 +1148,52 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], "rpc.invalid_import_upload");
+    }
+
+    #[tokio::test]
+    async fn browser_upload_can_be_previewed() {
+        let state = crate::router::tests::test_state();
+        let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
+        let cookie = crate::router::tests::setup_and_login(&app).await;
+        let boundary = "finsight-test-boundary";
+        let multipart = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"history.csv\"\r\nContent-Type: text/csv\r\n\r\ndate,merchant,amount\r\n2026-07-18,Coffee,-4.50\r\n--{boundary}--\r\n"
+        );
+        let res = app
+            .clone()
+            .oneshot(
+                Request::post("/api/import/csv")
+                    .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                    .header("cookie", cookie.clone())
+                    .body(Body::from(multipart))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let uploaded: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let token = uploaded["path"].as_str().unwrap();
+        assert!(!token.contains('/') && !token.contains('\\'));
+
+        let body = serde_json::json!({"path": token, "skipHeaderRows": 0});
+        let res = app
+            .oneshot(
+                Request::post("/api/rpc/preview_csv_columns")
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let preview: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(preview["rows"][0][0], "date");
     }
 }

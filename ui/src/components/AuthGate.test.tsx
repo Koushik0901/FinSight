@@ -314,6 +314,21 @@ describe("AuthGate — offline boot", () => {
     expect(hadPriorSession()).toBe(false);
   });
 
+  it("shows the connection-problem wall for auth.db instead of routing to login", async () => {
+    goServerMode();
+    markSessionEstablished("koushik");
+    vi.mocked(fetchAuthStatus).mockRejectedValue({
+      code: "auth.db",
+      message: "users.db is unreadable",
+    });
+    renderGate();
+
+    expect(await screen.findByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.queryByText("LOGIN_SCREEN")).toBeNull();
+    expect(screen.queryByText("APP_CONTENT")).toBeNull();
+    expect(hadPriorSession()).toBe(true);
+  });
+
   it("a server that says we're logged out clears the marker (no offline fallback next boot)", async () => {
     goServerMode();
     markSessionEstablished("koushik");

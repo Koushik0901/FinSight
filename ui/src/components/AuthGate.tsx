@@ -44,8 +44,8 @@ type GateState =
  * never sees a stale/previous user's cached data.
  *
  * OFFLINE BOOT: when the status probe rejects, the gate distinguishes two
- * failures. An AUTH verdict (`auth.*`, e.g. a 401 `auth.required`) always
- * routes to the login screen — authentication is never weakened. A NETWORK
+ * failures. An invalid-session verdict (`auth.required`) always routes to the
+ * login screen — authentication is never weakened. A NETWORK
  * failure (fetch never got a response) falls back to `children` in an
  * `offline` state *only if* this device has a prior-session marker
  * (`api/auth.ts`), so the 7-day IndexedDB-persisted query cache and the

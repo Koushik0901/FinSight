@@ -166,10 +166,10 @@ export function isNetworkFailure(err: unknown): boolean {
   return typeof code !== "string" || code === "rpc.transport";
 }
 
-/** True when a rejection is an authentication verdict from the server. */
+/** True only when the status probe says the session itself is invalid. */
 export function isAuthFailure(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === "string" && code.startsWith("auth.");
+  return code === "auth.required";
 }
 
 /** True once the httpBackend shim has installed the production HTTP/SSE transport. */

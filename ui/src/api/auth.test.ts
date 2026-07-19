@@ -283,11 +283,15 @@ describe("auth.ts — server-mode auth API client", () => {
       expect(isAuthFailure(err)).toBe(false);
     });
 
-    it("treats an auth-coded rejection as an AUTH failure, never a network one", () => {
-      for (const code of ["auth.required", "auth.bad_credentials", "auth.admin_required"]) {
-        expect(isAuthFailure({ code })).toBe(true);
-        expect(isNetworkFailure({ code })).toBe(false);
+    it("only treats an invalid session as an AuthGate login verdict", () => {
+      expect(isAuthFailure({ code: "auth.required" })).toBe(true);
+      for (const code of ["auth.db", "auth.crypto", "auth.runtime", "auth.admin_required"]) {
+        expect(isAuthFailure({ code })).toBe(false);
       }
+    });
+
+    it("keeps auth.db as a server response, not a network failure", () => {
+      expect(isNetworkFailure({ code: "auth.db" })).toBe(false);
     });
   });
 

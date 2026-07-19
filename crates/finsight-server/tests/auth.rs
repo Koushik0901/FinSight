@@ -151,6 +151,40 @@ async fn setup_twice_is_409() {
 }
 
 #[tokio::test]
+async fn concurrent_setup_requests_create_exactly_one_admin() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state.clone(), &test_ui_dir());
+
+    let first = app.clone().oneshot(setup_req("alice", "correct horse battery staple"));
+    let second = app.clone().oneshot(setup_req("bob", "another correct horse battery"));
+    let (first, second) = tokio::join!(first, second);
+    let mut statuses = [first.unwrap().status(), second.unwrap().status()];
+    statuses.sort();
+
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::CONFLICT]);
+    let users = state.users.list_users().unwrap();
+    assert_eq!(users.len(), 1, "setup must commit exactly one administrator");
+    assert!(users[0].is_admin);
+}
+
+#[tokio::test]
+async fn malformed_legacy_key_fails_setup_without_stranding_the_ledger() {
+    let (state, data_dir) = fresh_state();
+    std::fs::write(data_dir.join("data.sqlcipher"), b"legacy-ledger").unwrap();
+    std::fs::write(data_dir.join("db.key"), "not-valid-hex").unwrap();
+    let app = build_router(state.clone(), &test_ui_dir());
+
+    let res = app
+        .oneshot(setup_req("admin", "correct horse battery staple"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(json_body(res).await["code"], "auth.migration_failed");
+    assert!(state.users.is_empty().unwrap());
+    assert_eq!(std::fs::read(data_dir.join("data.sqlcipher")).unwrap(), b"legacy-ledger");
+}
+
+#[tokio::test]
 async fn login_logout_lifecycle() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
@@ -394,7 +428,7 @@ async fn delete_user_removes_dir_and_sessions() {
 #[tokio::test]
 async fn recover_resets_password_rotates_key_and_logs_in() {
     let (state, _dir) = fresh_state();
-    let app = build_router(state, &test_ui_dir());
+    let app = build_router(state.clone(), &test_ui_dir());
 
     let res = app
         .clone()
@@ -411,13 +445,21 @@ async fn recover_resets_password_rotates_key_and_logs_in() {
         .oneshot(
             Request::post("/api/rpc/create_account")
                 .header("content-type", "application/json")
-                .header("cookie", setup_cookie)
+                .header("cookie", &setup_cookie)
                 .body(Body::from(new_account_payload("Pre-Recovery Acct").to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+
+    let setup_token = setup_cookie.split_once('=').unwrap().1;
+    let (user_id, db_key, _) = state.sessions.get(setup_token).unwrap();
+    let runtime_before_recovery = state
+        .registry
+        .get_or_bootstrap(&state.data_dir, &user_id, &db_key)
+        .await
+        .unwrap();
 
     // Redeem.
     let res = app
@@ -433,6 +475,18 @@ async fn recover_resets_password_rotates_key_and_logs_in() {
         .to_string();
     assert_eq!(new_recovery.split('-').count(), 8);
     assert_ne!(new_recovery, old_recovery, "the recovery key must ROTATE");
+
+    let recovered_token = recovered_cookie.split_once('=').unwrap().1;
+    let (recovered_user_id, recovered_db_key, _) = state.sessions.get(recovered_token).unwrap();
+    let runtime_after_recovery = state
+        .registry
+        .get_or_bootstrap(&state.data_dir, &recovered_user_id, &recovered_db_key)
+        .await
+        .unwrap();
+    assert!(
+        !Arc::ptr_eq(&runtime_before_recovery, &runtime_after_recovery),
+        "recovery must evict the runtime that owns pre-recovery SSE subscribers and background work"
+    );
 
     // 1. The session handed back is live AND opens the SAME database — the
     //    pre-existing account is still there, so the db key survived intact.

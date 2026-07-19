@@ -230,16 +230,44 @@ fn dummy_phc() -> &'static str {
 /// If `<data>/data.sqlcipher` AND `<data>/db.key` both exist, this is a
 /// Phase 1 single-user install: read its keyfile hex so the new admin
 /// inherits the existing key (instead of a fresh random one), and report
-/// that a file migration is needed.
-fn read_legacy_key(data_dir: &FsPath) -> Option<[u8; 32]> {
+/// that a file migration is needed. An incomplete or unreadable legacy pair
+/// is an error, never "no legacy install": generating a fresh key in that
+/// state would strand the existing ledger permanently.
+fn read_legacy_key(data_dir: &FsPath) -> Result<Option<[u8; 32]>, String> {
     let db_path = data_dir.join("data.sqlcipher");
     let key_path = data_dir.join("db.key");
-    if !db_path.exists() || !key_path.exists() {
-        return None;
+    match (db_path.exists(), key_path.exists()) {
+        (false, false) => return Ok(None),
+        (true, false) => {
+            return Err(format!(
+                "existing legacy database at {} has no db.key; restore the key file before retrying setup",
+                db_path.display()
+            ))
+        }
+        (false, true) => {
+            return Err(format!(
+                "legacy key at {} has no matching data.sqlcipher; restore or remove the orphaned key before retrying setup",
+                key_path.display()
+            ))
+        }
+        (true, true) => {}
     }
-    let hex_str = std::fs::read_to_string(&key_path).ok()?;
-    let bytes = hex::decode(hex_str.trim()).ok()?;
-    bytes.try_into().ok()
+    let hex_str = std::fs::read_to_string(&key_path)
+        .map_err(|e| format!("could not read legacy key at {}: {e}", key_path.display()))?;
+    let bytes = hex::decode(hex_str.trim()).map_err(|e| {
+        format!(
+            "legacy key at {} is not valid hexadecimal: {e}",
+            key_path.display()
+        )
+    })?;
+    let key = bytes.try_into().map_err(|bytes: Vec<u8>| {
+        format!(
+            "legacy key at {} is {} bytes; expected 32 bytes",
+            key_path.display(),
+            bytes.len()
+        )
+    })?;
+    Ok(Some(key))
 }
 
 /// `rename(2)` reports EXDEV (Unix errno 18) / ERROR_NOT_SAME_DEVICE (Windows
@@ -359,13 +387,6 @@ fn migrate_legacy_files(data_dir: &FsPath, admin_id: &str) -> std::io::Result<()
 }
 
 pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<Credentials>) -> Response {
-    match st.users.is_empty() {
-        Ok(true) => {}
-        Ok(false) => {
-            return err_response(StatusCode::CONFLICT, "auth.already_setup", "setup already completed")
-        }
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()),
-    }
     if body.username.trim().is_empty() {
         return err_response(
             StatusCode::BAD_REQUEST,
@@ -377,7 +398,28 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
         return resp;
     }
 
-    let legacy_key = read_legacy_key(&st.data_dir);
+    // Make the empty-check and eventual insert a single-flight transition.
+    // The guard intentionally spans the async password/key derivation: a
+    // second setup waits, then observes the first administrator and gets 409.
+    let _setup_guard = st.setup_lock.lock().await;
+    match st.users.is_empty() {
+        Ok(true) => {}
+        Ok(false) => {
+            return err_response(StatusCode::CONFLICT, "auth.already_setup", "setup already completed")
+        }
+        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()),
+    }
+
+    let legacy_key = match read_legacy_key(&st.data_dir) {
+        Ok(key) => key,
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.migration_failed",
+                e,
+            )
+        }
+    };
     let dbkey: [u8; 32] = legacy_key.unwrap_or_else(crate::crypto::generate_db_key);
     let db_key_hex = crate::crypto::db_key_to_hex(&dbkey);
 
@@ -681,6 +723,10 @@ pub(crate) async fn recover(
     // password must not survive it. The user's own new session is created
     // after this sweep.
     st.sessions.remove_user(&rec.id);
+    // A runtime owns the event broadcaster and background sync task. Revoking
+    // only cookies leaves an already-open SSE connection subscribed to that
+    // runtime, so recovery must evict it as part of the same revocation.
+    st.registry.evict(&rec.id);
     st.throttle.record_success(&body.username);
 
     tracing::info!(

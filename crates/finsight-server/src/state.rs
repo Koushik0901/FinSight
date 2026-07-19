@@ -21,6 +21,10 @@ pub struct ServerState {
     pub throttle: crate::sessions::LoginThrottle,
     pub registry: crate::registry::Registry,
     pub data_dir: PathBuf,
+    /// Serializes the one-time setup transition. Without this guard, two
+    /// concurrent requests can both observe an empty users table, perform the
+    /// expensive credential work, and each insert an administrator.
+    pub setup_lock: tokio::sync::Mutex<()>,
 }
 
 impl ServerState {
@@ -49,6 +53,7 @@ impl ServerState {
             throttle,
             registry: crate::registry::Registry::default(),
             data_dir: data_dir.to_path_buf(),
+            setup_lock: tokio::sync::Mutex::new(()),
         }))
     }
 }

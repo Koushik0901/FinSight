@@ -1,5 +1,6 @@
 use crate::state::ServerState;
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, post},
     Json, Router,
 };
@@ -40,6 +41,11 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             get(crate::auth::list_users).post(crate::auth::create_user),
         )
         .route("/api/auth/users/{id}", delete(crate::auth::delete_user))
+        .route(
+            "/api/import/csv",
+            post(crate::uploads::upload_csv)
+                .layer(DefaultBodyLimit::max(crate::uploads::MAX_CSV_UPLOAD_BYTES)),
+        )
         .route("/api/rpc/{cmd}", post(crate::dispatch::rpc))
         .route("/api/events", get(crate::events::events))
         .with_state(state)

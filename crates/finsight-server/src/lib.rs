@@ -7,4 +7,5 @@ pub mod router;
 pub mod server_info;
 pub mod sessions;
 pub mod state;
+pub mod uploads;
 pub mod users;
