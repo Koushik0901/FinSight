@@ -26,6 +26,7 @@ import {
 } from "../api/hooks/simplefin";
 import SimpleFinDialog from "./onboarding/SimpleFinDialog";
 import DeleteAllDataDialog from "../components/DeleteAllDataDialog";
+import PushNotificationSettings from "../components/PushNotificationSettings";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
@@ -638,6 +639,7 @@ export default function Settings() {
 
           <Section id="notifications" title="Notifications" description="Control reminders and nudges.">
             <div className="s-row"><div><div className="label">Notifications enabled</div><div className="desc">Budget alerts, recurring reminders, and daily prompts.</div></div><div className="muted">{notificationsEnabled ? "Currently on" : "Currently off"}</div><Tog checked={notificationsEnabled} onChange={(value) => setNotificationsMutation.mutate(value)} /></div>
+            <PushNotificationSettings />
           </Section>
 
           <Section id="keyboard" title="Keyboard" description="Shortcuts available across the app.">

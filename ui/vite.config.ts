@@ -63,9 +63,9 @@ export default defineConfig({
         // must keep existing: importScripts throws if one 404s, and a throwing
         // service worker fails to install, which would take offline support
         // down with it. Their presence and payload contracts are pinned by the
-        // "service worker contract" block in src/pwa/shareTarget.test.ts, which
-        // imports the file with `?raw`.
-        importScripts: ["share-target-sw.js"],
+        // "service worker contract" blocks in src/pwa/shareTarget.test.ts and
+        // src/pwa/push.test.ts, which import each file with `?raw`.
+        importScripts: ["share-target-sw.js", "push-sw.js"],
       },
       devOptions: { enabled: false }, // never register the SW in `npm run dev`
     }),

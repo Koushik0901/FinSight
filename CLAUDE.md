@@ -123,7 +123,14 @@ ui/src/api/client.ts     ← re-exports bindings (import from here, not bindings
 ui/src/api/httpBackend.ts← server-mode invoke/event shim over HTTP + SSE
 ui/src/api/auth.ts       ← plain REST client for `/api/auth/*`
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
-ui/src/pwa/              ← seven-day IndexedDB query persistence + online state
+ui/src/pwa/              ← seven-day IndexedDB query persistence (AES-GCM encrypted
+                            at rest via cacheCrypto.ts) + online state + installed-PWA
+                            surfaces: badge.ts/useAppBadge.ts (icon badge),
+                            shareTarget.ts (OS share sheet), push.ts (Web Push)
+ui/public/*-sw.js        ← plain-JS service worker handlers pulled into the generated
+                            Workbox SW via `workbox.importScripts` (vite.config.ts).
+                            NOT bundled — they cannot import from src/, so their
+                            contracts are pinned by tests in ui/src/pwa/
 ui/src/screens/          ← one file per screen, consumes hooks
 ui/src/components/       ← shared: Sidebar, CommandPalette, TransactionDrawer, Drawer, Icons
 ui/src/components/copilot ← Copilot generative-UI: cards/ (one per block kind) + agUi/artifacts.ts (Zod validation) + renderers

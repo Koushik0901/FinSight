@@ -17,6 +17,7 @@ pub mod institutions;
 pub mod manual_assets;
 pub mod net_worth;
 pub mod planned_transactions;
+pub mod push;
 pub mod recipes;
 pub mod reset;
 pub mod rule_proposals;

@@ -22,6 +22,8 @@ rust_decimal.workspace = true
 url.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
+web-push.workspace = true
+p256.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

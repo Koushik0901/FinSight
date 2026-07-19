@@ -45,3 +45,12 @@ reqwest = { version = "0.12", features = ["json"] }
 rust_decimal = { version = "1.35", features = ["serde"] }
 base64 = "0.22"
 url = "2.5"
+# Web Push (VAPID + RFC 8291 payload encryption) for the installed PWA.
+# `default-features = false` drops the crate's bundled isahc HTTP client — the
+# workspace already has reqwest, and pulling a second HTTP stack (plus its TLS)
+# in just to POST a pre-built body is not worth it. We use the message builder
+# and send it ourselves. Pure Rust either way: no OpenSSL, no ring.
+web-push = { version = "0.11", default-features = false }
+# P-256 keygen for the VAPID keypair. `pem` gives SEC1 PEM output, which is the
+# format web-push's VAPID signer parses.
+p256 = { version = "0.13", features = ["ecdsa", "pem"] }

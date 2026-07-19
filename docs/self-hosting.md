@@ -24,6 +24,19 @@ picked.
   installable PWAs and service workers), you put a reverse proxy in front of
   it. Section 3–5 below cover three ways to do that, from easiest to most
   manual.
+
+  Three client features need a **secure context** (HTTPS, or `localhost`) and
+  are simply inert without one — no error, they just never happen:
+
+  | Feature | Without HTTPS |
+  |---|---|
+  | Installable PWA + offline app shell | Service workers don't register |
+  | Encrypted offline cache | `crypto.subtle` is unavailable, so the browser cache is **not written at all** — the app still works, it just re-fetches on every load instead of painting from cache. It never falls back to storing your financial data in the clear. |
+  | Share-target import, Web Push, icon badges | Depend on the service worker above |
+
+  Reaching FinSight over `http://<lan-ip>:8674` works, but you get a plain web
+  app rather than an installed one. If you want the full experience, use one of
+  the TLS recipes below.
 - **All durable state lives under one directory, mounted as `/data` inside
   the container.** That includes `users.db` (the account registry, password
   verifiers, and wrapped database keys) plus `users/<uuid>/data.sqlcipher`,

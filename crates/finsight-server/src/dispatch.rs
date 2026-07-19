@@ -458,6 +458,22 @@ async fn dispatch(
         "get_action_items" => ok(c::inbox::get_action_items(api).await?),
         "get_inbox_badge_count" => ok(c::inbox::get_inbox_badge_count(api).await?),
 
+        // ── web push ──
+        "get_push_status" => ok(c::push::get_push_status(api).await?),
+        "save_push_subscription" => ok(c::push::save_push_subscription(
+            api,
+            arg(&p, "endpoint")?,
+            arg(&p, "p256dh")?,
+            arg(&p, "auth")?,
+            arg(&p, "label")?,
+        )
+        .await?),
+        "delete_push_subscription" => {
+            ok(c::push::delete_push_subscription(api, arg(&p, "endpoint")?).await?)
+        }
+        "list_push_devices" => ok(c::push::list_push_devices(api).await?),
+        "send_test_push" => ok(c::push::send_test_push(api).await?),
+
         // ── insights ──
         "list_agent_memory" => ok(c::insights::list_agent_memory(api).await?),
         "forget_agent_memory" => {
@@ -910,6 +926,12 @@ pub const SUPPORTED: &[&str] = &[
     // inbox
     "get_action_items",
     "get_inbox_badge_count",
+    // web push
+    "get_push_status",
+    "save_push_subscription",
+    "delete_push_subscription",
+    "list_push_devices",
+    "send_test_push",
     // insights
     "list_agent_memory",
     "forget_agent_memory",

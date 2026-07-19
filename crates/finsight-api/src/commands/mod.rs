@@ -22,6 +22,7 @@ pub mod meta;
 pub mod metrics;
 pub mod onboarding;
 pub mod planned_transactions;
+pub mod push;
 pub mod recipes;
 pub mod recurring;
 pub mod reports;

@@ -138,6 +138,16 @@ impl SyncScheduler {
                         results.len()
                     );
                 }
+
+                // This is the one moment FinSight learns something new while
+                // the app may be fully closed — precisely what Web Push is for.
+                // One summary notification per cycle, not one per account: a
+                // four-account sync should buzz a phone once.
+                let added: usize = results.iter().map(|r| r.added).sum();
+                if added > 0 {
+                    let queued: usize = results.iter().map(|r| r.queued_for_review).sum();
+                    notify_new_activity(&db, added, queued).await;
+                }
             }
         })
     }
@@ -170,6 +180,43 @@ impl SyncScheduler {
 /// Sync every linked SimpleFin account across all active connections.
 /// Returns per-account results. Called from both the background loop and
 /// the manual "sync all" Tauri command.
+/// Push a one-line summary of what a background sync brought in.
+///
+/// Best-effort by design: a push failure must never look like a sync failure,
+/// and the user has the data either way the next time they open the app. Users
+/// with no registered device hit an early return inside `send_push_for_db`, so
+/// this costs one empty query for everyone who hasn't opted in.
+async fn notify_new_activity(db: &Db, added: usize, queued: usize) {
+    let txns = if added == 1 {
+        "1 new transaction".to_string()
+    } else {
+        format!("{added} new transactions")
+    };
+    let body = if queued > 0 {
+        format!("{txns} · {queued} to review")
+    } else {
+        txns
+    };
+
+    let payload = crate::commands::push::PushPayload {
+        title: "New activity".into(),
+        body,
+        // Send them where the work is: the review queue if there is any.
+        url: if queued > 0 { "/inbox".into() } else { "/transactions".into() },
+        // One tag for sync news, so an unread notification is replaced by the
+        // newer one rather than stacking up overnight.
+        tag: "finsight-sync".into(),
+        // Deliberately not set. The icon badge counts the whole inbox, which
+        // needs more than this sync's numbers to compute — and a badge showing
+        // a wrong total is worse than one that refreshes when the app opens.
+        badge_count: None,
+    };
+
+    if let Err(e) = crate::commands::push::send_push_for_db(db, payload).await {
+        tracing::warn!(error = ?e, "background sync push notification failed");
+    }
+}
+
 pub async fn sync_all_accounts(db: &Db) -> Vec<AccountSyncResult> {
     let guard = Arc::new(AtomicBool::new(false));
     sync_all_accounts_with_guard(db, &guard, "manual").await
