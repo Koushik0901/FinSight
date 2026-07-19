@@ -1358,6 +1358,14 @@ async listAccountBalanceHistory(accountId: string, days: number) : Promise<Resul
     else return { status: "error", error: e  as any };
 }
 },
+async getAccountBalanceTimeline(accountId: string, since: string | null) : Promise<Result<AccountBalanceTimeline, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_account_balance_timeline", { accountId, since }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAccountBalanceSparklines(days: number) : Promise<Result<AccountSparkline[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_account_balance_sparklines", { days }) };
@@ -1662,6 +1670,40 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
 apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
 export type AccountBalancePoint = { date: string; balanceCents: number }
 /**
+ * A reconstructed balance curve for one account, derived from its opening
+ * anchor plus cleared transaction activity.
+ */
+export type AccountBalanceTimeline = { accountId: string; accountName: string; 
+/**
+ * End-of-day balance for each day the account saw activity, ascending.
+ * Empty when the account is not reconstructable.
+ */
+points: AccountBalancePoint[]; 
+/**
+ * Highest and lowest end-of-day balance within the requested window.
+ * Ties resolve to the earliest date. `None` when there are no points.
+ */
+peak: AccountBalancePoint | null; trough: AccountBalancePoint | null; 
+/**
+ * Balance at the end of the series — the reconstruction's answer for today.
+ */
+currentCents: number; anchor: BalanceAnchorQuality; 
+/**
+ * Earliest cleared transaction *included in this curve*. History cannot
+ * reach back further, so a peak before it would be invisible.
+ */
+earliestTxnDate: string | null; 
+/**
+ * False when the balance cannot be honestly derived from the ledger. See
+ * [`AccountBalanceTimeline::skip_reason`] for which case applies.
+ */
+reconstructable: boolean; 
+/**
+ * Why reconstruction was refused, phrased for a human (or a model) to
+ * relay. `None` when `reconstructable` is true.
+ */
+skipReason: string | null }
+/**
  * One (account, member) ownership pair with the member's explicit share, if
  * any. The full list lets the UI derive sole/joint badges and per-member
  * net-worth attribution in one query. `share_bps` None = equal split.
@@ -1810,6 +1852,31 @@ export type BackupInfo = { path: string; name: string; bytes: number;
  * File modified time, RFC3339. Empty when unavailable.
  */
 createdAt: string }
+/**
+ * How trustworthy the *level* of a reconstructed balance curve is.
+ * 
+ * A reconstruction is `opening + Σ(cleared activity)`, so its SHAPE (when the
+ * balance rose and fell, and therefore when it peaked) is correct regardless of
+ * the anchor. Its LEVEL is only as good as that opening figure.
+ */
+export type BalanceAnchorQuality = 
+/**
+ * A real balance was confirmed for this account — bank-reported, or pinned
+ * by the user — so the curve is calibrated to a known value.
+ */
+"calibrated" | 
+/**
+ * The opening anchor is meaningful: either a non-zero opening balance, or a
+ * zero opening on an account with no history predating it (it really did
+ * start empty).
+ */
+"anchoredOpening" | 
+/**
+ * The opening is zero AND transactions predate it, so the account's history
+ * was imported behind an anchor that never accounted for it. Movement and
+ * timing are right; every absolute figure is off by an unknown constant.
+ */
+"assumedZero"
 /**
  * One category's budget + actual for a month.
  */

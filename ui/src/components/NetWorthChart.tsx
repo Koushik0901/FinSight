@@ -14,7 +14,7 @@ const MAX_DOTS = 14; // beyond this many points, per-point markers just clutter
  * with a ResizeObserver) — never with `preserveAspectRatio="none"`, whose
  * non-uniform scaling smears strokes into thick blurry bands on wide windows.
  */
-export default function NetWorthChart({ points, controls, rangeLabel = "6 months", embed = false }: { points: NetWorthPoint[]; controls?: ReactNode; rangeLabel?: string; embed?: boolean }) {
+export default function NetWorthChart({ points, controls, rangeLabel = "6 months", embed = false, subject = "Net worth" }: { points: NetWorthPoint[]; controls?: ReactNode; rangeLabel?: string; embed?: boolean; subject?: string }) {
   const gradId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -33,7 +33,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   }, []);
 
   if (points.length < 2) {
-    return <div className="stub">Net worth history is still building. Check back after a few days.</div>;
+    return <div className="stub">{subject} history is still building. Check back after a few days.</div>;
   }
 
   const w = width || 800;
@@ -81,7 +81,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
         </div>
       )}
       <div ref={wrapRef} style={{ width: "100%" }}>
-        <svg viewBox={`0 0 ${w} ${HEIGHT}`} style={{ width: "100%", height: HEIGHT, display: "block" }} role="img" aria-label={`Net worth trend, currently ${label}`}>
+        <svg viewBox={`0 0 ${w} ${HEIGHT}`} style={{ width: "100%", height: HEIGHT, display: "block" }} role="img" aria-label={`${subject} trend, currently ${label}`}>
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={lineColor} stopOpacity="0.28" />

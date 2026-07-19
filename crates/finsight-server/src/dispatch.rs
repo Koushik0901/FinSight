@@ -143,6 +143,12 @@ async fn dispatch(
             arg(&p, "days")?,
         )
         .await?),
+        "get_account_balance_timeline" => ok(c::accounts::get_account_balance_timeline(
+            api,
+            arg(&p, "accountId")?,
+            arg(&p, "since")?,
+        )
+        .await?),
         "list_account_balance_sparklines" => {
             ok(c::accounts::list_account_balance_sparklines(api, arg(&p, "days")?).await?)
         }
@@ -814,6 +820,7 @@ pub const SUPPORTED: &[&str] = &[
     "archive_account",
     "set_account_balance",
     "list_account_balance_history",
+    "get_account_balance_timeline",
     "list_account_balance_sparklines",
     "export_account_csv",
     // agent
