@@ -12,6 +12,7 @@ import {
   markSessionEstablished,
 } from "../api/auth";
 import { purgePersistedCache } from "../pwa/persist";
+import { clearAppBadge } from "../pwa/badge";
 import SetupScreen from "../screens/server/SetupScreen";
 import LoginScreen from "../screens/server/LoginScreen";
 
@@ -110,6 +111,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
       // a swallowed rejection would leave stale financial data in IndexedDB
       // past the session that's supposed to purge it.
       purgePersistedCache().catch((err) => console.error("purgePersistedCache failed", err));
+      // Same reasoning one level out: an icon badge left showing "6 items" after
+      // sign-out advertises the previous user's activity on a shared device.
+      // App's unmount cleanup also clears it — this is the explicit path, not a
+      // duplicate of it, because logout must not depend on unmount ordering.
+      void clearAppBadge();
       setState({ kind: "needsLogin" });
     };
     window.addEventListener("finsight:auth-required", onAuthRequired);

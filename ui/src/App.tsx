@@ -21,6 +21,7 @@ import { useOnboardingState } from "./api/hooks/onboarding";
 import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
+import { useAppBadge } from "./pwa/useAppBadge";
 import * as I from "./components/Icons";
 
 const Today = lazy(() => import("./screens/Today"));
@@ -200,6 +201,10 @@ export function App() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const { privacy, setPrivacy } = useTweaks();
   const isOnboarding = location.pathname === "/onboarding";
+
+  // Installed-PWA icon badge. App-level on purpose: the badge's job is to be
+  // right while the user is on some other screen entirely.
+  useAppBadge();
 
   // Global keyboard shortcuts
   useEffect(() => {

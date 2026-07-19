@@ -1382,6 +1382,54 @@ async getActionItems() : Promise<Result<ActionItem[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getInboxBadgeCount() : Promise<Result<InboxBadgeCount, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_inbox_badge_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPushStatus() : Promise<Result<PushStatus, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_push_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async savePushSubscription(endpoint: string, p256dh: string, auth: string, label: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_push_subscription", { endpoint, p256dh, auth, label }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deletePushSubscription(endpoint: string) : Promise<Result<boolean, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_push_subscription", { endpoint }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listPushDevices() : Promise<Result<PushDevice[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_push_devices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async sendTestPush() : Promise<Result<PushDeliveryReport, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_test_push") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Claim a SimpleFin setup token and persist the resulting bridge access URL
  * plus every connection exposed by that access URL.
@@ -1986,6 +2034,14 @@ aiCategorizationStarted: boolean }
 export type ImportSource = "csv" | "manual" | "sample" | "simple_fin"
 export type ImportSummary = { import_id: string; rows_imported: number; rows_skipped_duplicates: number; rows_queued_for_review: number; errors: RowError[] }
 /**
+ * The "needs attention" total, broken down by source.
+ * 
+ * The breakdown fields exist so the number is debuggable — when a badge shows
+ * "7" and the user expects "3", the caller can say which bucket the extra four
+ * came from without re-running five queries by hand.
+ */
+export type InboxBadgeCount = { total: number; actionItems: number; alerts: number; transferSuggestions: number; importReview: number; unresolvedCounterparties: number }
+/**
  * Ledger-derived portfolio summary for one investment account.
  */
 export type InvestmentSummary = { 
@@ -2171,6 +2227,26 @@ export type PreparedImportPreview = { signature: string; rowsTotal: number; rows
 export type ProjectedValue = { years: number; valueCents: number; annualRate: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
+/**
+ * Outcome of a send. Reported rather than swallowed so the Settings screen can
+ * tell "no devices registered" apart from "the push service rejected us".
+ */
+export type PushDeliveryReport = { delivered: number; 
+/**
+ * Subscriptions the push service reported as permanently gone; these are
+ * deleted rather than retried forever.
+ */
+expired: number; failed: number }
+export type PushDevice = { endpoint: string; label: string | null; createdAt: string; lastUsedAt: string | null }
+export type PushStatus = { 
+/**
+ * Base64url VAPID public key for `pushManager.subscribe`.
+ */
+publicKey: string; 
+/**
+ * How many devices are currently registered for this user.
+ */
+deviceCount: number }
 /**
  * A recurring transaction detected from transaction history (Phase 6 redesign).
  */

@@ -581,3 +581,62 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
     .await
     .map_err(AppError::from)
 }
+
+/// The "needs attention" total, broken down by source.
+///
+/// The breakdown fields exist so the number is debuggable — when a badge shows
+/// "7" and the user expects "3", the caller can say which bucket the extra four
+/// came from without re-running five queries by hand.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxBadgeCount {
+    pub total: i64,
+    pub action_items: i64,
+    pub alerts: i64,
+    pub transfer_suggestions: i64,
+    pub import_review: i64,
+    pub unresolved_counterparties: i64,
+}
+
+/// One number for passive "needs attention" surfaces — the installed PWA's icon
+/// badge (Badging API), and any future glanceable indicator.
+///
+/// This calls the SAME five command bodies the Inbox screen sums for its header
+/// count instead of re-deriving the total in SQL. That is the whole point: there
+/// is exactly one definition of "an inbox item", so the badge and the screen
+/// cannot drift apart when a sixth source is added later — whoever adds it to
+/// the Inbox necessarily adds it here too.
+///
+/// Runs sequentially rather than via `try_join!`: each call borrows a pooled
+/// blocking connection, and a badge refreshed on a slow poll is not worth
+/// occupying five pool slots at once on a multi-user server.
+pub async fn get_inbox_badge_count(state: &ApiState) -> AppResult<InboxBadgeCount> {
+    let action_items = get_action_items(state).await?.len() as i64;
+    let alerts = crate::commands::simplefin::list_simplefin_alerts(state)
+        .await?
+        .len() as i64;
+    let transfer_suggestions =
+        crate::commands::simplefin::list_simplefin_transfer_suggestions(state)
+            .await?
+            .len() as i64;
+    let import_review = crate::commands::simplefin::list_import_review_candidates(state)
+        .await?
+        .len() as i64;
+    let unresolved_counterparties =
+        crate::commands::transactions::list_unresolved_counterparties(state)
+            .await?
+            .len() as i64;
+
+    Ok(InboxBadgeCount {
+        total: action_items
+            + alerts
+            + transfer_suggestions
+            + import_review
+            + unresolved_counterparties,
+        action_items,
+        alerts,
+        transfer_suggestions,
+        import_review,
+        unresolved_counterparties,
+    })
+}

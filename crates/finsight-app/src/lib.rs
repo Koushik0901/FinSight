@@ -207,6 +207,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::accounts::list_account_balance_sparklines,
         commands::journey::get_journey_status,
         commands::inbox::get_action_items,
+        commands::inbox::get_inbox_badge_count,
         commands::simplefin::save_simplefin_setup_token,
         commands::simplefin::get_simplefin_status,
         commands::simplefin::list_simplefin_connections,

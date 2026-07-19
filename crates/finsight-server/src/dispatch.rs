@@ -456,6 +456,7 @@ async fn dispatch(
 
         // ── inbox ──
         "get_action_items" => ok(c::inbox::get_action_items(api).await?),
+        "get_inbox_badge_count" => ok(c::inbox::get_inbox_badge_count(api).await?),
 
         // ── insights ──
         "list_agent_memory" => ok(c::insights::list_agent_memory(api).await?),
@@ -908,6 +909,7 @@ pub const SUPPORTED: &[&str] = &[
     "discard_unfinished_import",
     // inbox
     "get_action_items",
+    "get_inbox_badge_count",
     // insights
     "list_agent_memory",
     "forget_agent_memory",

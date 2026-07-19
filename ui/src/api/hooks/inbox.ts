@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type ActionItem, type CounterpartyVerdict, type UnresolvedCounterpartyDto } from "../client";
+import {
+  commands,
+  type ActionItem,
+  type CounterpartyVerdict,
+  type InboxBadgeCount,
+  type UnresolvedCounterpartyDto,
+} from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -13,6 +19,32 @@ export function useActionItems() {
     },
     staleTime: 30_000,
     refetchInterval: 30_000,
+    enabled: isBackendAvailable(),
+  });
+}
+
+/**
+ * The single "needs attention" total, for passive surfaces that want a number
+ * without mounting the five queries the Inbox screen itself uses.
+ *
+ * Polled on a slower cadence than `useActionItems` (2 min vs 30 s) and paused
+ * while the tab is hidden: this drives an icon badge, not a live screen, and
+ * the backend call fans out to five separate queries. `refetchOnWindowFocus`
+ * is forced on here — app-wide it is off (see main.tsx), but a badge the user
+ * comes back to should be current rather than up to two minutes stale.
+ */
+export function useInboxBadgeCount() {
+  return useQuery<InboxBadgeCount>({
+    queryKey: ["inbox-badge-count"],
+    queryFn: async () => {
+      const result = await commands.getInboxBadgeCount();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
     enabled: isBackendAvailable(),
   });
 }
