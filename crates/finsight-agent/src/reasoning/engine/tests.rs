@@ -783,6 +783,24 @@ fn clarifying_questions_and_declines_are_not_intent_filler() {
     assert!(is_intent_filler("I'll need to fetch your accounts first."));
     assert!(is_intent_filler("I'll need to pull your transactions."));
 
+    // A tag question must not launder filler into an answer: the announcement
+    // is decided before the question mark is consulted.
+    assert!(is_intent_filler("Let me pull that up for you, okay?"));
+    assert!(is_intent_filler("Let me check that real quick, sound good?"));
+    // But a clarifying question that merely OPENS like filler still survives,
+    // because it names no data-gathering action.
+    assert!(!is_intent_filler("Let me confirm — did you mean May or June?"));
+
+    // The gathering verb may sit behind an adverb or an intervening noun.
+    assert!(is_intent_filler("I'll need a moment to pull the numbers."));
+    assert!(is_intent_filler("I'll need to quickly pull your latest statement."));
+    // ...yet an object the user owns still marks a genuine ask, even when a
+    // gathering verb appears later in the sentence.
+    assert!(!is_intent_filler("I'll need your income figure to calculate this."));
+
+    // Whole-word matching: "runway" is a noun, not the verb "run".
+    assert!(!is_intent_filler("I'll need your expenses to know your runway."));
+
     // Still filler: the model announcing it is about to go do the work.
     assert!(is_intent_filler("Let me pull that data now."));
     assert!(is_intent_filler("I'll check your accounts."));
