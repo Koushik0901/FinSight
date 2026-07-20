@@ -1007,6 +1007,53 @@ pub fn rank_debt_payoff() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+/// Side-by-side of two payoff strategies over the same debts.
+///
+/// Exists because presenting one strategy as *the* strategy hides a tradeoff
+/// the user is entitled to make. Every difference is computed in Rust — the
+/// model must never do arithmetic on money.
+pub fn compare_payoff_strategies() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "compare_payoff_strategies"
+        }
+        fn description(&self) -> &str {
+            "Compare two debt payoff strategies side by side — total interest, months to              debt-free, and when the first debt clears. Use for 'snowball vs avalanche',              'which payoff method is better', or to justify a hybrid order. Pass              custom_order (account ids) to model a hybrid plan: clear those first, then              optimise the rest by APR."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "baseline_method": {"type": "string", "enum": ["avalanche", "snowball"], "default": "avalanche"},
+                    "alternative_method": {"type": "string", "enum": ["avalanche", "snowball"], "default": "snowball"},
+                    "custom_order": {"type": "array", "items": {"type": "string"}},
+                    "extra_monthly_payment_cents": {"type": "integer", "default": 0}
+                }
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let baseline = args["baseline_method"].as_str().unwrap_or("avalanche");
+            let alternative = args["alternative_method"].as_str().unwrap_or("snowball");
+            let custom_order = args["custom_order"].as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            });
+            let extra = args["extra_monthly_payment_cents"].as_i64().unwrap_or(0);
+            Ok(serde_json::to_value(finance::compare_payoff_strategies(
+                ctx.conn,
+                baseline,
+                alternative,
+                custom_order,
+                extra,
+            )?)?)
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn compare_debt_vs_goal() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

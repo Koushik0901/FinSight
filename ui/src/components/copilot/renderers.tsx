@@ -30,6 +30,7 @@ const ALL_TOOL_NAMES = [
   "analyze_cash_inflow",
   "calculate_goal_eta",
   "rank_debt_payoff",
+  "compare_payoff_strategies",
   "compare_debt_vs_goal",
   "get_account_balances",
   "get_month_totals",

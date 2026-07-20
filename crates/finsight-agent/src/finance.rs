@@ -389,6 +389,356 @@ struct PayoffProjection {
     interest_cents: i64,
 }
 
+/// A full multi-debt simulation: the portfolio totals plus the month each
+/// individual debt hit zero.
+///
+/// The per-debt milestones are the reason this type exists. The simulator
+/// always computed them and threw them away, which is why "clears your first
+/// card N months sooner" — half the snowball's whole argument — could not be
+/// answered.
+#[derive(Debug, Clone)]
+struct PayoffRun {
+    months: i64,
+    interest_cents: i64,
+    cleared: Vec<DebtCleared>,
+}
+
+#[derive(Debug, Clone)]
+struct DebtCleared {
+    id: String,
+    name: String,
+    month: i64,
+}
+
+// ── Payoff ordering ─────────────────────────────────────────────────────────
+
+/// The single source of truth for "which debt do we attack next".
+///
+/// This used to be two independent implementations — one sorting the static
+/// ranking, one picking the next target inside the amortization simulator —
+/// which meant the order the user was *shown* could drift from the order that
+/// was actually *simulated*. Both now go through [`PayoffOrder::compare`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PayoffOrder {
+    /// Highest APR first. Pays the least interest overall.
+    Avalanche,
+    /// Smallest balance first. Early wins; the Ramsey argument that behaviour
+    /// beats math.
+    Snowball,
+    /// An explicit order the user chose — e.g. clear one small nuisance
+    /// balance for momentum, then switch to avalanche.
+    ///
+    /// Listed accounts come first in the order given; anything not listed
+    /// falls through to avalanche behind them, so a partial list is a valid
+    /// "these first, then optimise" instruction rather than an error.
+    Custom(Vec<String>),
+}
+
+/// The fields ordering actually depends on. Lets the static ranking and the
+/// simulator share one comparator despite holding different structs.
+#[derive(Debug, Clone, Copy)]
+pub struct OrderableDebt<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub balance_cents: f64,
+    pub apr_pct: Option<f64>,
+}
+
+impl PayoffOrder {
+    /// Parse a method name. Anything unrecognised is avalanche, matching the
+    /// tool schema's default — an unknown string must never silently become
+    /// the other school.
+    pub fn from_method(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "snowball" => PayoffOrder::Snowball,
+            _ => PayoffOrder::Avalanche,
+        }
+    }
+
+    /// A custom order, falling back to avalanche when the list is empty so a
+    /// caller can pass through an unfiltered user selection.
+    pub fn custom(account_ids: Vec<String>) -> Self {
+        let cleaned: Vec<String> = account_ids
+            .into_iter()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+            .collect();
+        if cleaned.is_empty() {
+            PayoffOrder::Avalanche
+        } else {
+            PayoffOrder::Custom(cleaned)
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            PayoffOrder::Avalanche => "avalanche",
+            PayoffOrder::Snowball => "snowball",
+            PayoffOrder::Custom(_) => "custom",
+        }
+    }
+
+    /// Position in an explicit custom list, if any. `None` sorts behind every
+    /// listed debt.
+    fn custom_rank(&self, id: &str) -> Option<usize> {
+        match self {
+            PayoffOrder::Custom(ids) => ids.iter().position(|listed| listed == id),
+            _ => None,
+        }
+    }
+
+    /// Order two debts: `Less` means "attack this one first".
+    ///
+    /// Every branch ends in a deterministic tiebreak on id, so two debts that
+    /// are identical on the sort dimension never swap between runs — a ranking
+    /// that reshuffles on refresh reads as a bug even when the maths is right.
+    pub fn compare(&self, a: &OrderableDebt<'_>, b: &OrderableDebt<'_>) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+
+        if let PayoffOrder::Custom(_) = self {
+            // Listed debts first, in the order given; the rest fall through to
+            // avalanche behind them.
+            match (self.custom_rank(a.id), self.custom_rank(b.id)) {
+                (Some(x), Some(y)) => return x.cmp(&y),
+                (Some(_), None) => return Ordering::Less,
+                (None, Some(_)) => return Ordering::Greater,
+                (None, None) => {}
+            }
+        }
+
+        match self {
+            PayoffOrder::Snowball => a
+                .balance_cents
+                .partial_cmp(&b.balance_cents)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.name.cmp(b.name))
+                .then_with(|| a.id.cmp(b.id)),
+            // Avalanche, and the unlisted tail of a custom order. A missing
+            // APR sorts last rather than as 0% — "unknown" is not "free", and
+            // ranking it above a known 20% card would be actively wrong.
+            _ => b
+                .apr_pct
+                .unwrap_or(f64::NEG_INFINITY)
+                .partial_cmp(&a.apr_pct.unwrap_or(f64::NEG_INFINITY))
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| {
+                    a.balance_cents
+                        .partial_cmp(&b.balance_cents)
+                        .unwrap_or(Ordering::Equal)
+                })
+                .then_with(|| a.id.cmp(b.id)),
+        }
+    }
+
+    /// Why this debt is ranked where it is, for the user-facing item.
+    pub fn reason_for(&self, debt: &OrderableDebt<'_>) -> String {
+        match self {
+            PayoffOrder::Snowball => {
+                "Smallest remaining balance first for behavioral momentum.".to_string()
+            }
+            PayoffOrder::Custom(_) if self.custom_rank(debt.id).is_some() => {
+                "You placed this debt in your own payoff order.".to_string()
+            }
+            _ => match debt.apr_pct {
+                Some(apr) => format!("Highest APR first avoids the most interest; APR is {apr}%."),
+                None => "APR missing; rank is provisional and should be confirmed.".to_string(),
+            },
+        }
+    }
+}
+
+// ── Strategy comparison ─────────────────────────────────────────────────────
+
+/// One strategy's projected outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyOutcome {
+    /// "avalanche" | "snowball" | "custom"
+    pub method: String,
+    pub months_to_debt_free: i64,
+    pub total_interest_cents: i64,
+    /// The debt cleared first, and when — the "early win" the snowball is
+    /// chosen for. `None` only when nothing is ever cleared.
+    pub first_cleared_name: Option<String>,
+    pub first_cleared_month: Option<i64>,
+    /// Payoff order the strategy produces, for showing the plan itself.
+    pub order: Vec<String>,
+}
+
+/// A side-by-side of two payoff strategies over the same debts.
+///
+/// Presenting one strategy as *the* strategy hides a tradeoff the user is
+/// entitled to make. This produces the numbers behind "snowball costs you $340
+/// more but clears your first card 4 months sooner" — the differences are
+/// computed here rather than left to the model, which must never do
+/// arithmetic on money.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyComparison {
+    pub extra_monthly_payment_cents: i64,
+    pub baseline: StrategyOutcome,
+    pub alternative: StrategyOutcome,
+    /// Extra interest the alternative costs versus the baseline. Negative
+    /// means the alternative is cheaper.
+    pub alternative_extra_interest_cents: i64,
+    /// Months sooner the alternative clears its FIRST debt. Positive means
+    /// the alternative gets the early win sooner.
+    pub alternative_first_win_sooner_months: Option<i64>,
+    /// Months sooner the alternative clears EVERYTHING. Negative means it
+    /// takes longer overall.
+    pub alternative_debt_free_sooner_months: i64,
+    /// Which one this user's stated philosophy currently selects.
+    pub preferred_method: String,
+    pub missing_data: Vec<MissingDataItem>,
+    pub assumptions: Vec<String>,
+}
+
+fn outcome_for(
+    debts: &[SnapshotLiability],
+    order: &PayoffOrder,
+    extra_monthly_payment_cents: i64,
+) -> Option<StrategyOutcome> {
+    let projection = simulate_debt_payoff(debts, order, extra_monthly_payment_cents)?;
+    let mut ordered: Vec<&SnapshotLiability> = debts.iter().collect();
+    ordered.sort_by(|a, b| {
+        order.compare(
+            &OrderableDebt {
+                id: &a.id,
+                name: &a.name,
+                balance_cents: a.balance_cents as f64,
+                apr_pct: a.apr_pct,
+            },
+            &OrderableDebt {
+                id: &b.id,
+                name: &b.name,
+                balance_cents: b.balance_cents as f64,
+                apr_pct: b.apr_pct,
+            },
+        )
+    });
+    let first = projection.cleared.first();
+    Some(StrategyOutcome {
+        method: order.label().to_string(),
+        months_to_debt_free: projection.months,
+        total_interest_cents: projection.interest_cents,
+        first_cleared_name: first.map(|c| c.name.clone()),
+        first_cleared_month: first.map(|c| c.month),
+        order: ordered.into_iter().map(|d| d.name.clone()).collect(),
+    })
+}
+
+/// Compare two payoff strategies over the user's actual debts.
+///
+/// `baseline_method` and `alternative_method` accept "avalanche" or
+/// "snowball"; `custom_order` (a list of account ids) overrides the
+/// alternative with an explicit ordering, which is how a hybrid plan is
+/// expressed — clear one nuisance balance for momentum, then optimise.
+pub fn compare_payoff_strategies(
+    conn: &mut Connection,
+    baseline_method: &str,
+    alternative_method: &str,
+    custom_order: Option<Vec<String>>,
+    extra_monthly_payment_cents: i64,
+) -> rusqlite::Result<StrategyComparison> {
+    let mut debts = liabilities(conn)?;
+    debts.retain(|d| d.balance_cents > 0);
+    let extra = extra_monthly_payment_cents.max(0);
+
+    // Same gaps, same links as the ranking — one source of truth for what is
+    // missing and where to fix it.
+    let ranking = rank_debt_payoff(conn, baseline_method)?;
+    let mut missing_data = ranking.missing_data;
+
+    let baseline_order = PayoffOrder::from_method(baseline_method);
+    // An explicitly empty list means "no custom order", not "custom order of
+    // nothing" — it must fall back to the requested method rather than
+    // silently forcing avalanche.
+    let alternative_order = match custom_order.filter(|ids| !ids.is_empty()) {
+        Some(ids) => PayoffOrder::custom(ids),
+        None => PayoffOrder::from_method(alternative_method),
+    };
+
+    let baseline = outcome_for(&debts, &baseline_order, extra);
+    let alternative = outcome_for(&debts, &alternative_order, extra);
+
+    let (baseline, alternative) = match (baseline, alternative) {
+        (Some(b), Some(a)) => (b, a),
+        _ => {
+            // Withhold the comparison rather than show a confident wrong one —
+            // but be accurate about WHY, because the two causes need opposite
+            // things from the user.
+            //
+            // Incomplete data is fixable on the Accounts screen. A simulation
+            // that will not converge is a different problem entirely: the
+            // numbers are all present, but the payments never overtake the
+            // interest. Telling someone to go fill in data that is already
+            // correct sends them to fix nothing.
+            let data_complete = debts
+                .iter()
+                .all(|d| d.apr_pct.is_some() && d.min_payment_cents.unwrap_or(0) > 0);
+            let reason = if data_complete {
+                "Minimum payments do not cover the interest accruing on at least one debt at \
+                 this payment level, so no payoff timeline exists to compare. Raising a minimum \
+                 payment or adding an extra monthly payment would make one."
+            } else {
+                "Comparing payoff strategies needs APR and minimum payment for every active \
+                 liability."
+            };
+            missing_data.push(MissingDataItem::prose(reason));
+            MissingDataItem::dedup(&mut missing_data);
+            let empty = |label: &str| StrategyOutcome {
+                method: label.to_string(),
+                months_to_debt_free: 0,
+                total_interest_cents: 0,
+                first_cleared_name: None,
+                first_cleared_month: None,
+                order: Vec::new(),
+            };
+            return Ok(StrategyComparison {
+                extra_monthly_payment_cents: extra,
+                baseline: empty(baseline_order.label()),
+                alternative: empty(alternative_order.label()),
+                alternative_extra_interest_cents: 0,
+                alternative_first_win_sooner_months: None,
+                alternative_debt_free_sooner_months: 0,
+                preferred_method: finsight_core::metrics::philosophy(conn)
+                    .debt_strategy
+                    .as_method()
+                    .to_string(),
+                missing_data,
+                assumptions: vec![format!("Comparison withheld. {reason}")],
+            });
+        }
+    };
+
+    MissingDataItem::dedup(&mut missing_data);
+
+    let first_win_sooner = match (baseline.first_cleared_month, alternative.first_cleared_month) {
+        (Some(b), Some(a)) => Some(b - a),
+        _ => None,
+    };
+
+    Ok(StrategyComparison {
+        extra_monthly_payment_cents: extra,
+        alternative_extra_interest_cents: alternative.total_interest_cents
+            - baseline.total_interest_cents,
+        alternative_first_win_sooner_months: first_win_sooner,
+        alternative_debt_free_sooner_months: baseline.months_to_debt_free
+            - alternative.months_to_debt_free,
+        preferred_method: finsight_core::metrics::philosophy(conn)
+            .debt_strategy
+            .as_method()
+            .to_string(),
+        missing_data,
+        assumptions: vec![
+            "Minimum payments are made on every debt before extra payments are applied."
+                .to_string(),
+            "APRs and minimum payments stay constant for the whole projection.".to_string(),
+            "Interest compounds monthly at APR/12.".to_string(),
+        ],
+        baseline,
+        alternative,
+    })
+}
+
 pub fn infer_question_profile(question: &str) -> FinanceQuestionProfile {
     let lower = question.to_lowercase();
     let kind = if contains_any(
@@ -870,27 +1220,33 @@ pub fn rank_debt_payoff(
             ));
         }
     }
-    if method == "snowball" {
-        debts.sort_by_key(|d| d.balance_cents);
-    } else {
-        debts.sort_by(|a, b| {
-            b.apr_pct
-                .partial_cmp(&a.apr_pct)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.balance_cents.cmp(&b.balance_cents))
-        });
-    }
+    let order = PayoffOrder::from_method(method);
+    debts.sort_by(|a, b| {
+        order.compare(
+            &OrderableDebt {
+                id: &a.id,
+                name: &a.name,
+                balance_cents: a.balance_cents as f64,
+                apr_pct: a.apr_pct,
+            },
+            &OrderableDebt {
+                id: &b.id,
+                name: &b.name,
+                balance_cents: b.balance_cents as f64,
+                apr_pct: b.apr_pct,
+            },
+        )
+    });
     let items = debts
         .into_iter()
         .enumerate()
         .map(|(idx, d)| {
-            let reason = if method == "snowball" {
-                "Smallest remaining balance first for behavioral momentum.".to_string()
-            } else if let Some(apr) = d.apr_pct {
-                format!("Highest APR first avoids the most interest; APR is {apr}%.")
-            } else {
-                "APR missing; rank is provisional and should be confirmed.".to_string()
-            };
+            let reason = order.reason_for(&OrderableDebt {
+                id: &d.id,
+                name: &d.name,
+                balance_cents: d.balance_cents as f64,
+                apr_pct: d.apr_pct,
+            });
             DebtRankItem {
                 liability_id: d.id,
                 name: d.name,
@@ -1088,9 +1444,11 @@ pub fn run_debt_payoff_scenarios(
         .iter()
         .all(|d| d.apr_pct.is_some() && d.min_payment_cents.unwrap_or(0) > 0);
 
+    let order = PayoffOrder::from_method(method);
     let (minimum, with_extra) = if can_project {
-        let minimum = simulate_debt_payoff(&debts, method, 0);
-        let with_extra = simulate_debt_payoff(&debts, method, extra_monthly_payment_cents.max(0));
+        let minimum = simulate_debt_payoff(&debts, &order, 0);
+        let with_extra =
+            simulate_debt_payoff(&debts, &order, extra_monthly_payment_cents.max(0));
         (minimum, with_extra)
     } else {
         missing_data.push(MissingDataItem::prose(
@@ -1104,15 +1462,15 @@ pub fn run_debt_payoff_scenarios(
         extra_monthly_payment_cents: extra_monthly_payment_cents.max(0),
         total_balance_cents,
         total_minimum_payment_cents,
-        payoff_months_minimums_only: minimum.map(|p| p.months),
-        payoff_months_with_extra: with_extra.map(|p| p.months),
-        estimated_interest_minimums_only_cents: minimum.map(|p| p.interest_cents),
-        estimated_interest_with_extra_cents: with_extra.map(|p| p.interest_cents),
-        estimated_interest_saved_cents: match (minimum, with_extra) {
+        payoff_months_minimums_only: minimum.as_ref().map(|p| p.months),
+        payoff_months_with_extra: with_extra.as_ref().map(|p| p.months),
+        estimated_interest_minimums_only_cents: minimum.as_ref().map(|p| p.interest_cents),
+        estimated_interest_with_extra_cents: with_extra.as_ref().map(|p| p.interest_cents),
+        estimated_interest_saved_cents: match (minimum.as_ref(), with_extra.as_ref()) {
             (Some(a), Some(b)) => Some((a.interest_cents - b.interest_cents).max(0)),
             _ => None,
         },
-        months_saved: match (minimum, with_extra) {
+        months_saved: match (minimum.as_ref(), with_extra.as_ref()) {
             (Some(a), Some(b)) => Some((a.months - b.months).max(0)),
             _ => None,
         },
@@ -1687,9 +2045,9 @@ pub fn get_data_quality_report(conn: &mut Connection) -> rusqlite::Result<DataQu
 
 fn simulate_debt_payoff(
     debts: &[SnapshotLiability],
-    method: &str,
+    order: &PayoffOrder,
     extra_monthly_payment_cents: i64,
-) -> Option<PayoffProjection> {
+) -> Option<PayoffRun> {
     let mut sim = debts
         .iter()
         .map(|d| {
@@ -1704,6 +2062,7 @@ fn simulate_debt_payoff(
         .collect::<Option<Vec<_>>>()?;
     let mut months = 0_i64;
     let mut interest = 0.0;
+    let mut cleared: Vec<DebtCleared> = Vec::new();
     let base_minimums: i64 = sim.iter().map(|d| d.min_payment_cents).sum();
     let total_payment = base_minimums + extra_monthly_payment_cents.max(0);
 
@@ -1725,12 +2084,22 @@ fn simulate_debt_payoff(
         }
 
         while remaining_payment > 0.5 {
-            let Some(idx) = next_debt_index(&sim, method) else {
+            let Some(idx) = next_debt_index(&sim, order) else {
                 break;
             };
             let pay = remaining_payment.min(sim[idx].balance_cents);
             sim[idx].balance_cents -= pay;
             remaining_payment -= pay;
+        }
+
+        for debt in sim.iter().filter(|d| d.balance_cents <= 0.5) {
+            if !cleared.iter().any(|c| c.id == debt.id) {
+                cleared.push(DebtCleared {
+                    id: debt.id.clone(),
+                    name: debt.name.clone(),
+                    month: months,
+                });
+            }
         }
 
         let active_interest: f64 = sim
@@ -1746,34 +2115,33 @@ fn simulate_debt_payoff(
     if months >= 600 {
         return None;
     }
-    Some(PayoffProjection {
+    Some(PayoffRun {
         months,
         interest_cents: interest.round() as i64,
+        cleared,
     })
 }
 
-fn next_debt_index(debts: &[SimDebt], method: &str) -> Option<usize> {
+fn next_debt_index(debts: &[SimDebt], order: &PayoffOrder) -> Option<usize> {
     debts
         .iter()
         .enumerate()
         .filter(|(_, debt)| debt.balance_cents > 0.5)
         .min_by(|(_, a), (_, b)| {
-            if method == "snowball" {
-                a.balance_cents
-                    .partial_cmp(&b.balance_cents)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.name.cmp(&b.name))
-            } else {
-                b.apr_pct
-                    .partial_cmp(&a.apr_pct)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| {
-                        a.balance_cents
-                            .partial_cmp(&b.balance_cents)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .then_with(|| a.id.cmp(&b.id))
-            }
+            order.compare(
+                &OrderableDebt {
+                    id: &a.id,
+                    name: &a.name,
+                    balance_cents: a.balance_cents,
+                    apr_pct: Some(a.apr_pct),
+                },
+                &OrderableDebt {
+                    id: &b.id,
+                    name: &b.name,
+                    balance_cents: b.balance_cents,
+                    apr_pct: Some(b.apr_pct),
+                },
+            )
         })
         .map(|(idx, _)| idx)
 }
@@ -2339,6 +2707,325 @@ mod tests {
     /// The value the high-interest line was hard-coded to before it became a
     /// preference. Pinned so the default profile cannot drift off it.
     const HIGH_INTEREST_APR: f64 = 8.0;
+
+    /// Two debts that the two schools rank in OPPOSITE order.
+    ///
+    /// The shared `seed()` fixture cannot distinguish them: its credit card is
+    /// both the smallest balance *and* the highest APR, so snowball and
+    /// avalanche agree and any test built on it proves nothing about ordering.
+    ///
+    /// Here the small debt is the *cheaper* one, which is the real-world shape
+    /// the tradeoff exists for: snowball clears it first for the early win and
+    /// pays more interest; avalanche attacks the expensive one and saves money.
+    fn seed_disagreeing_debts(conn: &mut Connection) {
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff','manual','liquid',1,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents) VALUES('a1',date('now'),500000)", []).unwrap();
+        // Small balance, LOW rate — snowball's first target.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('small','Household','Manual','Credit','Store Card','USD','#F97316','manual','restricted',0,'debt',6.0,5000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('small',date('now'),-100000,'manual')", []).unwrap();
+        // Large balance, HIGH rate — avalanche's first target.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('big','Household','Manual','Credit','Travel Card','USD','#F87171','manual','restricted',0,'debt',26.0,15000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('big',date('now'),-600000,'manual')", []).unwrap();
+    }
+
+    #[test]
+    fn the_two_schools_rank_the_same_debts_in_opposite_order() {
+        // Guards the fixture itself: if this ever passes trivially, every
+        // comparison test below is meaningless.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        let avalanche = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        let snowball = rank_debt_payoff(&mut conn, "snowball").unwrap();
+        assert_eq!(avalanche.items[0].liability_id, "big");
+        assert_eq!(snowball.items[0].liability_id, "small");
+    }
+
+    #[test]
+    fn comparison_quantifies_the_tradeoff_between_the_two_schools() {
+        // The numbers behind "snowball costs you $X more but clears your first
+        // card N months sooner".
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 50000).unwrap();
+
+        assert_eq!(cmp.baseline.method, "avalanche");
+        assert_eq!(cmp.alternative.method, "snowball");
+        assert!(cmp.missing_data.is_empty(), "both debts are fully specified");
+
+        // Avalanche is never more expensive than snowball — that is what it
+        // optimises for. Here the orders differ, so it must be strictly cheaper.
+        assert!(
+            cmp.alternative_extra_interest_cents > 0,
+            "snowball should cost more interest here, got {}",
+            cmp.alternative_extra_interest_cents
+        );
+        // ...and snowball buys the early win it is chosen for.
+        assert_eq!(cmp.alternative.first_cleared_name.as_deref(), Some("Store Card"));
+        assert_eq!(cmp.baseline.first_cleared_name.as_deref(), Some("Travel Card"));
+        assert!(
+            cmp.alternative_first_win_sooner_months.unwrap() > 0,
+            "snowball should clear its first debt sooner"
+        );
+
+        // The deltas must be self-consistent with the raw figures, since the
+        // model is handed these and forbidden from doing the arithmetic.
+        assert_eq!(
+            cmp.alternative_extra_interest_cents,
+            cmp.alternative.total_interest_cents - cmp.baseline.total_interest_cents
+        );
+        assert_eq!(
+            cmp.alternative_debt_free_sooner_months,
+            cmp.baseline.months_to_debt_free - cmp.alternative.months_to_debt_free
+        );
+    }
+
+    #[test]
+    fn a_custom_order_puts_the_chosen_debt_first_then_optimises_the_rest() {
+        // The hybrid case: clear one nuisance balance for momentum, then let
+        // avalanche take over.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        let cmp = compare_payoff_strategies(
+            &mut conn,
+            "avalanche",
+            "snowball",
+            Some(vec!["small".to_string()]),
+            50000,
+        )
+        .unwrap();
+
+        assert_eq!(cmp.alternative.method, "custom");
+        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
+        assert_eq!(cmp.alternative.first_cleared_name.as_deref(), Some("Store Card"));
+    }
+
+    #[test]
+    fn an_unlisted_debt_falls_behind_the_custom_list_by_apr() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+        // A third debt, cheapest of all, left out of the explicit list.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('mid','Household','Manual','Loan','Car Loan','USD','#888','manual','restricted',0,'debt',4.0,10000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('mid',date('now'),-300000,'manual')", []).unwrap();
+
+        let cmp = compare_payoff_strategies(
+            &mut conn,
+            "avalanche",
+            "snowball",
+            Some(vec!["small".to_string()]),
+            50000,
+        )
+        .unwrap();
+
+        // Listed first, then the unlisted tail ordered by APR descending.
+        assert_eq!(
+            cmp.alternative.order,
+            vec![
+                "Store Card".to_string(),
+                "Travel Card".to_string(),
+                "Car Loan".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn comparison_withholds_rather_than_guesses_when_a_debt_lacks_apr() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('unknown','Household','Manual','Credit','Mystery Card','USD','#999','manual','restricted',0,'debt',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('unknown',date('now'),-50000,'manual')", []).unwrap();
+
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+
+        assert_eq!(cmp.baseline.months_to_debt_free, 0);
+        assert!(
+            !cmp.missing_data.is_empty(),
+            "a withheld comparison must say what it is missing"
+        );
+        // And it must say where to fix it, not just that it is missing.
+        assert!(cmp
+            .missing_data
+            .iter()
+            .any(|m| m.action_path.as_deref() == Some("/accounts?focusAccount=unknown")));
+    }
+
+    #[test]
+    fn an_unprojectable_debt_is_not_blamed_on_missing_data() {
+        // Every field is filled in — the payments simply never overtake the
+        // interest. Telling the user to go add an APR they already entered
+        // sends them to fix nothing. The two causes need opposite responses,
+        // so the message has to distinguish them.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        // $900,000 at 29.9% accrues ~$22,425/month; a $100 minimum never
+        // touches the principal. Every field is present and valid.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('stuck','Household','Manual','Credit','Maxed Card','USD','#F97316','manual','restricted',0,'debt',29.9,10000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('stuck',date('now'),-90000000,'manual')", []).unwrap();
+
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+
+        assert_eq!(cmp.baseline.months_to_debt_free, 0, "comparison is withheld");
+        let said: String = cmp
+            .missing_data
+            .iter()
+            .map(|m| m.message.clone())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            said.to_lowercase().contains("minimum payments do not cover"),
+            "should explain the payments never overtake the interest, said: {said}"
+        );
+        assert!(
+            !said.contains("needs APR and minimum payment for every active liability"),
+            "must not claim data is missing when it is all present: {said}"
+        );
+    }
+
+    #[test]
+    fn genuinely_missing_data_still_says_so() {
+        // The other side of the same branch: when the data really is absent,
+        // the message must point at the data, not at the payment level.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('unknown','Household','Manual','Credit','Mystery Card','USD','#999','manual','restricted',0,'debt',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('unknown',date('now'),-50000,'manual')", []).unwrap();
+
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        let said: String = cmp
+            .missing_data
+            .iter()
+            .map(|m| m.message.clone())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            said.contains("needs APR and minimum payment for every active liability"),
+            "should name the real cause, said: {said}"
+        );
+    }
+
+    #[test]
+    fn an_empty_custom_order_falls_back_to_the_requested_method() {
+        // `custom_order: []` means "no custom order", not "custom order of
+        // nothing" — it must not silently override the requested strategy.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        let cmp = compare_payoff_strategies(
+            &mut conn,
+            "avalanche",
+            "snowball",
+            Some(Vec::new()),
+            50000,
+        )
+        .unwrap();
+        assert_eq!(cmp.alternative.method, "snowball");
+        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
+    }
+
+    #[test]
+    fn a_custom_order_naming_an_unknown_account_ignores_it() {
+        // Ids can be stale or hand-typed by the model; an unknown one must be
+        // inert rather than reordering or erroring.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        let cmp = compare_payoff_strategies(
+            &mut conn,
+            "avalanche",
+            "snowball",
+            Some(vec!["does-not-exist".to_string(), "small".to_string()]),
+            50000,
+        )
+        .unwrap();
+        // The real id still leads; the phantom one simply has no effect.
+        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
+        assert_eq!(cmp.alternative.order.len(), 2);
+    }
+
+    #[test]
+    fn a_user_with_no_debts_gets_an_empty_comparison_not_an_error() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff','manual','liquid',1,datetime('now'))", []).unwrap();
+
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        assert_eq!(cmp.baseline.months_to_debt_free, 0);
+        assert!(cmp.baseline.order.is_empty());
+        assert!(cmp.missing_data.is_empty(), "no debts is not missing data");
+    }
+
+    #[test]
+    fn ordering_is_deterministic_when_debts_tie() {
+        // Two debts identical on the sort dimension must not reshuffle between
+        // runs — a ranking that changes on refresh reads as a bug.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        for id in ["twin_b", "twin_a"] {
+            conn.execute(&format!("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('{id}','Household','Manual','Credit','Card {id}','USD','#F97316','manual','restricted',0,'debt',10.0,5000,datetime('now'))"), []).unwrap();
+            conn.execute(&format!("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('{id}',date('now'),-200000,'manual')"), []).unwrap();
+        }
+
+        let first = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        let second = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        let ids = |r: &DebtPayoffRanking| {
+            r.items.iter().map(|i| i.liability_id.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&first), ids(&second));
+        assert_eq!(ids(&first), vec!["twin_a".to_string(), "twin_b".to_string()]);
+    }
+
+    #[test]
+    fn a_debt_with_no_apr_sorts_last_under_avalanche_not_first() {
+        // Missing APR must not be read as 0% and rank above a known 26% card,
+        // nor as infinity and jump the queue. Unknown is not free.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('unknown','Household','Manual','Credit','Mystery Card','USD','#999','manual','restricted',0,'debt',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('unknown',date('now'),-50000,'manual')", []).unwrap();
+
+        let ranking = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        assert_eq!(
+            ranking.items.last().unwrap().liability_id,
+            "unknown",
+            "a debt with unknown APR should rank last, not be treated as 0% or highest"
+        );
+    }
+
+    #[test]
+    fn the_shown_order_matches_the_simulated_order() {
+        // These were two independent implementations before this change, so
+        // the ranking the user saw could drift from the plan that was costed.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_disagreeing_debts(&mut conn);
+
+        for method in ["avalanche", "snowball"] {
+            let ranking = rank_debt_payoff(&mut conn, method).unwrap();
+            let shown: Vec<String> = ranking.items.iter().map(|i| i.name.clone()).collect();
+            let cmp =
+                compare_payoff_strategies(&mut conn, method, method, None, 50000).unwrap();
+            assert_eq!(
+                shown, cmp.baseline.order,
+                "{method}: the ranking shown must be the ordering that was simulated"
+            );
+        }
+    }
 
     #[test]
     fn risk_tolerance_moves_which_debts_count_as_urgent() {
