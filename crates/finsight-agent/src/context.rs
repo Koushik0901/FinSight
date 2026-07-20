@@ -49,6 +49,12 @@ pub struct InvestmentPositionItem {
 pub struct WellnessContext {
     /// Months of average expenses covered by current total balance (Ramsey emergency fund gauge)
     pub emergency_fund_months: f64,
+    /// False when there is too little history for the figure above to mean
+    /// anything. The prompt must then present it as provisional — a brand-new
+    /// user hearing "you have 9 months of cover" as fact is the exact failure
+    /// this guards.
+    #[serde(default)]
+    pub emergency_fund_months_reliable: bool,
     /// Sum of remaining balances across all active debt-payoff goals (Ramsey snowball)
     pub total_debt_cents: i64,
     /// Ordered list of debt payoff goals by remaining balance ascending (Ramsey snowball order)
@@ -305,10 +311,19 @@ impl FinancialContext {
 
         lines.extend([
             "6. FINANCIAL WELLNESS".to_string(),
-            format!(
-                "   - Emergency fund coverage: {:.1} months of expenses (guideline: ≥3 months)",
-                self.wellness.emergency_fund_months
-            ),
+            if self.wellness.emergency_fund_months_reliable {
+                format!(
+                    "   - Emergency fund coverage: {:.1} months of expenses (guideline: ≥3 months)",
+                    self.wellness.emergency_fund_months
+                )
+            } else {
+                // Withhold the number rather than hedge around it: a figure in
+                // the prompt WILL be quoted, and there is not enough history for
+                // this one to be worth quoting.
+                "   - Emergency fund coverage: NOT YET KNOWN — too little transaction history to \
+                 estimate monthly expenses. Say so plainly if asked; do not state a month figure."
+                    .to_string()
+            },
             format!(
                 "   - Total remaining debt (debt-payoff goals): {}",
                 fmt_money(self.wellness.total_debt_cents)
@@ -918,8 +933,15 @@ fn wellness_context(
     let emergency_fund_balance = metrics::balance_breakdown(conn)
         .map(|b| b.emergency_fund_cents)
         .unwrap_or(0);
-    let emergency_fund_months =
-        metrics::emergency_fund_months(emergency_fund_balance, avg_monthly_expense_cents);
+    // Conservative basis, matching what the screens show. A short-window mean
+    // misses annual obligations, so measuring coverage against it would have the
+    // Copilot assert more months of safety than the user actually has.
+    let safety = metrics::safety_expense_basis(conn).unwrap_or_default();
+    let emergency_fund_months = metrics::emergency_fund_months(
+        emergency_fund_balance,
+        safety.monthly_expense_cents.max(avg_monthly_expense_cents),
+    );
+    let emergency_fund_months_reliable = safety.sufficient;
     let target_savings_rate_pct = metrics::assumptions(conn).target_savings_rate_pct;
 
     // Debt snowball: active debt-payoff goals ordered by remaining balance ascending
@@ -980,6 +1002,7 @@ fn wellness_context(
 
     WellnessContext {
         emergency_fund_months,
+        emergency_fund_months_reliable,
         total_debt_cents,
         debt_snowball,
         savings_rate_trend,

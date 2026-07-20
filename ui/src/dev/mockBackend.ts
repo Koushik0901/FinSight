@@ -241,8 +241,12 @@ function baseMetrics(o: AnyRec): AnyRec {
     thisMonthExpenseCents: 0,
     thisMonthNetCents: 0,
     thisMonthSavingsRatePct: 0,
-    emergencyFundMonths: 0,
-    runwayDays: 0,
+    // Null is the WITHHELD state — too little history to state a figure. The
+    // `empty` dataset leaves it null so that path is visible in the harness;
+    // populated datasets override with real numbers.
+    emergencyFundMonths: null,
+    runwayDays: null,
+    safetyBasisSpanDays: 0,
     targetSavingsRatePct: 20,
     emergencyFundTargetMonths: 6,
     expectedAnnualReturnPct: 7,

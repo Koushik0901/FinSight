@@ -111,6 +111,79 @@ pub fn runway_days(liquid_cents: i64, avg_monthly_expense_cents: i64) -> i64 {
     forecast::runway_days(liquid_cents, avg_monthly_expense_cents, RUNWAY_PERIOD_DAYS)
 }
 
+/// Below this much history there is no honest monthly burn, so safety metrics
+/// must withhold rather than state one.
+pub const SAFETY_BASIS_MIN_SPAN_DAYS: i64 = 30;
+/// Complete months considered for the long-window mean. A full year is what
+/// makes annual obligations visible at all.
+const SAFETY_BASIS_MAX_MONTHS: i64 = 12;
+
+/// The monthly expense figure SAFETY metrics should use — runway and
+/// emergency-fund coverage — as opposed to the descriptive or commitment ones.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SafetyExpenseBasis {
+    pub monthly_expense_cents: i64,
+    /// False when history is too thin for any monthly figure to be meaningful.
+    /// Callers must withhold the metric, not fall back to a guess: for a
+    /// brand-new user "we need a few more weeks" beats a confident wrong number.
+    pub sufficient: bool,
+    /// Complete months that fed the long-window mean.
+    pub months_observed: i64,
+    pub data_span_days: i64,
+}
+
+/// Conservative monthly burn: the larger of a up-to-12-month mean over complete
+/// months and the rolling 90-day mean.
+///
+/// Neither a median nor a single mean is safe here, because each fails for a
+/// different real user:
+///
+/// * A **median month excludes lumpy obligations by construction** — annual
+///   insurance, quarterly property tax, seasonal travel. Measuring runway
+///   against it tells exactly the people with the largest irregular bills that
+///   they are safer than they are. This is why the long window uses a MEAN.
+/// * A **90-day window misses anything annual** and is noisy, but it is the only
+///   term that reacts when costs genuinely step up (a new baby, a pricier
+///   lease); a 12-month mean would smooth that away for most of a year.
+///
+/// Taking the max is conservative against both failure modes. The cost is mild
+/// pessimism right after a one-off purchase — the acceptable direction for a
+/// metric whose job is to answer "how long can I survive?".
+///
+/// Complete months only: the current partial month would otherwise drag the mean
+/// down purely because it has not finished yet.
+pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis> {
+    let rolling = rolling_averages(conn, 90)?;
+    let pred = non_investment_txn_predicate("t");
+    let this_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let mut stmt = conn.prepare(&format!(
+        "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                          WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                          ELSE 0 END) \
+         FROM transactions t \
+         WHERE t.is_transfer = 0 AND {pred} AND substr(t.posted_at,1,7) < ?1 \
+         GROUP BY substr(t.posted_at,1,7) \
+         ORDER BY substr(t.posted_at,1,7) DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
+    ))?;
+    let mut totals: Vec<i64> = Vec::new();
+    for row in stmt.query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))? {
+        totals.push(row?.unwrap_or(0));
+    }
+
+    let long_mean = if totals.is_empty() {
+        0
+    } else {
+        totals.iter().sum::<i64>() / totals.len() as i64
+    };
+
+    Ok(SafetyExpenseBasis {
+        monthly_expense_cents: long_mean.max(rolling.avg_monthly_expense_cents),
+        sufficient: rolling.data_span_days >= SAFETY_BASIS_MIN_SPAN_DAYS,
+        months_observed: totals.len() as i64,
+        data_span_days: rolling.data_span_days,
+    })
+}
+
 // ── User-configurable assumptions ───────────────────────────────────────────
 
 /// Targets and rates the user can tune, with defaults drawn from the Financial
@@ -1302,6 +1375,95 @@ mod tests {
         assert_eq!(avg.months, 3);
         assert_eq!(avg.avg_monthly_expense_cents, 0);
         assert_eq!(avg.data_span_days, 0);
+    }
+
+    /// The archetype a median month cannot serve: most months are cheap, but a
+    /// large annual obligation lands once. A median excludes it by construction
+    /// and would overstate runway for exactly the people carrying the biggest
+    /// irregular bills. The long-window MEAN must carry it.
+    #[test]
+    fn safety_basis_includes_a_once_a_year_obligation() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // Eleven quiet months at $1,000, plus one $12,000 insurance bill.
+        for m in 1..=11 {
+            insert_txn(&mut conn, &acct, -100_000, 30 * m + 5, false);
+        }
+        insert_txn(&mut conn, &acct, -1_200_000, 30 * 12 + 5, false);
+
+        let basis = safety_expense_basis(&conn).unwrap();
+
+        // Mean carries the lump: (11 x 1,000 + 12,000) / 12 = ~$1,916/mo.
+        assert!(
+            basis.monthly_expense_cents > 150_000,
+            "the annual bill must be visible in the basis, got {}",
+            basis.monthly_expense_cents
+        );
+        assert!(basis.sufficient);
+    }
+
+    /// The archetype a long window alone cannot serve: costs genuinely stepped
+    /// up recently. A 12-month mean would smooth that away for most of a year,
+    /// so the recent window has to be able to win.
+    #[test]
+    fn safety_basis_reacts_to_a_recent_step_up_in_costs() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // Cheap for most of the year...
+        for m in 4..=12 {
+            insert_txn(&mut conn, &acct, -50_000, 30 * m + 5, false);
+        }
+        // ...then rent tripled three months ago.
+        for m in 1..=3 {
+            insert_txn(&mut conn, &acct, -150_000, 30 * m + 5, false);
+        }
+
+        let basis = safety_expense_basis(&conn).unwrap();
+
+        assert!(
+            basis.monthly_expense_cents >= 140_000,
+            "the recent step-up must win over the cheaper year, got {}",
+            basis.monthly_expense_cents
+        );
+    }
+
+    /// A brand-new user has no honest monthly burn. The basis must say so rather
+    /// than hand back a number the caller will render as fact.
+    #[test]
+    fn safety_basis_reports_insufficient_history_instead_of_guessing() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        insert_txn(&mut conn, &acct, -50_000, 5, false);
+
+        let basis = safety_expense_basis(&conn).unwrap();
+
+        assert!(
+            !basis.sufficient,
+            "5 days of history cannot support a runway figure"
+        );
+    }
+
+    /// An account with no activity at all must not report "sufficient" — there
+    /// is nothing to be confident about.
+    #[test]
+    fn safety_basis_on_an_empty_ledger_is_insufficient() {
+        let (_d, db) = fresh_db();
+        let conn = db.get().unwrap();
+
+        let basis = safety_expense_basis(&conn).unwrap();
+
+        assert!(!basis.sufficient);
+        assert_eq!(basis.monthly_expense_cents, 0);
+        assert_eq!(basis.months_observed, 0);
     }
 
     #[test]

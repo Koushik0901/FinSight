@@ -70,9 +70,12 @@ export default function Reports() {
   // for historical imports.
   const activeExpenseMonths = monthly.filter((m) => m.expenseCents > 0).length || 1;
   const avgMonthlyExpense = Math.round(totalExpense / activeExpenseMonths);
-  // Runway comes from the shared metrics layer (liquid ÷ trailing-90d burn),
-  // the same definition Today shows — not a scope-specific recomputation.
-  const runwayMonths = metrics ? Math.round(metrics.runwayDays / 30) : 0;
+  // Runway comes from the shared metrics layer, the same definition Today shows
+  // — not a scope-specific recomputation. Null when there is too little history
+  // to state one; render that as unknown rather than as zero, which would read
+  // as "you have no runway" to a brand-new user.
+  const runwayMonths =
+    metrics?.runwayDays != null ? Math.round(metrics.runwayDays / 30) : null;
   const chartValues = monthly;
   // A single shared max for both series so income and expense bars are directly
   // comparable across months (per-series maxima made unequal months look equal).
@@ -153,7 +156,7 @@ export default function Reports() {
         <div className="stat"><div className="label">Savings rate</div><div className="value">{savingsRate}%</div><div className="sub">Income vs. spend</div></div>
         <div className="stat"><div className="label">Net worth</div><div className="value money">{money(netWorth)}</div><div className="sub">Tracked balances</div></div>
         <div className="stat"><div className="label">Avg monthly spend</div><div className="value money">{money(avgMonthlyExpense)}</div><div className="sub">Across this period</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths}</div><div className="sub">Months liquid covers at avg burn</div></div>
+        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths ?? "—"}</div><div className="sub">{runwayMonths !== null ? "Months liquid covers at avg burn" : "Needs about a month of history"}</div></div>
       </div>
 
       {tab === "overview" && (
