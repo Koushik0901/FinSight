@@ -1873,6 +1873,25 @@ export type AgentFundingSource = { label: string; detail: string }
 export type AgentMemory = { id: string; kind: string; description: string; merchantKey: string | null; createdAt: string }
 export type AgentMetricBlock = { label: string; value: string; detail: string | null; tone: string | null }
 export type AgentMoneyPoint = { label: string; amountCents: number }
+/**
+ * A screen the user can jump to in order to *see* a change the agent made.
+ * 
+ * Always an offer rendered as a link — never an automatic redirect. Yanking
+ * someone out of a conversation mid-thread is worse than making them click.
+ * 
+ * Built from executed action payloads (which carry real entity ids) rather
+ * than from model-authored prose, so the destination is always a screen that
+ * exists and an entity that was actually touched.
+ */
+export type AgentNavigationTarget = { 
+/**
+ * Button text, e.g. "View in Budget".
+ */
+label: string; 
+/**
+ * An app-relative path, e.g. `/budget?focusCategory=abc`.
+ */
+path: string }
 export type AgentRankedOption = { rankTone: string; label: string; detail: string; rationale: string }
 export type AgentRankedOptionsBlock = { title: string; options: AgentRankedOption[] }
 export type AgentRecatRow = { merchant: string; categoryKey: string; confidence: number }
@@ -2084,7 +2103,13 @@ export type Driver = { merchant_key: string; display: string; category: string |
 user_verdict: string | null }
 export type EditConversationMessageInput = { conversationId: string; messageId: string; content: string }
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
-export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
+export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[]; 
+/**
+ * Screens the user can open to see the applied changes in context.
+ * Derived from the payloads of actions that succeeded, so these are
+ * always real screens holding real entities. Rendered as an offer.
+ */
+navigation: AgentNavigationTarget[] }
 export type FinancialAssumptionsInput = { targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
 export type FinancialMetrics = { liquidCents: number; investedCents: number; debtCents: number; emergencyFundCents: number; netWorthCents: number; accountsWithUnknownBalance: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; netMonthlyCents: number; rollingSavingsRatePct: number; thisMonthIncomeCents: number; thisMonthExpenseCents: number; thisMonthNetCents: number; thisMonthSavingsRatePct: number; emergencyFundMonths: number | null; runwayDays: number | null; 
 /**

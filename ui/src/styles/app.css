@@ -4001,6 +4001,27 @@ body::-webkit-scrollbar-track,
   justify-content: flex-end;
 }
 
+/* Post-execution "go see what changed" offers. Left-aligned and separated
+   from the execute button above so they read as a next step, not a repeat of
+   the primary action. */
+.copilot-approval-nav {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.copilot-approval-nav-lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .copilot-sources {
   display: flex;
   flex-wrap: wrap;

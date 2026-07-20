@@ -1,6 +1,6 @@
 use finsight_core::{
     error::{CoreError, CoreResult},
-    models::{AgentActionItem, NewPlannedTransaction, NewRule},
+    models::{AgentActionItem, AgentNavigationTarget, NewPlannedTransaction, NewRule},
     repos::{agent_memory, budgets, copilot_actions, planned_transactions, rules, scenarios},
 };
 use rusqlite::{params, Connection};
@@ -19,6 +19,9 @@ pub struct BundleExecutionResult {
     pub executed: Vec<ExecutionResult>,
     pub succeeded: usize,
     pub failed: usize,
+    /// Screens the user can visit to see what was applied. Empty when nothing
+    /// succeeded or no executed kind maps to a screen.
+    pub navigation: Vec<AgentNavigationTarget>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -133,10 +136,15 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
     let mut executed = Vec::new();
     let mut succeeded = 0usize;
     let mut failed = 0usize;
+    // (action_kind, payload_json) for items that actually applied — the basis
+    // for the "go look at what changed" offer. Failed items are excluded: a
+    // link to a change that never landed is worse than no link.
+    let mut applied: Vec<(String, String)> = Vec::new();
 
     for item in approved_items {
         match execute_item(conn, &item) {
             Ok(summary) => {
+                applied.push((item.action_kind.clone(), item.payload_json.clone()));
                 copilot_actions::set_item_status(conn, &item.id, "executed")?;
                 let result_json = serde_json::json!({ "summary": summary }).to_string();
                 copilot_actions::insert_execution_log_entry(
@@ -194,11 +202,22 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
     };
     copilot_actions::set_bundle_status(conn, bundle_id, final_status)?;
 
+    let navigation = crate::navigation::navigation_targets(
+        &applied
+            .iter()
+            .map(|(kind, payload)| crate::navigation::ExecutedAction {
+                action_kind: kind,
+                payload_json: payload,
+            })
+            .collect::<Vec<_>>(),
+    );
+
     Ok(BundleExecutionResult {
         bundle_id: bundle_id.to_string(),
         executed,
         succeeded,
         failed,
+        navigation,
     })
 }
 

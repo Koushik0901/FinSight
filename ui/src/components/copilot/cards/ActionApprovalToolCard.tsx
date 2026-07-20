@@ -1,8 +1,10 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as I from "../../Icons";
 import Button from "../../Button";
 import Badge from "../../Badge";
-import type { ExecutionSummary } from "../../../api/client";
+import type { AgentNavigationTarget, ExecutionSummary } from "../../../api/client";
 import {
   useActionBundle,
   useApproveActionItem,
@@ -20,6 +22,11 @@ export function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
   const approve = useApproveActionItem();
   const reject = useRejectActionItem();
   const execute = useExecuteActionBundle();
+  const navigate = useNavigate();
+  // Where the user can go to see what just landed. Populated only after a
+  // successful execution, and never navigated to automatically — being yanked
+  // out of a conversation mid-thread is worse than clicking a link.
+  const [navTargets, setNavTargets] = useState<AgentNavigationTarget[]>([]);
 
   if (isLoading) {
     return (
@@ -52,6 +59,9 @@ export function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
   const runExecute = async () => {
     try {
       const summary = await execute.mutateAsync(bundle.id) as ExecutionSummary;
+      // Backend-derived from the payloads that actually applied, so these
+      // always point at a real screen. Older servers omit the field entirely.
+      setNavTargets(summary.navigation ?? []);
       if (summary.failed > 0) {
         toast.error(`${summary.failed} action${summary.failed === 1 ? "" : "s"} failed`, {
           description: `${summary.succeeded} succeeded.`,
@@ -123,6 +133,22 @@ export function ActionApprovalToolCard({ bundleId }: { bundleId: string }) {
             <I.Check width={13} height={13} />
             Execute approved actions
           </Button>
+        </div>
+      )}
+      {navTargets.length > 0 && (
+        <div className="copilot-approval-footer copilot-approval-nav">
+          <span className="copilot-approval-nav-lbl">See the change</span>
+          {navTargets.map((target) => (
+            <Button
+              key={target.path}
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(target.path)}
+            >
+              {target.label}
+              <I.ArrowRight width={12} height={12} />
+            </Button>
+          ))}
         </div>
       )}
     </div>

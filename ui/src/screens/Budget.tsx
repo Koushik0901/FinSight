@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal } from "../api/hooks/budget";
@@ -178,6 +178,8 @@ export default function Budget() {
   const [sort, setSort] = useState<SortKey>("group");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pendingScrollRef = useRef<string | null>(null);
 
   const now = new Date();
   const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -218,6 +220,48 @@ export default function Budget() {
       : "The month is on pace right now — most envelopes still have room.";
 
   const totalTagged = breakdown ? breakdown.fixedCents + breakdown.investmentsCents + breakdown.savingsCents + breakdown.guiltFreeCents + breakdown.untaggedCents : 0;
+
+  // Deep-link support: ?focusCategory=<id-or-label> opens that envelope's
+  // editor, matching the focus idiom used by Accounts, Goals and Recurring.
+  // The Copilot links here after applying a budget change so the user can see
+  // the result rather than take "done" on trust.
+  const focusedCategoryId = useMemo(() => {
+    const focus = searchParams.get("focusCategory");
+    if (!focus) return null;
+    // Accept the label as well as the id — a link may be built from either.
+    const match = envelopes.find(
+      (env) => env.categoryId === focus || env.categoryLabel.toLowerCase() === focus.toLowerCase(),
+    );
+    return match?.categoryId ?? null;
+  }, [envelopes, searchParams]);
+
+  useEffect(() => {
+    if (!searchParams.has("focusCategory")) return;
+    // Wait for envelopes before deciding — otherwise a slow load looks like
+    // "category not found" and the param is dropped before it can match.
+    if (isLoading) return;
+    if (focusedCategoryId && !editingId) {
+      setEditingId(focusedCategoryId);
+      pendingScrollRef.current = focusedCategoryId;
+    }
+    // Clear the param either way, so a stale link to a deleted category does
+    // not stick in the URL and re-fire on every render.
+    const next = new URLSearchParams(searchParams);
+    next.delete("focusCategory");
+    setSearchParams(next, { replace: true });
+  }, [focusedCategoryId, editingId, isLoading, searchParams, setSearchParams]);
+
+  // Runs after every render until the focused envelope is on screen: the row
+  // does not exist yet on the render that sets `editingId`.
+  useEffect(() => {
+    const target = pendingScrollRef.current;
+    if (!target) return;
+    const el = document.querySelector(`[data-envelope-id="${CSS.escape(target)}"]`);
+    if (!el) return;
+    pendingScrollRef.current = null;
+    // jsdom and older webviews do not implement scrollIntoView.
+    el.scrollIntoView?.({ block: "center" });
+  });
 
   const donorFor = (categoryId: string): BudgetEnvelope | null => {
     const candidates = sorted.filter((env) => env.categoryId !== categoryId && env.budgetCents - env.spentCents > 0);
@@ -302,7 +346,7 @@ export default function Budget() {
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
       <section className="section">
         <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
@@ -315,7 +359,7 @@ export default function Budget() {
                 <div className="eyebrow">{label}</div>
                 {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
           );
         })}</div>}
@@ -331,7 +375,7 @@ export default function Budget() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
             {unbudgeted.map((env) => (
-              <div key={env.categoryId} className="card tight" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div key={env.categoryId} data-envelope-id={env.categoryId} className="card tight" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div className="row row-sm" style={{ alignItems: "center" }}>
                   <span className="cswatch" style={{ background: env.categoryColor || "var(--accent)" }} />
                   <strong>{env.categoryLabel}</strong>

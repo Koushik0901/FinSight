@@ -1,6 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
-use finsight_core::models::{AgentActionBundle, AgentExecutionEntry, AgentSession};
+use finsight_core::models::{
+    AgentActionBundle, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
+};
 use finsight_core::repos::{copilot_actions, copilot_sessions, run};
 use serde::Serialize;
 use specta::Type;
@@ -12,6 +14,10 @@ pub struct ExecutionSummary {
     pub succeeded: u32,
     pub failed: u32,
     pub results: Vec<ExecutionItemResult>,
+    /// Screens the user can open to see the applied changes in context.
+    /// Derived from the payloads of actions that succeeded, so these are
+    /// always real screens holding real entities. Rendered as an offer.
+    pub navigation: Vec<AgentNavigationTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -131,6 +137,7 @@ pub async fn execute_action_bundle(
         bundle_id: result.bundle_id,
         succeeded: result.succeeded as u32,
         failed: result.failed as u32,
+        navigation: result.navigation,
         results: result
             .executed
             .into_iter()

@@ -6,6 +6,7 @@ pub mod categorizer;
 pub mod context;
 pub mod executor;
 pub mod finance;
+pub mod navigation;
 pub mod planner;
 pub mod planning;
 pub mod providers;
