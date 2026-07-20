@@ -1581,8 +1581,65 @@ fn ground_clarification_options(
                 })
                 .collect()
         }
+        "goal" | "goals" => {
+            let Ok(goals) = finsight_core::repos::goals::list(conn) else {
+                return Vec::new();
+            };
+            goals
+                .iter()
+                .take(MAX_CLARIFICATION_OPTIONS)
+                .map(|g| AgentClarificationOption {
+                    id: g.id.clone(),
+                    label: g.name.clone(),
+                    // Progress is what tells two similarly-named goals apart,
+                    // and it is the number the user would be reasoning about
+                    // when they answer.
+                    hint: Some(match g.target_cents {
+                        target if target > 0 => format!(
+                            "{} of {}",
+                            dollars(g.current_cents),
+                            dollars(target)
+                        ),
+                        _ => format!("{} saved", dollars(g.current_cents)),
+                    }),
+                })
+                .collect()
+        }
+        "category" | "categories" => {
+            let Ok(categories) = finsight_core::repos::categories::list(conn) else {
+                return Vec::new();
+            };
+            categories
+                .iter()
+                // Unlike goals and accounts, this repo returns archived rows
+                // too. Offering one as an answer would let the user pick a
+                // category that no longer exists as far as the rest of the app
+                // is concerned.
+                .filter(|c| c.archived_at.is_none())
+                .take(MAX_CLARIFICATION_OPTIONS)
+                .map(|c| AgentClarificationOption {
+                    id: c.id.clone(),
+                    label: c.label.clone(),
+                    // Categories are user-defined and can repeat a label across
+                    // groups ("Other" under two parents), so the group is the
+                    // disambiguator here rather than a number.
+                    hint: category_group_label(conn, &c.group_id),
+                })
+                .collect()
+        }
         _ => Vec::new(),
     }
+}
+
+/// The display name of a category's group, used to tell two same-named
+/// categories apart. `None` when the group cannot be read — a missing hint is
+/// fine, a wrong one is not.
+fn category_group_label(conn: &mut rusqlite::Connection, group_id: &str) -> Option<String> {
+    finsight_core::repos::categories::list_groups(conn)
+        .ok()?
+        .into_iter()
+        .find(|g| g.id == group_id)
+        .map(|g| g.label)
 }
 
 /// Human label for an account type (the neutral chip shown on each row).
@@ -2548,6 +2605,134 @@ mod clarification_grounding_tests {
         assert!(grounded.iter().all(|o| o.hint.is_some()));
         // Distinct ids so the answer resolves to a real, specific entity.
         assert_ne!(grounded[0].id, grounded[1].id);
+    }
+
+    /// A goal and two categories, one of them archived.
+    fn db_with_goals_and_categories() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("clarify2.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        {
+            let conn = db.get().unwrap();
+            conn.execute(
+                "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,                  color,sort_order,created_at)                  VALUES('g-car','New Car','save-by-date',2000000,500000,50000,'#fff',0,datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,                  color,sort_order,created_at,archived_at)                  VALUES('g-old','Old Goal','save-by-date',100,0,0,'#fff',1,datetime('now'),datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO category_groups(id,label,sort_order) VALUES('grp-1','Everyday',0)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO categories(id,group_id,label,color,sort_order)                  VALUES('c-live','grp-1','Groceries','#0f0',0)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO categories(id,group_id,label,color,sort_order,archived_at)                  VALUES('c-dead','grp-1','Retired','#f00',1,strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+                [],
+            )
+            .unwrap();
+        }
+        (dir, db)
+    }
+
+    #[test]
+    fn goals_ground_with_their_progress_as_the_hint() {
+        let (_dir, db) = db_with_goals_and_categories();
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("goal"), invented()));
+        assert_eq!(grounded.len(), 1, "archived goals must not be offered");
+        assert_eq!(grounded[0].id, "g-car");
+        assert_eq!(grounded[0].label, "New Car");
+        // Progress is what the user reasons about when answering.
+        assert_eq!(grounded[0].hint.as_deref(), Some("$5,000 of $20,000"));
+    }
+
+    #[test]
+    fn categories_ground_with_their_group_as_the_hint() {
+        let (_dir, db) = db_with_goals_and_categories();
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("category"), invented()));
+        assert_eq!(grounded.len(), 1);
+        assert_eq!(grounded[0].label, "Groceries");
+        // Categories can repeat a label across groups, so the group is the
+        // disambiguator rather than a number.
+        assert_eq!(grounded[0].hint.as_deref(), Some("Everyday"));
+    }
+
+    #[test]
+    fn an_archived_category_is_never_offered_as_an_answer() {
+        // Unlike goals and accounts, the categories repo returns archived rows.
+        // Offering one would let the user pick something the rest of the app
+        // treats as gone.
+        let (_dir, db) = db_with_goals_and_categories();
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("category"), vec![]));
+        assert!(
+            !grounded.iter().any(|o| o.id == "c-dead"),
+            "an archived category was offered: {grounded:?}"
+        );
+    }
+
+    #[test]
+    fn the_new_reference_types_also_tolerate_case_and_plurals() {
+        let (_dir, db) = db_with_goals_and_categories();
+        let mut conn = db.get().unwrap();
+        for kind in ["goal", "Goals", " GOAL "] {
+            assert_eq!(
+                ground_clarification_options(&mut conn, &block(Some(kind), vec![])).len(),
+                1,
+                "{kind:?} should be recognised"
+            );
+        }
+        for kind in ["category", "Categories", " CATEGORY "] {
+            assert_eq!(
+                ground_clarification_options(&mut conn, &block(Some(kind), vec![])).len(),
+                1,
+                "{kind:?} should be recognised"
+            );
+        }
+    }
+
+    #[test]
+    fn a_goal_with_no_target_still_gets_a_usable_hint() {
+        // An open-ended goal has no target to measure against; the hint must
+        // still say something true rather than "of $0.00".
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("clarify3.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        {
+            let conn = db.get().unwrap();
+            conn.execute(
+                "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,                  color,sort_order,created_at)                  VALUES('g-open','Rainy Day','open',0,125000,0,'#fff',0,datetime('now'))",
+                [],
+            )
+            .unwrap();
+        }
+        let mut conn = db.get().unwrap();
+        let grounded = ground_clarification_options(&mut conn, &block(Some("goal"), vec![]));
+        assert_eq!(grounded[0].hint.as_deref(), Some("$1,250 saved"));
+    }
+
+    #[test]
+    fn a_user_with_no_goals_or_categories_gets_free_text() {
+        let (_dir, db) = db_with_accounts(&["Chequing"]);
+        let mut conn = db.get().unwrap();
+        // Migrations seed no goals; categories may be seeded, so only assert
+        // the goal case here, which is unambiguously empty.
+        assert!(ground_clarification_options(&mut conn, &block(Some("goal"), invented())).is_empty());
     }
 
     #[test]
