@@ -26,6 +26,7 @@ pub mod scenarios;
 pub mod securities;
 pub mod splits;
 pub mod sync_runs;
+pub mod restoration;
 pub mod transactions;
 pub mod transfers;
 

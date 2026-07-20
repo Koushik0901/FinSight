@@ -518,6 +518,30 @@ async fn dispatch(
         "set_financial_assumptions" => {
             ok(c::metrics::set_financial_assumptions(api, arg(&p, "input")?).await?)
         }
+        "list_restoration_envelopes" => ok(c::restoration::list_restoration_envelopes(api).await?),
+        "get_restoration_status" => {
+            ok(c::restoration::get_restoration_status(api, arg(&p, "id")?).await?)
+        }
+        "create_restoration_envelope" => {
+            ok(c::restoration::create_restoration_envelope(api, arg(&p, "input")?).await?)
+        }
+        "close_restoration_envelope" => {
+            ok(c::restoration::close_restoration_envelope(api, arg(&p, "id")?).await?)
+        }
+        "delete_restoration_envelope" => {
+            ok(c::restoration::delete_restoration_envelope(api, arg(&p, "id")?).await?)
+        }
+        "add_restoration_leg" => ok(c::restoration::add_restoration_leg(
+            api,
+            arg(&p, "envelopeId")?,
+            arg(&p, "amountCents")?,
+            arg(&p, "notedOn")?,
+            arg(&p, "transactionId")?,
+        )
+        .await?),
+        "remove_restoration_leg" => {
+            ok(c::restoration::remove_restoration_leg(api, arg(&p, "legId")?).await?)
+        }
         "get_financial_philosophy" => ok(c::metrics::get_financial_philosophy(api).await?),
         "set_financial_philosophy" => {
             ok(c::metrics::set_financial_philosophy(api, arg(&p, "input")?).await?)
@@ -966,6 +990,13 @@ pub const SUPPORTED: &[&str] = &[
     "get_financial_metrics",
     "household_net_worth_breakdown",
     "set_financial_assumptions",
+    "list_restoration_envelopes",
+    "get_restoration_status",
+    "create_restoration_envelope",
+    "close_restoration_envelope",
+    "delete_restoration_envelope",
+    "add_restoration_leg",
+    "remove_restoration_leg",
     "get_financial_philosophy",
     "set_financial_philosophy",
     // onboarding
