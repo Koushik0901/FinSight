@@ -1850,3 +1850,275 @@ mod tests {
         );
     }
 }
+
+// ── Financial philosophy ────────────────────────────────────────────────────
+//
+// The Financial Freedom Framework this app is built on contains genuinely
+// competing schools. Ramsey says clear the smallest balance first because
+// behaviour beats math; the avalanche says clear the highest APR first because
+// math is math. Both are defensible, and which one is right depends on the
+// person. The same is true of where the line sits between paying debt down and
+// investing instead.
+//
+// These preferences let the user say which school they belong to, and — this
+// is the part that matters — they reach the deterministic engines, not just
+// the prose. Defaults reproduce the previous hard-coded behaviour exactly, so
+// an untouched profile behaves as it always did.
+
+/// The order debts are attacked in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DebtStrategy {
+    /// Highest APR first — least interest paid overall.
+    Avalanche,
+    /// Smallest balance first — early wins, the Ramsey argument that
+    /// behaviour beats math.
+    Snowball,
+}
+
+impl DebtStrategy {
+    /// The wire/tool name, matching the `method` argument the debt tools take.
+    pub fn as_method(self) -> &'static str {
+        match self {
+            DebtStrategy::Avalanche => "avalanche",
+            DebtStrategy::Snowball => "snowball",
+        }
+    }
+
+    /// Parse a method name, falling back to the default for anything
+    /// unrecognised — an unknown string must never silently become "snowball".
+    pub fn from_method(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "snowball" => DebtStrategy::Snowball,
+            _ => DebtStrategy::Avalanche,
+        }
+    }
+
+    /// One line explaining the choice, for the Copilot's prompt.
+    pub fn rationale(self) -> &'static str {
+        match self {
+            DebtStrategy::Avalanche => {
+                "highest APR first, because it pays the least interest overall"
+            }
+            DebtStrategy::Snowball => {
+                "smallest balance first, because early wins keep them going"
+            }
+        }
+    }
+}
+
+/// How readily the user trades a guaranteed return (paying debt down) for a
+/// probable one (investing or saving instead).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskTolerance {
+    /// Debt-averse: clear it even when the math slightly favours investing.
+    Cautious,
+    Balanced,
+    /// Wants the mathematically optimal answer regardless of how it feels.
+    Aggressive,
+}
+
+impl RiskTolerance {
+    /// The APR at or above which a debt is treated as "high interest" — the
+    /// line where paying it down beats saving or investing.
+    ///
+    /// `Balanced` returns 8.0, the value this was hard-coded to, so an
+    /// untouched profile gets exactly the previous behaviour. A cautious user
+    /// draws the line lower (more debt counts as urgent); an aggressive one
+    /// higher (more room to invest instead).
+    pub fn high_interest_apr_pct(self) -> f64 {
+        match self {
+            RiskTolerance::Cautious => 5.0,
+            RiskTolerance::Balanced => 8.0,
+            RiskTolerance::Aggressive => 12.0,
+        }
+    }
+
+    pub fn rationale(self) -> &'static str {
+        match self {
+            RiskTolerance::Cautious => {
+                "debt-averse — prefers clearing debt even when the math slightly favours investing"
+            }
+            RiskTolerance::Balanced => "balanced between clearing debt and investing",
+            RiskTolerance::Aggressive => {
+                "wants the mathematically optimal answer regardless of how it feels"
+            }
+        }
+    }
+}
+
+/// The user's stated financial philosophy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FinancialPhilosophy {
+    pub debt_strategy: DebtStrategy,
+    pub risk_tolerance: RiskTolerance,
+}
+
+impl Default for FinancialPhilosophy {
+    /// Exactly the behaviour that was hard-coded before this existed.
+    fn default() -> Self {
+        Self {
+            debt_strategy: DebtStrategy::Avalanche,
+            risk_tolerance: RiskTolerance::Balanced,
+        }
+    }
+}
+
+pub const KEY_DEBT_STRATEGY: &str = "philosophy.debt_strategy";
+pub const KEY_RISK_TOLERANCE: &str = "philosophy.risk_tolerance";
+
+/// Read the user's philosophy, falling back to the defaults for anything not
+/// set — or if the settings read fails. A preference is never important enough
+/// to fail a whole request over, and the default is the previous behaviour.
+pub fn philosophy(conn: &Connection) -> FinancialPhilosophy {
+    let d = FinancialPhilosophy::default();
+    FinancialPhilosophy {
+        debt_strategy: crate::settings::get(conn, KEY_DEBT_STRATEGY)
+            .ok()
+            .flatten()
+            .unwrap_or(d.debt_strategy),
+        risk_tolerance: crate::settings::get(conn, KEY_RISK_TOLERANCE)
+            .ok()
+            .flatten()
+            .unwrap_or(d.risk_tolerance),
+    }
+}
+
+/// Persist the user's philosophy.
+pub fn set_philosophy(conn: &Connection, p: &FinancialPhilosophy) -> CoreResult<()> {
+    crate::settings::set(conn, KEY_DEBT_STRATEGY, &p.debt_strategy)?;
+    crate::settings::set(conn, KEY_RISK_TOLERANCE, &p.risk_tolerance)?;
+    Ok(())
+}
+
+/// The high-interest threshold this user's risk tolerance implies.
+///
+/// Every "is this debt urgent enough to prioritise" decision reads this rather
+/// than a constant, so the preference actually changes the advice instead of
+/// only the wording around it.
+pub fn high_interest_apr_pct(conn: &Connection) -> f64 {
+    philosophy(conn).risk_tolerance.high_interest_apr_pct()
+}
+
+#[cfg(test)]
+mod philosophy_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_reproduce_the_previously_hard_coded_behaviour() {
+        // The whole compatibility promise: an untouched profile must behave
+        // exactly as the app did before preferences existed.
+        let d = FinancialPhilosophy::default();
+        assert_eq!(d.debt_strategy, DebtStrategy::Avalanche);
+        assert_eq!(d.risk_tolerance, RiskTolerance::Balanced);
+        assert_eq!(d.risk_tolerance.high_interest_apr_pct(), 8.0);
+        assert_eq!(d.debt_strategy.as_method(), "avalanche");
+    }
+
+    #[test]
+    fn risk_tolerance_moves_the_high_interest_line_in_the_expected_direction() {
+        // Cautious means "clear debt even when the math slightly favours
+        // investing", so more debt must qualify as urgent — a lower bar.
+        assert!(
+            RiskTolerance::Cautious.high_interest_apr_pct()
+                < RiskTolerance::Balanced.high_interest_apr_pct()
+        );
+        assert!(
+            RiskTolerance::Balanced.high_interest_apr_pct()
+                < RiskTolerance::Aggressive.high_interest_apr_pct()
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_strategy_falls_back_to_the_default() {
+        // An older client, a typo, or a hand-edited settings row must never
+        // silently flip someone to the other school.
+        for raw in ["", "  ", "AVALANCHE", "nonsense", "snowbal"] {
+            let parsed = DebtStrategy::from_method(raw);
+            if raw.eq_ignore_ascii_case("avalanche") {
+                assert_eq!(parsed, DebtStrategy::Avalanche);
+            } else {
+                assert_eq!(
+                    parsed,
+                    FinancialPhilosophy::default().debt_strategy,
+                    "unrecognised {raw:?} must fall back to the default"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strategy_names_round_trip_case_insensitively() {
+        assert_eq!(DebtStrategy::from_method("snowball"), DebtStrategy::Snowball);
+        assert_eq!(DebtStrategy::from_method("SnowBall"), DebtStrategy::Snowball);
+        assert_eq!(DebtStrategy::from_method(" snowball "), DebtStrategy::Snowball);
+        assert_eq!(
+            DebtStrategy::from_method(DebtStrategy::Snowball.as_method()),
+            DebtStrategy::Snowball
+        );
+        assert_eq!(
+            DebtStrategy::from_method(DebtStrategy::Avalanche.as_method()),
+            DebtStrategy::Avalanche
+        );
+    }
+
+    #[test]
+    fn every_variant_has_a_non_empty_rationale_for_the_prompt() {
+        // These strings go into the Copilot's system prompt; an empty one
+        // would produce a dangling sentence.
+        for s in [DebtStrategy::Avalanche, DebtStrategy::Snowball] {
+            assert!(!s.rationale().is_empty());
+        }
+        for r in [
+            RiskTolerance::Cautious,
+            RiskTolerance::Balanced,
+            RiskTolerance::Aggressive,
+        ] {
+            assert!(!r.rationale().is_empty());
+        }
+    }
+
+    #[test]
+    fn philosophy_round_trips_through_settings() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let key = crate::keychain::generate_random_key();
+        let db = crate::Db::open(&dir.path().join("phil.sqlcipher"), &key).unwrap();
+        crate::db::run_migrations(&db).unwrap();
+        let conn = db.get().unwrap();
+
+        // Nothing stored yet — defaults.
+        assert_eq!(philosophy(&conn), FinancialPhilosophy::default());
+
+        let chosen = FinancialPhilosophy {
+            debt_strategy: DebtStrategy::Snowball,
+            risk_tolerance: RiskTolerance::Cautious,
+        };
+        set_philosophy(&conn, &chosen).unwrap();
+        assert_eq!(philosophy(&conn), chosen);
+        // And the derived threshold follows.
+        assert_eq!(high_interest_apr_pct(&conn), 5.0);
+    }
+
+    #[test]
+    fn a_corrupt_settings_row_degrades_to_the_default() {
+        // Settings values are JSON; a hand-edited or partially-written row
+        // must not fail a request.
+        let dir = tempfile::TempDir::new().unwrap();
+        let key = crate::keychain::generate_random_key();
+        let db = crate::Db::open(&dir.path().join("phil2.sqlcipher"), &key).unwrap();
+        crate::db::run_migrations(&db).unwrap();
+        let conn = db.get().unwrap();
+
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?1, ?2)",
+            rusqlite::params![KEY_DEBT_STRATEGY, "{not json"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            philosophy(&conn).debt_strategy,
+            FinancialPhilosophy::default().debt_strategy
+        );
+    }
+}

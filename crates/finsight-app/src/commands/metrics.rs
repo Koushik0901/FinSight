@@ -6,7 +6,7 @@ use crate::error::AppResult;
 use crate::AppState;
 
 pub use finsight_api::commands::metrics::{
-    FinancialAssumptionsInput, FinancialMetrics, MemberNetWorth,
+    FinancialAssumptionsInput, FinancialMetrics, FinancialPhilosophyDto, MemberNetWorth,
 };
 
 /// `get_financial_metrics`, optionally scoped to one household member. A `None`
@@ -41,4 +41,21 @@ pub async fn set_financial_assumptions(
     input: FinancialAssumptionsInput,
 ) -> AppResult<()> {
     finsight_api::commands::metrics::set_financial_assumptions(&state.api, input).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_financial_philosophy(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<FinancialPhilosophyDto> {
+    finsight_api::commands::metrics::get_financial_philosophy(&state.api).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_financial_philosophy(
+    state: tauri::State<'_, AppState>,
+    input: FinancialPhilosophyDto,
+) -> AppResult<()> {
+    finsight_api::commands::metrics::set_financial_philosophy(&state.api, input).await
 }

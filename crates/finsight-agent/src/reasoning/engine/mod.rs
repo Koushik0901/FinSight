@@ -653,6 +653,10 @@ fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
         bal.emergency_fund_cents,
         roll.avg_monthly_expense_cents,
     );
+    // The user's stated philosophy rides in the same authoritative block as
+    // the numbers, because it is equally a fact about them — and because this
+    // is the only per-user context the live reasoning loop receives.
+    let phil = finsight_core::metrics::philosophy(conn);
     let m = |c: i64| format!("${:.2}", c as f64 / 100.0);
     format!(
         "CURRENT SNAPSHOT (authoritative, pre-computed from the user's own data — these are the \
@@ -666,7 +670,14 @@ fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
          - Monthly net (income − expenses): {}\n\
          - Savings rate: {}%\n\
          - Emergency fund: {} ({:.1} months of expenses)\n\
-         - Total debt owed: {}",
+         - Total debt owed: {}\n\
+         \n\
+         HOW THIS USER WANTS TO BE ADVISED (their stated preference — follow it \
+         rather than defaulting to one school; if you recommend against it, say \
+         why explicitly):\n\
+         - Debt payoff order: {} ({})\n\
+         - Risk tolerance: {} — treat debt at or above {:.0}% APR as \
+         high-interest and worth prioritising over saving or investing",
         m(bal.liquid_cents),
         m(bal.invested_cents),
         m(roll.avg_monthly_income_cents),
@@ -676,6 +687,10 @@ fn finance_snapshot_block(conn: &mut rusqlite::Connection) -> String {
         m(bal.emergency_fund_cents),
         ef_months,
         m(bal.debt_cents),
+        phil.debt_strategy.as_method(),
+        phil.debt_strategy.rationale(),
+        phil.risk_tolerance.rationale(),
+        phil.risk_tolerance.high_interest_apr_pct(),
     )
 }
 

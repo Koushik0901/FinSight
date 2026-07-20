@@ -123,6 +123,8 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::metrics::get_financial_metrics,
         commands::metrics::household_net_worth_breakdown,
         commands::metrics::set_financial_assumptions,
+        commands::metrics::get_financial_philosophy,
+        commands::metrics::set_financial_philosophy,
         commands::scenarios::run_scenario,
         commands::scenarios::save_scenario,
         commands::scenarios::list_scenario_history,

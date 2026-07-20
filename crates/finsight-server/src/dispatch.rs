@@ -511,6 +511,10 @@ async fn dispatch(
         "set_financial_assumptions" => {
             ok(c::metrics::set_financial_assumptions(api, arg(&p, "input")?).await?)
         }
+        "get_financial_philosophy" => ok(c::metrics::get_financial_philosophy(api).await?),
+        "set_financial_philosophy" => {
+            ok(c::metrics::set_financial_philosophy(api, arg(&p, "input")?).await?)
+        }
 
         // ── onboarding (probe_ollama takes no state — plain HTTP probe) ──
         "get_onboarding_state" => ok(c::onboarding::get_onboarding_state(api).await?),
@@ -954,6 +958,8 @@ pub const SUPPORTED: &[&str] = &[
     "get_financial_metrics",
     "household_net_worth_breakdown",
     "set_financial_assumptions",
+    "get_financial_philosophy",
+    "set_financial_philosophy",
     // onboarding
     "get_onboarding_state",
     "mark_onboarding_complete",

@@ -71,6 +71,8 @@ vi.mock("../api/hooks/settings", () => ({
 vi.mock("../api/hooks/metrics", () => ({
   useFinancialMetrics: vi.fn(() => ({ data: { targetSavingsRatePct: 20, emergencyFundTargetMonths: 6, expectedAnnualReturnPct: 7 } })),
   useSetFinancialAssumptions: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useFinancialPhilosophy: vi.fn(() => ({ data: { debtStrategy: "avalanche", riskTolerance: "balanced", highInterestAprPct: 8 } })),
+  useSetFinancialPhilosophy: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
 vi.mock("../api/hooks/agentMemory", () => ({
   useAgentMemory: vi.fn(() => ({ data: [{ id: "m1", kind: "correction", description: "Amazon is Shopping, not Uncategorized", merchantKey: "amazon", createdAt: "2026-01-01" }] })),

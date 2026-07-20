@@ -636,6 +636,22 @@ async setFinancialAssumptions(input: FinancialAssumptionsInput) : Promise<Result
     else return { status: "error", error: e  as any };
 }
 },
+async getFinancialPhilosophy() : Promise<Result<FinancialPhilosophyDto, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_financial_philosophy") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setFinancialPhilosophy(input: FinancialPhilosophyDto) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_financial_philosophy", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async runScenario(description: string, months: number, params: ScenarioParamsInput | null) : Promise<Result<ScenarioResult, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("run_scenario", { description, months, params }) };
@@ -2130,6 +2146,28 @@ currency: string | null;
  * and the UI must label it as such rather than render a bare number.
  */
 unconvertedHoldings: UnconvertedHolding[] }
+/**
+ * The user's stated philosophy, as the UI reads and writes it.
+ * 
+ * Strings rather than enums on the wire so an older client that sends an
+ * unrecognised value degrades to the default instead of failing the request —
+ * a preference is never worth erroring over.
+ */
+export type FinancialPhilosophyDto = { 
+/**
+ * "avalanche" | "snowball"
+ */
+debtStrategy: string; 
+/**
+ * "cautious" | "balanced" | "aggressive"
+ */
+riskTolerance: string; 
+/**
+ * Derived, read-only: the APR at or above which debt is treated as
+ * high-interest. Surfaced so the Settings screen can show the
+ * consequence of the choice rather than just its name.
+ */
+highInterestAprPct: number }
 export type GoalContributionDto = { id: string; goalId: string; amountCents: number; note: string | null; source: string; createdAt: string }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }

@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type FinancialMetrics, type FinancialAssumptionsInput } from "../client";
+import {
+  commands,
+  type FinancialMetrics,
+  type FinancialAssumptionsInput,
+  type FinancialPhilosophyDto,
+} from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /**
@@ -35,6 +40,44 @@ export function useSetFinancialAssumptions() {
       // Targets feed the metrics response and the compound projector.
       qc.invalidateQueries({ queryKey: ["financial-metrics"] });
       qc.invalidateQueries({ queryKey: ["goal-projection"] });
+    },
+  });
+}
+
+/**
+ * The user's stated financial philosophy — which debt-payoff school they
+ * subscribe to, and where they draw the line between paying debt down and
+ * investing instead.
+ *
+ * These reach the deterministic engines and the Copilot's live prompt, not just
+ * the wording, so changing one changes the advice.
+ */
+export function useFinancialPhilosophy() {
+  return useQuery<FinancialPhilosophyDto>({
+    queryKey: ["financial-philosophy"],
+    queryFn: async () => {
+      const result = await commands.getFinancialPhilosophy();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    staleTime: 60_000,
+    enabled: isBackendAvailable(),
+  });
+}
+
+export function useSetFinancialPhilosophy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: FinancialPhilosophyDto) => {
+      const result = await commands.setFinancialPhilosophy(input);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["financial-philosophy"] });
+      // The philosophy changes debt ranking and the high-interest threshold,
+      // so anything derived from those is now stale.
+      qc.invalidateQueries({ queryKey: ["financial-metrics"] });
+      qc.invalidateQueries({ queryKey: ["inbox"] });
     },
   });
 }
