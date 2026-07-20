@@ -9,6 +9,17 @@ use finsight_core::{metrics, repos::run};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+/// A currency the user holds that these metrics are NOT denominated in.
+/// Reported so the UI can say "also holding US$3,200, not converted" instead of
+/// either inventing an exchange rate or silently omitting real money.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UnconvertedHolding {
+    pub code: String,
+    pub account_count: i64,
+    pub balance_cents: i64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FinancialMetrics {
@@ -42,6 +53,15 @@ pub struct FinancialMetrics {
     pub target_savings_rate_pct: i64,
     pub emergency_fund_target_months: f64,
     pub expected_annual_return_pct: f64,
+    /// The currency every `_cents` field above is denominated in, derived from
+    /// the user's accounts rather than from a display preference — a preference
+    /// goes stale the moment they open an account in another currency. `None`
+    /// only when there are no accounts yet.
+    pub currency: Option<String>,
+    /// Money held in other currencies, never converted and never folded into
+    /// the totals above. Non-empty means every figure here is a partial view,
+    /// and the UI must label it as such rather than render a bare number.
+    pub unconverted_holdings: Vec<UnconvertedHolding>,
 }
 
 pub async fn get_financial_metrics(
@@ -100,6 +120,16 @@ pub async fn get_financial_metrics(
             target_savings_rate_pct: assumptions.target_savings_rate_pct,
             emergency_fund_target_months: assumptions.emergency_fund_target_months,
             expected_annual_return_pct: assumptions.expected_annual_return_pct,
+            currency: balances.currency.clone(),
+            unconverted_holdings: balances
+                .unconverted
+                .iter()
+                .map(|h| UnconvertedHolding {
+                    code: h.code.clone(),
+                    account_count: h.account_count,
+                    balance_cents: h.balance_cents,
+                })
+                .collect(),
         })
     })
     .await

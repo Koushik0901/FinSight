@@ -2091,7 +2091,20 @@ export type FinancialMetrics = { liquidCents: number; investedCents: number; deb
  * Days of history behind the safety basis, so the UI can say WHY a figure
  * is withheld instead of showing a bare dash.
  */
-safetyBasisSpanDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
+safetyBasisSpanDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number; 
+/**
+ * The currency every `_cents` field above is denominated in, derived from
+ * the user's accounts rather than from a display preference — a preference
+ * goes stale the moment they open an account in another currency. `None`
+ * only when there are no accounts yet.
+ */
+currency: string | null; 
+/**
+ * Money held in other currencies, never converted and never folded into
+ * the totals above. Non-empty means every figure here is a partial view,
+ * and the UI must label it as such rather than render a bare number.
+ */
+unconvertedHoldings: UnconvertedHolding[] }
 export type GoalContributionDto = { id: string; goalId: string; amountCents: number; note: string | null; source: string; createdAt: string }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
@@ -2494,6 +2507,12 @@ quantity: number | null;
 unitPrice: number | null }
 export type TxnFilterInput = { accountId: string | null; limit: number | null; offset: number | null; search: string | null; filterPreset: string | null; startDate: string | null; endDate: string | null }
 export type TxnPatch = { notes: string | null; category_id: string | null; amount_cents: number | null; merchant_raw: string | null; ai_confidence: number | null }
+/**
+ * A currency the user holds that these metrics are NOT denominated in.
+ * Reported so the UI can say "also holding US$3,200, not converted" instead of
+ * either inventing an exchange rate or silently omitting real money.
+ */
+export type UnconvertedHolding = { code: string; accountCount: number; balanceCents: number }
 /**
  * One counterparty's undecided transfer-like rows, netted for the grouped
  * review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.

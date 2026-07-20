@@ -6,6 +6,7 @@ import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import NetWorthChart from "../components/NetWorthChart";
 import MemberSwitcher from "../components/MemberSwitcher";
+import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
@@ -136,6 +137,8 @@ export default function Reports() {
           <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
         </div>
       </div>
+
+      <UnconvertedCurrencies holdings={metrics?.unconvertedHoldings} primary={metrics?.currency} />
 
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         <MemberSwitcher value={memberId} onChange={setMemberId} />

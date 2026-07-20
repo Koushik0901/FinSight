@@ -38,10 +38,42 @@ pub struct NetWorthBreakdown {
 }
 
 /// Compute the current net-worth breakdown from live account and manual-asset
-/// data. Uses the exact same inclusion rules as [`record_today`].
+/// data. Uses the exact same inclusion rules as [`record_today`], and is scoped
+/// to the primary currency so the total is never a cross-currency sum.
 pub fn breakdown(conn: &mut Connection) -> CoreResult<NetWorthBreakdown> {
-    let accounts = accounts::list_summaries(conn)?;
-    let assets = manual_assets::list(conn)?;
+    let profile = crate::currency::currency_profile(conn)?;
+    let scope = if profile.is_mixed() {
+        profile.primary()
+    } else {
+        None
+    };
+    breakdown_in_currency(conn, scope)
+}
+
+/// [`breakdown`] with the currency scope supplied by the caller, so a caller
+/// that already resolved the profile does not resolve it twice and — more
+/// importantly — cannot resolve it *differently*. `None` includes every
+/// currency, which is correct only when there is at most one.
+///
+/// Manual assets are scoped alongside accounts: an asset recorded in another
+/// currency is real, but adding it to a total denominated in this one produces
+/// the same meaningless number as mixing the accounts would.
+pub fn breakdown_in_currency(
+    conn: &mut Connection,
+    scope: Option<&str>,
+) -> CoreResult<NetWorthBreakdown> {
+    let in_scope = |raw: &str| match scope {
+        None => true,
+        Some(code) => crate::currency::normalize_code(raw) == code,
+    };
+    let accounts: Vec<_> = accounts::list_summaries(conn)?
+        .into_iter()
+        .filter(|a| in_scope(&a.currency))
+        .collect();
+    let assets: Vec<_> = manual_assets::list(conn)?
+        .into_iter()
+        .filter(|a| in_scope(&a.currency))
+        .collect();
 
     let has_data = !(accounts.is_empty() && assets.is_empty());
 
@@ -198,16 +230,18 @@ pub fn record_today(conn: &mut Connection) -> CoreResult<()> {
         return Ok(());
     }
 
-    // Accounts with no confirmed balance (e.g. CSV-imported history with no
-    // balance field) are excluded rather than silently counted as a real $0 —
-    // mirrors the same exclusion in the frontend's useNetWorth().
-    let accounts_sum: i64 = accounts
-        .iter()
-        .filter(|a| a.balance_known)
-        .map(|a| a.balance_cents)
-        .sum();
-    let assets_sum: i64 = assets.iter().map(|a| a.value_cents).sum();
-    record_snapshot(conn, accounts_sum + assets_sum)
+    // Delegate the arithmetic to `breakdown` rather than re-summing here. The
+    // two used to be parallel implementations of the same rule, which is how
+    // they came to disagree the moment currency scoping was added to one of
+    // them: the trend chart's newest point would have been a cross-currency
+    // sum while the headline beside it was not — visible to the user as a
+    // data-integrity bug. One definition, one place.
+    //
+    // (Snapshots written before scoping existed remain cross-currency sums for
+    // mixed-currency users; they are historical observations, not derived
+    // values, so they are left alone rather than silently rewritten.)
+    let total_cents = breakdown(conn)?.net_worth_cents;
+    record_snapshot(conn, total_cents)
 }
 
 pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorthPoint>> {
@@ -360,6 +394,53 @@ mod tests {
         assert_eq!(hist.len(), 1);
         // 10,000,000 checking + 50,000,000 house + (−30,000,000) mortgage
         assert_eq!(hist[0].total_cents, 30_000_000);
+    }
+
+    /// The trend chart's newest point and the headline net worth beside it are
+    /// computed by different code paths. If only one of them narrowed by
+    /// currency, a mixed-currency user would see the chart disagree with the
+    /// number above it — which reads as corrupted data, not as a caveat.
+    #[test]
+    fn recorded_snapshot_matches_the_scoped_breakdown_for_a_mixed_currency_user() {
+        use crate::models::{NewAccount, NewManualAsset};
+        use crate::repos::{accounts, manual_assets};
+
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let acct = |name: &str, currency: &str, cents: i64| NewAccount {
+            name: name.into(),
+            currency: currency.into(),
+            opening_balance_cents: cents,
+            ..base_account(name, cents, "manual")
+        };
+        // CAD is primary on account count; the USD account is deliberately the
+        // larger balance so a cross-currency sum would be obvious.
+        accounts::insert(&mut conn, acct("CAD Chq", "CAD", 1_000_000)).unwrap();
+        accounts::insert(&mut conn, acct("CAD Sav", "CAD", 500_000)).unwrap();
+        accounts::insert(&mut conn, acct("USD Sav", "USD", 9_000_000)).unwrap();
+        manual_assets::create(
+            &mut conn,
+            NewManualAsset {
+                name: "US property".into(),
+                asset_type: "property".into(),
+                value_cents: 20_000_000,
+                currency: "USD".into(),
+                notes: None,
+            },
+        )
+        .unwrap();
+
+        record_today(&mut conn).unwrap();
+        let hist = list_history(&mut conn, 30).unwrap();
+        let live = breakdown(&mut conn).unwrap().net_worth_cents;
+
+        assert_eq!(
+            hist.last().unwrap().total_cents,
+            live,
+            "snapshot and live headline must agree"
+        );
+        assert_eq!(live, 1_500_000, "CAD only — no USD account or asset folded in");
     }
 
     #[test]

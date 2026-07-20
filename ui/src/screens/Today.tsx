@@ -15,6 +15,7 @@ import { useUncelebratedMilestones } from "../api/hooks/assets";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import NetWorthChart from "../components/NetWorthChart";
 import { CopilotNudge } from "../components/CopilotNudge";
+import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import { money } from "../utils/format";
 import { accountTypeColor } from "../utils/accountColor";
 import * as I from "../components/Icons";
@@ -160,7 +161,10 @@ export default function Today() {
   const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
   const dateLong = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const monthLabel = now.toLocaleString("default", { month: "long" });
-  const primaryCurrency = accounts[0]?.currency ?? "USD";
+  // The currency the metrics are actually denominated in, derived from the
+  // user's accounts. Falling back to the first account in the list — as this
+  // did — labelled household totals with whatever happened to sort first.
+  const primaryCurrency = metrics?.currency ?? accounts[0]?.currency ?? "USD";
   const isLoading = accLoading || totLoading;
 
   if (isLoading) return <div className="stub" aria-live="polite" aria-busy="true"><span className="spinner" aria-hidden="true" /><span style={{ marginTop: 12 }}>Loading…</span></div>;
@@ -245,6 +249,7 @@ export default function Today() {
             {unknownBalanceCount} account{unknownBalanceCount === 1 ? "" : "s"} {unknownBalanceCount === 1 ? "has" : "have"} no balance set — excluded from the totals above. <Link to="/accounts">Set balances →</Link>
           </div>
         )}
+        <UnconvertedCurrencies holdings={metrics?.unconvertedHoldings} primary={metrics?.currency} />
         <div className="today-hero-chart">
           <NetWorthChart points={nwHistory} rangeLabel={RANGES.find((r) => r.key === range)!.label} embed />
         </div>

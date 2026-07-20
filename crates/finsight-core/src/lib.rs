@@ -2,6 +2,7 @@
 
 pub mod anomaly;
 pub mod categorize;
+pub mod currency;
 pub mod db;
 pub mod error;
 pub mod merchant;

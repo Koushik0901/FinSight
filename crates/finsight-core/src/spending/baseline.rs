@@ -33,9 +33,12 @@ pub struct Baseline {
     pub grand_monthly_mad_cents: i64,
     /// Keyed by `canonical_merchant_key`.
     pub per_merchant: HashMap<String, MerchantBaseline>,
-    /// Dominant account currency in the window (v1 analyzes one currency).
+    /// The currency these figures are denominated in — the primary from
+    /// [`crate::currency`], so it agrees with every other aggregate.
     pub currency: String,
-    /// True when more than one currency appeared (drives a caller warning).
+    /// True when the user holds money in other currencies. Those rows are
+    /// EXCLUDED from the totals above (never converted, never mixed in), so
+    /// this flags an incomplete view rather than an unreliable one.
     pub mixed_currency: bool,
 }
 
@@ -94,24 +97,43 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
     let end = format!("{ey:04}-{em:02}-01");
     let rows = load_rows(conn, &start, &end)?;
 
-    // Dominant currency.
+    // Which currency to analyse is decided by `crate::currency`, the same rule
+    // every other aggregate uses. This module used to pick its own "dominant"
+    // currency by spend volume, which could name a DIFFERENT currency than the
+    // metrics layer for the same user — two screens, two answers. Falls back to
+    // dominant-by-spend only when there are no accounts to derive from (rows
+    // can outlive the account that produced them).
+    let profile = crate::currency::currency_profile(conn)?;
     let mut cur_tot: HashMap<String, i64> = HashMap::new();
     for r in &rows {
-        *cur_tot.entry(r.currency.clone()).or_default() += r.net_cents;
+        *cur_tot
+            .entry(crate::currency::normalize_code(&r.currency))
+            .or_default() += r.net_cents;
     }
-    let mixed_currency = cur_tot.len() > 1;
-    let currency = cur_tot
-        .iter()
-        .max_by_key(|(_, v)| **v)
-        .map(|(k, _)| k.clone())
-        .unwrap_or_else(|| "USD".to_string());
+    let currency = profile
+        .primary()
+        .map(str::to_string)
+        .or_else(|| {
+            cur_tot
+                .iter()
+                .max_by_key(|(_, v)| **v)
+                .map(|(k, _)| k.clone())
+        })
+        .unwrap_or_else(|| crate::currency::SCHEMA_DEFAULT_CURRENCY.to_string());
+    // Mixed means "money exists that these totals EXCLUDE", so it must consider
+    // the user's accounts, not only the currencies that happen to appear in
+    // this window's spending.
+    let mixed_currency = profile.is_mixed() || cur_tot.len() > 1;
 
-    // Per (merchant, month) and per-month grand totals — dominant currency only.
+    // Per (merchant, month) and per-month grand totals — primary currency only.
     let mut m_month: HashMap<String, HashMap<String, (i64, i64)>> = HashMap::new(); // key -> ym -> (sum, count)
     let mut m_display: HashMap<String, String> = HashMap::new();
     let mut m_cat: HashMap<String, Option<String>> = HashMap::new();
     let mut grand: HashMap<String, i64> = HashMap::new(); // ym -> sum
-    for r in rows.into_iter().filter(|r| r.currency == currency) {
+    for r in rows
+        .into_iter()
+        .filter(|r| crate::currency::normalize_code(&r.currency) == currency)
+    {
         let e = m_month.entry(r.key.clone()).or_default().entry(r.ym.clone()).or_insert((0, 0));
         e.0 += r.net_cents;
         e.1 += 1;
@@ -194,11 +216,15 @@ pub fn month_total(conn: &Connection, ym: &str) -> CoreResult<i64> {
     let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
     let end = format!("{ny:04}-{nm:02}-01");
     let pred = crate::metrics::non_investment_txn_predicate("t");
+    // Must match `compute`'s scoping exactly: `classify` subtracts this month
+    // total from that baseline, so scoping one and not the other compares a
+    // single-currency band against an all-currency total.
+    let cur = crate::metrics::primary_currency_clause(conn, "t");
     let sql = format!(
         "SELECT COALESCE(SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
                                    WHEN t.amount_cents < 0 THEN -t.amount_cents \
                                    ELSE 0 END), 0) FROM transactions t \
-         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred} \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred}{cur} \
            AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2"
     );
     let total: i64 = conn.query_row(&sql, rusqlite::params![start, end], |r| r.get(0))?;
@@ -225,13 +251,16 @@ pub fn month_category_breakdown(
     let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
     let end = format!("{ny:04}-{nm:02}-01");
     let pred = crate::metrics::non_investment_txn_predicate("t");
+    // Same scope as `month_total` — the doc comment above promises these two
+    // "never diverge", which only holds if they narrow identically.
+    let cur = crate::metrics::primary_currency_clause(conn, "t");
     let sql = format!(
         "SELECT COALESCE(c.label, 'Uncategorized') AS label, \
                 SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
                          WHEN t.amount_cents < 0 THEN -t.amount_cents \
                          ELSE 0 END) AS spent \
          FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
-         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred} \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND {pred}{cur} \
            AND substr(t.posted_at,1,10) >= ?1 AND substr(t.posted_at,1,10) < ?2 \
          GROUP BY label ORDER BY spent DESC LIMIT ?3"
     );
@@ -427,5 +456,91 @@ mod tests {
         let groceries = b.per_merchant.get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB")).unwrap();
         assert_eq!(groceries.monthly_cents, 300_00, "500 expense - 200 settle-up = 300 net spend");
         assert_eq!(b.grand_monthly_median_cents, 300_00);
+    }
+
+    #[test]
+    fn baseline_analyses_the_same_primary_currency_the_metrics_layer_reports() {
+        // Two CAD accounts and one USD, but the USD account carries the larger
+        // spend. The old rule picked the currency with the most SPEND, so this
+        // module would have analysed USD while every other screen reported CAD
+        // — the same user seeing two different "normal" figures.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('cad2','me','B','Checking','Chq','CAD','#fff',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('usd','me','B','Credit','US Card','USD','#fff',datetime('now'))", []).unwrap();
+
+        ins(&conn, "2026-05", -100_00, "CAD MERCHANT");
+        // -90000 cents = $900. Written as a plain SQL integer: Rust's `_` digit
+        // separators are not SQL syntax.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
+             VALUES(hex(randomblob(16)),'usd','2026-05-15T12:00:00Z',-90000,'USD MERCHANT',0,'cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let b = compute(&conn, "2026-05", "2026-06").unwrap();
+        assert_eq!(b.currency, "CAD", "primary comes from accounts, not spend volume");
+        assert!(b.mixed_currency, "the USD holding is flagged");
+        assert_eq!(
+            b.grand_monthly_median_cents, 100_00,
+            "USD spending is excluded, not added to the CAD total"
+        );
+        assert!(
+            b.per_merchant.get(&canonical_merchant_key("USD MERCHANT")).is_none(),
+            "a foreign-currency merchant must not appear in a CAD baseline"
+        );
+    }
+
+    #[test]
+    fn month_total_and_category_rows_narrow_the_same_way_the_baseline_does() {
+        // `classify` subtracts the month total from the baseline band. If one
+        // is currency-scoped and the other is not, a user whose foreign-card
+        // spending lands in the same month gets told their spending "stepped
+        // up" purely because two figures counted different accounts.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('cad2','me','B','Checking','Chq','CAD','#fff',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('usd','me','B','Credit','US Card','USD','#fff',datetime('now'))", []).unwrap();
+        seed_category(&conn, "cat-travel", "Travel");
+
+        ins(&conn, "2026-05", -100_00, "CAD MERCHANT");
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at,category_id) \
+             VALUES(hex(randomblob(16)),'usd','2026-05-15T12:00:00Z',-90000,'USD MERCHANT',0,'cleared',datetime('now'),'cat-travel')",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(
+            month_total(&conn, "2026-05").unwrap(),
+            100_00,
+            "the USD charge is excluded, matching the baseline's scope"
+        );
+        let cats = month_category_breakdown(&conn, "2026-05", 10).unwrap();
+        assert!(
+            !cats.iter().any(|c| c.label == "Travel"),
+            "a USD-only category must not appear in a CAD breakdown: {cats:?}"
+        );
+        assert_eq!(
+            cats.iter().map(|c| c.amount_cents).sum::<i64>(),
+            month_total(&conn, "2026-05").unwrap(),
+            "category rows still reconcile to the month total"
+        );
+    }
+
+    #[test]
+    fn currency_casing_does_not_split_one_currency_into_two() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        conn.execute("UPDATE accounts SET currency = 'usd' WHERE id = 'a'", []).unwrap();
+        ins(&conn, "2026-05", -100_00, "MERCHANT");
+
+        let b = compute(&conn, "2026-05", "2026-06").unwrap();
+        assert_eq!(b.currency, "USD");
+        assert!(!b.mixed_currency, "lowercase 'usd' is not a second currency");
+        assert_eq!(b.grand_monthly_median_cents, 100_00, "the row still counts");
     }
 }

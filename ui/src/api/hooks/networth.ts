@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { commands, type NetWorthPoint } from "../client";
 import { useManualAssets } from "./assets";
 import { useAccounts } from "./accounts";
+import { useCurrencyScope } from "./currencyScope";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /** Net-worth snapshot history for the §3a chart. */
@@ -28,13 +29,18 @@ export function useNetWorthHistory(days: number) {
 export function useNetWorth(): number {
   const { data: accounts = [] } = useAccounts();
   const { data: assets = [] } = useManualAssets();
+  // Never a cross-currency sum: see `useCurrencyScope`.
+  const { inScope } = useCurrencyScope();
+
   // Accounts with no confirmed balance (e.g. CSV-imported history with no
   // balance field) are excluded rather than silently counted as $0 — a
   // fabricated zero would understate or overstate net worth without saying
   // so. Mirrors the same exclusion in net_worth::record_today on the backend.
   const accountCents = accounts
-    .filter((a) => a.balance_known)
+    .filter((a) => a.balance_known && inScope(a.currency))
     .reduce((s, a) => s + a.balance_cents, 0);
-  const assetCents = assets.reduce((s, a) => s + a.valueCents, 0);
+  const assetCents = assets
+    .filter((a) => inScope(a.currency))
+    .reduce((s, a) => s + a.valueCents, 0);
   return accountCents + assetCents;
 }

@@ -80,6 +80,41 @@ pub fn is_liquid_type(t: AccountType) -> bool {
     !is_debt_type(t) && !is_investment_type(t)
 }
 
+// ── Currency scoping ────────────────────────────────────────────────────────
+
+/// SQL fragment (already prefixed with ` AND `, or empty) restricting a flow
+/// query to the primary currency — see [`crate::currency`] for why no aggregate
+/// may span currencies.
+///
+/// Empty for the single-currency case, which is almost everyone: there is
+/// nothing to scope, and appending a subquery every user pays for would be a
+/// cost with no reader.
+///
+/// Transactions have no currency of their own; they inherit their account's.
+/// Scoping therefore happens on `account_id`, which is also why this is
+/// expressible as a predicate at all.
+///
+/// Public so that aggregates which must build their own SQL — a `GROUP BY
+/// month` series, say — narrow by exactly the same rule instead of
+/// re-implementing it and drifting.
+pub fn primary_currency_clause(conn: &Connection, alias: &str) -> String {
+    let Ok(profile) = crate::currency::currency_profile(conn) else {
+        return String::new();
+    };
+    if !profile.is_mixed() {
+        return String::new();
+    }
+    profile
+        .primary()
+        .map(|code| {
+            format!(
+                " AND {}",
+                crate::currency::same_currency_txn_predicate(alias, code)
+            )
+        })
+        .unwrap_or_default()
+}
+
 // ── The one savings-rate formula ────────────────────────────────────────────
 
 /// Savings rate as a signed percentage: `(income - expense) / income * 100`.
@@ -155,13 +190,14 @@ pub struct SafetyExpenseBasis {
 pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis> {
     let rolling = rolling_averages(conn, 90)?;
     let pred = non_investment_txn_predicate("t");
+    let cur = primary_currency_clause(conn, "t");
     let this_month = chrono::Utc::now().format("%Y-%m").to_string();
     let mut stmt = conn.prepare(&format!(
         "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
                           WHEN t.amount_cents < 0 THEN -t.amount_cents \
                           ELSE 0 END) \
          FROM transactions t \
-         WHERE t.is_transfer = 0 AND {pred} AND substr(t.posted_at,1,7) < ?1 \
+         WHERE t.is_transfer = 0 AND {pred}{cur} AND substr(t.posted_at,1,7) < ?1 \
          GROUP BY substr(t.posted_at,1,7) \
          ORDER BY substr(t.posted_at,1,7) DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
     ))?;
@@ -243,9 +279,10 @@ pub fn set_assumptions(conn: &Connection, a: &Assumptions) -> CoreResult<()> {
 // ── Cashflow over a window ──────────────────────────────────────────────────
 
 /// Income and expense (both positive cents) since `start_inclusive`, transfers
-/// and investment-account activity excluded.
+/// and investment-account activity excluded, scoped to the primary currency.
 pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
+    let cur = primary_currency_clause(conn, "t");
     conn.query_row(
         &format!(
             "SELECT
@@ -254,7 +291,7 @@ pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreRes
                                   WHEN amount_cents < 0 THEN -amount_cents
                                   ELSE 0 END), 0)
              FROM transactions t
-             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}"
+             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
         ),
         params![start_inclusive],
         |r| Ok((r.get(0)?, r.get(1)?)),
@@ -263,13 +300,15 @@ pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreRes
 }
 
 /// Income and expense (both positive cents) over `[start_inclusive, end_exclusive)`,
-/// transfers and investment-account activity excluded.
+/// transfers and investment-account activity excluded, scoped to the primary
+/// currency.
 pub fn income_expense_between(
     conn: &Connection,
     start_inclusive: &str,
     end_exclusive: &str,
 ) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
+    let cur = primary_currency_clause(conn, "t");
     conn.query_row(
         &format!(
             "SELECT
@@ -279,7 +318,7 @@ pub fn income_expense_between(
                                   ELSE 0 END), 0)
              FROM transactions t
              WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0 \
-               AND {pred}"
+               AND {pred}{cur}"
         ),
         params![start_inclusive, end_exclusive],
         |r| Ok((r.get(0)?, r.get(1)?)),
@@ -389,11 +428,15 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
 /// months of data."
 fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
+    // Scoped identically to the totals it divides. Counting months of history
+    // from rows the numerator excludes would divide primary-currency spending
+    // by a foreign account's calendar.
+    let cur = primary_currency_clause(conn, "t");
     let (months, earliest): (i64, Option<String>) = conn.query_row(
         &format!(
             "SELECT COUNT(DISTINCT strftime('%Y-%m', t.posted_at)), MIN(t.posted_at) \
              FROM transactions t \
-             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}"
+             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
         ),
         params![cutoff],
         |r| Ok((r.get(0)?, r.get(1)?)),
@@ -442,17 +485,48 @@ pub struct BalanceBreakdown {
     /// Net worth (known account balances with debt as negatives + manual assets).
     pub net_worth_cents: i64,
     pub accounts_with_unknown_balance: i64,
+    /// The currency every `_cents` field above is denominated in. `None` only
+    /// when there are no accounts to derive one from.
+    pub currency: Option<String>,
+    /// Holdings in OTHER currencies: real money the user has, deliberately not
+    /// converted and not added in. Non-empty means the totals above are a
+    /// partial view and must never be presented as a bare whole — see
+    /// [`crate::currency`] for why no rate is invented to close the gap.
+    pub unconverted: Vec<crate::currency::CurrencyHolding>,
+}
+
+/// Whether an account belongs to the currency the aggregate is denominated in.
+/// `None` (no accounts at all, or a single currency) includes everything.
+fn in_scope_currency(account_currency: &str, scope: Option<&str>) -> bool {
+    match scope {
+        None => true,
+        Some(code) => crate::currency::normalize_code(account_currency) == code,
+    }
 }
 
 pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> {
+    let profile = crate::currency::currency_profile(conn)?;
+    // Only narrow when there is something to narrow: for the single-currency
+    // case (almost everyone) scope is None and every account is in scope, so
+    // this path is byte-for-byte the old behaviour.
+    let scope = if profile.is_mixed() {
+        profile.primary()
+    } else {
+        None
+    };
     let summaries = accounts::list_summaries(conn)?;
-    let net_worth_cents = net_worth::breakdown(conn)?.net_worth_cents;
+    let net_worth_cents = net_worth::breakdown_in_currency(conn, scope)?.net_worth_cents;
 
     let mut out = BalanceBreakdown {
         net_worth_cents,
+        currency: profile.primary().map(str::to_string),
+        unconverted: profile.unconverted().to_vec(),
         ..Default::default()
     };
     for a in &summaries {
+        if !in_scope_currency(&a.currency, scope) {
+            continue;
+        }
         if !a.balance_known {
             out.accounts_with_unknown_balance += 1;
             continue;
@@ -579,9 +653,10 @@ fn weighted_income_expense(
              FROM transactions t \
              LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
              WHERE t.posted_at >= ?2 AND t.is_transfer = 0 \
-               AND {pred}{end} \
+               AND {pred}{cur}{end} \
          ) t",
         pred = non_investment_txn_predicate("t"),
+        cur = primary_currency_clause(conn, "t"),
         end = if end_exclusive.is_some() {
             " AND t.posted_at < ?3"
         } else {
@@ -686,6 +761,17 @@ pub fn balance_breakdown_for(
     let Some(member) = member_id else {
         return balance_breakdown(conn);
     };
+    let profile = crate::currency::currency_profile(conn)?;
+    // Currency scoping is a fact about the DATA, not about ownership, so a
+    // member's slice is narrowed to the same primary currency as the household
+    // total and carries the same unconverted list. Otherwise a member's shares
+    // would fail to reconcile against a household figure computed on a
+    // different set of accounts.
+    let scope = if profile.is_mixed() {
+        profile.primary()
+    } else {
+        None
+    };
     let weights = account_weights_for_member(conn, member)?;
     let summaries = accounts::list_summaries(conn)?;
     let (mut liquid, mut invested, mut debt, mut ef, mut net) = (0f64, 0f64, 0f64, 0f64, 0f64);
@@ -694,6 +780,9 @@ pub fn balance_breakdown_for(
         let Some(&weight) = weights.get(&a.id) else {
             continue; // not owned by this member
         };
+        if !in_scope_currency(&a.currency, scope) {
+            continue;
+        }
         if !a.balance_known {
             unknown += 1;
             continue;
@@ -722,6 +811,9 @@ pub fn balance_breakdown_for(
     let asset_weights = asset_weights_for_member(conn, member)?;
     if !asset_weights.is_empty() {
         for asset in crate::repos::manual_assets::list(conn)? {
+            if !in_scope_currency(&asset.currency, scope) {
+                continue;
+            }
             if let Some(&w) = asset_weights.get(&asset.id) {
                 net += asset.value_cents as f64 * w;
             }
@@ -734,6 +826,8 @@ pub fn balance_breakdown_for(
         emergency_fund_cents: ef.round() as i64,
         net_worth_cents: net.round() as i64,
         accounts_with_unknown_balance: unknown,
+        currency: profile.primary().map(str::to_string),
+        unconverted: profile.unconverted().to_vec(),
     })
 }
 
@@ -787,6 +881,22 @@ mod tests {
             limit_cents: None,
             original_balance_cents: None,
             started_at: None,
+        }
+    }
+
+    /// `account()` in a specific currency. The repo's own sample data is
+    /// single-currency and structurally cannot exercise cross-currency
+    /// behaviour, so multi-currency coverage has to be synthesised.
+    fn account_in(
+        name: &str,
+        ty: AccountType,
+        opening: i64,
+        ef_eligible: bool,
+        currency: &str,
+    ) -> NewAccount {
+        NewAccount {
+            currency: currency.into(),
+            ..account(name, ty, opening, ef_eligible)
         }
     }
 
@@ -1499,5 +1609,244 @@ mod tests {
         assert_eq!(runway_days(300_000, 0), forecast::RUNWAY_CAP_DAYS);
         // Empty pocket → 0 regardless of burn.
         assert_eq!(runway_days(0, 100_000), 0);
+    }
+
+    // ── Multi-currency ──────────────────────────────────────────────────────
+    //
+    // A cross-border user is ordinary, not exotic, and their data can arrive on
+    // day one through CSV import. None of the following is reachable with the
+    // repository's single-currency sample data.
+
+    #[test]
+    fn mixed_currency_balances_are_scoped_and_the_rest_reported_unconverted() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        // Two CAD accounts and one USD: CAD is primary on account count.
+        accounts::insert(
+            &mut conn,
+            account_in("CAD Chequing", AccountType::Checking, 400_000, true, "CAD"),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("CAD Savings", AccountType::Savings, 800_000, true, "CAD"),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("USD Savings", AccountType::Savings, 320_000, true, "USD"),
+        )
+        .unwrap();
+
+        let bd = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(bd.currency.as_deref(), Some("CAD"), "most accounts wins");
+        assert_eq!(
+            bd.liquid_cents, 1_200_000,
+            "CAD only — the USD 320,000 must NOT be added in"
+        );
+        assert_eq!(
+            bd.net_worth_cents, 1_200_000,
+            "net worth is scoped identically, not a mixed sum"
+        );
+        assert_eq!(bd.unconverted.len(), 1, "the USD holding is still reported");
+        assert_eq!(bd.unconverted[0].code, "USD");
+        assert_eq!(bd.unconverted[0].balance_cents, 320_000);
+        assert_eq!(bd.unconverted[0].account_count, 1);
+    }
+
+    #[test]
+    fn mixed_currency_cashflow_never_mixes_income_and_expense_across_currencies() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let cad = accounts::insert(
+            &mut conn,
+            account_in("CAD Chequing", AccountType::Checking, 0, true, "CAD"),
+        )
+        .unwrap()
+        .id;
+        let usd = accounts::insert(
+            &mut conn,
+            account_in("USD Chequing", AccountType::Checking, 0, true, "USD"),
+        )
+        .unwrap()
+        .id;
+        // Force CAD primary by account count so the scope is deterministic.
+        accounts::insert(
+            &mut conn,
+            account_in("CAD Savings", AccountType::Savings, 0, true, "CAD"),
+        )
+        .unwrap();
+
+        insert_txn(&mut conn, &cad, 500_000, 10, false); // CAD income
+        insert_txn(&mut conn, &cad, -200_000, 9, false); // CAD expense
+        insert_txn(&mut conn, &usd, 900_000, 8, false); // USD income
+        insert_txn(&mut conn, &usd, -700_000, 7, false); // USD expense
+
+        let start = (Utc::now() - Duration::days(30)).to_rfc3339();
+        let (income, expense) = income_expense_since(&conn, &start).unwrap();
+        assert_eq!(income, 500_000, "USD income is not folded into CAD income");
+        assert_eq!(expense, 200_000, "USD expense is not folded into CAD expense");
+
+        // The savings rate must be computable from the scoped figures alone —
+        // a rate built from CAD income over USD expense is meaningless.
+        let cf = cashflow_since(&conn, &start).unwrap();
+        assert_eq!(cf.savings_rate_pct, savings_rate_pct(500_000, 200_000));
+    }
+
+    #[test]
+    fn single_currency_is_untouched_whatever_the_code() {
+        // The overwhelming majority of users. Scoping must be a no-op here —
+        // including for a non-USD user, whose totals must not be silently
+        // narrowed to nothing by a USD-shaped assumption.
+        for code in ["USD", "CAD", "EUR", "JPY"] {
+            let (_d, db) = fresh_db();
+            let mut conn = db.get().unwrap();
+            // Balances and flows are checked on separate accounts on purpose:
+            // an account carrying transactions has an *unknown* balance (its
+            // seeded opening is not a confirmed balance), which is existing
+            // behaviour unrelated to currency.
+            accounts::insert(
+                &mut conn,
+                account_in("Savings", AccountType::Savings, 250_000, true, code),
+            )
+            .unwrap();
+            let a = accounts::insert(
+                &mut conn,
+                account_in("Chequing", AccountType::Checking, 0, true, code),
+            )
+            .unwrap()
+            .id;
+            insert_txn(&mut conn, &a, 100_000, 5, false);
+            insert_txn(&mut conn, &a, -40_000, 4, false);
+
+            let bd = balance_breakdown(&mut conn).unwrap();
+            assert_eq!(bd.currency.as_deref(), Some(code));
+            assert!(
+                bd.unconverted.is_empty(),
+                "{code}: nothing to caveat when there is one currency"
+            );
+            assert_eq!(bd.liquid_cents, 250_000, "{code}: balance unchanged");
+
+            let start = (Utc::now() - Duration::days(30)).to_rfc3339();
+            let (income, expense) = income_expense_since(&conn, &start).unwrap();
+            assert_eq!((income, expense), (100_000, 40_000), "{code}: flows intact");
+        }
+    }
+
+    #[test]
+    fn currency_codes_differing_only_in_case_or_padding_are_one_currency() {
+        // Import sources are inconsistent about casing and stray whitespace.
+        // Treating " cad" and "CAD" as two currencies would raise a false
+        // mixed-currency caveat and split a user's own money in half.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("A", AccountType::Checking, 100_000, true, "cad"),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("B", AccountType::Savings, 250_000, true, " CAD "),
+        )
+        .unwrap();
+
+        let bd = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(bd.currency.as_deref(), Some("CAD"));
+        assert!(bd.unconverted.is_empty(), "not a mixed-currency user");
+        assert_eq!(bd.liquid_cents, 350_000, "both accounts counted once");
+    }
+
+    #[test]
+    fn archived_foreign_account_does_not_caveat_totals_forever() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("CAD Chequing", AccountType::Checking, 500_000, true, "CAD"),
+        )
+        .unwrap();
+        let old = accounts::insert(
+            &mut conn,
+            account_in("Closed USD", AccountType::Savings, 100_000, true, "USD"),
+        )
+        .unwrap()
+        .id;
+        conn.execute(
+            "UPDATE accounts SET archived_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), old],
+        )
+        .unwrap();
+
+        let bd = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(bd.currency.as_deref(), Some("CAD"));
+        assert!(
+            bd.unconverted.is_empty(),
+            "a closed account must not force a caveat on every future total"
+        );
+        assert_eq!(bd.liquid_cents, 500_000);
+    }
+
+    #[test]
+    fn no_accounts_yields_no_currency_and_no_false_caveat() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let bd = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(bd.currency, None, "nothing to denominate");
+        assert!(bd.unconverted.is_empty());
+        assert_eq!(bd.liquid_cents, 0);
+        assert_eq!(bd.net_worth_cents, 0);
+    }
+
+    #[test]
+    fn an_unfamiliar_currency_code_scopes_balances_and_flows_the_same_way() {
+        // A code we do not recognise must still narrow BOTH halves of the
+        // payload. If balances scoped but flows did not, one shared caveat
+        // would describe two different sets of accounts.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("Odd A", AccountType::Savings, 700_000, true, "GOLD BARS"),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account_in("Odd B", AccountType::Savings, 0, true, "GOLD BARS"),
+        )
+        .unwrap();
+        let usd = accounts::insert(
+            &mut conn,
+            account_in("Normal", AccountType::Checking, 0, true, "USD"),
+        )
+        .unwrap()
+        .id;
+        let odd = accounts::insert(
+            &mut conn,
+            account_in("Odd C", AccountType::Checking, 0, true, "GOLD BARS"),
+        )
+        .unwrap()
+        .id;
+        insert_txn(&mut conn, &odd, 500_000, 10, false);
+        insert_txn(&mut conn, &usd, 900_000, 9, false);
+
+        let bd = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(
+            bd.currency.as_deref(),
+            Some("GOLD BARS"),
+            "most accounts wins regardless of how unusual the code is"
+        );
+        assert_eq!(bd.unconverted.len(), 1, "the USD holding is reported");
+        // Every cent is still accounted for across the two subtotals.
+        let total: i64 =
+            bd.liquid_cents + bd.unconverted.iter().map(|h| h.balance_cents).sum::<i64>();
+        assert_eq!(total, 700_000, "no money went missing");
+
+        let start = (Utc::now() - Duration::days(30)).to_rfc3339();
+        let (income, _) = income_expense_since(&conn, &start).unwrap();
+        assert_eq!(
+            income, 500_000,
+            "flows narrow to the same currency as balances, not left wide"
+        );
     }
 }

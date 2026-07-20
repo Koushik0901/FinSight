@@ -250,6 +250,11 @@ function baseMetrics(o: AnyRec): AnyRec {
     targetSavingsRatePct: 20,
     emergencyFundTargetMonths: 6,
     expectedAnnualReturnPct: 7,
+    // Single-currency is the default because it is the common case; the
+    // `partial` dataset overrides it so the mixed-currency caveat is
+    // designable without needing a real cross-border account.
+    currency: "USD",
+    unconvertedHoldings: [],
     ...o,
   };
 }
@@ -325,6 +330,12 @@ function buildDataset(kind: Kind): Dataset {
         thisMonthSavingsRatePct: 24,
         emergencyFundMonths: 0.6,
         runwayDays: 18,
+        // A cross-border user: the totals above are USD only, and the CAD
+        // holding is real money deliberately left out rather than converted.
+        currency: "USD",
+        unconvertedHoldings: [
+          { code: "CAD", accountCount: 2, balanceCents: 418_000 },
+        ],
       }),
       healthScore: {
         total: 52,

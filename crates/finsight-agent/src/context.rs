@@ -22,6 +22,30 @@ pub struct FinancialContext {
     /// on investment advice is restated where this renders.
     #[serde(default)]
     pub investments: Vec<InvestmentAccountContext>,
+    /// What currency the figures are in, and what money is deliberately missing
+    /// from them.
+    #[serde(default)]
+    pub currency: CurrencyContext,
+}
+
+/// The currency every amount in this context is denominated in, plus holdings
+/// excluded from those amounts because converting them would need an exchange
+/// rate the app does not have and will not invent.
+///
+/// This exists because a number in the prompt WILL be quoted. Without it the
+/// model would present a single-currency subtotal as the user's whole financial
+/// position and be confidently wrong, with nothing in the context to warn it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CurrencyContext {
+    pub primary: Option<String>,
+    pub unconverted: Vec<UnconvertedHoldingContext>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UnconvertedHoldingContext {
+    pub code: String,
+    pub account_count: i64,
+    pub balance_cents: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -172,8 +196,46 @@ pub struct LoanDetailItem {
 
 impl FinancialContext {
     pub fn to_prompt_string(&self) -> String {
-        let mut lines = vec![
-            format!("Generated at: {}", self.generated_at),
+        let mut lines = vec![format!("Generated at: {}", self.generated_at)];
+        // Stated BEFORE any figure, because a number that reaches the model
+        // without its caveat gets quoted as fact.
+        if !self.currency.unconverted.is_empty() {
+            let held = self
+                .currency
+                .unconverted
+                .iter()
+                .map(|h| {
+                    format!(
+                        "{} ({} account{}, {})",
+                        h.code,
+                        h.account_count,
+                        if h.account_count == 1 { "" } else { "s" },
+                        fmt_money(h.balance_cents)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let primary = self
+                .currency
+                .primary
+                .as_deref()
+                .unwrap_or("the primary currency");
+            lines.push(format!(
+                "CURRENCY: this user holds more than one currency. Every amount in \
+                 this context is in {primary}. They ALSO hold {held}, excluded here \
+                 and NOT converted — this app has no exchange rate and will not \
+                 invent one. Never add amounts in different currencies together or \
+                 state a combined total. If asked for an overall figure, give the \
+                 {primary} figure and name the other holdings separately as \
+                 unconverted. Tool results may not all be currency-scoped, so treat \
+                 any total you did not get from this block as possibly spanning \
+                 currencies and say so rather than presenting it as a single \
+                 {primary} figure."
+            ));
+        } else if let Some(code) = self.currency.primary.as_deref() {
+            lines.push(format!("CURRENCY: all amounts are in {code}."));
+        }
+        lines.extend([
             "1. CASHFLOW".to_string(),
             format!(
                 "   - Total balance: {}",
@@ -199,7 +261,7 @@ impl FinancialContext {
                 fmt_money(self.cashflow.this_month_expense_cents)
             ),
             "   - Upcoming bills:".to_string(),
-        ];
+        ]);
         if self.cashflow.upcoming_bills.is_empty() {
             lines.push("     • none".to_string());
         } else {
@@ -516,6 +578,18 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
             .map(|ms| ms.into_iter().map(|m| m.name).collect())
             .unwrap_or_default(),
         investments: investment_context(conn),
+        currency: CurrencyContext {
+            primary: balances.currency.clone(),
+            unconverted: balances
+                .unconverted
+                .iter()
+                .map(|h| UnconvertedHoldingContext {
+                    code: h.code.clone(),
+                    account_count: h.account_count,
+                    balance_cents: h.balance_cents,
+                })
+                .collect(),
+        },
     }
 }
 
@@ -1473,5 +1547,57 @@ mod tests {
         assert!(ctx.cashflow.savings_rate_pct >= 66);
         assert!(ctx.cashflow.runway_days > 0);
         assert_eq!(ctx.transactions.total_count, 6);
+    }
+
+    /// A number that reaches the model without its caveat gets quoted as fact,
+    /// so the mixed-currency warning has to be IN the prompt, not merely in the
+    /// struct. Asserts on the rendered string for that reason.
+    #[test]
+    fn mixed_currency_prompt_warns_the_model_off_a_combined_total() {
+        let mut ctx = FinancialContext {
+            currency: CurrencyContext {
+                primary: Some("CAD".into()),
+                unconverted: vec![UnconvertedHoldingContext {
+                    code: "USD".into(),
+                    account_count: 2,
+                    balance_cents: 320_000,
+                }],
+            },
+            ..Default::default()
+        };
+        let prompt = ctx.to_prompt_string();
+        assert!(prompt.contains("CURRENCY:"), "caveat is present");
+        assert!(prompt.contains("CAD"), "names the currency figures are in");
+        assert!(prompt.contains("USD"), "names the excluded currency");
+        assert!(
+            prompt.contains("2 accounts"),
+            "quantifies what is excluded: {prompt}"
+        );
+        let lower = prompt.to_lowercase();
+        assert!(
+            lower.contains("never add") && lower.contains("together"),
+            "instructs the model not to combine them: {prompt}"
+        );
+        assert!(
+            lower.contains("not converted"),
+            "says the other holdings are unconverted: {prompt}"
+        );
+        assert!(
+            lower.contains("tool results"),
+            "warns that tool output may not be currency-scoped: {prompt}"
+        );
+        // The caveat must precede any figure, or it arrives too late to matter.
+        let caveat_at = prompt.find("CURRENCY:").unwrap();
+        let cashflow_at = prompt.find("1. CASHFLOW").unwrap();
+        assert!(caveat_at < cashflow_at, "caveat comes before the numbers");
+
+        // Single-currency: a plain statement, no warning language.
+        ctx.currency.unconverted.clear();
+        let prompt = ctx.to_prompt_string();
+        assert!(prompt.contains("all amounts are in CAD"));
+        assert!(
+            !prompt.to_lowercase().contains("never add"),
+            "no warning language when there is nothing to warn about: {prompt}"
+        );
     }
 }

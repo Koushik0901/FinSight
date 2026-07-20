@@ -97,7 +97,14 @@ pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResul
         PeriodClass::InsufficientHistory => String::new(),
     };
     if mixed {
-        note.push_str(" Multiple currencies present — totals mix them; treat as approximate.");
+        // The previous wording ("totals mix them; treat as approximate") was
+        // wrong in a way that mattered: the totals do NOT mix currencies —
+        // non-primary rows are filtered out — so it told users to distrust a
+        // number that is exact, while saying nothing about the spending it
+        // silently omits.
+        note.push_str(
+            " Covers your main currency only — spending in other currencies is not included.",
+        );
     }
 
     Ok(PeriodAssessment {

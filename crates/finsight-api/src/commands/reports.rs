@@ -148,10 +148,14 @@ fn category_totals_for_window(
                                     ELSE 0 END)) AS INTEGER) AS total, COUNT(t.id) \
          FROM transactions t{owner_join} \
          LEFT JOIN categories c ON c.id = t.category_id \
-         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
+         WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ?{cur} \
          GROUP BY c.id, c.label, c.color \
          ORDER BY total DESC \
-         LIMIT 10"
+         LIMIT 10",
+        // Same currency scope as the monthly series this sits beside — the
+        // screen renders an "other currencies not included above" caveat over
+        // both, which is only true if both actually exclude them.
+        cur = finsight_core::metrics::primary_currency_clause(conn, "t")
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(cat_binds.iter()), |r| {
@@ -255,10 +259,15 @@ pub async fn get_report_data(
                      WHERE strftime('%Y-%m', t.posted_at) >= ? \
                        AND strftime('%Y-%m', t.posted_at) <= ? \
                        AND t.is_transfer = 0 \
-                       AND {pred} \
+                       AND {pred}{cur} \
                      GROUP BY mo \
                      ORDER BY mo",
-                    pred = finsight_core::metrics::non_investment_txn_predicate("t")
+                    pred = finsight_core::metrics::non_investment_txn_predicate("t"),
+                    // Same currency rule as every metrics aggregate: a month
+                    // total that mixed CAD and USD rows would chart a number
+                    // that means nothing, and the screen sums these into the
+                    // headline income/expense figures.
+                    cur = finsight_core::metrics::primary_currency_clause(conn, "t")
                 );
                 let mut stmt = conn.prepare(&sql)?;
                 // member (if any) is the leading bind, then the date bounds.
@@ -337,10 +346,11 @@ pub async fn get_report_data(
                                             ELSE 0 END)) AS INTEGER) AS total, COUNT(t.id) \
                  FROM transactions t{owner_join} \
                  LEFT JOIN categories c ON c.id = t.category_id \
-                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ? \
+                 WHERE (t.amount_cents < 0 OR t.settle_up = 1) AND t.is_transfer = 0 AND t.posted_at >= ? AND t.posted_at < ?{cur} \
                  GROUP BY t.merchant_raw \
                  ORDER BY total DESC \
-                 LIMIT 10"
+                 LIMIT 10",
+                cur = finsight_core::metrics::primary_currency_clause(conn, "t")
             );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(binds.iter()), |r| {

@@ -8,6 +8,8 @@ import { useSyncAllSimpleFinAccounts } from "../api/hooks/simplefin";
 import { useManualAssets } from "../api/hooks/assets";
 import { useAccountOwners, useHouseholdMembers, useHouseholdNetWorthBreakdown } from "../api/hooks/household";
 import { useNetWorth } from "../api/hooks/networth";
+import { useCurrencyScope } from "../api/hooks/currencyScope";
+import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import type { AccountSummary, ManualAsset } from "../api/client";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
@@ -64,13 +66,20 @@ export default function Accounts() {
   const syncAll = useSyncAllSimpleFinAccounts();
   const netWorth = useNetWorth();
 
-  const knownAccounts = accounts.filter((account) => account.balance_known);
-  const unknownBalanceCount = accounts.length - knownAccounts.length;
+  // Totals are scoped to one currency — adding a USD balance to a CAD one
+  // produces a number that means nothing. Per-account rows below still show
+  // each account in its OWN currency; only the roll-ups are scoped.
+  const { currency: scopeCurrency, unconverted, inScope } = useCurrencyScope();
+  const knownAccounts = accounts.filter(
+    (account) => account.balance_known && inScope(account.currency),
+  );
+  const unknownBalanceCount =
+    accounts.filter((account) => inScope(account.currency)).length - knownAccounts.length;
   // Debt (Credit/Loan accounts) is just an Account with a negative balance —
   // no separate liabilities table anymore.
   const connectedAssets = knownAccounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
   const connectedLiabilities = knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
-  const manualAssetsTotal = assets.reduce((sum, asset) => sum + asset.valueCents, 0);
+  const manualAssetsTotal = assets.filter((asset) => inScope(asset.currency)).reduce((sum, asset) => sum + asset.valueCents, 0);
   const lastSyncLabel = accounts.map((account) => account.last_synced_at).filter(Boolean).sort().slice(-1)[0] ?? null;
   const hasSimpleFin = accounts.some((account) => account.simplefin_account_id);
 
@@ -125,11 +134,12 @@ export default function Accounts() {
       </header>
 
       <div className="stat-row">
-        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets)}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
-        <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal)}</div><div className="sub">{assets.length} tracked manually</div></div>
-        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities)}</div><div className="sub">Debt and payoff accounts</div></div>
-        <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth)}</div><div className="sub">Across every balance</div></div>
+        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: scopeCurrency })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
+        <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: scopeCurrency })}</div><div className="sub">{assets.filter((asset) => inScope(asset.currency)).length} tracked manually</div></div>
+        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities, { currency: scopeCurrency })}</div><div className="sub">Debt and payoff accounts</div></div>
+        <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: scopeCurrency })}</div><div className="sub">Across every balance</div></div>
       </div>
+      <UnconvertedCurrencies holdings={unconverted} primary={scopeCurrency} />
       {unknownBalanceCount > 0 && (
         <div className="muted" style={{ fontSize: 12.5, marginTop: -8, marginBottom: 16 }} role="status">
           {unknownBalanceCount} account{unknownBalanceCount === 1 ? "" : "s"} {unknownBalanceCount === 1 ? "has" : "have"} no balance set yet — totals above exclude {unknownBalanceCount === 1 ? "it" : "them"}.
