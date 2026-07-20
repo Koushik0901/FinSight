@@ -1823,6 +1823,41 @@ export type AgentCategoryRow = { categoryKey: string; amountCents: number; isFix
 export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
 export type AgentChartPoint = { label: string; value: number }
+/**
+ * A question the Copilot must have answered before it can continue.
+ * 
+ * One block covers all three shapes deliberately, so the interaction reads as a
+ * single feature rather than two: `options` empty means free text only; with
+ * options, `multi_select` picks single- vs multi-choice. Free text stays
+ * available either way, so the user is never trapped by an option set that
+ * lacks their answer.
+ */
+export type AgentClarificationBlock = { 
+/**
+ * Correlates an answer back to the question that prompted it.
+ */
+clarificationId: string; question: string; 
+/**
+ * Ignored when `options` is empty.
+ */
+multiSelect: boolean; options: AgentClarificationOption[]; textPlaceholder: string | null }
+/**
+ * One grounded choice in a clarification. Filled by the SERVER from real data
+ * — never by the model, which may only choose the question. A model-invented
+ * option could name an account the user does not have, and clicking it would
+ * produce a confidently wrong answer.
+ */
+export type AgentClarificationOption = { 
+/**
+ * Stable identifier (e.g. an account id) so the answer resolves to a real
+ * entity rather than being re-matched from its label.
+ */
+id: string; label: string; 
+/**
+ * Optional secondary line — a balance, a date, whatever disambiguates two
+ * similarly-named entities.
+ */
+hint: string | null }
 export type AgentComparisonBarsBlock = { title: string; current: AgentMoneyPoint; prior: AgentMoneyPoint }
 export type AgentDriver = { label: string; 
 /**
@@ -1844,7 +1879,7 @@ export type AgentRecatRow = { merchant: string; categoryKey: string; confidence:
 export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock) | ({ kind: "clarification" } & AgentClarificationBlock)
 export type AgentReviewCategory = { label: string; amountCents: number; 
 /**
  * Optional flag: "over" | "fixed" | "lever". None = plain bar.
@@ -2051,7 +2086,12 @@ export type EditConversationMessageInput = { conversationId: string; messageId: 
 export type ExecutionItemResult = { itemId: string; actionKind: string; status: string; summary: string | null; error: string | null }
 export type ExecutionSummary = { bundleId: string; succeeded: number; failed: number; results: ExecutionItemResult[] }
 export type FinancialAssumptionsInput = { targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
-export type FinancialMetrics = { liquidCents: number; investedCents: number; debtCents: number; emergencyFundCents: number; netWorthCents: number; accountsWithUnknownBalance: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; netMonthlyCents: number; rollingSavingsRatePct: number; thisMonthIncomeCents: number; thisMonthExpenseCents: number; thisMonthNetCents: number; thisMonthSavingsRatePct: number; emergencyFundMonths: number; runwayDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
+export type FinancialMetrics = { liquidCents: number; investedCents: number; debtCents: number; emergencyFundCents: number; netWorthCents: number; accountsWithUnknownBalance: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; netMonthlyCents: number; rollingSavingsRatePct: number; thisMonthIncomeCents: number; thisMonthExpenseCents: number; thisMonthNetCents: number; thisMonthSavingsRatePct: number; emergencyFundMonths: number | null; runwayDays: number | null; 
+/**
+ * Days of history behind the safety basis, so the UI can say WHY a figure
+ * is withheld instead of showing a bare dash.
+ */
+safetyBasisSpanDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number }
 export type GoalContributionDto = { id: string; goalId: string; amountCents: number; note: string | null; source: string; createdAt: string }
 export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }

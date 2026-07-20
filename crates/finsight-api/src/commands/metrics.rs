@@ -29,9 +29,15 @@ pub struct FinancialMetrics {
     pub this_month_expense_cents: i64,
     pub this_month_net_cents: i64,
     pub this_month_savings_rate_pct: i64,
-    // Derived.
-    pub emergency_fund_months: f64,
-    pub runway_days: i64,
+    // Derived. `None` means the app declines to state a figure rather than
+    // guessing — too little history, or a member-scoped query where a personal
+    // share of household survival time is not a meaningful quantity. Consumers
+    // must render an explicit "not yet" instead of substituting a number.
+    pub emergency_fund_months: Option<f64>,
+    pub runway_days: Option<i64>,
+    /// Days of history behind the safety basis, so the UI can say WHY a figure
+    /// is withheld instead of showing a bare dash.
+    pub safety_basis_span_days: i64,
     // User-configurable targets (settings-backed, framework defaults).
     pub target_savings_rate_pct: i64,
     pub emergency_fund_target_months: f64,
@@ -49,12 +55,29 @@ pub async fn get_financial_metrics(
         let balances = metrics::balance_breakdown_for(conn, member)?;
         let rolling = metrics::rolling_averages_for(conn, 90, member)?;
         let this_month = metrics::cashflow_since_for(conn, &month_start, member)?;
-        let emergency_fund_months = metrics::emergency_fund_months(
-            balances.emergency_fund_cents,
-            rolling.avg_monthly_expense_cents,
-        );
-        let runway_days =
-            metrics::runway_days(balances.liquid_cents, rolling.avg_monthly_expense_cents);
+        // Safety metrics use the conservative basis, NOT the 90-day mean the
+        // descriptive figures above use: a median or short-window mean hides
+        // annual obligations, and measuring survival time against a number that
+        // excludes your insurance bill overstates how safe you are.
+        //
+        // Household-scoped by definition — nobody survives on their share of a
+        // joint runway — so a member-filtered query withholds rather than
+        // inventing a personal figure. (No screen shows per-member runway.)
+        let safety = metrics::safety_expense_basis(conn)?;
+        let (emergency_fund_months, runway_days) = if member.is_some() || !safety.sufficient {
+            (None, None)
+        } else {
+            (
+                Some(metrics::emergency_fund_months(
+                    balances.emergency_fund_cents,
+                    safety.monthly_expense_cents,
+                )),
+                Some(metrics::runway_days(
+                    balances.liquid_cents,
+                    safety.monthly_expense_cents,
+                )),
+            )
+        };
         let assumptions = metrics::assumptions(conn);
         Ok(FinancialMetrics {
             liquid_cents: balances.liquid_cents,
@@ -73,6 +96,7 @@ pub async fn get_financial_metrics(
             this_month_savings_rate_pct: this_month.savings_rate_pct,
             emergency_fund_months,
             runway_days,
+            safety_basis_span_days: safety.data_span_days,
             target_savings_rate_pct: assumptions.target_savings_rate_pct,
             emergency_fund_target_months: assumptions.emergency_fund_target_months,
             expected_annual_return_pct: assumptions.expected_annual_return_pct,
