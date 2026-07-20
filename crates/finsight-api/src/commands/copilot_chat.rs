@@ -20,7 +20,7 @@ use finsight_agent::{
     planning,
     reasoning::engine::{ReasoningEngine, ReasoningEngineEvent},
 };
-use finsight_core::models::{ConversationMessage, ConversationSummary};
+use finsight_core::models::{ConversationMessage, ConversationSummary, MissingDataItem};
 use finsight_core::repos::{conversations, run};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -136,6 +136,9 @@ pub enum CopilotStreamFrame {
         bundle_id: Option<String>,
         tool_trace: Vec<String>,
         follow_up_questions: Vec<String>,
+        /// Data the answer needed but could not find, each with an optional
+        /// destination where the user can supply it.
+        missing_data: Vec<MissingDataItem>,
         action_label: Option<String>,
         action_path: Option<String>,
         provider_id: String,
@@ -591,10 +594,9 @@ pub async fn stream_copilot_message(
                 })
                 .await
                 .map_err(AppError::from)?;
-                answer.missing_data.push(
-                    "The tool loop answered without the full schema; treat as provisional."
-                        .to_string(),
-                );
+                answer.missing_data.push(MissingDataItem::prose(
+                    "The tool loop answered without the full schema; treat as provisional.",
+                ));
                 validate_finance_answer(&enriched_question, &mut answer);
                 enrich_agent_answer(&mut answer);
                 answer
@@ -876,6 +878,7 @@ pub async fn stream_copilot_message(
         "followUpQuestions": answer.follow_up_questions.clone(),
         "actionLabel": answer.action_label.clone(),
         "actionPath": answer.action_path.clone(),
+        "missingData": answer.missing_data.clone(),
     }))
     .unwrap_or_default();
     let asst_msg = {
@@ -920,6 +923,7 @@ pub async fn stream_copilot_message(
             bundle_id: answer.bundle_id.clone(),
             tool_trace: answer.trace.clone(),
             follow_up_questions: answer.follow_up_questions.clone(),
+            missing_data: answer.missing_data.clone(),
             action_label: answer.action_label.clone(),
             action_path: answer.action_path.clone(),
             provider_id: provider_id.clone(),
@@ -1655,7 +1659,13 @@ fn deterministic_copilot_fallback(
                 "Expenses are treated as negative transaction amounts.".to_string(),
             ],
             data_sources: vec!["Local transactions table".to_string()],
-            missing_data: vec!["No current-month expense rows were found.".to_string()],
+            // Nothing imported this month — send them where transactions
+            // come from rather than just stating the gap.
+            missing_data: vec![MissingDataItem::linked(
+                "No current-month expense rows were found.",
+                "Import transactions",
+                finsight_core::routes::AppRoute::Transactions.path(),
+            )],
             alternatives: Vec::new(),
             follow_up_questions: vec![
                 "Show the largest individual transactions this month.".to_string(),

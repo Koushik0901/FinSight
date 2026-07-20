@@ -11,7 +11,7 @@ use finsight_agent::{
     reasoning::{engine::ReasoningEngine, tools::ToolSet},
     CompletionProvider, ReasoningResult, LOW_CONFIDENCE_THRESHOLD,
 };
-use finsight_core::models::{NewRule, RuleProposal};
+use finsight_core::models::{MissingDataItem, NewRule, RuleProposal};
 use finsight_core::repos::{rule_proposals, rules, run};
 use finsight_core::settings;
 use serde::{Deserialize, Serialize};
@@ -832,7 +832,7 @@ pub struct AgentAnswer {
     pub bundle_id: Option<String>,
     pub assumptions: Vec<String>,
     pub data_sources: Vec<String>,
-    pub missing_data: Vec<String>,
+    pub missing_data: Vec<MissingDataItem>,
     pub alternatives: Vec<AgentScenarioAlternative>,
     pub follow_up_questions: Vec<String>,
     pub response_blocks: Vec<AgentResponseBlock>,
@@ -1163,8 +1163,7 @@ fn mentions_investing(question: &str) -> bool {
 }
 
 pub(crate) fn validate_finance_answer(question: &str, answer: &mut AgentAnswer) {
-    answer.missing_data.sort();
-    answer.missing_data.dedup();
+    MissingDataItem::dedup(&mut answer.missing_data);
     answer.assumptions.sort();
     answer.assumptions.dedup();
     answer.data_sources.sort();
@@ -1259,12 +1258,25 @@ pub(crate) fn planner_answer_to_agent_answer(
         ));
     }
 
-    let mut missing_data = answer.missing_data.clone();
+    let mut missing_data: Vec<MissingDataItem> = answer
+        .missing_data
+        .iter()
+        .cloned()
+        .map(MissingDataItem::from)
+        .collect();
     if answer.verification.severity != planning::VerificationSeverity::Ok {
-        missing_data.extend(answer.verification.findings.clone());
+        // Verification findings are prose about the answer itself, not about a
+        // missing field, so there is nowhere to send the user.
+        missing_data.extend(
+            answer
+                .verification
+                .findings
+                .iter()
+                .cloned()
+                .map(MissingDataItem::from),
+        );
     }
-    missing_data.sort();
-    missing_data.dedup();
+    MissingDataItem::dedup(&mut missing_data);
 
     let mut assumptions = answer.assumptions.clone();
     assumptions.extend(answer.risks.iter().map(|risk| format!("Risk flag: {risk}")));
@@ -1343,6 +1355,9 @@ pub(crate) fn reasoning_result_to_agent_answer(
     bundle_id: Option<String>,
     conn: &mut rusqlite::Connection,
 ) -> AgentAnswer {
+    // Captured before `result` is destructured, so missing-data hydration can
+    // tell whether this answer actually consulted the debt tools.
+    let trace_for_hydration = result.trace.clone();
     let mut data_sources = result.data_sources;
     if data_sources.is_empty() {
         data_sources.extend([
@@ -1388,11 +1403,90 @@ pub(crate) fn reasoning_result_to_agent_answer(
         bundle_id,
         assumptions: result.assumptions,
         data_sources,
-        missing_data: result.missing_data,
+        missing_data: {
+            let mut items: Vec<MissingDataItem> = result
+                .missing_data
+                .into_iter()
+                .map(MissingDataItem::from)
+                .collect();
+            hydrate_missing_data(conn, &trace_for_hydration, &mut items);
+            items
+        },
         alternatives: Vec::new(),
         follow_up_questions: result.follow_up_questions,
         response_blocks,
     }
+}
+
+/// Re-attach destinations to missing-data the model described in prose.
+///
+/// On the deep reasoning path the model authors `missing_data` itself, as
+/// plain strings — its output schema has no place to put a route. So even
+/// though the tool it called (`rank_debt_payoff`) returned fully-linked items,
+/// what reaches the answer is prose, and the user is told their advice is
+/// provisional with no way to unblock it. That is the exact complaint this
+/// feature exists to fix, and without this step it would be fixed only on the
+/// deterministic fallback path.
+///
+/// The gaps are re-derived from the database rather than parsed out of the
+/// model's wording — same principle as `hydrate_response_blocks`: the model
+/// says *what to talk about*, the server says *what is true*.
+///
+/// An exact echo of the deterministic message is upgraded in place. A
+/// paraphrase cannot be matched without guessing, so the authoritative item is
+/// added alongside it; `MissingDataItem::dedup` collapses the overlap when the
+/// wording matches, and a little redundancy is a better failure than a dead
+/// end. Nothing is ever removed — the model may have spotted a gap we cannot
+/// derive.
+///
+/// Adding is gated on the answer actually being about debt, read from the tool
+/// trace. Otherwise "Store Card is missing APR." would be appended to a
+/// question about grocery spending — noise attached to an answer that never
+/// needed the field. An echo is still upgraded whatever the question was,
+/// because the model raising the gap is itself the signal that it is relevant.
+fn hydrate_missing_data(
+    conn: &mut rusqlite::Connection,
+    trace: &[String],
+    items: &mut Vec<MissingDataItem>,
+) {
+    // Nothing to upgrade and nothing that would be relevant to add.
+    if items.is_empty() && !answer_consulted_debts(trace) {
+        return;
+    }
+    // Only debts have a derivable, linkable gap today. `rank_debt_payoff` is
+    // read-only and already scoped to active liabilities.
+    let Ok(ranking) = finsight_agent::finance::rank_debt_payoff(conn, "avalanche") else {
+        // A missing-data prompt is a nicety; never fail an answer over it.
+        return;
+    };
+    let may_add = answer_consulted_debts(trace);
+    for authoritative in ranking.missing_data {
+        match items
+            .iter_mut()
+            .find(|existing| existing.message == authoritative.message)
+        {
+            Some(existing) => *existing = authoritative,
+            None if may_add => items.push(authoritative),
+            None => {}
+        }
+    }
+    MissingDataItem::dedup(items);
+}
+
+/// Whether the tool trace shows this answer actually looked at debts.
+///
+/// The trace lines are free-form ("Called tool: rank_debt_payoff"), so this
+/// matches on the tool names rather than trying to parse them.
+fn answer_consulted_debts(trace: &[String]) -> bool {
+    const DEBT_TOOLS: [&str; 4] = [
+        "rank_debt_payoff",
+        "run_debt_payoff_scenarios",
+        "compare_debt_vs_goal",
+        "get_liabilities",
+    ];
+    trace
+        .iter()
+        .any(|line| DEBT_TOOLS.iter().any(|tool| line.contains(tool)))
 }
 
 /// The ONE place model-requested marquee blocks get their data-bearing fields
@@ -1566,7 +1660,12 @@ fn direct_finance_answer(
         finance::build_snapshot(conn).map_err(|e| AppError::new("agent.finance", e.to_string()))?;
 
     let mut assumptions = Vec::new();
-    let mut missing_data = snapshot.data_warnings.clone();
+    let mut missing_data: Vec<MissingDataItem> = snapshot
+        .data_warnings
+        .iter()
+        .cloned()
+        .map(MissingDataItem::from)
+        .collect();
     let mut follow_up_questions = Vec::new();
     let mut trace = Vec::new();
 
@@ -1599,7 +1698,7 @@ fn direct_finance_answer(
                 .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
             trace.push("Called tool: analyze_cash_inflow".to_string());
             if !advice.missing_data.is_empty() {
-                missing_data.extend(advice.missing_data.clone());
+                missing_data.extend(advice.missing_data.iter().cloned().map(MissingDataItem::from));
             }
             if advice.investing_allowed {
                 assumptions.push("Investing is allowed only after the emergency fund and high-interest debt checks pass.".to_string());
@@ -1703,7 +1802,11 @@ fn direct_finance_answer(
                 .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
             trace.push("Called tool: calculate_goal_eta".to_string());
             if eta.eta_months.is_none() {
-                missing_data.push("Goal ETA is provisional because the contribution is zero or the goal is fully funded.".to_string());
+                missing_data.push(MissingDataItem::linked(
+                    "Goal ETA is provisional because the contribution is zero or the goal is fully funded.",
+                    "Review goal",
+                    finsight_core::routes::AppRoute::Goals.focused(&goal.id),
+                ));
             }
             let reasoning = format!(
                 "{} needs {} remaining. At {} per {}, that is about {} month(s).",
@@ -1771,7 +1874,7 @@ fn direct_finance_answer(
                     .map_err(|e| AppError::new("agent.finance", e.to_string()))?;
             trace.push("Called tool: compare_debt_vs_goal".to_string());
             if !comparison.missing_data.is_empty() {
-                missing_data.extend(comparison.missing_data.clone());
+                missing_data.extend(comparison.missing_data.iter().cloned().map(MissingDataItem::from));
             }
             assumptions.push(format!(
                 "{} current savings is {}.",
@@ -1911,7 +2014,7 @@ fn direct_finance_answer(
                 snapshot.emergency_fund_months
             ));
             if !snapshot.data_warnings.is_empty() {
-                missing_data.extend(snapshot.data_warnings.clone());
+                missing_data.extend(snapshot.data_warnings.iter().cloned().map(MissingDataItem::from));
             }
             Some(AgentAnswer {
                 prose: prose.join(" "),
@@ -2076,9 +2179,9 @@ pub async fn ask_agent(
                 })
                 .await
                 .map_err(AppError::from)?;
-                answer.missing_data.push(
-                    "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.".to_string(),
-                );
+                answer.missing_data.push(MissingDataItem::prose(
+                    "The tool loop answered without the full structured finance schema; treat this broad answer as provisional.",
+                ));
                 validate_finance_answer(&question, &mut answer);
                 enrich_agent_answer(&mut answer);
                 return Ok(answer);
@@ -2294,6 +2397,175 @@ pub async fn ask_agent(
 }
 
 #[cfg(test)]
+mod hydrate_missing_data_tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    /// A debt with no APR and no minimum payment — the case the Copilot
+    /// blocks confident advice on.
+    fn db_with_incomplete_debt() -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("hydrate.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        {
+            let conn = db.get().unwrap();
+            conn.execute(
+                "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,\
+                  liquidity_type,emergency_fund_eligible,account_group,created_at) \
+                 VALUES('card-1','Household','Manual','Credit','Store Card','USD','#F97316',\
+                  'manual','restricted',0,'debt',datetime('now'))",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) \
+                 VALUES('card-1',date('now'),-120000,'manual')",
+                [],
+            )
+            .unwrap();
+        }
+        (dir, db)
+    }
+
+    /// A tool trace showing the answer actually looked at debts.
+    fn debt_trace() -> Vec<String> {
+        vec!["Called tool: rank_debt_payoff".to_string()]
+    }
+
+    #[test]
+    fn an_exact_echo_of_the_deterministic_message_is_upgraded_in_place() {
+        // The model calls the tool, sees its missing-data strings, and echoes
+        // them verbatim into its own prose-only answer. We re-attach the
+        // destination rather than leaving a dead end.
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items = vec![MissingDataItem::prose("Store Card is missing APR.")];
+        hydrate_missing_data(&mut conn, &debt_trace(), &mut items);
+
+        let apr = items
+            .iter()
+            .find(|i| i.message == "Store Card is missing APR.")
+            .expect("the echoed message must survive");
+        assert_eq!(
+            apr.action_path.as_deref(),
+            Some("/accounts?focusAccount=card-1")
+        );
+        // Upgraded, not duplicated.
+        assert_eq!(
+            items
+                .iter()
+                .filter(|i| i.message == "Store Card is missing APR.")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_paraphrase_keeps_its_wording_and_gains_an_actionable_sibling() {
+        // We cannot match a paraphrase without guessing, so the authoritative
+        // item is added alongside. Redundancy beats a dead end.
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items = vec![MissingDataItem::prose(
+            "I don't know the interest rate on your store card.",
+        )];
+        hydrate_missing_data(&mut conn, &debt_trace(), &mut items);
+
+        assert!(
+            items
+                .iter()
+                .any(|i| i.message == "I don't know the interest rate on your store card."),
+            "the model's own wording must never be deleted"
+        );
+        assert!(
+            items.iter().any(|i| i.action_path.is_some()),
+            "an actionable item must be available"
+        );
+    }
+
+    #[test]
+    fn gaps_the_model_did_not_mention_are_surfaced_when_it_consulted_debts() {
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items: Vec<MissingDataItem> = Vec::new();
+        hydrate_missing_data(&mut conn, &debt_trace(), &mut items);
+
+        assert_eq!(items.len(), 2, "APR and minimum payment are both missing");
+        for item in &items {
+            let path = item.action_path.as_deref().expect("must be actionable");
+            assert!(finsight_core::routes::is_known_route(path));
+        }
+    }
+
+    #[test]
+    fn a_user_with_no_debts_gets_no_prompts() {
+        // A brand-new user, or anyone debt-free, must not be nagged.
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("empty.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        let mut conn = db.get().unwrap();
+
+        let mut items: Vec<MissingDataItem> = Vec::new();
+        hydrate_missing_data(&mut conn, &debt_trace(), &mut items);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn an_answer_that_never_looked_at_debts_is_not_given_debt_prompts() {
+        // "How much did I spend on groceries?" must not come back with
+        // "Store Card is missing APR." attached — the answer never needed it.
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items = vec![MissingDataItem::prose("No category on 3 transactions.")];
+        let unrelated = vec!["Called tool: get_top_spending_categories".to_string()];
+        hydrate_missing_data(&mut conn, &unrelated, &mut items);
+
+        assert_eq!(items.len(), 1, "no debt prompt should be injected");
+        assert_eq!(items[0].message, "No category on 3 transactions.");
+    }
+
+    #[test]
+    fn an_echoed_gap_is_upgraded_even_on_an_unrelated_question() {
+        // If the model raised the gap itself, it is relevant by definition —
+        // upgrade it whatever tools were called.
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items = vec![MissingDataItem::prose("Store Card is missing APR.")];
+        let unrelated = vec!["Called tool: get_month_totals".to_string()];
+        hydrate_missing_data(&mut conn, &unrelated, &mut items);
+
+        assert_eq!(items.len(), 1, "nothing extra should be added");
+        assert_eq!(
+            items[0].action_path.as_deref(),
+            Some("/accounts?focusAccount=card-1")
+        );
+    }
+
+    #[test]
+    fn unrelated_model_observations_are_preserved() {
+        // Hydration only ever adds or upgrades; it must not curate the
+        // model's own findings away.
+        let (_dir, db) = db_with_incomplete_debt();
+        let mut conn = db.get().unwrap();
+
+        let mut items = vec![MissingDataItem::prose("No income transactions this month.")];
+        hydrate_missing_data(&mut conn, &debt_trace(), &mut items);
+
+        assert!(items
+            .iter()
+            .any(|i| i.message == "No income transactions this month."));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use finsight_core::{db::run_migrations, keychain, Db};
@@ -2334,7 +2606,8 @@ mod tests {
             .any(|t| t.contains("analyze_cash_inflow")));
         assert!(answer.prose.contains("high-interest debt"));
         assert!(
-            answer.missing_data.is_empty() || answer.missing_data.iter().any(|m| m.contains("APR"))
+            answer.missing_data.is_empty()
+                || answer.missing_data.iter().any(|m| m.message.contains("APR"))
         );
     }
 

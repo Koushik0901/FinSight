@@ -136,6 +136,7 @@ function metaFromDone(payload: Extract<CopilotStreamFrame, { type: "done" }>): M
     bundleId: payload.bundleId ?? undefined,
     toolTrace: payload.toolTrace,
     followUpQuestions: payload.followUpQuestions,
+    missingData: payload.missingData,
     actionLabel: payload.actionLabel ?? undefined,
     actionPath: payload.actionPath ?? undefined,
     providerId: payload.providerId,

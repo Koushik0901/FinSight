@@ -2,7 +2,7 @@
 // All Tauri IPC access in the UI should route through this module so the
 // bindings file remains a generated implementation detail.
 export * from "./bindings";
-import type { AgentResponseBlock } from "./bindings";
+import type { AgentResponseBlock, MissingDataItem } from "./bindings";
 
 // ── Tauri event payload types (emitted by Rust, not auto-generated) ───────────
 
@@ -19,6 +19,7 @@ export type CopilotDonePayload = {
   bundleId: string | null;
   toolTrace: string[];
   followUpQuestions: string[];
+  missingData: MissingDataItem[];
   actionLabel: string | null;
   actionPath: string | null;
 };
@@ -81,6 +82,7 @@ export type CopilotStreamFrame =
       bundleId: string | null;
       toolTrace: string[];
       followUpQuestions: string[];
+      missingData: MissingDataItem[];
       actionLabel: string | null;
       actionPath: string | null;
       providerId: string;

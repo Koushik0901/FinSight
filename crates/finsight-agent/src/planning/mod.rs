@@ -5,6 +5,7 @@ use crate::finance::{
     PurchaseAffordabilityScenario,
 };
 use chrono::{NaiveDate, Utc};
+use finsight_core::models::MissingDataItem;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +45,7 @@ pub struct ToolEvidence {
     pub tool_name: String,
     pub summary: String,
     pub data_sources: Vec<String>,
-    pub missing_data: Vec<String>,
+    pub missing_data: Vec<MissingDataItem>,
     pub numbers_used: Vec<NumberUsed>,
     pub raw_json: serde_json::Value,
 }
@@ -72,7 +73,7 @@ pub struct StructuredFinanceAnswer {
     pub numbers_used: Vec<NumberUsed>,
     pub data_sources: Vec<String>,
     pub assumptions: Vec<String>,
-    pub missing_data: Vec<String>,
+    pub missing_data: Vec<MissingDataItem>,
     pub risks: Vec<String>,
     pub next_actions: Vec<String>,
     pub what_would_change_recommendation: Vec<String>,
@@ -524,7 +525,7 @@ fn build_answer(
                 .collect::<Vec<_>>()
                 .join(" ");
             answer.reasoning = advice.rationale.join(" ");
-            answer.missing_data.extend(advice.missing_data.clone());
+            answer.missing_data.extend(advice.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.assumptions.push(if advice.investing_allowed {
                 "Investing readiness passed the emergency fund and high-interest debt checks."
                     .to_string()
@@ -597,7 +598,7 @@ fn build_answer(
             };
             answer.summary = ordered.join(" ");
             answer.reasoning = format!("{} debts ranked with {}.", ordered.len(), ranking.method);
-            answer.missing_data.extend(ranking.missing_data.clone());
+            answer.missing_data.extend(ranking.missing_data.iter().cloned().map(MissingDataItem::from));
             answer
                 .next_actions
                 .push("Use this order for extra payments after minimums are covered.".to_string());
@@ -627,7 +628,7 @@ fn build_answer(
                 _ => "Payoff timing is provisional because APR or minimum-payment data is missing.".to_string(),
             };
             answer.reasoning = scenarios.assumptions.join(" ");
-            answer.missing_data.extend(scenarios.missing_data.clone());
+            answer.missing_data.extend(scenarios.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.alternatives = vec![
                 FinanceAlternative {
                     name: "Minimum payments only".to_string(),
@@ -684,7 +685,7 @@ fn build_answer(
             }
             answer.summary = summary.join(" ");
             answer.reasoning = comparison.rationale.join(" ");
-            answer.missing_data.extend(comparison.missing_data.clone());
+            answer.missing_data.extend(comparison.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.alternatives = comparison
                 .alternatives
                 .iter()
@@ -742,7 +743,7 @@ fn build_answer(
                 .collect::<Vec<_>>()
                 .join(" ");
             answer.reasoning = scenarios.assumptions.join(" ");
-            answer.missing_data.extend(scenarios.missing_data.clone());
+            answer.missing_data.extend(scenarios.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.next_actions.push(
                 "Review whether the modeled goal priority matches your real preferences."
                     .to_string(),
@@ -771,7 +772,7 @@ fn build_answer(
                 format_cents(scenario.emergency_fund_after_full_contribution_cents)
             );
             answer.reasoning = scenario.assumptions.join(" ");
-            answer.missing_data.extend(scenario.missing_data.clone());
+            answer.missing_data.extend(scenario.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.alternatives = scenario
                 .alternatives
                 .iter()
@@ -837,7 +838,7 @@ fn build_answer(
                     .join(", ")
             );
             answer.reasoning = scenarios.assumptions.join(" ");
-            answer.missing_data.extend(scenarios.missing_data.clone());
+            answer.missing_data.extend(scenarios.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.next_actions.push(
                 "Choose a monthly emergency-fund contribution and rerun the target timeline."
                     .to_string(),
@@ -871,7 +872,7 @@ fn build_answer(
                 .collect::<Vec<_>>()
                 .join(" ");
             answer.reasoning = timeline.assumptions.join(" ");
-            answer.missing_data.extend(timeline.missing_data.clone());
+            answer.missing_data.extend(timeline.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.risks.extend(timeline.low_balance_warnings.clone());
             answer.next_actions.push(
                 "Add exact paycheck cadence and bill due dates for a sharper timeline.".to_string(),
@@ -903,7 +904,7 @@ fn build_answer(
                     .unwrap_or_else(|| "unknown without monthly surplus".to_string())
             );
             answer.reasoning = scenario.assumptions.join(" ");
-            answer.missing_data.extend(scenario.missing_data.clone());
+            answer.missing_data.extend(scenario.missing_data.iter().cloned().map(MissingDataItem::from));
             answer.alternatives = scenario
                 .alternatives
                 .iter()
@@ -957,7 +958,7 @@ fn build_answer(
                 report.uncategorized_expense_count
             );
             answer.reasoning = "Data quality report checks liabilities, transactions, goals, and planned transactions used by planning tools.".to_string();
-            answer.missing_data.extend(report.warnings.clone());
+            answer.missing_data.extend(report.warnings.iter().cloned().map(MissingDataItem::from));
             answer.next_actions.push(
                 "Fill in APRs, minimum payments, and uncategorized expenses first.".to_string(),
             );
@@ -975,7 +976,7 @@ fn build_answer(
                 answer.reasoning =
                     "Snapshot built from accounts, transactions, goals, debts, bills, and planned transactions."
                         .to_string();
-                answer.missing_data.extend(snapshot.data_warnings.clone());
+                answer.missing_data.extend(snapshot.data_warnings.iter().cloned().map(MissingDataItem::from));
             }
         }
         FinanceTaskType::InvestmentReadiness => {
@@ -1019,7 +1020,7 @@ fn build_answer(
                     ));
                 }
                 answer.assumptions.push("No external market data is used; no tickers, ETFs, or market timing are recommended.".to_string());
-                answer.missing_data.extend(snapshot.data_warnings.clone());
+                answer.missing_data.extend(snapshot.data_warnings.iter().cloned().map(MissingDataItem::from));
             }
         }
         FinanceTaskType::Unknown => {}
@@ -1043,8 +1044,7 @@ fn base_answer(plan: &FinancePlan, evidence: &[EvidenceRecord]) -> StructuredFin
         .iter()
         .flat_map(|item| item.evidence.missing_data.clone())
         .collect::<Vec<_>>();
-    missing_data.sort();
-    missing_data.dedup();
+    MissingDataItem::dedup(&mut missing_data);
     let numbers_used = evidence
         .iter()
         .flat_map(|item| item.evidence.numbers_used.clone())
@@ -1130,7 +1130,7 @@ fn blocked_for_missing_inputs(plan: &FinancePlan) -> StructuredFinanceAnswer {
         numbers_used: Vec::new(),
         data_sources: Vec::new(),
         assumptions: Vec::new(),
-        missing_data: plan.missing_inputs.clone(),
+        missing_data: plan.missing_inputs.iter().cloned().map(MissingDataItem::from).collect(),
         risks: plan.risk_flags.clone(),
         next_actions: Vec::new(),
         what_would_change_recommendation: Vec::new(),
@@ -1192,9 +1192,9 @@ fn verify_answer(
 
     let critical_missing = critical_missing_data(plan.task_type, &answer.missing_data);
     for missing in &answer.missing_data {
-        if is_critical_missing_data(missing) {
+        if is_critical_missing_data(&missing.message) {
             severity = severity.max_warning();
-            follow_up.push(missing.clone());
+            follow_up.push(missing.message.clone());
         }
     }
     if !critical_missing.is_empty() {
@@ -1235,7 +1235,7 @@ fn is_critical_missing_data(missing: &str) -> bool {
         || lower.contains("expense") && lower.contains("missing")
 }
 
-fn critical_missing_data(task_type: FinanceTaskType, missing_data: &[String]) -> Vec<String> {
+fn critical_missing_data(task_type: FinanceTaskType, missing_data: &[MissingDataItem]) -> Vec<String> {
     let requires_debt_math = matches!(
         task_type,
         FinanceTaskType::DebtPayoffScenario | FinanceTaskType::DebtVsGoal
@@ -1248,7 +1248,7 @@ fn critical_missing_data(task_type: FinanceTaskType, missing_data: &[String]) ->
     missing_data
         .iter()
         .filter(|item| {
-            let lower = item.to_lowercase();
+            let lower = item.message.to_lowercase();
             (requires_debt_math
                 && (lower.contains("missing apr")
                     || lower.contains("missing minimum payment")
@@ -1258,7 +1258,7 @@ fn critical_missing_data(task_type: FinanceTaskType, missing_data: &[String]) ->
                     && ((lower.contains("income") && lower.contains("missing"))
                         || (lower.contains("expense") && lower.contains("missing"))))
         })
-        .cloned()
+        .map(|item| item.message.clone())
         .collect()
 }
 
@@ -1322,7 +1322,7 @@ fn snapshot_evidence(snapshot: &FinancialSnapshot) -> anyhow::Result<ToolEvidenc
             snapshot.emergency_fund_months
         ),
         data_sources: default_data_sources(),
-        missing_data: snapshot.data_warnings.clone(),
+        missing_data: snapshot.data_warnings.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "liquid balance".to_string(),
@@ -1348,7 +1348,7 @@ fn cash_inflow_evidence(advice: &CashInflowAdvice) -> anyhow::Result<ToolEvidenc
             advice.allocations.len()
         ),
         data_sources: default_data_sources(),
-        missing_data: advice.missing_data.clone(),
+        missing_data: advice.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: advice
             .allocations
             .iter()
@@ -1416,7 +1416,7 @@ fn debt_payoff_scenario_evidence(scenarios: &DebtPayoffScenarios) -> anyhow::Res
             format_cents(scenarios.extra_monthly_payment_cents)
         ),
         data_sources: vec!["Tracked liabilities, APRs, and minimum payments".to_string()],
-        missing_data: scenarios.missing_data.clone(),
+        missing_data: scenarios.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "total debt balance".to_string(),
@@ -1442,7 +1442,7 @@ fn goal_allocation_evidence(scenarios: &GoalAllocationScenarios) -> anyhow::Resu
             scenarios.allocations.len()
         ),
         data_sources: vec!["Active goals".to_string()],
-        missing_data: scenarios.missing_data.clone(),
+        missing_data: scenarios.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: scenarios
             .allocations
             .iter()
@@ -1465,7 +1465,7 @@ fn goal_conflict_evidence(scenario: &GoalConflictScenario) -> anyhow::Result<Too
             format_cents(scenario.upcoming_obligations_cents)
         ),
         data_sources: default_data_sources(),
-        missing_data: scenario.missing_data.clone(),
+        missing_data: scenario.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "requested goal contribution".to_string(),
@@ -1495,7 +1495,7 @@ fn emergency_fund_evidence(scenarios: &EmergencyFundScenarios) -> anyhow::Result
             scenarios.current_months
         ),
         data_sources: default_data_sources(),
-        missing_data: scenarios.missing_data.clone(),
+        missing_data: scenarios.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: scenarios
             .targets
             .iter()
@@ -1518,7 +1518,7 @@ fn cashflow_timeline_evidence(timeline: &CashflowTimeline) -> anyhow::Result<Too
             format_cents(timeline.starting_liquid_cents)
         ),
         data_sources: default_data_sources(),
-        missing_data: timeline.missing_data.clone(),
+        missing_data: timeline.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: timeline
             .months
             .iter()
@@ -1543,7 +1543,7 @@ fn purchase_affordability_evidence(
             scenario.affordable_now
         ),
         data_sources: default_data_sources(),
-        missing_data: scenario.missing_data.clone(),
+        missing_data: scenario.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "purchase amount".to_string(),
@@ -1572,7 +1572,7 @@ fn data_quality_evidence(report: &DataQualityReport) -> anyhow::Result<ToolEvide
             report.warnings.len()
         ),
         data_sources: report.data_sources.clone(),
-        missing_data: report.warnings.clone(),
+        missing_data: report.warnings.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "missing APR count".to_string(),
@@ -1594,7 +1594,7 @@ fn debt_vs_goal_evidence(comparison: &DebtGoalComparison) -> anyhow::Result<Tool
         tool_name: "compare_debt_vs_goal".to_string(),
         summary: comparison.recommendation.clone(),
         data_sources: default_data_sources(),
-        missing_data: comparison.missing_data.clone(),
+        missing_data: comparison.missing_data.iter().cloned().map(MissingDataItem::from).collect(),
         numbers_used: vec![
             NumberUsed {
                 label: "goal current savings".to_string(),

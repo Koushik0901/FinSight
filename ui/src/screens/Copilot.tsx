@@ -524,6 +524,7 @@ function AssistantMessage({
 }) {
   const message = useMessage();
   const timing = useMessageTiming();
+  const navigate = useNavigate();
   const isRunning = message.status?.type === "running";
   const isError = message.status?.type === "incomplete" && message.status.reason === "error";
   const plainText = message.content
@@ -655,6 +656,32 @@ function AssistantMessage({
         {/* Action bundle panel */}
         {!isRunning && !isError && meta?.bundleId && (
           <ActionBundlePanel bundleId={meta.bundleId} />
+        )}
+
+        {/* Missing data — what the answer could not find, and where to add it.
+            The Copilot deliberately withholds confident debt advice when APR
+            or minimum-payment data is absent; without a way to unblock it,
+            that reads as unhelpful rather than careful. */}
+        {!isRunning && !isError && meta?.missingData && meta.missingData.length > 0 && (
+          <div className="cp-missing" data-testid="copilot-missing-data">
+            <span className="cp-missing-lbl">To answer this more precisely</span>
+            <ul className="cp-missing-list">
+              {meta.missingData.map((item, i) => (
+                <li key={i}>
+                  <span>{item.message}</span>
+                  {item.actionLabel && item.actionPath && (
+                    <button
+                      className="cp-missing-cta"
+                      onClick={() => navigate(item.actionPath!)}
+                    >
+                      {item.actionLabel}
+                      <I.ArrowRight width={10} height={10} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Follow-up suggestions */}
