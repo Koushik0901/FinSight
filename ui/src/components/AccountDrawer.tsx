@@ -22,6 +22,7 @@ export type EditableAccount = Pick<
   Account,
   | "id" | "bank" | "name" | "type" | "currency" | "color" | "owner" | "apy_pct" | "nickname"
   | "apr_pct" | "min_payment_cents" | "payoff_date" | "limit_cents" | "original_balance_cents" | "started_at"
+  | "promo_apr_expires_on" | "post_promo_apr_pct"
 > & { last4?: string | null };
 import { userErrorMessage } from "../utils/runtime";
 import { accountTypeColor } from "../utils/accountColor";
@@ -47,6 +48,8 @@ const schema = z.object({
   original_balance_dollars: optionalNumber,
   payoff_date: z.string().optional(),
   started_at: z.string().optional(),
+  promo_apr_expires_on: z.string().optional(),
+  post_promo_apr_pct: optionalNumber,
 });
 
 /// Avatar colors cycled for newly created household members.
@@ -144,6 +147,8 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         original_balance_dollars: account.original_balance_cents != null ? account.original_balance_cents / 100 : undefined,
         payoff_date: account.payoff_date ?? undefined,
         started_at: account.started_at ?? undefined,
+        promo_apr_expires_on: account.promo_apr_expires_on ?? undefined,
+        post_promo_apr_pct: account.post_promo_apr_pct ?? undefined,
       });
       const owners = allOwners.filter((o) => o.accountId === account.id);
       setSelectedOwnerIds(owners.map((o) => o.memberId));
@@ -214,6 +219,8 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
         limit_cents: null,
         original_balance_cents: null,
         started_at: null,
+        promo_apr_expires_on: null,
+        post_promo_apr_pct: null,
       };
     }
     return {
@@ -223,6 +230,11 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
       limit_cents: values.limit_dollars != null && !Number.isNaN(values.limit_dollars) ? Math.round(values.limit_dollars * 100) : null,
       original_balance_cents: values.original_balance_dollars != null && !Number.isNaN(values.original_balance_dollars) ? Math.round(values.original_balance_dollars * 100) : null,
       started_at: values.started_at ? values.started_at : null,
+      promo_apr_expires_on: values.promo_apr_expires_on ? values.promo_apr_expires_on : null,
+      post_promo_apr_pct:
+        values.post_promo_apr_pct != null && !Number.isNaN(values.post_promo_apr_pct)
+          ? values.post_promo_apr_pct
+          : null,
     };
   }
 
@@ -377,6 +389,19 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
             <legend>Debt details <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>(optional)</span></legend>
             <label> APR (%)
               <input type="number" step="0.01" {...register("apr_pct")} />
+              <span className="hint" style={{ fontSize: 12, color: "var(--ink-faint)" }}>
+                The rate you&rsquo;re paying right now, promotional or not.
+              </span>
+            </label>
+            <label> Promotional rate ends
+              <input type="date" {...register("promo_apr_expires_on")} />
+            </label>
+            <label> Rate after the promo (%)
+              <input type="number" step="0.01" {...register("post_promo_apr_pct")} />
+              <span className="hint" style={{ fontSize: 12, color: "var(--ink-faint)" }}>
+                Without this, payoff ranking can&rsquo;t tell what the balance
+                will actually cost once the promo ends.
+              </span>
             </label>
             <label> Minimum payment ($/mo)
               <input type="number" step="0.01" {...register("min_payment_dollars")} />

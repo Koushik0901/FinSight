@@ -41,6 +41,8 @@ async fn build_preview_reports_bounded_outcome_for_amex_sample() {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Amex".into(),
                 r#type: AccountType::Credit,

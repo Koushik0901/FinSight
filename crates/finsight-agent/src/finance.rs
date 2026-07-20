@@ -1,5 +1,5 @@
 use chrono::{Datelike, Duration, Utc};
-use finsight_core::models::MissingDataItem;
+use finsight_core::models::{effective_apr_pct, EffectiveApr, MissingDataItem};
 use finsight_core::routes::AppRoute;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -101,6 +101,11 @@ pub struct SnapshotLiability {
     pub payoff_date: Option<String>,
     pub original_balance_cents: Option<i64>,
     pub started_at: Option<String>,
+    /// ISO date a promotional rate ends. `apr_pct` above is the rate TODAY;
+    /// planning has to reason about the rate that will apply over the payoff
+    /// horizon, which is not the same number.
+    pub promo_apr_expires_on: Option<String>,
+    pub post_promo_apr_pct: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -379,7 +384,12 @@ struct SimDebt {
     id: String,
     name: String,
     balance_cents: f64,
+    /// The rate interest actually accrues at during the run.
     apr_pct: f64,
+    /// The rate this debt is PRIORITISED on — the post-promo rate when one is
+    /// coming. Separate from `apr_pct` because a 0% promo debt accrues nothing
+    /// today while still deserving to be attacked first.
+    ranking_apr_pct: Option<f64>,
     min_payment_cents: i64,
 }
 
@@ -597,6 +607,7 @@ fn outcome_for(
     extra_monthly_payment_cents: i64,
 ) -> Option<StrategyOutcome> {
     let projection = simulate_debt_payoff(debts, order, extra_monthly_payment_cents)?;
+    let horizon = promo_ranking_horizon();
     let mut ordered: Vec<&SnapshotLiability> = debts.iter().collect();
     ordered.sort_by(|a, b| {
         order.compare(
@@ -604,13 +615,13 @@ fn outcome_for(
                 id: &a.id,
                 name: &a.name,
                 balance_cents: a.balance_cents as f64,
-                apr_pct: a.apr_pct,
+                apr_pct: ranking_apr_pct(a, horizon),
             },
             &OrderableDebt {
                 id: &b.id,
                 name: &b.name,
                 balance_cents: b.balance_cents as f64,
-                apr_pct: b.apr_pct,
+                apr_pct: ranking_apr_pct(b, horizon),
             },
         )
     });
@@ -623,6 +634,27 @@ fn outcome_for(
         first_cleared_month: first.map(|c| c.month),
         order: ordered.into_iter().map(|d| d.name.clone()).collect(),
     })
+}
+
+/// The horizon over which a promotional rate is "soon enough to matter".
+fn promo_ranking_horizon() -> chrono::NaiveDate {
+    Utc::now().date_naive() + Duration::days(30 * PROMO_RANKING_HORIZON_MONTHS)
+}
+
+/// The rate a debt should be RANKED on: the one that will govern the payoff,
+/// not necessarily the one showing today.
+///
+/// Every ordering site goes through this. Ranking on today's rate in one place
+/// and the forward-looking rate in another is precisely the drift that makes
+/// the plan the user sees differ from the plan that was costed.
+fn ranking_apr_pct(d: &SnapshotLiability, horizon: chrono::NaiveDate) -> Option<f64> {
+    effective_apr_pct(
+        d.apr_pct,
+        d.promo_apr_expires_on.as_deref(),
+        d.post_promo_apr_pct,
+        horizon,
+    )
+    .pct()
 }
 
 /// Compare two payoff strategies over the user's actual debts.
@@ -1194,6 +1226,12 @@ pub fn calculate_goal_eta(
     })
 }
 
+/// How far ahead a promotional rate change is allowed to reorder the payoff
+/// plan. A promo ending inside a realistic payoff run governs the real cost of
+/// carrying that balance; one ending years out should not disturb today's
+/// ordering.
+const PROMO_RANKING_HORIZON_MONTHS: i64 = 12;
+
 pub fn rank_debt_payoff(
     conn: &mut Connection,
     method: &str,
@@ -1219,34 +1257,90 @@ pub fn rank_debt_payoff(
                 AppRoute::Accounts.focused(&d.id),
             ));
         }
+        // A recorded expiry with no post-promo rate is a KNOWN unknown: the
+        // user told us the rate changes but not to what. Surfacing it as
+        // missing data is the honest move — the alternative is projecting the
+        // promotional rate forever, which understates the debt.
+        if d.promo_apr_expires_on.is_some() && d.post_promo_apr_pct.is_none() {
+            missing_data.push(MissingDataItem::linked(
+                format!(
+                    "{} has a promotional rate ending but no rate it reverts to.",
+                    d.name
+                ),
+                "Add post-promo APR",
+                AppRoute::Accounts.focused(&d.id),
+            ));
+        }
     }
+    // Avalanche ranks on the rate that will GOVERN the payoff, not today's. A
+    // 0% promo expiring in three months is not a 0% debt to plan around, and
+    // ranking it last is exactly the confidently-wrong advice this guards
+    // against. `PROMO_RANKING_HORIZON_MONTHS` bounds "soon enough to matter":
+    // a promo ending well beyond any realistic payoff run should not reorder
+    // today's plan.
+    let today = Utc::now().date_naive();
+    let horizon = promo_ranking_horizon();
+    let ranking_apr = |d: &SnapshotLiability| {
+        effective_apr_pct(
+            d.apr_pct,
+            d.promo_apr_expires_on.as_deref(),
+            d.post_promo_apr_pct,
+            horizon,
+        )
+    };
+    // One comparator for the ranking the user sees and the ordering the
+    // simulator costs, fed the forward-looking rate. A debt whose future rate
+    // we do not know carries `None` and sorts last rather than as 0% —
+    // defaulting it to zero would bury the very debt most worth looking at.
     let order = PayoffOrder::from_method(method);
+    fn orderable<'a>(d: &'a SnapshotLiability, apr_pct: Option<f64>) -> OrderableDebt<'a> {
+        OrderableDebt {
+            id: &d.id,
+            name: &d.name,
+            balance_cents: d.balance_cents as f64,
+            apr_pct,
+        }
+    }
     debts.sort_by(|a, b| {
         order.compare(
-            &OrderableDebt {
-                id: &a.id,
-                name: &a.name,
-                balance_cents: a.balance_cents as f64,
-                apr_pct: a.apr_pct,
-            },
-            &OrderableDebt {
-                id: &b.id,
-                name: &b.name,
-                balance_cents: b.balance_cents as f64,
-                apr_pct: b.apr_pct,
-            },
+            &orderable(a, ranking_apr(a).pct()),
+            &orderable(b, ranking_apr(b).pct()),
         )
     });
     let items = debts
         .into_iter()
         .enumerate()
         .map(|(idx, d)| {
-            let reason = order.reason_for(&OrderableDebt {
-                id: &d.id,
-                name: &d.name,
-                balance_cents: d.balance_cents as f64,
-                apr_pct: d.apr_pct,
-            });
+            let promo_ends_within_horizon = d
+                .promo_apr_expires_on
+                .as_deref()
+                .and_then(|s| chrono::NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok())
+                .is_some_and(|end| end > today && end <= horizon);
+            // A promo expiry explains an order that looks wrong against
+            // today's rate, so it takes precedence over the generic reason —
+            // but only for APR-driven orders. Snowball and an explicit custom
+            // order are not ranking on rate at all, so saying "ranked on 22%"
+            // would be a lie about why the debt is there.
+            let reason = if promo_ends_within_horizon && matches!(order, PayoffOrder::Avalanche) {
+                match ranking_apr(&d) {
+                    EffectiveApr::Known(future) => format!(
+                        "Ranked on {future}% — the promotional rate ends {}, after which this balance starts costing that. Today's rate is {}%.",
+                        d.promo_apr_expires_on.as_deref().unwrap_or("soon"),
+                        d.apr_pct.map(|v| v.to_string()).unwrap_or_else(|| "?".into())
+                    ),
+                    _ => format!(
+                        "The promotional rate ends {} but no post-promotional APR is recorded, so this rank is a guess — add the rate it reverts to.",
+                        d.promo_apr_expires_on.as_deref().unwrap_or("soon")
+                    ),
+                }
+            } else {
+                order.reason_for(&OrderableDebt {
+                    id: &d.id,
+                    name: &d.name,
+                    balance_cents: d.balance_cents as f64,
+                    apr_pct: ranking_apr(&d).pct(),
+                })
+            };
             DebtRankItem {
                 liability_id: d.id,
                 name: d.name,
@@ -2048,6 +2142,7 @@ fn simulate_debt_payoff(
     order: &PayoffOrder,
     extra_monthly_payment_cents: i64,
 ) -> Option<PayoffRun> {
+    let horizon = promo_ranking_horizon();
     let mut sim = debts
         .iter()
         .map(|d| {
@@ -2056,6 +2151,7 @@ fn simulate_debt_payoff(
                 name: d.name.clone(),
                 balance_cents: d.balance_cents as f64,
                 apr_pct: d.apr_pct?,
+                ranking_apr_pct: ranking_apr_pct(d, horizon),
                 min_payment_cents: d.min_payment_cents?,
             })
         })
@@ -2133,13 +2229,13 @@ fn next_debt_index(debts: &[SimDebt], order: &PayoffOrder) -> Option<usize> {
                     id: &a.id,
                     name: &a.name,
                     balance_cents: a.balance_cents,
-                    apr_pct: Some(a.apr_pct),
+                    apr_pct: a.ranking_apr_pct,
                 },
                 &OrderableDebt {
                     id: &b.id,
                     name: &b.name,
                     balance_cents: b.balance_cents,
-                    apr_pct: Some(b.apr_pct),
+                    apr_pct: b.ranking_apr_pct,
                 },
             )
         })
@@ -2388,10 +2484,11 @@ fn goal_by_id(conn: &mut Connection, goal_id: &str) -> rusqlite::Result<Option<S
 /// planning/reasoning logic itself is unchanged, only its data source moved.
 fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, type, balance, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at FROM (
+        "SELECT id, name, type, balance, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at, promo_apr_expires_on, post_promo_apr_pct FROM (
              SELECT a.id, a.name, a.type,
                     -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
-                    a.limit_cents, a.apr_pct, a.min_payment_cents, a.payoff_date, a.original_balance_cents, a.started_at
+                    a.limit_cents, a.apr_pct, a.min_payment_cents, a.payoff_date, a.original_balance_cents, a.started_at,
+                    a.promo_apr_expires_on, a.post_promo_apr_pct
              FROM accounts a
              WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
          ) WHERE balance > 0
@@ -2414,6 +2511,8 @@ fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>
             payoff_date: r.get(7)?,
             original_balance_cents: r.get(8)?,
             started_at: r.get(9)?,
+            promo_apr_expires_on: r.get(10)?,
+            post_promo_apr_pct: r.get(11)?,
         })
     })?;
     rows.collect()
@@ -2648,6 +2747,133 @@ mod tests {
         assert_eq!(snowball.items[0].liability_id, "cc");
     }
 
+    /// Insert a Credit account with a balance, optionally on a promotional
+    /// rate. `owed_cents` is what the user owes (stored as a negative balance).
+    fn insert_card(
+        conn: &mut Connection,
+        id: &str,
+        owed_cents: i64,
+        apr: f64,
+        promo_expiry: Option<&str>,
+        post_promo: Option<f64>,
+    ) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,\
+                emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at,\
+                promo_apr_expires_on,post_promo_apr_pct) \
+             VALUES(?1,'Household','Manual','Credit',?1,'USD','#F97316','manual','restricted',0,'debt',\
+                ?2,5000,datetime('now'),?3,?4)",
+            params![id, apr, promo_expiry, post_promo],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id, as_of_date, balance_cents, source) \
+             VALUES(?1, date('now'), ?2, 'manual')",
+            params![id, -owed_cents],
+        )
+        .unwrap();
+    }
+
+    /// The failure the issue describes: a 0% balance about to become 22.99% is
+    /// not a 0% balance, and ranking it last is confidently-wrong advice.
+    #[test]
+    fn avalanche_ranks_on_the_rate_that_will_apply_not_todays() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let soon = (Utc::now().date_naive() + Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        // On today's rates "steady" (12%) beats "promo" (0%) outright.
+        insert_card(&mut conn, "promo", 500_000, 0.0, Some(&soon), Some(24.99));
+        insert_card(&mut conn, "steady", 500_000, 12.0, None, None);
+
+        let ranked = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        assert_eq!(
+            ranked.items[0].liability_id, "promo",
+            "the expiring promo governs the real cost of carrying this balance"
+        );
+        assert!(
+            ranked.items[0].reason.contains("promotional rate ends"),
+            "and the reordering explains itself: {}",
+            ranked.items[0].reason
+        );
+    }
+
+    #[test]
+    fn a_promo_expiring_beyond_the_horizon_does_not_reorder_todays_plan() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let far = (Utc::now().date_naive() + Duration::days(365 * 4))
+            .format("%Y-%m-%d")
+            .to_string();
+        insert_card(&mut conn, "promo", 500_000, 0.0, Some(&far), Some(24.99));
+        insert_card(&mut conn, "steady", 500_000, 12.0, None, None);
+
+        let ranked = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        assert_eq!(
+            ranked.items[0].liability_id, "steady",
+            "a rate change years out should not disturb today's ordering"
+        );
+    }
+
+    #[test]
+    fn snowball_is_unaffected_by_promotional_rates() {
+        // Snowball is explicitly a behavioural strategy keyed on balance size.
+        // Rate modelling must not leak into it.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let soon = (Utc::now().date_naive() + Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
+        insert_card(&mut conn, "big-promo", 900_000, 0.0, Some(&soon), Some(29.99));
+        insert_card(&mut conn, "small", 100_000, 5.0, None, None);
+
+        let ranked = rank_debt_payoff(&mut conn, "snowball").unwrap();
+        assert_eq!(ranked.items[0].liability_id, "small");
+    }
+
+    #[test]
+    fn a_promo_with_no_recorded_post_rate_is_reported_as_missing_data() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let soon = (Utc::now().date_naive() + Duration::days(45))
+            .format("%Y-%m-%d")
+            .to_string();
+        insert_card(&mut conn, "promo", 500_000, 0.0, Some(&soon), None);
+
+        let ranked = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        let item = ranked
+            .missing_data
+            .iter()
+            .find(|m| m.message.contains("no rate it reverts to"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the user is told what to fill in rather than getting a silent 0%: {:?}",
+                    ranked.missing_data
+                )
+            });
+        // And they are told WHERE, like every other missing-debt-data prompt.
+        assert!(
+            item.action_path
+                .as_deref()
+                .is_some_and(|p| p.contains("focusAccount=promo")),
+            "links to the account that needs the rate: {item:?}"
+        );
+    }
+
+    #[test]
+    fn accounts_without_promos_rank_exactly_as_before() {
+        // Regression guard for every existing debt behaviour.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_card(&mut conn, "high", 300_000, 22.0, None, None);
+        insert_card(&mut conn, "low", 300_000, 4.0, None, None);
+
+        let ranked = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        assert_eq!(ranked.items[0].liability_id, "high");
+        assert!(ranked.items[0].reason.contains("Highest APR first"));
+    }
+
     #[test]
     fn missing_debt_fields_link_to_the_account_that_lacks_them() {
         // The Copilot withholds confident debt advice without APR and minimum
@@ -2740,6 +2966,53 @@ mod tests {
         let snowball = rank_debt_payoff(&mut conn, "snowball").unwrap();
         assert_eq!(avalanche.items[0].liability_id, "big");
         assert_eq!(snowball.items[0].liability_id, "small");
+    }
+
+    #[test]
+    fn strategy_comparison_ranks_on_the_post_promo_rate_too() {
+        // Where the unified comparator meets promotional-APR ranking: a 0%
+        // promo about to expire must not read as a free debt to leave for
+        // last, in the comparison as much as in the ranking.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,promo_apr_expires_on,post_promo_apr_pct,created_at) VALUES('promo','Household','Manual','Credit','Promo Card','USD','#F97316','manual','restricted',0,'debt',0.0,5000,date('now','+2 months'),27.0,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('promo',date('now'),-400000,'manual')", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('plain','Household','Manual','Credit','Plain Card','USD','#F87171','manual','restricted',0,'debt',12.0,5000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('plain',date('now'),-400000,'manual')", []).unwrap();
+
+        let ranking = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        assert_eq!(
+            ranking.items[0].liability_id, "promo",
+            "the debt reverting to 27% should outrank a steady 12% one"
+        );
+        assert!(
+            ranking.items[0].reason.contains("promotional rate ends"),
+            "the reason must explain why it outranks today's higher rate: {}",
+            ranking.items[0].reason
+        );
+
+        // And the comparison simulates the same order it displays.
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 20000).unwrap();
+        assert_eq!(cmp.baseline.order.first().map(String::as_str), Some("Promo Card"));
+    }
+
+    #[test]
+    fn a_custom_order_reason_does_not_claim_a_rate_ranking() {
+        // Snowball and custom orders are not ranking on rate, so a promo
+        // expiry must not produce "ranked on 27%" — that would be a lie about
+        // why the debt is where it is.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,promo_apr_expires_on,post_promo_apr_pct,created_at) VALUES('promo','Household','Manual','Credit','Promo Card','USD','#F97316','manual','restricted',0,'debt',0.0,5000,date('now','+2 months'),27.0,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('promo',date('now'),-400000,'manual')", []).unwrap();
+
+        let ranking = rank_debt_payoff(&mut conn, "snowball").unwrap();
+        assert!(
+            ranking.items[0].reason.contains("Smallest remaining balance"),
+            "snowball must explain itself as snowball: {}",
+            ranking.items[0].reason
+        );
     }
 
     #[test]

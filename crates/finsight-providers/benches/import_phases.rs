@@ -57,6 +57,8 @@ fn seed_amex_account(db: &Db) -> String {
     let account = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Amex".into(),
             r#type: AccountType::Credit,

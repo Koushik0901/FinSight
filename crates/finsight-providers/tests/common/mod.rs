@@ -91,6 +91,8 @@ fn open_with_typed_account(
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "joint".into(),
                 bank: bank.into(),
                 r#type,

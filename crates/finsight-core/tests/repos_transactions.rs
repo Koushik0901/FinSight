@@ -22,6 +22,8 @@ fn insert_and_list_returns_descending_by_posted_at() {
     let acct = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,
@@ -113,6 +115,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
     let a = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "mira".into(),
             bank: "Schwab".into(),
             r#type: AccountType::Checking,
@@ -152,6 +156,8 @@ fn list_filtered_by_account_id_only_returns_that_account_txns() {
     let b = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "adam".into(),
             bank: "Chase".into(),
             r#type: AccountType::Checking,
@@ -249,6 +255,8 @@ fn list_respects_limit() {
     let acct = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,
@@ -324,6 +332,8 @@ fn seed_investment_account(conn: &mut rusqlite::Connection) -> String {
     accounts::insert(
         conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Wealthsimple".into(),
             r#type: AccountType::Investment,

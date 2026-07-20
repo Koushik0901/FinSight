@@ -366,6 +366,8 @@ mod tests {
         accounts::insert(
             conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Household".into(),
                 bank: "Manual".into(),
                 r#type: AccountType::Loan,

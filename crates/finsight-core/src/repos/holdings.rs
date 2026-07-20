@@ -93,6 +93,8 @@ mod tests {
         accounts::insert(
             conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Investment,
@@ -200,6 +202,8 @@ mod tests {
         let acc2 = accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Investment,

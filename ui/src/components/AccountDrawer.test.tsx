@@ -20,7 +20,7 @@ const existingAccount = {
   mask: null, subtype: null, account_group: "cash", available_balance_cents: null,
   balance_date: null, extra_json: null, raw_json: null, import_pending: false,
   apr_pct: null, min_payment_cents: null, payoff_date: null, limit_cents: null,
-  original_balance_cents: null, started_at: null,
+  original_balance_cents: null, started_at: null, promo_apr_expires_on: null, post_promo_apr_pct: null,
 };
 
 describe("AccountDrawer — create mode", () => {
@@ -78,6 +78,30 @@ describe("AccountDrawer — edit mode", () => {
       { wrapper: createWrapper() },
     );
     expect(screen.getByText(/Add an APY so savings projections/i)).toBeInTheDocument();
+  });
+
+  it("shows promotional-rate fields only for debt accounts, pre-filled", () => {
+    // A promo is meaningless on a chequing account; the fieldset it lives in
+    // is debt-only, so the fields must not leak into other account types.
+    render(
+      <AccountDrawer open={true} onClose={() => {}} account={existingAccount} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.queryByLabelText(/promotional rate ends/i)).not.toBeInTheDocument();
+
+    const card = {
+      ...existingAccount,
+      type: "Credit" as const,
+      apr_pct: 0,
+      promo_apr_expires_on: "2026-09-01",
+      post_promo_apr_pct: 22.99,
+    };
+    render(
+      <AccountDrawer open={true} onClose={() => {}} account={card} />,
+      { wrapper: createWrapper() },
+    );
+    expect(screen.getByLabelText(/promotional rate ends/i)).toHaveValue("2026-09-01");
+    expect(screen.getByLabelText(/rate after the promo/i)).toHaveValue(22.99);
   });
 
   it("two-click confirm on archive: first click shows confirm text", async () => {

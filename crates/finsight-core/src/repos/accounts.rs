@@ -14,8 +14,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     conn.execute(
-        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, nickname, apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+        "INSERT INTO accounts (id, owner, bank, type, name, last4, currency, color, source, liquidity_type, emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, nickname, apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at, promo_apr_expires_on, post_promo_apr_pct) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
         params![
             &id,
             &input.owner,
@@ -39,6 +39,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
             &input.limit_cents,
             &input.original_balance_cents,
             &input.started_at,
+            &input.promo_apr_expires_on,
+            &input.post_promo_apr_pct,
         ],
     )?;
 
@@ -93,6 +95,8 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
         limit_cents: input.limit_cents,
         original_balance_cents: input.original_balance_cents,
         started_at: input.started_at,
+        promo_apr_expires_on: input.promo_apr_expires_on,
+        post_promo_apr_pct: input.post_promo_apr_pct,
     })
 }
 
@@ -121,7 +125,8 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
                    WHERE b.account_id = a.id \
                    ORDER BY b.as_of_date DESC, \
                      CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END \
-                   LIMIT 1) AS balance_source \
+                   LIMIT 1) AS balance_source, \
+                a.promo_apr_expires_on, a.post_promo_apr_pct \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
@@ -174,6 +179,10 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
             limit_cents: r.get(32)?,
             original_balance_cents: r.get(33)?,
             started_at: r.get(34)?,
+            // Appended AFTER balance_source (35) so no existing positional
+            // index shifts — this query maps columns by number.
+            promo_apr_expires_on: r.get(36)?,
+            post_promo_apr_pct: r.get(37)?,
         })
     })?;
     let mut out = Vec::new();
@@ -286,6 +295,18 @@ pub fn update(conn: &mut Connection, id: &str, patch: AccountPatch) -> CoreResul
             params![started_at, id],
         )?;
     }
+    if let Some(promo_apr_expires_on) = &patch.promo_apr_expires_on {
+        conn.execute(
+            "UPDATE accounts SET promo_apr_expires_on = ?1 WHERE id = ?2",
+            params![promo_apr_expires_on, id],
+        )?;
+    }
+    if let Some(post_promo_apr_pct) = &patch.post_promo_apr_pct {
+        conn.execute(
+            "UPDATE accounts SET post_promo_apr_pct = ?1 WHERE id = ?2",
+            params![post_promo_apr_pct, id],
+        )?;
+    }
     get_by_id(conn, id)
 }
 
@@ -296,7 +317,8 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
                 simplefin_account_id, last_synced_at, nickname, connection_id, institution_id, \
                 external_account_id, official_name, mask, subtype, account_group, \
                 available_balance_cents, balance_date, extra_json, raw_json, import_pending, \
-                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at \
+                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at, \
+                promo_apr_expires_on, post_promo_apr_pct \
          FROM accounts WHERE id = ?1",
         params![id],
         |r| {
@@ -354,6 +376,8 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
                 limit_cents: r.get(32)?,
                 original_balance_cents: r.get(33)?,
                 started_at: r.get(34)?,
+                promo_apr_expires_on: r.get(35)?,
+                post_promo_apr_pct: r.get(36)?,
             })
         },
     )
@@ -669,7 +693,8 @@ pub fn list_by_connection_id(
                 last_synced_at, nickname, connection_id, institution_id, external_account_id, \
                 official_name, mask, subtype, account_group, available_balance_cents, balance_date, \
                 extra_json, raw_json, import_pending, \
-                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at \
+                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at, \
+                promo_apr_expires_on, post_promo_apr_pct \
          FROM accounts WHERE connection_id = ?1 AND archived_at IS NULL",
     )?;
     let rows = stmt.query_map(params![connection_id], |r| {
@@ -727,6 +752,8 @@ pub fn list_by_connection_id(
             limit_cents: r.get(32)?,
             original_balance_cents: r.get(33)?,
             started_at: r.get(34)?,
+            promo_apr_expires_on: r.get(35)?,
+            post_promo_apr_pct: r.get(36)?,
         })
     })?;
     let mut out = Vec::new();
@@ -781,7 +808,9 @@ pub fn get_by_simplefin_id(
                 emergency_fund_eligible, goal_earmark, apy_pct, created_at, simplefin_account_id, \
                 last_synced_at, nickname, connection_id, institution_id, external_account_id, \
                 official_name, mask, subtype, account_group, available_balance_cents, balance_date, \
-                extra_json, raw_json, import_pending \
+                extra_json, raw_json, import_pending, \
+                apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at, \
+                promo_apr_expires_on, post_promo_apr_pct \
          FROM accounts WHERE simplefin_account_id = ?1 AND archived_at IS NULL",
     )?;
     let mut rows = stmt.query_map(params![simplefin_id], |r| {
@@ -839,6 +868,8 @@ pub fn get_by_simplefin_id(
             limit_cents: r.get(32)?,
             original_balance_cents: r.get(33)?,
             started_at: r.get(34)?,
+            promo_apr_expires_on: r.get(35)?,
+            post_promo_apr_pct: r.get(36)?,
         })
     })?;
     Ok(rows.next().transpose()?)
@@ -1215,6 +1246,8 @@ mod tests {
         insert(
             conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type,
@@ -1415,6 +1448,8 @@ mod tests {
         let b = insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Savings,

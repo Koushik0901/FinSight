@@ -20,6 +20,8 @@ fn insert_then_list_summaries_returns_one() {
     accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,
@@ -78,6 +80,8 @@ fn list_summaries_excludes_archived_accounts() {
     let live = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,
@@ -117,6 +121,8 @@ fn list_summaries_excludes_archived_accounts() {
     let archived = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,

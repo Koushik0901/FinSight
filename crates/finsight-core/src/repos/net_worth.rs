@@ -299,6 +299,8 @@ mod tests {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Checking,
@@ -351,6 +353,8 @@ mod tests {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "me".into(),
                 bank: "Manual".into(),
                 r#type: AccountType::Loan,
@@ -529,6 +533,8 @@ mod tests {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 r#type: AccountType::Credit,
                 opening_balance_cents: -120_000,
                 account_group: "debt".into(),
@@ -570,6 +576,8 @@ mod tests {
     ) -> crate::models::NewAccount {
         use crate::models::{AccountType, NewAccount};
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "me".into(),
             bank: "Bank".into(),
             r#type: AccountType::Checking,
@@ -617,6 +625,8 @@ mod tests {
         let acct = accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Checking,

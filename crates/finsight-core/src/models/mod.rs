@@ -21,8 +21,9 @@ mod transaction;
 mod transfer;
 
 pub use account::{
-    Account, AccountBalancePoint, AccountBalanceTimeline, AccountPatch, AccountSparkline,
-    AccountSummary, AccountType, BalanceAnchorQuality, NewAccount,
+    effective_apr_pct, promo_expiry_warning, Account, AccountBalancePoint, AccountBalanceTimeline,
+    AccountPatch, AccountSparkline, AccountSummary, AccountType, BalanceAnchorQuality,
+    EffectiveApr, NewAccount, PromoExpiryWarning,
 };
 pub use agent_memory::AgentMemory;
 pub use alert::SimpleFinAlert;

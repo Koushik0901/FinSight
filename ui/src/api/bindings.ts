@@ -1731,7 +1731,20 @@ export type Account = { id: string; owner: string; bank: string; type: AccountTy
  * liability-tracking model: a debt is just an account with a negative
  * balance and these optional details, not a separate entity.
  */
-apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
+apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; 
+/**
+ * ISO date a promotional rate ends. `None` means `apr_pct` is permanent.
+ * See [`effective_apr_pct`] — `apr_pct` always means "the rate right now",
+ * which is why adding a promo needs no rewrite of existing data.
+ */
+promo_apr_expires_on: string | null; 
+/**
+ * The rate that takes over once the promo ends. `None` alongside a set
+ * expiry means the user recorded that the rate WILL change but not to
+ * what — a real state that must be surfaced as unknown, never silently
+ * projected as 0%.
+ */
+post_promo_apr_pct: number | null }
 export type AccountBalancePoint = { date: string; balanceCents: number }
 /**
  * A reconstructed balance curve for one account, derived from its opening
@@ -1773,7 +1786,7 @@ skipReason: string | null }
  * net-worth attribution in one query. `share_bps` None = equal split.
  */
 export type AccountOwner = { accountId: string; memberId: string; shareBps: number | null }
-export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
+export type AccountPatch = { name: string | null; bank: string | null; account_type: AccountType | null; color: string | null; last4: string | null; currency: string | null; liquidity_type: string | null; emergency_fund_eligible: boolean | null; goal_earmark: string | null; apy_pct: number | null; nickname: string | null; official_name: string | null; subtype: string | null; account_group: string | null; import_pending: boolean | null; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; promo_apr_expires_on: string | null; post_promo_apr_pct: number | null }
 export type AccountSparkline = { accountId: string; points: AccountBalancePoint[] }
 export type AccountSummary = { id: string; owner: string; bank: string; type: AccountType; name: string; balance_cents: number; 
 /**
@@ -1789,7 +1802,7 @@ balance_known?: boolean;
  * opening + activity), or `seed` (untouched opening). Lets the UI show the
  * balance's basis — "synced", "estimated from your transactions", etc.
  */
-balance_source?: string | null; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
+balance_source?: string | null; currency: string; color: string; source: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; last_synced_at: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; promo_apr_expires_on: string | null; post_promo_apr_pct: number | null }
 export type AccountSyncResult = { accountId: string; added: number; updated: number; skipped: number; queuedForReview: number; error: string | null }
 export type AccountType = "Checking" | "Savings" | "Credit" | "Investment" | "Cash" | "Loan" | "Other"
 /**
@@ -1801,7 +1814,7 @@ export type ActionItem = {
  */
 id: string; 
 /**
- * "review" | "bills" | "budget" | "goals" | "savings"
+ * "review" | "bills" | "budget" | "goals" | "savings" | "debt"
  */
 category: string; 
 /**
@@ -2362,7 +2375,7 @@ export type MonthlyActual = { month: string; label: string; spentCents: number; 
 export type MonthlyReview = { id: string; year: number; month: number; monthLabel: string; notes: string | null; snapshot: MonthlyReviewSnapshot; createdAt: string }
 export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
-export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group?: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending?: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null }
+export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group?: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending?: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; promo_apr_expires_on?: string | null; post_promo_apr_pct?: number | null }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; accountId: string | null }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewPlannedTransaction = { description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; source: string }

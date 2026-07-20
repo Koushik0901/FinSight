@@ -77,6 +77,8 @@ pub fn walking_skeleton(db: &Db) -> CoreResult<()> {
     let acct = accounts::insert(
         &mut conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "joint".into(),
             bank: "Mercury".into(),
             r#type: AccountType::Checking,
