@@ -503,7 +503,10 @@ impl ReasoningEngine {
         }
     }
 
-    fn build_system_prompt(tools: &ToolSet) -> String {
+    /// `pub(crate)` so tests can assert the prompt and the validators agree —
+    /// a prompt that names a tool which does not exist, or shows an example
+    /// shape the backend rejects, fails silently on every single call.
+    pub(crate) fn build_system_prompt(tools: &ToolSet) -> String {
         let tool_defs = tools.definitions();
         let tool_list: String = tool_defs
             .iter()

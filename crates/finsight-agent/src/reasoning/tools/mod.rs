@@ -68,6 +68,11 @@ impl ToolSet {
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
+    /// The registered tool by name, if any. Lets callers inspect a tool's
+    /// schema without going through `execute`.
+    pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
+        self.tools.get(name)
+    }
     pub fn definitions(&self) -> Vec<ToolDefinition> {
         self.tools
             .values()
@@ -352,5 +357,154 @@ mod format_tests {
         // Non-cents fields are untouched; raw cents remain for any consumer.
         assert_eq!(v["note"], "hi");
         assert_eq!(v["net_worth_cents"], -220000);
+    }
+}
+
+/// The prompt tells the model exactly what to send. The validators decide what
+/// is accepted. Nothing checks that those two agree — and when they disagree
+/// the failure is invisible: `validate_tool_arguments` rejects an unknown
+/// argument on every single call, and `parse_response_blocks` silently drops a
+/// block that does not validate. The user just sees a Copilot that never uses
+/// a feature.
+///
+/// Unit tests prove each engine computes correctly; a live eval proves the
+/// model chooses to call it. This is the layer in between, and it is the one
+/// that can be checked deterministically without a model.
+#[cfg(test)]
+mod prompt_contract_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Every argument shape the prompt instructs the model to send must be
+    /// accepted by the tool's own schema.
+    fn assert_args_accepted(tool_name: &str, args: serde_json::Value) {
+        let tools = standard_toolset();
+        let tool = tools
+            .get(tool_name)
+            .unwrap_or_else(|| panic!("{tool_name} is not registered in standard_toolset()"));
+        if let Err(e) = validate_tool_arguments(tool_name, &tool.parameters(), &args) {
+            panic!(
+                "the prompt tells the model to call {tool_name} with {args}, but its schema \
+                 rejects that: {} ({})",
+                e.message, e.code
+            );
+        }
+    }
+
+    #[test]
+    fn debt_comparison_accepts_the_arguments_the_prompt_describes() {
+        // "pass those account ids as custom_order"
+        assert_args_accepted(
+            "compare_payoff_strategies",
+            json!({
+                "baseline_method": "avalanche",
+                "alternative_method": "snowball",
+                "custom_order": ["acct-1", "acct-2"],
+                "extra_monthly_payment_cents": 20000
+            }),
+        );
+        // And the minimal form, since every field is optional.
+        assert_args_accepted("compare_payoff_strategies", json!({}));
+    }
+
+    #[test]
+    fn counterparty_lookup_accepts_a_name_or_nothing() {
+        assert_args_accepted("get_counterparty_position", json!({"name": "Alex"}));
+        assert_args_accepted("get_counterparty_position", json!({}));
+    }
+
+    #[test]
+    fn sinking_fund_planner_takes_no_arguments() {
+        assert_args_accepted("plan_sinking_funds", json!({}));
+    }
+
+    #[test]
+    fn recategorization_accepts_the_assignment_shape_the_prompt_describes() {
+        // "one assignment per transaction (transaction_id + a category_id
+        // chosen from available_categories + a confidence)"
+        assert_args_accepted(
+            "draft_recategorization",
+            json!({"assignments": [{
+                "transaction_id": "t-1",
+                "category_id": "c-1",
+                "confidence": 0.9
+            }]}),
+        );
+    }
+
+    /// Pull a `{...}` JSON object out of prose by matching braces from a
+    /// starting marker. The prompt embeds its examples inline, so this reads
+    /// the real thing rather than a copy that can drift.
+    fn extract_json_object(haystack: &str, start_marker: &str) -> String {
+        let start = haystack
+            .find(start_marker)
+            .unwrap_or_else(|| panic!("prompt no longer contains {start_marker}"));
+        let bytes = haystack.as_bytes();
+        let mut depth = 0usize;
+        for (i, b) in bytes.iter().enumerate().skip(start) {
+            match b {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return haystack[start..=i].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {start_marker}");
+    }
+
+    #[test]
+    fn every_tool_the_prompt_names_is_actually_registered() {
+        // A prompt naming a tool that does not exist produces a model that
+        // tries to call it and gets an error it cannot recover from.
+        let tools = standard_toolset();
+        let prompt = crate::reasoning::engine::ReasoningEngine::build_system_prompt(&tools);
+        for name in [
+            "compare_payoff_strategies",
+            "get_counterparty_position",
+            "plan_sinking_funds",
+            "draft_recategorization",
+            "list_uncategorized_transactions",
+            "rank_debt_payoff",
+        ] {
+            assert!(
+                prompt.contains(name),
+                "{name} is registered but the prompt never tells the model it exists"
+            );
+            assert!(
+                tools.get(name).is_some(),
+                "the prompt names {name} but it is not registered"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clarification_example_in_the_prompt_is_one_the_backend_accepts() {
+        // The model copies this shape. If the validator rejects it, every
+        // clarification is dropped on the floor and the feature silently never
+        // appears.
+        let tools = standard_toolset();
+        let prompt = crate::reasoning::engine::ReasoningEngine::build_system_prompt(&tools);
+        // The prompt names the block twice: a bare `{"kind":"clarification"}`
+        // in the rule text, and the full shape in the supported-blocks list.
+        // Target the latter — the shorthand carries no fields to check.
+        let raw = extract_json_object(&prompt, "{\"kind\":\"clarification\",\"clarificationId\"");
+        let parsed: serde_json::Value = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("the prompt's clarification example is not valid JSON: {e}\n{raw}"));
+
+        // The fields the server depends on must be present in the example.
+        assert_eq!(parsed["kind"], "clarification");
+        assert!(
+            parsed["options"].as_array().is_some_and(|o| o.is_empty()),
+            "the example must show an EMPTY options array — the server grounds them, and an \
+             example with options invites the model to invent its own"
+        );
+        assert!(
+            parsed.get("referenceType").and_then(|v| v.as_str()).is_some(),
+            "the example must set referenceType or the server has nothing to ground against"
+        );
     }
 }
