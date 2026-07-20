@@ -220,6 +220,11 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       )
       .max(MAX_CLARIFICATION_OPTIONS),
     textPlaceholder: shortString.nullable(),
+    // What the question is about, so the server knows what to enumerate.
+    // Nullable because an unknown or absent type grounds to nothing and the
+    // block falls back to free text — a degraded question still beats a
+    // fabricated option list.
+    referenceType: shortString.nullish(),
   }),
 ]);
 

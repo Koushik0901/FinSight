@@ -1877,7 +1877,19 @@ clarificationId: string; question: string;
 /**
  * Ignored when `options` is empty.
  */
-multiSelect: boolean; options: AgentClarificationOption[]; textPlaceholder: string | null }
+multiSelect: boolean; options: AgentClarificationOption[]; textPlaceholder: string | null; 
+/**
+ * What kind of thing the question is about — the model names it so the
+ * server knows what to enumerate. `"account"` today; unknown or absent
+ * values ground to nothing and the block degrades to its free-text mode,
+ * which is why this is optional rather than an enum.
+ * 
+ * The model naming the type is deliberate. Inferring it by pattern-
+ * matching the question text would be a heuristic keyed on the wrong
+ * signal — the same shape as reading intent out of model prose, which is
+ * how confidently-wrong answers get built.
+ */
+referenceType: string | null }
 /**
  * One grounded choice in a clarification. Filled by the SERVER from real data
  * — never by the model, which may only choose the question. A model-invented
