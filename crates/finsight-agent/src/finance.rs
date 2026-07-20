@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, Utc};
+use chrono::{Datelike, Duration, NaiveDate, Utc};
 use finsight_core::models::{effective_apr_pct, EffectiveApr, MissingDataItem};
 use finsight_core::repos::goals::{DeadlineStrictness, GoalPriority};
 use finsight_core::routes::AppRoute;
@@ -778,6 +778,159 @@ pub fn compare_payoff_strategies(
     })
 }
 
+
+// ── Sinking funds ───────────────────────────────────────────────────────────
+
+/// A sinking fund is saving toward a *known* amount on a *known* date, and it
+/// usually recurs: car insurance every March, property tax every June.
+///
+/// That makes it a different question from an open-ended goal. "Save toward a
+/// house deposit" is aspiration, and the honest answer is a projection. "Have
+/// $1,800 by March" is arithmetic, and missing it has a consequence on a
+/// specific day. The monthly figure here is therefore a requirement, not a
+/// suggestion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SinkingFundPlan {
+    pub goal_id: String,
+    pub name: String,
+    pub target_cents: i64,
+    pub current_cents: i64,
+    pub remaining_cents: i64,
+    pub due_date: Option<String>,
+    /// Whole months left, floored at zero. `None` when no date is set — which
+    /// is the one case where a sinking fund cannot be planned, because the
+    /// date is half of what makes it one.
+    pub months_remaining: Option<i64>,
+    /// What must go in each month to arrive on time. `None` without a date.
+    pub required_monthly_cents: Option<i64>,
+    /// What the user has actually committed per month.
+    pub current_monthly_cents: i64,
+    /// How far the commitment falls short, per month. Zero when on track.
+    pub shortfall_monthly_cents: i64,
+    pub on_track: bool,
+    /// True once the due date has passed with money still owing — the case
+    /// that most deserves saying out loud, since the consequence has landed.
+    pub overdue: bool,
+    pub priority: String,
+    pub deadline_strictness: String,
+}
+
+/// Every sinking fund, most urgent first, plus what they cost together.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SinkingFundSchedule {
+    pub funds: Vec<SinkingFundPlan>,
+    /// Total that must be set aside monthly to keep every dated fund on time.
+    /// This is a commitment against the same surplus goals compete for, so it
+    /// belongs in any allocation answer rather than being discovered later.
+    pub total_required_monthly_cents: i64,
+    /// Total the user has actually committed across these funds.
+    pub total_committed_monthly_cents: i64,
+    /// The gap between those two, floored at zero.
+    pub total_shortfall_monthly_cents: i64,
+    pub missing_data: Vec<MissingDataItem>,
+}
+
+/// What must be set aside each month to cover `remaining_cents` in
+/// `months_remaining`.
+///
+/// Rounds UP: arriving a few cents short on a date that matters is the failure
+/// this whole calculation exists to prevent. Zero or fewer months means the
+/// money is needed now, so the whole remainder is due.
+pub fn required_monthly_contribution_cents(remaining_cents: i64, months_remaining: i64) -> i64 {
+    let remaining = remaining_cents.max(0);
+    if months_remaining <= 0 {
+        return remaining;
+    }
+    div_ceil(remaining, months_remaining)
+}
+
+/// Whole months from today until `date`, floored at zero.
+fn months_until(date: NaiveDate, today: NaiveDate) -> i64 {
+    ((date - today).num_days() / 30).max(0)
+}
+
+fn parse_goal_target_date(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .or_else(|| NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok())
+}
+
+/// Plan every sinking fund the user has.
+pub fn plan_sinking_funds(conn: &mut Connection) -> rusqlite::Result<SinkingFundSchedule> {
+    let today = Utc::now().date_naive();
+    let goals = finsight_core::repos::goals::list(conn)
+        .map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+
+    let mut funds: Vec<SinkingFundPlan> = Vec::new();
+    let mut missing_data: Vec<MissingDataItem> = Vec::new();
+
+    for goal in goals.iter().filter(|g| g.goal_type == "sinking-fund") {
+        let remaining = (goal.target_cents - goal.current_cents).max(0);
+        let due = goal.target_date.as_deref().and_then(parse_goal_target_date);
+
+        // A sinking fund without a date is only half specified: the date is
+        // what separates it from an ordinary goal, and without one there is no
+        // required monthly figure to give.
+        let (months_remaining, required) = match due {
+            Some(d) => {
+                let m = months_until(d, today);
+                (Some(m), Some(required_monthly_contribution_cents(remaining, m)))
+            }
+            None => {
+                missing_data.push(MissingDataItem::linked(
+                    format!("{} has no due date, so its monthly requirement cannot be worked out.", goal.name),
+                    "Set a due date",
+                    AppRoute::Goals.focused(&goal.id),
+                ));
+                (None, None)
+            }
+        };
+
+        let committed = goal.monthly_cents.max(0);
+        let shortfall = required.map(|r| (r - committed).max(0)).unwrap_or(0);
+        let overdue = matches!(due, Some(d) if d < today) && remaining > 0;
+
+        funds.push(SinkingFundPlan {
+            goal_id: goal.id.clone(),
+            name: goal.name.clone(),
+            target_cents: goal.target_cents,
+            current_cents: goal.current_cents,
+            remaining_cents: remaining,
+            due_date: goal.target_date.clone(),
+            months_remaining,
+            required_monthly_cents: required,
+            current_monthly_cents: committed,
+            shortfall_monthly_cents: shortfall,
+            // A fully-funded fund is on track whatever its date says.
+            on_track: remaining == 0 || (required.is_some() && shortfall == 0),
+            overdue,
+            priority: goal.priority.as_db().to_string(),
+            deadline_strictness: goal.deadline_strictness.as_db().to_string(),
+        });
+    }
+
+    // Overdue first, then biggest monthly shortfall, then soonest due. A fund
+    // whose date has passed is the one with a consequence already landed.
+    funds.sort_by(|a, b| {
+        b.overdue
+            .cmp(&a.overdue)
+            .then_with(|| b.shortfall_monthly_cents.cmp(&a.shortfall_monthly_cents))
+            .then_with(|| a.due_date.cmp(&b.due_date))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    let total_required: i64 = funds.iter().filter_map(|f| f.required_monthly_cents).sum();
+    let total_committed: i64 = funds.iter().map(|f| f.current_monthly_cents).sum();
+
+    MissingDataItem::dedup(&mut missing_data);
+    Ok(SinkingFundSchedule {
+        total_required_monthly_cents: total_required,
+        total_committed_monthly_cents: total_committed,
+        total_shortfall_monthly_cents: (total_required - total_committed).max(0),
+        funds,
+        missing_data,
+    })
+}
 pub fn infer_question_profile(question: &str) -> FinanceQuestionProfile {
     let lower = question.to_lowercase();
     let kind = if contains_any(
@@ -3006,6 +3159,177 @@ mod tests {
         // Large balance, HIGH rate — avalanche's first target.
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('big','Household','Manual','Credit','Travel Card','USD','#F87171','manual','restricted',0,'debt',26.0,15000,datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('big',date('now'),-600000,'manual')", []).unwrap();
+    }
+
+    /// Insert a sinking-fund goal. `due` is an ISO date or None.
+    fn seed_sinking_fund(
+        conn: &mut Connection,
+        id: &str,
+        name: &str,
+        target_cents: i64,
+        current_cents: i64,
+        monthly_cents: i64,
+        due: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,target_date,color,sort_order,created_at) \
+             VALUES(?1,?2,'sinking-fund',?3,?4,?5,?6,'#fff',0,datetime('now'))",
+            params![id, name, target_cents, current_cents, monthly_cents, due],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn required_monthly_rounds_up_so_the_date_is_actually_met() {
+        // Arriving a few cents short on a date that matters is the failure the
+        // whole calculation exists to prevent.
+        assert_eq!(required_monthly_contribution_cents(100, 3), 34);
+        assert_eq!(required_monthly_contribution_cents(90, 3), 30);
+        // Due now, or overdue: the whole remainder is needed.
+        assert_eq!(required_monthly_contribution_cents(5000, 0), 5000);
+        assert_eq!(required_monthly_contribution_cents(5000, -4), 5000);
+        // Nothing left to save is zero, not a negative instalment.
+        assert_eq!(required_monthly_contribution_cents(0, 6), 0);
+        assert_eq!(required_monthly_contribution_cents(-500, 6), 0);
+    }
+
+    #[test]
+    fn a_sinking_fund_reports_what_it_needs_each_month() {
+        // The issue's example shape: a known amount on a known date.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let due = (Utc::now().date_naive() + Duration::days(180))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_sinking_fund(&mut conn, "ins", "Car insurance", 180000, 0, 10000, Some(&due));
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert_eq!(plan.funds.len(), 1);
+        let f = &plan.funds[0];
+        assert_eq!(f.remaining_cents, 180000);
+        assert_eq!(f.months_remaining, Some(6));
+        assert_eq!(f.required_monthly_cents, Some(30000));
+        assert_eq!(f.current_monthly_cents, 10000);
+        assert_eq!(f.shortfall_monthly_cents, 20000, "committed $100 of the $300 needed");
+        assert!(!f.on_track);
+        assert!(!f.overdue);
+    }
+
+    #[test]
+    fn a_fund_contributing_enough_is_on_track_with_no_shortfall() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let due = (Utc::now().date_naive() + Duration::days(180))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_sinking_fund(&mut conn, "ins", "Car insurance", 180000, 0, 30000, Some(&due));
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert_eq!(plan.funds[0].shortfall_monthly_cents, 0);
+        assert!(plan.funds[0].on_track);
+        assert_eq!(plan.total_shortfall_monthly_cents, 0);
+    }
+
+    #[test]
+    fn a_fully_funded_sinking_fund_is_on_track_whatever_its_date_says() {
+        // Already has the money: a past date does not make it a problem.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_sinking_fund(&mut conn, "done", "Property tax", 100000, 100000, 0, Some("2020-01-01"));
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert_eq!(plan.funds[0].remaining_cents, 0);
+        assert!(plan.funds[0].on_track);
+        assert!(!plan.funds[0].overdue, "funded, so nothing is outstanding");
+    }
+
+    #[test]
+    fn an_overdue_fund_is_surfaced_first() {
+        // The consequence has already landed, so it outranks a bigger
+        // shortfall that is still in the future.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let future = (Utc::now().date_naive() + Duration::days(300))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_sinking_fund(&mut conn, "big", "Big future thing", 900000, 0, 0, Some(&future));
+        seed_sinking_fund(&mut conn, "late", "Missed insurance", 50000, 0, 0, Some("2020-01-01"));
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert_eq!(plan.funds[0].goal_id, "late");
+        assert!(plan.funds[0].overdue);
+        // Past due means the whole remainder is needed now, not spread.
+        assert_eq!(plan.funds[0].required_monthly_cents, Some(50000));
+    }
+
+    #[test]
+    fn a_fund_with_no_due_date_says_so_and_links_to_the_goal() {
+        // The date is half of what makes it a sinking fund; without one there
+        // is no monthly requirement to state, and guessing would be worse.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_sinking_fund(&mut conn, "vague", "Someday repair", 100000, 0, 0, None);
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert_eq!(plan.funds[0].required_monthly_cents, None);
+        assert_eq!(plan.funds[0].months_remaining, None);
+        assert_eq!(plan.funds[0].shortfall_monthly_cents, 0, "no basis for a shortfall");
+        assert!(!plan.missing_data.is_empty());
+        assert_eq!(
+            plan.missing_data[0].action_path.as_deref(),
+            Some("/goals?focusGoal=vague")
+        );
+    }
+
+    #[test]
+    fn the_schedule_totals_what_the_funds_cost_together() {
+        // Sinking funds compete for the same surplus as goals, so the combined
+        // monthly load is the number an allocation answer needs.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let due = (Utc::now().date_naive() + Duration::days(300))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_sinking_fund(&mut conn, "a", "Insurance", 100000, 0, 5000, Some(&due));
+        seed_sinking_fund(&mut conn, "b", "Tax", 200000, 0, 0, Some(&due));
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        let expected: i64 = plan.funds.iter().filter_map(|f| f.required_monthly_cents).sum();
+        assert_eq!(plan.total_required_monthly_cents, expected);
+        assert_eq!(plan.total_committed_monthly_cents, 5000);
+        assert_eq!(
+            plan.total_shortfall_monthly_cents,
+            expected - 5000,
+            "the gap is what the user is not yet covering"
+        );
+    }
+
+    #[test]
+    fn ordinary_goals_are_not_treated_as_sinking_funds() {
+        // A house deposit is aspiration, not a dated obligation. Reporting a
+        // "required" monthly for it would misrepresent what it is.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute(
+            "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,color,sort_order,created_at) \
+             VALUES('house','House','save-by-date',5000000,100000,50000,'#fff',0,datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert!(plan.funds.is_empty());
+        assert_eq!(plan.total_required_monthly_cents, 0);
+    }
+
+    #[test]
+    fn a_user_with_no_sinking_funds_gets_an_empty_schedule_not_an_error() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let plan = plan_sinking_funds(&mut conn).unwrap();
+        assert!(plan.funds.is_empty());
+        assert!(plan.missing_data.is_empty());
+        assert_eq!(plan.total_shortfall_monthly_cents, 0);
     }
 
     #[test]
