@@ -265,3 +265,43 @@ describe("Budget ?focusCategory deep link", () => {
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
   });
 });
+
+describe("Budget loading state", () => {
+  it("shows a skeleton grid rather than collapsing to one line", async () => {
+    // A bare "Loading budget…" line makes the page collapse and then snap back
+    // into a grid once data lands. The skeleton holds the shape.
+    mockEnvelopes.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { container } = renderAt("/budget");
+
+    expect(container.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
+    expect(container.querySelector(".budget-grid")).not.toBeNull();
+  });
+
+  it("announces loading to screen readers, since the skeletons are decoration", async () => {
+    mockEnvelopes.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const { container } = renderAt("/budget");
+
+    // The visual grid is aria-hidden, so the status has to be carried by text
+    // that is not on screen.
+    expect(screen.getByText("Loading budget…")).toHaveClass("sr-only");
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(container.querySelector('.budget-grid[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it("still renders the real grid once envelopes arrive", async () => {
+    mockEnvelopes.mockReturnValue({
+      data: [envelope("cat-groceries", "Groceries")],
+      isLoading: false,
+      error: null,
+    });
+
+    const { container } = renderAt("/budget");
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".skeleton").length).toBe(0);
+    });
+    expect(container.querySelector("[data-envelope-id]")).not.toBeNull();
+  });
+});
