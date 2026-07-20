@@ -319,6 +319,27 @@ pub const TRANSFER_REVIEW_KEYWORDS: &[&str] = &[
     "fulfill request",
 ];
 
+/// SQL predicate selecting every leg that could involve a *person* — the
+/// broader sibling of [`transfer_review_predicate`].
+///
+/// The review predicate deliberately narrows to rows still needing a verdict:
+/// unflagged, unpaired, uncategorized. That is right for a triage queue and
+/// wrong for a running tab, because a leg the user already ruled on still
+/// moved money. "Am I up or down with this person" has to count every leg,
+/// settled or not.
+///
+/// Still excludes investment-account rows, which are internal by construction
+/// and never a payment to a person.
+pub fn counterparty_candidate_predicate(alias: &str) -> String {
+    let vocab = TRANSFER_REVIEW_KEYWORDS
+        .iter()
+        .map(|kw| format!("lower({alias}.merchant_raw) LIKE '%{kw}%'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let non_investment = crate::metrics::non_investment_txn_predicate(alias);
+    format!("({alias}.amount_cents != 0 AND {non_investment} AND ({vocab}))")
+}
+
 /// SQL predicate selecting the transactions that need a user's transfer
 /// verdict. `alias` is the `transactions` table alias in the caller's query.
 /// Built from `TRANSFER_REVIEW_KEYWORDS` so the vocabulary lives in one place;

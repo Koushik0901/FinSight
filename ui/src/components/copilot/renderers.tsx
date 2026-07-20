@@ -32,6 +32,7 @@ const ALL_TOOL_NAMES = [
   "calculate_goal_eta",
   "rank_debt_payoff",
   "compare_payoff_strategies",
+  "get_counterparty_position",
   "compare_debt_vs_goal",
   "get_account_balances",
   "get_month_totals",
