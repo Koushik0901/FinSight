@@ -291,7 +291,26 @@ export default function Budget() {
     }
   };
 
-  if (isLoading) return <div className="stub" aria-live="polite" aria-busy="true">Loading budget…</div>;
+  if (isLoading) {
+    // Mirrors the real grid so the page does not collapse to one line and then
+    // snap back into three columns once data lands.
+    return (
+      <div className="budget-loading" aria-live="polite" aria-busy="true">
+        <span className="sr-only">Loading budget…</span>
+        <div className="skeleton heading" style={{ width: 220 }} />
+        <div className="budget-grid" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card budget-skel-card">
+              <div className="skeleton text" style={{ width: "55%" }} />
+              <div className="skeleton" style={{ height: 34, width: "45%", margin: "10px 0 8px" }} />
+              <div className="skeleton text" style={{ width: "35%" }} />
+              <div className="skeleton" style={{ height: 6, marginTop: 16 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (error) return <div className="stub" role="alert">Error loading budget.</div>;
 
   return (
@@ -324,7 +343,7 @@ export default function Budget() {
               <span>{totalDays - today} days left</span>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+          <div className="budget-grid">
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
             <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}/day pace</div></div>
             <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by {money(projectedEom - totalAvailable)}</span> : <span className="npill pos">Under by {money(totalAvailable - projectedEom)}</span>}</div></div>
@@ -346,7 +365,7 @@ export default function Budget() {
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div className="budget-grid">{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
       <section className="section">
         <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
@@ -359,7 +378,7 @@ export default function Budget() {
                 <div className="eyebrow">{label}</div>
                 {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
+              <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
           );
         })}</div>}
@@ -373,7 +392,7 @@ export default function Budget() {
               <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>These don't have a plan yet.</h2>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+          <div className="budget-grid">
             {unbudgeted.map((env) => (
               <div key={env.categoryId} data-envelope-id={env.categoryId} className="card tight" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div className="row row-sm" style={{ alignItems: "center" }}>

@@ -5861,3 +5861,61 @@ body::-webkit-scrollbar-track,
     padding-inline: 18px;
   }
 }
+
+/* ── Budget screen ─────────────────────────────────────────────────────────
+   The envelope grids were three inline copies of the same declaration, which
+   is how their spacing drifts apart. One class, and `auto-fit` so the columns
+   collapse on a narrow window instead of squeezing three cards into it. */
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+/* An envelope is a glanceable object, so it lifts slightly under the cursor —
+   enough to say "this row is the one you're reading", not enough to look
+   clickable, since the action lives on the button inside it. */
+.budget-grid > * > .card {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.budget-grid > *:hover > .card {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+}
+/* Keyboard users get the same signal when focus lands inside the card. */
+.budget-grid > *:focus-within > .card {
+  border-color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .budget-grid > * > .card,
+  .budget-grid > *:hover > .card {
+    transition: none;
+    transform: none;
+  }
+}
+
+.budget-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+/* Matches EnvelopeCard's padding so the skeleton occupies the same space the
+   real card will, and the layout does not jump when data arrives. */
+.budget-skel-card {
+  padding: 22px;
+}
+
+/* Visible to screen readers only. Needed wherever the visual content is
+   aria-hidden decoration — a skeleton grid says nothing out loud, so the
+   status has to be carried by text that is not on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
