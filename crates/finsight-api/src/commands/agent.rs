@@ -784,6 +784,16 @@ pub struct AgentClarificationBlock {
     pub multi_select: bool,
     pub options: Vec<AgentClarificationOption>,
     pub text_placeholder: Option<String>,
+    /// What kind of thing the question is about — the model names it so the
+    /// server knows what to enumerate. `"account"` today; unknown or absent
+    /// values ground to nothing and the block degrades to its free-text mode,
+    /// which is why this is optional rather than an enum.
+    ///
+    /// The model naming the type is deliberate. Inferring it by pattern-
+    /// matching the question text would be a heuristic keyed on the wrong
+    /// signal — the same shape as reading intent out of model prose, which is
+    /// how confidently-wrong answers get built.
+    pub reference_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -1509,8 +1519,69 @@ fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentR
                     *block = AgentResponseBlock::SpendingReview(fresh);
                 }
             }
+            AgentResponseBlock::Clarification(model) => {
+                let mut grounded = model.clone();
+                // The model chooses the question; the SERVER chooses the
+                // answers. Whatever it put in `options` is discarded, not
+                // merged — a merge would let one invented account through, and
+                // the user clicking it gets a confidently wrong answer about an
+                // account they do not have.
+                grounded.options = ground_clarification_options(conn, &grounded);
+                // The id is stamped here rather than trusted, for the same
+                // reason. The client remembers answered ids forever so a
+                // question does not re-block on reload; a model that reused an
+                // id — it has every reason to, having been shown one in the
+                // prompt — would have its next question arrive pre-answered and
+                // silently never ask again.
+                grounded.clarification_id = uuid::Uuid::new_v4().to_string();
+                *block = AgentResponseBlock::Clarification(grounded);
+            }
             _ => {}
         }
+    }
+}
+
+/// The most options a picker should offer before a text box is kinder. Mirrors
+/// `MAX_CLARIFICATION_OPTIONS` in the Zod schema, which rejects anything above
+/// it — exceeding this would get the whole block dropped at the client.
+const MAX_CLARIFICATION_OPTIONS: usize = 8;
+
+/// Build the answer set for a clarification from the user's real data.
+///
+/// Returns empty for an absent or unrecognised `reference_type`, which is not a
+/// failure: the block's free-text mode is exactly the right fallback for a
+/// question we cannot enumerate answers to. A degraded question still beats a
+/// fabricated option list.
+fn ground_clarification_options(
+    conn: &mut rusqlite::Connection,
+    block: &AgentClarificationBlock,
+) -> Vec<AgentClarificationOption> {
+    let Some(reference_type) = block.reference_type.as_deref() else {
+        return Vec::new();
+    };
+    match reference_type.trim().to_ascii_lowercase().as_str() {
+        "account" | "accounts" => {
+            let Ok(summaries) = finsight_core::repos::accounts::list_summaries(conn) else {
+                return Vec::new();
+            };
+            summaries
+                .iter()
+                .take(MAX_CLARIFICATION_OPTIONS)
+                .map(|s| AgentClarificationOption {
+                    id: s.id.clone(),
+                    // The hint is what makes two similarly-named accounts
+                    // distinguishable, so it carries the balance when we have
+                    // one and says so plainly when we do not.
+                    hint: Some(if s.balance_known {
+                        dollars(s.balance_cents)
+                    } else {
+                        "balance unknown".to_string()
+                    }),
+                    label: s.name.clone(),
+                })
+                .collect()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -2393,6 +2464,188 @@ pub async fn ask_agent(
         validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
         Ok(answer)
+    }
+}
+
+#[cfg(test)]
+mod clarification_grounding_tests {
+    use super::*;
+    use finsight_core::{db::run_migrations, keychain, Db};
+    use tempfile::TempDir;
+
+    fn db_with_accounts(names: &[&str]) -> (TempDir, Db) {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = Db::open(&dir.path().join("clarify.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        {
+            let conn = db.get().unwrap();
+            for (i, name) in names.iter().enumerate() {
+                conn.execute(
+                    "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,\
+                      liquidity_type,emergency_fund_eligible,created_at) \
+                     VALUES(?1,'Me','Bank','Checking',?2,'USD','#fff','manual','liquid',1,datetime('now'))",
+                    rusqlite::params![format!("acct-{i}"), name],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO account_balances(account_id,as_of_date,balance_cents) \
+                     VALUES(?1,date('now'),?2)",
+                    rusqlite::params![format!("acct-{i}"), 100_000 + i as i64],
+                )
+                .unwrap();
+            }
+        }
+        (dir, db)
+    }
+
+    fn block(reference_type: Option<&str>, options: Vec<AgentClarificationOption>) -> AgentClarificationBlock {
+        AgentClarificationBlock {
+            clarification_id: "c1".into(),
+            question: "Which account did you mean?".into(),
+            multi_select: false,
+            options,
+            text_placeholder: None,
+            reference_type: reference_type.map(str::to_string),
+        }
+    }
+
+    fn invented() -> Vec<AgentClarificationOption> {
+        vec![AgentClarificationOption {
+            id: "not-a-real-account".into(),
+            label: "Offshore Trust".into(),
+            hint: Some("$9,999,999".into()),
+        }]
+    }
+
+    #[test]
+    fn options_come_from_the_database_not_the_model() {
+        // The whole point of the feature: a model-invented account must never
+        // become a clickable answer. Clicking one would produce a confidently
+        // wrong answer about an account the user does not have.
+        let (_dir, db) = db_with_accounts(&["Chequing", "Savings"]);
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("account"), invented()));
+
+        let labels: Vec<&str> = grounded.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, vec!["Chequing", "Savings"]);
+        assert!(
+            !grounded.iter().any(|o| o.id == "not-a-real-account"),
+            "the model's invented option survived grounding"
+        );
+    }
+
+    #[test]
+    fn grounded_options_carry_a_disambiguating_hint() {
+        // Two accounts can share a name; the hint is what makes the choice
+        // meaningful rather than a coin flip.
+        let (_dir, db) = db_with_accounts(&["Everyday", "Everyday"]);
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("account"), vec![]));
+        assert_eq!(grounded.len(), 2);
+        assert!(grounded.iter().all(|o| o.hint.is_some()));
+        // Distinct ids so the answer resolves to a real, specific entity.
+        assert_ne!(grounded[0].id, grounded[1].id);
+    }
+
+    #[test]
+    fn an_unknown_reference_type_grounds_to_free_text() {
+        // Degrading to the block's free-text mode is the right fallback — a
+        // question we cannot enumerate answers for still beats a fabricated
+        // option list.
+        let (_dir, db) = db_with_accounts(&["Chequing"]);
+        let mut conn = db.get().unwrap();
+
+        for kind in [Some("goal"), Some("spaceship"), Some(""), None] {
+            let grounded = ground_clarification_options(&mut conn, &block(kind, invented()));
+            assert!(
+                grounded.is_empty(),
+                "reference type {kind:?} should ground to nothing, got {grounded:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reference_type_matching_tolerates_case_and_padding() {
+        let (_dir, db) = db_with_accounts(&["Chequing"]);
+        let mut conn = db.get().unwrap();
+        for kind in ["account", "Account", " ACCOUNTS "] {
+            assert_eq!(
+                ground_clarification_options(&mut conn, &block(Some(kind), vec![])).len(),
+                1,
+                "{kind:?} should be recognised"
+            );
+        }
+    }
+
+    #[test]
+    fn options_are_capped_so_the_client_does_not_reject_the_block() {
+        // The Zod schema rejects more than MAX_CLARIFICATION_OPTIONS, which
+        // would drop the whole block. Past a handful a text box is kinder
+        // anyway.
+        let names: Vec<String> = (0..20).map(|i| format!("Account {i}")).collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let (_dir, db) = db_with_accounts(&refs);
+        let mut conn = db.get().unwrap();
+
+        let grounded = ground_clarification_options(&mut conn, &block(Some("account"), vec![]));
+        assert_eq!(grounded.len(), MAX_CLARIFICATION_OPTIONS);
+    }
+
+    #[test]
+    fn a_user_with_no_accounts_gets_free_text_rather_than_an_empty_picker() {
+        let (_dir, db) = db_with_accounts(&[]);
+        let mut conn = db.get().unwrap();
+        assert!(ground_clarification_options(&mut conn, &block(Some("account"), invented())).is_empty());
+    }
+
+    #[test]
+    fn hydration_stamps_a_fresh_id_so_a_reused_one_cannot_suppress_later_questions() {
+        // The client remembers answered ids forever so a question does not
+        // re-block on reload. A model reusing an id — it has every reason to,
+        // having been shown the field in the prompt — would make its next
+        // question arrive pre-answered and silently never ask again.
+        let (_dir, db) = db_with_accounts(&["Chequing"]);
+        let mut conn = db.get().unwrap();
+
+        let mut first = vec![AgentResponseBlock::Clarification(block(Some("account"), vec![]))];
+        let mut second = vec![AgentResponseBlock::Clarification(block(Some("account"), vec![]))];
+        hydrate_response_blocks(&mut conn, &mut first);
+        hydrate_response_blocks(&mut conn, &mut second);
+
+        let id_of = |blocks: &[AgentResponseBlock]| match &blocks[0] {
+            AgentResponseBlock::Clarification(b) => b.clarification_id.clone(),
+            _ => panic!("block kind changed"),
+        };
+        let (a, b) = (id_of(&first), id_of(&second));
+        assert_ne!(a, b, "two clarifications must never share an id");
+        assert_ne!(a, "c1", "the model's id must not be trusted through");
+        assert!(!a.is_empty());
+    }
+
+    #[test]
+    fn hydration_replaces_the_options_on_the_block_itself() {
+        // End to end through the same seam every other grounded block uses.
+        let (_dir, db) = db_with_accounts(&["Chequing"]);
+        let mut conn = db.get().unwrap();
+
+        let mut blocks = vec![AgentResponseBlock::Clarification(block(
+            Some("account"),
+            invented(),
+        ))];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::Clarification(out) = &blocks[0] else {
+            panic!("block kind changed");
+        };
+        assert_eq!(out.options.len(), 1);
+        assert_eq!(out.options[0].label, "Chequing");
+        // The question the model chose is preserved — only the answers, and
+        // the id that tracks them, are ours.
+        assert_eq!(out.question, "Which account did you mean?");
+        assert_ne!(out.clarification_id, "c1");
     }
 }
 

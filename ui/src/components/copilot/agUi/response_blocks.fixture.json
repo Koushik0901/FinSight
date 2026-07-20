@@ -1,21 +1,345 @@
 [
-  { "expectValid": true,  "block": { "kind": "accountsOverview", "title": "2 accounts", "subtitle": "$1 tracked", "rows": [{ "name": "Chq", "subtitle": null, "typeLabel": "Checking", "amountCents": 100, "badge": null }, { "name": "Broker", "subtitle": "manual", "typeLabel": "Investment", "amountCents": null, "badge": "needs a balance set" }] } },
-  { "expectValid": false, "block": { "kind": "accountsOverview", "title": null, "subtitle": null, "rows": [] } },
-  { "expectValid": true,  "block": { "kind": "spendingReview", "months": [{ "label": "May 2026", "spentCents": 100, "subtitle": null, "categories": [{ "label": "Housing", "amountCents": 50, "tag": "fixed" }], "summary": null, "actions": [] }] } },
-  { "expectValid": false, "block": { "kind": "spendingReview", "months": [{ "label": "May", "spentCents": 1, "subtitle": null, "categories": [{ "label": "X", "amountCents": 1, "tag": "bogus" }], "summary": null, "actions": [] }] } },
-  { "expectValid": true,  "block": { "kind": "spendTimeline", "title": "Trend", "subtitle": null, "points": [{ "label": "Jan", "amountCents": 1, "highlight": false, "annotation": null, "projected": false }, { "label": "Feb", "amountCents": 2, "highlight": false, "annotation": null, "projected": false }] } },
-  { "expectValid": false, "block": { "kind": "spendTimeline", "title": "Trend", "subtitle": null, "points": [{ "label": "Jan", "amountCents": 1, "highlight": false, "annotation": null, "projected": false }] } },
-  { "expectValid": true,  "block": { "kind": "spendingDrivers", "title": "Drivers", "subtitle": null, "drivers": [{ "label": "Travel", "tag": "planned", "amountDisplay": "+$1/mo", "note": null }] } },
-  { "expectValid": false, "block": { "kind": "spendingDrivers", "title": "Drivers", "subtitle": null, "drivers": [{ "label": "Travel", "tag": "bogus", "amountDisplay": "+$1/mo", "note": null }] } },
-  { "expectValid": true,  "block": { "kind": "watchList", "title": "Watch", "items": [{ "label": "A", "detail": "d", "amountDisplay": null }] } },
-  { "expectValid": false, "block": { "kind": "watchList", "title": "Watch", "items": [] } },
-  { "expectValid": true,  "block": { "kind": "actionPlan", "title": "Plan", "items": ["Do X"] } },
-  { "expectValid": false, "block": { "kind": "actionPlan", "title": "Plan", "items": [] } },
-  { "expectValid": true,  "block": { "kind": "clarification", "clarificationId": "c1", "question": "Which account did you mean?", "multiSelect": false, "options": [{ "id": "acc-1", "label": "Chequing", "hint": "$1,240" }, { "id": "acc-2", "label": "Savings", "hint": null }], "textPlaceholder": null } },
-  { "expectValid": true,  "block": { "kind": "clarification", "clarificationId": "c2", "question": "Which goals should I include?", "multiSelect": true, "options": [{ "id": "g1", "label": "Car", "hint": null }], "textPlaceholder": null } },
-  { "expectValid": true,  "block": { "kind": "clarification", "clarificationId": "c3", "question": "What is your target retirement age?", "multiSelect": false, "options": [], "textPlaceholder": "e.g. 60" } },
-  { "expectValid": false, "block": { "kind": "clarification", "clarificationId": "c4", "question": "   ", "multiSelect": false, "options": [], "textPlaceholder": null } },
-  { "expectValid": false, "block": { "kind": "clarification", "clarificationId": "  ", "question": "Which account?", "multiSelect": false, "options": [], "textPlaceholder": null } },
-  { "expectValid": false, "block": { "kind": "clarification", "clarificationId": "c5", "question": "Which account?", "multiSelect": false, "options": [{ "id": "a", "label": "  ", "hint": null }], "textPlaceholder": null } },
-  { "expectValid": false, "block": { "kind": "clarification", "clarificationId": "c6", "question": "Pick one", "multiSelect": false, "options": [{ "id": "1", "label": "A", "hint": null }, { "id": "2", "label": "B", "hint": null }, { "id": "3", "label": "C", "hint": null }, { "id": "4", "label": "D", "hint": null }, { "id": "5", "label": "E", "hint": null }, { "id": "6", "label": "F", "hint": null }, { "id": "7", "label": "G", "hint": null }, { "id": "8", "label": "H", "hint": null }, { "id": "9", "label": "I", "hint": null }], "textPlaceholder": null } }
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "accountsOverview",
+      "title": "2 accounts",
+      "subtitle": "$1 tracked",
+      "rows": [
+        {
+          "name": "Chq",
+          "subtitle": null,
+          "typeLabel": "Checking",
+          "amountCents": 100,
+          "badge": null
+        },
+        {
+          "name": "Broker",
+          "subtitle": "manual",
+          "typeLabel": "Investment",
+          "amountCents": null,
+          "badge": "needs a balance set"
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "accountsOverview",
+      "title": null,
+      "subtitle": null,
+      "rows": []
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "spendingReview",
+      "months": [
+        {
+          "label": "May 2026",
+          "spentCents": 100,
+          "subtitle": null,
+          "categories": [
+            {
+              "label": "Housing",
+              "amountCents": 50,
+              "tag": "fixed"
+            }
+          ],
+          "summary": null,
+          "actions": []
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendingReview",
+      "months": [
+        {
+          "label": "May",
+          "spentCents": 1,
+          "subtitle": null,
+          "categories": [
+            {
+              "label": "X",
+              "amountCents": 1,
+              "tag": "bogus"
+            }
+          ],
+          "summary": null,
+          "actions": []
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "spendTimeline",
+      "title": "Trend",
+      "subtitle": null,
+      "points": [
+        {
+          "label": "Jan",
+          "amountCents": 1,
+          "highlight": false,
+          "annotation": null,
+          "projected": false
+        },
+        {
+          "label": "Feb",
+          "amountCents": 2,
+          "highlight": false,
+          "annotation": null,
+          "projected": false
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendTimeline",
+      "title": "Trend",
+      "subtitle": null,
+      "points": [
+        {
+          "label": "Jan",
+          "amountCents": 1,
+          "highlight": false,
+          "annotation": null,
+          "projected": false
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "spendingDrivers",
+      "title": "Drivers",
+      "subtitle": null,
+      "drivers": [
+        {
+          "label": "Travel",
+          "tag": "planned",
+          "amountDisplay": "+$1/mo",
+          "note": null
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendingDrivers",
+      "title": "Drivers",
+      "subtitle": null,
+      "drivers": [
+        {
+          "label": "Travel",
+          "tag": "bogus",
+          "amountDisplay": "+$1/mo",
+          "note": null
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "watchList",
+      "title": "Watch",
+      "items": [
+        {
+          "label": "A",
+          "detail": "d",
+          "amountDisplay": null
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "watchList",
+      "title": "Watch",
+      "items": []
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "actionPlan",
+      "title": "Plan",
+      "items": [
+        "Do X"
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "actionPlan",
+      "title": "Plan",
+      "items": []
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c1",
+      "question": "Which account did you mean?",
+      "multiSelect": false,
+      "options": [
+        {
+          "id": "acc-1",
+          "label": "Chequing",
+          "hint": "$1,240"
+        },
+        {
+          "id": "acc-2",
+          "label": "Savings",
+          "hint": null
+        }
+      ],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c2",
+      "question": "Which goals should I include?",
+      "multiSelect": true,
+      "options": [
+        {
+          "id": "g1",
+          "label": "Car",
+          "hint": null
+        }
+      ],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c3",
+      "question": "What is your target retirement age?",
+      "multiSelect": false,
+      "options": [],
+      "textPlaceholder": "e.g. 60",
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c4",
+      "question": "   ",
+      "multiSelect": false,
+      "options": [],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "  ",
+      "question": "Which account?",
+      "multiSelect": false,
+      "options": [],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c5",
+      "question": "Which account?",
+      "multiSelect": false,
+      "options": [
+        {
+          "id": "a",
+          "label": "  ",
+          "hint": null
+        }
+      ],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "clarification",
+      "clarificationId": "c6",
+      "question": "Pick one",
+      "multiSelect": false,
+      "options": [
+        {
+          "id": "1",
+          "label": "A",
+          "hint": null
+        },
+        {
+          "id": "2",
+          "label": "B",
+          "hint": null
+        },
+        {
+          "id": "3",
+          "label": "C",
+          "hint": null
+        },
+        {
+          "id": "4",
+          "label": "D",
+          "hint": null
+        },
+        {
+          "id": "5",
+          "label": "E",
+          "hint": null
+        },
+        {
+          "id": "6",
+          "label": "F",
+          "hint": null
+        },
+        {
+          "id": "7",
+          "label": "G",
+          "hint": null
+        },
+        {
+          "id": "8",
+          "label": "H",
+          "hint": null
+        },
+        {
+          "id": "9",
+          "label": "I",
+          "hint": null
+        }
+      ],
+      "textPlaceholder": null,
+      "referenceType": null
+    }
+  }
 ]

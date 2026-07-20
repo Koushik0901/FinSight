@@ -344,3 +344,49 @@
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .cp-missing-cta:hover { border-color: var(--accent); background: var(--surface-2); }
+
+/* ── Clarification ─────────────────────────────────────────────────────────
+   A question the Copilot needs answered before it can continue. Styled to
+   read as an ask rather than a result: accent-bordered, and the composer is
+   replaced while it is outstanding. */
+.cp-clarify { border-left: 2px solid var(--accent); display: flex; flex-direction: column; gap: 10px; }
+.cp-clarify.is-resolved { border-left-color: var(--line); opacity: 0.6; }
+.cp-clarify-head { display: flex; align-items: center; justify-content: space-between; }
+.cp-clarify-eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.cp-clarify-dismiss { background: none; border: none; color: var(--ink-faint); cursor: pointer; padding: 2px; border-radius: 4px; }
+.cp-clarify-dismiss:hover { color: var(--ink); background: var(--surface-2); }
+.cp-clarify-q { font-size: 14px; font-weight: 600; color: var(--ink); }
+.cp-clarify-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-clarify-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 6px 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--elevated); color: var(--ink); cursor: pointer; text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.cp-clarify-option:hover { border-color: var(--accent); }
+.cp-clarify-option.is-on { border-color: var(--accent); background: var(--surface-2); }
+.cp-clarify-option-label { font-size: 13px; font-weight: 600; }
+.cp-clarify-option-hint { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+.cp-clarify-send {
+  align-self: flex-start; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--elevated);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.cp-clarify-send:disabled { opacity: 0.45; cursor: not-allowed; }
+.cp-clarify-text { display: flex; gap: 6px; align-items: center; }
+.cp-clarify-text input {
+  flex: 1; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--elevated); color: var(--ink); font-size: 13px;
+}
+.cp-clarify-text input:focus { outline: none; border-color: var(--accent); }
+.cp-clarify-text button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--elevated); color: var(--ink); cursor: pointer;
+}
+.cp-clarify-text button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* The composer while a clarification is outstanding. */
+.copilot-composer.is-blocked { flex-direction: column; align-items: flex-start; gap: 2px; justify-content: center; }
+.cp-blocked-q { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cp-blocked-hint { font-size: 11px; color: var(--ink-faint); }

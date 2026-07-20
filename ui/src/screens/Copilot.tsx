@@ -1,4 +1,5 @@
-/**
+
+/**
  * Copilot screen — full ChatGPT-style threaded AI chat.
  *
  * Architecture:
@@ -50,6 +51,7 @@ import {
 } from "../api/hooks/copilotChat";
 import { useAccounts } from "../api/hooks/accounts";
 import { useNavigate } from "react-router-dom";
+import { useClarifications } from "../state/clarifications";
 import { commands, type AgentNavigationTarget } from "../api/client";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import { sourcesFromToolTrace } from "../components/copilot/toolSources";
@@ -933,6 +935,22 @@ function CopilotComposerBox({
   isRunning: boolean;
   latestMeta: MessageMeta | null;
 }) {
+  const pendingClarification = useClarifications((s) => s.pending);
+
+  // A clarification the user has neither answered nor dismissed replaces the
+  // composer entirely. Showing a best-effort answer next to an unanswered
+  // question invites the model to guess, which is the failure this exists to
+  // remove — and a composer that still worked would make the question look
+  // optional. Dismissing is always available, so this is never a trap.
+  if (pendingClarification) {
+    return (
+      <div className="copilot-composer is-blocked" data-testid="composer-blocked">
+        <span className="cp-blocked-q">{pendingClarification.question}</span>
+        <span className="cp-blocked-hint">Answer above to continue</span>
+      </div>
+    );
+  }
+
   return (
     <ComposerPrimitive.Root className="copilot-composer">
       <button
