@@ -19,6 +19,10 @@ pub struct RecurringItem {
     /// Human-readable evidence for the classification.
     pub reasons: Vec<String>,
     pub last_amount_cents: i64,
+    /// Cost per month with cadence accounted for, positive. Computed in
+    /// `finsight-core` so the UI does not re-derive the normalisation and
+    /// disagree with the budget and Copilot figures built on the same rule.
+    pub monthly_equivalent_cents: i64,
     pub min_amount_cents: i64,
     pub max_amount_cents: i64,
     pub avg_gap_days: f64,
@@ -28,6 +32,10 @@ pub struct RecurringItem {
     pub cadence: String,
     /// True only for genuine subscriptions (not repeat purchases).
     pub is_subscription: bool,
+    /// Whether this item is confident enough to feed forward-looking
+    /// projections. Low-confidence entries stay VISIBLE — the user is the one
+    /// who can confirm or dismiss them — but do not silently move arithmetic.
+    pub feeds_projections: bool,
 }
 
 fn kind_str(kind: RecurringKind) -> &'static str {
@@ -59,6 +67,8 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
                 )
             })
             .map(|i| RecurringItem {
+                monthly_equivalent_cents: i.monthly_equivalent_cents(),
+                feeds_projections: i.is_projection_obligation(),
                 merchant_raw: i.display_merchant,
                 category_label: i.category_label.unwrap_or_default(),
                 category_color: i.category_color.unwrap_or_default(),

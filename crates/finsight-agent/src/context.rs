@@ -889,82 +889,30 @@ fn recent_memory(conn: &mut Connection) -> Vec<MemoryItem> {
     out
 }
 
+/// Bills the user should expect in the next 30 days, from the one shared
+/// detector.
+///
+/// This was a fifth hand-rolled copy of the recurring heuristic, and the one
+/// with the most direct route to the user: it renders straight into the
+/// Copilot's prompt as "Upcoming bills", which the model then states as fact.
+/// Grouping by raw merchant text with `COUNT(*) >= 2` meant an internal
+/// transfer or a twice-seen coincidence arrived in the prompt indistinguishable
+/// from a real, long-established bill.
 fn upcoming_bills(conn: &mut Connection) -> Vec<UpcomingBill> {
     let now = Utc::now().date_naive();
-    let cutoff = (Utc::now() - Duration::days(395))
-        .format("%Y-%m-%d")
-        .to_string();
-    let mut stmt = match conn.prepare(
-        "WITH dated AS (
-           SELECT t.merchant_raw,
-                  date(t.posted_at) AS d,
-                  t.amount_cents,
-                  LAG(date(t.posted_at)) OVER (
-                    PARTITION BY t.merchant_raw
-                    ORDER BY t.posted_at
-                  ) AS prev_d
-           FROM transactions t
-           WHERE t.posted_at >= ?1 AND t.is_transfer = 0
-         ),
-         gaps AS (
-           SELECT merchant_raw, d, amount_cents,
-                  julianday(d) - julianday(prev_d) AS gap
-           FROM dated
-           WHERE prev_d IS NOT NULL
-         ),
-         agg AS (
-           -- `last_amount` is a bare column paired with a single MAX() aggregate,
-           -- so SQLite draws it from the row holding MAX(d) — i.e. the amount of
-           -- the most recent occurrence, not MAX(amount_cents) which for negative
-           -- expenses would return the smallest charge. The HAVING guard requires
-           -- every occurrence to be an outflow (no non-negative amounts).
-           SELECT merchant_raw,
-                  AVG(gap) AS avg_gap,
-                  COUNT(*) AS occurrences,
-                  MAX(d) AS last_seen,
-                  amount_cents AS last_amount
-           FROM gaps
-           WHERE gap BETWEEN 5 AND 400
-           GROUP BY merchant_raw
-           HAVING occurrences >= 2 AND AVG(gap) < 400
-              AND SUM(CASE WHEN amount_cents >= 0 THEN 1 ELSE 0 END) = 0
-         )
-         SELECT merchant_raw, avg_gap, last_seen, last_amount
-         FROM agg
-         ORDER BY last_seen ASC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(_) => return Vec::new(),
-    };
-
-    let rows = match stmt.query_map(params![cutoff], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, f64>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-        ))
-    }) {
-        Ok(rows) => rows,
-        Err(_) => return Vec::new(),
-    };
-
-    let mut out = Vec::new();
-    for row in rows.flatten() {
-        let (label, avg_gap, last_seen, last_amount) = row;
-        let Some(last_seen_date) = parse_date(&last_seen) else {
-            continue;
-        };
-        let next_due = last_seen_date + Duration::days(avg_gap.round() as i64);
-        let due_days = (next_due - now).num_days();
-        if (0..=30).contains(&due_days) {
-            out.push(UpcomingBill {
-                label,
-                amount_cents: last_amount.abs(),
+    let mut out: Vec<UpcomingBill> = finsight_core::recurring::projection_obligations(conn, 395)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| {
+            let next_due = parse_date(item.next_expected.as_deref()?)?;
+            let due_days = (next_due - now).num_days();
+            (0..=30).contains(&due_days).then(|| UpcomingBill {
+                label: item.display_merchant.clone(),
+                amount_cents: item.last_amount_cents.abs(),
                 due_days_from_now: due_days,
-            });
-        }
-    }
+            })
+        })
+        .collect();
     out.sort_by_key(|bill| bill.due_days_from_now);
     out.truncate(8);
     out

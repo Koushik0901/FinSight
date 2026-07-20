@@ -1,7 +1,5 @@
 import type { RecurringItem } from "../api/client";
 
-const AVG_DAYS_PER_MONTH = 30.44;
-
 /**
  * Human cadence label for a recurring item. Prefers the backend-provided
  * `cadence`, falling back to a bucket derived from the observed average gap.
@@ -15,29 +13,16 @@ export function recurringFrequency(item: Pick<RecurringItem, "cadence" | "avgGap
 }
 
 /**
- * Normalize a recurring item's last amount to a per-month figure (positive
- * cents) so weekly, biweekly, monthly, quarterly, and annual commitments are
- * directly comparable and summable. An annual subscription must NOT be counted
- * as a monthly one — that inflates annualized cost 12×.
+ * Per-month cost of a recurring item, positive cents.
+ *
+ * The normalisation itself lives in `finsight-core::recurring` and arrives on
+ * the item as `monthlyEquivalentCents`. It used to be reimplemented here, which
+ * meant the "committed per month" figure on this screen and the same figure in
+ * the budget planner and Copilot were two independent implementations of one
+ * rule, free to drift. This is now just a typed accessor.
  */
 export function monthlyEquivalentCents(
-  item: Pick<RecurringItem, "cadence" | "avgGapDays" | "lastAmountCents">,
+  item: Pick<RecurringItem, "monthlyEquivalentCents">,
 ): number {
-  const abs = Math.abs(item.lastAmountCents);
-  switch (item.cadence) {
-    case "weekly":
-      return Math.round(abs * (AVG_DAYS_PER_MONTH / 7));
-    case "biweekly":
-      return Math.round(abs * (AVG_DAYS_PER_MONTH / 14));
-    case "monthly":
-      return abs;
-    case "quarterly":
-      return Math.round(abs / 3);
-    case "annual":
-    case "yearly":
-      return Math.round(abs / 12);
-  }
-  // No explicit cadence: derive from the observed average gap between hits.
-  if (item.avgGapDays > 0) return Math.round(abs * (AVG_DAYS_PER_MONTH / item.avgGapDays));
-  return abs;
+  return item.monthlyEquivalentCents;
 }

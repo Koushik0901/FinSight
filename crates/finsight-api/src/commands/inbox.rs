@@ -228,68 +228,25 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
         }
 
         // ── 4. Bills due within 7 days ────────────────────────────────────────
-        // Reuse the same recurring detection logic but only surface items due soon.
-        let cutoff_past = (now - Duration::days(395)).format("%Y-%m-%d").to_string();
-        let mut bill_stmt = conn
-            .prepare(&format!(
-                "WITH dated AS (
-                   SELECT t.merchant_raw,
-                          date(t.posted_at) AS d,
-                          t.amount_cents,
-                          LAG(date(t.posted_at)) OVER (
-                            PARTITION BY t.merchant_raw ORDER BY t.posted_at
-                          ) AS prev_d
-                   FROM transactions t
-                   WHERE t.posted_at >= ?1 AND t.amount_cents < 0 AND {}
-                 ),
-                 gaps AS (
-                   SELECT merchant_raw, d, amount_cents,
-                          julianday(d) - julianday(prev_d) AS gap
-                   FROM dated WHERE prev_d IS NOT NULL
-                 ),
-                 agg AS (
-                   SELECT merchant_raw,
-                          AVG(gap) AS avg_gap,
-                          MAX(d) AS last_seen,
-                          MAX(amount_cents) AS last_amount
-                   FROM gaps
-                   WHERE gap BETWEEN 5 AND 400
-                   GROUP BY merchant_raw
-                   HAVING COUNT(*) >= 2 AND AVG(gap) < 400
-                 )
-                 SELECT merchant_raw, avg_gap, last_seen, last_amount
-                 FROM agg
-                 ORDER BY last_amount ASC",
-                finsight_core::metrics::non_investment_txn_predicate("t")
-            ))
-            .ok();
-
-        if let Some(ref mut stmt) = bill_stmt {
-            let rows = stmt
-                .query_map(params![cutoff_past], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, f64>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, i64>(3)?,
-                    ))
-                })
-                .ok();
-
-            let mut due_soon: Vec<(String, String, i64)> = Vec::new(); // (merchant, next_date, amount)
-
-            if let Some(rows) = rows {
-                for row in rows.flatten() {
-                    let (merchant, avg_gap, last_seen, last_amount) = row;
-                    if let Ok(d) = NaiveDate::parse_from_str(&last_seen, "%Y-%m-%d") {
-                        let next = d + Duration::days(avg_gap.round() as i64);
-                        let next_str = next.format("%Y-%m-%d").to_string();
-                        if next_str > today && next_str <= week_out {
-                            due_soon.push((merchant, next_str, last_amount));
-                        }
-                    }
-                }
-            }
+        // Through the one shared detector, not a private variant of it. The
+        // query this replaced grouped by raw merchant text with `COUNT(*) >= 2`
+        // and no transfer exclusion, so a regular internal transfer surfaced
+        // here as a bill the user was told to fund.
+        {
+            let due_soon: Vec<(String, String, i64)> =
+                finsight_core::recurring::projection_obligations(conn, 395)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|item| {
+                        // Only items with a real projected date can be "due
+                        // soon"; falling back to last_seen would nag about a
+                        // charge that already happened.
+                        let next = item.next_expected.clone()?;
+                        (next > today && next <= week_out).then(|| {
+                            (item.display_merchant.clone(), next, item.last_amount_cents)
+                        })
+                    })
+                    .collect();
 
             for (merchant, next_date, amount) in &due_soon {
                 let days_away = NaiveDate::parse_from_str(next_date, "%Y-%m-%d")

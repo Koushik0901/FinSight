@@ -420,46 +420,21 @@ pub async fn get_agent_status(state: &ApiState) -> AppResult<AgentStatus> {
             |r| r.get(0),
         )?;
 
-        // Count recurring items with expected date within 7 days
+        // Bills expected within 7 days, from the one shared detector. The
+        // previous inline query was the loosest of the four hand-rolled copies
+        // — no sign filter, no transfer or investment exclusion — so it counted
+        // regular INFLOWS and internal transfers as upcoming bills.
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let in_7 = (chrono::Utc::now() + chrono::Duration::days(7))
             .format("%Y-%m-%d")
             .to_string();
-        let cutoff = (chrono::Utc::now() - chrono::Duration::days(395))
-            .format("%Y-%m-%d")
-            .to_string();
-
-        let mut stmt = conn.prepare(
-            "WITH gaps AS (
-               SELECT merchant_raw,
-                      date(posted_at) AS d,
-                      LAG(date(posted_at)) OVER (PARTITION BY merchant_raw ORDER BY posted_at) AS prev_d
-               FROM transactions WHERE posted_at >= ?1
-             ),
-             agg AS (
-               SELECT merchant_raw,
-                      AVG(julianday(d) - julianday(prev_d)) AS avg_gap,
-                      MAX(d) AS last_seen,
-                      COUNT(*) AS occ
-               FROM gaps WHERE prev_d IS NOT NULL
-               GROUP BY merchant_raw
-               HAVING occ >= 2 AND AVG(julianday(d)-julianday(prev_d)) BETWEEN 5 AND 400
-             )
-             SELECT merchant_raw, avg_gap, last_seen FROM agg",
-        )?;
-        let upcoming_bills_count: i64 = stmt
-            .query_map(rusqlite::params![cutoff], |r| {
-                Ok((r.get::<_, f64>(1)?, r.get::<_, String>(2)?))
-            })?
-            .filter_map(|r| r.ok())
-            .filter(|(avg_gap, last_seen)| {
-                use chrono::NaiveDate;
-                let Ok(last) = NaiveDate::parse_from_str(last_seen, "%Y-%m-%d") else {
-                    return false;
-                };
-                let next = last + chrono::Duration::days(avg_gap.round() as i64);
-                let next_str = next.format("%Y-%m-%d").to_string();
-                next_str >= today && next_str <= in_7
+        let upcoming_bills_count: i64 = finsight_core::recurring::projection_obligations(conn, 395)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|item| {
+                item.next_expected
+                    .as_ref()
+                    .is_some_and(|next| *next >= today && *next <= in_7)
             })
             .count() as i64;
 

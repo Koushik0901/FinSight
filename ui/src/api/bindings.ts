@@ -2407,11 +2407,23 @@ confidence: number;
 /**
  * Human-readable evidence for the classification.
  */
-reasons: string[]; lastAmountCents: number; minAmountCents: number; maxAmountCents: number; avgGapDays: number; occurrences: number; lastSeen: string; nextExpected: string; cadence: string; 
+reasons: string[]; lastAmountCents: number; 
+/**
+ * Cost per month with cadence accounted for, positive. Computed in
+ * `finsight-core` so the UI does not re-derive the normalisation and
+ * disagree with the budget and Copilot figures built on the same rule.
+ */
+monthlyEquivalentCents: number; minAmountCents: number; maxAmountCents: number; avgGapDays: number; occurrences: number; lastSeen: string; nextExpected: string; cadence: string; 
 /**
  * True only for genuine subscriptions (not repeat purchases).
  */
-isSubscription: boolean }
+isSubscription: boolean; 
+/**
+ * Whether this item is confident enough to feed forward-looking
+ * projections. Low-confidence entries stay VISIBLE — the user is the one
+ * who can confirm or dismiss them — but do not silently move arithmetic.
+ */
+feedsProjections: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string; treatment: string }

@@ -184,6 +184,15 @@ function recur(merchant: string, color: string, label: string, kind: string, cad
     occurrences: 6,
     lastSeen: isoDaysAgo(30 - dueInDays),
     nextExpected: isoInDays(dueInDays),
+    // Backend-computed in real runs; mirrored here so the harness shows the
+    // same cadence-normalised figure the screen sums.
+    monthlyEquivalentCents:
+      cadence === "monthly"
+        ? Math.abs(amt)
+        : cadence === "annual"
+          ? Math.round(Math.abs(amt) / 12)
+          : Math.round(Math.abs(amt) * (30.44 / 7)),
+    feedsProjections: amt < 0 && kind !== "income",
   };
 }
 

@@ -100,7 +100,17 @@ pub struct SnapshotLiability {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotRecurringBill {
     pub merchant: String,
+    /// Face value of the most recent charge, positive. Right for "your next
+    /// Netflix charge is $X"; WRONG for any monthly total — see
+    /// `monthly_equivalent_cents`.
     pub amount_cents: i64,
+    /// Cost per month once cadence is accounted for. An annual renewal
+    /// contributes a twelfth here, not its whole face value.
+    pub monthly_equivalent_cents: i64,
+    pub cadence: String,
+    /// 0..1 from the shared detector, so the model can hedge on a weak signal
+    /// instead of asserting it.
+    pub confidence: f64,
     pub next_expected: String,
 }
 
@@ -1375,10 +1385,14 @@ pub fn run_goal_conflict_scenario(
         .filter(|p| p.amount_cents < 0)
         .map(|p| p.amount_cents.abs())
         .sum();
+    // Monthly-equivalent, not face value: this is subtracted from a MONTHLY
+    // surplus, so an annual $600 renewal must count as $50 here. Summing face
+    // values charged a full year of every annual commitment against a single
+    // month and made contributions look unaffordable that plainly were.
     let upcoming_recurring_bills: i64 = snapshot
         .recurring_bills
         .iter()
-        .map(|b| b.amount_cents.abs())
+        .map(|b| b.monthly_equivalent_cents)
         .sum();
     let upcoming_obligations_cents = upcoming_planned_outflows + upcoming_recurring_bills;
     let emergency_floor_cents = snapshot
@@ -2008,36 +2022,34 @@ fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>
     rows.collect()
 }
 
+/// The user's recurring obligations, from the one shared detector.
+///
+/// This used to be a private `LAG`-over-`merchant_raw` query with `occ >= 2`
+/// and no transfer or investment exclusion — the exact heuristic
+/// `finsight_core::recurring` was written to replace. It classified a bare
+/// internal transfer as a recurring bill, and those phantom bills fed the
+/// surplus and affordability math below.
+///
+/// Capped at 10 by monthly cost so the snapshot stays prompt-sized; the cap is
+/// on what the model SEES, while `monthly_equivalent_cents` on each row is what
+/// the arithmetic uses.
 fn recurring_bills(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotRecurringBill>> {
-    let cutoff = (Utc::now() - Duration::days(395))
-        .format("%Y-%m-%d")
-        .to_string();
-    let mut stmt = conn.prepare(
-        "WITH gaps AS (
-            SELECT merchant_raw, date(posted_at) AS d, amount_cents, LAG(date(posted_at)) OVER (PARTITION BY merchant_raw ORDER BY posted_at) AS prev_d
-            FROM transactions WHERE posted_at >= ?1
-         ), agg AS (
-            SELECT merchant_raw, AVG(julianday(d)-julianday(prev_d)) AS avg_gap, MAX(d) AS last_seen, MAX(amount_cents) AS last_amount, COUNT(*) AS occ
-            FROM gaps WHERE prev_d IS NOT NULL GROUP BY merchant_raw HAVING occ >= 2 AND AVG(julianday(d)-julianday(prev_d)) BETWEEN 5 AND 400 AND MAX(amount_cents) < 0
-         ) SELECT merchant_raw, avg_gap, last_seen, ABS(last_amount) FROM agg ORDER BY ABS(last_amount) DESC LIMIT 10"
-    )?;
-    let rows = stmt.query_map(params![cutoff], |r| {
-        let avg_gap: f64 = r.get(1)?;
-        let last_seen: String = r.get(2)?;
-        let next_expected = chrono::NaiveDate::parse_from_str(&last_seen, "%Y-%m-%d")
-            .map(|d| {
-                (d + Duration::days(avg_gap.round() as i64))
-                    .format("%Y-%m-%d")
-                    .to_string()
-            })
-            .unwrap_or(last_seen);
-        Ok(SnapshotRecurringBill {
-            merchant: r.get(0)?,
-            amount_cents: r.get(3)?,
-            next_expected,
-        })
+    let mut items = finsight_core::recurring::projection_obligations(conn, 395).map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
     })?;
-    rows.collect()
+    items.sort_by_key(|i| std::cmp::Reverse(i.monthly_equivalent_cents()));
+    Ok(items
+        .into_iter()
+        .take(10)
+        .map(|i| SnapshotRecurringBill {
+            merchant: i.display_merchant.clone(),
+            amount_cents: i.last_amount_cents.abs(),
+            monthly_equivalent_cents: i.monthly_equivalent_cents(),
+            cadence: i.cadence.clone(),
+            confidence: i.confidence,
+            next_expected: i.next_expected.clone().unwrap_or_else(|| i.last_seen.clone()),
+        })
+        .collect())
 }
 
 fn planned_transactions(

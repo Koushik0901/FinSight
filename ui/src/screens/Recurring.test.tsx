@@ -24,6 +24,30 @@ vi.mock("../api/hooks/recurring", () => ({
         kind: "subscription",
         confidence: 0.9,
         reasons: ["5 occurrences", "~monthly cadence", "known subscription vendor (spotify)"],
+        monthlyEquivalentCents: 1299,
+        feedsProjections: true,
+      },
+      {
+        // Detected, but too weak to budget against: it must stay VISIBLE (the
+        // user is the one who can confirm or dismiss it) while being excluded
+        // from the committed-per-month headline.
+        merchantRaw: "Odd Jobs Ltd",
+        categoryLabel: "Other",
+        categoryColor: "#94A3B8",
+        lastAmountCents: -20000,
+        minAmountCents: -31500,
+        maxAmountCents: -4100,
+        avgGapDays: 47,
+        occurrences: 3,
+        lastSeen: "2026-06-02",
+        nextExpected: "2026-07-19",
+        cadence: "monthly",
+        isSubscription: false,
+        kind: "bill",
+        confidence: 0.34,
+        reasons: ["3 occurrences", "irregular cadence"],
+        monthlyEquivalentCents: 20000,
+        feedsProjections: false,
       },
     ],
     isLoading: false,
@@ -75,5 +99,23 @@ describe("Recurring — planned transactions", () => {
     render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring?focusPlanned=pt-1"]) });
     expect(await screen.findByText("Planned transaction · Insurance premium")).toBeInTheDocument();
     expect(screen.getByText("Description")).toBeInTheDocument();
+  });
+});
+
+describe("Recurring — low-confidence entries", () => {
+  it("lists a weak entry but leaves it out of the committed-per-month total", () => {
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+
+    // Visible: the user is the one who can confirm or dismiss it.
+    expect(screen.getByText(/Odd Jobs Ltd/i)).toBeInTheDocument();
+    expect(screen.getByText(/not used in forecasts/i)).toBeInTheDocument();
+
+    // The headline counts only the $12.99 subscription, not the $200 guess.
+    // If the weak entry were counted the figure would read $213.
+    expect(screen.getByText("$13")).toBeInTheDocument();
+    expect(screen.queryByText("$213")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/1 less certain entry is listed below but not counted/i),
+    ).toBeInTheDocument();
   });
 });

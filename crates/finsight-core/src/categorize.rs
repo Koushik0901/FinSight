@@ -533,14 +533,32 @@ fn name_tokens(name: &str) -> Vec<String> {
 /// nameless transfer is internal by the bank's product definition, so two
 /// equal-and-opposite such legs are safe to pair (see `pair_transfers` Rule 4).
 fn is_bare_reference_transfer(merchant_raw: &str) -> bool {
-    if !is_pairing_eligible(merchant_raw) || has_own_account_marker(merchant_raw) {
+    if !is_nameless_bank_movement(merchant_raw) || has_own_account_marker(merchant_raw) {
         return false;
     }
-    if reference_tokens(merchant_raw).is_empty() {
-        return false; // needs a bank reference number to key on
+    !reference_tokens(merchant_raw).is_empty() // needs a bank reference to key on
+}
+
+/// True when a descriptor is transfer vocabulary and NOTHING ELSE — a bank
+/// product name with no counterparty. "INTERNET BANKING INTERNET TRANSFER" is
+/// one; "ONLINE BANKING BILL PAYMENT HYDRO ONE" is not, because `hydro` names
+/// who was paid.
+///
+/// The distinction is what separates a money movement from a bill paid THROUGH
+/// online banking. A plain substring test cannot make it: both contain channel
+/// words, and the payee may sit beyond the three tokens
+/// `canonical_merchant_key` keeps, so it is invisible to anything working from
+/// the key. Requiring every alphabetic token to be structural asks the right
+/// question — is there a payee here at all?
+///
+/// Unlike [`is_bare_reference_transfer`] this does not require a reference
+/// number, because a nameless transfer is nameless whether or not the bank
+/// stamped a number on it. Pairing needs the number (it has to key on
+/// something); classification does not.
+pub fn is_nameless_bank_movement(merchant_raw: &str) -> bool {
+    if !is_pairing_eligible(merchant_raw) {
+        return false;
     }
-    // No counterparty name: every alphabetic ≥3-char token is a structural
-    // transfer word (bank/product/direction), not a person or payee.
     merchant_raw
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))

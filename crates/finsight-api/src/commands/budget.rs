@@ -539,31 +539,23 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
             .map(goal_to_dto)
             .collect();
 
-        // Recurring expense estimate
-        let cutoff = (now - chrono::Duration::days(395)).format("%Y-%m-%d").to_string();
-        let recurring_expense_cents: i64 = conn.query_row(
-            &format!(
-                "WITH gaps AS (
-               SELECT merchant_raw,
-                      julianday(date(posted_at)) -
-                        julianday(LAG(date(posted_at)) OVER (
-                          PARTITION BY merchant_raw ORDER BY posted_at
-                        )) AS gap,
-                      amount_cents
-               FROM transactions t WHERE posted_at >= ?1 AND is_transfer = 0 AND {}
-             ),
-             agg AS (
-               SELECT merchant_raw, AVG(gap) AS avg_gap, MAX(amount_cents) AS last_amount
-               FROM gaps WHERE gap BETWEEN 5 AND 400
-               GROUP BY merchant_raw
-               HAVING COUNT(*) >= 2 AND AVG(gap) < 45
-             )
-             SELECT COALESCE(SUM(ABS(last_amount)), 0) FROM agg WHERE last_amount < 0",
-                finsight_core::metrics::non_investment_txn_predicate("t")
-            ),
-            rusqlite::params![cutoff],
-            |r| r.get(0),
-        )?;
+        // Recurring expense estimate for NEXT month, from the shared detector.
+        //
+        // The query this replaced restricted itself to roughly-monthly items
+        // (`AVG(gap) < 45`) and summed their raw last amounts. That ceiling was
+        // not really about cadence — it was damage control for summing face
+        // values: including an annual renewal would have charged its whole
+        // year against one month. Now that each item reports a monthly
+        // equivalent, quarterly and annual commitments can be INCLUDED at their
+        // true share, which is what a monthly plan should account for. A $600
+        // yearly renewal is genuinely $50/month of the user's obligations, and
+        // omitting it understated the plan every month except the one it landed
+        // in.
+        let recurring_expense_cents: i64 =
+            finsight_core::recurring::projection_obligations(conn, 395)?
+                .iter()
+                .map(|item| item.monthly_equivalent_cents())
+                .sum();
 
         let look_back = budgets::look_back_facts(conn, &m0)?;
 
