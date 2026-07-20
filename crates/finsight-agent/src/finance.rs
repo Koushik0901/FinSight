@@ -1,4 +1,6 @@
 use chrono::{Datelike, Duration, Utc};
+use finsight_core::models::MissingDataItem;
+use finsight_core::routes::AppRoute;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -146,7 +148,9 @@ pub struct GoalEtaResult {
 pub struct DebtPayoffRanking {
     pub method: String,
     pub items: Vec<DebtRankItem>,
-    pub missing_data: Vec<String>,
+    /// Structured rather than prose because this producer knows exactly which
+    /// account is missing the field, so it can send the user straight there.
+    pub missing_data: Vec<MissingDataItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,7 +211,9 @@ pub struct DebtPayoffScenarios {
     pub estimated_interest_saved_cents: Option<i64>,
     pub months_saved: Option<i64>,
     pub payoff_order: Vec<DebtRankItem>,
-    pub missing_data: Vec<String>,
+    /// Inherits the actionable items from the underlying ranking, so a missing
+    /// APR still links to the account that lacks it.
+    pub missing_data: Vec<MissingDataItem>,
     pub assumptions: Vec<String>,
 }
 
@@ -827,13 +833,24 @@ pub fn rank_debt_payoff(
 ) -> rusqlite::Result<DebtPayoffRanking> {
     let mut debts = liabilities(conn)?;
     debts.retain(|d| d.balance_cents > 0);
+    // Debts live in `accounts`, so each gap links straight to the account
+    // editor for the debt that is missing it. Without this the user is told
+    // their advice is provisional and left to find the screen themselves.
     let mut missing_data = Vec::new();
     for d in &debts {
         if d.apr_pct.is_none() {
-            missing_data.push(format!("{} is missing APR.", d.name));
+            missing_data.push(MissingDataItem::linked(
+                format!("{} is missing APR.", d.name),
+                "Add APR",
+                AppRoute::Accounts.focused(&d.id),
+            ));
         }
         if d.min_payment_cents.is_none() {
-            missing_data.push(format!("{} is missing minimum payment.", d.name));
+            missing_data.push(MissingDataItem::linked(
+                format!("{} is missing minimum payment.", d.name),
+                "Add minimum payment",
+                AppRoute::Accounts.focused(&d.id),
+            ));
         }
     }
     if method == "snowball" {
@@ -1056,10 +1073,9 @@ pub fn run_debt_payoff_scenarios(
         let with_extra = simulate_debt_payoff(&debts, method, extra_monthly_payment_cents.max(0));
         (minimum, with_extra)
     } else {
-        missing_data.push(
-            "Debt payoff scenarios need APR and minimum payment for every active liability."
-                .to_string(),
-        );
+        missing_data.push(MissingDataItem::prose(
+            "Debt payoff scenarios need APR and minimum payment for every active liability.",
+        ));
         (None, None)
     };
 
@@ -2237,6 +2253,73 @@ mod tests {
         assert_eq!(avalanche.items[0].liability_id, "cc");
         let snowball = rank_debt_payoff(&mut conn, "snowball").unwrap();
         assert_eq!(snowball.items[0].liability_id, "cc");
+    }
+
+    #[test]
+    fn missing_debt_fields_link_to_the_account_that_lacks_them() {
+        // The Copilot withholds confident debt advice without APR and minimum
+        // payment. Saying so is right; saying so with no way to fix it is what
+        // makes it read as unhelpful. Each gap must point at its own account.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+
+        // A second card with neither field, so the two debts differ in what
+        // they are missing.
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,              liquidity_type,emergency_fund_eligible,account_group,created_at)              VALUES('store-card','Household','Manual','Credit','Store Card','USD',              '#F97316','manual','restricted',0,'debt',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id,as_of_date,balance_cents,source)              VALUES('store-card',date('now'),-80000,'manual')",
+            [],
+        )
+        .unwrap();
+
+        let ranking = rank_debt_payoff(&mut conn, "avalanche").unwrap();
+        let store: Vec<_> = ranking
+            .missing_data
+            .iter()
+            .filter(|m| m.message.contains("Store Card"))
+            .collect();
+        assert_eq!(store.len(), 2, "expected both APR and minimum payment gaps");
+
+        for item in &store {
+            assert!(
+                item.action_path.as_deref() == Some("/accounts?focusAccount=store-card"),
+                "gap {:?} should link to the account that lacks it, got {:?}",
+                item.message,
+                item.action_path
+            );
+            let path = item.action_path.as_deref().unwrap();
+            assert!(
+                finsight_core::routes::is_known_route(path),
+                "{path} is not a route the frontend renders"
+            );
+            assert!(item.action_label.is_some(), "a destination needs a label");
+        }
+
+        // The seeded debts have both fields, so they contribute no gaps —
+        // a complete account must not be nagged about.
+        assert!(
+            ranking
+                .missing_data
+                .iter()
+                .all(|m| m.message.contains("Store Card")),
+            "fully-specified debts should not produce missing-data items"
+        );
+    }
+
+    #[test]
+    fn fully_specified_debts_produce_no_missing_data() {
+        // A brand-new user who filled everything in should see no prompts at
+        // all — the feature must not manufacture busywork.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&mut conn);
+        let ranking = rank_debt_payoff(&mut conn, "snowball").unwrap();
+        assert!(ranking.missing_data.is_empty());
     }
 
     #[test]

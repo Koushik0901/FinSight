@@ -28,13 +28,39 @@ import type {
   CopilotStreamFrame,
   CopilotDonePayload,
   CopilotResponseBlock,
+  MissingDataItem,
 } from "../../api/client";
+
+/** Missing-data items rehydrated from a stored message.
+ *
+ * The metadata blob is JSON read back out of the database, so it is parsed
+ * defensively: a message written by an older build has no `missingData` at
+ * all, and a partially-written one could carry anything. An entry keeps its
+ * call-to-action only when both halves survive — a labelled button with
+ * nowhere to go is worse than plain text. */
+function sanitizeMissingData(raw: unknown[]): MissingDataItem[] {
+  return raw.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { message, actionLabel, actionPath } = entry as Record<string, unknown>;
+    if (typeof message !== "string" || message.trim() === "") return [];
+    const hasCta = typeof actionLabel === "string" && actionLabel.trim() !== ""
+      && typeof actionPath === "string" && actionPath.trim() !== "";
+    return [{
+      message,
+      actionLabel: hasCta ? (actionLabel as string) : null,
+      actionPath: hasCta ? (actionPath as string) : null,
+    }];
+  });
+}
 
 export interface MessageMeta {
   bundleId?: string;
   toolTrace?: string[];
   plan?: string[];
   followUpQuestions?: string[];
+  /** Data the answer needed but could not find, each with an optional
+   * destination where the user can supply it. */
+  missingData?: MissingDataItem[];
   actionLabel?: string;
   actionPath?: string;
   providerId?: string;
@@ -239,6 +265,7 @@ function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | nul
         bundleId: pickFrameValue<string | null>(raw, "bundleId", "bundle_id") ?? null,
         toolTrace: (pickFrameValue(raw, "toolTrace", "tool_trace") ?? []) as string[],
         followUpQuestions: (pickFrameValue(raw, "followUpQuestions", "follow_up_questions") ?? []) as string[],
+        missingData: (pickFrameValue(raw, "missingData", "missing_data") ?? []) as MissingDataItem[],
         actionLabel: pickFrameValue<string | null>(raw, "actionLabel", "action_label") ?? null,
         actionPath: pickFrameValue<string | null>(raw, "actionPath", "action_path") ?? null,
         providerId: pickFrameValue<string>(raw, "providerId", "provider_id") ?? "unknown",
@@ -314,6 +341,7 @@ function metaFromDone(payload: Extract<CopilotStreamFrame, { type: "done" }>): M
     bundleId: payload.bundleId ?? undefined,
     toolTrace: payload.toolTrace,
     followUpQuestions: payload.followUpQuestions,
+    missingData: payload.missingData,
     actionLabel: payload.actionLabel ?? undefined,
     actionPath: payload.actionPath ?? undefined,
     providerId: payload.providerId,
@@ -604,6 +632,9 @@ export function buildMetaFromMessages(messages: ConversationMessage[]): MetaByMe
           }
           if (Array.isArray(parsed.followUpQuestions)) {
             meta.followUpQuestions = parsed.followUpQuestions.filter((item): item is string => typeof item === "string");
+          }
+          if (Array.isArray(parsed.missingData)) {
+            meta.missingData = sanitizeMissingData(parsed.missingData);
           }
           if (typeof parsed.actionLabel === "string") meta.actionLabel = parsed.actionLabel;
           if (typeof parsed.actionPath === "string") meta.actionPath = parsed.actionPath;

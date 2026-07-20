@@ -31,7 +31,7 @@ pub use category::{Category, CategoryGroup};
 pub use connection::{NewSimpleFinConnection, SimpleFinConnection, SimpleFinConnectionPatch};
 pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
-    ConversationMessage, ConversationSummary,
+    ConversationMessage, ConversationSummary, MissingDataItem,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};

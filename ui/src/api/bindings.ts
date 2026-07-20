@@ -1817,7 +1817,7 @@ export type AgentActivity = { text: string; sub: string; minutesAgo: number }
 export type AgentAffordabilityVerdictBlock = { canAfford: boolean; headline: string; sub: string; caveat: string | null; fundingSource: AgentFundingSource | null }
 export type AgentAllocationSegment = { label: string; amountCents: number; rationale: string; categoryKey: string }
 export type AgentAllocationSplitBlock = { totalCents: number; segments: AgentAllocationSegment[] }
-export type AgentAnswer = { prose: string; reasoning: string; plan: string[]; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: string[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
+export type AgentAnswer = { prose: string; reasoning: string; plan: string[]; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: MissingDataItem[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
 export type AgentCategoryBreakdownBlock = { periodLabel: string; rows: AgentCategoryRow[] }
 export type AgentCategoryRow = { categoryKey: string; amountCents: number; isFixed: boolean; isLever: boolean }
 export type AgentChange = { kind: string; description: string }
@@ -2258,6 +2258,36 @@ export type MemberNetWorth = { memberId: string | null; name: string; color: str
  * One merchant's 12-month total.
  */
 export type MerchantTotal = { merchantRaw: string; categoryLabel: string; categoryColor: string; totalCents: number; txnCount: number }
+/**
+ * Something the Copilot needed but could not find, and — where we can work it
+ * out — where the user would go to supply it.
+ * 
+ * The Copilot deliberately withholds high-confidence debt advice when APR or
+ * minimum-payment data is absent. That is the right call, but a block that
+ * does not say how to unblock it reads as the app being unhelpful rather than
+ * careful. Attaching a destination turns an honest limitation into a
+ * completed setup step.
+ * 
+ * `action_label` and `action_path` are always set or cleared **together**: a
+ * labelled button with nowhere to go, or a destination with no label, are
+ * both worse than plain prose. Producers that do not know which entity is
+ * missing data (notably the model itself, on the deep reasoning path) build
+ * these through [`From<String>`], which leaves both `None` — the message
+ * still renders, just without a shortcut.
+ */
+export type MissingDataItem = { 
+/**
+ * Human-readable description of what is missing.
+ */
+message: string; 
+/**
+ * Button text, e.g. "Add APR". `None` when there is nowhere to send them.
+ */
+actionLabel: string | null; 
+/**
+ * App-relative path, e.g. `/accounts?focusAccount=abc`.
+ */
+actionPath: string | null }
 /**
  * One month's summary for the bar chart.
  */

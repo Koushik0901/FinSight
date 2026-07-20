@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
 import { commands } from "../../../api/client";
-import type { ChatHistoryEntry, CopilotStreamFrame } from "../../../api/client";
+import type { ChatHistoryEntry, CopilotStreamFrame, MissingDataItem } from "../../../api/client";
 import { serializeFinanceArtifactEnvelope } from "./artifacts";
 
 function unwrapCommandResult<T>(result: { status: "ok"; data: T } | { status: "error"; error: unknown }): T {
@@ -158,6 +158,7 @@ export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | nu
         bundleId: pick<string | null>(raw, "bundleId", "bundle_id") ?? null,
         toolTrace: (pick(raw, "toolTrace", "tool_trace") ?? []) as string[],
         followUpQuestions: (pick(raw, "followUpQuestions", "follow_up_questions") ?? []) as string[],
+        missingData: (pick(raw, "missingData", "missing_data") ?? []) as MissingDataItem[],
         actionLabel: pick<string | null>(raw, "actionLabel", "action_label") ?? null,
         actionPath: pick<string | null>(raw, "actionPath", "action_path") ?? null,
         providerId: pick<string>(raw, "providerId", "provider_id") ?? "unknown",
