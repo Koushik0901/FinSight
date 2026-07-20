@@ -193,6 +193,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::analyze_cash_inflow());
     tools.register(read::calculate_goal_eta());
     tools.register(read::rank_debt_payoff());
+    tools.register(read::compare_payoff_strategies());
     tools.register(read::compare_debt_vs_goal());
     tools.register(read::get_account_balances());
     tools.register(read::get_account_balance_history());
