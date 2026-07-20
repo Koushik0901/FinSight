@@ -2276,16 +2276,25 @@ pub async fn ask_agent(
             .and_then(|v| v.as_str())
             .unwrap_or("I couldn't generate a response. Try rephrasing your question.")
             .to_string();
-        let action_label = raw
-            .get("action_label")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+        // The model authors these two, so the path is only as good as its
+        // guess — it can invent a screen that does not exist. Validate against
+        // the real route registry and drop the pair together, so we never
+        // render a labelled button that dead-ends.
         let action_path = raw
             .get("action_path")
             .and_then(|v| v.as_str())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
+            .filter(|s| finsight_core::routes::is_known_route(s))
             .map(|s| s.to_string());
+        let action_label = action_path.as_ref().and_then(|_| {
+            raw.get("action_label")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        });
+        let action_path = action_label.as_ref().and(action_path);
 
         let mut answer = AgentAnswer {
             prose,

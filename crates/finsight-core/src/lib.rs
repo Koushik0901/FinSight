@@ -15,6 +15,7 @@ pub mod models;
 pub mod palette;
 pub mod repos;
 pub mod reset_barrier;
+pub mod routes;
 pub mod sample;
 pub mod seed;
 pub mod settings;

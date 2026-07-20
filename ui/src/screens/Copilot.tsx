@@ -49,7 +49,8 @@ import {
   useDeleteConversation,
 } from "../api/hooks/copilotChat";
 import { useAccounts } from "../api/hooks/accounts";
-import { commands } from "../api/client";
+import { useNavigate } from "react-router-dom";
+import { commands, type AgentNavigationTarget } from "../api/client";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import { sourcesFromToolTrace } from "../components/copilot/toolSources";
 import { useTauriAgUiRuntime } from "../components/copilot/agUi/TauriAgUiRuntime";
@@ -131,8 +132,13 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
   const approve = useApproveActionItem();
   const reject = useRejectActionItem();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [isExecuting, setIsExecuting] = useState(false);
   const [executed, setExecuted] = useState(false);
+  // Offered after a successful execution so the user can verify the change on
+  // the screen it landed on instead of taking "done" on trust. Backend-derived
+  // from the payloads that applied, so every path is a real screen.
+  const [navTargets, setNavTargets] = useState<AgentNavigationTarget[]>([]);
 
   if (!bundle || bundle.items.length === 0) return null;
 
@@ -147,6 +153,8 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
         bundleId: bundle.id,
       });
       setExecuted(true);
+      // Older servers omit this field; an absent offer is fine, a wrong one is not.
+      setNavTargets(raw.navigation ?? []);
       await qc.invalidateQueries({ queryKey: ["action-bundles"] });
       if (raw.failed === 0) {
         toast.success(`${raw.succeeded} action${raw.succeeded !== 1 ? "s" : ""} applied`);
@@ -289,6 +297,20 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
             <I.Check width={13} height={13} />
             Execute {approvedItems.length} approved action{approvedItems.length !== 1 ? "s" : ""}
           </Button>
+        </div>
+      )}
+
+      {navTargets.length > 0 && (
+        <div className="cp-followups" data-testid="copilot-action-navigation">
+          <span className="cp-followups-lbl">See the change</span>
+          <div className="cp-followups-row">
+            {navTargets.map((target) => (
+              <button key={target.path} className="cp-fu-chip" onClick={() => navigate(target.path)}>
+                {target.label}
+                <I.ArrowRight width={10} height={10} />
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

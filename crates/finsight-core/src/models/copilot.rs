@@ -46,6 +46,23 @@ pub struct AgentActionItem {
     pub updated_at: String,
 }
 
+/// A screen the user can jump to in order to *see* a change the agent made.
+///
+/// Always an offer rendered as a link — never an automatic redirect. Yanking
+/// someone out of a conversation mid-thread is worse than making them click.
+///
+/// Built from executed action payloads (which carry real entity ids) rather
+/// than from model-authored prose, so the destination is always a screen that
+/// exists and an entity that was actually touched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentNavigationTarget {
+    /// Button text, e.g. "View in Budget".
+    pub label: String,
+    /// An app-relative path, e.g. `/budget?focusCategory=abc`.
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentExecutionEntry {

@@ -30,8 +30,8 @@ pub use categorization::{Categorization, NewCategorization};
 pub use category::{Category, CategoryGroup};
 pub use connection::{NewSimpleFinConnection, SimpleFinConnection, SimpleFinConnectionPatch};
 pub use copilot::{
-    AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentSession, ConversationMessage,
-    ConversationSummary,
+    AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
+    ConversationMessage, ConversationSummary,
 };
 pub use holding::Holding;
 pub use household::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
