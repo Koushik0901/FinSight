@@ -224,3 +224,71 @@ pub async fn set_financial_assumptions(
     .await
     .map_err(AppError::from)
 }
+
+// ── Financial philosophy ────────────────────────────────────────────────────
+
+/// The user's stated philosophy, as the UI reads and writes it.
+///
+/// Strings rather than enums on the wire so an older client that sends an
+/// unrecognised value degrades to the default instead of failing the request —
+/// a preference is never worth erroring over.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FinancialPhilosophyDto {
+    /// "avalanche" | "snowball"
+    pub debt_strategy: String,
+    /// "cautious" | "balanced" | "aggressive"
+    pub risk_tolerance: String,
+    /// Derived, read-only: the APR at or above which debt is treated as
+    /// high-interest. Surfaced so the Settings screen can show the
+    /// consequence of the choice rather than just its name.
+    pub high_interest_apr_pct: f64,
+}
+
+fn philosophy_to_dto(p: metrics::FinancialPhilosophy) -> FinancialPhilosophyDto {
+    FinancialPhilosophyDto {
+        debt_strategy: p.debt_strategy.as_method().to_string(),
+        risk_tolerance: match p.risk_tolerance {
+            metrics::RiskTolerance::Cautious => "cautious",
+            metrics::RiskTolerance::Balanced => "balanced",
+            metrics::RiskTolerance::Aggressive => "aggressive",
+        }
+        .to_string(),
+        high_interest_apr_pct: p.risk_tolerance.high_interest_apr_pct(),
+    }
+}
+
+/// Parse a risk-tolerance name, falling back to the default for anything
+/// unrecognised. Never errors: an unknown string must behave as "untouched".
+fn parse_risk_tolerance(raw: &str) -> metrics::RiskTolerance {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "cautious" => metrics::RiskTolerance::Cautious,
+        "aggressive" => metrics::RiskTolerance::Aggressive,
+        _ => metrics::RiskTolerance::Balanced,
+    }
+}
+
+pub async fn get_financial_philosophy(state: &ApiState) -> AppResult<FinancialPhilosophyDto> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| Ok(philosophy_to_dto(metrics::philosophy(conn))))
+        .await
+        .map_err(AppError::from)
+}
+
+pub async fn set_financial_philosophy(
+    state: &ApiState,
+    input: FinancialPhilosophyDto,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        metrics::set_philosophy(
+            conn,
+            &metrics::FinancialPhilosophy {
+                debt_strategy: metrics::DebtStrategy::from_method(&input.debt_strategy),
+                risk_tolerance: parse_risk_tolerance(&input.risk_tolerance),
+            },
+        )
+    })
+    .await
+    .map_err(AppError::from)
+}

@@ -12,7 +12,12 @@ import {
   useListProviderModels,
 } from "../api/hooks/agent";
 import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
-import { useFinancialMetrics, useSetFinancialAssumptions } from "../api/hooks/metrics";
+import {
+  useFinancialMetrics,
+  useSetFinancialAssumptions,
+  useFinancialPhilosophy,
+  useSetFinancialPhilosophy,
+} from "../api/hooks/metrics";
 import { useAgentMemory, useForgetAgentMemory } from "../api/hooks/agentMemory";
 import { useDataHealth, useCreateBackup, useStageRestore, useCancelRestore } from "../api/hooks/dataHealth";
 import {
@@ -45,6 +50,7 @@ const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"];
 const SECTIONS = [
   ["profile", "Profile"],
   ["targets", "Financial targets"],
+  ["philosophy", "How you want advice"],
   ["privacy", "Privacy & data"],
   ["backups", "Data & backups"],
   ["agent", "Agent"],
@@ -69,6 +75,153 @@ function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
 
 function Tog({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return <span className={`tog${checked ? " on" : ""}`} role="switch" aria-checked={checked} tabIndex={0} onClick={() => onChange(!checked)} onKeyDown={(e) => e.key === "Enter" && onChange(!checked)} />;
+}
+
+
+const DEBT_STRATEGIES = [
+  {
+    value: "avalanche",
+    label: "Highest interest first",
+    detail: "Avalanche — pays the least interest overall.",
+  },
+  {
+    value: "snowball",
+    label: "Smallest balance first",
+    detail: "Snowball — early wins keep the momentum up (Ramsey).",
+  },
+] as const;
+
+const RISK_TOLERANCES = [
+  {
+    value: "cautious",
+    label: "Debt-averse",
+    detail: "Clear debt even when the math slightly favours investing.",
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    detail: "The default: weigh clearing debt and investing evenly.",
+  },
+  {
+    value: "aggressive",
+    label: "Optimise the math",
+    detail: "Take the mathematically optimal answer regardless of how it feels.",
+  },
+] as const;
+
+/** Which school of personal-finance advice the user subscribes to.
+ *
+ *  These are not cosmetic: they set the default debt-payoff ordering used by
+ *  the ranking engine and the APR above which debt is treated as urgent, and
+ *  they are stated in the Copilot's prompt. Defaults reproduce the behaviour
+ *  the app had before the setting existed. */
+export function PhilosophySection() {
+  const { data: philosophy } = useFinancialPhilosophy();
+  const save = useSetFinancialPhilosophy();
+  const [debtStrategy, setDebtStrategy] = useState("avalanche");
+  const [riskTolerance, setRiskTolerance] = useState("balanced");
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (philosophy && !dirty) {
+      setDebtStrategy(philosophy.debtStrategy);
+      setRiskTolerance(philosophy.riskTolerance);
+    }
+  }, [philosophy, dirty]);
+
+  const onSave = async () => {
+    try {
+      await save.mutateAsync({
+        debtStrategy,
+        riskTolerance,
+        // Derived server-side from riskTolerance; sent only to satisfy the
+        // shared type.
+        highInterestAprPct: philosophy?.highInterestAprPct ?? 8,
+      });
+      setDirty(false);
+      toast.success("Advice preferences saved");
+    } catch (error) {
+      toast.error("Could not save preferences", { description: userErrorMessage(error) });
+    }
+  };
+
+  const choice = (
+    name: string,
+    label: string,
+    desc: string,
+    options: ReadonlyArray<{ value: string; label: string; detail: string }>,
+    value: string,
+    setter: (v: string) => void,
+  ) => (
+    <div className="s-row">
+      <div>
+        <div className="label">{label}</div>
+        <div className="desc">{desc}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {options.map((option) => (
+          <label key={option.value} className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => {
+                setter(option.value);
+                setDirty(true);
+              }}
+            />
+            <span>
+              <span style={{ fontWeight: 600 }}>{option.label}</span>
+              <span className="desc" style={{ display: "block" }}>{option.detail}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div />
+    </div>
+  );
+
+  return (
+    <Section
+      id="philosophy"
+      title="How you want advice"
+      description="The books this app draws on disagree with each other, and both sides are defensible. Tell FinSight which you follow and the Copilot — and the debt engine behind it — will argue your way."
+    >
+      {choice(
+        "debt-strategy",
+        "Debt payoff order",
+        "Which debt to attack first when you have spare money.",
+        DEBT_STRATEGIES,
+        debtStrategy,
+        setDebtStrategy,
+      )}
+      {choice(
+        "risk-tolerance",
+        "Debt versus investing",
+        philosophy
+          ? `Currently treating debt at or above ${philosophy.highInterestAprPct}% APR as urgent.`
+          : "Where the line sits between paying debt down and investing instead.",
+        RISK_TOLERANCES,
+        riskTolerance,
+        setRiskTolerance,
+      )}
+      <div className="s-row">
+        <div />
+        <div style={{ textAlign: "right" }}>
+          <button
+            className="btn primary sm"
+            type="button"
+            disabled={save.isPending || !dirty}
+            onClick={() => void onSave()}
+          >
+            {save.isPending ? "Applying…" : "Apply preferences"}
+          </button>
+        </div>
+        <div />
+      </div>
+    </Section>
+  );
 }
 
 function FinancialTargetsSection() {
@@ -548,6 +701,7 @@ export default function Settings() {
           )}
 
           <FinancialTargetsSection />
+          <PhilosophySection />
 
           <DataBackupsSection />
 

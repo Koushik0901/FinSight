@@ -993,7 +993,12 @@ pub fn rank_debt_payoff() -> Arc<dyn Tool> {
             json!({"type":"object","properties":{"method":{"type":"string","enum":["avalanche","snowball"]}}})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let method = args["method"].as_str().unwrap_or("avalanche");
+            // No explicit method means "use whatever school this user
+            // subscribes to", not a hard-coded one.
+            let preferred = finsight_core::metrics::philosophy(ctx.conn)
+                .debt_strategy
+                .as_method();
+            let method = args["method"].as_str().unwrap_or(preferred);
             Ok(serde_json::to_value(finance::rank_debt_payoff(
                 ctx.conn, method,
             )?)?)
@@ -1042,7 +1047,10 @@ pub fn run_debt_payoff_scenarios() -> Arc<dyn Tool> {
             json!({"type":"object","properties":{"method":{"type":"string","enum":["avalanche","snowball"],"default":"avalanche"},"extra_monthly_payment_cents":{"type":"integer","default":0}}})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let method = args["method"].as_str().unwrap_or("avalanche");
+            let preferred = finsight_core::metrics::philosophy(ctx.conn)
+                .debt_strategy
+                .as_method();
+            let method = args["method"].as_str().unwrap_or(preferred);
             let extra = args["extra_monthly_payment_cents"].as_i64().unwrap_or(0);
             Ok(serde_json::to_value(finance::run_debt_payoff_scenarios(
                 ctx.conn, method, extra,

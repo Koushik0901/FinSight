@@ -4,7 +4,11 @@ use finsight_core::routes::AppRoute;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-const HIGH_INTEREST_APR: f64 = 8.0;
+// The "is this debt urgent" threshold used to be a hard-coded 8% here. It now
+// comes from the user's risk tolerance via
+// `finsight_core::metrics::high_interest_apr_pct(conn)`, which still returns
+// 8% for the default (Balanced) profile. Deliberately not kept as a constant
+// too — two sources of truth for the same line is how they drift apart.
 const STARTER_EMERGENCY_CENTS: i64 = 100_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -686,6 +690,9 @@ pub fn analyze_cash_inflow(
     conn: &mut Connection,
     amount_cents: i64,
 ) -> rusqlite::Result<CashInflowAdvice> {
+    // The line between "pay this down" and "invest instead", set by the
+    // user's risk tolerance. Defaults to the previous hard-coded 8%.
+    let high_interest_apr = finsight_core::metrics::high_interest_apr_pct(conn);
     let snapshot = build_snapshot(conn)?;
     let mut remaining = amount_cents.max(0);
     let mut allocations = Vec::new();
@@ -720,7 +727,7 @@ pub fn analyze_cash_inflow(
     });
     for debt in debts
         .iter()
-        .filter(|d| d.apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR)
+        .filter(|d| d.apr_pct.unwrap_or(0.0) >= high_interest_apr)
     {
         if remaining <= 0 {
             break;
@@ -781,7 +788,7 @@ pub fn analyze_cash_inflow(
         && !snapshot
             .liabilities
             .iter()
-            .any(|l| l.balance_cents > 0 && l.apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR);
+            .any(|l| l.balance_cents > 0 && l.apr_pct.unwrap_or(0.0) >= high_interest_apr);
     if !investing_allowed {
         rationale.push("Investing is not recommended yet; answer should stay principles-only and focus on debt/liquidity.".to_string());
     }
@@ -907,6 +914,9 @@ pub fn compare_debt_vs_goal(
     goal_id: &str,
     liability_id: Option<&str>,
 ) -> rusqlite::Result<DebtGoalComparison> {
+    // The line between "pay this down" and "invest instead", set by the
+    // user's risk tolerance. Defaults to the previous hard-coded 8%.
+    let high_interest_apr = finsight_core::metrics::high_interest_apr_pct(conn);
     let snapshot = build_snapshot(conn)?;
     let goal = snapshot
         .goals
@@ -951,7 +961,7 @@ pub fn compare_debt_vs_goal(
         .avg_monthly_expense_90d_cents
         .max(STARTER_EMERGENCY_CENTS);
     let max_safe_drawdown = (snapshot.liquid_balance_cents - emergency_floor).max(0);
-    let suggested_goal_drawdown_cents = if highest_apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR {
+    let suggested_goal_drawdown_cents = if highest_apr_pct.unwrap_or(0.0) >= high_interest_apr {
         goal.current_cents
             .min(max_safe_drawdown)
             .min(compared_debt_cents)
@@ -1003,11 +1013,11 @@ pub fn compare_debt_vs_goal(
 
     let recommendation = if snapshot.emergency_fund_months < 1.0 {
         "Do not raid car savings yet; preserve liquidity and divert future paycheck surplus toward debt first.".to_string()
-    } else if highest_apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR
+    } else if highest_apr_pct.unwrap_or(0.0) >= high_interest_apr
         && suggested_goal_drawdown_cents > 0
     {
         "Use only the portion of car savings above the emergency floor for high-interest debt, then redirect future paychecks to the remaining debt.".to_string()
-    } else if highest_apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR {
+    } else if highest_apr_pct.unwrap_or(0.0) >= high_interest_apr {
         "Prioritize future paycheck surplus toward high-interest debt before adding more to the car goal.".to_string()
     } else {
         "Keep car savings intact and direct new paycheck surplus to debt according to the payoff ranking.".to_string()
@@ -1500,6 +1510,9 @@ pub fn run_purchase_affordability(
     conn: &mut Connection,
     purchase_amount_cents: i64,
 ) -> rusqlite::Result<PurchaseAffordabilityScenario> {
+    // The line between "pay this down" and "invest instead", set by the
+    // user's risk tolerance. Defaults to the previous hard-coded 8%.
+    let high_interest_apr = finsight_core::metrics::high_interest_apr_pct(conn);
     let snapshot = build_snapshot(conn)?;
     let purchase_amount_cents = purchase_amount_cents.max(0);
     let emergency_floor_cents = snapshot
@@ -1520,7 +1533,7 @@ pub fn run_purchase_affordability(
     let high_interest_debt_cents: i64 = snapshot
         .liabilities
         .iter()
-        .filter(|l| l.balance_cents > 0 && l.apr_pct.unwrap_or(0.0) >= HIGH_INTEREST_APR)
+        .filter(|l| l.balance_cents > 0 && l.apr_pct.unwrap_or(0.0) >= high_interest_apr)
         .map(|l| l.balance_cents)
         .sum();
     let safe_cash_available_cents = (starting_emergency_fund_cents - emergency_floor_cents).max(0);
@@ -2320,6 +2333,76 @@ mod tests {
                 .iter()
                 .all(|m| m.message.contains("Store Card")),
             "fully-specified debts should not produce missing-data items"
+        );
+    }
+
+    /// The value the high-interest line was hard-coded to before it became a
+    /// preference. Pinned so the default profile cannot drift off it.
+    const HIGH_INTEREST_APR: f64 = 8.0;
+
+    #[test]
+    fn risk_tolerance_moves_which_debts_count_as_urgent() {
+        // A preference that only changes wording is decoration. This proves it
+        // changes a deterministic engine's output: a 6.5% APR debt sits between
+        // the cautious (5%) and balanced (8%) thresholds, so the same data
+        // yields a different recommendation depending on the profile.
+        use finsight_core::metrics::{
+            set_philosophy, DebtStrategy, FinancialPhilosophy, RiskTolerance,
+        };
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff','manual','liquid',1,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents) VALUES('a1',date('now'),500000)", []).unwrap();
+        // Mid-rate debt: urgent to a cautious profile, not to a balanced one.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('mid','Household','Manual','Loan','Car Loan','USD','#F87171','manual','restricted',0,'debt',6.5,20000,datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('mid',date('now'),-800000,'manual')", []).unwrap();
+        for days in [10, 40, 70] {
+            conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),300000,'Payroll','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
+            conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES(hex(randomblob(16)),'a1',datetime('now', ?1),-200000,'Rent','cleared',datetime('now'))", [format!("-{days} days")]).unwrap();
+        }
+
+        let balanced = analyze_cash_inflow(&mut conn, 200000).unwrap();
+        let balanced_to_debt: i64 = balanced
+            .allocations
+            .iter()
+            .filter(|a| a.target_id.as_deref() == Some("mid"))
+            .map(|a| a.amount_cents)
+            .sum();
+
+        set_philosophy(
+            &conn,
+            &FinancialPhilosophy {
+                debt_strategy: DebtStrategy::Avalanche,
+                risk_tolerance: RiskTolerance::Cautious,
+            },
+        )
+        .unwrap();
+
+        let cautious = analyze_cash_inflow(&mut conn, 200000).unwrap();
+        let cautious_to_debt: i64 = cautious
+            .allocations
+            .iter()
+            .filter(|a| a.target_id.as_deref() == Some("mid"))
+            .map(|a| a.amount_cents)
+            .sum();
+
+        assert!(
+            cautious_to_debt > balanced_to_debt,
+            "a debt-averse profile should send more of a windfall at a 6.5% debt \
+             (cautious {cautious_to_debt}, balanced {balanced_to_debt})"
+        );
+    }
+
+    #[test]
+    fn the_default_profile_uses_the_previous_high_interest_threshold() {
+        // Backward compatibility: an untouched profile must see exactly the
+        // 8% line the constant used to hard-code.
+        let (_dir, db) = fresh();
+        let conn = db.get().unwrap();
+        assert_eq!(
+            finsight_core::metrics::high_interest_apr_pct(&conn),
+            HIGH_INTEREST_APR
         );
     }
 

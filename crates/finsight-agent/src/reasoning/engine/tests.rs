@@ -1082,3 +1082,82 @@ async fn provider_error_still_propagates_once_retries_are_exhausted() {
     let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5).await;
     assert!(result.is_err(), "a persistently failing provider must still surface an error");
 }
+
+/// The trap this guards against: a preference that reaches `planner.rs`'s
+/// prompt (which is recipe-only and never runs for the live Copilot) looks
+/// wired but changes nothing the user sees. `finance_snapshot_block` is the
+/// only per-user context the live reasoning loop receives, so the preference
+/// has to be visible *here* or it is decoration.
+#[test]
+fn the_live_prompt_carries_the_users_stated_philosophy() {
+    use super::finance_snapshot_block;
+    use finsight_core::metrics::{
+        set_philosophy, DebtStrategy, FinancialPhilosophy, RiskTolerance,
+    };
+
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+
+    // Default profile: avalanche at the historic 8% line.
+    let default_block = finance_snapshot_block(&mut conn);
+    assert!(
+        default_block.contains("avalanche"),
+        "default strategy missing from the live prompt: {default_block}"
+    );
+    assert!(
+        default_block.contains("8% APR"),
+        "default high-interest line missing from the live prompt: {default_block}"
+    );
+
+    // Flip to the other school and a lower threshold.
+    set_philosophy(
+        &conn,
+        &FinancialPhilosophy {
+            debt_strategy: DebtStrategy::Snowball,
+            risk_tolerance: RiskTolerance::Cautious,
+        },
+    )
+    .unwrap();
+
+    let changed_block = finance_snapshot_block(&mut conn);
+    assert!(
+        changed_block.contains("snowball"),
+        "chosen strategy missing from the live prompt: {changed_block}"
+    );
+    assert!(
+        changed_block.contains("5% APR"),
+        "chosen high-interest line missing from the live prompt: {changed_block}"
+    );
+    assert!(
+        !changed_block.contains("avalanche"),
+        "the prompt still advertises the strategy the user rejected"
+    );
+    assert_ne!(
+        default_block, changed_block,
+        "changing the preference must change the prompt the model actually sees"
+    );
+}
+
+/// Rust's multi-line string literals need a trailing `\` on every line or the
+/// source indentation lands in the prompt verbatim. That is easy to get wrong
+/// and invisible to a `contains` assertion — it just quietly wastes tokens on
+/// runs of spaces in the one block the model reads every single turn.
+#[test]
+fn the_live_prompt_has_no_stray_indentation() {
+    use super::finance_snapshot_block;
+    let (_dir, db) = fresh_db();
+    let mut conn = db.get().unwrap();
+    let block = finance_snapshot_block(&mut conn);
+
+    for (i, line) in block.lines().enumerate() {
+        assert!(
+            !line.contains("  "),
+            "line {i} carries source indentation into the prompt: {line:?}"
+        );
+        assert_eq!(
+            line,
+            line.trim_end(),
+            "line {i} has trailing whitespace: {line:?}"
+        );
+    }
+}
