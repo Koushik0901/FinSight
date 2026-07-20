@@ -1281,6 +1281,97 @@ mod tests {
         tool.execute(&mut ctx, args).unwrap()
     }
 
+
+    /// The Copilot proposing a category for a transfer would write a category
+    /// onto a row the whole app treats as an internal move — the invariant the
+    /// categorizer, the metrics layer and the importer all hold. This tool is
+    /// where a conversational flow first sees those rows, so it is where the
+    /// exclusion has to bite.
+    #[test]
+    fn uncategorized_listing_never_offers_a_transfer() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('chk','Me','Bank','Checking','Everyday','USD','#fff',datetime('now'))", []).unwrap();
+        // A genuine uncategorized expense.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at)              VALUES('t-real','chk','2026-05-01',-4200,'Corner Shop','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        // A flagged transfer, otherwise identical.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_transfer,created_at)              VALUES('t-xfer','chk','2026-05-02',-50000,'INTERNET TRANSFER 123','cleared',1,datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let out = call(&mut conn, list_uncategorized_transactions(), json!({}));
+        let ids: Vec<String> = out["uncategorized"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap_or_default().to_string())
+            .collect();
+
+        assert!(ids.contains(&"t-real".to_string()), "the real expense should be listed");
+        assert!(
+            !ids.contains(&"t-xfer".to_string()),
+            "a transfer must never be offered for categorization"
+        );
+        // The headline count has to agree with the rows, or the answer says
+        // "12 need categorizing" and shows 11.
+        assert_eq!(out["total_uncategorized"].as_i64(), Some(1));
+    }
+
+    /// Brokerage rows carry no transfer vocabulary in their merchant ("Buy
+    /// ACME"), so they are excluded by account type rather than by keyword.
+    /// Proposing "Shopping" for a stock purchase is the failure here.
+    #[test]
+    fn uncategorized_listing_never_offers_investment_activity() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('brk','Me','Broker','Investment','TFSA','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('chk','Me','Bank','Checking','Everyday','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,activity_type,created_at)              VALUES('t-trade','brk','2026-05-01',-100000,'Buy ACME','cleared','Trade',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at)              VALUES('t-spend','chk','2026-05-02',-4200,'Corner Shop','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let out = call(&mut conn, list_uncategorized_transactions(), json!({}));
+        let ids: Vec<String> = out["uncategorized"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap_or_default().to_string())
+            .collect();
+
+        assert_eq!(ids, vec!["t-spend".to_string()]);
+    }
+
+    /// Income is legitimately uncategorized — a paycheck has no spending
+    /// category. Offering payroll rows would bury the real work.
+    #[test]
+    fn uncategorized_listing_ignores_income() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('chk','Me','Bank','Checking','Everyday','USD','#fff',datetime('now'))", []).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at)              VALUES('t-pay','chk','2026-05-01',300000,'Payroll','cleared',datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let out = call(&mut conn, list_uncategorized_transactions(), json!({}));
+        assert!(out["uncategorized"].as_array().unwrap().is_empty());
+        assert_eq!(out["total_uncategorized"].as_i64(), Some(0));
+    }
+
     fn seed_txns(conn: &mut Connection) {
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('chk','Me','Bank','Checking','Everyday Checking','USD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at) VALUES('amex','Me','Amex','Credit','Amex Card','USD','#111',datetime('now'))", []).unwrap();
