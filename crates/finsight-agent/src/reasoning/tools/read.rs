@@ -640,10 +640,11 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
             // a separate liabilities-table row; "balance_cents" here is the
             // amount owed (positive), matching the old liabilities convention.
             let mut stmt = ctx.conn.prepare(
-                "SELECT id, name, type, balance, apr_pct, limit_cents, min_payment_cents, payoff_date FROM (
+                "SELECT id, name, type, balance, apr_pct, limit_cents, min_payment_cents, payoff_date, promo_apr_expires_on, post_promo_apr_pct FROM (
                      SELECT a.id, a.name, a.type,
                             -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
-                            a.apr_pct, a.limit_cents, a.min_payment_cents, a.payoff_date
+                            a.apr_pct, a.limit_cents, a.min_payment_cents, a.payoff_date,
+                            a.promo_apr_expires_on, a.post_promo_apr_pct
                      FROM accounts a
                      WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
                  ) WHERE balance > 0
@@ -652,7 +653,11 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
             let rows: Vec<Value> = stmt.query_map([], |r| {
                 let account_type: String = r.get(2)?;
                 let liability_type = if account_type == "Credit" { "credit-card" } else { "loan" };
-                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "liability_type": liability_type, "balance_cents": r.get::<_, i64>(3)?, "apr_pct": r.get::<_, Option<f64>>(4)?, "limit_cents": r.get::<_, Option<i64>>(5)?, "min_payment_cents": r.get::<_, Option<i64>>(6)?, "payoff_date": r.get::<_, Option<String>>(7)?}))
+                // `apr_pct` is the rate TODAY. Handing the model a promotional
+                // 0% with no end date attached invites it to describe a balance
+                // as free that is about to become expensive, so the expiry and
+                // the rate it reverts to travel with it.
+                Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "liability_type": liability_type, "balance_cents": r.get::<_, i64>(3)?, "apr_pct": r.get::<_, Option<f64>>(4)?, "limit_cents": r.get::<_, Option<i64>>(5)?, "min_payment_cents": r.get::<_, Option<i64>>(6)?, "payoff_date": r.get::<_, Option<String>>(7)?, "promo_apr_expires_on": r.get::<_, Option<String>>(8)?, "post_promo_apr_pct": r.get::<_, Option<f64>>(9)?}))
             })?.filter_map(|r| r.ok()).collect();
             let total: i64 = rows
                 .iter()

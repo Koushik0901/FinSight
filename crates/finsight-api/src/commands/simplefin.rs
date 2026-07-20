@@ -267,6 +267,12 @@ pub async fn save_simplefin_setup_token(
                     limit_cents: existing.limit_cents,
                     original_balance_cents: existing.original_balance_cents,
                     started_at: existing.started_at,
+                    // A promo expiry is user-entered and unknowable from the
+                    // feed, so a sync must carry it forward. Dropping it would
+                    // silently turn a rate that is about to jump back into a
+                    // permanent one — exactly the misleading state this models.
+                    promo_apr_expires_on: existing.promo_apr_expires_on,
+                    post_promo_apr_pct: existing.post_promo_apr_pct,
                 };
                 let _ = accounts::upsert_simplefin_account(conn, refreshed)?;
             }
@@ -494,6 +500,8 @@ pub async fn import_simplefin_accounts(
                 let bank = remote.connection_name.clone();
                 let account_type = remote.account_type;
                 let account = NewAccount {
+                    promo_apr_expires_on: None,
+                    post_promo_apr_pct: None,
                     owner: "Me".to_string(),
                     bank,
                     r#type: account_type,

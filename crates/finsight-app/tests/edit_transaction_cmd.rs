@@ -25,6 +25,8 @@ fn seed(conn: &mut rusqlite::Connection) -> (String, String) {
     let acc = accounts::insert(
         conn,
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "Me".into(),
             bank: "B".into(),
             r#type: AccountType::Checking,

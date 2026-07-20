@@ -96,6 +96,8 @@ mod tests {
         let acct = accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "me".into(),
                 bank: "Bank".into(),
                 r#type: crate::models::AccountType::Checking,

@@ -147,6 +147,8 @@ mod tests {
         accounts::insert(
             conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Checking,

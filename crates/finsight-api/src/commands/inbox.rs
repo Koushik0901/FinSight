@@ -5,6 +5,11 @@ use crate::{
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use finsight_agent::LOW_CONFIDENCE_THRESHOLD;
 use finsight_core::repos::run;
+
+/// How far ahead of a promotional-rate expiry to start warning. Long enough to
+/// actually do something about it (pay it down, move the balance), short enough
+/// that it is not permanent background noise.
+const PROMO_EXPIRY_LEAD_DAYS: i64 = 60;
 use rusqlite::params;
 use serde::Serialize;
 use specta::Type;
@@ -15,7 +20,7 @@ use specta::Type;
 pub struct ActionItem {
     /// Stable ID for this item — used as React key and for deduplication.
     pub id: String,
-    /// "review" | "bills" | "budget" | "goals" | "savings"
+    /// "review" | "bills" | "budget" | "goals" | "savings" | "debt"
     pub category: String,
     /// "high" | "medium" | "low"
     pub priority: String,
@@ -279,6 +284,81 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
                     action_route: "/recurring".to_string(),
                     badge_count: None,
                     amount_cents: Some(*amount),
+                });
+            }
+        }
+
+        // ── 4b. Promotional APR about to expire ──────────────────────────────
+        //
+        // One of the few genuinely time-critical events in personal finance:
+        // the warning is only useful BEFORE it lands, and afterwards the
+        // balance is simply expensive with nothing left to decide. Fires
+        // strictly inside a lead window so it is actionable rather than
+        // ambient.
+        {
+            let mut stmt = conn.prepare(
+                "SELECT a.id, a.name, a.apr_pct, a.promo_apr_expires_on, a.post_promo_apr_pct, \
+                        COALESCE((SELECT b.balance_cents FROM account_balances b \
+                                  WHERE b.account_id = a.id \
+                                  ORDER BY b.as_of_date DESC, \
+                                    CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 \
+                                                  WHEN 'seed' THEN 3 ELSE 1 END \
+                                  LIMIT 1), 0) AS balance \
+                 FROM accounts a \
+                 WHERE a.archived_at IS NULL \
+                   AND a.type IN ('Credit', 'Loan') \
+                   AND a.promo_apr_expires_on IS NOT NULL",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<f64>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<f64>>(4)?,
+                    r.get::<_, i64>(5)?,
+                ))
+            })?;
+            let today_date = now.date_naive();
+            for row in rows.flatten() {
+                let (id, name, apr, expires_on, post_promo, balance) = row;
+                // WHETHER to warn is a domain rule, kept in core so it is
+                // testable against synthetic data rather than only reachable
+                // through a live ApiState. This loop only formats the answer.
+                let Some(warning) = finsight_core::models::promo_expiry_warning(
+                    apr,
+                    expires_on.as_deref(),
+                    post_promo,
+                    balance,
+                    today_date,
+                    PROMO_EXPIRY_LEAD_DAYS,
+                ) else {
+                    continue;
+                };
+                let becomes = match warning.becomes_apr_pct {
+                    Some(rate) => format!("{rate}%"),
+                    None => "a rate you haven't recorded".to_string(),
+                };
+                let when = match warning.days_left {
+                    0 => "today".to_string(),
+                    1 => "tomorrow".to_string(),
+                    d => format!("in {d} days"),
+                };
+                items.push(ActionItem {
+                    id: format!("promo-apr-{id}"),
+                    category: "debt".to_string(),
+                    // Escalates as the date approaches — a month out is worth
+                    // planning around, a fortnight out is worth acting on.
+                    priority: if warning.days_left <= 14 { "high" } else { "medium" }.to_string(),
+                    title: format!("{name}'s promotional rate ends {when}"),
+                    detail: format!(
+                        "{} of balance starts accruing {becomes}. Paying it down or moving it before then is the whole window.",
+                        fmt_money(warning.owed_cents)
+                    ),
+                    action_label: "Review this account".to_string(),
+                    action_route: finsight_core::routes::AppRoute::Accounts.focused(&id),
+                    badge_count: None,
+                    amount_cents: Some(warning.owed_cents),
                 });
             }
         }

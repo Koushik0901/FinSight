@@ -848,6 +848,8 @@ mod tests {
 
     fn account(name: &str, ty: AccountType, opening: i64, ef_eligible: bool) -> NewAccount {
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             owner: "me".into(),
             bank: "Bank".into(),
             r#type: ty,
@@ -895,6 +897,8 @@ mod tests {
         currency: &str,
     ) -> NewAccount {
         NewAccount {
+            promo_apr_expires_on: None,
+            post_promo_apr_pct: None,
             currency: currency.into(),
             ..account(name, ty, opening, ef_eligible)
         }

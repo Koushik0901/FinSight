@@ -13,7 +13,7 @@ vi.mock("../client", () => ({
 describe("useUpdateAccount", () => {
   it("calls updateAccount and invalidates queries", async () => {
     const { result } = renderHook(() => useUpdateAccount(), { wrapper: createWrapper() });
-    result.current.mutate({ id: "a1", patch: { name: "Updated", bank: null, account_type: null, color: null, last4: null, currency: null, liquidity_type: null, emergency_fund_eligible: null, goal_earmark: null, apy_pct: null, nickname: null, official_name: null, subtype: null, account_group: null, import_pending: null, apr_pct: null, min_payment_cents: null, payoff_date: null, limit_cents: null, original_balance_cents: null, started_at: null } });
+    result.current.mutate({ id: "a1", patch: { name: "Updated", bank: null, account_type: null, color: null, last4: null, currency: null, liquidity_type: null, emergency_fund_eligible: null, goal_earmark: null, apy_pct: null, nickname: null, official_name: null, subtype: null, account_group: null, import_pending: null, apr_pct: null, min_payment_cents: null, payoff_date: null, limit_cents: null, original_balance_cents: null, started_at: null, promo_apr_expires_on: null, post_promo_apr_pct: null } });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.name).toBe("Updated");
   });

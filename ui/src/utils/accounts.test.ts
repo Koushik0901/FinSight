@@ -38,6 +38,8 @@ function makeAccount(overrides: Partial<AccountSummary> = {}): AccountSummary {
     limit_cents: null,
     original_balance_cents: null,
     started_at: null,
+    promo_apr_expires_on: null,
+    post_promo_apr_pct: null,
     ...overrides,
   };
 }

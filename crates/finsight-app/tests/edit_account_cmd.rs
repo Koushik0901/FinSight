@@ -23,6 +23,8 @@ async fn update_account_name_and_color() {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Chase".into(),
                 r#type: AccountType::Checking,
@@ -81,6 +83,8 @@ async fn archive_account_cleans_up_mappings() {
         let acc = accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Chase".into(),
                 r#type: AccountType::Checking,

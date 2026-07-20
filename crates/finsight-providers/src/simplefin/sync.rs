@@ -469,6 +469,8 @@ mod tests {
         let account = finsight_core::repos::accounts::insert(
             &mut conn,
             finsight_core::models::NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: finsight_core::models::AccountType::Checking,

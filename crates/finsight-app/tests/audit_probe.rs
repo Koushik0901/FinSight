@@ -27,6 +27,8 @@ fn bank_for(name: &str) -> &'static str {
 fn new_account(id_hint: &str, name: &str, ty: AccountType, ef: bool) -> NewAccount {
     let _ = id_hint;
     NewAccount {
+        promo_apr_expires_on: None,
+        post_promo_apr_pct: None,
         owner: "Koushik Sivarama Krishnan".into(),
         bank: bank_for(name).into(),
         r#type: ty,

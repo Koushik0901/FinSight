@@ -1140,6 +1140,8 @@ mod tests {
         accounts::insert(
             conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Checking,
@@ -1302,6 +1304,8 @@ mod tests {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Me".into(),
                 bank: "Bank".into(),
                 r#type: AccountType::Savings,
@@ -1342,6 +1346,8 @@ mod tests {
         accounts::insert(
             &mut conn,
             NewAccount {
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
                 owner: "Household".into(),
                 bank: "Manual".into(),
                 r#type: AccountType::Loan,
