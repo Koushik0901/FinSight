@@ -1704,12 +1704,6 @@ fn contains_investment_specifics(content: &str) -> bool {
         .any(|term| lower.contains(term))
 }
 
-fn ceil_div(n: i64, d: i64) -> i64 {
-    if d <= 0 {
-        return 0;
-    }
-    (n + d - 1) / d
-}
 fn urgent_underfunded_goal(snapshot: &FinancialSnapshot) -> Option<&finance::SnapshotGoal> {
     snapshot.goals.iter().find(|goal| {
         let Some(target_date) = goal.target_date.as_deref().and_then(parse_goal_date) else {
@@ -1719,11 +1713,13 @@ fn urgent_underfunded_goal(snapshot: &FinancialSnapshot) -> Option<&finance::Sna
         if !(0..=12).contains(&months_until_due) {
             return false;
         }
-        let required_monthly_cents = if months_until_due <= 0 {
-            goal.remaining_cents
-        } else {
-            ceil_div(goal.remaining_cents, months_until_due)
-        };
+        // One definition of "what must go in each month", shared with the
+        // sinking-fund planner — two copies of this drift the moment one gets
+        // a rounding fix the other does not.
+        let required_monthly_cents = finance::required_monthly_contribution_cents(
+            goal.remaining_cents,
+            months_until_due,
+        );
         goal.remaining_cents > 0 && required_monthly_cents > goal.monthly_cents.max(0)
     })
 }

@@ -1023,6 +1023,35 @@ pub fn rank_debt_payoff() -> Arc<dyn Tool> {
 /// crossing the user's own accounts. Nothing is stored: the tab is recomputed
 /// every time, so it cannot drift out of date the way a hand-maintained
 /// balance would.
+/// What the user's sinking funds require each month.
+///
+/// Separate from goal ETA because the question is inverted: a goal asks "when
+/// will I get there at this rate", a sinking fund asks "what rate gets me
+/// there by this date". The date is given, so the monthly figure is
+/// arithmetic rather than a projection.
+pub fn plan_sinking_funds() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "plan_sinking_funds"
+        }
+        fn description(&self) -> &str {
+            "Required monthly contribution for each sinking fund — a known amount due on a known \
+             date, like car insurance or property tax. Use for 'am I saving enough for X', \
+             'what do my sinking funds cost me per month', or before allocating spare money, \
+             since these are commitments against the same surplus goals compete for. Reports \
+             shortfalls and overdue funds."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type": "object", "properties": {}})
+        }
+        fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
+            Ok(serde_json::to_value(finance::plan_sinking_funds(ctx.conn)?)?)
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn get_counterparty_position() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

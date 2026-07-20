@@ -33,6 +33,7 @@ const ALL_TOOL_NAMES = [
   "rank_debt_payoff",
   "compare_payoff_strategies",
   "get_counterparty_position",
+  "plan_sinking_funds",
   "compare_debt_vs_goal",
   "get_account_balances",
   "get_month_totals",
