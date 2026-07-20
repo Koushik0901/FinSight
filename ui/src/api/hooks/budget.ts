@@ -171,6 +171,33 @@ export function useUpdateGoalPurpose() {
   });
 }
 
+/**
+ * Priority and deadline strictness are saved together because the planner reads
+ * them as a pair — a hard deadline on a "someday" goal and a "critical" goal
+ * with no date are both coherent, and ordering needs to see both.
+ */
+export function useUpdateGoalPriority() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      priority,
+      deadlineStrictness,
+    }: {
+      id: string;
+      priority: string;
+      deadlineStrictness: string;
+    }) => {
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      const result = await commands.updateGoalPriority(id, priority, deadlineStrictness);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSuccess: () => {
+      invalidateDomains(qc, "goals");
+    },
+  });
+}
+
 // ── Plan Next Month ───────────────────────────────────────────────────────
 
 export function usePlanNextMonthData() {

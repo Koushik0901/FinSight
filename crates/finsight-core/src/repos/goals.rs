@@ -3,6 +3,85 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
+/// How much a goal matters relative to the others, as the USER sees it.
+///
+/// Distinct from `sort_order`, which is where they dragged the card. Dragging a
+/// list around must not silently change financial advice, so importance is its
+/// own axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GoalPriority {
+    /// Fund before anything else — the emergency fund, a tax bill.
+    Critical,
+    High,
+    /// The default. Every goal that existed before priorities did.
+    Normal,
+    /// Aspirational. Fund from what is genuinely spare.
+    Someday,
+}
+
+impl GoalPriority {
+    /// Parse a stored value, falling back to `Normal` for anything
+    /// unrecognised. A goal whose priority we cannot read must still be
+    /// planned around — dropping it, or refusing to rank it, would lose the
+    /// user's money from their own plan over a typo.
+    pub fn from_db(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "critical" => Self::Critical,
+            "high" => Self::High,
+            "someday" => Self::Someday,
+            _ => Self::Normal,
+        }
+    }
+
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Normal => "normal",
+            Self::Someday => "someday",
+        }
+    }
+
+    /// Sort key: lower comes first. Derived from the declaration order above,
+    /// so adding a level in the right place is all it takes.
+    pub fn rank(self) -> u8 {
+        self as u8
+    }
+}
+
+/// What the goal's `target_date` actually commits the user to.
+///
+/// The same date can be an immovable obligation or a hope, and allocation
+/// should not treat a wedding like "pay off the car by summer".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeadlineStrictness {
+    /// Immovable: a wedding, a visa fee, a tax instalment. Missing it costs
+    /// something real beyond disappointment.
+    Hard,
+    /// The default — a date the user is aiming at.
+    Target,
+    /// No meaningful deadline.
+    None,
+}
+
+impl DeadlineStrictness {
+    pub fn from_db(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "hard" => Self::Hard,
+            "none" => Self::None,
+            _ => Self::Target,
+        }
+    }
+
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Hard => "hard",
+            Self::Target => "target",
+            Self::None => "none",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Goal {
     pub id: String,
@@ -18,6 +97,38 @@ pub struct Goal {
     pub sort_order: i64,
     pub created_at: String,
     pub account_id: Option<String>,
+    pub priority: GoalPriority,
+    pub deadline_strictness: DeadlineStrictness,
+}
+
+impl Goal {
+    /// What the deadline actually means, reconciling the stored strictness with
+    /// whether a date exists at all.
+    ///
+    /// A goal with no `target_date` is open-ended whatever the column says —
+    /// the two can disagree (set a hard date, then clear the date) and the
+    /// stored value alone would have planning treat a nonexistent deadline as
+    /// immovable.
+    pub fn effective_strictness(&self) -> DeadlineStrictness {
+        match self.target_date.as_deref().map(str::trim) {
+            None | Some("") => DeadlineStrictness::None,
+            Some(_) => self.deadline_strictness,
+        }
+    }
+
+    /// Ordering key for "what should I fund first": priority, then whether the
+    /// deadline is immovable, then the soonest date.
+    ///
+    /// Every goal that predates this feature sorts identically to every other,
+    /// which is what makes the new ordering collapse back to the old
+    /// date-based one when nobody has expressed a preference.
+    pub fn funding_order_key(&self) -> (u8, u8, Option<String>) {
+        let hard_first = match self.effective_strictness() {
+            DeadlineStrictness::Hard => 0,
+            _ => 1,
+        };
+        (self.priority.rank(), hard_first, self.target_date.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -31,26 +142,24 @@ pub struct NewGoal {
     pub notes: Option<String>,
     pub purpose: Option<String>,
     pub account_id: Option<String>,
+    /// `None` uses the schema default (`normal` / `target`), so a caller that
+    /// does not care about priority does not have to think about it.
+    pub priority: Option<GoalPriority>,
+    pub deadline_strictness: Option<DeadlineStrictness>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct GoalPatch {
-    pub name: Option<String>,
-    pub target_cents: Option<i64>,
-    pub current_cents: Option<i64>,
-    pub monthly_cents: Option<i64>,
-    pub target_date: Option<Option<String>>,
-    pub color: Option<String>,
-    pub notes: Option<String>,
-    pub purpose: Option<Option<String>>,
-    pub account_id: Option<Option<String>>,
-}
+// `GoalPatch` used to live here. It was dead — declared, never constructed,
+// never read anywhere in the workspace — while goals are actually edited
+// through narrow intent-named commands (`update_goal_monthly`,
+// `update_goal_balance`, and now `set_goal_priority`). Removed rather than
+// grown, because a patch struct nothing reads is a standing invitation to add
+// a field to it and wonder why nothing happens.
 
 pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                account_id \
+                account_id, priority, deadline_strictness \
          FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -68,6 +177,8 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<Goal>> {
             sort_order: r.get(10)?,
             created_at: r.get(11)?,
             account_id: r.get(12)?,
+            priority: GoalPriority::from_db(&r.get::<_, String>(13)?),
+            deadline_strictness: DeadlineStrictness::from_db(&r.get::<_, String>(14)?),
         })
     })?;
     let mut out = Vec::new();
@@ -81,7 +192,7 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
     let mut stmt = conn.prepare(
         "SELECT id, name, type, target_cents, current_cents, monthly_cents, \
                 target_date, color, notes, purpose, sort_order, created_at, \
-                account_id \
+                account_id, priority, deadline_strictness \
          FROM goals WHERE id = ?1 AND archived_at IS NULL",
     )?;
     let mut rows = stmt.query_map(params![id], |r| {
@@ -99,6 +210,8 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Goal> {
             sort_order: r.get(10)?,
             created_at: r.get(11)?,
             account_id: r.get(12)?,
+            priority: GoalPriority::from_db(&r.get::<_, String>(13)?),
+            deadline_strictness: DeadlineStrictness::from_db(&r.get::<_, String>(14)?),
         })
     })?;
     rows.next()
@@ -112,8 +225,8 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
     conn.execute(
         "INSERT INTO goals(id, name, type, target_cents, current_cents, monthly_cents, \
                            target_date, color, notes, purpose, sort_order, created_at, \
-                           account_id)
-         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
+                           account_id, priority, deadline_strictness)
+         VALUES(?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13)",
         params![
             id,
             g.name,
@@ -125,7 +238,11 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
             g.notes,
             g.purpose,
             now,
-            g.account_id
+            g.account_id,
+            g.priority.unwrap_or(GoalPriority::Normal).as_db(),
+            g.deadline_strictness
+                .unwrap_or(DeadlineStrictness::Target)
+                .as_db()
         ],
     )?;
     Ok(Goal {
@@ -142,7 +259,27 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         sort_order: 0,
         created_at: now,
         account_id: g.account_id,
+        priority: g.priority.unwrap_or(GoalPriority::Normal),
+        deadline_strictness: g.deadline_strictness.unwrap_or(DeadlineStrictness::Target),
     })
+}
+
+/// Record how much a goal matters and what its date commits the user to.
+///
+/// Narrow and intent-named, matching `update_goal_monthly` — these two travel
+/// together in the UI and neither is meaningful without the other in the
+/// planner.
+pub fn set_priority(
+    conn: &mut Connection,
+    id: &str,
+    priority: GoalPriority,
+    deadline_strictness: DeadlineStrictness,
+) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE goals SET priority = ?1, deadline_strictness = ?2 WHERE id = ?3",
+        params![priority.as_db(), deadline_strictness.as_db(), id],
+    )?;
+    Ok(())
 }
 
 /// Sync `current_cents` of every goal linked to the given account with the
@@ -302,6 +439,8 @@ mod tests {
         let goal = insert(
             &mut conn,
             NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Italy trip".into(),
                 goal_type: "save-by-date".into(),
                 target_cents: 500_000,
@@ -330,6 +469,8 @@ mod tests {
         let goal = insert(
             &mut conn,
             NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Emergency".into(),
                 goal_type: "build-balance".into(),
                 target_cents: 1_000_000,
@@ -415,6 +556,8 @@ mod tests {
         let goal = insert(
             &mut conn,
             NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Payoff".into(),
                 goal_type: "debt-payoff".into(),
                 target_cents: 5_000_00,
@@ -441,6 +584,8 @@ mod tests {
         let goal = insert(
             &mut conn,
             NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Payoff".into(),
                 goal_type: "debt-payoff".into(),
                 target_cents: 5_000_00,
@@ -470,6 +615,8 @@ mod tests {
         let goal = insert(
             &mut conn,
             NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Pay off car".into(),
                 goal_type: "debt-payoff".into(),
                 target_cents: 5_000_00,

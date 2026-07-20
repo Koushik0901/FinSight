@@ -20,6 +20,21 @@ const TYPE_LABELS: Record<string, string> = {
   "sinking-fund": "Sinking fund",
 };
 
+/// Written as what the user is saying about the goal, not as abstract levels —
+/// "Nice to have" is answerable; "Someday" is a category to decode.
+const PRIORITY_LABELS: Record<string, string> = {
+  critical: "Must fund first",
+  high: "Important",
+  normal: "Normal",
+  someday: "Nice to have",
+};
+
+const STRICTNESS_LABELS: Record<string, string> = {
+  hard: "Fixed — the date can't move",
+  target: "A target I'm aiming for",
+  none: "No real deadline",
+};
+
 function paceLabel(goal: GoalDto) {
   // Spending caps invert the usual direction: a full bar is bad, not "ahead".
   if (goal.goalType === "spending-cap") {
@@ -439,6 +454,8 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
   const [targetDate, setTargetDate] = useState("");
   const [purpose, setPurpose] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [deadlineStrictness, setDeadlineStrictness] = useState("target");
 
   const submit = async () => {
     if (!name.trim() || !target) {
@@ -456,6 +473,10 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
       notes: null,
       purpose: purpose.trim() || null,
       accountId: accountId || null,
+      priority,
+      // A goal with no date is open-ended whatever the picker says, so don't
+      // record a commitment the date cannot back up.
+      deadlineStrictness: targetDate ? deadlineStrictness : "none",
     };
 
     try {
@@ -482,6 +503,12 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
         <label className="stack stack-xs"><span className="muted">Target ($)</span><input className="control" type="number" value={target} onChange={(e) => setTarget(e.target.value)} /></label>
         <label className="stack stack-xs"><span className="muted">Monthly contribution ($)</span><input className="control" type="number" value={monthly} onChange={(e) => setMonthly(e.target.value)} /></label>
         <label className="stack stack-xs"><span className="muted">Target date</span><input className="control" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></label>
+        <label className="stack stack-xs"><span className="muted">Priority</span><select className="control" value={priority} onChange={(e) => setPriority(e.target.value)}>{Object.entries(PRIORITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {/* Only meaningful with a date — an open-ended goal has no deadline to
+            be strict about, and offering the choice would imply otherwise. */}
+        {targetDate && (
+          <label className="stack stack-xs"><span className="muted">Is that date firm?</span><select className="control" value={deadlineStrictness} onChange={(e) => setDeadlineStrictness(e.target.value)}>{Object.entries(STRICTNESS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        )}
         <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Linked account</span><select className="control" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">None</option>{accounts.map((account) => <option key={account.id} value={account.id}>{getAccountDisplayName(account)}</option>)}</select></label>
         <label className="stack stack-xs" style={{ gridColumn: "1 / -1" }}><span className="muted">Why this goal?</span><textarea className="control" rows={3} value={purpose} onChange={(e) => setPurpose(e.target.value)} /></label>
       </div>

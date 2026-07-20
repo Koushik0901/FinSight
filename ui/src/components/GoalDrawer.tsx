@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
-import { useUpdateGoalMonthly, useUpdateGoalPurpose, useGoalContributions, useContributeToGoal } from "../api/hooks/budget";
+import { useUpdateGoalMonthly, useUpdateGoalPurpose, useUpdateGoalPriority, useGoalContributions, useContributeToGoal } from "../api/hooks/budget";
 import type { GoalDto } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
@@ -17,8 +17,11 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
   const updateMonthly = useUpdateGoalMonthly();
   const updatePurpose = useUpdateGoalPurpose();
   const { data: accounts = [] } = useAccounts();
+  const updatePriority = useUpdateGoalPriority();
   const [monthly, setMonthly] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [priority, setPriority] = useState("normal");
+  const [strictness, setStrictness] = useState("target");
   const [contribAmount, setContribAmount] = useState("");
   const [contribNote, setContribNote] = useState("");
 
@@ -60,6 +63,8 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
     }
     setMonthly(String((goal.monthlyCents / 100).toFixed(2)));
     setPurpose(goal.purpose ?? "");
+    setPriority(goal.priority || "normal");
+    setStrictness(goal.deadlineStrictness || "target");
   }, [goal?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const linkedAccount = useMemo(
@@ -81,6 +86,19 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
       }
       if (nextPurpose !== currentPurpose) {
         tasks.push(updatePurpose.mutateAsync({ id: goal.id, purpose: nextPurpose || null }));
+      }
+      // Sent as a pair, and only when something actually changed — the planner
+      // reads them together, so a partial write would leave an incoherent
+      // combination behind.
+      const nextStrictness = goal.targetDate ? strictness : "none";
+      if (priority !== goal.priority || nextStrictness !== goal.deadlineStrictness) {
+        tasks.push(
+          updatePriority.mutateAsync({
+            id: goal.id,
+            priority,
+            deadlineStrictness: nextStrictness,
+          }),
+        );
       }
       if (tasks.length === 0) {
         onClose();
@@ -149,13 +167,43 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
           </label>
 
           <label>
+            Priority
+            <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="critical">Must fund first</option>
+              <option value="high">Important</option>
+              <option value="normal">Normal</option>
+              <option value="someday">Nice to have</option>
+            </select>
+          </label>
+          {/* Outside the label on purpose: text inside one becomes part of the
+              field's accessible name, so a screen reader would announce the
+              whole explanation as the control's label. */}
+          <p className="muted" style={{ fontSize: 12, marginTop: -8 }}>
+            Used when goals compete for the same money. Separate from the order
+            the cards are arranged in.
+          </p>
+
+          {/* Only offered with a date: an open-ended goal has no deadline to be
+              strict about, and the choice would imply it does. */}
+          {goal?.targetDate && (
+            <label>
+              Is {goal.targetDate} firm?
+              <select value={strictness} onChange={(e) => setStrictness(e.target.value)}>
+                <option value="hard">Fixed — the date can&rsquo;t move</option>
+                <option value="target">A target I&rsquo;m aiming for</option>
+                <option value="none">No real deadline</option>
+              </select>
+            </label>
+          )}
+
+          <label>
             Purpose
             <textarea rows={4} value={purpose} onChange={(e) => setPurpose(e.target.value)} />
           </label>
 
           <div className="form-actions">
             <button type="button" onClick={onClose}>Cancel</button>
-            <button type="button" className="primary" onClick={() => void save()} disabled={updateMonthly.isPending || updatePurpose.isPending}>
+            <button type="button" className="primary" onClick={() => void save()} disabled={updateMonthly.isPending || updatePurpose.isPending || updatePriority.isPending}>
               Save goal
             </button>
           </div>

@@ -1166,6 +1166,14 @@ async updateGoalMonthly(id: string, monthlyCents: number) : Promise<Result<null,
     else return { status: "error", error: e  as any };
 }
 },
+async updateGoalPriority(id: string, priority: string, deadlineStrictness: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_goal_priority", { id, priority, deadlineStrictness }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateGoalPurpose(id: string, purpose: string | null) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_goal_purpose", { id, purpose }) };
@@ -2182,7 +2190,16 @@ riskTolerance: string;
  */
 highInterestAprPct: number }
 export type GoalContributionDto = { id: string; goalId: string; amountCents: number; note: string | null; source: string; createdAt: string }
-export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null }
+export type GoalDto = { id: string; name: string; goalType: string; targetCents: number; currentCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; sortOrder: number; createdAt: string; accountId: string | null; 
+/**
+ * "critical" | "high" | "normal" | "someday" — how much this goal matters,
+ * as distinct from `sort_order`, which is only where the card sits.
+ */
+priority: string; 
+/**
+ * "hard" | "target" | "none" — what `target_date` commits the user to.
+ */
+deadlineStrictness: string }
 export type HealthScore = { total: number; grade: string; breakdown: HealthScoreBreakdown; tips: string[] }
 export type HealthScoreBreakdown = { savingsRatePts: number; emergencyFundPts: number; debtRatioPts: number; goalProgressPts: number; budgetAdherencePts: number; savingsRatePct: number; emergencyFundMonths: number; debtToIncomePct: number; avgGoalPct: number; budgetAdherencePct: number }
 /**
@@ -2376,7 +2393,11 @@ export type MonthlyReview = { id: string; year: number; month: number; monthLabe
 export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group?: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending?: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; promo_apr_expires_on?: string | null; post_promo_apr_pct?: number | null }
-export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; accountId: string | null }
+export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; accountId: string | null; 
+/**
+ * Omitted by callers that do not care; the schema defaults apply.
+ */
+priority?: string | null; deadlineStrictness?: string | null }
 export type NewManualAsset = { name: string; assetType: string; valueCents: number; currency: string; notes: string | null }
 export type NewPlannedTransaction = { description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; source: string }
 export type NewTransaction = { account_id: string; posted_at: string; amount_cents: number; merchant_raw: string; category_id: string | null; notes: string | null; status: TransactionStatus; imported_id: string | null; source: string | null; raw_synced_data: string | null; pending: boolean; external_tx_id: string | null; external_account_id: string | null; 

@@ -153,6 +153,14 @@ pub struct GoalContextItem {
     pub pct_complete: i64,
     pub months_to_goal: Option<i64>,
     pub is_on_track: bool,
+    /// What the user said this goal is worth relative to the others, and
+    /// whether its date is a commitment or a hope. Without these the model had
+    /// to treat every goal as equally important and every date as equally
+    /// movable, which is exactly what makes multi-goal advice generic.
+    #[serde(default)]
+    pub priority: String,
+    #[serde(default)]
+    pub deadline_strictness: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -328,8 +336,21 @@ impl FinancialContext {
                     .as_deref()
                     .map(|p| format!(", why: \"{p}\""))
                     .unwrap_or_default();
+                // Priority and deadline are stated only when the user actually
+                // set them. Printing "priority normal, deadline target" on
+                // every goal would be noise the model reads as a signal —
+                // silence means "they didn't say", which is the truth.
+                let priority_str = match goal.priority.as_str() {
+                    "" | "normal" => String::new(),
+                    p => format!(", priority {p}"),
+                };
+                let deadline_str = match goal.deadline_strictness.as_str() {
+                    "hard" => ", deadline is HARD (a fixed commitment, not a preference)",
+                    "none" => ", no deadline",
+                    _ => "",
+                };
                 lines.push(format!(
-                    "   - {} [{}]: target {}, current {}, monthly {}, complete {}%, ETA {}, on-track {}{}",
+                    "   - {} [{}]: target {}, current {}, monthly {}, complete {}%, ETA {}, on-track {}{}{}{}",
                     goal.name,
                     goal.id,
                     fmt_money(goal.target_cents),
@@ -338,8 +359,22 @@ impl FinancialContext {
                     goal.pct_complete,
                     eta,
                     goal.is_on_track,
+                    priority_str,
+                    deadline_str,
                     purpose_str
                 ));
+            }
+            if self
+                .goals
+                .iter()
+                .any(|g| g.priority != "normal" || g.deadline_strictness == "hard")
+            {
+                lines.push(
+                    "   - The user has ranked these. Fund higher priority and HARD deadlines \
+                     first when they compete, and say so when a ranking is why you recommended \
+                     one over another."
+                        .to_string(),
+                );
             }
         }
 
@@ -778,6 +813,10 @@ fn goal_context(conn: &mut Connection, today: NaiveDate) -> Vec<GoalContextItem>
                 .unwrap_or(true);
 
             GoalContextItem {
+                priority: goal.priority.as_db().to_string(),
+                // Resolved against whether a date exists, so the model is never
+                // told a dateless goal has an immovable deadline.
+                deadline_strictness: goal.effective_strictness().as_db().to_string(),
                 id: goal.id,
                 name: goal.name,
                 purpose: goal.purpose,

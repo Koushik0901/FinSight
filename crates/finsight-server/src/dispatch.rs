@@ -259,6 +259,13 @@ async fn dispatch(
             arg(&p, "monthlyCents")?,
         )
         .await?),
+        "update_goal_priority" => ok(c::budget::update_goal_priority(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "priority")?,
+            arg(&p, "deadlineStrictness")?,
+        )
+        .await?),
         "update_goal_purpose" => ok(c::budget::update_goal_purpose(
             api,
             arg(&p, "id")?,
@@ -881,6 +888,7 @@ pub const SUPPORTED: &[&str] = &[
     "archive_goal",
     "project_goal_growth",
     "update_goal_monthly",
+    "update_goal_priority",
     "update_goal_purpose",
     "get_plan_next_month_data",
     "apply_next_month_plan",

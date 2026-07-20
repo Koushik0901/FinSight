@@ -547,6 +547,8 @@ mod tests {
         let goal = goals::insert(
             &mut conn,
             goals::NewGoal {
+                priority: None,
+                deadline_strictness: None,
                 name: "Trip".into(),
                 goal_type: "save-by-date".into(),
                 target_cents: 500_000,

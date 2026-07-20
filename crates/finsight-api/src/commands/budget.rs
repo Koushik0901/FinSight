@@ -132,6 +132,11 @@ pub struct GoalDto {
     pub sort_order: i64,
     pub created_at: String,
     pub account_id: Option<String>,
+    /// "critical" | "high" | "normal" | "someday" — how much this goal matters,
+    /// as distinct from `sort_order`, which is only where the card sits.
+    pub priority: String,
+    /// "hard" | "target" | "none" — what `target_date` commits the user to.
+    pub deadline_strictness: String,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -195,9 +200,18 @@ pub struct NewGoalInput {
     pub notes: Option<String>,
     pub purpose: Option<String>,
     pub account_id: Option<String>,
+    /// Omitted by callers that do not care; the schema defaults apply.
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub deadline_strictness: Option<String>,
 }
 
 fn goal_to_dto(g: goals::Goal) -> GoalDto {
+    // Resolved before the struct is destructured — `effective_strictness`
+    // borrows `g`, and the field moves below would have taken it apart first.
+    let priority = g.priority.as_db().to_string();
+    let deadline_strictness = g.effective_strictness().as_db().to_string();
     GoalDto {
         id: g.id,
         name: g.name,
@@ -212,6 +226,11 @@ fn goal_to_dto(g: goals::Goal) -> GoalDto {
         sort_order: g.sort_order,
         created_at: g.created_at,
         account_id: g.account_id,
+        priority,
+        // The RESOLVED strictness, not the raw column: a goal with no date is
+        // open-ended whatever was stored, and the UI should not offer to edit a
+        // deadline commitment that cannot apply.
+        deadline_strictness,
     }
 }
 
@@ -230,6 +249,11 @@ pub async fn create_goal(state: &ApiState, input: NewGoalInput) -> AppResult<Goa
         goals::insert(
             conn,
             goals::NewGoal {
+                priority: input.priority.as_deref().map(goals::GoalPriority::from_db),
+                deadline_strictness: input
+                    .deadline_strictness
+                    .as_deref()
+                    .map(goals::DeadlineStrictness::from_db),
                 name: input.name,
                 goal_type: input.goal_type,
                 target_cents: input.target_cents,
@@ -415,6 +439,34 @@ pub async fn update_goal_monthly(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         goals::set_monthly_cents(conn, &id, monthly_cents)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Set how much a goal matters and what its date commits the user to.
+///
+/// The two travel together because neither is meaningful to the planner alone:
+/// a hard deadline on a `someday` goal and a `critical` goal with no date are
+/// both coherent, and allocation needs to see the pair to order them.
+///
+/// Unrecognised strings fall back to the neutral defaults rather than erroring
+/// — this is a preference, and refusing to save a goal over a bad enum value
+/// would be a worse outcome than storing "normal".
+pub async fn update_goal_priority(
+    state: &ApiState,
+    id: String,
+    priority: String,
+    deadline_strictness: String,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        goals::set_priority(
+            conn,
+            &id,
+            goals::GoalPriority::from_db(&priority),
+            goals::DeadlineStrictness::from_db(&deadline_strictness),
+        )
     })
     .await
     .map_err(AppError::from)

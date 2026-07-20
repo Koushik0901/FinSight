@@ -13,6 +13,7 @@ vi.mock("../api/hooks/budget", () => ({
         targetCents: 500000, currentCents: 100000, monthlyCents: 20000,
         targetDate: "2027-06-01", color: "#C9F950", notes: null, purpose: null,
         sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+        priority: "normal", deadlineStrictness: "target",
       },
       {
         id: "g2", name: "Car repair", goalType: "save-by-date",
@@ -20,6 +21,7 @@ vi.mock("../api/hooks/budget", () => ({
         targetDate: new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10),
         color: "#34D399", notes: null, purpose: null, sortOrder: 1,
         createdAt: "2026-01-01", accountId: null,
+        priority: "normal", deadlineStrictness: "target",
       },
     ],
     isLoading: false,
@@ -30,6 +32,7 @@ vi.mock("../api/hooks/budget", () => ({
   useArchiveGoal: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useUpdateGoalMonthly: vi.fn(() => ({ mutateAsync: mockUpdateMonthly, isPending: false })),
   useUpdateGoalPurpose: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
+  useUpdateGoalPriority: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useProjectGoalGrowth: vi.fn(() => ({ data: null })),
   useContributeToGoal: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
   useGoalContributions: vi.fn(() => ({ data: [] })),
@@ -67,6 +70,7 @@ describe("Goals — buildHorizonRows", () => {
   const baseGoal = {
     id: "x", name: "X", color: "#C9F950", notes: null, purpose: null,
     sortOrder: 0, createdAt: "2026-01-01", accountId: null, targetDate: null,
+    priority: "normal", deadlineStrictness: "target",
   };
 
   it("excludes spending-cap goals even when they would have a finite ETA", () => {
@@ -362,6 +366,7 @@ describe("Goals — focus editor", () => {
         targetCents: 2000000, currentCents: 1500000, monthlyCents: 50000,
         targetDate: null, color: "#C9F950", notes: null, purpose: null,
         sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+        priority: "normal", deadlineStrictness: "target",
       }],
       isLoading: false,
       error: null,
@@ -369,6 +374,39 @@ describe("Goals — focus editor", () => {
     render(<Goals />, { wrapper: createWrapperWithEntries(["/goals?focusGoal=g3"]) });
     expect(await screen.findByText("Edit goal · Car payoff")).toBeInTheDocument();
     expect(screen.getByText(/Monthly contribution/i)).toBeInTheDocument();
+  });
+
+  it("offers priority always, but deadline firmness only when a date exists", async () => {
+    const budget = await import("../api/hooks/budget");
+    const dateless = {
+      id: "g4", name: "Someday boat", goalType: "save-by-date",
+      targetCents: 2000000, currentCents: 0, monthlyCents: 10000,
+      targetDate: null, color: "#C9F950", notes: null, purpose: null,
+      sortOrder: 0, createdAt: "2026-01-01", accountId: null,
+      priority: "someday", deadlineStrictness: "none",
+    };
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [dateless], isLoading: false, error: null,
+    });
+    const { unmount } = render(<Goals />, {
+      wrapper: createWrapperWithEntries(["/goals?focusGoal=g4"]),
+    });
+    expect(await screen.findByText("Edit goal · Someday boat")).toBeInTheDocument();
+    // Priority is always meaningful and pre-filled from the goal.
+    expect(screen.getByLabelText(/^Priority$/i)).toHaveValue("someday");
+    // A goal with no date has no deadline to be strict about; offering the
+    // choice would imply it does.
+    expect(screen.queryByLabelText(/firm\?/i)).not.toBeInTheDocument();
+    unmount();
+
+    (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      data: [{ ...dateless, id: "g5", name: "Wedding", targetDate: "2027-06-01", deadlineStrictness: "hard" }],
+      isLoading: false,
+      error: null,
+    });
+    render(<Goals />, { wrapper: createWrapperWithEntries(["/goals?focusGoal=g5"]) });
+    expect(await screen.findByText("Edit goal · Wedding")).toBeInTheDocument();
+    expect(screen.getByLabelText(/firm\?/i)).toHaveValue("hard");
   });
 });
 

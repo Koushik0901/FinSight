@@ -1,5 +1,6 @@
 use chrono::{Datelike, Duration, Utc};
 use finsight_core::models::{effective_apr_pct, EffectiveApr, MissingDataItem};
+use finsight_core::repos::goals::{DeadlineStrictness, GoalPriority};
 use finsight_core::routes::AppRoute;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,12 @@ pub struct SnapshotGoal {
     pub target_date: Option<String>,
     pub remaining_cents: i64,
     pub eta_months: Option<i64>,
+    /// What the user said this goal is worth relative to the others, and
+    /// whether its date is a commitment or a hope. Before these existed,
+    /// allocation inferred an order from goal type and date because there was
+    /// nothing else to go on.
+    pub priority: String,
+    pub deadline_strictness: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1191,6 +1198,26 @@ pub fn run_debt_payoff_scenarios(
     })
 }
 
+/// Sort rank for a goal's user-stated priority. Lower funds first.
+fn goal_priority_rank(g: &SnapshotGoal) -> u8 {
+    GoalPriority::from_db(&g.priority).rank()
+}
+
+/// `0` when the goal's deadline is an immovable commitment, `1` otherwise, so
+/// it sorts first.
+///
+/// Reads the stored strictness THROUGH the presence of a date: a goal with no
+/// `target_date` is open-ended whatever the column says. The two can disagree
+/// — set a hard date, then clear the date — and trusting the column alone would
+/// have allocation defend a deadline that no longer exists.
+fn hard_deadline_first(g: &SnapshotGoal) -> u8 {
+    let has_date = g.target_date.as_deref().map(str::trim).is_some_and(|d| !d.is_empty());
+    match (has_date, DeadlineStrictness::from_db(&g.deadline_strictness)) {
+        (true, DeadlineStrictness::Hard) => 0,
+        _ => 1,
+    }
+}
+
 pub fn run_goal_allocation_scenarios(
     conn: &mut Connection,
     monthly_available_cents: i64,
@@ -1205,9 +1232,30 @@ pub fn run_goal_allocation_scenarios(
         _ => "priority",
     };
     match strategy {
-        "deadline" => goals.sort_by(|a, b| a.target_date.cmp(&b.target_date)),
+        "deadline" => {
+            // A hard date outranks a soft one even if the soft one lands
+            // sooner: missing a wedding or a tax instalment costs something a
+            // slipped "pay the car off by summer" does not.
+            goals.sort_by(|a, b| {
+                hard_deadline_first(a)
+                    .cmp(&hard_deadline_first(b))
+                    .then_with(|| a.target_date.cmp(&b.target_date))
+            })
+        }
         "proportional" => goals.sort_by_key(|g| std::cmp::Reverse(g.remaining_cents)),
-        _ => goals.sort_by_key(|g| (g.goal_type != "save-by-date", g.target_date.clone())),
+        // "priority" used to INFER an order from goal type and date, because
+        // the user had no way to state one. Now it asks. The inferred rule is
+        // kept as the tie-break, so a user who has expressed no preference —
+        // every goal at the `normal` default — gets byte-for-byte the ordering
+        // they got before.
+        _ => goals.sort_by_key(|g| {
+            (
+                goal_priority_rank(g),
+                hard_deadline_first(g),
+                g.goal_type != "save-by-date",
+                g.target_date.clone(),
+            )
+        }),
     }
 
     let mut remaining_monthly = monthly_available_cents.max(0);
@@ -1467,6 +1515,10 @@ pub fn run_goal_conflict_scenario(
         target_date: None,
         remaining_cents: 0,
         eta_months: None,
+        // A placeholder for a goal we could not find gets the neutral defaults,
+        // not an invented importance.
+        priority: GoalPriority::Normal.as_db().to_string(),
+        deadline_strictness: DeadlineStrictness::None.as_db().to_string(),
     });
     let requested_contribution_cents = requested_contribution_cents.max(0);
     let upcoming_planned_outflows: i64 = snapshot
@@ -2044,7 +2096,7 @@ fn setting_i64(conn: &mut Connection, key: &str) -> rusqlite::Result<Option<i64>
 }
 
 fn goals(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotGoal>> {
-    let mut stmt = conn.prepare("SELECT id, name, type, target_cents, current_cents, monthly_cents, target_date FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at")?;
+    let mut stmt = conn.prepare("SELECT id, name, type, target_cents, current_cents, monthly_cents, target_date, priority, deadline_strictness FROM goals WHERE archived_at IS NULL ORDER BY sort_order, created_at")?;
     let rows = stmt.query_map([], |r| {
         let target: i64 = r.get(3)?;
         let current: i64 = r.get(4)?;
@@ -2067,6 +2119,8 @@ fn goals(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotGoal>> {
             target_date: r.get(6)?,
             remaining_cents: remaining,
             eta_months,
+            priority: r.get(7)?,
+            deadline_strictness: r.get(8)?,
         })
     })?;
     rows.collect()
@@ -2678,6 +2732,135 @@ mod tests {
         assert_eq!(scenarios.allocations[0].goal_id, "car");
         assert_eq!(scenarios.allocations[0].suggested_monthly_cents, 50_000);
         assert_eq!(scenarios.allocations[0].eta_months, Some(30));
+    }
+
+    /// Insert a goal, optionally with a stated priority / deadline strictness.
+    /// Omitting them exercises the schema defaults, i.e. every goal that
+    /// existed before this feature.
+    fn insert_goal(
+        conn: &mut Connection,
+        id: &str,
+        target_date: Option<&str>,
+        priority: Option<&str>,
+        strictness: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO goals(id,name,type,target_cents,current_cents,monthly_cents,target_date,\
+                color,sort_order,created_at,priority,deadline_strictness) \
+             VALUES(?1,?1,'save-by-date',1000000,0,0,?2,'#fff',0,datetime('now'),\
+                COALESCE(?3,'normal'),COALESCE(?4,'target'))",
+            params![id, target_date, priority, strictness],
+        )
+        .unwrap();
+    }
+
+    fn order_of(conn: &mut Connection, strategy: &str) -> Vec<String> {
+        run_goal_allocation_scenarios(conn, 100_000, strategy)
+            .unwrap()
+            .allocations
+            .into_iter()
+            .map(|a| a.goal_id)
+            .collect()
+    }
+
+    /// THE regression guard for this feature. A user who has never expressed a
+    /// preference — every goal at the `normal` / `target` defaults — must get
+    /// byte-for-byte the ordering they got before priorities existed, which was
+    /// inferred from goal type and target date.
+    #[test]
+    fn goals_with_no_stated_preference_order_exactly_as_before() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "later", Some("2027-01-01"), None, None);
+        insert_goal(&mut conn, "sooner", Some("2026-03-01"), None, None);
+        insert_goal(&mut conn, "undated", None, None, None);
+
+        // Undated first, then soonest date. That is NOT an endorsement — a goal
+        // with no deadline outranking one with a deadline is odd — but it is
+        // what the previous key produced (`Option::None` sorts before `Some`),
+        // and this feature is about letting users STATE a preference, not about
+        // silently re-ranking the goals of everyone who has not. Pinned so the
+        // quirk is a visible decision rather than an accident, and so a future
+        // change to it has to be deliberate.
+        assert_eq!(order_of(&mut conn, "priority"), ["undated", "sooner", "later"]);
+    }
+
+    #[test]
+    fn a_stated_priority_outranks_an_earlier_date() {
+        // The whole point: "the emergency fund matters more than the vacation
+        // fund" is something the user can now say, and it wins over a date the
+        // old inference would have preferred.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "vacation", Some("2026-03-01"), None, None);
+        insert_goal(&mut conn, "emergency", Some("2027-01-01"), Some("critical"), None);
+
+        assert_eq!(order_of(&mut conn, "priority")[0], "emergency");
+    }
+
+    #[test]
+    fn someday_goals_fall_behind_ordinary_ones() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "aspirational", Some("2026-01-01"), Some("someday"), None);
+        insert_goal(&mut conn, "ordinary", Some("2027-06-01"), None, None);
+
+        assert_eq!(order_of(&mut conn, "priority"), ["ordinary", "aspirational"]);
+    }
+
+    #[test]
+    fn a_hard_deadline_outranks_a_softer_one_that_lands_sooner() {
+        // Missing a wedding costs something that slipping "pay the car off by
+        // summer" does not, even though the car date comes first.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "car", Some("2026-03-01"), None, Some("target"));
+        insert_goal(&mut conn, "wedding", Some("2026-09-01"), None, Some("hard"));
+
+        assert_eq!(order_of(&mut conn, "priority")[0], "wedding");
+        assert_eq!(order_of(&mut conn, "deadline")[0], "wedding");
+    }
+
+    /// Strictness and the date can contradict each other — mark a deadline
+    /// hard, then clear the date. The stored column alone would have allocation
+    /// defend a deadline that no longer exists.
+    #[test]
+    fn hard_strictness_without_a_date_is_not_treated_as_a_deadline() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "dateless", None, None, Some("hard"));
+        insert_goal(&mut conn, "dated", Some("2026-03-01"), Some("someday"), Some("target"));
+
+        // If the stray `hard` were honoured, "dateless" would jump the
+        // hard-deadline tier and beat even a lower-priority dated goal on that
+        // basis. Instead priority decides, which is what should happen when
+        // there is no deadline to defend.
+        assert_eq!(
+            order_of(&mut conn, "priority"),
+            ["dateless", "dated"],
+            "dateless wins on PRIORITY (normal beats someday), not on a phantom deadline"
+        );
+
+        // The direct check: resolved strictness ignores the stored value when
+        // there is no date behind it.
+        let dateless =
+            finsight_core::repos::goals::get_by_id(&mut conn, "dateless").unwrap();
+        assert_eq!(dateless.deadline_strictness, DeadlineStrictness::Hard);
+        assert_eq!(dateless.effective_strictness(), DeadlineStrictness::None);
+    }
+
+    #[test]
+    fn an_unrecognised_priority_is_treated_as_normal_not_dropped() {
+        // A typo, a hand-edited DB, or a value from a future version must not
+        // lose the goal from the user's own plan.
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_goal(&mut conn, "weird", Some("2026-03-01"), Some("URGENT!!"), None);
+        insert_goal(&mut conn, "plain", Some("2026-06-01"), None, None);
+
+        let order = order_of(&mut conn, "priority");
+        assert_eq!(order.len(), 2, "nothing was dropped: {order:?}");
+        assert_eq!(order, ["weird", "plain"], "sorts as normal, by date");
     }
 
     #[test]

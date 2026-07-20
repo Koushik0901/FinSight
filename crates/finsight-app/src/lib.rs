@@ -183,6 +183,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::transactions::get_transaction_splits,
         commands::transactions::set_transaction_splits,
         commands::budget::update_goal_monthly,
+        commands::budget::update_goal_priority,
         commands::budget::update_goal_purpose,
         commands::settings::get_currency,
         commands::settings::set_currency,

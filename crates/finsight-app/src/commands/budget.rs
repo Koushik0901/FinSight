@@ -105,6 +105,23 @@ pub async fn update_goal_monthly(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn update_goal_priority(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    priority: String,
+    deadline_strictness: String,
+) -> AppResult<()> {
+    finsight_api::commands::budget::update_goal_priority(
+        &state.api,
+        id,
+        priority,
+        deadline_strictness,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn update_goal_purpose(
     state: tauri::State<'_, AppState>,
     id: String,

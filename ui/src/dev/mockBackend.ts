@@ -210,6 +210,10 @@ function goal(id: string, name: string, target: number, current: number, monthly
     purpose: null,
     sortOrder: 0,
     accountId,
+    // The neutral defaults — every goal that predates priorities. The
+    // `partial` dataset overrides one so the ranked state is designable.
+    priority: "normal",
+    deadlineStrictness: "target",
   };
 }
 
@@ -453,8 +457,11 @@ function buildDataset(kind: Kind): Dataset {
         recur("Internet — Bell", C.utilities, "Utilities", "bill", "monthly", 9500, 8),
       ],
       goals: [
-        goal("g-ef", "Emergency Fund", 4800000, 4400000, 40000, "#34D399", null, "safety"),
-        goal("g-vac", "Japan 2027", 900000, 340000, 30000, "#818CF8", null, "travel"),
+        // A ranked household: the emergency fund outranks everything and the
+        // trip has a date that cannot move, so the competing-goals state is
+        // visible in the harness rather than only reachable with real data.
+        { ...goal("g-ef", "Emergency Fund", 4800000, 4400000, 40000, "#34D399", null, "safety"), priority: "critical" },
+        { ...goal("g-vac", "Japan 2027", 900000, 340000, 30000, "#818CF8", null, "travel"), deadlineStrictness: "hard" },
         goal("g-car", "Next Car", 3500000, 1180000, 60000, "#FB923C", null, "purchase"),
         goal("g-house", "House Down Payment", 8000000, 2100000, 120000, "#A78BFA", null, "home"),
       ],
