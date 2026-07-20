@@ -898,6 +898,147 @@ fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Transaction> {
     .map_err(Into::into)
 }
 
+// ── Counterparty net position ───────────────────────────────────────────────
+
+/// Where a person stands with the user across every leg that has crossed the
+/// user's own accounts.
+///
+/// Derived fresh on every read. There is deliberately no stored balance: a
+/// running total maintained by hand drifts the moment a leg is imported,
+/// edited or deleted, and nothing would detect it. Recomputing is cheap and
+/// cannot go stale.
+///
+/// Only legs crossing the user's own accounts are counted, which is the whole
+/// reason this is answerable. What a person does with money after receiving it
+/// happens at a bank we will never see, and does not change the tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CounterpartyPosition {
+    /// The `%name%` LIKE pattern that identifies this person — the same
+    /// identity notion the settle-up review uses, so a counterparty resolved
+    /// there is the same entity here.
+    pub pattern: String,
+    /// Display name: the pattern with its `%` delimiters trimmed.
+    pub label: String,
+    pub txn_count: i64,
+    /// Money that came IN from them (absolute).
+    pub inflow_cents: i64,
+    /// Money that went OUT to them (absolute).
+    pub outflow_cents: i64,
+    /// Inflow minus outflow, from the user's point of view. Negative means the
+    /// user is DOWN — they have sent more than they have received back, so the
+    /// difference is outstanding with this person. Positive means the reverse.
+    pub net_cents: i64,
+    /// ISO date of the earliest and latest leg, so a caller can say how long
+    /// the tab has been running.
+    pub first_at: Option<String>,
+    pub last_at: Option<String>,
+}
+
+impl CounterpartyPosition {
+    /// Amount this person still owes the user, or zero when they do not.
+    pub fn owed_to_user_cents(&self) -> i64 {
+        (-self.net_cents).max(0)
+    }
+
+    /// Amount the user still owes this person, or zero when they do not.
+    pub fn owed_by_user_cents(&self) -> i64 {
+        self.net_cents.max(0)
+    }
+}
+
+/// Net position for every identifiable counterparty, biggest outstanding
+/// first.
+///
+/// "Identifiable" means the merchant generalises to a `%name%` pattern.
+/// Bare-reference legs ("INTERNET TRANSFER 4471") name nobody, so they are not
+/// a counterparty and are left out rather than lumped into a fake one.
+pub fn list_counterparty_positions(conn: &Connection) -> CoreResult<Vec<CounterpartyPosition>> {
+    // Every leg with transfer vocabulary, settled or not: the question is what
+    // has moved between the two of them in total, and a leg the user already
+    // ruled on still moved money.
+    let cur = crate::metrics::primary_currency_clause(conn, "t");
+    let sql = format!(
+        "SELECT t.merchant_raw, t.amount_cents, substr(t.posted_at,1,10) \
+         FROM transactions t \
+         WHERE {}{cur}",
+        crate::categorize::counterparty_candidate_predicate("t")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+
+    let mut groups: std::collections::HashMap<String, CounterpartyPosition> =
+        std::collections::HashMap::new();
+
+    for row in rows {
+        let (merchant_raw, amount_cents, posted_at) = row?;
+        let pattern = crate::categorize::suggested_rule_pattern(&merchant_raw);
+        // A raw (unchanged) string means there was no name to generalise on,
+        // so there is no person to keep a tab with.
+        if !pattern.starts_with('%') {
+            continue;
+        }
+        let entry = groups
+            .entry(pattern.clone())
+            .or_insert_with(|| CounterpartyPosition {
+                label: pattern.trim_matches('%').to_string(),
+                pattern: pattern.clone(),
+                txn_count: 0,
+                inflow_cents: 0,
+                outflow_cents: 0,
+                net_cents: 0,
+                first_at: None,
+                last_at: None,
+            });
+        entry.txn_count += 1;
+        if amount_cents > 0 {
+            entry.inflow_cents += amount_cents;
+        } else {
+            entry.outflow_cents += -amount_cents;
+        }
+        entry.net_cents = entry.inflow_cents - entry.outflow_cents;
+        if entry.first_at.as_deref().is_none_or(|d| posted_at.as_str() < d) {
+            entry.first_at = Some(posted_at.clone());
+        }
+        if entry.last_at.as_deref().is_none_or(|d| posted_at.as_str() > d) {
+            entry.last_at = Some(posted_at);
+        }
+    }
+
+    let mut out: Vec<CounterpartyPosition> = groups.into_values().collect();
+    // Largest outstanding amount first — in either direction, since "I owe
+    // them" matters as much as "they owe me". Ties break on label so the order
+    // does not reshuffle between reads.
+    out.sort_by(|a, b| {
+        b.net_cents
+            .abs()
+            .cmp(&a.net_cents.abs())
+            .then_with(|| a.label.cmp(&b.label))
+    });
+    Ok(out)
+}
+
+/// Net position for one counterparty, matched on its `%name%` pattern or on
+/// the bare name. Returns `None` when nothing has ever moved between them.
+pub fn counterparty_position(
+    conn: &Connection,
+    name_or_pattern: &str,
+) -> CoreResult<Option<CounterpartyPosition>> {
+    let needle = name_or_pattern.trim().trim_matches('%').to_lowercase();
+    if needle.is_empty() {
+        return Ok(None);
+    }
+    Ok(list_counterparty_positions(conn)?
+        .into_iter()
+        .find(|p| p.label.to_lowercase() == needle))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1560,6 +1701,181 @@ mod tests {
             )
             .unwrap();
         assert_eq!(real_rule_count, 0, "Real verdicts create no rule");
+    }
+
+    /// The issue's own worked example: $3,000 lent, $2,500 repaid, $500
+    /// outstanding.
+    #[test]
+    fn counterparty_position_answers_am_i_up_or_down() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('l1',?1,'2026-01-05T12:00:00Z',-300000,'E-TRANSFER 111 Joe','cleared','2026-01-05T12:00:00Z'),\
+             ('r1',?1,'2026-03-09T12:00:00Z', 250000,'E-TRANSFER 222 Joe','cleared','2026-03-09T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let joe = counterparty_position(&conn, "joe")
+            .unwrap()
+            .expect("joe has a position");
+        assert_eq!(joe.outflow_cents, 300000, "lent out");
+        assert_eq!(joe.inflow_cents, 250000, "repaid");
+        assert_eq!(joe.net_cents, -50000, "down $500");
+        assert_eq!(joe.owed_to_user_cents(), 50000, "$500 outstanding with them");
+        assert_eq!(joe.owed_by_user_cents(), 0);
+        assert_eq!(joe.txn_count, 2);
+        assert_eq!(joe.first_at.as_deref(), Some("2026-01-05"));
+        assert_eq!(joe.last_at.as_deref(), Some("2026-03-09"));
+    }
+
+    /// The distinction from the review queue: that one deliberately narrows to
+    /// rows still awaiting a verdict, which is right for triage and wrong for a
+    /// running tab. A leg the user already ruled on still moved money.
+    #[test]
+    fn position_counts_settled_legs_that_the_review_queue_hides() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,settle_up,category_id) VALUES\
+             ('a1',?1,'2026-01-01T12:00:00Z',-10000,'E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL),\
+             ('a2',?1,'2026-02-01T12:00:00Z',-20000,'E-TRANSFER 222 Joe','cleared','2026-02-01T12:00:00Z',1,'cat1')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let queue_total: i64 = list_unresolved_counterparties(&conn)
+            .unwrap()
+            .iter()
+            .filter(|g| g.label == "joe")
+            .map(|g| g.outflow_cents)
+            .sum();
+        assert_eq!(queue_total, 10000, "the queue hides the settled leg, by design");
+
+        let joe = counterparty_position(&conn, "joe").unwrap().unwrap();
+        assert_eq!(joe.outflow_cents, 30000, "the tab counts both legs");
+        assert_eq!(joe.txn_count, 2);
+    }
+
+    #[test]
+    fn a_person_who_paid_more_than_they_received_shows_the_user_owing() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('i1',?1,'2026-01-01T12:00:00Z', 80000,'E-TRANSFER 111 Sam','cleared','2026-01-01T12:00:00Z'),\
+             ('o1',?1,'2026-02-01T12:00:00Z',-30000,'E-TRANSFER 222 Sam','cleared','2026-02-01T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let sam = counterparty_position(&conn, "sam").unwrap().unwrap();
+        assert_eq!(sam.net_cents, 50000, "up $500");
+        assert_eq!(sam.owed_by_user_cents(), 50000);
+        assert_eq!(sam.owed_to_user_cents(), 0);
+    }
+
+    #[test]
+    fn a_settled_up_person_nets_to_zero_rather_than_disappearing() {
+        // Being square with someone is a real answer, and a different one from
+        // "never heard of them".
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('x1',?1,'2026-01-01T12:00:00Z',-25000,'E-TRANSFER 111 Alex','cleared','2026-01-01T12:00:00Z'),\
+             ('x2',?1,'2026-02-01T12:00:00Z', 25000,'E-TRANSFER 222 Alex','cleared','2026-02-01T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let alex = counterparty_position(&conn, "alex")
+            .unwrap()
+            .expect("still a counterparty");
+        assert_eq!(alex.net_cents, 0);
+        assert_eq!(alex.owed_to_user_cents(), 0);
+        assert_eq!(alex.owed_by_user_cents(), 0);
+        assert_eq!(alex.txn_count, 2);
+    }
+
+    #[test]
+    fn bare_reference_legs_are_not_a_counterparty() {
+        // "INTERNET TRANSFER 000000999" names nobody. Inventing a person from
+        // it would put a stranger on the list.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('u1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking INTERNET TRANSFER 000000999','cleared','2026-01-01T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        assert!(list_counterparty_positions(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn positions_are_ordered_by_size_of_the_outstanding_amount() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('s1',?1,'2026-01-01T12:00:00Z', -5000,'E-TRANSFER 1 Small','cleared','2026-01-01T12:00:00Z'),\
+             ('b1',?1,'2026-01-02T12:00:00Z',-90000,'E-TRANSFER 2 Big','cleared','2026-01-02T12:00:00Z'),\
+             ('m1',?1,'2026-01-03T12:00:00Z', 40000,'E-TRANSFER 3 Mid','cleared','2026-01-03T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+
+        let labels: Vec<String> = list_counterparty_positions(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|p| p.label)
+            .collect();
+        // Ordered by magnitude regardless of direction — "I owe them" matters
+        // as much as "they owe me".
+        assert_eq!(
+            labels,
+            vec!["big".to_string(), "mid".to_string(), "small".to_string()]
+        );
+    }
+
+    #[test]
+    fn an_unknown_name_has_no_position_rather_than_a_zeroed_one() {
+        // A confident "$0" about someone who has never appeared would read as
+        // "you are square", which is a different claim from "no such person".
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let _ = seed(&mut conn);
+        assert!(counterparty_position(&conn, "nobody").unwrap().is_none());
+        assert!(counterparty_position(&conn, "").unwrap().is_none());
+        assert!(counterparty_position(&conn, "   ").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_name_matches_with_or_without_its_pattern_delimiters() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (acc_id, _) = seed(&mut conn);
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
+             ('p1',?1,'2026-01-01T12:00:00Z',-1000,'E-TRANSFER 1 Joe','cleared','2026-01-01T12:00:00Z')",
+            params![acc_id],
+        )
+        .unwrap();
+        for needle in ["joe", "%joe%", "Joe", " JOE "] {
+            assert!(
+                counterparty_position(&conn, needle).unwrap().is_some(),
+                "{needle:?} should resolve to the same person"
+            );
+        }
     }
 
     #[test]

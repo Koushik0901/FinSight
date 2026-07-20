@@ -1017,6 +1017,63 @@ pub fn rank_debt_payoff() -> Arc<dyn Tool> {
 /// Exists because presenting one strategy as *the* strategy hides a tradeoff
 /// the user is entitled to make. Every difference is computed in Rust — the
 /// model must never do arithmetic on money.
+/// Where the user stands with the people money has moved between.
+///
+/// Answers "am I up or down with this person, and by how much" from real legs
+/// crossing the user's own accounts. Nothing is stored: the tab is recomputed
+/// every time, so it cannot drift out of date the way a hand-maintained
+/// balance would.
+pub fn get_counterparty_position() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "get_counterparty_position"
+        }
+        fn description(&self) -> &str {
+            "Net position with the people money has moved between — who owes whom, and how much. \
+             Use for 'does anyone owe me money', 'am I square with X', 'how much did I lend X'. \
+             Pass `name` for one person, or omit it for everyone. Amounts are derived from real \
+             transactions every time, so they are current by construction."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type":"object","properties":{"name":{"type":"string"}}})
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let name = args["name"].as_str().map(str::trim).filter(|s| !s.is_empty());
+            let positions = match name {
+                Some(n) => finsight_core::repos::transactions::counterparty_position(ctx.conn, n)?
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                None => finsight_core::repos::transactions::list_counterparty_positions(ctx.conn)?,
+            };
+            let rows: Vec<Value> = positions
+                .iter()
+                .map(|p| {
+                    json!({
+                        "name": p.label,
+                        "txn_count": p.txn_count,
+                        "they_sent_me_cents": p.inflow_cents,
+                        "i_sent_them_cents": p.outflow_cents,
+                        "net_cents": p.net_cents,
+                        "they_owe_me_cents": p.owed_to_user_cents(),
+                        "i_owe_them_cents": p.owed_by_user_cents(),
+                        "first_at": p.first_at,
+                        "last_at": p.last_at,
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "counterparties": rows,
+                // Distinguishes "nobody by that name" from "square with them",
+                // which are different answers.
+                "found": !rows.is_empty(),
+                "searched_for": name,
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn compare_payoff_strategies() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
