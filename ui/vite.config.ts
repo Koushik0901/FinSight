@@ -92,5 +92,12 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    // Vitest's 5s default is too tight for this suite. The screen-level tests
+    // render whole component trees in jsdom, and the cost is environment setup
+    // rather than app work — TransactionDrawer's submit test sits at ~4.7s in
+    // isolation and tips over the default once the full suite loads the box.
+    // 15s still fails a genuinely hung test; it just stops timing out the
+    // merely-slow ones.
+    testTimeout: 15_000,
   },
 });
