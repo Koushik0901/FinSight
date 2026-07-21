@@ -3,7 +3,7 @@ use crate::AppState;
 use finsight_core::models::RuleProposal;
 
 // Types live in finsight-api now; re-exported so existing imports of
-// `finsight_app::commands::agent::*` (lib.rs, tests) keep resolving. The
+// `finsight_bindings::commands::agent::*` (lib.rs, tests) keep resolving. The
 // shared reasoning-pipeline helpers (build_toolset, enrich_agent_answer, etc.)
 // are pub(crate) in finsight-api since Task 6 moved their only cross-crate
 // consumer (copilot_chat) into the same crate — no longer re-exported here.

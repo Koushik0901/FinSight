@@ -109,7 +109,7 @@ pub struct ImportResult {
 /// payload shapes) — the Tauri wrapper feeds a `TauriFrameSink` that emits real
 /// window events, and ALSO fires the desktop "check_and_fire" notification
 /// after this returns (that notification is native-only and stays in the
-/// wrapper, not here — see `crates/finsight-app/src/commands/import.rs`).
+/// wrapper, not here — see `crates/finsight-bindings/src/commands/import.rs`).
 pub async fn import_csv(
     state: &ApiState,
     sink: Arc<dyn FrameSink>,

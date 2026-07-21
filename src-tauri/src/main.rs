@@ -1,8 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // Thin desktop shell (Phase 4): no local command surface, no local database.
-// Reads a server URL from the OS keychain (crates/finsight_app is NOT used
-// here — it exists only for the `export_bindings` bin's TypeScript codegen).
+// Reads a server URL from the OS keychain. This crate does NOT depend on the
+// command surface at all — the `#[tauri::command]` wrappers and the
+// `export_bindings` codegen live in the separate, codegen-only
+// `finsight-bindings` crate, which is intentionally kept out of this shipped
+// binary's dependency graph.
 // On first launch (no stored URL) the bundled ui/dist app shows its own
 // ConnectScreen (gated by DesktopConnectGate, itself gated on isTauriRuntime()
 // — see ui/src/utils/runtime.ts); once a URL is set, the window navigates

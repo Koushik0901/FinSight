@@ -1,4 +1,4 @@
-use finsight_app::commands::agent::CompletionProviderConfig;
+use finsight_bindings::commands::agent::CompletionProviderConfig;
 use finsight_core::{db::run_migrations, keychain, settings, Db};
 use tempfile::TempDir;
 
@@ -27,7 +27,7 @@ fn migrate_llm_provider_to_completion_provider() {
         .unwrap();
     }
 
-    finsight_app::migrate_provider_settings(&db).unwrap();
+    finsight_bindings::migrate_provider_settings(&db).unwrap();
 
     let conn = db.get().unwrap();
     let new_cfg: Option<serde_json::Value> = settings::get(&conn, "completion_provider").unwrap();
@@ -56,7 +56,7 @@ fn load_completion_provider_config_round_trip() {
         settings::set(&conn, "completion_provider", &saved).unwrap();
     }
 
-    let loaded = finsight_app::load_completion_provider_config(&db).unwrap();
+    let loaded = finsight_bindings::load_completion_provider_config(&db).unwrap();
     match loaded {
         CompletionProviderConfig::OpenAiCompat {
             preset,
@@ -105,7 +105,7 @@ fn load_completion_provider_config_unconfigured_when_missing() {
     let db = Db::open(&dir.path().join("missing.sqlcipher"), &key).unwrap();
     run_migrations(&db).unwrap();
 
-    let loaded = finsight_app::load_completion_provider_config(&db).unwrap();
+    let loaded = finsight_bindings::load_completion_provider_config(&db).unwrap();
     assert!(
         matches!(loaded, CompletionProviderConfig::Unconfigured),
         "expected Unconfigured when setting is absent"

@@ -1,6 +1,6 @@
 //! Phase 6 read-only diagnostics against the REAL imported dev-app data.
 //! Ignored; run manually (app may be running — WAL allows concurrent reads):
-//!   cargo test -p finsight-app --test phase6_diagnostics -- --ignored --nocapture
+//!   cargo test -p finsight-bindings --test phase6_diagnostics -- --ignored --nocapture
 
 use finsight_core::{keychain, Db};
 use rusqlite::Connection;

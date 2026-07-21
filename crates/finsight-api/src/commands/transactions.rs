@@ -726,8 +726,8 @@ pub async fn export_transactions_csv(
 
 /// Input for [`export_search_transactions_csv`] — mirrors the Copilot
 /// `search_transactions` tool's query shape so the exported rows match
-/// exactly what the card displayed. Moved here from finsight-app in Phase 4
-/// (was finsight-app-only before the export commands became transport-agnostic).
+/// exactly what the card displayed. Moved here from finsight-bindings in Phase 4
+/// (was finsight-bindings-only before the export commands became transport-agnostic).
 #[derive(Debug, Clone, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchTxnQueryInput {

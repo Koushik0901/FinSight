@@ -692,7 +692,7 @@ pub async fn get_plan_next_month_data(state: &ApiState) -> AppResult<PlanData> {
 
 /// Write next month's budget assignments. The Tauri wrapper additionally fires
 /// a best-effort desktop notification after this returns (see
-/// `crates/finsight-app/src/commands/budget.rs`); the server has no native
+/// `crates/finsight-bindings/src/commands/budget.rs`); the server has no native
 /// notifications in Phase 1, so this body is purely the budget write.
 pub async fn apply_next_month_plan(
     state: &ApiState,

@@ -2,7 +2,7 @@ use crate::error::AppResult;
 use crate::AppState;
 
 // Types live in finsight-api now; re-exported so existing imports of
-// `finsight_app::commands::copilot::*` (lib.rs, tests) keep resolving.
+// `finsight_bindings::commands::copilot::*` (lib.rs, tests) keep resolving.
 pub use finsight_api::commands::copilot::{ExecutionItemResult, ExecutionSummary};
 
 use finsight_core::models::{AgentActionBundle, AgentExecutionEntry, AgentSession};

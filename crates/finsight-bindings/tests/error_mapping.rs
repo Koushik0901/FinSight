@@ -2,7 +2,7 @@
 //! the frontend relies on. If a CoreError variant is added or the mapping is
 //! reordered, this test will fail with a clear diff.
 
-use finsight_app::error::AppError;
+use finsight_bindings::error::AppError;
 use finsight_core::CoreError;
 
 #[test]

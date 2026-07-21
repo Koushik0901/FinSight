@@ -2,7 +2,7 @@
 //! Gemma provider. Ignored by default (needs network + `OPENROUTER_API_KEY`).
 //!
 //! Run with the key loaded from `.env` (never printed):
-//!   OPENROUTER_API_KEY=... cargo test -p finsight-app --test copilot_live -- --ignored --nocapture
+//!   OPENROUTER_API_KEY=... cargo test -p finsight-bindings --test copilot_live -- --ignored --nocapture
 //!
 //! This drives the actual `ReasoningEngine` + tool loop for the six required
 //! Phase 5B questions over a controlled, clearly-synthetic test fixture (NOT

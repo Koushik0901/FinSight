@@ -1,5 +1,5 @@
 //! Shared CSV-field escaping for the export commands (accounts, transactions,
-//! settings) — was triplicated as a private fn in each finsight-app command
+//! settings) — was triplicated as a private fn in each finsight-bindings command
 //! file before Phase 4 moved the bodies here.
 pub fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
