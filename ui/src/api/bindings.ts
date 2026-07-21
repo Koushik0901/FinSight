@@ -636,6 +636,62 @@ async setFinancialAssumptions(input: FinancialAssumptionsInput) : Promise<Result
     else return { status: "error", error: e  as any };
 }
 },
+async listRestorationEnvelopes() : Promise<Result<RestorationEnvelope[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_restoration_envelopes") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getRestorationStatus(id: string) : Promise<Result<RestorationStatus | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_restoration_status", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async createRestorationEnvelope(input: RestorationEnvelopeInput) : Promise<Result<RestorationEnvelope, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_restoration_envelope", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async closeRestorationEnvelope(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("close_restoration_envelope", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteRestorationEnvelope(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_restoration_envelope", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addRestorationLeg(envelopeId: string, amountCents: number, notedOn: string, transactionId: string | null) : Promise<Result<RestorationLeg, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_restoration_leg", { envelopeId, amountCents, notedOn, transactionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeRestorationLeg(legId: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_restoration_leg", { legId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getFinancialPhilosophy() : Promise<Result<FinancialPhilosophyDto, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_financial_philosophy") };
@@ -2539,6 +2595,66 @@ isSubscription: boolean;
  */
 feedsProjections: boolean }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
+export type RestorationEnvelope = { id: string; label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; openedOn: string; counterpartyPattern: string | null; closedAt: string | null; note: string | null; createdAt: string }
+export type RestorationEnvelopeInput = { label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; 
+/**
+ * ISO date the money left the pot.
+ */
+openedOn: string; 
+/**
+ * Optional `%name%` pattern for the person expected to pay some of it
+ * back. One person deliberately — see the repo docs.
+ */
+counterpartyPattern: string | null; note: string | null }
+export type RestorationLeg = { id: string; envelopeId: string; transactionId: string | null; amountCents: number; notedOn: string }
+/**
+ * Everything needed to say the sentence, and nothing that would need to be
+ * asserted without evidence.
+ */
+export type RestorationStatus = { envelope: RestorationEnvelope; legs: RestorationLeg[]; 
+/**
+ * Sum of everything attributed as already gone back.
+ */
+restoredCents: number; 
+/**
+ * Original minus restored. The headline number.
+ */
+leftToRestoreCents: number; 
+/**
+ * What a person still owes, from the counterparty tab. Zero when the
+ * envelope names nobody — an unlinked envelope has nothing collectable,
+ * and guessing across every counterparty would produce a confident wrong
+ * figure.
+ */
+collectableCents: number; 
+/**
+ * What the user has to find themselves: left-to-restore minus collectable.
+ */
+fundYourselfCents: number; 
+/**
+ * An UPPER BOUND on what could still be sitting in the destination
+ * account, never a claim that it is.
+ * 
+ * The naive "still remaining" figure degrades silently: withdraw in
+ * January, flag a couple of legs, and it will still confidently report the
+ * same number in July after six months of unrelated churn. At that point
+ * it is not measuring anything.
+ * 
+ * The account's lowest end-of-day balance since the withdrawal is a real
+ * bound instead — if checking dipped to $2,000 in March, the user
+ * demonstrably is not still holding $9,500. `None` when the destination is
+ * unknown or its balance cannot be reconstructed, which is the honest
+ * answer rather than a guess.
+ */
+stillHeldCeilingCents: number | null; 
+/**
+ * Why the ceiling is what it is, or why there isn't one.
+ */
+stillHeldBasis: string; daysOpen: number; 
+/**
+ * Open long enough that it should be reconciled and closed.
+ */
+stale: boolean }
 export type RowError = { row_number: number; reason: string }
 export type Rule = { id: string; pattern: string; category_id: string; enabled: boolean; source: string; created_at: string; treatment: string }
 export type RuleProposal = { id: string; whenLabel: string; description: string; pattern: string; categoryId: string; status: string; createdAt: string }

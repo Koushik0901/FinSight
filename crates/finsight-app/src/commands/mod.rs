@@ -34,6 +34,7 @@ pub mod push;
 pub mod recipes;
 pub mod recurring;
 pub mod reports;
+pub mod restoration;
 pub mod scenarios;
 pub mod settings;
 pub mod simplefin;
