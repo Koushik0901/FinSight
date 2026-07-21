@@ -1,14 +1,20 @@
-//! FinSight Tauri app — command surface + lifecycle.
+//! FinSight TypeScript-bindings codegen crate.
 //!
-//! **Codegen-only as of Phase 4.** This crate's ~199 `#[tauri::command]`
-//! wrappers are consumed SOLELY by `src-tauri`'s `export_bindings` binary
-//! (via `build_specta_builder()`) to generate `ui/src/api/bindings.ts`.
-//! Nothing in this crate is linked into the SHIPPED desktop binary anymore —
-//! that's `src-tauri/src/main.rs`, a thin webview shell with no local
-//! command surface and no local database (see
-//! docs/superpowers/plans/2026-07-17-server-phase4-thin-desktop-shell.md).
-//! If you're reading this wondering why 27 files of Tauri commands exist
-//! with nothing calling `configure_app()` in the shipped app: this is why.
+//! **This crate exists purely to generate `ui/src/api/bindings.ts`.** Its
+//! ~199 `#[tauri::command]` wrappers are thin delegations to
+//! `finsight_api::commands::*`; their only job is to carry the
+//! `#[specta::specta]` type signatures that `build_specta_builder()` feeds to
+//! the co-located `export_bindings` binary (`cargo run -p finsight-bindings
+//! --bin export_bindings`, aka `pnpm bindings`).
+//!
+//! Nothing here is linked into the SHIPPED desktop binary — that's
+//! `src-tauri/src/main.rs`, a thin webview shell with no local command surface
+//! and no local database (see
+//! docs/superpowers/plans/2026-07-17-server-phase4-thin-desktop-shell.md). The
+//! shell's crate does NOT depend on this one; the pre-Phase-4 app-lifecycle
+//! setup (`configure_app`, data-dir resolution, the single-instance/dialog/
+//! opener plugins) was dead after the pivot and has been removed so the crate's
+//! codegen-only purpose is clear at a glance.
 
 pub mod commands;
 pub mod error;
@@ -21,16 +27,15 @@ pub use finsight_api::sync_scheduler;
 
 /// Provider-construction helpers, moved to finsight-api (tauri-free already).
 /// Re-exported here because integration tests and command modules import them
-/// from `finsight_app`/`crate::` today.
+/// from `finsight_bindings`/`crate::` today.
 pub use finsight_api::provider::{
     build_copilot_router_from_settings, build_provider_from_config, load_completion_provider_config,
     load_provider_from_settings, migrate_provider_settings,
 };
 
-use finsight_agent::agent::{AgentEvent, EventCallback};
+use finsight_agent::agent::EventCallback;
 use finsight_core::Db;
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
 
 pub struct AppState {
     /// Shared behind an `Arc` so the future finsight-server can hand the same
@@ -46,9 +51,10 @@ impl AppState {
     }
 }
 
-/// Build the tauri-specta builder with all commands registered.
-/// Shared between the Tauri app and the `export_bindings` binary so the
-/// generated TS bindings stay in sync with what Tauri actually exposes.
+/// Build the tauri-specta builder with all commands registered. Consumed by
+/// the `export_bindings` binary; the registered command set is the contract the
+/// generated `bindings.ts` — and the finsight-server dispatcher (see
+/// `crates/finsight-server/tests/parity.rs`) — must stay in sync with.
 pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         commands::accounts::list_accounts,
@@ -254,178 +260,5 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::copilot_chat::edit_conversation_user_message,
         commands::copilot_chat::delete_conversation_messages_after,
     ])
-}
-
-const SERVICE: &str = "com.finsight.app";
-const USER: &str = "default";
-
-/// Configure a `tauri::Builder` with our plugins, invoke handler, and lifecycle
-/// setup. The caller (the `src-tauri` binary) is responsible for the final
-/// `.run(generate_context!())` because `generate_context!` must be expanded in
-/// the crate that owns `tauri.conf.json`.
-pub fn configure_app(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    let specta = build_specta_builder();
-
-    builder
-        // Single-instance: two windows on the same encrypted DB would deadlock on WAL locks.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }))
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
-        .invoke_handler(specta.invoke_handler())
-        .setup(move |app| {
-            // Dev/prod DB isolation (root-cause fix for recurring corruption): the
-            // Tauri identifier is shared with the installed app, so a debug
-            // `tauri dev` build would otherwise open/migrate/corrupt the REAL
-            // production database. Debug builds use a sibling ".dev" data dir.
-            let app_data_dir = resolve_app_data_dir(app.path().app_data_dir()?, cfg!(debug_assertions));
-            std::fs::create_dir_all(&app_data_dir)?;
-            let db_path = app_data_dir.join("data.sqlcipher");
-
-            // Apply a staged restore (P0-4) BEFORE opening the DB, so we never
-            // swap a database that has live connections. Move the pending file
-            // over data.sqlcipher and drop the stale WAL/SHM so the restored
-            // snapshot is authoritative.
-            let pending_restore = app_data_dir.join("data.pending-restore.sqlcipher");
-            if pending_restore.exists() {
-                let _ = std::fs::remove_file(app_data_dir.join("data.sqlcipher-wal"));
-                let _ = std::fs::remove_file(app_data_dir.join("data.sqlcipher-shm"));
-                if let Err(e) = std::fs::rename(&pending_restore, &db_path) {
-                    eprintln!("⚠ failed to apply staged restore: {e}");
-                }
-            }
-
-            let key = finsight_core::keychain::load_or_create_key(SERVICE, USER)
-                .map_err(|e| -> Box<dyn std::error::Error> {
-                    format!("keychain error: {e}").into()
-                })?;
-
-            let db = Db::open(&db_path, &key).map_err(|e| -> Box<dyn std::error::Error> {
-                format!("db open error: {e}").into()
-            })?;
-
-            // Refresh derived state (integrity check, pre-migration backup,
-            // migrations, provider-settings migration, categorization/transfer
-            // pairing/balances/net-worth/anomaly recompute). Shared with the
-            // server's per-user login catch-up — see finsight_api::startup.
-            let backups_dir = app_data_dir.join("backups");
-            let _startup_report = finsight_api::startup::run_startup_cascade(&db, &backups_dir);
-
-            let window = app.get_webview_window("main").expect("main window");
-            let on_event: EventCallback = Arc::new(move |event| {
-                let (event_name, payload) = match &event {
-                    AgentEvent::CategorizationProgress { .. } =>
-                        ("categorization.progress", serde_json::to_value(&event).unwrap()),
-                    AgentEvent::CategorizationComplete { .. } =>
-                        ("categorization.complete", serde_json::to_value(&event).unwrap()),
-                    AgentEvent::Error { .. } =>
-                        ("agent.error", serde_json::to_value(&event).unwrap()),
-                };
-                let _ = window.emit(event_name, payload);
-            });
-
-            let state = AppState::new(db.clone(), app_data_dir.clone(), on_event);
-            // Load saved provider configuration and wire it into the agent
-            if let Some(provider) = load_provider_from_settings(&db) {
-                state.api.agent.set_provider(provider);
-            }
-            app.manage(state);
-
-            // Pass Tauri's Tokio runtime handle explicitly: `.setup()` runs with no
-            // ambient runtime entered, so `SyncScheduler::start` must spawn via a
-            // `Handle` rather than the bare `tokio::spawn` (which would panic here).
-            let rt = tauri::async_runtime::handle();
-            let _scheduler = app.state::<AppState>().api.sync_scheduler.start(rt.inner());
-
-            let check_agent = app.state::<AppState>().api.agent.tx.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = check_agent
-                    .send(finsight_agent::agent::AgentJob::CheckDueRecipes)
-                    .await;
-            });
-
-            // Resume auto-categorization if a previous run was interrupted — e.g.
-            // the app was imported into and then closed before the LLM pass
-            // finished, which otherwise leaves those rows uncategorized forever.
-            // Best-effort: gated on the setting and on there being real work.
-            let cat_agent = app.state::<AppState>().api.agent.tx.clone();
-            let cat_db = db.clone();
-            tauri::async_runtime::spawn(async move {
-                let should = finsight_core::repos::run(&cat_db, |conn| {
-                    let auto: Option<bool> = finsight_core::settings::get(
-                        conn,
-                        crate::commands::settings::AUTO_CATEGORIZE_ENABLED_KEY,
-                    )?;
-                    if !auto.unwrap_or(true) {
-                        return Ok(false);
-                    }
-                    let pending: i64 = conn.query_row(
-                        "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND is_transfer = 0",
-                        [],
-                        |r| r.get(0),
-                    )?;
-                    Ok(pending > 0)
-                })
-                .await
-                .unwrap_or(false);
-                if should {
-                    let _ = cat_agent
-                        .send(finsight_agent::agent::AgentJob::CategorizeAll)
-                        .await;
-                }
-            });
-
-            let notify_app = app.handle().clone();
-            let notify_db = db.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = crate::notifications::check_and_fire(&notify_app, &notify_db).await;
-            });
-
-            Ok(())
-        })
-}
-
-/// Choose the app data directory. Debug builds get a sibling `<identifier>.dev`
-/// directory so development NEVER opens the installed app's production database
-/// — the Tauri identifier is shared, so without this a `tauri dev` build would
-/// migrate/corrupt the real DB (the root cause of the recurring corruption).
-fn resolve_app_data_dir(prod: std::path::PathBuf, is_debug: bool) -> std::path::PathBuf {
-    if !is_debug {
-        return prod;
-    }
-    let dev_name = prod
-        .file_name()
-        .map(|n| format!("{}.dev", n.to_string_lossy()))
-        .unwrap_or_else(|| "finsight.dev".to_string());
-    prod.with_file_name(dev_name)
-}
-
-#[cfg(test)]
-mod data_dir_tests {
-    use super::resolve_app_data_dir;
-    use std::path::PathBuf;
-
-    #[test]
-    fn release_uses_the_production_dir() {
-        let prod = PathBuf::from(r"C:\Users\k\AppData\Roaming\com.finsight.app");
-        assert_eq!(resolve_app_data_dir(prod.clone(), false), prod);
-    }
-
-    #[test]
-    fn debug_uses_a_sibling_dev_dir_beside_prod() {
-        let prod = PathBuf::from(r"C:\Users\k\AppData\Roaming\com.finsight.app");
-        let dev = resolve_app_data_dir(prod.clone(), true);
-        assert_eq!(
-            dev.file_name().unwrap(),
-            std::ffi::OsStr::new("com.finsight.app.dev")
-        );
-        // Same parent → fully separate from prod, never nested inside it.
-        assert_eq!(dev.parent(), prod.parent());
-        assert_ne!(dev, prod);
-    }
 }
 

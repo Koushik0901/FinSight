@@ -5,7 +5,7 @@ use finsight_providers::{CsvImportMapping, CsvPreview};
 use std::sync::Arc;
 
 // Types + the tauri-free preview helper live in finsight-api now; re-exported
-// so existing imports of `finsight_app::commands::import::*` (lib.rs, tests —
+// so existing imports of `finsight_bindings::commands::import::*` (lib.rs, tests —
 // e.g. `prepare_csv_cmd.rs`'s direct call to `build_preview`) keep resolving.
 pub use finsight_api::commands::import::{
     build_preview, ImportResult, PreparedImportPreview, ProgressPayload,

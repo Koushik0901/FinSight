@@ -48,7 +48,7 @@ cd ui && npx vitest run src/screens/Settings.test.tsx
 cd ui && npx tsc --noEmit
 
 # Regenerate TypeScript bindings after changing the shared command contract
-cargo run -p finsight-tauri --bin export_bindings
+cargo run -p finsight-tauri --bin export_bindings --features codegen
 
 # Build for production
 cd ui && npm run build
@@ -77,13 +77,13 @@ sent by `bindings.ts`.
 
 **`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-app`** — codegen-only Tauri wrapper layer. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract used by `export_bindings`. This crate is not linked into the shipped desktop binary. The real desktop entry point is `src-tauri/src/main.rs`, which exposes only the three local server-URL commands.
+**`crates/finsight-bindings`** — codegen-only Tauri wrapper layer. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract the `export_bindings` binary emits. This crate exists **purely** to generate `ui/src/api/bindings.ts`. `src-tauri` pulls it in only as an *optional*, `codegen`-feature-gated dependency, so it stays out of the shipped desktop binary's dependency graph. The real desktop entry point is `src-tauri/src/main.rs`, a thin webview shell exposing only the three local server-URL commands.
 
 **`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against `bindings.ts`.
 
 **`crates/finsight-eval`** — evaluation fixtures and runners for Copilot/provider quality checks. Live-provider tests remain opt-in.
 
-**`src-tauri`** (crate alias `finsight-tauri`) — binary entry point + `export_bindings` binary that writes `ui/src/api/bindings.ts`.
+**`src-tauri`** (crate alias `finsight-tauri`) — the shipped thin desktop shell binary (`finsight`), which depends only on `finsight-core` (keychain for the server URL) + Tauri. It also hosts the tiny `export_bindings` codegen bin, gated behind the `codegen` feature (which is the only thing that pulls in the optional `finsight-bindings` dep). A default/shipping build skips that bin, so the codegen crate never enters the `finsight` binary's dependency graph; the bin lives here only because it needs this crate's `tauri_build` setup to be a runnable Windows binary.
 
 ### The `run()` pattern
 
@@ -102,14 +102,14 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
    `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
-2. Add a thin wrapper in `crates/finsight-app/src/commands/` that delegates to it via
+2. Add a thin wrapper in `crates/finsight-bindings/src/commands/` that delegates to it via
    `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
-3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-app/src/lib.rs`
+3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-bindings/src/lib.rs`
 4. **Add a `finsight-server` route**: one match arm in `crates/finsight-server/src/dispatch.rs`
    using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
    `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
    client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
-5. `cargo run -p finsight-tauri --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
+5. `cargo run -p finsight-tauri --bin export_bindings --features codegen` (aka `pnpm bindings`) — regenerates `ui/src/api/bindings.ts`
 
 ### Database migrations
 
@@ -139,7 +139,7 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-app` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-bindings` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### TypeScript type field naming
 

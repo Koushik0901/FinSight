@@ -3,8 +3,8 @@ use crate::ApiState;
 use finsight_core::{repos::run, settings};
 
 const CURRENCY_KEY: &str = "display_currency";
-/// `pub` (not `pub(crate)`): `crates/finsight-app/src/lib.rs`'s startup cascade
-/// and the finsight-app `settings` wrapper module both need this key across the
+/// `pub` (not `pub(crate)`): `crates/finsight-bindings/src/lib.rs`'s startup cascade
+/// and the finsight-bindings `settings` wrapper module both need this key across the
 /// crate boundary now that the body lives here.
 pub const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
 

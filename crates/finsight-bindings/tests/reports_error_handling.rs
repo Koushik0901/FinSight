@@ -19,7 +19,7 @@ fn fresh_db() -> (TempDir, Db) {
     (dir, db)
 }
 
-/// Mirrors fetch_monthly's row-collection step in crates/finsight-app/src/commands/reports.rs.
+/// Mirrors fetch_monthly's row-collection step in crates/finsight-bindings/src/commands/reports.rs.
 fn fetch_monthly_sums(
     conn: &rusqlite::Connection,
 ) -> Result<Vec<(String, i64, i64)>, rusqlite::Error> {

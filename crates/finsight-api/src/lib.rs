@@ -3,7 +3,7 @@ pub mod commands; // transport-agnostic command surface: each command is a plain
                   // wrappers and finsight-server. See commands/mod.rs.
 pub mod csv; // shared csv_escape helper for the export commands (accounts,
              // transactions, settings) — dedupes what used to be triplicated
-             // private copies in finsight-app.
+             // private copies in finsight-bindings.
 pub mod error;
 pub mod provider; // provider-construction helpers (settings → live CompletionProvider).
 pub mod secrets; // per-user secret storage in the user's own encrypted DB (settings KV)

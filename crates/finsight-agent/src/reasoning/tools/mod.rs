@@ -188,7 +188,7 @@ pub fn augment_cents_fields(v: &mut Value) {
 }
 
 /// The canonical set of tools the Copilot runs with. Single source of truth so
-/// the shipped app (`finsight-app::commands::agent::build_toolset`) and the
+/// the shipped app (`finsight-bindings::commands::agent::build_toolset`) and the
 /// offline evaluation harness (`finsight-eval`) exercise exactly the same
 /// capabilities — otherwise the benchmark would grade a different agent than
 /// users get.

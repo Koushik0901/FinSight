@@ -3,7 +3,7 @@
 //! number (balances, cashflow, recurring, transfers, anomalies, net worth) so
 //! the audit can diff them against independently computed ground truth.
 //!
-//! Run: cargo test -p finsight-app --release --test audit_probe -- --ignored --nocapture
+//! Run: cargo test -p finsight-bindings --release --test audit_probe -- --ignored --nocapture
 
 use finsight_core::models::{AccountType, NewAccount};
 use finsight_core::{db::run_migrations, keychain, metrics, Db};

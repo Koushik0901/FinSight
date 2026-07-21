@@ -1,7 +1,7 @@
 //! Live #3 verification: run the real LLM categorizer (Gemma via OpenRouter) on
 //! the real dev-app data's uncategorized transactions. Ignored; run manually
 //! with the app stopped (writes to the dev DB):
-//!   OPENROUTER_API_KEY=... cargo test -p finsight-app --test phase6_categorize_live -- --ignored --nocapture
+//!   OPENROUTER_API_KEY=... cargo test -p finsight-bindings --test phase6_categorize_live -- --ignored --nocapture
 
 use std::sync::Arc;
 

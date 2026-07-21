@@ -29,13 +29,13 @@ ranked, evidence-backed roadmap for an implementation agent.
 
 ## How this was audited (evidence base)
 
-1. **Headless real-pipeline probe** — `crates/finsight-app/tests/audit_probe.rs`
+1. **Headless real-pipeline probe** — `crates/finsight-bindings/tests/audit_probe.rs`
    (committed as audit tooling, `#[ignore]`d) drives the REAL import pipeline
    against the user's actual bank CSVs in `samples/` (6 accounts, 3,213
    transactions, Dec 2023 → Jul 2026), then runs the real post-import cascade
    (builtin categorization, transfer pairing, anomaly recompute, balance
    derivation, net-worth backfill) and dumps every derived number.
-   Run: `cargo test -p finsight-app --release --test audit_probe -- --ignored --nocapture`
+   Run: `cargo test -p finsight-bindings --release --test audit_probe -- --ignored --nocapture`
 2. **Independent ground truth** — the same CSVs parsed independently (Python) to
    compute per-account sums, transfer legs, payroll, and recurring candidates;
    diffed against the app's numbers.

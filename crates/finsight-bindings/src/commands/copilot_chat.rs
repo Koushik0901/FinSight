@@ -5,7 +5,7 @@ use finsight_core::models::{ConversationMessage, ConversationSummary};
 use std::sync::Arc;
 
 // Types + the tauri-free command bodies live in finsight-api now; re-exported
-// so existing imports of `finsight_app::commands::copilot_chat::*` (lib.rs,
+// so existing imports of `finsight_bindings::commands::copilot_chat::*` (lib.rs,
 // tests) keep resolving.
 pub use finsight_api::commands::copilot_chat::{
     ChatHistoryEntry, CopilotStreamFrame, EditConversationMessageInput,

@@ -2,7 +2,7 @@ use crate::error::AppResult;
 use crate::AppState;
 
 // Types live in finsight-api now; re-exported so existing imports of
-// `finsight_app::commands::budget::*` (lib.rs, tests) keep resolving.
+// `finsight_bindings::commands::budget::*` (lib.rs, tests) keep resolving.
 pub use finsight_api::commands::budget::{
     BudgetEnvelope, CategoryHistory, CategoryPlanRow, GoalContributionDto, GoalDto,
     MemberBudgetEnvelope, MonthlyActual,
