@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
+import { commands, type BudgetEnvelope, type CategoryHistory, type GoalContributionDto, type GoalDto, type MemberBudgetEnvelope, type NewGoalInput, type PlanAssignment, type ProjectedValue } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -14,6 +14,24 @@ export function useBudgetEnvelopes() {
       return result.data;
     },
     enabled: isBackendAvailable(),
+  });
+}
+
+/**
+ * Budget-vs-actual scoped to one household member's ownership-weighted share
+ * of the spend. The budgets themselves stay household-level — this is a view of
+ * progress against the shared target, not a per-person target. `null` member
+ * disables the query, so callers can fall back to the household view.
+ */
+export function useMemberBudgetEnvelopes(memberId: string | null) {
+  return useQuery<MemberBudgetEnvelope[]>({
+    queryKey: ["member-budget-envelopes", memberId],
+    queryFn: async () => {
+      const result = await commands.listMemberBudgetEnvelopes(memberId as string);
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isBackendAvailable() && memberId !== null,
   });
 }
 

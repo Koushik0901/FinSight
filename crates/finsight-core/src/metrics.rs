@@ -596,6 +596,57 @@ fn account_weights_for_member(
     Ok(out)
 }
 
+/// A member's share of spending per category for the month starting
+/// `month_start`, weighted by their ownership of the account each transaction
+/// sits in.
+///
+/// Reuses [`MEMBER_WEIGHT_SUBQUERY`] — the one definition of a member's account
+/// weight — so a per-person budget can never disagree with the per-person
+/// balance and cashflow figures the rest of the app already shows. A joint
+/// account split 50/50 attributes half of each of its transactions to each
+/// owner; an account the member does not own contributes nothing.
+///
+/// Spend is measured the same way [`budget_envelopes_for_month`] measures it:
+/// a `settle_up` reimbursement nets against spend, otherwise a negative amount
+/// is an outflow. Returns `(category_id, member_spend_cents)`, rounded to whole
+/// cents, only for categories the member spent against.
+pub fn member_category_spend(
+    conn: &Connection,
+    member_id: &str,
+    month_start: &str,
+) -> CoreResult<std::collections::HashMap<String, i64>> {
+    let cur = primary_currency_clause(conn, "t");
+    // The weight subquery binds the member id to its own `?1`; this query binds
+    // the member id (?1) and the month start (?2).
+    let sql = format!(
+        "SELECT t.category_id, \
+                SUM( (CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                           WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                           ELSE 0 END) * w.weight ) \
+         FROM transactions t \
+         JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+         WHERE t.category_id IS NOT NULL \
+           AND t.posted_at >= ?2 \
+           AND t.is_transfer = 0{cur} \
+         GROUP BY t.category_id"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![member_id, month_start], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))
+    })?;
+    let mut out = std::collections::HashMap::new();
+    for r in rows {
+        let (category_id, weighted) = r?;
+        // Only keep categories the member actually spent against, so an
+        // untouched category is absent rather than a noisy zero.
+        let cents = weighted.round() as i64;
+        if cents != 0 {
+            out.insert(category_id, cents);
+        }
+    }
+    Ok(out)
+}
+
 /// The manual-asset analogue of [`MEMBER_WEIGHT_SUBQUERY`]: a member's share of a
 /// jointly-owned asset — explicit `share_bps` when set, else an equal split.
 /// Selects `(asset_id, weight)` for the member bound to `?1`.
@@ -920,6 +971,194 @@ mod tests {
         .unwrap();
     }
 
+
+    fn insert_categorized_txn(
+        conn: &mut Connection,
+        acct: &str,
+        category_id: &str,
+        amount: i64,
+        settle_up: bool,
+    ) {
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,category_id,posted_at,amount_cents,merchant_raw,status,is_transfer,settle_up,created_at) \
+             VALUES(?1,?2,?3,?4,?5,'M','cleared',0,?6,?4)",
+            params![
+                id,
+                acct,
+                category_id,
+                (Utc::now() - Duration::days(2)).to_rfc3339(),
+                amount,
+                if settle_up { 1 } else { 0 }
+            ],
+        )
+        .unwrap();
+    }
+
+    fn seed_category(conn: &Connection, id: &str, label: &str) {
+        conn.execute(
+            "INSERT OR IGNORE INTO category_groups(id,label,sort_order) VALUES('grp','Everyday',0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO categories(id,group_id,label,color,sort_order) VALUES(?1,'grp',?2,'#0f0',0)",
+            params![id, label],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_sole_owner_gets_all_of_their_accounts_category_spend() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        seed_category(&conn, "groceries", "Groceries");
+        insert_categorized_txn(&mut conn, &acct, "groceries", -40_000, false);
+
+        let spend = member_category_spend(&conn, &alice.id, "1970-01-01").unwrap();
+        assert_eq!(spend.get("groceries").copied(), Some(40_000));
+    }
+
+    #[test]
+    fn a_joint_account_splits_its_spend_by_ownership_share() {
+        // The heart of the feature: a 50/50 account attributes half of each of
+        // its transactions to each partner.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = crate::repos::household::create_member(&mut conn, "Bob", None).unwrap();
+        let joint = accounts::insert(&mut conn, account("Joint", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
+        seed_category(&conn, "dining", "Dining");
+        insert_categorized_txn(&mut conn, &joint, "dining", -30_000, false);
+
+        assert_eq!(
+            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            Some(15_000)
+        );
+        assert_eq!(
+            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("dining").copied(),
+            Some(15_000)
+        );
+    }
+
+    #[test]
+    fn an_explicit_share_weights_the_split_unequally() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = crate::repos::household::create_member(&mut conn, "Bob", None).unwrap();
+        let joint = accounts::insert(&mut conn, account("Joint", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        // Alice owns 70%, Bob 30%.
+        crate::repos::household::set_account_owner_shares(
+            &mut conn,
+            &joint,
+            &[
+                crate::models::OwnerShare { member_id: alice.id.clone(), share_bps: Some(7000) },
+                crate::models::OwnerShare { member_id: bob.id.clone(), share_bps: Some(3000) },
+            ],
+        )
+        .unwrap();
+        seed_category(&conn, "dining", "Dining");
+        insert_categorized_txn(&mut conn, &joint, "dining", -100_000, false);
+
+        assert_eq!(
+            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            Some(70_000)
+        );
+        assert_eq!(
+            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("dining").copied(),
+            Some(30_000)
+        );
+    }
+
+    #[test]
+    fn a_member_sees_nothing_from_an_account_they_do_not_own() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = crate::repos::household::create_member(&mut conn, "Bob", None).unwrap();
+        let bobs = accounts::insert(&mut conn, account("Bob Chk", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &bobs, &[bob.id.clone()]).unwrap();
+        seed_category(&conn, "hobbies", "Hobbies");
+        insert_categorized_txn(&mut conn, &bobs, "hobbies", -50_000, false);
+
+        assert!(member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().is_empty());
+        assert_eq!(
+            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("hobbies").copied(),
+            Some(50_000)
+        );
+    }
+
+    #[test]
+    fn a_settle_up_reimbursement_nets_a_members_share_down() {
+        // Same spend definition the household envelope uses: a reimbursement
+        // inflow nets against spend rather than counting as income.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        seed_category(&conn, "dining", "Dining");
+        insert_categorized_txn(&mut conn, &acct, "dining", -60_000, false); // spent
+        insert_categorized_txn(&mut conn, &acct, "dining", 20_000, true); // reimbursed
+
+        assert_eq!(
+            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            Some(40_000)
+        );
+    }
+
+    #[test]
+    fn transfers_and_income_are_not_counted_as_member_spend() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        seed_category(&conn, "salary", "Salary");
+        // A positive (income) row, not settle_up, contributes nothing to spend.
+        insert_categorized_txn(&mut conn, &acct, "salary", 300_000, false);
+
+        assert!(
+            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().is_empty(),
+            "income is not spend"
+        );
+    }
+
+    #[test]
+    fn the_month_window_excludes_earlier_spend() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        seed_category(&conn, "dining", "Dining");
+        // insert_categorized_txn dates rows 2 days ago; a window starting
+        // tomorrow must exclude them.
+        insert_categorized_txn(&mut conn, &acct, "dining", -10_000, false);
+        let tomorrow = (Utc::now() + Duration::days(1)).format("%Y-%m-%d").to_string();
+
+        assert!(member_category_spend(&conn, &alice.id, &tomorrow).unwrap().is_empty());
+    }
     #[test]
     fn savings_rate_is_signed_and_guards_zero_income() {
         assert_eq!(savings_rate_pct(0, 500), 0, "no income → 0, not a divide by zero");

@@ -221,6 +221,9 @@ async fn dispatch(
 
         // ── budget ──
         "list_budget_envelopes" => ok(c::budget::list_budget_envelopes(api).await?),
+        "list_member_budget_envelopes" => {
+            ok(c::budget::list_member_budget_envelopes(api, arg(&p, "memberId")?).await?)
+        }
         "set_budget" => ok(c::budget::set_budget(
             api,
             arg(&p, "categoryId")?,
@@ -903,6 +906,7 @@ pub const SUPPORTED: &[&str] = &[
     "get_uncelebrated_milestones",
     // budget
     "list_budget_envelopes",
+    "list_member_budget_envelopes",
     "set_budget",
     "list_goals",
     "create_goal",
