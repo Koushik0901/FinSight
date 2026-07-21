@@ -19,6 +19,7 @@ import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import { money } from "../utils/format";
 import { accountTypeColor } from "../utils/accountColor";
 import * as I from "../components/Icons";
+import ExplainInspector from "../components/ExplainInspector";
 
 const RANGES = [
   { key: "1M", days: 30, label: "month" },
@@ -107,7 +108,7 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
   );
 }
 
-function HealthScoreCard({ score, savingsPoints }: { score: ReturnType<typeof useHealthScore>["data"]; savingsPoints: Array<{ month: string; savingsRatePct: number }> }) {
+function HealthScoreCard({ score, savingsPoints, onExplain }: { score: ReturnType<typeof useHealthScore>["data"]; savingsPoints: Array<{ month: string; savingsRatePct: number }>; onExplain: (m: string) => void }) {
   if (!score || !("breakdown" in score) || !score.breakdown) return null;
   return (
     <div className="card" style={{ height: "100%" }}>
@@ -122,7 +123,13 @@ function HealthScoreCard({ score, savingsPoints }: { score: ReturnType<typeof us
           <div className="stack stack-xs">
             <div className="eyebrow">Financial health</div>
             <div className="h3">Your scorecard this month</div>
-            <div className="muted" style={{ fontSize: 12.5 }}>Savings {score.breakdown.savingsRatePct}% · Emergency fund {score.breakdown.emergencyFundMonths.toFixed(1)} months</div>
+            {/* Savings rate here IS the rolling-90-day metric the explanation
+                reads, so its ⓘ is consistent. Emergency-fund months on this card
+                comes from the health-score context (rolling expense), NOT the
+                conservative safety basis the metrics layer / explanation use, so
+                it deliberately has no ⓘ — pointing "explain" at a number the
+                inspector would compute differently is the one thing to avoid. */}
+            <div className="muted" style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>Savings {score.breakdown.savingsRatePct}%<ExplainBtn metric="savings_rate" label="savings rate" onOpen={onExplain} /><span aria-hidden="true">·</span> Emergency fund {score.breakdown.emergencyFundMonths.toFixed(1)} months</div>
           </div>
         </div>
         <div className="stack stack-xs" style={{ minWidth: 180 }}>
@@ -135,6 +142,22 @@ function HealthScoreCard({ score, savingsPoints }: { score: ReturnType<typeof us
         {score.tips.map((tip) => <li key={tip} style={{ marginBottom: 6, color: "var(--ink-mute)", fontSize: 13 }}>{tip}</li>)}
       </ul>
     </div>
+  );
+}
+
+/** The ⓘ affordance that opens the "explain this number" inspector for a
+ *  metric. Kept tiny and ghost so it never competes with the figure itself. */
+function ExplainBtn({ metric, label, onOpen }: { metric: string; label: string; onOpen: (m: string) => void }) {
+  return (
+    <button
+      type="button"
+      className="explain-btn"
+      aria-label={`Explain how ${label} is calculated`}
+      title={`How ${label} is calculated`}
+      onClick={() => onOpen(metric)}
+    >
+      <I.Info width="15" height="15" />
+    </button>
   );
 }
 
@@ -152,6 +175,8 @@ export default function Today() {
   const createMonthlyReview = useCreateMonthlyReview();
   const netWorth = useNetWorth();
   const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
+  // The metric whose "explain this number" inspector is open, or null.
+  const [explainKey, setExplainKey] = useState<string | null>(null);
   const [sweepDismissed, setSweepDismissed] = useState(false);
   const [dismissedMilestones, setDismissedMilestones] = useState<number[]>([]);
   const days = RANGES.find((r) => r.key === range)!.days;
@@ -227,7 +252,7 @@ export default function Today() {
         <div className="today-hero-head">
           <div className="today-hero-headline">
             <div className="eyebrow"><span className="dot" />{weekday} · {dateLong}</div>
-            <div className="eyebrow" style={{ color: "var(--ink-mute)", marginTop: -4 }}>Net worth</div>
+            <div className="eyebrow" style={{ color: "var(--ink-mute)", marginTop: -4, display: "inline-flex", alignItems: "center", gap: 4 }}>Net worth<ExplainBtn metric="net_worth" label="net worth" onOpen={setExplainKey} /></div>
             <div className="h-display today-figure" style={{ color: netWorth >= 0 ? "var(--ink)" : "var(--negative)" }}><span className="figure money">{money(netWorth, { currency: primaryCurrency })}</span></div>
             <div className="hero-meta">
               <span className={`npill${trendChipClass}`}>{trendText}</span>
@@ -259,7 +284,7 @@ export default function Today() {
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("checking"), width: 8, height: 8, marginRight: 6 }} />Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency })}</div><div className="sub">Cash and near-cash accounts</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("investment"), width: 8, height: 8, marginRight: 6 }} />Invested</div><div className="value money">{money(investedCents, { currency: primaryCurrency })}</div><div className="sub">Brokerage and retirement balances</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("credit"), width: 8, height: 8, marginRight: 6 }} />Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">{runwayDays !== null ? `Liquid at avg burn · ${metrics ? money(metrics.avgMonthlyExpenseCents, { currency: primaryCurrency }) : "—"}/mo` : "Needs about a month of history"}</div></div>
+        <div className="stat accent"><div className="label" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Runway<ExplainBtn metric="runway_days" label="runway" onOpen={setExplainKey} /></div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">{runwayDays !== null ? `Liquid at avg burn · ${metrics ? money(metrics.avgMonthlyExpenseCents, { currency: primaryCurrency }) : "—"}/mo` : "Needs about a month of history"}</div></div>
       </section>
 
       <PerPersonCard currency={primaryCurrency} />
@@ -282,7 +307,7 @@ export default function Today() {
             <p className="muted" style={{ lineHeight: 1.6 }}>Quiet compounding is working. Take a moment, then decide where the next increment should go.</p>
             <button className="btn ghost sm" type="button" onClick={() => setDismissedMilestones((prev) => [...prev, celebrateMilestones[0]!])}>Dismiss</button>
           </div>
-        ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} />}
+        ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} onExplain={setExplainKey} />}
       </section>
 
       {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month in review</div><div className="h3">Capture this month’s snapshot before the calendar rolls over.</div></div><button className="btn primary" type="button" disabled={createMonthlyReview.isPending} onClick={async () => { try { const nowDate = new Date(); await createMonthlyReview.mutateAsync({ year: nowDate.getFullYear(), month: nowDate.getMonth() + 1, notes: null }); toast.success("Monthly review saved", { description: "Open Reports to revisit it later." }); navigate("/reports"); } catch { toast.error("Could not create monthly review"); } }}>{createMonthlyReview.isPending ? "Saving…" : "Save review"}</button></div></div></section>}
@@ -294,6 +319,7 @@ export default function Today() {
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>{recurringSoon.length > 0 ? "Due in the next two weeks" : "Recurring commitments"}</div>{upcomingRecurring.length === 0 ? <div className="muted">No recurring subscriptions or bills detected yet.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>{recurringSoon.length > 0 ? "Due" : "Cadence"}</th><th className="right">Amount</th></tr></thead><tbody>{upcomingRecurring.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected) ?? item.cadence}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
       </section>
 
+      <ExplainInspector metricKey={explainKey} currency={primaryCurrency} onClose={() => setExplainKey(null)} />
     </div>
   );
 }

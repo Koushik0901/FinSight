@@ -128,6 +128,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::spending::get_spending_path_back,
         commands::spending::set_spending_annotation,
         commands::metrics::get_financial_metrics,
+        commands::metrics::explain_financial_metrics,
         commands::metrics::household_net_worth_breakdown,
         commands::metrics::set_financial_assumptions,
         commands::restoration::list_restoration_envelopes,

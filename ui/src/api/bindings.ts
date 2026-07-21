@@ -624,6 +624,20 @@ async getFinancialMetrics(memberId: string | null) : Promise<Result<FinancialMet
 }
 },
 /**
+ * Structured "explain this number" provenance for the dashboard metrics —
+ * definition, inputs, exclusions, assumptions, period, and data-quality
+ * warnings — optionally scoped to one household member. Values come from the
+ * same metrics layer as `get_financial_metrics`, so they always agree.
+ */
+async explainFinancialMetrics(memberId: string | null) : Promise<Result<MetricExplanation[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explain_financial_metrics", { memberId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Each household member's share of net worth (share-weighted across accounts AND
  * jointly-owned assets, via the metrics layer — NOT a client-side equal split),
  * plus an "unassigned" residual so the rows sum to the household total.
@@ -2422,6 +2436,84 @@ export type MemberNetWorth = { memberId: string | null; name: string; color: str
  */
 export type MerchantTotal = { merchantRaw: string; categoryLabel: string; categoryColor: string; totalCents: number; txnCount: number }
 /**
+ * A tunable assumption that shaped the metric (e.g. the user's target rate).
+ */
+export type MetricAssumption = { label: string; value: string }
+/**
+ * A complete, self-consistent explanation of one financial metric: what it
+ * means, what produced it, what it leaves out, what it assumes, over what
+ * period, and how far to trust it.
+ */
+export type MetricExplanation = { 
+/**
+ * Stable identifier, e.g. `"net_worth"`. Safe to switch on.
+ */
+key: string; label: string; 
+/**
+ * The value — identical to what the app shows elsewhere, by construction.
+ */
+value: MetricValue; 
+/**
+ * One-sentence definition of what the number represents.
+ */
+definition: string; 
+/**
+ * The material inputs that produced it, with their amounts where money.
+ */
+inputs: MetricInput[]; 
+/**
+ * What was deliberately left out.
+ */
+exclusions: string[]; 
+/**
+ * Tunable assumptions that shaped it.
+ */
+assumptions: MetricAssumption[]; 
+/**
+ * The time window the figure covers.
+ */
+period: string; 
+/**
+ * Data-quality caveats: missing / stale / withheld / low-confidence disclosures.
+ */
+warnings: MetricWarning[] }
+/**
+ * A material input that fed the metric. `amount_cents` is present when the
+ * input is a money figure (formatted by the UI in the user's currency);
+ * `detail` carries non-money context such as "3 months of history".
+ */
+export type MetricInput = { label: string; amountCents: number | null; detail: string | null }
+/**
+ * The metric's value, tagged so the UI knows how to format it and so a
+ * withheld figure is a first-class state rather than a fabricated zero.
+ */
+export type MetricValue = { kind: "money"; cents: number } | { kind: "percent"; pct: number } | { kind: "months"; months: number } | { kind: "days"; days: number } | 
+/**
+ * The app declines to state a figure; see `warnings` for why.
+ */
+{ kind: "withheld" }
+/**
+ * One data-quality caveat: missing, stale, low-confidence, or unsupported data.
+ */
+export type MetricWarning = { level: MetricWarningLevel; message: string }
+/**
+ * Severity of a data-quality caveat attached to a metric.
+ */
+export type MetricWarningLevel = 
+/**
+ * Neutral context — e.g. which window was used. Does not undermine the figure.
+ */
+"info" | 
+/**
+ * The figure stands, but this caveat materially affects how far to trust it.
+ */
+"caution" | 
+/**
+ * The figure is withheld entirely; [`MetricExplanation::value`] is
+ * [`MetricValue::Withheld`]. Better to say "not yet" than a confident wrong number.
+ */
+"withheld"
+/**
  * Something the Copilot needed but could not find, and — where we can work it
  * out — where the user would go to supply it.
  * 
@@ -2696,8 +2788,8 @@ export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; month
 /**
  * Input for [`export_search_transactions_csv`] — mirrors the Copilot
  * `search_transactions` tool's query shape so the exported rows match
- * exactly what the card displayed. Moved here from finsight-app in Phase 4
- * (was finsight-app-only before the export commands became transport-agnostic).
+ * exactly what the card displayed. Moved here from finsight-bindings in Phase 4
+ * (was finsight-bindings-only before the export commands became transport-agnostic).
  */
 export type SearchTxnQueryInput = { merchant: string | null; account: string | null; startDate: string | null; endDate: string | null; minAmountCents: number | null; direction: string | null }
 export type SimpleFinAccountImportRequest = { simplefinId: string; connectionId: string; nickname: string | null }

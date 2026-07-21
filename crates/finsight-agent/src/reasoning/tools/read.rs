@@ -209,6 +209,61 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn explain_metric() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "explain_metric"
+        }
+        fn description(&self) -> &str {
+            "Explain how a headline financial metric is produced: its plain-English \
+             definition, the inputs that fed it (with amounts), what was excluded, the \
+             assumptions and time period, and any data-quality warnings. Use for 'how is \
+             my savings rate calculated', 'why is my net worth what it is', 'what does \
+             runway mean', or whenever a figure looks surprising and the user wants the \
+             basis. The values come straight from the app's shared metrics layer — the \
+             SAME numbers the dashboard shows — so report them as given and never \
+             recompute. A value whose kind is 'withheld' means the app deliberately \
+             declines to state it (too little history, or a per-person figure that isn't \
+             meaningful); explain WHY from its warnings instead of inventing a number. \
+             Pass `metric` to focus on one of: net_worth, avg_monthly_income, \
+             avg_monthly_expense, monthly_surplus, savings_rate, emergency_fund_months, \
+             runway_days; omit it to get all of them."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "metric": {
+                        "type": "string",
+                        "description": "Optional metric key to focus on. Omit for every metric."
+                    }
+                }
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let all = finsight_core::provenance::explain_financial_metrics(ctx.conn, None)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let focus = args["metric"].as_str().map(str::trim).filter(|s| !s.is_empty());
+            let metrics: Vec<Value> = all
+                .into_iter()
+                .filter(|e| focus.map_or(true, |k| e.key == k))
+                .map(|e| serde_json::to_value(e).unwrap_or(Value::Null))
+                .collect();
+            let unknown = focus.is_some() && metrics.is_empty();
+            Ok(json!({
+                "metrics": metrics,
+                "note": if unknown {
+                    "No metric by that key. Valid keys: net_worth, avg_monthly_income, avg_monthly_expense, monthly_surplus, savings_rate, emergency_fund_months, runway_days. Call again with one of those, or omit `metric` for all.".to_string()
+                } else {
+                    "These figures come from the app's shared metrics layer — report them as-is, do not recompute. A value with kind 'withheld' means the app declines to state it; explain why from its warnings rather than inventing a number.".to_string()
+                }
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn get_month_totals() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

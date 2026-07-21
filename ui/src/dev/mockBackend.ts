@@ -272,6 +272,97 @@ function baseMetrics(o: AnyRec): AnyRec {
   };
 }
 
+/** Dev-harness "explain this number" provenance, mirroring the shape and
+ *  withholding rules of finsight-core::provenance so the inspector renders
+ *  realistically in every mock dataset (incl. the `empty` withheld path and the
+ *  `partial` mixed-currency path). Values are read from the SAME mock metrics
+ *  the cards show, so the explanation and the figure always agree here too. */
+function buildMetricExplanations(m: AnyRec): AnyRec[] {
+  const n = (k: string) => (m[k] as number) ?? 0;
+  const codes = ((m.unconvertedHoldings as AnyRec[]) ?? []).map((h) => h.code as string);
+  const unknown = n("accountsWithUnknownBalance");
+  const span = n("safetyBasisSpanDays");
+  const nwExcl: string[] = [];
+  const nwWarn: AnyRec[] = [];
+  if (unknown > 0) {
+    nwExcl.push(`${unknown} account(s) with no confirmed balance excluded — counted as unknown, never as zero.`);
+    nwWarn.push({ level: "caution", message: `This figure omits ${unknown} account(s) whose balance hasn't been confirmed.` });
+  }
+  if (codes.length) {
+    nwExcl.push(`Money held in ${codes.join(", ")} is not converted and not included.`);
+    nwWarn.push({ level: "caution", message: `You also hold money in ${codes.join(", ")}. It isn't converted, so this is a partial view.` });
+  }
+  const cashflowExcl = [
+    "Transfers between your own accounts (they aren't income or spending).",
+    "Activity inside investment accounts (buys/sells aren't cashflow).",
+    ...(codes.length ? [`Transactions in other currencies (${codes.join(", ")}) — only your primary currency is totalled.`] : []),
+  ];
+  const thin = span > 0 && span < 30
+    ? [{ level: "caution", message: `Only ${span} day(s) of history so far — this monthly average is extrapolated from a partial month.` }]
+    : span <= 0
+      ? [{ level: "caution", message: "No transaction history in this window yet, so this is $0 by default." }]
+      : [];
+  const residual = n("netWorthCents") - (n("liquidCents") + n("investedCents") - n("debtCents"));
+  const efMonths = m.emergencyFundMonths as number | null;
+  const runway = m.runwayDays as number | null;
+  const withheld = (extra?: string) => ({ level: "withheld", message: `Withheld until there's about 30 days of history — currently ${span}.${extra ?? ""}` });
+  const period90 = "Trailing 90 days";
+  return [
+    { key: "net_worth", label: "Net worth", value: { kind: "money", cents: n("netWorthCents") },
+      definition: "Everything you own minus everything you owe: confirmed account balances (debts negative) plus any manual assets.",
+      inputs: [
+        { label: "Cash & liquid accounts", amountCents: n("liquidCents"), detail: null },
+        { label: "Investments", amountCents: n("investedCents"), detail: null },
+        { label: "Debts", amountCents: n("debtCents") === 0 ? 0 : -n("debtCents"), detail: "credit cards & loans, counted as negative" },
+        ...(residual !== 0 ? [{ label: "Manual assets & other holdings", amountCents: residual, detail: null }] : []),
+      ],
+      exclusions: nwExcl, assumptions: [], period: "As of today", warnings: nwWarn },
+    { key: "avg_monthly_income", label: "Average monthly income", value: { kind: "money", cents: n("avgMonthlyIncomeCents") },
+      definition: "Your typical income per month: money coming in, averaged over the months of history in the window.",
+      inputs: [{ label: "Averaged over", amountCents: null, detail: "the months of activity in the last 90 days" }],
+      exclusions: [...cashflowExcl, "Reimbursements you were paid back (they net against the original expense)."],
+      assumptions: [], period: period90, warnings: thin },
+    { key: "avg_monthly_expense", label: "Average monthly spending", value: { kind: "money", cents: n("avgMonthlyExpenseCents") },
+      definition: "Your typical spending per month: money going out, averaged over the months of history in the window.",
+      inputs: [{ label: "Averaged over", amountCents: null, detail: "the months of activity in the last 90 days" }],
+      exclusions: cashflowExcl, assumptions: [], period: period90, warnings: thin },
+    { key: "monthly_surplus", label: "Monthly surplus", value: { kind: "money", cents: n("netMonthlyCents") },
+      definition: "What's left over in a typical month: average income minus average spending.",
+      inputs: [
+        { label: "Average monthly income", amountCents: n("avgMonthlyIncomeCents"), detail: null },
+        { label: "Average monthly spending", amountCents: -n("avgMonthlyExpenseCents"), detail: null },
+      ],
+      exclusions: ["Transfers and investment-account activity (see income and spending)."], assumptions: [], period: period90, warnings: thin },
+    { key: "savings_rate", label: "Savings rate", value: { kind: "percent", pct: n("rollingSavingsRatePct") },
+      definition: "The share of your income you keep: (income − spending) ÷ income, over the window.",
+      inputs: [
+        { label: "Average monthly income", amountCents: n("avgMonthlyIncomeCents"), detail: null },
+        { label: "Average monthly spending", amountCents: n("avgMonthlyExpenseCents"), detail: null },
+      ],
+      exclusions: ["Transfers and investment-account activity."],
+      assumptions: [{ label: "Your target savings rate", value: `${n("targetSavingsRatePct")}%` }], period: period90, warnings: thin },
+    { key: "emergency_fund_months", label: "Emergency-fund coverage",
+      value: efMonths === null ? { kind: "withheld" } : { kind: "months", months: efMonths },
+      definition: "How many months your emergency-fund savings would cover at your typical spending.",
+      inputs: [
+        { label: "Emergency-fund savings", amountCents: n("emergencyFundCents"), detail: null },
+        { label: "Conservative monthly spending", amountCents: n("avgMonthlyExpenseCents"), detail: "the larger of your 12-month and 90-day average, so annual bills are counted" },
+      ],
+      exclusions: [], assumptions: [{ label: "Your target", value: `${n("emergencyFundTargetMonths")} months of expenses` }],
+      period: "As of today, at your conservative monthly spending",
+      warnings: efMonths === null ? [withheld(" A confident wrong number here would overstate how safe you are.")] : [{ level: "info", message: "Based on your complete months of spending history." }] },
+    { key: "runway_days", label: "Cash runway",
+      value: runway === null ? { kind: "withheld" } : { kind: "days", days: runway },
+      definition: "How long your liquid cash would last with no new income, at your typical spending.",
+      inputs: [
+        { label: "Liquid cash", amountCents: n("liquidCents"), detail: null },
+        { label: "Conservative monthly spending", amountCents: n("avgMonthlyExpenseCents"), detail: null },
+      ],
+      exclusions: [], assumptions: [], period: "As of today, at your conservative monthly spending",
+      warnings: runway === null ? [withheld()] : [{ level: "info", message: "Based on your complete months of spending history." }] },
+  ];
+}
+
 function agentStatus(o: AnyRec): AnyRec {
   return {
     uncategorizedCount: 0,
@@ -658,6 +749,11 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       const memberId = a?.memberId as string | null | undefined;
       if (memberId && ds.metricsByMember?.[memberId]) return ds.metricsByMember[memberId];
       return ds.metrics;
+    },
+    explain_financial_metrics: (a) => {
+      const memberId = a?.memberId as string | null | undefined;
+      const m = memberId && ds.metricsByMember?.[memberId] ? ds.metricsByMember[memberId] : ds.metrics;
+      return buildMetricExplanations(m);
     },
     get_financial_health_score: () => ds.healthScore,
     get_savings_rate_history: () => ds.savingsRateHistory,

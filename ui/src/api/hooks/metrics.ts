@@ -4,6 +4,7 @@ import {
   type FinancialMetrics,
   type FinancialAssumptionsInput,
   type FinancialPhilosophyDto,
+  type MetricExplanation,
 } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
@@ -25,6 +26,27 @@ export function useFinancialMetrics(memberId?: string | null) {
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
+    enabled: isBackendAvailable(),
+  });
+}
+
+/**
+ * Structured "explain this number" provenance for the dashboard metrics —
+ * definition, inputs, exclusions, assumptions, period, and data-quality
+ * warnings. The values come from the same shared metrics layer as
+ * {@link useFinancialMetrics}, so an explanation can never disagree with the
+ * number shown. Returned as a lookup keyed by the stable metric `key`
+ * (net_worth, savings_rate, runway_days, …) so a card can grab just its own.
+ */
+export function useMetricExplanations(memberId?: string | null) {
+  return useQuery<Record<string, MetricExplanation>>({
+    queryKey: ["metric-explanations", memberId ?? null],
+    queryFn: async () => {
+      const result = await commands.explainFinancialMetrics(memberId ?? null);
+      if (result.status === "error") throw new Error(result.error.message);
+      return Object.fromEntries(result.data.map((e) => [e.key, e]));
+    },
+    staleTime: 60_000,
     enabled: isBackendAvailable(),
   });
 }

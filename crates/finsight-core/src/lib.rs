@@ -12,6 +12,7 @@ pub mod investments;
 pub mod keychain;
 pub mod metrics;
 pub mod models;
+pub mod provenance;
 pub mod palette;
 pub mod repos;
 pub mod reset_barrier;

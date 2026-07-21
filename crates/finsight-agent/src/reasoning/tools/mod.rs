@@ -205,6 +205,7 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::get_account_balances());
     tools.register(read::get_account_balance_history());
     tools.register(read::get_net_worth());
+    tools.register(read::explain_metric());
     tools.register(read::get_month_totals());
     tools.register(read::get_top_spending_categories());
     tools.register(read::get_spending_breakdown());
