@@ -209,6 +209,75 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn get_safe_to_spend() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "get_safe_to_spend"
+        }
+        fn description(&self) -> &str {
+            "Project the liquid balance forward day by day over the near term and answer how \
+             much is genuinely safe to spend today without risking upcoming obligations. Returns \
+             the conservative safe-to-spend (lowest projected balance minus the buffer), the \
+             lowest projected balance and its date, the first day the balance would fall below \
+             the buffer (the first cash-flow risk), the upcoming dated income and bills in the \
+             window, and any data-quality warnings. Use for 'how much can I safely spend', 'can I \
+             afford X before payday', 'when is my tightest day', 'will I be short before rent'. It \
+             already blends everyday spending with bill timing and excludes internal transfers, so \
+             report its numbers as-is and never recompute them. If reliable=false there is too \
+             little history to trust the forecast as precise — say so rather than stating a firm \
+             figure. Pass horizon_days (7-90, default 30), a safety buffer_cents to keep \
+             untouched, and extra_expense_cents to test a hypothetical purchase's effect."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "horizon_days": {"type": "integer", "description": "Days to project (7-90). Default 30."},
+                    "buffer_cents": {"type": "integer", "description": "Safety buffer to keep untouched, in cents. Default 0."},
+                    "extra_expense_cents": {"type": "integer", "description": "Optional hypothetical one-off spend to test, in cents."}
+                }
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            use finsight_core::cashflow::{self, WhatIf};
+            let horizon = args["horizon_days"].as_i64().unwrap_or(cashflow::DEFAULT_HORIZON_DAYS);
+            let whatif = WhatIf {
+                buffer_cents: args["buffer_cents"].as_i64().unwrap_or(0).max(0),
+                extra_expense_cents: args["extra_expense_cents"].as_i64().unwrap_or(0).max(0),
+                extra_expense_date: None,
+                extra_expense_label: None,
+            };
+            let f = cashflow::build_forecast(ctx.conn, horizon, &whatif)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            // Summarize (omit the full daily array): the decision-driving figures,
+            // the dated events, and the caveats.
+            let events: Vec<Value> = f
+                .upcoming_events
+                .iter()
+                .map(|e| json!({"date": e.date, "label": e.label, "amount_cents": e.amount_cents, "kind": format!("{:?}", e.kind).to_lowercase()}))
+                .collect();
+            let warnings: Vec<&str> = f.warnings.iter().map(|w| w.message.as_str()).collect();
+            Ok(json!({
+                "as_of": f.as_of,
+                "horizon_days": f.horizon_days,
+                "start_liquid_balance_cents": f.start_balance_cents,
+                "buffer_cents": f.buffer_cents,
+                "daily_variable_burn_cents": f.daily_burn_cents,
+                "safe_to_spend_cents": f.safe_to_spend_cents,
+                "lowest_projected_balance_cents": f.lowest_balance_cents,
+                "lowest_balance_date": f.lowest_date,
+                "first_day_below_buffer": f.first_breach_date,
+                "upcoming_events": events,
+                "warnings": warnings,
+                "reliable": f.reliable,
+                "note": "Figures come from the app's cash-flow projection (everyday spending + dated bills/income, internal transfers excluded). Report them as-is; do not recompute. If reliable is false, say the forecast is a rough estimate. safe_to_spend_cents is what can be spent TODAY while keeping every projected day at or above the buffer."
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn explain_metric() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

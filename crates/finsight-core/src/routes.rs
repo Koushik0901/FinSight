@@ -36,6 +36,7 @@ pub const APP_ROUTES: &[&str] = &[
     "/goals",
     "/journey",
     "/scenarios",
+    "/cashflow",
     "/reports",
     "/path-back",
     "/rules",

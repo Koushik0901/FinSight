@@ -48,6 +48,7 @@ const NAV: NavSection[] = [
     label: "Plan",
     items: [
       { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
+      { id: "cashflow", path: "/cashflow", label: "Cash flow", Icon: I.Horizon },
       { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
       { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
       { id: "path-back", path: "/path-back", label: "Path back", Icon: I.Flow },

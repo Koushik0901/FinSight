@@ -129,6 +129,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::spending::set_spending_annotation,
         commands::metrics::get_financial_metrics,
         commands::metrics::explain_financial_metrics,
+        commands::cashflow::get_cashflow_forecast,
         commands::metrics::household_net_worth_breakdown,
         commands::metrics::set_financial_assumptions,
         commands::restoration::list_restoration_envelopes,

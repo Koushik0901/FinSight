@@ -37,6 +37,7 @@ const Recurring = lazy(() => import("./screens/Recurring"));
 const Goals = lazy(() => import("./screens/Goals"));
 const Journey = lazy(() => import("./screens/Journey"));
 const Scenarios = lazy(() => import("./screens/Scenarios"));
+const Cashflow = lazy(() => import("./screens/Cashflow"));
 const Reports = lazy(() => import("./screens/Reports"));
 const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
@@ -296,6 +297,7 @@ export function App() {
                     <Route path="/goals" element={<Goals />} />
                     <Route path="/journey" element={<Journey />} />
                     <Route path="/scenarios" element={<Scenarios />} />
+                    <Route path="/cashflow" element={<Cashflow />} />
                     <Route path="/reports" element={<Reports />} />
                     <Route path="/path-back" element={<PathBack />} />
                     <Route path="/rules" element={<Rules />} />
