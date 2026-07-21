@@ -118,6 +118,13 @@ export const ArrowLeft = icon(<path d="M13 8H3M7 4 3 8l4 4" />);
 export const ArrowDown = icon(<path d="M8 3v10M4 9l4 4 4-4" />);
 export const ArrowUp = icon(<path d="M8 13V3M4 7l4-4 4 4" />);
 
+export const Horizon = icon(
+  <>
+    <path d="M2 12.5h12" />
+    <path d="M2.5 10l3-3.5 2.5 2L13 4" />
+  </>,
+);
+
 export const Info = icon(
   <>
     <circle cx="8" cy="8" r="6" />

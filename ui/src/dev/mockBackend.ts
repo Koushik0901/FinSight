@@ -363,6 +363,82 @@ function buildMetricExplanations(m: AnyRec): AnyRec[] {
   ];
 }
 
+/** Dev-harness cash-flow forecast, mirroring finsight-core::cashflow: dated
+ *  events on their days + a residual smooth burn, then lowest-point / breach /
+ *  safe-to-spend. Reads the mock metrics so it moves with the chosen dataset
+ *  (the `empty` set → withheld/rough, populated sets → a real trajectory). */
+function buildCashflowForecast(m: AnyRec, horizonDays?: number, bufferCents?: number, extraExpenseCents?: number): AnyRec {
+  const horizon = Math.min(90, Math.max(7, Number(horizonDays ?? 30)));
+  const buffer = Math.max(0, Number(bufferCents ?? 0));
+  const start = Number(m.liquidCents ?? 0);
+  const avgExp = Number(m.avgMonthlyExpenseCents ?? 0);
+  const avgInc = Number(m.avgMonthlyIncomeCents ?? 0);
+  const hasData = avgExp > 0;
+
+  const raw: Array<{ day: number; amountCents: number; kind: string; label: string }> = [];
+  if (hasData) {
+    raw.push({ day: 3, amountCents: -1_200, kind: "subscription", label: "Streaming Plus" });
+    if (10 < horizon) raw.push({ day: 10, amountCents: -Math.round(avgExp * 0.4), kind: "bill", label: "Rent" });
+    if (14 < horizon && avgInc > 0) raw.push({ day: 14, amountCents: avgInc, kind: "income", label: "Employer payroll" });
+  }
+  if (Number(extraExpenseCents ?? 0) > 0) raw.push({ day: 0, amountCents: -Math.abs(Number(extraExpenseCents)), kind: "hypothetical", label: "Hypothetical spend" });
+
+  // Residual everyday burn: expense minus the dated obligations, per day.
+  const datedObligationMonthly = hasData ? 1_200 + Math.round(avgExp * 0.4) : 0;
+  const dailyBurn = Math.max(0, Math.round((avgExp - datedObligationMonthly) / 30.44));
+
+  const byDay = new Map<number, number>();
+  for (const e of raw) byDay.set(e.day, (byDay.get(e.day) ?? 0) + e.amountCents);
+
+  const days: AnyRec[] = [];
+  let bal = start;
+  let lowest = start;
+  let lowestDate = isoInDays(0);
+  let firstBreach: string | null = null;
+  for (let dd = 0; dd < horizon; dd++) {
+    const net = byDay.get(dd) ?? 0;
+    bal += net - dailyBurn;
+    const date = isoInDays(dd);
+    const below = bal < buffer;
+    if (bal < lowest) { lowest = bal; lowestDate = date; }
+    if (below && !firstBreach) firstBreach = date;
+    days.push({ date, projectedBalanceCents: bal, eventNetCents: net, burnCents: -dailyBurn, belowBuffer: below });
+  }
+  const upcomingEvents = raw
+    .filter((e) => e.day < horizon)
+    .map((e) => ({
+      date: isoInDays(e.day),
+      label: e.label,
+      amountCents: e.amountCents,
+      kind: e.kind,
+      confidence: ["income", "bill", "subscription"].includes(e.kind) ? 0.82 : null,
+    }));
+
+  const warnings: AnyRec[] = [];
+  if (!hasData) {
+    warnings.push({ level: "caution", message: "Only a little history so far — this forecast is a rough estimate, not a precise projection." });
+  } else {
+    warnings.push({ level: "caution", message: `Car insurance (about $680) is due ${isoInDays(horizon + 4)}, just after this window — plan for it.` });
+    warnings.push({ level: "info", message: `Everyday spending is projected at about $${Math.round(dailyBurn / 100)}/day from your recent average.` });
+  }
+
+  return {
+    asOf: isoInDays(0),
+    horizonDays: horizon,
+    startBalanceCents: start,
+    bufferCents: buffer,
+    dailyBurnCents: dailyBurn,
+    days,
+    lowestBalanceCents: lowest,
+    lowestDate,
+    firstBreachDate: firstBreach,
+    safeToSpendCents: Math.max(lowest - buffer, 0),
+    upcomingEvents,
+    warnings,
+    reliable: hasData,
+  };
+}
+
 function agentStatus(o: AnyRec): AnyRec {
   return {
     uncategorizedCount: 0,
@@ -755,6 +831,13 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       const m = memberId && ds.metricsByMember?.[memberId] ? ds.metricsByMember[memberId] : ds.metrics;
       return buildMetricExplanations(m);
     },
+    get_cashflow_forecast: (a) =>
+      buildCashflowForecast(
+        ds.metrics,
+        a?.horizonDays as number | undefined,
+        a?.bufferCents as number | undefined,
+        a?.extraExpenseCents as number | undefined,
+      ),
     get_financial_health_score: () => ds.healthScore,
     get_savings_rate_history: () => ds.savingsRateHistory,
     list_categories_with_spending: () => ds.categories,

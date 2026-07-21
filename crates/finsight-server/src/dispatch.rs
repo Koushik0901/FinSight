@@ -518,6 +518,14 @@ async fn dispatch(
         "explain_financial_metrics" => {
             ok(c::metrics::explain_financial_metrics(api, arg(&p, "memberId")?).await?)
         }
+        "get_cashflow_forecast" => ok(c::cashflow::get_cashflow_forecast(
+            api,
+            arg(&p, "horizonDays")?,
+            arg(&p, "bufferCents")?,
+            arg(&p, "extraExpenseCents")?,
+            arg(&p, "extraExpenseDate")?,
+        )
+        .await?),
         "household_net_worth_breakdown" => {
             ok(c::metrics::household_net_worth_breakdown(api).await?)
         }
@@ -996,6 +1004,7 @@ pub const SUPPORTED: &[&str] = &[
     // metrics
     "get_financial_metrics",
     "explain_financial_metrics",
+    "get_cashflow_forecast",
     "household_net_worth_breakdown",
     "set_financial_assumptions",
     "list_restoration_envelopes",

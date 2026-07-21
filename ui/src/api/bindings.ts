@@ -638,6 +638,19 @@ async explainFinancialMetrics(memberId: string | null) : Promise<Result<MetricEx
 }
 },
 /**
+ * Project the liquid balance forward `horizonDays` (default 30, clamped 7–90),
+ * optionally against a safety buffer and a hypothetical one-off outflow — all
+ * evaluated purely, nothing persisted.
+ */
+async getCashflowForecast(horizonDays: number | null, bufferCents: number | null, extraExpenseCents: number | null, extraExpenseDate: string | null) : Promise<Result<CashflowForecast, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_cashflow_forecast", { horizonDays, bufferCents, extraExpenseCents, extraExpenseDate }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Each household member's share of net worth (share-weighted across accounts AND
  * jointly-owned assets, via the metrics layer — NOT a client-side equal split),
  * plus an "unassigned" residual so the rows sum to the household total.
@@ -2124,6 +2137,69 @@ spentCents: number;
  * negative = accumulated overspend.
  */
 carryoverCents: number; txnCount: number }
+/**
+ * One projected day.
+ */
+export type CashflowDay = { date: string; 
+/**
+ * Projected end-of-day liquid balance.
+ */
+projectedBalanceCents: number; 
+/**
+ * Net of the dated events landing on this day.
+ */
+eventNetCents: number; 
+/**
+ * The day's share of everyday variable spend (<= 0).
+ */
+burnCents: number; 
+/**
+ * Whether the projected balance is below the safety buffer this day.
+ */
+belowBuffer: boolean }
+/**
+ * A single dated cash movement. `amount_cents` is signed: positive inflow,
+ * negative outflow.
+ */
+export type CashflowEvent = { date: string; label: string; amountCents: number; kind: CashflowEventKind; 
+/**
+ * Detection confidence for recurring-derived events (0..1); `None` for
+ * user-entered planned/hypothetical events, which aren't guesses.
+ */
+confidence: number | null }
+export type CashflowEventKind = "income" | "bill" | "subscription" | "planned" | 
+/**
+ * A temporary what-if outflow the user is testing; never persisted.
+ */
+"hypothetical"
+/**
+ * The forward cash-flow forecast.
+ */
+export type CashflowForecast = { asOf: string; horizonDays: number; startBalanceCents: number; bufferCents: number; 
+/**
+ * Everyday variable spend spread per day (magnitude, >= 0).
+ */
+dailyBurnCents: number; days: CashflowDay[]; lowestBalanceCents: number; lowestDate: string; 
+/**
+ * First day the projected balance drops below the buffer, if any.
+ */
+firstBreachDate: string | null; 
+/**
+ * The conservative amount safe to spend today: the lowest projected balance
+ * minus the buffer, floored at zero. Spending it today lowers every later
+ * day by the same amount, so the lowest point is the binding constraint.
+ */
+safeToSpendCents: number; 
+/**
+ * The dated events inside the horizon, chronological, for display.
+ */
+upcomingEvents: CashflowEvent[]; warnings: CashflowWarning[]; 
+/**
+ * False when there's too little history (or no known balance) for the
+ * forecast to be trusted as precise. Consumers must say so, not imply rigor.
+ */
+reliable: boolean }
+export type CashflowWarning = { level: WarningLevel; message: string }
 export type Category = { id: string; group_id: string; label: string; color: string; icon: string | null; spending_type: string | null; 
 /**
  * Free-text guidance the user attaches so the categorizer/Copilot know when
@@ -2905,6 +2981,7 @@ export type UnconvertedHolding = { code: string; accountCount: number; balanceCe
  */
 export type UnresolvedCounterpartyDto = { pattern: string | null; label: string; txnCount: number; inflowCents: number; outflowCents: number }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
+export type WarningLevel = "info" | "caution"
 
 /** tauri-specta globals **/
 

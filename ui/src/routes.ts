@@ -26,6 +26,7 @@ export const APP_ROUTES = [
   "/goals",
   "/journey",
   "/scenarios",
+  "/cashflow",
   "/reports",
   "/path-back",
   "/rules",
