@@ -39,6 +39,12 @@ const MAX_HORIZON_DAYS: i64 = 90;
 /// Detection window for recurring items — over a year, so annual bills that
 /// haven't recurred inside the horizon are still known and can be flagged.
 const RECURRING_WINDOW_DAYS: i64 = 400;
+/// The trailing window the everyday-expense average is taken over (must match
+/// the `rolling_averages` call below). An obligation is only netted out of the
+/// smooth burn when it actually falls inside this window — otherwise a lumpy
+/// quarterly/annual bill absent from the average would pull the burn down and
+/// overstate safe-to-spend.
+const EXPENSE_WINDOW_DAYS: i64 = 90;
 /// Below this much transaction history a daily forecast is guesswork; it is
 /// still returned but flagged unreliable rather than shown as precise.
 const MIN_RELIABLE_SPAN_DAYS: i64 = 30;
@@ -273,8 +279,12 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
     let horizon_end = as_of + Duration::days(horizon);
 
     let balances = metrics::balance_breakdown(conn)?;
-    let rolling = metrics::rolling_averages(conn, 90)?;
+    let rolling = metrics::rolling_averages(conn, EXPENSE_WINDOW_DAYS)?;
     let items = recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)?;
+    // Only obligations whose last charge lands inside the expense window are
+    // reflected in `avg_monthly_expense`, so only those may be netted out of the
+    // smooth burn (see EXPENSE_WINDOW_DAYS).
+    let expense_window_start = as_of - Duration::days(EXPENSE_WINDOW_DAYS);
 
     // Planned transactions due within the horizon, still pending.
     let planned_rows = planned_transactions::list(
@@ -323,7 +333,17 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
 
         let is_obligation = matches!(kind, CashflowEventKind::Bill | CashflowEventKind::Subscription);
         if is_obligation {
-            dated_obligation_monthly += item.monthly_equivalent_cents();
+            // Net this bill out of the smooth burn ONLY if its most recent charge
+            // is inside the expense window — otherwise it isn't in
+            // `avg_monthly_expense` and subtracting it would understate the burn
+            // and overstate safe-to-spend. Longer-cadence bills still ride as
+            // dated events (in horizon) or the near-horizon warning.
+            let in_expense_base = NaiveDate::parse_from_str(&item.last_seen, "%Y-%m-%d")
+                .map(|last| last >= expense_window_start)
+                .unwrap_or(false);
+            if in_expense_base {
+                dated_obligation_monthly += item.monthly_equivalent_cents();
+            }
         }
 
         for occ in occurrences_in_window(next, gap, as_of, horizon_end) {
@@ -635,6 +655,39 @@ mod tests {
             short.warnings.iter().any(|w| w.message.contains("ACME UTILITIES") && w.message.contains("just after")),
             "a bill just past the horizon must be surfaced: {:?}",
             short.warnings
+        );
+    }
+
+    /// A lumpy bill (quarterly/annual) whose last charge is OUTSIDE the 90-day
+    /// expense window is NOT in `avg_monthly_expense`, so it must not be netted
+    /// out of the smooth burn — doing so would understate the burn and overstate
+    /// safe-to-spend, the dangerous direction. It rides as a dated event / near-
+    /// horizon warning instead.
+    #[test]
+    fn a_bill_outside_the_expense_window_does_not_lower_the_burn() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let today = chrono::Utc::now().date_naive();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,color,created_at) \
+             VALUES('acct','me','Bank','Checking','Checking','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        steady_spend(&conn, today, 90);
+        // A monthly bill INSIDE the window — establishes a real burn to compare.
+        series(&conn, "ACME UTILITIES", today - Duration::days(5), 30, 6, -12_000, false);
+        let burn_before = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap().daily_burn_cents;
+        assert!(burn_before > 0);
+
+        // A quarterly bill whose charges are ALL >90 days ago: detected over the
+        // 400-day window, but absent from the 90-day expense average.
+        series(&conn, "ANNUAL PREMIUM CO", today - Duration::days(100), 90, 3, -60_000, false);
+        let burn_after = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap().daily_burn_cents;
+
+        assert_eq!(
+            burn_after, burn_before,
+            "a lumpy bill outside the expense window must not pull the daily burn down"
         );
     }
 }
