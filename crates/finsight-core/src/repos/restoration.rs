@@ -301,9 +301,32 @@ fn still_held_ceiling(
             "That account's balance history could not be read.".to_string(),
         );
     };
+    // A reconstruction anchored at an assumed zero is off by an unknown
+    // constant — every absolute figure it produces is unreliable, and for an
+    // UPPER BOUND that is the dangerous direction: the trough can come out
+    // lower than the truth, so the ceiling would claim less is held than
+    // actually could be. A too-tight bound presented as fact is exactly the
+    // confidently-wrong number this feature exists to avoid, so withhold it.
+    // (Same test the accounts read-tool applies before trusting these amounts.)
+    if timeline.anchor == crate::models::BalanceAnchorQuality::AssumedZero {
+        return (
+            None,
+            format!(
+                "{}'s history was imported without a known opening balance, so its low point \
+                 cannot be pinned down precisely enough to bound this.",
+                timeline.account_name
+            ),
+        );
+    }
     match timeline.trough {
         Some(trough) => {
-            let bound = trough.balance_cents.max(0);
+            // Cap at the envelope's own size: a trough larger than the whole
+            // withdrawal is a true statement but a useless bound, and reads as
+            // a bug next to a much smaller "left to restore".
+            let bound = trough
+                .balance_cents
+                .max(0)
+                .min(envelope.original_cents.max(0));
             (
                 Some(bound),
                 format!(
@@ -511,6 +534,94 @@ mod tests {
             "the balance dipped, so the ceiling must be below the original: {ceiling}"
         );
         assert!(st.still_held_basis.contains("lowest point"));
+    }
+
+
+    #[test]
+    fn an_assumed_zero_reconstruction_withholds_the_ceiling_rather_than_asserting_a_wrong_one() {
+        // History imported behind a zero opening is off by an unknown constant.
+        // For an upper bound that is the dangerous direction — the trough can
+        // read lower than the truth — so no ceiling is the honest answer.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        // Account created 2026-02-01, but activity dated BEFORE that: the
+        // hallmark of an assumed-zero reconstruction.
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at)              VALUES('chk','Me','Bank','Checking','Everyday','USD','#fff','2026-02-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES             ('h1','chk','2026-01-05T12:00:00Z', 500000,'Old activity','cleared','2026-01-05T12:00:00Z'),             ('d1','chk','2026-01-10T12:00:00Z', 1000000,'Withdrawal landing','cleared','2026-01-10T12:00:00Z'),             ('s1','chk','2026-02-15T12:00:00Z', -300000,'Spend','cleared','2026-02-15T12:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let conn2 = db.get().unwrap();
+
+        let env = create(
+            &conn2,
+            NewRestorationEnvelope {
+                label: "Car fund".into(),
+                source_account_id: None,
+                destination_account_id: Some("chk".into()),
+                original_cents: 1_000_000,
+                opened_on: "2026-01-10".into(),
+                counterparty_pattern: None,
+                note: None,
+            },
+        )
+        .unwrap();
+        drop(conn2);
+        let mut conn = db.get().unwrap();
+
+        let st = status(&mut conn, &env.id).unwrap().unwrap();
+        assert_eq!(
+            st.still_held_ceiling_cents, None,
+            "an off-by-a-constant reconstruction must not masquerade as a ceiling"
+        );
+        assert!(st.still_held_basis.contains("without a known opening balance"));
+    }
+
+    #[test]
+    fn the_ceiling_never_exceeds_the_envelope_original() {
+        // A trough larger than the whole withdrawal is a true statement but a
+        // useless bound, and reads as a bug beside a smaller "left to restore".
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_checking(&conn, "chk");
+        // Balance stays well above the small withdrawal the whole time.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES             ('d1','chk','2026-01-10T12:00:00Z', 5000000,'Big balance','cleared','2026-01-10T12:00:00Z'),             ('s1','chk','2026-02-01T12:00:00Z', -100000,'Small spend','cleared','2026-02-01T12:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let conn2 = db.get().unwrap();
+
+        let env = create(
+            &conn2,
+            NewRestorationEnvelope {
+                label: "Small fund".into(),
+                source_account_id: None,
+                destination_account_id: Some("chk".into()),
+                original_cents: 200_000,
+                opened_on: "2026-01-10".into(),
+                counterparty_pattern: None,
+                note: None,
+            },
+        )
+        .unwrap();
+        drop(conn2);
+        let mut conn = db.get().unwrap();
+
+        let st = status(&mut conn, &env.id).unwrap().unwrap();
+        let ceiling = st.still_held_ceiling_cents.expect("reliably anchored");
+        assert!(
+            ceiling <= st.envelope.original_cents,
+            "ceiling {ceiling} should be capped at the {} original",
+            st.envelope.original_cents
+        );
     }
 
     #[test]
