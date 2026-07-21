@@ -196,6 +196,20 @@ pub fn canonical_vendor(normalized: &str) -> Option<&'static str> {
         .map(|(canon, _)| *canon)
 }
 
+/// Counterparty NAME tokens from a transfer/payment descriptor: alphabetic,
+/// ≥3 chars, with the bank/product/direction vocabulary removed. Shared by the
+/// e-transfer and bank-bill-payment recovery paths in
+/// [`canonical_merchant_key`] so both find the payee the same way. Empty when
+/// the descriptor carries no name at all (a bare "PRE-AUTHORIZED PAYMENT").
+fn counterparty_name(raw: &str) -> String {
+    raw.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))
+        .map(|t| t.to_lowercase())
+        .filter(|t| !crate::categorize::TRANSFER_STRUCTURAL_TOKENS.contains(&t.as_str()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Stable, vendor-canonical grouping key for recurring detection:
 /// [`normalize_merchant`] plus company-alias collapsing and plan-word stripping,
 /// so every descriptor for the same vendor — statement padding, product brand
@@ -220,14 +234,33 @@ pub fn canonical_merchant_key(raw: &str) -> String {
         .iter()
         .any(|k| lower.contains(k))
     {
-        let name: Vec<String> = raw
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|t| t.len() >= 3 && t.chars().all(|c| c.is_alphabetic()))
-            .map(|t| t.to_lowercase())
-            .filter(|t| !crate::categorize::TRANSFER_STRUCTURAL_TOKENS.contains(&t.as_str()))
-            .collect();
+        let name = counterparty_name(raw);
         if !name.is_empty() {
-            return format!("e-transfer {}", name.join(" "));
+            return format!("e-transfer {name}");
+        }
+    }
+    // A bank bill payment names the channel and the payee together — "ONLINE
+    // BANKING BILL PAYMENT HYDRO ONE" — with the payee LAST, so the 3-token
+    // normalize truncates it and every payee through the same channel collapses
+    // to one key ("online banking bill"). Even when the payee survives (a short
+    // "BILL PAYMENT ROGERS"), the key still carries "bill payment", which the
+    // recurring classifier reads as a transfer. Re-key on the payee alone.
+    //
+    // Triggered on "bill pay" specifically — the substring of "BILL PAYMENT" /
+    // "BILL PAY" / "ONLINE BILL PAYMENT" — not bare "online banking", which also
+    // fronts plain internal transfers that must stay nameless. Every word this
+    // phrase can match ("bill", "pay", "payment") is structural vocabulary that
+    // `counterparty_name` strips, so the recovered key is clean; an abbreviated
+    // "BILL PYMT" is deliberately NOT matched, because "pymt" is not in that
+    // vocabulary and would leak into the key. The BARE payee is the whole point:
+    // a channel-prefixed key ("bill-payment hydro one") would match
+    // `is_payment_like` and flip a real bill back to a Transfer, the false
+    // positive #31 removed. An empty recovery (no payee named) falls through
+    // unchanged, so a nameless "BILL PAYMENT" is untouched.
+    if lower.contains("bill pay") {
+        let name = counterparty_name(raw);
+        if !name.is_empty() {
+            return name;
         }
     }
     let kept: Vec<&str> = norm
@@ -307,6 +340,54 @@ mod tests {
             canonical_merchant_key("MEMBERSHIP FEE INSTALLMENT"),
         );
         assert!(!canonical_merchant_key("MEMBERSHIP FEE INSTALLMENT").is_empty());
+    }
+
+    #[test]
+    fn bank_bill_payments_key_on_the_payee_not_the_channel() {
+        // The bug: the payee sits after the channel words, past the 3-token
+        // cutoff, so every payee through the same channel collapsed to one key.
+        let hydro = canonical_merchant_key("ONLINE BANKING BILL PAYMENT HYDRO ONE");
+        let telus = canonical_merchant_key("INTERNET BANKING BILL PAYMENT TELUS");
+        let rogers = canonical_merchant_key("BILL PAYMENT ROGERS");
+
+        // Each recovers its own payee — the actual regression guard.
+        assert_eq!(hydro, "hydro one");
+        assert_eq!(telus, "telus");
+        assert_eq!(rogers, "rogers");
+        assert_ne!(hydro, telus);
+        assert_ne!(hydro, rogers);
+
+        // The same payee through different channels groups together.
+        assert_eq!(
+            canonical_merchant_key("ONLINE BANKING BILL PAYMENT TELUS"),
+            canonical_merchant_key("INTERNET BANKING BILL PAYMENT TELUS"),
+        );
+
+        // Crucially, the recovered key carries NO payment vocabulary — a key
+        // containing "bill payment" would make the recurring classifier read it
+        // as a transfer, undoing #31.
+        for k in [&hydro, &telus, &rogers] {
+            for banned in ["bill payment", "transfer", "payment received", "e-transfer"] {
+                assert!(!k.contains(banned), "recovered key {k:?} leaks payment vocabulary");
+            }
+        }
+    }
+
+    #[test]
+    fn real_merchants_without_the_bill_payment_phrase_are_untouched() {
+        // The trigger is the bill-payment PHRASE, not any structural word, so a
+        // real vendor that merely contains "pay"/"credit"/"money" never fires.
+        // Pinned because it is the obvious over-reach if the trigger widens.
+        assert_eq!(canonical_merchant_key("CREDIT ONE BANK  LAS VEGAS"), "credit one bank");
+        assert_eq!(canonical_merchant_key("MONEY MART  BURNABY"), "money mart");
+        assert_eq!(canonical_merchant_key("PAYLESS SHOES  BURNABY"), "payless shoes");
+    }
+
+    #[test]
+    fn a_bill_payment_with_no_named_payee_falls_through_unchanged() {
+        // The phrase matches but there is no counterparty to recover, so the
+        // key must not become empty — it falls through to the normal path.
+        assert_eq!(canonical_merchant_key("BILL PAYMENT"), "bill payment");
     }
 
     #[test]

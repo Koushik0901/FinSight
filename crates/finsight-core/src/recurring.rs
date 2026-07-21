@@ -787,9 +787,11 @@ mod tests {
     /// banking carries the same channel vocabulary as an internal transfer.
     /// Only one of them names who was paid.
     ///
-    /// These descriptors are also the case a key-based check cannot see —
-    /// `canonical_merchant_key` keeps three tokens, so "HYDRO ONE BILL PAYMENT"
-    /// becomes "hydro one bill" and the payment wording never reaches it.
+    /// These descriptors are the case the key-based grouping used to get wrong:
+    /// `canonical_merchant_key` now recovers the payee from a bill-payment
+    /// descriptor, so HYDRO and TELUS form SEPARATE series and each stays a
+    /// Bill. Before that, both truncated to "online/internet banking bill" —
+    /// one merged garbage series carrying "bill" in the key.
     #[test]
     fn a_bill_paid_through_online_banking_is_still_a_bill() {
         let (_d, db) = fresh();
@@ -802,9 +804,7 @@ mod tests {
         insert_series(&conn, "INTERNET BANKING INTERNET TRANSFER", "2026-01-05", 30, 10, -50_000, 0.0, None, 0);
 
         let items = detect_recurring(&conn, 395).unwrap();
-        // Matched on the DISPLAY descriptor, not the canonical key: the key
-        // keeps three tokens, so the payee these assertions are about
-        // ("HYDRO", "TELUS") is not in it.
+        let mut keys = Vec::new();
         for needle in ["HYDRO", "TELUS"] {
             let item = items
                 .iter()
@@ -819,7 +819,12 @@ mod tests {
                 item.is_projection_obligation(),
                 "and it must still be budgeted for: {item:?}"
             );
+            keys.push(item.merchant_key.clone());
         }
+        // The regression guard for #61: two unrelated bills are two series, not
+        // one merged one. If the key still truncated to the channel words these
+        // would be equal.
+        assert_ne!(keys[0], keys[1], "HYDRO and TELUS must not share a key: {keys:?}");
         let nameless = items
             .iter()
             .find(|i| i.display_merchant.contains("INTERNET TRANSFER"))
