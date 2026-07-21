@@ -123,7 +123,13 @@ function HealthScoreCard({ score, savingsPoints, onExplain }: { score: ReturnTyp
           <div className="stack stack-xs">
             <div className="eyebrow">Financial health</div>
             <div className="h3">Your scorecard this month</div>
-            <div className="muted" style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>Savings {score.breakdown.savingsRatePct}%<ExplainBtn metric="savings_rate" label="savings rate" onOpen={onExplain} /><span aria-hidden="true">·</span> Emergency fund {score.breakdown.emergencyFundMonths.toFixed(1)} months<ExplainBtn metric="emergency_fund_months" label="emergency-fund coverage" onOpen={onExplain} /></div>
+            {/* Savings rate here IS the rolling-90-day metric the explanation
+                reads, so its ⓘ is consistent. Emergency-fund months on this card
+                comes from the health-score context (rolling expense), NOT the
+                conservative safety basis the metrics layer / explanation use, so
+                it deliberately has no ⓘ — pointing "explain" at a number the
+                inspector would compute differently is the one thing to avoid. */}
+            <div className="muted" style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>Savings {score.breakdown.savingsRatePct}%<ExplainBtn metric="savings_rate" label="savings rate" onOpen={onExplain} /><span aria-hidden="true">·</span> Emergency fund {score.breakdown.emergencyFundMonths.toFixed(1)} months</div>
           </div>
         </div>
         <div className="stack stack-xs" style={{ minWidth: 180 }}>

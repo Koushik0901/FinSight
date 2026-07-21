@@ -527,6 +527,7 @@ mod tests {
 
         let balances = metrics::balance_breakdown_for(&mut conn, None).unwrap();
         let rolling = metrics::rolling_averages_for(&conn, ROLLING_WINDOW_DAYS, None).unwrap();
+        let safety = metrics::safety_expense_basis(&conn).unwrap();
 
         let out = explain_financial_metrics(&mut conn, None).unwrap();
         assert_eq!(out.len(), 7);
@@ -535,6 +536,26 @@ mod tests {
         assert_eq!(find(&out, "avg_monthly_expense").value, MetricValue::Money { cents: rolling.avg_monthly_expense_cents });
         assert_eq!(find(&out, "monthly_surplus").value, MetricValue::Money { cents: rolling.net_monthly_cents });
         assert_eq!(find(&out, "savings_rate").value, MetricValue::Percent { pct: rolling.savings_rate_pct });
+
+        // The safety metrics must match get_financial_metrics' EXACT rule
+        // (household scope: withhold iff the basis is insufficient; otherwise the
+        // same emergency_fund_months / runway_days over the conservative basis).
+        // Replicated here because get_financial_metrics lives in finsight-api;
+        // this is the guard against the two withholding rules drifting apart.
+        let (expected_ef, expected_runway) = if !safety.sufficient {
+            (MetricValue::Withheld, MetricValue::Withheld)
+        } else {
+            (
+                MetricValue::Months {
+                    months: metrics::emergency_fund_months(balances.emergency_fund_cents, safety.monthly_expense_cents),
+                },
+                MetricValue::Days {
+                    days: metrics::runway_days(balances.liquid_cents, safety.monthly_expense_cents),
+                },
+            )
+        };
+        assert_eq!(find(&out, "emergency_fund_months").value, expected_ef);
+        assert_eq!(find(&out, "runway_days").value, expected_runway);
     }
 
     fn full_history() -> (BalanceBreakdown, RollingAverages, SafetyExpenseBasis, Assumptions) {
