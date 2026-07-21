@@ -337,16 +337,54 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
         }
         "save_scenario" => {
             let payload: SaveScenarioPayload = parse_payload(&item.payload_json)?;
+            // Save a first-class DURABLE scenario (params + baseline + result) so
+            // a Copilot-saved scenario can be recomputed and compared just like a
+            // hand-saved one. Field names are read tolerantly (snake_ or camelCase).
+            let p = &payload.params;
+            let field = |snake: &str, camel: &str| {
+                p.get(snake).or_else(|| p.get(camel)).cloned().unwrap_or(serde_json::Value::Null)
+            };
+            let params = finsight_core::forecast::ScenarioParams {
+                income_delta_pct: field("income_delta_pct", "incomeDeltaPct").as_i64().unwrap_or(0) as i32,
+                monthly_expense_delta_cents: field("monthly_expense_delta_cents", "monthlyExpenseDeltaCents").as_i64().unwrap_or(0),
+                one_time_cents: field("one_time_cents", "oneTimeCents").as_i64().unwrap_or(0),
+                start_month_offset: field("start_month_offset", "startMonthOffset").as_u64().unwrap_or(0) as u32,
+                label: field("label", "label").as_str().unwrap_or(&payload.description).to_string(),
+            };
+            let months: u32 = 12;
+            let baseline = scenarios::build_baseline(conn)?;
+            let proj = finsight_core::forecast::project(&baseline, &params, months);
+            // JSON shapes match the api DTOs (ScenarioResult / ScenarioParamsInput
+            // are camelCase; Snapshot serializes with its own field names).
+            let result_json = serde_json::json!({
+                "verdict": proj.verdict,
+                "runwayChangeDays": proj.runway_change_days,
+                "monthlyImpactCents": proj.monthly_impact_cents,
+                "considerations": proj.considerations,
+                "baselineMonthly": proj.baseline_monthly,
+                "scenarioMonthly": proj.scenario_monthly,
+                "goalsAffected": proj.goals_affected,
+            })
+            .to_string();
+            let params_json = serde_json::json!({
+                "incomeDeltaPct": params.income_delta_pct,
+                "monthlyExpenseDeltaCents": params.monthly_expense_delta_cents,
+                "oneTimeCents": params.one_time_cents,
+                "startMonthOffset": params.start_month_offset,
+                "label": params.label,
+            })
+            .to_string();
+            let baseline_json =
+                serde_json::to_string(&baseline).map_err(|e| CoreError::InvalidState(e.to_string()))?;
             let row = scenarios::insert(
                 conn,
                 &payload.description,
-                &serde_json::to_string(&payload.params)
-                    .map_err(|e| CoreError::InvalidState(e.to_string()))?,
+                &result_json,
+                Some(&params_json),
+                Some(&baseline_json),
+                Some(months as i64),
             )?;
-            Ok(format!(
-                "Scenario '{}' saved as {}",
-                row.description, row.id
-            ))
+            Ok(format!("Scenario '{}' saved as {}", row.description, row.id))
         }
         "generate_report" => {
             let payload: GenerateReportPayload = parse_payload(&item.payload_json)?;

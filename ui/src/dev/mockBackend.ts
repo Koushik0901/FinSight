@@ -816,6 +816,43 @@ function buildDataset(kind: Kind): Dataset {
 }
 
 // ── invoke dispatch ─────────────────────────────────────────────────────────
+// ── Dev-harness saved scenarios (in-memory; resets each page load) ───────────
+function scResult(verdict: boolean, runway: number, impact: number, considerations: string[], goals: string[]): AnyRec {
+  return { verdict, runwayChangeDays: runway, monthlyImpactCents: impact, considerations, baselineMonthly: [], scenarioMonthly: [], goalsAffected: goals };
+}
+function scParams(o: Partial<AnyRec>): AnyRec {
+  return { incomeDeltaPct: 0, monthlyExpenseDeltaCents: 0, oneTimeCents: 0, startMonthOffset: 0, label: "Scenario", ...o };
+}
+let mockScenarioSeq = 0;
+let mockScenarios: AnyRec[] = [
+  {
+    id: "sc-income", description: "Cut income 50%", createdAt: isoDaysAgo(9), months: 24,
+    params: scParams({ incomeDeltaPct: -50, label: "Cut income 50%" }),
+    originalResult: scResult(false, -180, -300000, ["Runway shortens sharply."], []),
+    originalBaseline: { balanceCents: 2314000, avgMonthlyIncomeCents: 600000, avgMonthlyExpenseCents: 388000, goalCount: 1 },
+    currentResult: scResult(false, -214, -300000, ["Runway shortens by 214 days."], []),
+    isStale: true, recomputable: true,
+  },
+  {
+    id: "sc-save", description: "Add $500/mo to savings", createdAt: isoDaysAgo(2), months: 24,
+    params: scParams({ monthlyExpenseDeltaCents: 50000, label: "Add $500/mo to savings" }),
+    originalResult: scResult(true, 52, -50000, ["Frees room in the budget."], ["House Fund: +6 mo"]),
+    originalBaseline: { balanceCents: 2314000, avgMonthlyIncomeCents: 540000, avgMonthlyExpenseCents: 388000, goalCount: 1 },
+    currentResult: scResult(true, 38, -50000, ["Extends runway by 38 days."], ["House Fund: +6 mo"]),
+    isStale: false, recomputable: true,
+  },
+];
+function mockDetailFromParams(description: string, params: AnyRec, months: number): AnyRec {
+  const cut = Number(params.incomeDeltaPct ?? 0) < 0 || Number(params.oneTimeCents ?? 0) > 0;
+  const result = scResult(!cut, cut ? -120 : 24, Number(params.monthlyExpenseDeltaCents ?? 0) * -1, ["Saved just now."], []);
+  return {
+    id: `sc-${++mockScenarioSeq}`, description, createdAt: isoInDays(0), months,
+    params, originalResult: result,
+    originalBaseline: { balanceCents: 2314000, avgMonthlyIncomeCents: 540000, avgMonthlyExpenseCents: 388000, goalCount: 1 },
+    currentResult: result, isStale: false, recomputable: true,
+  };
+}
+
 function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown> {
   return {
     list_accounts: () => ds.accounts,
@@ -838,6 +875,44 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
         a?.bufferCents as number | undefined,
         a?.extraExpenseCents as number | undefined,
       ),
+    // ── Scenarios (in-memory) ──
+    run_scenario: (a) => {
+      const params = (a?.params as AnyRec | null) ?? scParams({ label: String(a?.description ?? "Scenario") });
+      const months = Number(a?.months ?? 24);
+      return mockDetailFromParams(String(a?.description ?? "Scenario"), params, months);
+    },
+    save_scenario: (a) => {
+      const detail = mockDetailFromParams(String(a?.description ?? "Scenario"), (a?.params as AnyRec) ?? scParams({}), Number(a?.months ?? 24));
+      mockScenarios = [detail, ...mockScenarios];
+      return detail;
+    },
+    list_saved_scenarios: () => mockScenarios,
+    duplicate_scenario: (a) => {
+      const src = mockScenarios.find((s) => s.id === a?.id);
+      if (!src) return null;
+      const copy = { ...src, id: `sc-${++mockScenarioSeq}`, description: `${src.description} (copy)`, createdAt: isoInDays(0) };
+      mockScenarios = [copy, ...mockScenarios];
+      return copy;
+    },
+    archive_scenario: (a) => {
+      mockScenarios = mockScenarios.filter((s) => s.id !== a?.id);
+      return null;
+    },
+    promote_scenario: (a) => {
+      const s = mockScenarios.find((x) => x.id === a?.id);
+      const changes: AnyRec[] = [];
+      const delta = Number((s?.params as AnyRec)?.monthlyExpenseDeltaCents ?? 0);
+      if (delta !== 0) changes.push({ title: delta < 0 ? "Trim monthly spending" : "Commit more each month", detail: `Adjust your monthly commitments by about $${Math.abs(delta) / 100}.`, currentCents: 388000, proposedCents: 388000 + delta });
+      const incPct = Number((s?.params as AnyRec)?.incomeDeltaPct ?? 0);
+      if (incPct !== 0) changes.push({ title: "Plan around an income change", detail: `This scenario assumes your monthly income changes by ${incPct}%. Update your plan if that becomes real.`, currentCents: 540000, proposedCents: Math.round(540000 * (1 + incPct / 100)) });
+      for (const g of ((s?.currentResult as AnyRec)?.goalsAffected ?? []) as string[]) changes.push({ title: "Revisit a goal", detail: `${g} — adjust its contribution or target if you go ahead.`, currentCents: null, proposedCents: null });
+      if (changes.length === 0) changes.push({ title: "No changes to your plan", detail: "This scenario doesn't imply any change to your monthly commitments.", currentCents: null, proposedCents: null });
+      return { scenarioId: String(a?.id ?? ""), description: String(s?.description ?? "Scenario"), changes, note: "These are suggestions for your review — nothing has been changed. Apply each one yourself if you decide to go ahead." };
+    },
+    delete_scenario: (a) => {
+      mockScenarios = mockScenarios.filter((s) => s.id !== a?.id);
+      return null;
+    },
     get_financial_health_score: () => ds.healthScore,
     get_savings_rate_history: () => ds.savingsRateHistory,
     list_categories_with_spending: () => ds.categories,
