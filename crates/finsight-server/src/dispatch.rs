@@ -664,10 +664,16 @@ async fn dispatch(
         "save_scenario" => ok(c::scenarios::save_scenario(
             api,
             arg(&p, "description")?,
-            arg(&p, "result")?,
+            arg(&p, "params")?,
+            arg(&p, "months")?,
         )
         .await?),
-        "list_scenario_history" => ok(c::scenarios::list_scenario_history(api).await?),
+        "list_saved_scenarios" => ok(c::scenarios::list_saved_scenarios(api).await?),
+        "duplicate_scenario" => ok(c::scenarios::duplicate_scenario(api, arg(&p, "id")?).await?),
+        "archive_scenario" => {
+            ok(c::scenarios::archive_scenario(api, arg(&p, "id")?, arg(&p, "archived")?).await?)
+        }
+        "promote_scenario" => ok(c::scenarios::promote_scenario(api, arg(&p, "id")?).await?),
         "delete_scenario" => ok(c::scenarios::delete_scenario(api, arg(&p, "id")?).await?),
 
         // ── settings ──
@@ -1049,7 +1055,10 @@ pub const SUPPORTED: &[&str] = &[
     // scenarios
     "run_scenario",
     "save_scenario",
-    "list_scenario_history",
+    "list_saved_scenarios",
+    "duplicate_scenario",
+    "archive_scenario",
+    "promote_scenario",
     "delete_scenario",
     // settings
     "get_currency",

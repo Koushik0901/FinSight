@@ -743,7 +743,11 @@ async setFinancialPhilosophy(input: FinancialPhilosophyDto) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
-async runScenario(description: string, months: number, params: ScenarioParamsInput | null) : Promise<Result<ScenarioResult, AppError>> {
+/**
+ * Run a what-if projection. Returns the result plus the resolved params (so a
+ * free-text scenario, whose params the server extracted, can then be saved).
+ */
+async runScenario(description: string, months: number, params: ScenarioParamsInput | null) : Promise<Result<RanScenario, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("run_scenario", { description, months, params }) };
 } catch (e) {
@@ -751,17 +755,53 @@ async runScenario(description: string, months: number, params: ScenarioParamsInp
     else return { status: "error", error: e  as any };
 }
 },
-async saveScenario(description: string, result: ScenarioResult) : Promise<Result<SavedScenario, AppError>> {
+/**
+ * Save a scenario durably (params + baseline + result), so it can later be
+ * recomputed, compared, and checked for staleness.
+ */
+async saveScenario(description: string, params: ScenarioParamsInput, months: number) : Promise<Result<SavedScenarioDetail, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("save_scenario", { description, result }) };
+    return { status: "ok", data: await TAURI_INVOKE("save_scenario", { description, params, months }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async listScenarioHistory() : Promise<Result<SavedScenario[], AppError>> {
+/**
+ * Active saved scenarios, each recomputed against the current baseline (so a
+ * comparison across them is consistent) with a staleness flag.
+ */
+async listSavedScenarios() : Promise<Result<SavedScenarioDetail[], AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_scenario_history") };
+    return { status: "ok", data: await TAURI_INVOKE("list_saved_scenarios") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async duplicateScenario(id: string) : Promise<Result<SavedScenarioDetail | null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("duplicate_scenario", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async archiveScenario(id: string, archived: boolean) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("archive_scenario", { id, archived }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Promote a scenario into a reviewable set of proposed plan changes. Writes
+ * nothing — the proposals are for the user to approve and apply themselves.
+ */
+async promoteScenario(id: string) : Promise<Result<ScenarioPlanProposal, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("promote_scenario", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2120,6 +2160,11 @@ export type BalanceAnchorQuality =
  */
 "assumedZero"
 /**
+ * A compact view of the baseline a scenario was computed against, for display
+ * and for showing the user what moved when a scenario goes stale.
+ */
+export type BaselineSummary = { balanceCents: number; avgMonthlyIncomeCents: number; avgMonthlyExpenseCents: number; goalCount: number }
+/**
  * One category's budget + actual for a month.
  */
 export type BudgetEnvelope = { categoryId: string; categoryLabel: string; categoryColor: string; groupLabel: string; 
@@ -2696,6 +2741,11 @@ mixed_currency: boolean; note: string }
 export type PeriodClass = "normal" | "episodic_spike" | "regime_shift" | "insufficient_history"
 export type Persistence = "one_off" | "recurring" | "emerging" | "uncertain"
 export type PlanAssignment = { categoryId: string; amountCents: number }
+/**
+ * One proposed plan change from promoting a scenario — a suggestion for the
+ * user to review, never an applied mutation.
+ */
+export type PlanChange = { title: string; detail: string; currentCents: number | null; proposedCents: number | null }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; sinkingFunds: GoalDto[]; recurringExpenseCents: number; lookBack: LookBackFact[] }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
@@ -2757,6 +2807,11 @@ publicKey: string;
  * How many devices are currently registered for this user.
  */
 deviceCount: number }
+/**
+ * A run's result together with the resolved params, so the UI can save a
+ * scenario it ran from free text (where the params were resolved server-side).
+ */
+export type RanScenario = { result: ScenarioResult; params: ScenarioParamsInput; months: number }
 /**
  * A recurring transaction detected from transaction history (Phase 6 redesign).
  */
@@ -2857,9 +2912,34 @@ export type RuleProposal = { id: string; whenLabel: string; description: string;
  * Rule with resolved category label and color.
  */
 export type RuleWithCategory = { id: string; pattern: string; categoryId: string; categoryLabel: string; categoryColor: string; enabled: boolean; source: string; createdAt: string }
-export type SavedScenario = { id: string; description: string; result: ScenarioResult; createdAt: string }
+/**
+ * A saved scenario with everything needed to compare and act on it. The
+ * `original_*` fields are exactly what was saved; `current_result`/`is_stale`
+ * recompute it against TODAY's baseline so every compared scenario shares one
+ * baseline (consistent by construction) while the original stays distinct.
+ */
+export type SavedScenarioDetail = { id: string; description: string; createdAt: string; months: number; 
+/**
+ * `None` for legacy result-only rows saved before durable scenarios.
+ */
+params: ScenarioParamsInput | null; originalResult: ScenarioResult; originalBaseline: BaselineSummary | null; 
+/**
+ * The scenario re-run against the current baseline. `None` when the row
+ * lacks params/baseline (legacy) and can't be recomputed.
+ */
+currentResult: ScenarioResult | null; 
+/**
+ * Whether the current baseline differs materially from the saved one.
+ */
+isStale: boolean | null; recomputable: boolean }
 export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
+/**
+ * The reviewable result of promoting a scenario. Deliberately carries NO write
+ * path: promoting produces suggestions only, so exploration can never silently
+ * change live budgets, goals, or debt plans.
+ */
+export type ScenarioPlanProposal = { scenarioId: string; description: string; changes: PlanChange[]; note: string }
 export type ScenarioResult = { verdict: boolean; runwayChangeDays: number; monthlyImpactCents: number; considerations: string[]; baselineMonthly: number[]; scenarioMonthly: number[]; goalsAffected: string[] }
 /**
  * Input for [`export_search_transactions_csv`] — mirrors the Copilot

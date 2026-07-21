@@ -209,6 +209,88 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+/// Parse a stored scenario's camelCase params JSON into the projection engine's
+/// params, so a saved scenario can be recomputed against current finances.
+fn parse_scenario_params(s: &str) -> Option<finsight_core::forecast::ScenarioParams> {
+    let v: serde_json::Value = serde_json::from_str(s).ok()?;
+    Some(finsight_core::forecast::ScenarioParams {
+        income_delta_pct: v.get("incomeDeltaPct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
+        monthly_expense_delta_cents: v.get("monthlyExpenseDeltaCents").and_then(|x| x.as_i64()).unwrap_or(0),
+        one_time_cents: v.get("oneTimeCents").and_then(|x| x.as_i64()).unwrap_or(0),
+        start_month_offset: v.get("startMonthOffset").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+        label: v.get("label").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+    })
+}
+
+pub fn list_saved_scenarios() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "list_saved_scenarios"
+        }
+        fn description(&self) -> &str {
+            "List the user's saved what-if scenarios, each RECOMPUTED against their current \
+             finances so any comparison across them uses one consistent baseline, plus whether \
+             each has gone stale (the data it was saved against has since changed materially). \
+             Use for 'compare my saved scenarios', 'which plan looks better now', 'is my <X> \
+             scenario still valid'. Report the recomputed verdict, runway change, and monthly \
+             impact as given and explain the tradeoffs from them — never invent a projection. \
+             A scenario with recomputable=false was saved before this feature and can't be \
+             recomputed; say so instead of guessing."
+        }
+        fn parameters(&self) -> Value {
+            json!({"type": "object", "properties": {}})
+        }
+        fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
+            use finsight_core::{forecast, repos::scenarios};
+            let current =
+                scenarios::build_baseline(ctx.conn).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let rows = scenarios::list(ctx.conn).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let out: Vec<Value> = rows
+                .iter()
+                .map(|row| {
+                    let params = row.params_json.as_deref().and_then(parse_scenario_params);
+                    let baseline: Option<forecast::Snapshot> =
+                        row.baseline_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+                    let months = row.months.unwrap_or(12).clamp(1, 120) as u32;
+                    match (params, baseline) {
+                        (Some(p), Some(b)) => {
+                            let proj = forecast::project(&current, &p, months);
+                            json!({
+                                "id": row.id,
+                                "name": row.description,
+                                "created_at": row.created_at,
+                                "recomputable": true,
+                                "is_stale": forecast::baseline_materially_changed(&b, &current),
+                                "recomputed": {
+                                    "stays_positive": proj.verdict,
+                                    "runway_change_days": proj.runway_change_days,
+                                    "monthly_impact_cents": proj.monthly_impact_cents,
+                                    "considerations": proj.considerations,
+                                    "goals_affected": proj.goals_affected,
+                                }
+                            })
+                        }
+                        _ => json!({
+                            "id": row.id,
+                            "name": row.description,
+                            "created_at": row.created_at,
+                            "recomputable": false,
+                            "note": "Legacy scenario saved before durable params/baseline; can't be recomputed."
+                        }),
+                    }
+                })
+                .collect();
+            Ok(json!({
+                "scenarios": out,
+                "count": rows.len(),
+                "note": "Each recomputable scenario is projected against the user's CURRENT finances, so comparisons are consistent. Report these numbers as-is; a stale scenario's original saved result may differ from this recompute."
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn get_safe_to_spend() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

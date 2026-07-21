@@ -1,8 +1,15 @@
 //! Pure deterministic projection engine for what-if scenarios.
 //! No DB, no LLM — given a financial snapshot and parameters, project trajectories.
 
+use serde::{Deserialize, Serialize};
+
 /// Runway is capped here so "covered indefinitely" doesn't produce absurd numbers.
 pub const RUNWAY_CAP_DAYS: i64 = 3650;
+
+/// Relative-change threshold (percent) above which a baseline input counts as
+/// materially changed. Relative, not absolute, so it is fair across wealth
+/// levels: a $50 drift is noise for one user and material for another.
+pub const BASELINE_MATERIAL_CHANGE_PCT: i64 = 10;
 
 /// Parameters describing a scenario. Built directly from preset chips, or
 /// extracted from free text by the LLM in the app layer.
@@ -21,20 +28,46 @@ pub struct ScenarioParams {
     pub label: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GoalInfo {
     pub name: String,
     pub remaining_cents: i64,
     pub monthly_cents: i64,
 }
 
-/// Current financial state the projection runs against.
-#[derive(Debug, Clone)]
+/// Current financial state the projection runs against. Serializable so a
+/// scenario can store the exact baseline it was computed against and later
+/// detect whether real data has moved out from under it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Snapshot {
     pub balance_cents: i64,
     pub avg_monthly_income_cents: i64,
     pub avg_monthly_expense_cents: i64,
     pub goals: Vec<GoalInfo>,
+}
+
+/// Whether two same-driver amounts differ by more than the relative threshold.
+/// Both ~zero counts as unchanged (avoids dividing by zero and flagging noise).
+fn rel_changed(a: i64, b: i64) -> bool {
+    let hi = a.abs().max(b.abs());
+    hi != 0 && (a - b).abs() * 100 / hi > BASELINE_MATERIAL_CHANGE_PCT
+}
+
+/// Whether the baseline a scenario was saved against differs MATERIALLY from the
+/// current one — the trigger for marking a saved scenario stale. Uses a relative
+/// threshold on each driver (balance, income, expense) and treats goals changing
+/// in count or aggregate commitment as material. Immaterial day-to-day drift (a
+/// balance nudged by one transaction, averages wobbling) deliberately does not
+/// flag, or the "stale" badge would be permanent noise on every scenario.
+pub fn baseline_materially_changed(saved: &Snapshot, current: &Snapshot) -> bool {
+    let goal_monthly = |s: &Snapshot| s.goals.iter().map(|g| g.monthly_cents).sum::<i64>();
+    let goal_remaining = |s: &Snapshot| s.goals.iter().map(|g| g.remaining_cents.max(0)).sum::<i64>();
+    rel_changed(saved.balance_cents, current.balance_cents)
+        || rel_changed(saved.avg_monthly_income_cents, current.avg_monthly_income_cents)
+        || rel_changed(saved.avg_monthly_expense_cents, current.avg_monthly_expense_cents)
+        || saved.goals.len() != current.goals.len()
+        || rel_changed(goal_monthly(saved), goal_monthly(current))
+        || rel_changed(goal_remaining(saved), goal_remaining(current))
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +335,42 @@ mod tests {
                 monthly_cents: 100_000,
             }],
         }
+    }
+
+    #[test]
+    fn baseline_staleness_ignores_drift_but_catches_material_change() {
+        let base = snap();
+
+        // Immaterial day-to-day drift (balance +5%, expense +2.5%) → NOT stale.
+        let mut drift = base.clone();
+        drift.balance_cents += base.balance_cents / 20;
+        drift.avg_monthly_expense_cents += 10_000;
+        assert!(
+            !baseline_materially_changed(&base, &drift),
+            "sub-threshold drift must not flag a scenario stale"
+        );
+
+        // Identical → not stale.
+        assert!(!baseline_materially_changed(&base, &base.clone()));
+
+        // Income drops 30% → material.
+        let mut income_drop = base.clone();
+        income_drop.avg_monthly_income_cents = base.avg_monthly_income_cents * 7 / 10;
+        assert!(baseline_materially_changed(&base, &income_drop));
+
+        // A goal added → material (count changed).
+        let mut goal_added = base.clone();
+        goal_added.goals.push(GoalInfo {
+            name: "Car".into(),
+            remaining_cents: 500_000,
+            monthly_cents: 50_000,
+        });
+        assert!(baseline_materially_changed(&base, &goal_added));
+
+        // Balance moves 40% → material.
+        let mut balance_jump = base.clone();
+        balance_jump.balance_cents = base.balance_cents * 6 / 10;
+        assert!(baseline_materially_changed(&base, &balance_jump));
     }
 
     #[test]

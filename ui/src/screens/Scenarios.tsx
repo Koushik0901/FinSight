@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { type ScenarioResult, type ScenarioParamsInput } from "../api/client";
 import {
-  useScenarioHistory,
+  type ScenarioResult,
+  type ScenarioParamsInput,
+  type SavedScenarioDetail,
+  type ScenarioPlanProposal,
+} from "../api/client";
+import {
+  useSavedScenarios,
   useRunScenario,
   useSaveScenario,
+  useDuplicateScenario,
+  useArchiveScenario,
+  usePromoteScenario,
   useDeleteScenario,
 } from "../api/hooks/useScenarios";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -76,11 +84,15 @@ function ForecastChart({
 function Results({
   description,
   result,
+  params,
+  months,
   onSaved,
   onDiscard,
 }: {
   description: string;
   result: ScenarioResult;
+  params: ScenarioParamsInput;
+  months: number;
   onSaved: () => void;
   onDiscard: () => void;
 }) {
@@ -160,8 +172,8 @@ function Results({
             disabled={save.isPending}
             onClick={async () => {
               try {
-                await save.mutateAsync({ description, result });
-                toast.success("Scenario saved", { description });
+                await save.mutateAsync({ description, params, months });
+                toast.success("Scenario saved", { description: "Find it in Saved scenarios below to compare and promote." });
                 onSaved();
               } catch (e) {
                 toast.error("Could not save scenario");
@@ -182,14 +194,115 @@ function Results({
   );
 }
 
+// ── Saved-scenario comparison row ───────────────────────────────────────────
+
+/** One row of the saved-scenario comparison. Shows the scenario RECOMPUTED
+ *  against current finances (so all rows compare on one baseline), with the
+ *  original figure surfaced as "was …" when it has gone stale. */
+function ScenarioRow({
+  s,
+  busy,
+  onReopen,
+  onDuplicate,
+  onArchive,
+  onPromote,
+  onDelete,
+}: {
+  s: SavedScenarioDetail;
+  busy: boolean;
+  onReopen: () => void;
+  onDuplicate: () => void;
+  onArchive: () => void;
+  onPromote: () => void;
+  onDelete: () => void;
+}) {
+  // Compare on the recomputed result; fall back to the original for legacy rows.
+  const shown = s.currentResult ?? s.originalResult;
+  const stale = s.isStale === true;
+  const runwayDrifted = s.currentResult && s.currentResult.runwayChangeDays !== s.originalResult.runwayChangeDays;
+  return (
+    <tr>
+      <td>
+        <div className="stack stack-xs">
+          <div className="row-sm" style={{ alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600 }}>{s.description}</span>
+            {stale && <Badge tone="warning">Stale</Badge>}
+            {!s.recomputable && <Badge>Legacy</Badge>}
+          </div>
+          <span className="num muted" style={{ fontSize: 11.5 }}>
+            Saved {new Date(s.createdAt).toLocaleDateString()}
+            {stale && " · your finances have changed since"}
+          </span>
+        </div>
+      </td>
+      <td className="right">
+        <Badge tone={shown.verdict ? "positive" : "warning"}>{shown.verdict ? "Yes" : "At risk"}</Badge>
+      </td>
+      <td className="right num">
+        <span className={shown.runwayChangeDays >= 0 ? "" : "neg"} style={{ color: shown.runwayChangeDays >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600 }}>
+          {shown.runwayChangeDays >= 0 ? "+" : ""}{shown.runwayChangeDays}d
+        </span>
+        {stale && runwayDrifted && (
+          <div className="muted" style={{ fontSize: 11 }}>was {s.originalResult.runwayChangeDays >= 0 ? "+" : ""}{s.originalResult.runwayChangeDays}d</div>
+        )}
+      </td>
+      <td className="right num money">{fmt(shown.monthlyImpactCents)}</td>
+      <td className="right">
+        <div className="row-sm wrap" style={{ justifyContent: "flex-end", gap: 6 }}>
+          <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onReopen}>Reopen</Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onDuplicate}>Duplicate</Button>
+          <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onPromote}>Promote</Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onArchive}>Archive</Button>
+          <Button variant="ghost" size="sm" aria-label={`Delete ${s.description}`} disabled={busy} onClick={onDelete}><I.Trash /></Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** The review-only result of promoting a scenario: proposed plan changes the
+ *  user can apply themselves. Nothing here mutates live data. */
+function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; onClose: () => void }) {
+  return (
+    <Card className="stack stack-md" style={{ marginTop: 20 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div className="screen-eyebrow">Promote &ldquo;{proposal.description}&rdquo; — proposed changes</div>
+        <Button variant="ghost" size="sm" aria-label="Close proposal" onClick={onClose}><I.X /></Button>
+      </div>
+      <div className="stack">
+        {proposal.changes.map((c, i) => (
+          <div key={i} className="row-md" style={{ padding: "12px 0", borderTop: i > 0 ? "1px solid var(--hairline)" : "none", alignItems: "flex-start" }}>
+            <div className="grow stack stack-xs">
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.title}</div>
+              <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.detail}</div>
+            </div>
+            {c.currentCents !== null && c.proposedCents !== null && (
+              <div className="num" style={{ fontSize: 12.5, color: "var(--ink-2)", whiteSpace: "nowrap" }}>
+                <span className="money">{fmt(c.currentCents)}</span>
+                <span style={{ color: "var(--ink-faint)", margin: "0 6px" }}>→</span>
+                <span className="money">{fmt(c.proposedCents)}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>{proposal.note}</p>
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function Scenarios() {
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState<{ description: string; result: ScenarioResult } | null>(null);
+  const [active, setActive] = useState<{ description: string; result: ScenarioResult; params: ScenarioParamsInput; months: number } | null>(null);
+  const [proposal, setProposal] = useState<ScenarioPlanProposal | null>(null);
   const run = useRunScenario();
   const del = useDeleteScenario();
-  const { data: history = [] } = useScenarioHistory();
+  const dup = useDuplicateScenario();
+  const archive = useArchiveScenario();
+  const promote = usePromoteScenario();
+  const { data: saved = [] } = useSavedScenarios();
   const { data: categories } = useCategoriesWithSpending();
   const diningMonthly = useMemo(() => {
     const match = categories?.find((c) => /dining|restaurant|food|eat/i.test(c.label));
@@ -209,8 +322,8 @@ export default function Scenarios() {
 
   const runWith = async (description: string, params: ScenarioParamsInput | null) => {
     try {
-      const result = await run.mutateAsync({ description, months: 24, params });
-      setActive({ description, result });
+      const ran = await run.mutateAsync({ description, months: 24, params });
+      setActive({ description, result: ran.result, params: ran.params, months: ran.months });
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === "scenario.no_provider") {
@@ -273,66 +386,90 @@ export default function Scenarios() {
         <Results
           description={active.description}
           result={active.result}
+          params={active.params}
+          months={active.months}
           onSaved={() => undefined}
           onDiscard={() => setActive(null)}
         />
       )}
 
       <section className="stack stack-md" style={{ marginTop: 32 }}>
-        <div className="screen-eyebrow">Recent scenarios you've run</div>
-        <Card flush>
-          {history.length === 0 ? (
+        <div className="screen-eyebrow">Saved scenarios</div>
+        {saved.length === 0 ? (
+          <Card flush>
             <EmptyState
               compact
               icon={<I.Sparkle style={{ color: "var(--ink-faint)", width: 24, height: 24 }} />}
-              title="No scenarios saved"
-              description="Run one above to keep it here."
+              title="No saved scenarios yet"
+              description="Run one above and save it to compare and promote later."
             />
-          ) : (
-            <ul className="stack" style={{ margin: 0, padding: 0, listStyle: "none" }}>
-              {history.map((h, i) => (
-                <li
-                  key={h.id}
-                  className="row-md"
-                  style={{
-                    padding: "14px 20px",
-                    borderBottom: i < history.length - 1 ? "1px solid var(--hairline)" : "none",
-                    alignItems: "center",
-                  }}
-                >
-                  <div className="grow stack stack-xs">
-                    <div style={{ fontSize: 14 }}>{h.description}</div>
-                    <Badge tone={h.result.verdict ? "positive" : "warning"}>
-                      {h.result.verdict ? "Coverable" : "Not coverable"}
-                    </Badge>
-                  </div>
-                  <span className="num muted" style={{ fontSize: 11.5, whiteSpace: "nowrap" }}>
-                    {new Date(h.createdAt).toLocaleDateString()}
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={() => setActive({ description: h.description, result: h.result })}>
-                    View
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Delete ${h.description}`}
-                    onClick={async () => {
-                      try {
-                        await del.mutateAsync(h.id);
-                        toast("Scenario deleted");
-                      } catch {
-                        toast.error("Could not delete scenario");
-                      }
-                    }}
-                  >
-                    <I.Trash />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+          </Card>
+        ) : (
+          <Card className="stack stack-sm">
+            <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+              Each is re-run against your finances today, so the columns compare fairly.
+            </p>
+            <div className="table-wrap" style={{ border: "none", background: "transparent" }}>
+              <table className="tbl scenario-cmp">
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th className="right">Stays afloat?</th>
+                    <th className="right">Runway change</th>
+                    <th className="right">Monthly impact</th>
+                    <th className="right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {saved.map((s) => (
+                    <ScenarioRow
+                      key={s.id}
+                      s={s}
+                      busy={promote.isPending || dup.isPending || archive.isPending || del.isPending}
+                      onReopen={() => {
+                        if (s.params) void runWith(s.description, s.params);
+                      }}
+                      onDuplicate={async () => {
+                        try {
+                          await dup.mutateAsync(s.id);
+                          toast.success("Scenario duplicated");
+                        } catch {
+                          toast.error("Could not duplicate scenario");
+                        }
+                      }}
+                      onArchive={async () => {
+                        try {
+                          await archive.mutateAsync({ id: s.id, archived: true });
+                          toast("Scenario archived");
+                        } catch {
+                          toast.error("Could not archive scenario");
+                        }
+                      }}
+                      onPromote={async () => {
+                        try {
+                          setProposal(await promote.mutateAsync(s.id));
+                        } catch (e) {
+                          toast.error("Could not promote scenario", { description: userErrorMessage(e, "Re-run and save it first.") });
+                        }
+                      }}
+                      onDelete={async () => {
+                        try {
+                          await del.mutateAsync(s.id);
+                          toast("Scenario deleted");
+                        } catch {
+                          toast.error("Could not delete scenario");
+                        }
+                      }}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </section>
+
+      {proposal && <PromotePanel proposal={proposal} onClose={() => setProposal(null)} />}
     </div>
   );
 }
