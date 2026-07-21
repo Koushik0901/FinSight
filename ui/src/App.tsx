@@ -23,6 +23,7 @@ import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
 import ShareTargetImport from "./components/ShareTargetImport";
 import { useAppBadge } from "./pwa/useAppBadge";
+import { startNativeNotifications } from "./pwa/nativeNotify";
 import * as I from "./components/Icons";
 
 const Today = lazy(() => import("./screens/Today"));
@@ -206,6 +207,13 @@ export function App() {
   // Installed-PWA icon badge. App-level on purpose: the badge's job is to be
   // right while the user is on some other screen entirely.
   useAppBadge();
+
+  // Native OS notifications for server events (Copilot finished, import done)
+  // that land while the window is in the background. App-level and mounted once
+  // for the same reason as the badge — the whole point is to reach the user
+  // when they are not looking at this screen. Fires only when permission is
+  // already granted and the tab is hidden; see pwa/nativeNotify.ts.
+  useEffect(() => startNativeNotifications(), []);
 
   // Global keyboard shortcuts
   useEffect(() => {
