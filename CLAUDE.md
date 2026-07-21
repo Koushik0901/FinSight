@@ -69,7 +69,7 @@ sent by `bindings.ts`.
 
 ### Rust workspace (8 crates)
 
-**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
+**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store, and the financial engines (`metrics`, `forecast`, `cashflow`, `provenance`). All SQL lives here. No Tauri dependency.
 
 **`crates/finsight-providers`** — CSV import parsers, LLM provider HTTP clients (`CompletionProvider` trait with Ollama / OpenAI-compat / Anthropic impls).
 
@@ -140,6 +140,14 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 ### Copilot generative-UI blocks
 
 The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-bindings` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+
+### Financial forecasting, cash-flow & scenarios
+
+Money math lives in `finsight-core` so the app and the Copilot compute identical numbers — route financial figures through the shared engines, never hand-roll them in a command or the UI.
+
+- **`cashflow`** powers the **`/cashflow`** screen (safe-to-spend) and the Copilot `get_safe_to_spend` tool. It's a near-term **daily** projection = dated events (recurring income/bills/subscriptions rolled forward by cadence + planned transactions) **plus** a residual smooth daily burn for everyday variable spending (`avg_monthly_expense` − the monthly equivalent of the in-window dated obligations). Two invariants keep safe-to-spend from *overstating* — the one direction it must never err: `RecurringKind::Transfer` is excluded (internal transfers/card payments aren't spending), and an obligation is netted out of the burn **only if its last charge falls inside the 90-day expense window** (else a lumpy annual bill absent from the average would understate the burn). `safe_to_spend = lowest projected balance − buffer`; the buffer + an optional hypothetical spend are pure what-if params, nothing persisted.
+
+- **Scenarios** (`finsight-api::commands::scenarios` over `forecast::project`) are **durable**: each stores its params **and** the `forecast::Snapshot` baseline it ran against (nullable columns via V055 — pre-existing result-only rows degrade to "legacy": viewable, not recomputable/comparable). Comparison (`list_saved_scenarios`) recomputes every scenario against the **current** baseline via `repos::scenarios::build_baseline` — the single baseline source, shared by the command and the Copilot `list_saved_scenarios` tool — so rows compare on one baseline while each original result stays labeled. Staleness is `forecast::baseline_materially_changed`: a **relative ~10%** threshold (never exact-equality or absolute cents, or every scenario reads stale within a day). `promote_scenario` returns a reviewable proposal with **no write path** — exploration can never mutate live budgets/goals/debt; applying is the user's separate, explicit act.
 
 ### TypeScript type field naming
 
