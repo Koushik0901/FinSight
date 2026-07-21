@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,6 +39,12 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalBalance: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useContributeToGoal: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useGoalContributions: vi.fn(() => ({ data: [] })),
+  useMemberBudgetEnvelopes: vi.fn(() => ({ data: [] })),
+}));
+
+const householdMock = vi.fn(() => ({ data: [] as unknown[] }));
+vi.mock("../api/hooks/household", () => ({
+  useHouseholdMembers: () => householdMock(),
 }));
 
 vi.mock("../api/client", () => ({
@@ -76,6 +82,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockEnvelopes.mockReturnValue({ data: [], isLoading: false, error: null });
   vi.mocked(budgetHooks.useBudgetEnvelopes).mockImplementation(mockEnvelopes);
+  householdMock.mockReturnValue({ data: [] });
 });
 
 describe("Budget ?focusCategory deep link", () => {
@@ -303,5 +310,89 @@ describe("Budget loading state", () => {
       expect(container.querySelectorAll(".skeleton").length).toBe(0);
     });
     expect(container.querySelector("[data-envelope-id]")).not.toBeNull();
+  });
+});
+
+describe("Budget per-person scope", () => {
+  it("shows no member toggle when the household has no members", async () => {
+    mockEnvelopes.mockReturnValue({
+      data: [envelope("cat-groceries", "Groceries")],
+      isLoading: false,
+      error: null,
+    });
+
+    renderAt("/budget");
+
+    await waitFor(() => {
+      expect(screen.getByText("Groceries")).toBeInTheDocument();
+    });
+    // With no household, the budget screen looks exactly as it did before.
+    expect(screen.queryByRole("button", { name: "Household" })).not.toBeInTheDocument();
+  });
+
+  it("offers a scope toggle per member once a household exists", async () => {
+    householdMock.mockReturnValue({
+      data: [
+        { id: "alice", name: "Alice", color: "#f0f", createdAt: "2026-01-01" },
+        { id: "bob", name: "Bob", color: "#0ff", createdAt: "2026-01-01" },
+      ],
+    });
+    mockEnvelopes.mockReturnValue({
+      data: [envelope("cat-groceries", "Groceries")],
+      isLoading: false,
+      error: null,
+    });
+
+    renderAt("/budget");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Household" })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /Alice/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Bob/ })).toBeInTheDocument();
+    // Household is the default scope.
+    expect(screen.getByRole("button", { name: "Household" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("overlays a member's share and keeps the household budget when scoped", async () => {
+    householdMock.mockReturnValue({
+      data: [{ id: "alice", name: "Alice", color: "#f0f", createdAt: "2026-01-01" }],
+    });
+    mockEnvelopes.mockReturnValue({
+      data: [envelope("cat-dining", "Dining")],
+      isLoading: false,
+      error: null,
+    });
+    vi.mocked(budgetHooks.useMemberBudgetEnvelopes).mockReturnValue({
+      data: [
+        {
+          categoryId: "cat-dining",
+          categoryLabel: "Dining",
+          categoryColor: "#000",
+          groupLabel: "Everyday",
+          budgetCents: 50000,
+          householdSpentCents: 30000,
+          memberSpentCents: 15000,
+          txnCount: 3,
+        },
+      ],
+    } as unknown as ReturnType<typeof budgetHooks.useMemberBudgetEnvelopes>);
+
+    const { container } = renderAt("/budget");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Alice/ }));
+
+    // The per-envelope overlay line, specifically (the scope note above also
+    // says "Alice's share", so match on the overlay's own container).
+    await waitFor(() => {
+      expect(container.querySelector(".budget-member-share")).not.toBeNull();
+    });
+    const overlay = container.querySelector(".budget-member-share")!;
+    expect(overlay.textContent).toContain("Alice's share");
+    // Half of the $300 household spend on the joint account. `money()` renders
+    // whole dollars by default.
+    expect(overlay.textContent).toContain("$150");
+    // The note makes clear the target is still shared.
+    expect(screen.getByText(/targets are still the household's/)).toBeInTheDocument();
   });
 });

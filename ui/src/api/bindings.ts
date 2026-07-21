@@ -464,6 +464,14 @@ async listBudgetEnvelopes() : Promise<Result<BudgetEnvelope[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listMemberBudgetEnvelopes(memberId: string) : Promise<Result<MemberBudgetEnvelope[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_member_budget_envelopes", { memberId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async setBudget(categoryId: string, amountCents: number) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("set_budget", { categoryId, amountCents }) };
@@ -2383,6 +2391,25 @@ streakMonths: number }
 export type ManualAsset = { id: string; name: string; assetType: string; valueCents: number; currency: string; notes: string | null; createdAt: string; updatedAt: string }
 export type ManualAssetPatch = { name: string | null; assetType: string | null; valueCents: number | null; currency: string | null; notes: string | null }
 export type Mechanism = "new" | "stopped" | "price_up" | "price_down" | "frequency_up" | "frequency_down" | "mixed" | "flat"
+/**
+ * One category's household budget alongside a single member's share of the
+ * spend against it. The budget itself stays household-level — the issue keeps
+ * budgets a shared pool and adds a per-person *view* of progress against it,
+ * rather than splitting the target itself.
+ */
+export type MemberBudgetEnvelope = { categoryId: string; categoryLabel: string; categoryColor: string; groupLabel: string; 
+/**
+ * The household budget for this category — the same target everyone sees.
+ */
+budgetCents: number; 
+/**
+ * The whole household's spend, for "my share of our total" context.
+ */
+householdSpentCents: number; 
+/**
+ * This member's ownership-weighted share of that spend.
+ */
+memberSpentCents: number; txnCount: number }
 /**
  * One row of the "who owns what" household net-worth split. `member_id` None is
  * the unassigned residual — value owned by no recorded member, i.e. by people

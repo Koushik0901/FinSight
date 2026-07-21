@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal } from "../api/hooks/budget";
+import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
+import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
@@ -63,7 +64,7 @@ function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose:
   );
 }
 
-function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null }) {
+function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberName }: { env: BudgetEnvelope; editing: boolean; onEdit: () => void; donor: BudgetEnvelope | null; memberShareCents?: number; memberName?: string }) {
   const status = envelopeStatus(env);
   const available = env.budgetCents + env.carryoverCents;
   const remaining = available - env.spentCents;
@@ -114,6 +115,14 @@ function EnvelopeCard({ env, editing, onEdit, donor }: { env: BudgetEnvelope; ed
         <span className="money">{money(env.spentCents)} spent</span>
         <span className="money">of {money(available)}</span>
       </div>
+
+      {memberShareCents !== undefined && (
+        <div className="budget-member-share">
+          <span className="cswatch" style={{ background: "var(--accent)" }} />
+          <span className="money">{money(memberShareCents)}</span>
+          <span className="muted">{memberName}&apos;s share</span>
+        </div>
+      )}
 
       {env.carryoverCents !== 0 && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -178,6 +187,19 @@ export default function Budget() {
   const [sort, setSort] = useState<SortKey>("group");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  // Which household member's share of the spend to overlay, or null for the
+  // whole household. The budgets stay household-level either way — this only
+  // scopes the "spent" side.
+  const [scopeMemberId, setScopeMemberId] = useState<string | null>(null);
+  const { data: members = [] } = useHouseholdMembers();
+  const { data: memberEnvelopes = [] } = useMemberBudgetEnvelopes(scopeMemberId);
+  // A member's share of spend, by category, for the overlay. Empty for the
+  // household view.
+  const memberSpendById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const env of memberEnvelopes) map.set(env.categoryId, env.memberSpentCents);
+    return map;
+  }, [memberEnvelopes]);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingScrollRef = useRef<string | null>(null);
 
@@ -321,9 +343,39 @@ export default function Budget() {
           <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the plan stands today.</h1>
         </div>
         <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
+          {members.length > 0 && (
+            <div className="budget-scope" role="group" aria-label="Whose spending to show">
+              <button
+                type="button"
+                className={`budget-scope-btn${scopeMemberId === null ? " is-on" : ""}`}
+                aria-pressed={scopeMemberId === null}
+                onClick={() => setScopeMemberId(null)}
+              >
+                Household
+              </button>
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`budget-scope-btn${scopeMemberId === m.id ? " is-on" : ""}`}
+                  aria-pressed={scopeMemberId === m.id}
+                  onClick={() => setScopeMemberId(m.id)}
+                >
+                  {m.color && <span className="cswatch" style={{ background: m.color }} />}
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
           <button className="btn primary" type="button" onClick={() => setShowPlan(true)}>Plan next month</button>
         </div>
       </header>
+      {scopeMemberId !== null && (
+        <p className="muted budget-scope-note">
+          Showing {members.find((m) => m.id === scopeMemberId)?.name}&apos;s share of the spend against
+          each shared budget — the targets are still the household&apos;s.
+        </p>
+      )}
 
       <div className="card accent" style={{ padding: 28 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 3fr", gap: 24 }}>
@@ -365,7 +417,7 @@ export default function Budget() {
 
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div className="budget-grid">{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div className="budget-grid">{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
       <section className="section">
         <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
@@ -378,7 +430,7 @@ export default function Budget() {
                 <div className="eyebrow">{label}</div>
                 {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
-              <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
+              <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
           );
         })}</div>}

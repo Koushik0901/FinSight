@@ -100,6 +100,72 @@ pub async fn list_budget_envelopes(state: &ApiState) -> AppResult<Vec<BudgetEnve
     .map_err(AppError::from)
 }
 
+/// One category's household budget alongside a single member's share of the
+/// spend against it. The budget itself stays household-level — the issue keeps
+/// budgets a shared pool and adds a per-person *view* of progress against it,
+/// rather than splitting the target itself.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberBudgetEnvelope {
+    pub category_id: String,
+    pub category_label: String,
+    pub category_color: String,
+    pub group_label: String,
+    /// The household budget for this category — the same target everyone sees.
+    pub budget_cents: i64,
+    /// The whole household's spend, for "my share of our total" context.
+    pub household_spent_cents: i64,
+    /// This member's ownership-weighted share of that spend.
+    pub member_spent_cents: i64,
+    pub txn_count: i64,
+}
+
+fn member_budget_envelopes_for_month(
+    conn: &mut rusqlite::Connection,
+    member_id: &str,
+    month: &str,
+    month_start: &str,
+) -> finsight_core::CoreResult<Vec<MemberBudgetEnvelope>> {
+    // Build on the household envelopes rather than re-querying budgets and
+    // categories: the household view is the source of truth for what a budget
+    // is, and a member view that computed budgets differently would drift from
+    // it. Here we only overlay the member's share of the spend.
+    let household = budget_envelopes_for_month(conn, month, month_start)?;
+    let member_spend = finsight_core::metrics::member_category_spend(conn, member_id, month_start)?;
+
+    Ok(household
+        .into_iter()
+        .map(|env| MemberBudgetEnvelope {
+            member_spent_cents: member_spend.get(&env.category_id).copied().unwrap_or(0),
+            category_id: env.category_id,
+            category_label: env.category_label,
+            category_color: env.category_color,
+            group_label: env.group_label,
+            budget_cents: env.budget_cents,
+            household_spent_cents: env.spent_cents,
+            txn_count: env.txn_count,
+        })
+        .collect())
+}
+
+/// Budget-vs-actual for the current month, scoped to one household member's
+/// share of the spend. The budgets themselves are the household's.
+pub async fn list_member_budget_envelopes(
+    state: &ApiState,
+    member_id: String,
+) -> AppResult<Vec<MemberBudgetEnvelope>> {
+    let db = (*state.db).clone();
+    let now = Utc::now();
+    let month = now.format("%Y-%m").to_string();
+    let this_month_start = now.format("%Y-%m-01").to_string();
+
+    run(&db, move |conn| {
+        member_budget_envelopes_for_month(conn, &member_id, &month, &this_month_start)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 pub async fn set_budget(
     state: &ApiState,
     category_id: String,
@@ -876,5 +942,92 @@ mod tests {
             food.spent_cents < food.budget_cents,
             "netted spend (3000) is under the 4000 budget"
         );
+    }
+
+    #[test]
+    fn member_envelope_keeps_the_household_budget_and_overlays_the_members_share() {
+        // The issue keeps budgets household-level and adds a per-person VIEW:
+        // the target is still shared, only the spend is scoped to the member.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice =
+            finsight_core::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        let bob = finsight_core::repos::household::create_member(&mut conn, "Bob", None).unwrap();
+
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES('joint','H','Bank','Checking','Joint','USD','#fff',datetime('now'))",
+            [],
+        )
+        .unwrap();
+        finsight_core::repos::household::set_account_owners(
+            &mut conn,
+            "joint",
+            &[alice.id.clone(), bob.id.clone()],
+        )
+        .unwrap();
+        seed_category(&conn, "dining", "Dining");
+
+        let month = "2026-05";
+        let month_start = "2026-05-01";
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES('b1','dining',?1,60000,datetime('now'),datetime('now'))",
+            rusqlite::params![month],
+        )
+        .unwrap();
+        // $300 dined on the joint account.
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_transfer,created_at) \
+             VALUES('e1','joint','2026-05-10T00:00:00Z',-30000,'RESTAURANT','dining','cleared',0,'2026-05-10T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let envelopes =
+            member_budget_envelopes_for_month(&mut conn, &alice.id, month, month_start).unwrap();
+        let dining = envelopes
+            .iter()
+            .find(|e| e.category_id == "dining")
+            .expect("dining envelope present");
+
+        // The budget is the household's, unchanged.
+        assert_eq!(dining.budget_cents, 60000);
+        // The whole household spent $300...
+        assert_eq!(dining.household_spent_cents, 30000);
+        // ...and Alice's half of the joint account is $150.
+        assert_eq!(dining.member_spent_cents, 15000);
+    }
+
+    #[test]
+    fn a_member_view_still_lists_every_category_even_those_they_have_not_touched() {
+        // A partner needs to see the shared targets they have not spent against
+        // yet, not just the ones they have — otherwise the view is not
+        // budget-vs-actual, just a spend list.
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let alice =
+            finsight_core::repos::household::create_member(&mut conn, "Alice", None).unwrap();
+        seed_account(&conn);
+        finsight_core::repos::household::set_account_owners(&mut conn, "a1", &[alice.id.clone()])
+            .unwrap();
+        seed_category(&conn, "untouched", "Untouched");
+
+        let month = "2026-05";
+        conn.execute(
+            "INSERT INTO budgets(id,category_id,month,amount_cents,created_at,updated_at) \
+             VALUES('b1','untouched',?1,10000,datetime('now'),datetime('now'))",
+            rusqlite::params![month],
+        )
+        .unwrap();
+
+        let envelopes =
+            member_budget_envelopes_for_month(&mut conn, &alice.id, month, "2026-05-01").unwrap();
+        let env = envelopes
+            .iter()
+            .find(|e| e.category_id == "untouched")
+            .expect("a budgeted-but-unspent category is still shown");
+        assert_eq!(env.budget_cents, 10000);
+        assert_eq!(env.member_spent_cents, 0);
     }
 }

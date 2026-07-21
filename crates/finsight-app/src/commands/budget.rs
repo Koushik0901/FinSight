@@ -4,7 +4,8 @@ use crate::AppState;
 // Types live in finsight-api now; re-exported so existing imports of
 // `finsight_app::commands::budget::*` (lib.rs, tests) keep resolving.
 pub use finsight_api::commands::budget::{
-    BudgetEnvelope, CategoryHistory, CategoryPlanRow, GoalContributionDto, GoalDto, MonthlyActual,
+    BudgetEnvelope, CategoryHistory, CategoryPlanRow, GoalContributionDto, GoalDto,
+    MemberBudgetEnvelope, MonthlyActual,
     NewGoalInput, PlanAssignment, PlanData, ProjectedValue,
 };
 
@@ -14,6 +15,15 @@ pub async fn list_budget_envelopes(
     state: tauri::State<'_, AppState>,
 ) -> AppResult<Vec<BudgetEnvelope>> {
     finsight_api::commands::budget::list_budget_envelopes(&state.api).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_member_budget_envelopes(
+    state: tauri::State<'_, AppState>,
+    member_id: String,
+) -> AppResult<Vec<MemberBudgetEnvelope>> {
+    finsight_api::commands::budget::list_member_budget_envelopes(&state.api, member_id).await
 }
 
 #[tauri::command]

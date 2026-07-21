@@ -35,6 +35,11 @@ vi.mock("../api/hooks/budget", () => ({
   useUpdateGoalBalance: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useContributeToGoal: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useGoalContributions: vi.fn(() => ({ data: [] })),
+  useMemberBudgetEnvelopes: vi.fn(() => ({ data: [] })),
+}));
+
+vi.mock("../api/hooks/household", () => ({
+  useHouseholdMembers: vi.fn(() => ({ data: [] })),
 }));
 
 vi.mock("../api/client", () => ({
