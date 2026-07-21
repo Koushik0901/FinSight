@@ -136,6 +136,24 @@ pub async fn get_financial_metrics(
     .map_err(AppError::from)
 }
 
+/// Structured "explain this number" provenance for the decision-driving
+/// dashboard metrics, optionally scoped to one household member. Every value is
+/// pulled from the same `finsight-core::metrics` layer `get_financial_metrics`
+/// reads, so an explanation can never disagree with the number shown elsewhere.
+/// The single source of truth is shared verbatim with the Copilot's
+/// `explain_metric` tool.
+pub async fn explain_financial_metrics(
+    state: &ApiState,
+    member_id: Option<String>,
+) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        finsight_core::provenance::explain_financial_metrics(conn, member_id.as_deref())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
 /// One row of the "who owns what" household net-worth split. `member_id` None is
 /// the unassigned residual — value owned by no recorded member, i.e. by people
 /// running their OWN separate FinSight app (the cross-user share). Member slices

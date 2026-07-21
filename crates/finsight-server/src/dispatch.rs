@@ -515,6 +515,9 @@ async fn dispatch(
         "get_financial_metrics" => {
             ok(c::metrics::get_financial_metrics(api, arg(&p, "memberId")?).await?)
         }
+        "explain_financial_metrics" => {
+            ok(c::metrics::explain_financial_metrics(api, arg(&p, "memberId")?).await?)
+        }
         "household_net_worth_breakdown" => {
             ok(c::metrics::household_net_worth_breakdown(api).await?)
         }
@@ -992,6 +995,7 @@ pub const SUPPORTED: &[&str] = &[
     "app_ready",
     // metrics
     "get_financial_metrics",
+    "explain_financial_metrics",
     "household_net_worth_breakdown",
     "set_financial_assumptions",
     "list_restoration_envelopes",

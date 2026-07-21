@@ -23,6 +23,19 @@ pub async fn get_financial_metrics(
     finsight_api::commands::metrics::get_financial_metrics(&state.api, member_id).await
 }
 
+/// Structured "explain this number" provenance for the dashboard metrics —
+/// definition, inputs, exclusions, assumptions, period, and data-quality
+/// warnings — optionally scoped to one household member. Values come from the
+/// same metrics layer as `get_financial_metrics`, so they always agree.
+#[tauri::command]
+#[specta::specta]
+pub async fn explain_financial_metrics(
+    state: tauri::State<'_, AppState>,
+    member_id: Option<String>,
+) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+    finsight_api::commands::metrics::explain_financial_metrics(&state.api, member_id).await
+}
+
 /// Each household member's share of net worth (share-weighted across accounts AND
 /// jointly-owned assets, via the metrics layer — NOT a client-side equal split),
 /// plus an "unassigned" residual so the rows sum to the household total.
