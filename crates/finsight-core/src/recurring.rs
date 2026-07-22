@@ -876,6 +876,24 @@ mod tests {
     }
 
     #[test]
+    fn a_single_anomalous_latest_charge_flags_for_review() {
+        // A one-off spike as the LATEST charge on an otherwise-flat subscription
+        // reads as a price increase. This is deliberate: subscriptions rarely
+        // spike, so flagging a new level early catches real hikes; the rare
+        // billing-error case is dismissable in the review card and lapses via the
+        // notification TTL. Pinned so the behavior is a decision, not a surprise.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "NOTION", "2025-01-06", 6, -1000);
+        charge(&conn, "a", "NOTION", "2025-07-06", -3000); // anomalous latest charge
+        let items = detect_recurring(&conn, 500).unwrap();
+        let pc = find(&items, "notion").expect("detected").price_change.clone();
+        assert!(pc.is_some(), "a new latest level flags — the user reviews or dismisses it");
+        assert_eq!(pc.unwrap().to_cents, 3000);
+    }
+
+    #[test]
     fn only_subscriptions_and_bills_carry_a_price_change() {
         // Income that changes amount (a raise) is not a "subscription price
         // change"; it must not carry one.
