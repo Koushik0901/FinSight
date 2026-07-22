@@ -7,6 +7,7 @@ import type { SavedScenarioDetail, ScenarioPlanProposal } from "../api/client";
 const runMutate = vi.fn();
 const promoteMutate = vi.fn();
 const reviseMutate = vi.fn();
+const applyMutate = vi.fn();
 const useSavedScenarios = vi.fn();
 
 vi.mock("../api/hooks/useScenarios", () => ({
@@ -16,6 +17,7 @@ vi.mock("../api/hooks/useScenarios", () => ({
   useDuplicateScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useArchiveScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePromoteScenario: () => ({ mutateAsync: promoteMutate, isPending: false }),
+  useApplyScenario: () => ({ mutateAsync: applyMutate, isPending: false }),
   useReviseScenario: () => ({ mutateAsync: reviseMutate, isPending: false }),
   useClearScenarioRevision: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -61,9 +63,10 @@ function saved(over: Partial<SavedScenarioDetail>): SavedScenarioDetail {
 
 const PROPOSAL: ScenarioPlanProposal = {
   scenarioId: "s1",
-  description: "Add $500/mo to savings",
+  description: "Buy a car $35k",
   changes: [
-    { title: "Commit more each month", detail: "Set aside about $500 more each month.", currentCents: 388000, proposedCents: 438000 },
+    { id: "expense", title: "Commit more each month", detail: "Set aside about $500 more each month.", currentCents: 388000, proposedCents: 438000, applyable: false },
+    { id: "one_time", title: "Set aside for a one-time amount", detail: "Plan for a one-off of about $35,000. Applying adds it as a planned transaction.", currentCents: null, proposedCents: 3500000, applyable: true },
   ],
   note: "These are suggestions for your review — nothing has been changed.",
 };
@@ -76,6 +79,8 @@ describe("Scenarios screen", () => {
     promoteMutate.mockResolvedValue(PROPOSAL);
     reviseMutate.mockReset();
     reviseMutate.mockResolvedValue(saved({}));
+    applyMutate.mockReset();
+    applyMutate.mockResolvedValue({ applied: ["one_time"], skipped: [], note: "Applied 1 change(s) to your plan as planned transactions. The scenario is unchanged." });
     useSavedScenarios.mockReset();
     useSavedScenarios.mockReturnValue({ data: [] });
   });
@@ -110,13 +115,28 @@ describe("Scenarios screen", () => {
     expect(screen.getByText(/was .*-180d/)).toBeInTheDocument();
   });
 
-  it("promoting a scenario shows reviewable proposed changes and the no-op note", async () => {
+  it("promoting a scenario shows changes split into applyable vs recommendation-only", async () => {
     useSavedScenarios.mockReturnValue({ data: [saved({})] });
     render(<Scenarios />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole("button", { name: "Promote" }));
     await waitFor(() => expect(promoteMutate).toHaveBeenCalledWith("s1"));
     expect(await screen.findByText("Commit more each month")).toBeInTheDocument();
-    expect(screen.getByText(/nothing has been changed/)).toBeInTheDocument();
+    // The aggregate change is recommendation-only; the one-time is applyable.
+    expect(screen.getByText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByText("Applyable")).toBeInTheDocument();
+  });
+
+  it("applies only the approved applyable changes to the plan and reports the outcome (#72)", async () => {
+    useSavedScenarios.mockReturnValue({ data: [saved({})] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Promote" }));
+    // The applyable one-time is pre-approved; apply writes it.
+    fireEvent.click(await screen.findByRole("button", { name: /Apply 1 to plan/i }));
+    await waitFor(() =>
+      expect(applyMutate).toHaveBeenCalledWith({ id: "s1", approvedChangeIds: ["one_time"] }),
+    );
+    // The result summary surfaces what was written; the scenario is unchanged.
+    expect(await screen.findByText(/Applied 1 change/i)).toBeInTheDocument();
   });
 
   it("revising a scenario re-evaluates the new assumptions without touching the plan (#73)", async () => {

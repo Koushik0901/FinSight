@@ -5,6 +5,7 @@ import {
   type ScenarioParamsInput,
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
+  type ApplyScenarioResult,
 } from "../api/client";
 import {
   useSavedScenarios,
@@ -13,6 +14,7 @@ import {
   useDuplicateScenario,
   useArchiveScenario,
   usePromoteScenario,
+  useApplyScenario,
   useReviseScenario,
   useClearScenarioRevision,
   useDeleteScenario,
@@ -266,9 +268,27 @@ function ScenarioRow({
   );
 }
 
-/** The review-only result of promoting a scenario: proposed plan changes the
- *  user can apply themselves. Nothing here mutates live data. */
+/** The reviewable result of promoting a scenario: proposed plan changes. The
+ *  applyable ones (a one-time amount → a planned transaction) can be approved and
+ *  written to the plan; the rest are recommendations. Nothing is applied without
+ *  an explicit click, and the scenario is never consumed (#72). */
 function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; onClose: () => void }) {
+  const apply = useApplyScenario();
+  const applyable = proposal.changes.filter((c) => c.applyable);
+  const [approved, setApproved] = useState<Set<string>>(() => new Set(applyable.map((c) => c.id)));
+  const [result, setResult] = useState<ApplyScenarioResult | null>(null);
+
+  const runApply = async () => {
+    try {
+      const res = await apply.mutateAsync({ id: proposal.scenarioId, approvedChangeIds: [...approved] });
+      setResult(res);
+      if (res.applied.length > 0) toast.success("Applied to your plan", { description: res.note });
+      else toast(res.note);
+    } catch (e) {
+      toast.error("Could not apply scenario", { description: userErrorMessage(e, "Try again.") });
+    }
+  };
+
   return (
     <Card className="stack stack-md" style={{ marginTop: 20 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -277,9 +297,21 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
       </div>
       <div className="stack">
         {proposal.changes.map((c, i) => (
-          <div key={i} className="row-md" style={{ padding: "12px 0", borderTop: i > 0 ? "1px solid var(--hairline)" : "none", alignItems: "flex-start" }}>
+          <div key={c.id || i} className="row-md" style={{ padding: "12px 0", borderTop: i > 0 ? "1px solid var(--hairline)" : "none", alignItems: "flex-start" }}>
+            {c.applyable && (
+              <input
+                type="checkbox"
+                aria-label={`Approve: ${c.title}`}
+                checked={approved.has(c.id)}
+                onChange={() => setApproved((prev) => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
+                style={{ marginTop: 3, flexShrink: 0 }}
+              />
+            )}
             <div className="grow stack stack-xs">
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.title}</div>
+              <div className="row-sm" style={{ alignItems: "center" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{c.title}</span>
+                {c.applyable ? <Badge tone="accent">Applyable</Badge> : <Badge>Recommendation</Badge>}
+              </div>
               <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.detail}</div>
             </div>
             {c.currentCents !== null && c.proposedCents !== null && (
@@ -292,7 +324,28 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
           </div>
         ))}
       </div>
-      <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>{proposal.note}</p>
+
+      {applyable.length > 0 ? (
+        <div className="row-sm" style={{ alignItems: "center" }}>
+          <Button variant="default" size="sm" disabled={apply.isPending || approved.size === 0} onClick={runApply}>
+            Apply {approved.size} to plan
+          </Button>
+          <span className="muted" style={{ fontSize: 12 }}>Adds a planned transaction. Recommendations aren&apos;t written.</span>
+        </div>
+      ) : (
+        <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.5, margin: 0 }}>{proposal.note}</p>
+      )}
+
+      {result && (
+        <div className="stack stack-xs" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{result.note}</div>
+          {result.skipped.length > 0 && (
+            <ul className="muted" style={{ fontSize: 12, margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+              {result.skipped.map((s) => <li key={s.id}>{s.reason}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

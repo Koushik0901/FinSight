@@ -2,7 +2,8 @@ use crate::error::AppResult;
 use crate::AppState;
 
 pub use finsight_api::commands::scenarios::{
-    RanScenario, SavedScenarioDetail, ScenarioParamsInput, ScenarioPlanProposal, ScenarioResult,
+    ApplyScenarioResult, RanScenario, SavedScenarioDetail, ScenarioParamsInput,
+    ScenarioPlanProposal, ScenarioResult, SkippedChange,
 };
 
 /// Run a what-if projection. Returns the result plus the resolved params (so a
@@ -81,6 +82,19 @@ pub async fn revise_scenario(
     params: ScenarioParamsInput,
 ) -> AppResult<SavedScenarioDetail> {
     finsight_api::commands::scenarios::revise_scenario(&state.api, id, params).await
+}
+
+/// Apply the approved, applyable changes of a scenario to the active plan (#72).
+/// Only writes what's mechanically applyable (a one-time amount → a planned
+/// transaction); idempotent, and the scenario itself is never consumed.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply_scenario(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    approved_change_ids: Vec<String>,
+) -> AppResult<finsight_api::commands::scenarios::ApplyScenarioResult> {
+    finsight_api::commands::scenarios::apply_scenario(&state.api, id, approved_change_ids).await
 }
 
 /// Discard a scenario's revision, reverting to the original assumptions only.

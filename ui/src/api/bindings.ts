@@ -872,6 +872,19 @@ async promoteScenario(id: string) : Promise<Result<ScenarioPlanProposal, AppErro
 }
 },
 /**
+ * Apply the approved, applyable changes of a scenario to the active plan (#72).
+ * Only writes what's mechanically applyable (a one-time amount → a planned
+ * transaction); idempotent, and the scenario itself is never consumed.
+ */
+async applyScenario(id: string, approvedChangeIds: string[]) : Promise<Result<ApplyScenarioResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_scenario", { id, approvedChangeIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Revise a saved scenario's assumptions (issue #73) and re-evaluate it — the
  * original result is preserved; the returned detail adds the revised result.
  */
@@ -2212,6 +2225,22 @@ export type AmountConvention = "negative_is_outflow" | "positive_is_outflow" | "
 export type AppError = { code: string; message: string; details?: JsonValue | null }
 export type AppReady = { version: string }
 /**
+ * The outcome of applying approved scenario changes to the plan (#72).
+ */
+export type ApplyScenarioResult = { 
+/**
+ * Changes written to the plan (a planned transaction was created).
+ */
+applied: string[]; 
+/**
+ * Approved-but-not-written changes, with why (unsupported, or already applied).
+ */
+skipped: SkippedChange[]; 
+/**
+ * Human summary of what happened.
+ */
+note: string }
+/**
  * One (asset, member) ownership pair — the manual-asset analogue of
  * [`AccountOwner`].
  */
@@ -2890,9 +2919,22 @@ export type Persistence = "one_off" | "recurring" | "emerging" | "uncertain"
 export type PlanAssignment = { categoryId: string; amountCents: number }
 /**
  * One proposed plan change from promoting a scenario — a suggestion for the
- * user to review, never an applied mutation.
+ * user to review. Most are recommendation-only; a change with `applyable=true`
+ * can be written to the plan on explicit approval (#72).
  */
-export type PlanChange = { title: string; detail: string; currentCents: number | null; proposedCents: number | null }
+export type PlanChange = { 
+/**
+ * Stable key the apply step approves by (e.g. "one_time").
+ */
+id: string; title: string; detail: string; currentCents: number | null; proposedCents: number | null; 
+/**
+ * Whether this change can be mechanically applied to the plan. Only true for
+ * changes that map to a concrete plan entity — a one-time amount becomes a
+ * dated planned transaction. Aggregate world-assumptions (income %, monthly
+ * spending delta) and goal mentions have no unambiguous target, so they stay
+ * recommendations the user acts on themselves.
+ */
+applyable: boolean }
 export type PlanData = { incomeCents: number; categories: CategoryPlanRow[]; goals: GoalDto[]; sinkingFunds: GoalDto[]; recurringExpenseCents: number; lookBack: LookBackFact[] }
 export type PlannedTransaction = { id: string; description: string; amountCents: number; accountId: string | null; categoryId: string | null; dueDate: string; status: string; source: string; createdAt: string }
 export type PlannedTransactionPatch = { description: string | null; amountCents: number | null; accountId: string | null; categoryId: string | null; dueDate: string | null; status: string | null; source: string | null }
@@ -3168,6 +3210,7 @@ export type SimpleFinConnectionInfo = { id: string; orgName: string | null; labe
 export type SimpleFinPurgeSummary = { accountsDeleted: number; transactionsDeleted: number; connectionsDeleted: number }
 export type SimpleFinStatus = { configured: boolean }
 export type SimpleFinSyncSettings = { backgroundSyncEnabled: boolean; backgroundSyncIntervalMinutes: number }
+export type SkippedChange = { id: string; reason: string }
 export type SpendingBreakdown = { fixedCents: number; investmentsCents: number; savingsCents: number; guiltFreeCents: number; untaggedCents: number; totalIncomeCents: number }
 export type SpendingPlan = { currency: string; 
 /**
