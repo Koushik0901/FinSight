@@ -233,6 +233,18 @@ pub async fn import_csv(
             })
             .await;
         }
+        // Surface subscription price-change / renewal alerts (#58) from the newly
+        // enlarged history. Runs here — after categorization, so classification
+        // is accurate — so a CSV-only user with no background sync still gets
+        // them right after an import. Best-effort; idempotent (dedup keys), so a
+        // partial run is safe and never fails the import.
+        if !wiped() {
+            let sub_db = (*state.db).clone();
+            let _ = run(&sub_db, |conn| {
+                finsight_core::subscriptions::refresh_subscription_alerts(conn, chrono::Utc::now())
+            })
+            .await;
+        }
     }
     // Release the lease now that all import + cascade writes are done. The AI
     // categorizer enqueued below takes its own lease when it runs, so it stays

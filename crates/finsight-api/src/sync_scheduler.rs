@@ -162,6 +162,11 @@ impl SyncScheduler {
                     let now = chrono::Utc::now();
                     finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
                     finsight_core::notify::expire_due(conn, now)?;
+                    // Subscription price-change / renewal alerts (#58). Runs every
+                    // cycle so time-based renewals fire as they approach, not only
+                    // when new data lands — the scan reads transaction history, so
+                    // it covers CSV-only users too (no connection required).
+                    finsight_core::subscriptions::refresh_subscription_alerts(conn, now)?;
                     Ok::<(), finsight_core::error::CoreError>(())
                 })
                 .await;

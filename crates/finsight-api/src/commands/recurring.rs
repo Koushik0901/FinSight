@@ -1,14 +1,42 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
-use finsight_core::recurring::{detect_recurring, RecurringKind};
+use finsight_core::recurring::{detect_recurring, PriceChange, RecurringKind};
 use finsight_core::repos::run;
+use finsight_core::subscriptions::{self, SubscriptionVerdict};
 use serde::Serialize;
 use specta::Type;
+
+/// A detected material change in a fixed-price recurring charge's amount (#58).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceChangeDto {
+    pub from_cents: i64,
+    pub to_cents: i64,
+    /// Signed percent change vs the prior price.
+    pub pct: f64,
+    pub effective_date: String,
+    pub currency: String,
+}
+
+impl From<&PriceChange> for PriceChangeDto {
+    fn from(p: &PriceChange) -> Self {
+        Self {
+            from_cents: p.from_cents,
+            to_cents: p.to_cents,
+            pct: p.pct,
+            effective_date: p.effective_date.clone(),
+            currency: p.currency.clone(),
+        }
+    }
+}
 
 /// A recurring transaction detected from transaction history (Phase 6 redesign).
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RecurringItem {
+    /// The canonical grouping key — the handle the confirm/dismiss verdict is
+    /// keyed on (`set_subscription_verdict`).
+    pub merchant_key: String,
     pub merchant_raw: String,
     pub category_label: String,
     pub category_color: String,
@@ -36,6 +64,11 @@ pub struct RecurringItem {
     /// projections. Low-confidence entries stay VISIBLE — the user is the one
     /// who can confirm or dismiss them — but do not silently move arithmetic.
     pub feeds_projections: bool,
+    /// A detected material price change on this series, if any (#58).
+    pub price_change: Option<PriceChangeDto>,
+    /// The user's durable verdict on this series: "confirmed" | "dismissed" |
+    /// null. A dismissed series is suppressed from price-change/renewal alerts.
+    pub verdict: Option<String>,
 }
 
 fn kind_str(kind: RecurringKind) -> &'static str {
@@ -55,6 +88,8 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
         // 13-month window so annual charges are detectable; the detector anchors
         // on the most recent transaction so historical imports still work.
         let items = detect_recurring(conn, 395)?;
+        // The user's confirm/dismiss verdicts, attached by merchant key.
+        let verdicts = subscriptions::load_verdicts(conn)?;
         Ok(items
             .into_iter()
             // Show genuine recurring commitments + income only. Repeat purchases
@@ -69,6 +104,9 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
             .map(|i| RecurringItem {
                 monthly_equivalent_cents: i.monthly_equivalent_cents(),
                 feeds_projections: i.is_projection_obligation(),
+                price_change: i.price_change.as_ref().map(PriceChangeDto::from),
+                verdict: verdicts.get(&i.merchant_key).map(|v| v.as_str().to_string()),
+                merchant_key: i.merchant_key,
                 merchant_raw: i.display_merchant,
                 category_label: i.category_label.unwrap_or_default(),
                 category_color: i.category_color.unwrap_or_default(),
@@ -89,4 +127,19 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
     })
     .await
     .map_err(AppError::from)
+}
+
+/// Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
+/// detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
+/// value (or null) clears it, so a bad string can't corrupt state.
+pub async fn set_subscription_verdict(
+    state: &ApiState,
+    merchant_key: String,
+    verdict: Option<String>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    let parsed = verdict.as_deref().and_then(SubscriptionVerdict::from_str);
+    run(&db, move |conn| subscriptions::set_verdict(conn, &merchant_key, parsed))
+        .await
+        .map_err(AppError::from)
 }

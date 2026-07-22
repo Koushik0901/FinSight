@@ -168,12 +168,15 @@ function cat(id: string, label: string, color: string, thisM: number, lastM: num
   };
 }
 
-function recur(merchant: string, color: string, label: string, kind: string, cadence: string, amt: number, dueInDays: number): AnyRec {
+function recur(merchant: string, color: string, label: string, kind: string, cadence: string, amt: number, dueInDays: number, priceChange: AnyRec | null = null): AnyRec {
   return {
     merchantRaw: merchant,
+    merchantKey: merchant.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
     categoryLabel: label,
     categoryColor: color,
     kind,
+    priceChange,
+    verdict: null,
     cadence,
     confidence: 0.9,
     reasons: ["Regular cadence", "Stable amount"],
@@ -755,10 +758,16 @@ function buildDataset(kind: Kind): Dataset {
     recurring: [
       recur("Rent", C.housing, "Housing", "bill", "monthly", 180000, 4),
       recur("Netflix", C.subs, "Subscriptions", "subscription", "monthly", 1699, 9),
-      recur("Spotify", C.subs, "Subscriptions", "subscription", "monthly", 1199, 2),
+      // A detected price increase — exercises the "Changes to review" card.
+      recur("Spotify", C.subs, "Subscriptions", "subscription", "monthly", 1299, 2, {
+        fromCents: 999, toCents: 1299, pct: 30, effectiveDate: isoDaysAgo(20), currency: "USD",
+      }),
       recur("Hydro", C.utilities, "Utilities", "bill", "monthly", 8400, 11),
       recur("Fitness World", C.health, "Health", "subscription", "monthly", 4500, 13),
-      recur("iCloud+", C.subs, "Subscriptions", "subscription", "monthly", 299, 1),
+      // A small price drop, on a low-ish amount.
+      recur("iCloud+", C.subs, "Subscriptions", "subscription", "monthly", 249, 1, {
+        fromCents: 299, toCents: 249, pct: -16.7, effectiveDate: isoDaysAgo(35), currency: "USD",
+      }),
     ],
     goals: [
       goal("g-ef", "Emergency Fund", 3000000, 1840000, 40000, "#34D399", null, "safety"),
@@ -869,6 +878,8 @@ function defaultNotifPrefs(): AnyRec {
   };
 }
 let mockNotifPrefs: AnyRec = defaultNotifPrefs();
+// In-memory subscription confirm/dismiss verdicts (#58), keyed by merchantKey.
+const mockSubVerdicts: Record<string, string> = {};
 // Deliberately varied: a critical unread with a sensitive amount, a low-urgency
 // activity ping, a read item, and one held overnight (delivered_at null) — so
 // the Inbox section and badge exercise every branch.
@@ -989,7 +1000,15 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       const months = Math.min(24, Math.max(2, Math.round(days / 30) + 1));
       return netWorthSeries(months, ds.netWorthStart, ds.netWorthEnd);
     },
-    list_recurring: () => ds.recurring,
+    list_recurring: () =>
+      ds.recurring.map((r) => ({ ...r, verdict: mockSubVerdicts[String(r.merchantKey)] ?? r.verdict ?? null })),
+    set_subscription_verdict: (a) => {
+      const key = String(a?.merchantKey ?? "");
+      const verdict = a?.verdict;
+      if (verdict === "confirmed" || verdict === "dismissed") mockSubVerdicts[key] = verdict;
+      else delete mockSubVerdicts[key];
+      return null;
+    },
     list_manual_assets: () => ds.manualAssets,
     list_goals: () => ds.goals,
     get_month_totals: () => ds.monthTotals,
