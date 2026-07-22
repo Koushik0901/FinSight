@@ -33,6 +33,104 @@ const AMOUNT_TOLERANCE: f64 = 0.15;
 /// Gap coefficient-of-variation below this = "regular" cadence.
 const REGULAR_GAP_CV: f64 = 0.40;
 
+// ── Price-change detection thresholds ───────────────────────────────────────
+/// Total same-currency charges required before a price step is trustworthy.
+const PRICE_CHANGE_MIN_HISTORY: usize = 4;
+/// Charges that must sit at the established prior price before a step counts —
+/// this is the proration/first-charge guard (a lone prorated charge can never
+/// form a baseline).
+const PRICE_CHANGE_MIN_BASELINE: usize = 3;
+/// Fraction of the baseline that must cluster tightly around its median for the
+/// prior price to count as "established". A variable bill fails this and so
+/// never yields a price change.
+const PRICE_CHANGE_BASELINE_TIGHTNESS: f64 = 0.75;
+/// Relative move (vs the prior price) required to flag — below this is ordinary
+/// variation, tax, or rounding.
+const PRICE_CHANGE_REL_THRESHOLD: f64 = 0.08;
+/// Absolute floor (cents) so a large-percentage move on a tiny charge (99¢ ->
+/// $1.09) doesn't spam. Both the relative and absolute test must pass.
+const PRICE_CHANGE_ABS_FLOOR_CENTS: i64 = 100;
+
+/// Detect a material, sustained change in a fixed-price series' amount from the
+/// ORDERED occurrence sequence. Returns `None` unless there is an established,
+/// tight prior price and the trailing run sits at a materially different level.
+///
+/// Guards, each tied to a criterion in the issue:
+/// - **refunds/credits**: only same-sign outflow charges are considered;
+/// - **currency**: only charges in the latest charge's currency are compared;
+/// - **prorated first charge**: the baseline (everything before the trailing
+///   run) must have >= `PRICE_CHANGE_MIN_BASELINE` charges, so a lone opening
+///   proration can't be the baseline;
+/// - **ordinary variation / variable bills**: the baseline must be *tight*
+///   (>= `PRICE_CHANGE_BASELINE_TIGHTNESS` clustered), which a variable bill
+///   never is;
+/// - **noise**: the move must clear both a relative and an absolute floor.
+fn detect_price_change(occ: &[Occurrence]) -> Option<PriceChange> {
+    let currency = occ.last()?.currency.clone();
+    // Same-currency outflows only (an inflow/refund is not a subscription charge).
+    let charges: Vec<&Occurrence> = occ
+        .iter()
+        .filter(|o| o.currency == currency && o.amount_cents < 0)
+        .collect();
+    if charges.len() < PRICE_CHANGE_MIN_HISTORY {
+        return None;
+    }
+    let abs = |o: &Occurrence| o.amount_cents.unsigned_abs() as f64;
+    let latest = abs(charges[charges.len() - 1]);
+    if latest <= 0.0 {
+        return None;
+    }
+
+    // Walk back over the trailing run of charges at (roughly) the latest price.
+    let mut run_start = charges.len() - 1;
+    while run_start > 0 && within_tolerance(abs(charges[run_start - 1]), latest) {
+        run_start -= 1;
+    }
+    let baseline_charges = &charges[..run_start];
+    if baseline_charges.len() < PRICE_CHANGE_MIN_BASELINE {
+        return None;
+    }
+
+    let baseline_amounts: Vec<f64> = baseline_charges.iter().map(|o| abs(o)).collect();
+    let baseline = median(&baseline_amounts);
+    if baseline <= 0.0 {
+        return None;
+    }
+    // The prior price must be established (tightly clustered), else this is a
+    // variable bill, not a stepped subscription.
+    let tight = baseline_amounts
+        .iter()
+        .filter(|&&a| within_tolerance(a, baseline))
+        .count();
+    if (tight as f64) / (baseline_amounts.len() as f64) < PRICE_CHANGE_BASELINE_TIGHTNESS {
+        return None;
+    }
+
+    // The new level = the median of the trailing run (robust to a single blip).
+    let run_amounts: Vec<f64> = charges[run_start..].iter().map(|o| abs(o)).collect();
+    let current = median(&run_amounts);
+    let delta = current - baseline;
+    if delta.abs() < PRICE_CHANGE_ABS_FLOOR_CENTS as f64
+        || delta.abs() / baseline < PRICE_CHANGE_REL_THRESHOLD
+    {
+        return None;
+    }
+
+    let pct = (delta / baseline * 1000.0).round() / 10.0;
+    Some(PriceChange {
+        from_cents: baseline.round() as i64,
+        to_cents: current.round() as i64,
+        pct,
+        effective_date: charges[run_start].date.format("%Y-%m-%d").to_string(),
+        currency,
+    })
+}
+
+/// Whether `a` is within the amount tolerance band of `reference`.
+fn within_tolerance(a: f64, reference: f64) -> bool {
+    reference > 0.0 && (a - reference).abs() / reference <= AMOUNT_TOLERANCE
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecurringKind {
@@ -74,11 +172,18 @@ pub struct RecurringItem {
     pub category_color: Option<String>,
     pub last_seen: String,
     pub next_expected: Option<String>,
+    /// A detected material change in this series' price, if any (fixed-price
+    /// subscriptions/bills only). `None` for variable bills, income, transfers,
+    /// repeat purchases, or a steady price.
+    pub price_change: Option<PriceChange>,
 }
 
 struct Occurrence {
     date: chrono::NaiveDate,
     amount_cents: i64,
+    /// The charging account's currency, so a price-change check never compares
+    /// two different currencies as if a rate move were a price hike.
+    currency: String,
 }
 
 struct Group {
@@ -89,6 +194,28 @@ struct Group {
     category_color: Option<String>,
     any_transfer_flag: bool,
     any_membership_like: bool,
+}
+
+/// A detected material change in a fixed-price recurring charge's amount.
+///
+/// Computed on the ordered per-occurrence sequence (not on min/max/median
+/// aggregates, which a single spike, refund, or prorated first charge would
+/// skew into a false positive). Only emitted for a series with an established,
+/// stable prior price — a variable bill whose amount moves every cycle by design
+/// never produces one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PriceChange {
+    /// The established prior price, as a positive figure (same currency as `to`).
+    pub from_cents: i64,
+    /// The new current price, as a positive figure.
+    pub to_cents: i64,
+    /// Signed percent change vs the prior price (e.g. `11.2` for +11.2%), 1 dp.
+    pub pct: f64,
+    /// The charge date the new price level first appears on (`YYYY-MM-DD`), so
+    /// the notification dedup key is stable across later charges at that price.
+    pub effective_date: String,
+    /// The currency the change was observed in (empty when the account had none).
+    pub currency: String,
 }
 
 /// Detect recurring items from transaction history.
@@ -119,8 +246,10 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
     // repeated BUY trades would otherwise read as recurring "bills".
     let mut stmt = conn.prepare(&format!(
         "SELECT t.merchant_raw, substr(t.posted_at,1,10) AS d, t.amount_cents, \
-                c.label, c.color, COALESCE(t.is_transfer,0) \
-         FROM transactions t LEFT JOIN categories c ON c.id = t.category_id \
+                c.label, c.color, COALESCE(t.is_transfer,0), COALESCE(a.currency,'') \
+         FROM transactions t \
+         LEFT JOIN categories c ON c.id = t.category_id \
+         LEFT JOIN accounts a ON a.id = t.account_id \
          WHERE substr(t.posted_at,1,10) >= ?1 AND {} \
          ORDER BY t.posted_at ASC",
         crate::metrics::non_investment_txn_predicate("t")
@@ -133,13 +262,14 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             r.get::<_, Option<String>>(3)?,
             r.get::<_, Option<String>>(4)?,
             r.get::<_, i64>(5)? != 0,
+            r.get::<_, String>(6)?,
         ))
     })?;
 
     // Group by normalized merchant.
     let mut groups: std::collections::HashMap<String, Group> = std::collections::HashMap::new();
     for row in rows.flatten() {
-        let (raw, date_str, amount, category, color, transfer_flag) = row;
+        let (raw, date_str, amount, category, color, transfer_flag, currency) = row;
         // Group by a VENDOR-CANONICAL key so brand/product variants of the same
         // subscription (OPENAI *CHATGPT SUBSCR / CHATGPT SUBSCRIPTION / OPENAI)
         // form one series instead of several sparse ones.
@@ -159,7 +289,7 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             any_transfer_flag: false,
             any_membership_like: false,
         });
-        g.occ.push(Occurrence { date, amount_cents: amount });
+        g.occ.push(Occurrence { date, amount_cents: amount, currency });
         if g.category.is_none() {
             g.category = category;
             g.category_color = color;
@@ -334,6 +464,14 @@ fn classify(g: Group) -> Option<RecurringItem> {
     confidence += ((n.min(12) as f64 - 3.0) / 9.0).max(0.0) * 0.1;
     confidence = confidence.clamp(0.0, 0.99);
 
+    // Price-change detection applies only to genuine recurring COSTS — a
+    // subscription or bill. Income, transfers, and repeat purchases don't have a
+    // "price" that changing is meaningful, so they never carry one.
+    let price_change = match kind {
+        RecurringKind::Subscription | RecurringKind::Bill => detect_price_change(&occ),
+        _ => None,
+    };
+
     Some(RecurringItem {
         merchant_key: g.key,
         display_merchant: g.display,
@@ -353,6 +491,7 @@ fn classify(g: Group) -> Option<RecurringItem> {
         category_color: g.category_color,
         last_seen,
         next_expected,
+        price_change,
     })
 }
 
@@ -591,6 +730,182 @@ mod tests {
 
     fn find<'a>(items: &'a [RecurringItem], needle: &str) -> Option<&'a RecurringItem> {
         items.iter().find(|i| i.merchant_key.contains(needle))
+    }
+
+    /// Insert an account with a specific currency (for multi-currency tests).
+    fn insert_account(conn: &Connection, id: &str, currency: &str) {
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) \
+             VALUES(?1,'me','B','Credit','Card',?2,'#fff',datetime('now'))",
+            rusqlite::params![id, currency],
+        )
+        .unwrap();
+    }
+
+    /// Insert one charge on a specific account/date/amount (exact control over
+    /// the ORDERED occurrence sequence a price-change test depends on).
+    fn charge(conn: &Connection, account: &str, merchant: &str, date: &str, cents: i64) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
+             VALUES(hex(randomblob(16)),?1,?2,?3,?4,0,'cleared',datetime('now'))",
+            rusqlite::params![account, format!("{date}T12:00:00Z"), cents, merchant],
+        )
+        .unwrap();
+    }
+
+    /// Insert `n` charges every ~30 days from `start` at a fixed amount.
+    fn monthly(conn: &Connection, account: &str, merchant: &str, start: &str, n: i64, cents: i64) {
+        let start = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").unwrap();
+        for i in 0..n {
+            let d = start + chrono::Duration::days(30 * i);
+            charge(conn, account, merchant, &d.format("%Y-%m-%d").to_string(), cents);
+        }
+    }
+
+    #[test]
+    fn steady_price_has_no_change() {
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "NETFLIX.COM", "2025-01-04", 10, -1599);
+        let items = detect_recurring(&conn, 500).unwrap();
+        let it = find(&items, "netflix").expect("detected");
+        assert!(it.price_change.is_none(), "a flat price must not flag: {:?}", it.price_change);
+    }
+
+    #[test]
+    fn sustained_price_increase_is_detected_with_effective_date() {
+        // Six months at $9.99, then three at $12.99 — a real subscription hike.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "SPOTIFY", "2025-01-05", 6, -999);
+        // continue the same series at the new price
+        for i in 0..3 {
+            let d = chrono::NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap()
+                + chrono::Duration::days(30 * i);
+            charge(&conn, "a", "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1299);
+        }
+        let items = detect_recurring(&conn, 500).unwrap();
+        let pc = find(&items, "spotify").expect("detected").price_change.as_ref().expect("a step must be flagged");
+        assert_eq!(pc.from_cents, 999);
+        assert_eq!(pc.to_cents, 1299);
+        assert!((pc.pct - 30.0).abs() < 0.5, "≈+30%, got {}", pc.pct);
+        assert_eq!(pc.effective_date, "2025-07-05", "dated at the FIRST charge of the new level");
+    }
+
+    #[test]
+    fn small_variation_below_threshold_is_not_a_change() {
+        // $10.00 drifting by a few cents (tax rounding) is not a price change.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        for (i, amt) in [-1000, -1000, -1002, -999, -1001, -1000, -1003, -1000].iter().enumerate() {
+            let d = chrono::NaiveDate::parse_from_str("2025-01-05", "%Y-%m-%d").unwrap()
+                + chrono::Duration::days(30 * i as i64);
+            charge(&conn, "a", "DROPBOX", &d.format("%Y-%m-%d").to_string(), *amt);
+        }
+        let items = detect_recurring(&conn, 500).unwrap();
+        assert!(find(&items, "dropbox").expect("detected").price_change.is_none());
+    }
+
+    #[test]
+    fn a_refund_is_not_read_as_a_price_change() {
+        // Steady $20, then a full refund (+$20), then steady $20 again. The
+        // credit must be ignored, not read as a drop-and-recover.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "ADOBE", "2025-01-06", 5, -2000);
+        charge(&conn, "a", "ADOBE", "2025-06-06", 2000); // refund
+        monthly(&conn, "a", "ADOBE", "2025-07-06", 3, -2000);
+        let items = detect_recurring(&conn, 500).unwrap();
+        assert!(find(&items, "adobe").expect("detected").price_change.is_none(), "a refund is not a price change");
+    }
+
+    #[test]
+    fn a_prorated_first_charge_is_not_a_price_change() {
+        // A tiny prorated first charge then the steady price — the opening
+        // proration must not become the "old price" a step is measured against.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        charge(&conn, "a", "NYTIMES", "2025-01-03", -250); // prorated
+        monthly(&conn, "a", "NYTIMES", "2025-02-03", 7, -1700);
+        let items = detect_recurring(&conn, 500).unwrap();
+        assert!(find(&items, "nytimes").expect("detected").price_change.is_none(), "proration is not a step");
+    }
+
+    #[test]
+    fn a_variable_bill_has_no_price_change() {
+        // A utility bill that swings every month has no established price to
+        // step from — it must never emit a change.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        for (i, amt) in [-6200, -8800, -4100, -9500, -5300, -7700, -10200, -4800].iter().enumerate() {
+            let d = chrono::NaiveDate::parse_from_str("2025-01-09", "%Y-%m-%d").unwrap()
+                + chrono::Duration::days(30 * i as i64);
+            charge(&conn, "a", "BC HYDRO", &d.format("%Y-%m-%d").to_string(), *amt);
+        }
+        let items = detect_recurring(&conn, 500).unwrap();
+        if let Some(it) = find(&items, "hydro") {
+            assert!(it.price_change.is_none(), "a variable bill has no price step: {:?}", it.price_change);
+        }
+    }
+
+    #[test]
+    fn a_price_change_never_compares_across_currencies() {
+        // The same subscription billed in two currencies must not read the
+        // USD/CAD nominal difference as a price hike. Latest currency's charges
+        // are too few on their own, so no change is emitted.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn); // account 'a' is USD
+        insert_account(&conn, "cad", "CAD");
+        monthly(&conn, "a", "SPOTIFY", "2025-01-05", 5, -999); // USD 9.99
+        // Moved to a CAD card: nominal 13.99 CAD — different currency, not a hike.
+        for i in 0..3 {
+            let d = chrono::NaiveDate::parse_from_str("2025-06-05", "%Y-%m-%d").unwrap()
+                + chrono::Duration::days(30 * i);
+            charge(&conn, "cad", "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1399);
+        }
+        let items = detect_recurring(&conn, 500).unwrap();
+        let it = find(&items, "spotify").expect("detected across both cards");
+        assert!(it.price_change.is_none(), "cross-currency nominal gap is not a price change: {:?}", it.price_change);
+    }
+
+    #[test]
+    fn a_single_anomalous_latest_charge_flags_for_review() {
+        // A one-off spike as the LATEST charge on an otherwise-flat subscription
+        // reads as a price increase. This is deliberate: subscriptions rarely
+        // spike, so flagging a new level early catches real hikes; the rare
+        // billing-error case is dismissable in the review card and lapses via the
+        // notification TTL. Pinned so the behavior is a decision, not a surprise.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "NOTION", "2025-01-06", 6, -1000);
+        charge(&conn, "a", "NOTION", "2025-07-06", -3000); // anomalous latest charge
+        let items = detect_recurring(&conn, 500).unwrap();
+        let pc = find(&items, "notion").expect("detected").price_change.clone();
+        assert!(pc.is_some(), "a new latest level flags — the user reviews or dismisses it");
+        assert_eq!(pc.unwrap().to_cents, 3000);
+    }
+
+    #[test]
+    fn only_subscriptions_and_bills_carry_a_price_change() {
+        // Income that changes amount (a raise) is not a "subscription price
+        // change"; it must not carry one.
+        let (_d, db) = fresh();
+        let conn = db.get().unwrap();
+        seed_categories(&conn);
+        monthly(&conn, "a", "ACME PAYROLL", "2025-01-02", 6, 250_000);
+        monthly(&conn, "a", "ACME PAYROLL", "2025-07-02", 3, 300_000);
+        let items = detect_recurring(&conn, 500).unwrap();
+        let it = find(&items, "acme").expect("detected");
+        assert_eq!(it.kind, RecurringKind::Income);
+        assert!(it.price_change.is_none(), "income carries no subscription price change");
     }
 
     #[test]
@@ -967,6 +1282,7 @@ mod tests {
             category_color: None,
             last_seen: "2026-01-01".into(),
             next_expected: None,
+            price_change: None,
         };
         // $600/year is $50/month of commitment — not $600.
         assert_eq!(base.monthly_equivalent_cents(), 5_000);

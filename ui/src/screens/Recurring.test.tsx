@@ -1,14 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import Recurring from "./Recurring";
 import { createWrapperWithEntries } from "../test-utils";
-import { useRecurring } from "../api/hooks/recurring";
+import { useRecurring, useSetSubscriptionVerdict } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 
+const mockSetVerdict = vi.fn();
 vi.mock("../api/hooks/recurring", () => ({
+  useSetSubscriptionVerdict: vi.fn(() => ({ mutate: mockSetVerdict, isPending: false })),
   useRecurring: vi.fn(() => ({
     data: [
       {
+        merchantKey: "spotify",
         merchantRaw: "Spotify",
         categoryLabel: "Subscriptions",
         categoryColor: "#22C55E",
@@ -31,6 +35,7 @@ vi.mock("../api/hooks/recurring", () => ({
         // Detected, but too weak to budget against: it must stay VISIBLE (the
         // user is the one who can confirm or dismiss it) while being excluded
         // from the committed-per-month headline.
+        merchantKey: "odd jobs ltd",
         merchantRaw: "Odd Jobs Ltd",
         categoryLabel: "Other",
         categoryColor: "#94A3B8",
@@ -117,5 +122,63 @@ describe("Recurring — low-confidence entries", () => {
     expect(
       screen.getByText(/1 less certain entry is listed below but not counted/i),
     ).toBeInTheDocument();
+  });
+});
+
+// Placed last: these set a persistent mockReturnValue, so ordering after the
+// default-mock tests keeps them from leaking into earlier cases.
+describe("Recurring — subscription price changes (#58)", () => {
+  const withChange = [
+    {
+      merchantKey: "spotify",
+      merchantRaw: "Spotify",
+      categoryLabel: "Subscriptions",
+      categoryColor: "#22C55E",
+      lastAmountCents: -1299,
+      minAmountCents: -1299,
+      maxAmountCents: -1299,
+      avgGapDays: 30,
+      occurrences: 9,
+      lastSeen: "2026-06-01",
+      nextExpected: "2026-07-01",
+      cadence: "monthly",
+      isSubscription: true,
+      kind: "subscription",
+      confidence: 0.96,
+      reasons: ["9 occurrences", "~monthly cadence"],
+      monthlyEquivalentCents: 1299,
+      feedsProjections: true,
+      priceChange: { fromCents: 999, toCents: 1299, pct: 30, effectiveDate: "2026-05-05", currency: "USD" },
+      verdict: null,
+    },
+  ];
+
+  it("surfaces a detected price change with confirm/dismiss and wires the verdict", () => {
+    vi.mocked(useRecurring).mockReturnValue({ data: withChange, isLoading: false, error: null } as unknown as ReturnType<typeof useRecurring>);
+    vi.mocked(usePlannedTransactions).mockReturnValue({ data: [] } as unknown as ReturnType<typeof usePlannedTransactions>);
+    mockSetVerdict.mockClear();
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+
+    // The review card summarizes the move with evidence (the from → to amounts
+    // are unique to the card; the old price doesn't appear in the table row).
+    expect(screen.getByText(/Changes to review/i)).toBeInTheDocument();
+    expect(screen.getByText(/9\.99/)).toBeInTheDocument();
+
+    // Dismiss routes to the verdict mutation with the series' key.
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(mockSetVerdict).toHaveBeenCalledWith({ merchantKey: "spotify", verdict: "dismissed" });
+  });
+
+  it("hides the review card once every change is confirmed or dismissed", () => {
+    vi.mocked(useRecurring).mockReturnValue({
+      data: [{ ...withChange[0], verdict: "dismissed" }],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useRecurring>);
+    vi.mocked(usePlannedTransactions).mockReturnValue({ data: [] } as unknown as ReturnType<typeof usePlannedTransactions>);
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+    expect(screen.queryByText(/Changes to review/i)).not.toBeInTheDocument();
+    // The row is still listed (dismissed), with a Restore affordance.
+    expect(screen.getByRole("button", { name: /Restore Spotify/i })).toBeInTheDocument();
   });
 });

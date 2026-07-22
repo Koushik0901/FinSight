@@ -650,6 +650,12 @@ async fn dispatch(
 
         // ── recurring ──
         "list_recurring" => ok(c::recurring::list_recurring(api).await?),
+        "set_subscription_verdict" => ok(c::recurring::set_subscription_verdict(
+            api,
+            arg(&p, "merchantKey")?,
+            arg(&p, "verdict")?,
+        )
+        .await?),
 
         // ── reports ──
         "get_report_data" => ok(c::reports::get_report_data(
@@ -1064,6 +1070,7 @@ pub const SUPPORTED: &[&str] = &[
     "list_recipe_runs",
     // recurring
     "list_recurring",
+    "set_subscription_verdict",
     // reports
     "get_report_data",
     "get_month_totals",

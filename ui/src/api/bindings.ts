@@ -552,6 +552,14 @@ async listRecurring() : Promise<Result<RecurringItem[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async setSubscriptionVerdict(merchantKey: string, verdict: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_subscription_verdict", { merchantKey, verdict }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getReportData(scope: string, memberId: string | null) : Promise<Result<ReportData, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_report_data", { scope, memberId }) };
@@ -2858,6 +2866,14 @@ investedCents: number }
  */
 export type PreparedImportPreview = { signature: string; rowsTotal: number; rowsImported: number; rowsSkippedDuplicates: number; rowsQueuedForReview: number; errors: RowError[] }
 /**
+ * A detected material change in a fixed-price recurring charge's amount (#58).
+ */
+export type PriceChangeDto = { fromCents: number; toCents: number; 
+/**
+ * Signed percent change vs the prior price.
+ */
+pct: number; effectiveDate: string; currency: string }
+/**
  * How much sensitive detail a notification may expose. Mirrors the app's
  * "blur amounts" privacy concept rather than inventing a parallel model — a
  * push composed server-side can't consult the client's blur, so this is the
@@ -2912,7 +2928,12 @@ export type RanScenario = { result: ScenarioResult; params: ScenarioParamsInput;
 /**
  * A recurring transaction detected from transaction history (Phase 6 redesign).
  */
-export type RecurringItem = { merchantRaw: string; categoryLabel: string; categoryColor: string; 
+export type RecurringItem = { 
+/**
+ * The canonical grouping key — the handle the confirm/dismiss verdict is
+ * keyed on (`set_subscription_verdict`).
+ */
+merchantKey: string; merchantRaw: string; categoryLabel: string; categoryColor: string; 
 /**
  * "subscription" | "bill" | "income" — genuine recurring commitments only.
  */
@@ -2940,7 +2961,16 @@ isSubscription: boolean;
  * projections. Low-confidence entries stay VISIBLE — the user is the one
  * who can confirm or dismiss them — but do not silently move arithmetic.
  */
-feedsProjections: boolean }
+feedsProjections: boolean; 
+/**
+ * A detected material price change on this series, if any (#58).
+ */
+priceChange: PriceChangeDto | null; 
+/**
+ * The user's durable verdict on this series: "confirmed" | "dismissed" |
+ * null. A dismissed series is suppressed from price-change/renewal alerts.
+ */
+verdict: string | null }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RestorationEnvelope = { id: string; label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; openedOn: string; counterpartyPattern: string | null; closedAt: string | null; note: string | null; createdAt: string }
 export type RestorationEnvelopeInput = { label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; 

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
-import { useRecurring } from "../api/hooks/recurring";
+import { useRecurring, useSetSubscriptionVerdict } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
-import type { PlannedTransaction } from "../api/client";
+import type { PlannedTransaction, RecurringItem } from "../api/client";
 import { money } from "../utils/format";
 import { prettyMerchant } from "../utils/merchant";
 import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";
@@ -17,11 +17,30 @@ function recurringGroup(item: { kind: string; lastAmountCents: number }) {
   return "Bills";
 }
 
+/** Colored ±% pill for a detected price change (#58). Up = negative tone. */
+function PriceChangePill({ pc, compact = false }: { pc: NonNullable<RecurringItem["priceChange"]>; compact?: boolean }) {
+  const up = pc.toCents >= pc.fromCents;
+  const tone = up ? "var(--negative)" : "var(--positive)";
+  return (
+    <span
+      className="chip"
+      title={`Was ${money(pc.fromCents, { decimals: 2 })}, now ${money(pc.toCents, { decimals: 2 })} since ${new Date(pc.effectiveDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+      style={{ color: tone, borderColor: tone, background: "transparent", fontVariantNumeric: "tabular-nums", ...(compact ? { fontSize: 11, padding: "1px 7px", marginLeft: 6 } : {}) }}
+    >
+      {up ? "↑" : "↓"} {pc.pct >= 0 ? "+" : ""}{Math.round(pc.pct)}%
+    </span>
+  );
+}
+
 export default function Recurring() {
   const navigate = useNavigate();
   const { data: items = [], isLoading, error } = useRecurring();
   const { data: plannedTransactions = [] } = usePlannedTransactions();
+  const setVerdict = useSetSubscriptionVerdict();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Detected price changes the user hasn't yet confirmed or dismissed (#58).
+  const pendingChanges = items.filter((item) => item.priceChange && !item.verdict);
   const [view, setView] = useState<"monthly" | "upcoming" | "all">("monthly");
   const [editingPlanned, setEditingPlanned] = useState<PlannedTransaction | null>(null);
 
@@ -110,6 +129,36 @@ export default function Recurring() {
         <div className="stat accent"><div className="label">Next 7 days</div><div className="value">{nextSevenDays}</div><div className="sub">Upcoming expected hits</div></div>
       </div>
 
+      {pendingChanges.length > 0 && (
+        <section className="section">
+          <div className="card" style={{ padding: 20 }}>
+            <div className="eyebrow"><span className="dot" style={{ background: "var(--warning)" }} />Changes to review · {pendingChanges.length}</div>
+            <div className="muted" style={{ fontSize: 13, margin: "6px 0 2px" }}>
+              Price moves we spotted in your recurring charges. Confirm what&apos;s real, dismiss what isn&apos;t.
+            </div>
+            {pendingChanges.map((item) => {
+              const pc = item.priceChange!;
+              return (
+                <div key={item.merchantKey} className="row" style={{ justifyContent: "space-between", gap: 14, padding: "14px 0", borderTop: "1px solid var(--hairline)", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{prettyMerchant(item.merchantRaw)} <PriceChangePill pc={pc} /></div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                      <span className="money">{money(pc.fromCents, { decimals: 2 })} → {money(pc.toCents, { decimals: 2 })}</span>
+                      {" · since "}{new Date(pc.effectiveDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {" · "}{Math.round((item.confidence ?? 0) * 100)}% confidence
+                    </div>
+                  </div>
+                  <div className="row row-sm">
+                    <button className="btn primary sm" type="button" disabled={setVerdict.isPending} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: "confirmed" })}>Confirm</button>
+                    <button className="btn outline sm" type="button" disabled={setVerdict.isPending} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: "dismissed" })}>Dismiss</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <section className="section">
         <div className="card flush">
           <table className="tbl">
@@ -127,14 +176,18 @@ export default function Recurring() {
                   <tr key={`${group.label}-hdr`}>
                     <td colSpan={4} style={{ paddingTop: 18, paddingBottom: 10, fontSize: 12, color: "var(--ink-faint)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{group.label}</td>
                   </tr>,
-                  ...group.items.map((item) => (
-                    <tr key={`${group.label}-${item.merchantRaw}-${item.nextExpected}`} title={(item.reasons ?? []).join(" · ")}>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence{item.kind !== "income" && !item.feedsProjections ? " · not used in forecasts" : ""}</div></div></div></td>
+                  ...group.items.map((item) => {
+                    const dismissed = item.verdict === "dismissed";
+                    const canDismiss = item.kind !== "income";
+                    return (
+                    <tr key={`${group.label}-${item.merchantKey}`} title={(item.reasons ?? []).join(" · ")} style={dismissed ? { opacity: 0.5 } : undefined}>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}{item.priceChange && <PriceChangePill pc={item.priceChange} compact />}{dismissed && <span className="chip" style={{ marginLeft: 6, fontSize: 11, padding: "1px 8px" }}>dismissed</span>}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence{item.kind !== "income" && !item.feedsProjections ? " · not used in forecasts" : ""}{canDismiss && <>{" · "}<button type="button" aria-label={`${dismissed ? "Restore" : "Dismiss"} ${prettyMerchant(item.merchantRaw)}`} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: dismissed ? null : "dismissed" })} disabled={setVerdict.isPending} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--ink-mute)", textDecoration: "underline", cursor: "pointer" }}>{dismissed ? "Restore" : "Dismiss"}</button></>}</div></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
                       <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
                       <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { decimals: 2 })}</span></td>
                     </tr>
-                  )),
+                    );
+                  }),
                 ] : null
               ))}
             </tbody>

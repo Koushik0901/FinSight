@@ -14,6 +14,7 @@ pub mod keychain;
 pub mod metrics;
 pub mod models;
 pub mod notify;
+pub mod subscriptions;
 pub mod provenance;
 pub mod palette;
 pub mod repos;

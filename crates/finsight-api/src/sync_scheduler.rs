@@ -158,13 +158,41 @@ impl SyncScheduler {
                 // pass materializes expiry for discrete events (e.g. the per-day
                 // activity nudge) whose `expires_at` has passed — the reads already
                 // hide them, this keeps the stored state honest too.
-                let _ = finsight_core::repos::run(&db, |conn| {
+                // Subscription price-change / renewal alerts (#58) run alongside
+                // the sweep; `refresh_subscription_alerts` returns how many were
+                // push-eligible this cycle so we can nudge a CLOSED device — a
+                // renewal is only "early enough to act on" if it doesn't wait for
+                // the next app open. finsight-core can't reach the push layer, so
+                // the send happens here, mirroring notify_new_activity.
+                let sub_pushable = finsight_core::repos::run(&db, |conn| {
                     let now = chrono::Utc::now();
                     finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
                     finsight_core::notify::expire_due(conn, now)?;
-                    Ok::<(), finsight_core::error::CoreError>(())
+                    finsight_core::subscriptions::refresh_subscription_alerts(conn, now)
                 })
-                .await;
+                .await
+                .unwrap_or(0);
+
+                if sub_pushable > 0 {
+                    // One summary buzz, not one per change. The push names no
+                    // amount or merchant (privacy-safe on a lock screen); the
+                    // specifics live in the in-app "Changes to review" list.
+                    let body = if sub_pushable == 1 {
+                        "A recurring charge changed price or renews soon.".to_string()
+                    } else {
+                        format!("{sub_pushable} recurring charges changed price or renew soon.")
+                    };
+                    let payload = crate::commands::push::PushPayload {
+                        title: "Subscription changes to review".into(),
+                        body,
+                        url: "/recurring".into(),
+                        tag: "finsight-subscriptions".into(),
+                        badge_count: None,
+                    };
+                    if let Err(e) = crate::commands::push::send_push_for_db(&db, payload).await {
+                        tracing::warn!(error = ?e, "subscription-change push notification failed");
+                    }
+                }
             }
         })
     }
