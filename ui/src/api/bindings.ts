@@ -650,6 +650,54 @@ async getCashflowForecast(horizonDays: number | null, bufferCents: number | null
     else return { status: "error", error: e  as any };
 }
 },
+async getNotificationPrefs() : Promise<Result<NotificationPrefsDto, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_notification_prefs") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setNotificationPrefs(prefs: NotificationPrefsDto) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_notification_prefs", { prefs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listNotifications(includeResolved: boolean | null) : Promise<Result<Notification[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_notifications", { includeResolved }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async markNotificationRead(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_notification_read", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async markAllNotificationsRead() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_all_notifications_read") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async notificationUnreadCount() : Promise<Result<number, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("notification_unread_count") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Each household member's share of net worth (share-weighted across accounts AND
  * jointly-owned assets, via the metrics layer — NOT a client-side equal split),
@@ -2713,6 +2761,31 @@ export type NewTransaction = { account_id: string; posted_at: string; amount_cen
  * `#[serde(default)]` keeps pre-V048 `candidate_json` review rows decodable.
  */
 activity?: TxnActivity | null }
+/**
+ * A stored notification, as the history surface reads it.
+ */
+export type Notification = { id: string; category: NotificationCategory; urgency: Urgency; title: string; body: string; sensitive: string | null; route: string | null; createdAt: string; deliveredAt: string | null; readAt: string | null; resolvedAt: string | null }
+/**
+ * What a notification is about. Drives the per-category user preference and how
+ * events are grouped. The string form is the stored value and the preference key.
+ */
+export type NotificationCategory = "cashflow_risk" | "stale_data" | "debt_deadline" | "subscription_change" | "categorization" | "goal_progress" | "month_end_review" | "security" | "sync_error" | "account_activity"
+export type NotificationCategoryPref = { 
+/**
+ * Stable key (e.g. "cashflow_risk").
+ */
+key: string; label: string; enabled: boolean }
+export type NotificationPrefsDto = { masterEnabled: boolean; 
+/**
+ * Every category with its current enabled state, in a stable order for the UI.
+ */
+categories: NotificationCategoryPref[]; quietHours: QuietHours | null; 
+/**
+ * The client's UTC offset in minutes (`local = UTC + offset`). The client
+ * stamps this on every save so the server can evaluate the local-time quiet
+ * window; the user never edits it directly.
+ */
+utcOffsetMinutes: number; privacy: PrivacyLevel }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 /**
@@ -2784,6 +2857,21 @@ investedCents: number }
  * thousands and must never cross the Tauri IPC boundary wholesale.
  */
 export type PreparedImportPreview = { signature: string; rowsTotal: number; rowsImported: number; rowsSkippedDuplicates: number; rowsQueuedForReview: number; errors: RowError[] }
+/**
+ * How much sensitive detail a notification may expose. Mirrors the app's
+ * "blur amounts" privacy concept rather than inventing a parallel model — a
+ * push composed server-side can't consult the client's blur, so this is the
+ * server-side equivalent.
+ */
+export type PrivacyLevel = 
+/**
+ * Full detail — amounts and merchants may appear.
+ */
+"full" | 
+/**
+ * Redact the sensitive amount/merchant from outbound content (push, etc.).
+ */
+"hide_amounts"
 export type ProjectedValue = { years: number; valueCents: number; annualRate: number }
 export type ProposedRuleDto = { pattern: string; category_id: string; category_label: string }
 export type ProviderTestResult = { ok: boolean; error: string | null; latency_ms: number }
@@ -2807,6 +2895,15 @@ publicKey: string;
  * How many devices are currently registered for this user.
  */
 deviceCount: number }
+export type QuietHours = { 
+/**
+ * Local hour 0–23 the quiet window starts.
+ */
+start: number; 
+/**
+ * Local hour 0–23 it ends. Equal to `start` means "no window".
+ */
+end: number }
 /**
  * A run's result together with the resolved params, so the UI can save a
  * scenario it ran from free text (where the params were resolved server-side).
@@ -3061,6 +3158,11 @@ export type UnconvertedHolding = { code: string; accountCount: number; balanceCe
  */
 export type UnresolvedCounterpartyDto = { pattern: string | null; label: string; txnCount: number; inflowCents: number; outflowCents: number }
 export type UpdateTxnResult = { transaction: Transaction; proposed_rule: ProposedRuleDto | null }
+export type Urgency = 
+/**
+ * Bypasses quiet hours (e.g. security).
+ */
+"critical" | "normal" | "low"
 export type WarningLevel = "info" | "caution"
 
 /** tauri-specta globals **/

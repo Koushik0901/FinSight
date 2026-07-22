@@ -853,6 +853,32 @@ function mockDetailFromParams(description: string, params: AnyRec, months: numbe
   };
 }
 
+// ── Dev-harness notifications + policy prefs (in-memory; reset each load) ─────
+const NOTIF_CATEGORY_LABELS: Record<string, string> = {
+  cashflow_risk: "Cash-flow risk", stale_data: "Stale data", debt_deadline: "Debt deadline",
+  subscription_change: "Subscription", categorization: "Categorization", goal_progress: "Goal progress",
+  month_end_review: "Month-end review", security: "Security", sync_error: "Sync error", account_activity: "Account activity",
+};
+function defaultNotifPrefs(): AnyRec {
+  return {
+    masterEnabled: true,
+    categories: Object.entries(NOTIF_CATEGORY_LABELS).map(([key, label]) => ({ key, label, enabled: true })),
+    quietHours: { start: 22, end: 7 },
+    utcOffsetMinutes: 0,
+    privacy: "full",
+  };
+}
+let mockNotifPrefs: AnyRec = defaultNotifPrefs();
+// Deliberately varied: a critical unread with a sensitive amount, a low-urgency
+// activity ping, a read item, and one held overnight (delivered_at null) — so
+// the Inbox section and badge exercise every branch.
+let mockNotifications: AnyRec[] = [
+  { id: "n-cash", category: "cashflow_risk", urgency: "critical", title: "Balance dips below your buffer", body: "Your projected balance goes negative before your next paycheck", sensitive: "-$142 on the 3rd", route: "/cashflow", createdAt: isoDaysAgo(0), deliveredAt: isoDaysAgo(0), readAt: null, resolvedAt: null },
+  { id: "n-act", category: "account_activity", urgency: "low", title: "New transactions synced", body: "3 new transactions arrived from your linked accounts", sensitive: null, route: "/transactions", createdAt: isoDaysAgo(0), deliveredAt: isoDaysAgo(0), readAt: null, resolvedAt: null },
+  { id: "n-sub", category: "subscription_change", urgency: "normal", title: "A subscription renews soon", body: "Your streaming plan renews in 3 days", sensitive: "$16.99/mo", route: "/recurring", createdAt: isoDaysAgo(1), deliveredAt: null, readAt: null, resolvedAt: null },
+  { id: "n-stale", category: "stale_data", urgency: "normal", title: "An account hasn't synced", body: "One linked account is more than 3 days out of date", sensitive: null, route: "/accounts", createdAt: isoDaysAgo(2), deliveredAt: isoDaysAgo(2), readAt: isoDaysAgo(1), resolvedAt: null },
+];
+
 function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown> {
   return {
     list_accounts: () => ds.accounts,
@@ -913,6 +939,46 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       mockScenarios = mockScenarios.filter((s) => s.id !== a?.id);
       return null;
     },
+    // Data health — a real object (not the `[]` fallback) so DataBackupsSection,
+    // which reads `health.startupWarnings.length` / `health.backups`, renders.
+    get_data_health: () => ({
+      integrityStatus: "ok",
+      integrityCheckedAt: isoInDays(0),
+      lastBackupAt: isoDaysAgo(1),
+      dbBytes: 2_400_000,
+      walBytes: 32_000,
+      startupWarnings: [],
+      startupSummary: "Refreshed on launch: categorized 12 · matched 3 transfer pairs",
+      backups: [
+        { path: "/data/backups/finsight-2026-07-20.db", name: "finsight-2026-07-20.db", bytes: 2_380_000, createdAt: isoDaysAgo(1) },
+      ],
+      pendingRestore: false,
+    }),
+    // ── Notifications (in-memory) ──
+    get_notification_prefs: () => mockNotifPrefs,
+    set_notification_prefs: (a) => {
+      if (a?.prefs) mockNotifPrefs = a.prefs as AnyRec;
+      return null;
+    },
+    list_notifications: (a) => {
+      if (ds.accounts.length === 0) return [];
+      const includeResolved = a?.includeResolved === true;
+      return includeResolved ? mockNotifications : mockNotifications.filter((n) => n.resolvedAt == null);
+    },
+    mark_notification_read: (a) => {
+      const n = mockNotifications.find((x) => x.id === a?.id);
+      if (n && n.readAt == null) n.readAt = isoInDays(0);
+      return null;
+    },
+    mark_all_notifications_read: () => {
+      let count = 0;
+      for (const n of mockNotifications) {
+        if (n.readAt == null) { n.readAt = isoInDays(0); count++; }
+      }
+      return count;
+    },
+    notification_unread_count: () =>
+      ds.accounts.length === 0 ? 0 : mockNotifications.filter((n) => n.readAt == null && n.resolvedAt == null).length,
     get_financial_health_score: () => ds.healthScore,
     get_savings_rate_history: () => ds.savingsRateHistory,
     list_categories_with_spending: () => ds.categories,
