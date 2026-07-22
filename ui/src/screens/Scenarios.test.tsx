@@ -142,6 +142,8 @@ describe("Scenarios screen", () => {
     // The revised result is shown against the original assumptions' result.
     expect(screen.getByText("-300d")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Discard revision" })).toBeInTheDocument();
+    // The edit itself is legible: income was 0% before the revision to -50%.
+    expect(screen.getByText(/was 0%/)).toBeInTheDocument();
   });
 
   it("does not offer recompute/promote on a legacy scenario", () => {

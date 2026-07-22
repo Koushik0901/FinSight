@@ -321,6 +321,14 @@ function RevisePanel({
   const current = scenario.currentResult ?? scenario.originalResult;
   const revised = scenario.revisedResult;
 
+  // When a revision exists, show what each assumption changed FROM (its original
+  // saved value) so the edit itself is legible, not just the new numbers.
+  const orig = scenario.revisedParams ? scenario.params : null;
+  const wasPct = (o: number | undefined, r: number | undefined) =>
+    orig && o !== r ? <span style={{ color: "var(--ink-faint)" }}> · was {o}%</span> : null;
+  const wasMoney = (oCents: number | undefined, rCents: number | undefined) =>
+    orig && oCents !== rCents ? <span style={{ color: "var(--ink-faint)" }}> · was {fmt(oCents ?? 0)}</span> : null;
+
   const submit = () => {
     onRevise({
       incomeDeltaPct: Math.round(incomePct),
@@ -342,15 +350,15 @@ function RevisePanel({
       </p>
       <div className="row-md wrap" style={{ gap: 14 }}>
         <label className="stack stack-xs">
-          <span className="muted" style={{ fontSize: 12 }}>Income change (%)</span>
+          <span className="muted" style={{ fontSize: 12 }}>Income change (%){wasPct(orig?.incomeDeltaPct, scenario.revisedParams?.incomeDeltaPct)}</span>
           <input className="control" type="number" style={{ width: 120 }} value={incomePct} onChange={(e) => setIncomePct(Number(e.target.value))} />
         </label>
         <label className="stack stack-xs">
-          <span className="muted" style={{ fontSize: 12 }}>Monthly spending change ($)</span>
+          <span className="muted" style={{ fontSize: 12 }}>Monthly spending change ($){wasMoney(orig?.monthlyExpenseDeltaCents, scenario.revisedParams?.monthlyExpenseDeltaCents)}</span>
           <input className="control" type="number" style={{ width: 160 }} value={expenseDollars} onChange={(e) => setExpenseDollars(Number(e.target.value))} />
         </label>
         <label className="stack stack-xs">
-          <span className="muted" style={{ fontSize: 12 }}>One-time amount ($)</span>
+          <span className="muted" style={{ fontSize: 12 }}>One-time amount ($){wasMoney(orig?.oneTimeCents, scenario.revisedParams?.oneTimeCents)}</span>
           <input className="control" type="number" style={{ width: 150 }} value={oneTimeDollars} onChange={(e) => setOneTimeDollars(Number(e.target.value))} />
         </label>
       </div>
