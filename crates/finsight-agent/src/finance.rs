@@ -1,5 +1,8 @@
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use finsight_core::models::{effective_apr_pct, EffectiveApr, MissingDataItem};
+use finsight_core::provenance::{
+    MetricAssumption, MetricExplanation, MetricInput, MetricValue, MetricWarning, MetricWarningLevel,
+};
 use finsight_core::repos::goals::{DeadlineStrictness, GoalPriority};
 use finsight_core::routes::AppRoute;
 use rusqlite::{params, Connection};
@@ -2778,6 +2781,258 @@ fn div_ceil(n: i64, d: i64) -> i64 {
     (n + d - 1) / d
 }
 
+// ── "Explain this recommendation" — issue #71 ───────────────────────────────
+//
+// Debt payoff and goal completion are recommendations produced HERE — above
+// finsight-core — so, unlike the dashboard metrics (explained in
+// `finsight_core::provenance`), their [`MetricExplanation`]s are assembled in
+// this crate. They still add no arithmetic of their own: each describes exactly
+// what `rank_debt_payoff` / `compare_payoff_strategies` and the goal loader
+// already computed, so an explanation can never disagree with the plan shown or
+// the Copilot's grounded answer, and they reuse the same shape so one inspector
+// renders every explanation the app produces.
+
+/// Whole-dollar money for explanation prose, matching the "$"-prefixed strings
+/// the debt/goal tools already emit. (Currency-general formatting for the whole
+/// planning engine is a separate concern; the structured `amount_cents` inputs
+/// are always currency-formatted by the UI.)
+fn explain_money(cents: i64) -> String {
+    format!("${}", cents.abs() / 100)
+}
+
+fn debt_strategy_phrase(method: &str) -> &'static str {
+    match method {
+        "snowball" => "smallest balance first",
+        _ => "highest interest rate first",
+    }
+}
+
+/// Explain the debt-payoff ORDER the user's stated strategy produces — the same
+/// ranking `rank_debt_payoff` feeds the plan and the Copilot — with the
+/// competing strategy's cost/first-win tradeoff and any missing-data caveats.
+/// The headline value is the total balance being ordered; the order itself is
+/// the inputs.
+pub fn explain_debt_payoff(conn: &mut Connection) -> rusqlite::Result<MetricExplanation> {
+    let method = finsight_core::metrics::philosophy(conn)
+        .debt_strategy
+        .as_method()
+        .to_string();
+    let ranking = rank_debt_payoff(conn, &method)?;
+
+    let strategy_assumption = MetricAssumption {
+        label: "Payoff strategy".into(),
+        value: match method.as_str() {
+            "snowball" => "Snowball — smallest balance first".into(),
+            _ => "Avalanche — highest interest rate first".into(),
+        },
+    };
+
+    if ranking.items.is_empty() {
+        return Ok(MetricExplanation {
+            key: "debt_payoff".into(),
+            label: "Debt payoff order".into(),
+            value: MetricValue::Withheld,
+            definition: "The order to clear your debts, and why each sits where it does.".into(),
+            inputs: Vec::new(),
+            exclusions: Vec::new(),
+            assumptions: vec![strategy_assumption],
+            tradeoffs: Vec::new(),
+            period: "As of today".into(),
+            warnings: vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "No open debts with a balance to order — there's nothing to pay down.".into(),
+            }],
+        });
+    }
+
+    let total: i64 = ranking.items.iter().map(|d| d.balance_cents).sum();
+
+    let inputs = ranking
+        .items
+        .iter()
+        .map(|d| {
+            let apr = d
+                .apr_pct
+                .map(|a| format!("{a:.1}% APR"))
+                .unwrap_or_else(|| "APR not set".into());
+            MetricInput {
+                label: format!("{}. {}", d.rank, d.name),
+                amount_cents: Some(d.balance_cents),
+                detail: Some(format!("{apr} — {}", d.reason)),
+            }
+        })
+        .collect();
+
+    // The real "this school vs. the other" tradeoff, using the comparison
+    // engine's own figures (extra interest is what the ALTERNATIVE costs vs. the
+    // user's current baseline method). extra_monthly=0 ⇒ compares the pure
+    // minimum-payment orderings, i.e. the ranking as shown.
+    let alt_method = if method == "snowball" { "avalanche" } else { "snowball" };
+    let mut tradeoffs = Vec::new();
+    if let Ok(c) = compare_payoff_strategies(conn, &method, alt_method, None, 0) {
+        match c.alternative_extra_interest_cents {
+            x if x > 0 => tradeoffs.push(format!(
+                "Sticking with {method} is the cheaper path here — a {alt_method} order would cost about {} more in interest overall.",
+                explain_money(x)
+            )),
+            x if x < 0 => tradeoffs.push(format!(
+                "A {alt_method} order would save about {} in interest versus your current {method} order.",
+                explain_money(x)
+            )),
+            _ => {}
+        }
+        match c.alternative_first_win_sooner_months {
+            Some(win) if win > 0 => tradeoffs.push(format!(
+                "…but a {alt_method} order clears your first debt about {win} month(s) sooner — the early-win motivation."
+            )),
+            Some(win) if win < 0 => tradeoffs.push(format!(
+                "Your {method} order also clears your first debt about {} month(s) sooner.",
+                win.abs()
+            )),
+            _ => {}
+        }
+    }
+
+    let warnings = ranking
+        .missing_data
+        .iter()
+        .map(|m| MetricWarning {
+            level: MetricWarningLevel::Caution,
+            message: m.message.clone(),
+        })
+        .collect();
+
+    Ok(MetricExplanation {
+        key: "debt_payoff".into(),
+        label: "Debt payoff order".into(),
+        value: MetricValue::Money { cents: total },
+        definition: format!(
+            "The order to clear your debts — {} — and why each sits where it does. The value is your total balance across them.",
+            debt_strategy_phrase(&method)
+        ),
+        inputs,
+        exclusions: Vec::new(),
+        assumptions: vec![strategy_assumption],
+        tradeoffs,
+        period: "As of today".into(),
+        warnings,
+    })
+}
+
+/// Explain each active goal's projected completion — the same ETA the goal
+/// loader feeds the plan and the Copilot — with its inputs and the caveats that
+/// honestly withhold a date (no contribution yet; already funded). Keyed
+/// `goal:{id}` so a card can grab just its own.
+pub fn explain_goals(conn: &mut Connection) -> rusqlite::Result<Vec<MetricExplanation>> {
+    Ok(goals(conn)?
+        .iter()
+        // A spending cap is a recurring monthly limit, not something that
+        // "completes" — projecting a completion date for it would be nonsense.
+        .filter(|g| g.goal_type != "spending-cap")
+        .map(explain_one_goal)
+        .collect())
+}
+
+fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
+    let inputs = vec![
+        MetricInput { label: "Target".into(), amount_cents: Some(g.target_cents), detail: None },
+        MetricInput { label: "Saved so far".into(), amount_cents: Some(g.current_cents), detail: None },
+        MetricInput { label: "Still to go".into(), amount_cents: Some(g.remaining_cents), detail: None },
+        MetricInput { label: "Monthly contribution".into(), amount_cents: Some(g.monthly_cents), detail: None },
+    ];
+    let mut assumptions = vec![MetricAssumption {
+        label: "Contribution".into(),
+        value: "Your current monthly amount, held flat".into(),
+    }];
+    if let Some(d) = g.target_date.as_ref().filter(|s| !s.is_empty()) {
+        assumptions.push(MetricAssumption { label: "Target date".into(), value: d.clone() });
+    }
+
+    let definition =
+        "When this goal finishes at your current monthly contribution, and what feeds that date.".to_string();
+    let period = "Projected from today".to_string();
+    let key = format!("goal:{}", g.id);
+
+    // No target amount → nothing to complete. Don't call it "funded" (a target
+    // can be cleared to 0 out-of-band, e.g. via the Copilot); withhold instead.
+    if g.target_cents <= 0 {
+        return MetricExplanation {
+            key,
+            label: g.name.clone(),
+            value: MetricValue::Withheld,
+            definition,
+            inputs,
+            exclusions: Vec::new(),
+            assumptions,
+            tradeoffs: Vec::new(),
+            period,
+            warnings: vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "This goal has no target amount set, so there's no completion date to project.".into(),
+            }],
+        };
+    }
+
+    // Already funded — a real, positive state, not a projection.
+    if g.remaining_cents <= 0 {
+        return MetricExplanation {
+            key,
+            label: g.name.clone(),
+            value: MetricValue::Months { months: 0.0 },
+            definition: "This goal is fully funded — there's nothing left to contribute.".into(),
+            inputs,
+            exclusions: Vec::new(),
+            assumptions,
+            tradeoffs: Vec::new(),
+            period,
+            warnings: vec![MetricWarning { level: MetricWarningLevel::Info, message: "Target reached.".into() }],
+        };
+    }
+    // No contribution — there is no honest completion date to state.
+    if g.monthly_cents <= 0 {
+        return MetricExplanation {
+            key,
+            label: g.name.clone(),
+            value: MetricValue::Withheld,
+            definition,
+            inputs,
+            exclusions: Vec::new(),
+            assumptions,
+            tradeoffs: Vec::new(),
+            period,
+            warnings: vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "No monthly contribution set, so there's no completion date to project. Add a monthly amount to see when this finishes.".into(),
+            }],
+        };
+    }
+    // With a target, a contribution, and something still to go, the loader
+    // always yields a finite ETA — but if it somehow doesn't, withhold WITH a
+    // reason rather than a bare "not shown".
+    let (value, warnings) = match g.eta_months {
+        Some(m) => (MetricValue::Months { months: m as f64 }, Vec::new()),
+        None => (
+            MetricValue::Withheld,
+            vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "A completion date can't be projected for this goal right now.".into(),
+            }],
+        ),
+    };
+    MetricExplanation {
+        key,
+        label: g.name.clone(),
+        value,
+        definition,
+        inputs,
+        exclusions: Vec::new(),
+        assumptions,
+        tradeoffs: Vec::new(),
+        period,
+        warnings,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2979,6 +3234,87 @@ mod tests {
             params![id, -owed_cents],
         )
         .unwrap();
+    }
+
+    // ── Explain debt payoff / goals (issue #71) ─────────────────────────────
+
+    /// The debt explanation lists the payoff order as inputs, totals the
+    /// balance as the headline, states the strategy, and DISCLOSES a debt whose
+    /// APR is missing rather than silently ranking it as 0%.
+    #[test]
+    fn debt_payoff_explanation_lists_order_and_discloses_missing_apr() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        insert_card(&mut conn, "big", 800_000, 19.99, None, None);
+        // A second card with no APR at all.
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,\
+                emergency_fund_eligible,account_group,min_payment_cents,created_at) \
+             VALUES('noapr','Household','Manual','Credit','noapr','USD','#000','manual','restricted',0,'debt',2500,datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO account_balances(account_id, as_of_date, balance_cents, source) \
+             VALUES('noapr', date('now'), -200000, 'manual')",
+            [],
+        )
+        .unwrap();
+
+        let ex = explain_debt_payoff(&mut conn).unwrap();
+        assert_eq!(ex.key, "debt_payoff");
+        // Headline = total owed across the ordered debts ($10,000).
+        assert_eq!(ex.value, MetricValue::Money { cents: 1_000_000 });
+        assert!(ex.inputs.iter().any(|i| i.label.contains("big")));
+        assert!(ex.inputs.iter().any(|i| i.label.contains("noapr")));
+        assert!(ex.assumptions.iter().any(|a| a.label == "Payoff strategy"));
+        // The missing APR is disclosed, not hidden.
+        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+    }
+
+    /// No debts → withhold honestly, don't invent an empty "order".
+    #[test]
+    fn debt_payoff_explanation_withholds_when_there_are_no_debts() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        let ex = explain_debt_payoff(&mut conn).unwrap();
+        assert_eq!(ex.value, MetricValue::Withheld);
+        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(ex.inputs.is_empty());
+    }
+
+    /// A funded goal projects a completion in months; a goal with no monthly
+    /// contribution withholds a date instead of inventing one.
+    #[test]
+    fn goal_explanation_projects_completion_and_withholds_without_a_contribution() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_sinking_fund(&mut conn, "g1", "Vacation", 600_000, 200_000, 100_000, None);
+        seed_sinking_fund(&mut conn, "g2", "House", 5_000_000, 0, 0, None);
+
+        let out = explain_goals(&mut conn).unwrap();
+        assert_eq!(out.len(), 2);
+        let vac = out.iter().find(|e| e.key == "goal:g1").unwrap();
+        // remaining 400k / 100k a month = 4 months.
+        assert_eq!(vac.value, MetricValue::Months { months: 4.0 });
+        assert!(vac.inputs.iter().any(|i| i.label == "Still to go" && i.amount_cents == Some(400_000)));
+        let house = out.iter().find(|e| e.key == "goal:g2").unwrap();
+        assert_eq!(house.value, MetricValue::Withheld);
+        assert!(house.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+    }
+
+    /// A goal with no target amount (e.g. a target cleared to 0 out-of-band) has
+    /// nothing to complete — withhold with a reason rather than declaring it
+    /// "fully funded".
+    #[test]
+    fn goal_with_no_target_is_withheld_not_called_funded() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_sinking_fund(&mut conn, "gz", "Open-ended", 0, 0, 5_000, None);
+        let out = explain_goals(&mut conn).unwrap();
+        let g = out.iter().find(|e| e.key == "goal:gz").unwrap();
+        assert_eq!(g.value, MetricValue::Withheld);
+        assert!(g.warnings.iter().any(|w| w.message.contains("no target amount")));
     }
 
     /// The failure the issue describes: a 0% balance about to become 22.99% is

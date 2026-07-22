@@ -51,6 +51,26 @@ export function useMetricExplanations(memberId?: string | null) {
   });
 }
 
+/**
+ * Structured "explain this goal" provenance (#71) — one explanation per active
+ * goal, keyed `goal:{id}`, from the same completion projection the plan and the
+ * Copilot use. A goal with no monthly contribution withholds a date (its value
+ * is `withheld`) rather than inventing one. Same shape as
+ * {@link useMetricExplanations}, so the shared inspector renders it.
+ */
+export function useGoalExplanations() {
+  return useQuery<Record<string, MetricExplanation>>({
+    queryKey: ["goal-explanations"],
+    queryFn: async () => {
+      const result = await commands.explainGoals();
+      if (result.status === "error") throw new Error(result.error.message);
+      return Object.fromEntries(result.data.map((e) => [e.key, e]));
+    },
+    staleTime: 60_000,
+    enabled: isBackendAvailable(),
+  });
+}
+
 export function useSetFinancialAssumptions() {
   const qc = useQueryClient();
   return useMutation({

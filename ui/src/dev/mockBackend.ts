@@ -944,6 +944,40 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       const m = memberId && ds.metricsByMember?.[memberId] ? ds.metricsByMember[memberId] : ds.metrics;
       return buildMetricExplanations(m);
     },
+    explain_goals: () =>
+      (ds.goals ?? [])
+        .filter((g) => g.goalType !== "spending-cap")
+        .map((g) => {
+          const target = Number(g.targetCents ?? 0);
+          const current = Number(g.currentCents ?? 0);
+          const monthly = Number(g.monthlyCents ?? 0);
+          const remaining = Math.max(0, target - current);
+          const withheld = monthly <= 0 && remaining > 0;
+          return {
+            key: `goal:${g.id}`,
+            label: String(g.name ?? "Goal"),
+            value:
+              remaining <= 0
+                ? { kind: "months", months: 0 }
+                : withheld
+                  ? { kind: "withheld" }
+                  : { kind: "months", months: Math.ceil(remaining / monthly) },
+            definition: "When this goal finishes at your current monthly contribution, and what feeds that date.",
+            inputs: [
+              { label: "Target", amountCents: target, detail: null },
+              { label: "Saved so far", amountCents: current, detail: null },
+              { label: "Still to go", amountCents: remaining, detail: null },
+              { label: "Monthly contribution", amountCents: monthly, detail: null },
+            ],
+            exclusions: [],
+            assumptions: [{ label: "Contribution", value: "Your current monthly amount, held flat" }],
+            tradeoffs: [],
+            period: "Projected from today",
+            warnings: withheld
+              ? [{ level: "withheld", message: "No monthly contribution set, so there's no completion date to project. Add a monthly amount to see when this finishes." }]
+              : [],
+          };
+        }),
     get_cashflow_forecast: (a) =>
       buildCashflowForecast(
         ds.metrics,
@@ -963,6 +997,40 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       return detail;
     },
     list_saved_scenarios: () => mockScenarios,
+    explain_scenario: (a) => {
+      const s = mockScenarios.find((x) => x.id === a?.id);
+      const res = (s?.currentResult ?? s?.originalResult) as AnyRec | undefined;
+      if (!s || !s.recomputable || !res) {
+        return {
+          key: "scenario",
+          label: String(s?.description ?? "Scenario"),
+          value: { kind: "withheld" },
+          definition: "A scenario you saved earlier. Its result was stored, but the assumptions behind it weren't, so it can't be broken down against today's finances.",
+          inputs: [],
+          exclusions: [],
+          assumptions: [],
+          tradeoffs: [],
+          period: "Saved earlier",
+          warnings: [{ level: "withheld", message: "Legacy scenario: recorded before its assumptions were saved, so there's nothing to recompute or explain." }],
+        };
+      }
+      const months = Number(s.months ?? 24);
+      return {
+        key: "scenario",
+        label: String(s.description),
+        value: { kind: "money", cents: Number(res.monthlyImpactCents ?? 0) },
+        definition: `How “${s.description}” changes your finances, projected over ${months} months against your current balance, income, and spending.`,
+        inputs: [{ label: "Starting balance", amountCents: Number(ds.metrics?.liquidCents ?? 0), detail: null }],
+        exclusions: [],
+        assumptions: [
+          { label: "Projection horizon", value: `${months} months` },
+          { label: "Basis", value: "Your trailing 90-day averages, projected flat" },
+        ],
+        tradeoffs: ((res.considerations as string[]) ?? []),
+        period: "Projected from today",
+        warnings: s.isStale ? [{ level: "caution", message: "The finances this scenario was saved against have moved materially since. This is it re-run on today's numbers." }] : [],
+      };
+    },
     duplicate_scenario: (a) => {
       const src = mockScenarios.find((s) => s.id === a?.id);
       if (!src) return null;

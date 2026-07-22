@@ -42,11 +42,46 @@ vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [] })),
 }));
 
+vi.mock("../api/hooks/metrics", () => ({
+  useGoalExplanations: () => ({
+    data: {
+      "goal:g1": {
+        key: "goal:g1",
+        label: "Italy Fund",
+        value: { kind: "months", months: 20 },
+        definition: "When this goal finishes at your current monthly contribution, and what feeds that date.",
+        inputs: [
+          { label: "Target", amountCents: 500000, detail: null },
+          { label: "Still to go", amountCents: 400000, detail: null },
+          { label: "Monthly contribution", amountCents: 20000, detail: null },
+        ],
+        exclusions: [],
+        assumptions: [{ label: "Contribution", value: "Your current monthly amount, held flat" }],
+        tradeoffs: [],
+        period: "Projected from today",
+        warnings: [],
+      },
+    },
+    isLoading: false,
+  }),
+}));
+
 describe("Goals — eyebrow casing", () => {
   it("renders eyebrows in natural case, relying on CSS for uppercase", () => {
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText(/Goals · 2 active/)).toBeInTheDocument();
     expect(screen.queryByText(/GOALS ·/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Goals — explain a goal's completion (#71)", () => {
+  it("opens the inspector with the goal's projected completion", async () => {
+    render(<Goals />, { wrapper: createWrapper() });
+    // Each goal card offers an Explain affordance; open the first.
+    fireEvent.click(screen.getAllByRole("button", { name: "Explain" })[0]);
+    expect(await screen.findByText(/When this goal finishes at your current monthly contribution/i)).toBeInTheDocument();
+    // The inspector shows what feeds the date.
+    expect(screen.getByText("Still to go")).toBeInTheDocument();
   });
 });
 

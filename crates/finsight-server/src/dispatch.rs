@@ -518,6 +518,7 @@ async fn dispatch(
         "explain_financial_metrics" => {
             ok(c::metrics::explain_financial_metrics(api, arg(&p, "memberId")?).await?)
         }
+        "explain_goals" => ok(c::metrics::explain_goals(api).await?),
         "get_notification_prefs" => ok(c::notifications::get_notification_prefs(api).await?),
         "set_notification_prefs" => {
             ok(c::notifications::set_notification_prefs(api, arg(&p, "prefs")?).await?)
@@ -706,6 +707,7 @@ async fn dispatch(
         "clear_scenario_revision" => {
             ok(c::scenarios::clear_scenario_revision(api, arg(&p, "id")?).await?)
         }
+        "explain_scenario" => ok(c::scenarios::explain_scenario(api, arg(&p, "id")?).await?),
         "delete_scenario" => ok(c::scenarios::delete_scenario(api, arg(&p, "id")?).await?),
 
         // ── settings ──
@@ -1042,6 +1044,7 @@ pub const SUPPORTED: &[&str] = &[
     // metrics
     "get_financial_metrics",
     "explain_financial_metrics",
+    "explain_goals",
     "get_cashflow_forecast",
     "get_notification_prefs",
     "set_notification_prefs",
@@ -1102,6 +1105,7 @@ pub const SUPPORTED: &[&str] = &[
     "apply_scenario",
     "revise_scenario",
     "clear_scenario_revision",
+    "explain_scenario",
     "delete_scenario",
     // settings
     "get_currency",

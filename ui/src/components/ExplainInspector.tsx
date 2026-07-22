@@ -11,6 +11,41 @@ import { money } from "../utils/format";
  * never disagree with the number shown; a deliberately withheld figure shows
  * the reason in place of a fabricated number.
  */
+/**
+ * Reusable "explain this number" drawer: renders an already-fetched explanation
+ * (or its loading / empty state). Screens that explain a goal or scenario fetch
+ * their own explanation (from a different command than the dashboard metrics)
+ * and pass it here; the dashboard uses {@link ExplainInspector}, which looks one
+ * up by key. Both share the same body, so every explanation reads identically.
+ */
+export function ExplainDrawer({
+  explanation,
+  isLoading,
+  open,
+  currency,
+  onClose,
+}: {
+  explanation: MetricExplanation | null | undefined;
+  isLoading?: boolean;
+  open: boolean;
+  currency?: string;
+  onClose: () => void;
+}) {
+  return (
+    <Drawer open={open} onClose={onClose} title={explanation?.label ?? "How this is calculated"} width={440}>
+      {isLoading && !explanation ? (
+        <div className="muted" style={{ padding: "8px 0" }}>Loading…</div>
+      ) : explanation ? (
+        <ExplanationBody explanation={explanation} currency={currency} />
+      ) : (
+        <div className="muted" style={{ padding: "8px 0" }}>
+          No explanation is available for this yet.
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
 export default function ExplainInspector({
   metricKey,
   memberId,
@@ -25,20 +60,14 @@ export default function ExplainInspector({
 }) {
   const { data: explanations, isLoading } = useMetricExplanations(memberId);
   const explanation = metricKey ? explanations?.[metricKey] : undefined;
-  const open = metricKey !== null;
-
   return (
-    <Drawer open={open} onClose={onClose} title={explanation?.label ?? "How this is calculated"} width={440}>
-      {isLoading && !explanation ? (
-        <div className="muted" style={{ padding: "8px 0" }}>Loading…</div>
-      ) : explanation ? (
-        <ExplanationBody explanation={explanation} currency={currency} />
-      ) : (
-        <div className="muted" style={{ padding: "8px 0" }}>
-          No explanation is available for this metric yet.
-        </div>
-      )}
-    </Drawer>
+    <ExplainDrawer
+      explanation={explanation}
+      isLoading={isLoading}
+      open={metricKey !== null}
+      currency={currency}
+      onClose={onClose}
+    />
   );
 }
 
@@ -59,7 +88,7 @@ function valueText(value: MetricValue, currency?: string): string | null {
   }
 }
 
-function ExplanationBody({ explanation, currency }: { explanation: MetricExplanation; currency?: string }) {
+export function ExplanationBody({ explanation, currency }: { explanation: MetricExplanation; currency?: string }) {
   const shown = valueText(explanation.value, currency);
   return (
     <div className="explain">
@@ -129,6 +158,20 @@ function ExplanationBody({ explanation, currency }: { explanation: MetricExplana
             <div key={i} className="explain-assume">
               <span className="explain-lbl">{a.label}</span>
               <span className="explain-aval">{a.value}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* Tradeoffs: the "why this and not the alternative" reasoning behind a
+          recommendation (empty for a plain descriptive metric). */}
+      {(explanation.tradeoffs?.length ?? 0) > 0 && (
+        <section className="explain-sec">
+          <div className="explain-sec-h">Tradeoffs</div>
+          {explanation.tradeoffs!.map((t, i) => (
+            <div key={i} className="explain-exline">
+              <span className="explain-dot" aria-hidden="true">&bull;</span>
+              <span>{t}</span>
             </div>
           ))}
         </section>

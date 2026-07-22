@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   commands,
   type ApplyScenarioResult,
+  type MetricExplanation,
   type ScenarioParamsInput,
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
@@ -155,6 +156,22 @@ export function useApplyScenario() {
       qc.invalidateQueries({ queryKey: ["planned-transactions"] });
       qc.invalidateQueries({ queryKey: ["recurring"] });
     },
+  });
+}
+
+/** Structured "explain this scenario" (#71) for one saved scenario — the same
+ *  recomputed projection the comparison shows, as inputs/assumptions/tradeoffs/
+ *  warnings. Fetched on demand: pass the scenario id to explain, or null to
+ *  close. A legacy row withholds its value with the reason. */
+export function useScenarioExplanation(id: string | null) {
+  return useQuery<MetricExplanation>({
+    queryKey: ["scenario-explanation", id],
+    queryFn: async () => {
+      const res = await commands.explainScenario(id!);
+      if (res.status === "error") throw new Error(res.error.message);
+      return res.data;
+    },
+    enabled: isBackendAvailable() && id !== null,
   });
 }
 

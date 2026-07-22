@@ -95,6 +95,12 @@ pub struct MetricExplanation {
     pub exclusions: Vec<String>,
     /// Tunable assumptions that shaped it.
     pub assumptions: Vec<MetricAssumption>,
+    /// Material tradeoffs between this result and the competing option(s) — the
+    /// "why this and not the alternative" reasoning. Empty for a descriptive
+    /// metric that has no alternative (e.g. net worth); populated for a
+    /// recommendation such as a debt-payoff order or a contribution level.
+    #[serde(default)]
+    pub tradeoffs: Vec<String>,
     /// The time window the figure covers.
     pub period: String,
     /// Data-quality caveats: missing / stale / withheld / low-confidence disclosures.
@@ -262,6 +268,7 @@ fn net_worth(balances: &BalanceBreakdown) -> MetricExplanation {
         inputs,
         exclusions,
         assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
         period: "As of today".into(),
         warnings,
     }
@@ -282,6 +289,7 @@ fn avg_monthly_income(balances: &BalanceBreakdown, rolling: &RollingAverages) ->
             ex
         },
         assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
         period: format!("Trailing {} days", rolling.window_days),
         warnings,
     }
@@ -298,6 +306,7 @@ fn avg_monthly_expense(balances: &BalanceBreakdown, rolling: &RollingAverages) -
         inputs: vec![averaging_input(rolling)],
         exclusions: cashflow_exclusions(balances),
         assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
         period: format!("Trailing {} days", rolling.window_days),
         warnings,
     }
@@ -317,6 +326,7 @@ fn monthly_surplus(rolling: &RollingAverages) -> MetricExplanation {
         ],
         exclusions: vec!["Transfers and investment-account activity (see income and spending).".into()],
         assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
         period: format!("Trailing {} days", rolling.window_days),
         warnings,
     }
@@ -345,6 +355,7 @@ fn savings_rate(rolling: &RollingAverages, assumptions: &Assumptions) -> MetricE
             label: "Your target savings rate".into(),
             value: format!("{}%", assumptions.target_savings_rate_pct),
         }],
+        tradeoffs: Vec::new(),
         period: format!("Trailing {} days", rolling.window_days),
         warnings,
     }
@@ -379,6 +390,7 @@ fn emergency_fund_months(
             inputs,
             exclusions: Vec::new(),
             assumptions: vec![assumption],
+            tradeoffs: Vec::new(),
             period,
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
@@ -395,6 +407,7 @@ fn emergency_fund_months(
             inputs,
             exclusions: Vec::new(),
             assumptions: vec![assumption],
+            tradeoffs: Vec::new(),
             period,
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
@@ -424,6 +437,7 @@ fn emergency_fund_months(
         inputs,
         exclusions: Vec::new(),
         assumptions: vec![assumption],
+        tradeoffs: Vec::new(),
         period,
         warnings,
     }
@@ -446,6 +460,7 @@ fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member:
             inputs,
             exclusions: Vec::new(),
             assumptions: Vec::new(),
+            tradeoffs: Vec::new(),
             period,
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
@@ -462,6 +477,7 @@ fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member:
             inputs,
             exclusions: Vec::new(),
             assumptions: Vec::new(),
+            tradeoffs: Vec::new(),
             period,
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
@@ -481,10 +497,134 @@ fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member:
         inputs,
         exclusions: Vec::new(),
         assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
         period,
         warnings: vec![MetricWarning {
             level: MetricWarningLevel::Info,
             message: format!("Based on {} complete month(s) of spending history.", safety.months_observed),
+        }],
+    }
+}
+
+// ── Planning-output explanations (issue #71) ────────────────────────────────
+//
+// Debt payoff, goals, and scenarios are *recommendations*, not descriptive
+// dashboard figures. They reuse the same [`MetricExplanation`] shape — so one
+// inspector renders them and the Copilot reads one contract — but they populate
+// `tradeoffs` (the "why this and not the alternative" reasoning the dashboard
+// metrics leave empty) and, like every metric here, describe numbers an engine
+// already produced rather than computing anything new.
+
+/// Explain a saved scenario's *current* projected result. Pure: the caller
+/// (finsight-api) rebuilds the scenario's params, the current baseline
+/// [`Snapshot`](crate::forecast::Snapshot), and the
+/// [`Projection`](crate::forecast::Projection) via the same `forecast::project`
+/// the Scenarios screen shows, then hands them here to be described. The
+/// narrative `considerations` the engine already generated become the
+/// tradeoffs, so this explanation can never disagree with the scenario card.
+pub fn scenario_explanation(
+    label: &str,
+    params: &crate::forecast::ScenarioParams,
+    baseline: &crate::forecast::Snapshot,
+    projection: &crate::forecast::Projection,
+    is_stale: bool,
+    horizon_months: u32,
+) -> MetricExplanation {
+    let mut inputs = vec![
+        MetricInput { label: "Starting balance".into(), amount_cents: Some(baseline.balance_cents), detail: None },
+        MetricInput { label: "Baseline monthly income".into(), amount_cents: Some(baseline.avg_monthly_income_cents), detail: None },
+        MetricInput { label: "Baseline monthly spending".into(), amount_cents: Some(baseline.avg_monthly_expense_cents), detail: None },
+    ];
+    // The scenario's own levers — only those actually set, so the explanation
+    // lists what THIS scenario changes, not every possible knob.
+    if params.income_delta_pct != 0 {
+        inputs.push(MetricInput {
+            label: "Income change".into(),
+            amount_cents: None,
+            detail: Some(format!("{:+}% vs baseline", params.income_delta_pct)),
+        });
+    }
+    if params.monthly_expense_delta_cents != 0 {
+        // Sign mirrors ScenarioParams: positive = more outflow.
+        inputs.push(MetricInput {
+            label: "Monthly spending change".into(),
+            amount_cents: Some(params.monthly_expense_delta_cents),
+            detail: None,
+        });
+    }
+    if params.one_time_cents != 0 {
+        inputs.push(MetricInput {
+            label: "One-time amount".into(),
+            amount_cents: Some(params.one_time_cents),
+            detail: None,
+        });
+    }
+
+    let starts = if params.start_month_offset == 0 {
+        "immediately".to_string()
+    } else {
+        format!("in {} month(s)", params.start_month_offset)
+    };
+    let assumptions = vec![
+        MetricAssumption { label: "Projection horizon".into(), value: format!("{} months", horizon_months.max(1)) },
+        MetricAssumption { label: "Change starts".into(), value: starts },
+        MetricAssumption { label: "Basis".into(), value: "Your trailing 90-day averages, projected flat".into() },
+    ];
+
+    let mut warnings = Vec::new();
+    if is_stale {
+        warnings.push(MetricWarning {
+            level: MetricWarningLevel::Caution,
+            message: "The finances this scenario was saved against have moved materially since. This is it re-run on today's numbers; the saved result may differ.".into(),
+        });
+    }
+    if !projection.verdict {
+        warnings.push(MetricWarning {
+            level: MetricWarningLevel::Caution,
+            message: "On these assumptions your projected balance goes negative within the horizon — treat this as a plan that needs adjusting, not a safe path.".into(),
+        });
+    }
+
+    MetricExplanation {
+        key: "scenario".into(),
+        label: label.to_string(),
+        // Headline is the change to monthly cash flow; the fuller consequence
+        // story lives in the tradeoffs.
+        value: MetricValue::Money { cents: projection.monthly_impact_cents },
+        definition: format!(
+            "How \u{201c}{}\u{201d} changes your finances, projected over {} months against your current balance, income, and spending.",
+            label.trim(),
+            horizon_months.max(1),
+        ),
+        inputs,
+        exclusions: Vec::new(),
+        assumptions,
+        // The engine's own narrative of consequences vs. your current plan — the
+        // same lines the Scenarios screen shows — are exactly the tradeoffs.
+        tradeoffs: projection.considerations.clone(),
+        period: "Projected from today".into(),
+        warnings,
+    }
+}
+
+/// Explain a *legacy* saved scenario — one stored before params+baseline were
+/// captured (pre-V055), so it can be shown but never recomputed. No projection
+/// exists to describe, so the value is withheld and the reason stated rather
+/// than fabricating a breakdown.
+pub fn legacy_scenario_explanation(label: &str) -> MetricExplanation {
+    MetricExplanation {
+        key: "scenario".into(),
+        label: label.to_string(),
+        value: MetricValue::Withheld,
+        definition: "A scenario you saved earlier. Its result was stored, but the assumptions behind it weren't, so it can't be broken down against today's finances.".into(),
+        inputs: Vec::new(),
+        exclusions: Vec::new(),
+        assumptions: Vec::new(),
+        tradeoffs: Vec::new(),
+        period: "Saved earlier".into(),
+        warnings: vec![MetricWarning {
+            level: MetricWarningLevel::Withheld,
+            message: "Legacy scenario: recorded before its assumptions were saved, so there's nothing to recompute or explain. Re-create it to get a full breakdown.".into(),
         }],
     }
 }
@@ -694,5 +834,73 @@ mod tests {
         assert_eq!(find(&out, "runway_days").value, MetricValue::Withheld);
         assert_eq!(find(&out, "savings_rate").value, MetricValue::Percent { pct: 30 });
         assert_eq!(find(&out, "net_worth").value, MetricValue::Money { cents: 2_000_000 });
+    }
+
+    // ── Scenario explanation (issue #71) ────────────────────────────────────
+
+    fn scen_snap() -> crate::forecast::Snapshot {
+        crate::forecast::Snapshot {
+            balance_cents: 2_000_000,
+            avg_monthly_income_cents: 600_000,
+            avg_monthly_expense_cents: 400_000,
+            goals: vec![crate::forecast::GoalInfo {
+                name: "House".into(),
+                remaining_cents: 1_200_000,
+                monthly_cents: 100_000,
+            }],
+        }
+    }
+
+    /// A scenario explanation describes the very projection it was handed: the
+    /// headline is that projection's monthly impact, the baseline is the inputs,
+    /// only the levers this scenario sets are listed, and the engine's own
+    /// considerations become the tradeoffs verbatim (so it can't disagree with
+    /// the scenario card).
+    #[test]
+    fn scenario_explanation_describes_the_projection_it_ran() {
+        let snap = scen_snap();
+        let params = crate::forecast::ScenarioParams {
+            monthly_expense_delta_cents: 50_000,
+            one_time_cents: 300_000,
+            ..Default::default()
+        };
+        let proj = crate::forecast::project(&snap, &params, 12);
+        let ex = scenario_explanation("Adopt a dog", &params, &snap, &proj, false, 12);
+
+        assert_eq!(ex.value, MetricValue::Money { cents: proj.monthly_impact_cents });
+        assert!(ex.inputs.iter().any(|i| i.label == "Starting balance" && i.amount_cents == Some(2_000_000)));
+        assert!(ex.inputs.iter().any(|i| i.label == "Monthly spending change"));
+        assert!(ex.inputs.iter().any(|i| i.label == "One-time amount"));
+        // A lever this scenario leaves untouched is not listed.
+        assert!(!ex.inputs.iter().any(|i| i.label == "Income change"));
+        // Consistency: the tradeoffs ARE the engine's considerations.
+        assert_eq!(ex.tradeoffs, proj.considerations);
+        assert!(ex.assumptions.iter().any(|a| a.label == "Projection horizon"));
+        // A clean, non-stale, positive scenario raises no caution.
+        assert!(!ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+    }
+
+    /// Staleness and a balance-goes-negative verdict each surface as a caution,
+    /// so the explanation never presents a risky or outdated result as safe.
+    #[test]
+    fn scenario_explanation_flags_stale_and_negative_verdict() {
+        let mut snap = scen_snap();
+        snap.balance_cents = 100_000; // a one-time far larger than the balance
+        let params = crate::forecast::ScenarioParams { one_time_cents: 3_500_000, ..Default::default() };
+        let proj = crate::forecast::project(&snap, &params, 12);
+        assert!(!proj.verdict, "this scenario should drive the balance negative");
+        let ex = scenario_explanation("Buy a car", &params, &snap, &proj, true, 12);
+        let cautions = ex.warnings.iter().filter(|w| w.level == MetricWarningLevel::Caution).count();
+        assert!(cautions >= 2, "expected stale + negative-verdict cautions, got {cautions}");
+    }
+
+    /// A legacy row (no saved assumptions) withholds its value and says why,
+    /// rather than fabricating a breakdown.
+    #[test]
+    fn legacy_scenario_is_withheld_with_reason() {
+        let ex = legacy_scenario_explanation("Old scenario");
+        assert_eq!(ex.value, MetricValue::Withheld);
+        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(ex.tradeoffs.is_empty() && ex.inputs.is_empty());
     }
 }

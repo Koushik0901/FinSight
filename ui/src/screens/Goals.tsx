@@ -4,11 +4,13 @@ import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
 import { useGoals, useCreateGoal, useUpdateGoalMonthly, useProjectGoalGrowth } from "../api/hooks/budget";
+import { useGoalExplanations } from "../api/hooks/metrics";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
+import { ExplainDrawer } from "../components/ExplainInspector";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund";
 
@@ -57,7 +59,7 @@ function paceLabel(goal: GoalDto) {
   return { label: "On track", className: "chip accent" };
 }
 
-function GoalCard({ goal, onEdit, linkedAccountName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; linkedAccountName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
+function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, pausePending, pausedByUser }: { goal: GoalDto; onEdit: (goal: GoalDto) => void; onExplain: (goal: GoalDto) => void; linkedAccountName: string | null; onTogglePause: (goal: GoalDto) => void; pausePending: boolean; pausedByUser: boolean }) {
   const pct = goal.targetCents > 0 ? Math.min(100, Math.round((goal.currentCents / goal.targetCents) * 100)) : 0;
   const pace = paceLabel(goal);
   const canPause = goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff";
@@ -100,6 +102,9 @@ function GoalCard({ goal, onEdit, linkedAccountName, onTogglePause, pausePending
           <div className="row row-sm" style={{ justifyContent: "flex-end", marginTop: 10 }}>
             {goal.goalType !== "spending-cap" && goal.goalType !== "debt-payoff" && (
               <button className="btn ghost sm" type="button" disabled={pausePending} onClick={() => onTogglePause(goal)}>{isPaused ? "Resume" : "Pause"}</button>
+            )}
+            {goal.goalType !== "spending-cap" && (
+              <button className="btn ghost sm" type="button" onClick={() => onExplain(goal)}>Explain</button>
             )}
             <button className="btn outline sm" type="button" onClick={() => onEdit(goal)}>Adjust</button>
           </div>
@@ -525,6 +530,8 @@ export default function Goals() {
   const [creating, setCreating] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
   const [pausedPrevious, setPausedPrevious] = useState<Record<string, number>>({});
+  const [explainKey, setExplainKey] = useState<string | null>(null);
+  const { data: goalExplanations, isLoading: goalExplaining } = useGoalExplanations();
   const updateGoalMonthly = useUpdateGoalMonthly();
 
   const accountNameById = useMemo(() => new Map(accounts.map((account) => [account.id, getAccountDisplayName(account)])), [accounts]);
@@ -616,6 +623,7 @@ export default function Goals() {
               key={goal.id}
               goal={goal}
               onEdit={setEditingGoal}
+              onExplain={(g) => setExplainKey(`goal:${g.id}`)}
               linkedAccountName={goal.accountId ? accountNameById.get(goal.accountId) ?? null : null}
               onTogglePause={(g) => void handleTogglePause(g)}
               pausePending={updateGoalMonthly.isPending}
@@ -624,6 +632,13 @@ export default function Goals() {
           ))
         )}
       </div>
+
+      <ExplainDrawer
+        explanation={explainKey ? goalExplanations?.[explainKey] : undefined}
+        isLoading={goalExplaining}
+        open={explainKey !== null}
+        onClose={() => setExplainKey(null)}
+      />
 
       <GoalsHorizon goals={goals} />
 

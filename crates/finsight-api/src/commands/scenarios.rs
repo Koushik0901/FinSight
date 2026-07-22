@@ -391,6 +391,50 @@ pub async fn list_saved_scenarios(state: &ApiState) -> AppResult<Vec<SavedScenar
     Ok(rows.into_iter().map(|row| detail_from_row(row, &current)).collect())
 }
 
+/// Structured "explain this scenario" — the same recomputed projection the
+/// comparison shows, described via `provenance::scenario_explanation` (its
+/// narrative `considerations` become the tradeoffs, so this can never disagree
+/// with the scenario card). A pre-V055 legacy row that can't be recomputed gets
+/// the legacy variant: a withheld value with the reason, never a fabricated
+/// breakdown.
+pub async fn explain_scenario(
+    state: &ApiState,
+    id: String,
+) -> AppResult<finsight_core::provenance::MetricExplanation> {
+    let current = build_snapshot(state).await?;
+    let db = (*state.db).clone();
+    let row = run(&db, move |conn| scenarios_repo::get(conn, &id))
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
+
+    let params: Option<ScenarioParamsInput> =
+        row.params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let saved_baseline: Option<Snapshot> =
+        row.baseline_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let months = row.months.unwrap_or(12).clamp(1, 120) as u32;
+
+    // Recompute only when BOTH params and the saved baseline exist — exactly the
+    // condition `detail_from_row` uses to mark a row recomputable. Without the
+    // saved baseline, staleness can't be judged, so we don't imply freshness.
+    match (params, saved_baseline) {
+        (Some(p), Some(b)) => {
+            let core_params = to_core_params(&p);
+            let proj = forecast::project(&current, &core_params, months);
+            let is_stale = forecast::baseline_materially_changed(&b, &current);
+            Ok(finsight_core::provenance::scenario_explanation(
+                &row.description,
+                &core_params,
+                &current,
+                &proj,
+                is_stale,
+                months,
+            ))
+        }
+        _ => Ok(finsight_core::provenance::legacy_scenario_explanation(&row.description)),
+    }
+}
+
 pub async fn duplicate_scenario(state: &ApiState, id: String) -> AppResult<Option<SavedScenarioDetail>> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
