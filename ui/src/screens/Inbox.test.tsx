@@ -22,6 +22,12 @@ vi.mock("../api/hooks/simplefin", () => ({
   useDismissImportCandidate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
+vi.mock("../api/hooks/notifications", () => ({
+  useNotifications: vi.fn(() => ({ data: [] })),
+  useMarkNotificationRead: vi.fn(() => ({ mutate: vi.fn() })),
+  useMarkAllNotificationsRead: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
+
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
   return { ...actual, useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })) };
@@ -171,5 +177,52 @@ describe("Inbox screen — with items", () => {
     expect(ctaBtns.length).toBeGreaterThanOrEqual(1);
     // Should not throw on click (navigation mocked by MemoryRouter in createWrapper)
     fireEvent.click(ctaBtns[0]!);
+  });
+});
+
+describe("Inbox screen — notifications section", () => {
+  beforeEach(async () => {
+    // Only notifications present — no action items, alerts, transfers, etc.
+    const { useActionItems } = await import("../api/hooks/inbox");
+    vi.mocked(useActionItems).mockReturnValue({
+      data: [] as ActionItem[],
+      isLoading: false,
+      error: null,
+      dataUpdatedAt: Date.now(),
+    } as unknown as ReturnType<typeof useActionItems>);
+  });
+
+  it("renders the notification history, held badge, and suppresses All clear when only notifications exist", async () => {
+    const { useNotifications } = await import("../api/hooks/notifications");
+    vi.mocked(useNotifications).mockReturnValue({
+      data: [
+        { id: "n1", category: "cashflow_risk", urgency: "critical", title: "Balance dips below buffer", body: "Projected to go negative", sensitive: "-$142", route: "/cashflow", createdAt: "2026-07-20T00:00:00Z", deliveredAt: "2026-07-20T00:00:00Z", readAt: null, resolvedAt: null },
+        { id: "n2", category: "subscription_change", urgency: "normal", title: "Subscription renews soon", body: "Renews in 3 days", sensitive: null, route: null, createdAt: "2026-07-19T00:00:00Z", deliveredAt: null, readAt: null, resolvedAt: null },
+      ],
+    } as never);
+
+    render(<Inbox />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Notifications · 2/i)).toBeInTheDocument();
+    expect(screen.getByText("Balance dips below buffer")).toBeInTheDocument();
+    // n2 was withheld overnight (deliveredAt null) → held badge.
+    expect(screen.getByText(/Held · quiet hours/i)).toBeInTheDocument();
+    // Notifications count toward the inbox total, so the empty-state must not show.
+    expect(screen.queryByText(/All clear/i)).toBeNull();
+    expect(screen.getByText(/2 items/i)).toBeInTheDocument();
+  });
+
+  it("marks a notification read and navigates when its card is clicked", async () => {
+    const markRead = vi.fn();
+    const { useNotifications, useMarkNotificationRead } = await import("../api/hooks/notifications");
+    vi.mocked(useMarkNotificationRead).mockReturnValue({ mutate: markRead } as never);
+    vi.mocked(useNotifications).mockReturnValue({
+      data: [
+        { id: "n1", category: "cashflow_risk", urgency: "critical", title: "Balance dips below buffer", body: "Projected to go negative", sensitive: null, route: "/cashflow", createdAt: "2026-07-20T00:00:00Z", deliveredAt: "2026-07-20T00:00:00Z", readAt: null, resolvedAt: null },
+      ],
+    } as never);
+
+    render(<Inbox />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByText("Balance dips below buffer"));
+    expect(markRead).toHaveBeenCalledWith("n1");
   });
 });

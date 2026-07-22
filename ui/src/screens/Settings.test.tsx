@@ -68,6 +68,21 @@ vi.mock("../api/hooks/settings", () => ({
   useSetAutoCategorizeEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteAllData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
+vi.mock("../api/hooks/notifications", () => ({
+  useNotificationPrefs: vi.fn(() => ({
+    data: {
+      masterEnabled: true,
+      categories: [
+        { key: "cashflow_risk", label: "Cash-flow risk", enabled: true },
+        { key: "account_activity", label: "Account activity", enabled: false },
+      ],
+      quietHours: { start: 22, end: 7 },
+      utcOffsetMinutes: 0,
+      privacy: "full",
+    },
+  })),
+  useSetNotificationPrefs: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}));
 vi.mock("../api/hooks/metrics", () => ({
   useFinancialMetrics: vi.fn(() => ({ data: { targetSavingsRatePct: 20, emergencyFundTargetMonths: 6, expectedAnnualReturnPct: 7 } })),
   useSetFinancialAssumptions: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
@@ -123,6 +138,19 @@ describe("Settings — Agent section", () => {
     fireEvent.click(screen.getByRole("button", { name: /Forget: Amazon is Shopping/ }));
     // Optimistically removed from the list immediately (before the delayed write).
     expect(screen.queryByText(/Amazon is Shopping/)).toBeNull();
+  });
+});
+
+describe("Settings — Notifications section", () => {
+  it("renders the master switch, category toggles, and quiet-hours window", () => {
+    render(<Settings />, { wrapper: createWrapper() });
+    expect(screen.getByRole("switch", { name: "Notifications enabled" })).toBeInTheDocument();
+    // Category rows come from the server's list — a per-category opt-out.
+    expect(screen.getByRole("switch", { name: "Cash-flow risk" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Account activity" })).toBeInTheDocument();
+    // Quiet hours is on (22→07 in the fixture) so the window pickers show.
+    expect(screen.getByRole("combobox", { name: "Quiet hours start" })).toHaveValue("22");
+    expect(screen.getByRole("combobox", { name: "Quiet hours end" })).toHaveValue("7");
   });
 });
 

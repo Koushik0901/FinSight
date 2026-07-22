@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ActionItem, ImportCandidateWithMatches, SimpleFinAlert, TransferSuggestionInfo } from "../api/client";
 import { useActionItems, useUnresolvedCounterparties } from "../api/hooks/inbox";
+import { useNotifications } from "../api/hooks/notifications";
 import { useTriggerRecategorizeLowConfidence } from "../api/hooks/agent";
 import {
   useSimpleFinAlerts,
@@ -23,6 +24,7 @@ import EmptyState from "../components/EmptyState";
 import * as I from "../components/Icons";
 import { CopilotNudge } from "../components/CopilotNudge";
 import UnresolvedPeopleCard from "../components/inbox/UnresolvedPeopleCard";
+import NotificationsInboxSection from "../components/inbox/NotificationsInboxSection";
 
 const CATEGORY_ICONS: Record<string, React.FC<React.SVGProps<SVGSVGElement>>> = {
   review:  I.Flow,
@@ -414,6 +416,7 @@ export default function Inbox() {
   const { data: transfers = [] } = useSimpleFinTransferSuggestions();
   const { data: importReview = [] } = useImportReviewCandidates();
   const { data: unresolvedCounterparties = [] } = useUnresolvedCounterparties();
+  const { data: notifications = [] } = useNotifications();
   const qc = useQueryClient();
   const rerunAi = useTriggerRecategorizeLowConfidence();
 
@@ -421,7 +424,8 @@ export default function Inbox() {
   const mediumItems = items.filter((i) => i.priority === "medium");
   const lowItems = items.filter((i) => i.priority === "low");
 
-  const allCount = items.length + alerts.length + transfers.length + importReview.length + unresolvedCounterparties.length;
+  const allCount =
+    items.length + alerts.length + transfers.length + importReview.length + unresolvedCounterparties.length + notifications.length;
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
@@ -433,6 +437,7 @@ export default function Inbox() {
     void qc.invalidateQueries({ queryKey: ["simplefin", "transfers"] });
     void qc.invalidateQueries({ queryKey: ["simplefin", "importReview"] });
     void qc.invalidateQueries({ queryKey: ["unresolved-counterparties"] });
+    void qc.invalidateQueries({ queryKey: ["notifications"] });
   };
 
   const handleRerunAi = () => {
@@ -510,6 +515,8 @@ export default function Inbox() {
           <UnresolvedPeopleCard />
         </div>
       )}
+
+      <NotificationsInboxSection notifications={notifications} />
 
       {allCount === 0 ? (
         <EmptyState

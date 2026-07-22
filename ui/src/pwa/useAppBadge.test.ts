@@ -4,11 +4,15 @@ import { createWrapper } from "../test-utils";
 import { useAppBadge } from "./useAppBadge";
 
 const getInboxBadgeCount = vi.fn();
+const notificationUnreadCount = vi.fn();
 
 vi.mock("../api/client", () => ({
   commands: {
     get getInboxBadgeCount() {
       return getInboxBadgeCount;
+    },
+    get notificationUnreadCount() {
+      return notificationUnreadCount;
     },
   },
 }));
@@ -33,6 +37,9 @@ beforeEach(() => {
       unresolvedCounterparties: 0,
     },
   });
+  // No unread notifications by default — existing expectations stay at the
+  // inbox total until a test opts into a non-zero unread count.
+  notificationUnreadCount.mockResolvedValue({ status: "ok", data: 0 });
 });
 
 describe("useAppBadge", () => {
@@ -74,14 +81,27 @@ describe("useAppBadge", () => {
     expect(clearAppBadge).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves the badge alone when the count query fails", async () => {
+  it("sums the inbox total and unread notifications onto the icon", async () => {
+    notificationUnreadCount.mockResolvedValue({ status: "ok", data: 4 });
+    renderHook(() => useAppBadge(), { wrapper: createWrapper() });
+    await waitFor(() => expect(setAppBadge).toHaveBeenCalledWith(10));
+  });
+
+  it("leaves the badge alone when both count queries fail", async () => {
+    // Both sources share a transport; a real outage fails both, and only then
+    // is the count fully unknown — writing anything would clobber a live badge.
     getInboxBadgeCount.mockResolvedValue({
       status: "error",
       error: { code: "rpc.transport", message: "offline" },
     });
+    notificationUnreadCount.mockResolvedValue({
+      status: "error",
+      error: { code: "rpc.transport", message: "offline" },
+    });
     renderHook(() => useAppBadge(), { wrapper: createWrapper() });
-    // Give the query a chance to reject and settle.
+    // Give the queries a chance to reject and settle.
     await new Promise((r) => setTimeout(r, 20));
     expect(setAppBadge).not.toHaveBeenCalled();
+    expect(clearAppBadge).not.toHaveBeenCalled();
   });
 });

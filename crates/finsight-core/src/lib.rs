@@ -13,6 +13,7 @@ pub mod investments;
 pub mod keychain;
 pub mod metrics;
 pub mod models;
+pub mod notify;
 pub mod provenance;
 pub mod palette;
 pub mod repos;

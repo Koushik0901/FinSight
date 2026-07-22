@@ -11,7 +11,7 @@ import {
   useTriggerCategorize,
   useListProviderModels,
 } from "../api/hooks/agent";
-import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useNotificationsEnabled, useSetNotificationsEnabled, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
+import { useDefaultCurrency, useSetCurrency, useExportJson, useExportCsv, useAutoCategorizeEnabled, useSetAutoCategorizeEnabled } from "../api/hooks/settings";
 import {
   useFinancialMetrics,
   useSetFinancialAssumptions,
@@ -32,6 +32,8 @@ import {
 import SimpleFinDialog from "./onboarding/SimpleFinDialog";
 import DeleteAllDataDialog from "../components/DeleteAllDataDialog";
 import PushNotificationSettings from "../components/PushNotificationSettings";
+import NotificationPolicySettings from "../components/NotificationPolicySettings";
+import { Toggle as Tog } from "../components/Toggle";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
@@ -72,11 +74,6 @@ function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
   if (cfg.kind === "anthropic") return `Configured — Anthropic (${cfg.model})`;
   return `Configured — ${cfg.preset} (${cfg.model})`;
 }
-
-function Tog({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return <span className={`tog${checked ? " on" : ""}`} role="switch" aria-checked={checked} tabIndex={0} onClick={() => onChange(!checked)} onKeyDown={(e) => e.key === "Enter" && onChange(!checked)} />;
-}
-
 
 const DEBT_STRATEGIES = [
   {
@@ -544,8 +541,6 @@ export default function Settings() {
   const exportJson = useExportJson();
   const exportCsv = useExportCsv();
   const { data: currentCurrency = "USD" } = useDefaultCurrency();
-  const { data: notificationsEnabled = true } = useNotificationsEnabled();
-  const setNotificationsMutation = useSetNotificationsEnabled();
   const { data: autoCategorizeEnabled = true } = useAutoCategorizeEnabled();
   const setAutoCategorizeMutation = useSetAutoCategorizeEnabled();
 
@@ -791,8 +786,8 @@ export default function Settings() {
             <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
           </Section>
 
-          <Section id="notifications" title="Notifications" description="Control reminders and nudges.">
-            <div className="s-row"><div><div className="label">Notifications enabled</div><div className="desc">Budget alerts, recurring reminders, and daily prompts.</div></div><div className="muted">{notificationsEnabled ? "Currently on" : "Currently off"}</div><Tog checked={notificationsEnabled} onChange={(value) => setNotificationsMutation.mutate(value)} /></div>
+          <Section id="notifications" title="Notifications" description="Choose what you're notified about, when it stays quiet, and how much detail shows.">
+            <NotificationPolicySettings />
             <PushNotificationSettings />
           </Section>
 

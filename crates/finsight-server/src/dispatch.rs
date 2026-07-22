@@ -518,6 +518,18 @@ async fn dispatch(
         "explain_financial_metrics" => {
             ok(c::metrics::explain_financial_metrics(api, arg(&p, "memberId")?).await?)
         }
+        "get_notification_prefs" => ok(c::notifications::get_notification_prefs(api).await?),
+        "set_notification_prefs" => {
+            ok(c::notifications::set_notification_prefs(api, arg(&p, "prefs")?).await?)
+        }
+        "list_notifications" => {
+            ok(c::notifications::list_notifications(api, arg(&p, "includeResolved")?).await?)
+        }
+        "mark_notification_read" => {
+            ok(c::notifications::mark_notification_read(api, arg(&p, "id")?).await?)
+        }
+        "mark_all_notifications_read" => ok(c::notifications::mark_all_notifications_read(api).await?),
+        "notification_unread_count" => ok(c::notifications::notification_unread_count(api).await?),
         "get_cashflow_forecast" => ok(c::cashflow::get_cashflow_forecast(
             api,
             arg(&p, "horizonDays")?,
@@ -1011,6 +1023,12 @@ pub const SUPPORTED: &[&str] = &[
     "get_financial_metrics",
     "explain_financial_metrics",
     "get_cashflow_forecast",
+    "get_notification_prefs",
+    "set_notification_prefs",
+    "list_notifications",
+    "mark_notification_read",
+    "mark_all_notifications_read",
+    "notification_unread_count",
     "household_net_worth_breakdown",
     "set_financial_assumptions",
     "list_restoration_envelopes",

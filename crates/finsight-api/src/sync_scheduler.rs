@@ -23,6 +23,9 @@ use uuid::Uuid;
 const DEFAULT_INTERVAL_MINUTES: u32 = 360;
 const BRIDGE_CALL_STAGGER_SECS: u64 = 1;
 const MAX_FETCH_ATTEMPTS: usize = 5;
+/// A connected account whose last successful sync is older than this is flagged
+/// as "stale data" via the unified notification policy.
+const STALE_ACCOUNT_THRESHOLD_DAYS: i64 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +151,20 @@ impl SyncScheduler {
                     let queued: usize = results.iter().map(|r| r.queued_for_review).sum();
                     notify_new_activity(&db, added, queued).await;
                 }
+
+                // Standing-condition sweep: raise/clear "stale data" for accounts
+                // whose last successful sync has aged out. Runs every cycle so the
+                // condition resolves the moment an account catches up. The same
+                // pass materializes expiry for discrete events (e.g. the per-day
+                // activity nudge) whose `expires_at` has passed — the reads already
+                // hide them, this keeps the stored state honest too.
+                let _ = finsight_core::repos::run(&db, |conn| {
+                    let now = chrono::Utc::now();
+                    finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
+                    finsight_core::notify::expire_due(conn, now)?;
+                    Ok::<(), finsight_core::error::CoreError>(())
+                })
+                .await;
             }
         })
     }
@@ -197,14 +214,45 @@ async fn notify_new_activity(db: &Db, added: usize, queued: usize) {
     } else {
         txns
     };
+    let route = if queued > 0 { "/inbox" } else { "/transactions" };
+
+    // Route through the unified notification policy (finsight-core::notify) so
+    // category preferences, quiet hours, privacy, and dedup are decided in ONE
+    // place. Discrete key per DAY: at most one "new activity" nudge a day rather
+    // than one per sync cycle — the app shows the full picture on open.
+    let body_owned = body.clone();
+    let route_owned = route.to_string();
+    let outcome = finsight_core::repos::run(db, move |conn| {
+        let prefs = finsight_core::notify::load_prefs(conn);
+        let now = chrono::Utc::now();
+        finsight_core::notify::enqueue(
+            conn,
+            finsight_core::notify::NewNotification {
+                category: finsight_core::notify::NotificationCategory::AccountActivity,
+                urgency: finsight_core::notify::Urgency::Low,
+                dedup_key: format!("activity.{}", now.format("%Y-%m-%d")),
+                title: "New activity".into(),
+                body: body_owned,
+                sensitive: None, // a count of transactions isn't a sensitive figure
+                route: Some(route_owned),
+                expires_at: Some((now + chrono::Duration::days(2)).to_rfc3339()),
+            },
+            &prefs,
+            now,
+        )
+    })
+    .await;
+
+    // The policy decides whether this pushes (disabled category / quiet hours /
+    // already-notified-today all say no).
+    if !matches!(&outcome, Ok(o) if o.push) {
+        return;
+    }
 
     let payload = crate::commands::push::PushPayload {
         title: "New activity".into(),
         body,
-        // Send them where the work is: the review queue if there is any.
-        url: if queued > 0 { "/inbox".into() } else { "/transactions".into() },
-        // One tag for sync news, so an unread notification is replaced by the
-        // newer one rather than stacking up overnight.
+        url: route.to_string(),
         tag: "finsight-sync".into(),
         // Deliberately not set. The icon badge counts the whole inbox, which
         // needs more than this sync's numbers to compute — and a badge showing
