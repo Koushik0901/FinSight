@@ -71,6 +71,13 @@ pub struct SavedScenarioDetail {
     /// Whether the current baseline differs materially from the saved one.
     pub is_stale: Option<bool>,
     pub recomputable: bool,
+    /// A REVISED set of assumptions the user is evaluating (issue #73), or `None`.
+    pub revised_params: Option<ScenarioParamsInput>,
+    /// The revised params run against the CURRENT baseline — same baseline as
+    /// `current_result`, so the difference between the two is purely the effect
+    /// of the assumption edit (never confused with live-data drift). `None` when
+    /// there is no revision or the row can't be recomputed.
+    pub revised_result: Option<ScenarioResult>,
 }
 
 /// One proposed plan change from promoting a scenario — a suggestion for the
@@ -261,6 +268,60 @@ pub async fn save_scenario(
     Ok(detail_from_row(row, &baseline))
 }
 
+/// Revise a saved scenario's assumptions (issue #73). Stores a second set of
+/// what-if params alongside the immutable original; the returned detail carries
+/// the recalculated `revised_result` next to the original and current results.
+/// Never touches the active plan, and never overwrites the original params.
+pub async fn revise_scenario(
+    state: &ApiState,
+    id: String,
+    params: ScenarioParamsInput,
+) -> AppResult<SavedScenarioDetail> {
+    let current = build_snapshot(state).await?;
+    let revised_json =
+        serde_json::to_string(&params).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let db = (*state.db).clone();
+
+    let id_load = id.clone();
+    let existing = run(&db, move |conn| scenarios_repo::get(conn, &id_load))
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
+    // Legacy result-only rows have no assumptions to revise.
+    if existing.params_json.is_none() || existing.baseline_json.is_none() {
+        return Err(AppError::new(
+            "scenario.legacy",
+            "This scenario was saved before durable scenarios, so its assumptions can't be revised. Re-run and save it to enable this.",
+        ));
+    }
+
+    let id_set = id.clone();
+    let row = run(&db, move |conn| {
+        scenarios_repo::set_revised_params(conn, &id_set, Some(&revised_json))?;
+        scenarios_repo::get(conn, &id_set)
+    })
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
+
+    Ok(detail_from_row(row, &current))
+}
+
+/// Discard a scenario's revision, reverting to the original assumptions only.
+pub async fn clear_scenario_revision(state: &ApiState, id: String) -> AppResult<SavedScenarioDetail> {
+    let current = build_snapshot(state).await?;
+    let db = (*state.db).clone();
+    let id2 = id.clone();
+    let row = run(&db, move |conn| {
+        scenarios_repo::set_revised_params(conn, &id2, None)?;
+        scenarios_repo::get(conn, &id2)
+    })
+    .await
+    .map_err(AppError::from)?
+    .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
+    Ok(detail_from_row(row, &current))
+}
+
 /// Turn a stored row into a comparable detail: recompute against `current` and
 /// flag staleness. Pure and infallible — malformed legacy JSON degrades to a
 /// non-recomputable row rather than failing the whole list.
@@ -286,6 +347,16 @@ fn detail_from_row(row: scenarios_repo::ScenarioRow, current: &Snapshot) -> Save
         _ => (None, None),
     };
 
+    // A revision (issue #73): the revised params run against the SAME current
+    // baseline, so `current_result` vs `revised_result` isolates the assumption
+    // edit. Only meaningful when the row is recomputable.
+    let revised_params: Option<ScenarioParamsInput> =
+        row.revised_params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let revised_result = match (&revised_params, current_result.is_some()) {
+        (Some(rp), true) => Some(projection_to_result(forecast::project(current, &to_core_params(rp), months))),
+        _ => None,
+    };
+
     SavedScenarioDetail {
         id: row.id,
         description: row.description,
@@ -297,6 +368,8 @@ fn detail_from_row(row: scenarios_repo::ScenarioRow, current: &Snapshot) -> Save
         original_baseline: baseline.as_ref().map(baseline_summary),
         current_result,
         is_stale,
+        revised_params,
+        revised_result,
     }
 }
 
@@ -430,4 +503,91 @@ pub async fn delete_scenario(state: &ApiState, id: String) -> AppResult<()> {
     run(&db, move |conn| scenarios_repo::delete(conn, &id))
         .await
         .map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finsight_core::forecast::Snapshot;
+
+    fn snap(income: i64, expense: i64) -> Snapshot {
+        Snapshot {
+            balance_cents: 2_000_000,
+            avg_monthly_income_cents: income,
+            avg_monthly_expense_cents: expense,
+            goals: vec![],
+        }
+    }
+
+    fn params(income_delta_pct: i32, expense_delta: i64) -> ScenarioParamsInput {
+        ScenarioParamsInput {
+            income_delta_pct,
+            monthly_expense_delta_cents: expense_delta,
+            one_time_cents: 0,
+            start_month_offset: 0,
+            label: "t".into(),
+        }
+    }
+
+    fn row_with(
+        original: &ScenarioParamsInput,
+        baseline: &Snapshot,
+        revised: Option<&ScenarioParamsInput>,
+    ) -> scenarios_repo::ScenarioRow {
+        let orig_result = projection_to_result(forecast::project(baseline, &to_core_params(original), 24));
+        scenarios_repo::ScenarioRow {
+            id: "s".into(),
+            description: "d".into(),
+            result_json: serde_json::to_string(&orig_result).unwrap(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            params_json: Some(serde_json::to_string(original).unwrap()),
+            baseline_json: Some(serde_json::to_string(baseline).unwrap()),
+            months: Some(24),
+            archived_at: None,
+            revised_params_json: revised.map(|r| serde_json::to_string(r).unwrap()),
+        }
+    }
+
+    #[test]
+    fn revision_recomputes_a_distinct_result_and_preserves_the_original() {
+        let baseline = snap(500_000, 300_000);
+        let original = params(0, 0);
+        // Revised: income cut 50% — a materially different outcome.
+        let revised = params(-50, 0);
+        let row = row_with(&original, &baseline, Some(&revised));
+        let orig_impact = projection_to_result(forecast::project(&baseline, &to_core_params(&original), 24)).monthly_impact_cents;
+
+        // Recompute against the SAME baseline so any difference is the assumption edit alone.
+        let detail = detail_from_row(row, &baseline);
+
+        assert_eq!(detail.original_result.monthly_impact_cents, orig_impact, "original preserved");
+        assert!(detail.revised_params.is_some());
+        let current = detail.current_result.as_ref().expect("recomputable");
+        let revised_res = detail.revised_result.as_ref().expect("revision recomputed");
+        assert_ne!(
+            revised_res.runway_change_days, current.runway_change_days,
+            "an income cut must change the projected outcome vs the original assumptions"
+        );
+    }
+
+    #[test]
+    fn no_revision_yields_no_revised_result() {
+        let baseline = snap(500_000, 300_000);
+        let original = params(0, -20_000);
+        let detail = detail_from_row(row_with(&original, &baseline, None), &baseline);
+        assert!(detail.revised_result.is_none());
+        assert!(detail.revised_params.is_none());
+    }
+
+    #[test]
+    fn legacy_row_cannot_carry_a_revised_result() {
+        // A revision on a row with no baseline can't be recomputed → no revised result.
+        let baseline = snap(500_000, 300_000);
+        let mut row = row_with(&params(0, 0), &baseline, Some(&params(-50, 0)));
+        row.baseline_json = None;
+        row.params_json = None;
+        let detail = detail_from_row(row, &baseline);
+        assert!(detail.current_result.is_none());
+        assert!(detail.revised_result.is_none(), "not recomputable → no revised result");
+    }
 }

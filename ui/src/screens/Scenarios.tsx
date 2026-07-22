@@ -13,6 +13,8 @@ import {
   useDuplicateScenario,
   useArchiveScenario,
   usePromoteScenario,
+  useReviseScenario,
+  useClearScenarioRevision,
   useDeleteScenario,
 } from "../api/hooks/useScenarios";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -204,6 +206,7 @@ function ScenarioRow({
   busy,
   onReopen,
   onDuplicate,
+  onRevise,
   onArchive,
   onPromote,
   onDelete,
@@ -212,6 +215,7 @@ function ScenarioRow({
   busy: boolean;
   onReopen: () => void;
   onDuplicate: () => void;
+  onRevise: () => void;
   onArchive: () => void;
   onPromote: () => void;
   onDelete: () => void;
@@ -227,6 +231,7 @@ function ScenarioRow({
           <div className="row-sm" style={{ alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontWeight: 600 }}>{s.description}</span>
             {stale && <Badge tone="warning">Stale</Badge>}
+            {s.revisedParams && <Badge tone="accent">Revised</Badge>}
             {!s.recomputable && <Badge>Legacy</Badge>}
           </div>
           <span className="num muted" style={{ fontSize: 11.5 }}>
@@ -251,6 +256,7 @@ function ScenarioRow({
         <div className="row-sm wrap" style={{ justifyContent: "flex-end", gap: 6 }}>
           <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onReopen}>Reopen</Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={onDuplicate}>Duplicate</Button>
+          <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onRevise}>Revise</Button>
           <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onPromote}>Promote</Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={onArchive}>Archive</Button>
           <Button variant="ghost" size="sm" aria-label={`Delete ${s.description}`} disabled={busy} onClick={onDelete}><I.Trash /></Button>
@@ -291,18 +297,115 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
   );
 }
 
+/** Revise a saved scenario's assumptions (#73) and re-evaluate. The original is
+ *  preserved; the revised result is shown against the current one (same baseline,
+ *  so the difference is purely the assumption edit). Never touches the plan. */
+function RevisePanel({
+  scenario,
+  onRevise,
+  onDiscard,
+  onClose,
+  busy,
+}: {
+  scenario: SavedScenarioDetail;
+  onRevise: (params: ScenarioParamsInput) => void;
+  onDiscard: () => void;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  const base = scenario.revisedParams ?? scenario.params;
+  const [incomePct, setIncomePct] = useState(base?.incomeDeltaPct ?? 0);
+  const [expenseDollars, setExpenseDollars] = useState((base?.monthlyExpenseDeltaCents ?? 0) / 100);
+  const [oneTimeDollars, setOneTimeDollars] = useState((base?.oneTimeCents ?? 0) / 100);
+
+  const current = scenario.currentResult ?? scenario.originalResult;
+  const revised = scenario.revisedResult;
+
+  const submit = () => {
+    onRevise({
+      incomeDeltaPct: Math.round(incomePct),
+      monthlyExpenseDeltaCents: Math.round(expenseDollars * 100),
+      oneTimeCents: Math.round(oneTimeDollars * 100),
+      startMonthOffset: base?.startMonthOffset ?? 0,
+      label: base?.label ?? scenario.description,
+    });
+  };
+
+  return (
+    <Card className="stack stack-md" style={{ marginTop: 20 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div className="screen-eyebrow">Revise &ldquo;{scenario.description}&rdquo; — new assumptions</div>
+        <Button variant="ghost" size="sm" aria-label="Close revise panel" onClick={onClose}><I.X /></Button>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>
+        The original stays saved for comparison. Re-evaluating only recalculates this scenario — it never changes your budgets, goals, or plan.
+      </p>
+      <div className="row-md wrap" style={{ gap: 14 }}>
+        <label className="stack stack-xs">
+          <span className="muted" style={{ fontSize: 12 }}>Income change (%)</span>
+          <input className="control" type="number" style={{ width: 120 }} value={incomePct} onChange={(e) => setIncomePct(Number(e.target.value))} />
+        </label>
+        <label className="stack stack-xs">
+          <span className="muted" style={{ fontSize: 12 }}>Monthly spending change ($)</span>
+          <input className="control" type="number" style={{ width: 160 }} value={expenseDollars} onChange={(e) => setExpenseDollars(Number(e.target.value))} />
+        </label>
+        <label className="stack stack-xs">
+          <span className="muted" style={{ fontSize: 12 }}>One-time amount ($)</span>
+          <input className="control" type="number" style={{ width: 150 }} value={oneTimeDollars} onChange={(e) => setOneTimeDollars(Number(e.target.value))} />
+        </label>
+      </div>
+      <div className="row-sm wrap">
+        <Button variant="default" size="sm" disabled={busy} onClick={submit}>Re-evaluate</Button>
+        {scenario.revisedParams && (
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onDiscard}>Discard revision</Button>
+        )}
+      </div>
+      {revised && (
+        <div className="table-wrap" style={{ border: "1px solid var(--hairline)", borderRadius: 10 }}>
+          <table className="tbl">
+            <thead>
+              <tr><th /><th className="right">Original assumptions</th><th className="right">Revised assumptions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="muted">Stays afloat?</td>
+                <td className="right">{current.verdict ? "Yes" : "At risk"}</td>
+                <td className="right" style={{ fontWeight: 600 }}>{revised.verdict ? "Yes" : "At risk"}</td>
+              </tr>
+              <tr>
+                <td className="muted">Runway change</td>
+                <td className="right num">{current.runwayChangeDays >= 0 ? "+" : ""}{current.runwayChangeDays}d</td>
+                <td className="right num" style={{ fontWeight: 600 }}>{revised.runwayChangeDays >= 0 ? "+" : ""}{revised.runwayChangeDays}d</td>
+              </tr>
+              <tr>
+                <td className="muted">Monthly impact</td>
+                <td className="right num money">{fmt(current.monthlyImpactCents)}</td>
+                <td className="right num money" style={{ fontWeight: 600 }}>{fmt(revised.monthlyImpactCents)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 export default function Scenarios() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<{ description: string; result: ScenarioResult; params: ScenarioParamsInput; months: number } | null>(null);
   const [proposal, setProposal] = useState<ScenarioPlanProposal | null>(null);
+  const [revisingId, setRevisingId] = useState<string | null>(null);
   const run = useRunScenario();
   const del = useDeleteScenario();
   const dup = useDuplicateScenario();
   const archive = useArchiveScenario();
   const promote = usePromoteScenario();
+  const revise = useReviseScenario();
+  const clearRev = useClearScenarioRevision();
   const { data: saved = [] } = useSavedScenarios();
+  const revising = revisingId ? saved.find((x) => x.id === revisingId) ?? null : null;
   const { data: categories } = useCategoriesWithSpending();
   const diningMonthly = useMemo(() => {
     const match = categories?.find((c) => /dining|restaurant|food|eat/i.test(c.label));
@@ -437,6 +540,7 @@ export default function Scenarios() {
                           toast.error("Could not duplicate scenario");
                         }
                       }}
+                      onRevise={() => setRevisingId(s.id)}
                       onArchive={async () => {
                         try {
                           await archive.mutateAsync({ id: s.id, archived: true });
@@ -470,6 +574,30 @@ export default function Scenarios() {
       </section>
 
       {proposal && <PromotePanel proposal={proposal} onClose={() => setProposal(null)} />}
+
+      {revising && (
+        <RevisePanel
+          scenario={revising}
+          busy={revise.isPending || clearRev.isPending}
+          onClose={() => setRevisingId(null)}
+          onRevise={async (params) => {
+            try {
+              await revise.mutateAsync({ id: revising.id, params });
+              toast.success("Scenario re-evaluated", { description: "The original is kept for comparison." });
+            } catch (e) {
+              toast.error("Could not revise scenario", { description: userErrorMessage(e, "Re-run and save it first.") });
+            }
+          }}
+          onDiscard={async () => {
+            try {
+              await clearRev.mutateAsync(revising.id);
+              toast("Revision discarded");
+            } catch {
+              toast.error("Could not discard the revision");
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

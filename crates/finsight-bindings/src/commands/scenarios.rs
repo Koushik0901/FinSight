@@ -71,6 +71,28 @@ pub async fn promote_scenario(
     finsight_api::commands::scenarios::promote_scenario(&state.api, id).await
 }
 
+/// Revise a saved scenario's assumptions (issue #73) and re-evaluate it — the
+/// original result is preserved; the returned detail adds the revised result.
+#[tauri::command]
+#[specta::specta]
+pub async fn revise_scenario(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    params: ScenarioParamsInput,
+) -> AppResult<SavedScenarioDetail> {
+    finsight_api::commands::scenarios::revise_scenario(&state.api, id, params).await
+}
+
+/// Discard a scenario's revision, reverting to the original assumptions only.
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_scenario_revision(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> AppResult<SavedScenarioDetail> {
+    finsight_api::commands::scenarios::clear_scenario_revision(&state.api, id).await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_scenario(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {

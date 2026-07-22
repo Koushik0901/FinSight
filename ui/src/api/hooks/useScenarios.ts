@@ -108,6 +108,36 @@ export function usePromoteScenario() {
   });
 }
 
+/** Revise a saved scenario's assumptions (#73) and re-evaluate. The original
+ *  result is preserved; the returned detail carries the revised result. Never
+ *  touches the active plan. */
+export function useReviseScenario() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, params }: { id: string; params: ScenarioParamsInput }): Promise<SavedScenarioDetail> => {
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      const res = await commands.reviseScenario(id, params);
+      if (res.status === "error") throw new Error(res.error.message);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+/** Discard a scenario's revision, reverting to the original assumptions. */
+export function useClearScenarioRevision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string): Promise<SavedScenarioDetail> => {
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      const res = await commands.clearScenarioRevision(id);
+      if (res.status === "error") throw new Error(res.error.message);
+      return res.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 export function useDeleteScenario() {
   const qc = useQueryClient();
   return useMutation({
