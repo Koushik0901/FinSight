@@ -666,10 +666,12 @@ async fn dispatch(
         .await?),
         "get_month_totals" => ok(c::reports::get_month_totals(api).await?),
         "get_savings_rate_history" => ok(c::reports::get_savings_rate_history(api).await?),
-        "create_monthly_review" => {
-            ok(c::reports::create_monthly_review(api, arg(&p, "input")?).await?)
+        // ── month-end close (#59) ──
+        "get_month_close" => {
+            ok(c::month_close::get_month_close(api, arg(&p, "year")?, arg(&p, "month")?).await?)
         }
-        "list_monthly_reviews" => ok(c::reports::list_monthly_reviews(api).await?),
+        "save_month_close" => ok(c::month_close::save_month_close(api, arg(&p, "input")?).await?),
+        "list_month_closes" => ok(c::month_close::list_month_closes(api).await?),
 
         // ── scenarios ──
         "run_scenario" => ok(c::scenarios::run_scenario(
@@ -1075,8 +1077,9 @@ pub const SUPPORTED: &[&str] = &[
     "get_report_data",
     "get_month_totals",
     "get_savings_rate_history",
-    "create_monthly_review",
-    "list_monthly_reviews",
+    "get_month_close",
+    "save_month_close",
+    "list_month_closes",
     // scenarios
     "run_scenario",
     "save_scenario",

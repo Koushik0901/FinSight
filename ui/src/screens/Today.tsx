@@ -7,7 +7,7 @@ import { useHealthScore } from "../api/hooks/insights";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useGoals, useContributeToGoal } from "../api/hooks/budget";
 import { useRecurring } from "../api/hooks/recurring";
-import { useCreateMonthlyReview, useMonthTotals, useSavingsRateHistory } from "../api/hooks";
+import { useMonthTotals, useSavingsRateHistory } from "../api/hooks";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import PerPersonCard from "../components/PerPersonCard";
 import AgentActivityFeed from "../components/AgentActivityFeed";
@@ -172,7 +172,6 @@ export default function Today() {
   const { data: needsReview = 0 } = useNeedsReviewCount();
   const { data: agentStatus } = useAgentStatus();
   const { data: milestones = [] } = useUncelebratedMilestones();
-  const createMonthlyReview = useCreateMonthlyReview();
   const netWorth = useNetWorth();
   const [range, setRange] = useState<typeof RANGES[number]["key"]>("6M");
   // The metric whose "explain this number" inspector is open, or null.
@@ -229,7 +228,10 @@ export default function Today() {
   const runwayDays = metrics?.runwayDays ?? null;
   const showSweep = !sweepDismissed && !!totals && totals.netCents > 5000;
   const celebrateMilestones = milestones.filter((threshold): threshold is number => typeof threshold === "number").filter((threshold) => !dismissedMilestones.includes(threshold));
-  const shouldShowMonthlyReview = dayOfMonth >= 28;
+  // Prompt closing the month that JUST ended, in the first week of the new one.
+  const prevMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+  const prevMonthLabel = prevMonthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const shouldShowMonthlyReview = dayOfMonth <= 7;
   const trendDelta = nwHistory.length >= 2 ? nwHistory[nwHistory.length - 1]!.totalCents - nwHistory[0]!.totalCents : null;
   const trendChipClass = trendDelta === null ? "" : trendDelta >= 0 ? " pos" : " neg";
   const trendText = trendDelta === null ? "Baseline building" : `${trendDelta >= 0 ? "↑" : "↓"} ${money(Math.abs(trendDelta), { currency: primaryCurrency })} over ${range}`;
@@ -310,7 +312,7 @@ export default function Today() {
         ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} onExplain={setExplainKey} />}
       </section>
 
-      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month in review</div><div className="h3">Capture this month’s snapshot before the calendar rolls over.</div></div><button className="btn primary" type="button" disabled={createMonthlyReview.isPending} onClick={async () => { try { const nowDate = new Date(); await createMonthlyReview.mutateAsync({ year: nowDate.getFullYear(), month: nowDate.getMonth() + 1, notes: null }); toast.success("Monthly review saved", { description: "Open Reports to revisit it later." }); navigate("/reports"); } catch { toast.error("Could not create monthly review"); } }}>{createMonthlyReview.isPending ? "Saving…" : "Save review"}</button></div></div></section>}
+      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month-end close</div><div className="h3">Close out {prevMonthLabel} — verify the data and record its snapshot.</div></div><button className="btn primary" type="button" onClick={() => navigate("/close")}>Start close</button></div></div></section>}
 
       {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Spent this month</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div className="today-cat-grid">{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
 

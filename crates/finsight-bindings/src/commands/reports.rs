@@ -2,8 +2,7 @@ use crate::error::AppResult;
 use crate::AppState;
 
 pub use finsight_api::commands::reports::{
-    CategoryTotal, CreateMonthlyReviewInput, MerchantTotal, MonthSummary, MonthTotals,
-    MonthlyReview, MonthlyReviewSnapshot, ReportData, SavingsRatePoint,
+    CategoryTotal, MerchantTotal, MonthSummary, MonthTotals, ReportData, SavingsRatePoint,
 };
 
 #[tauri::command]
@@ -30,19 +29,3 @@ pub async fn get_savings_rate_history(
     finsight_api::commands::reports::get_savings_rate_history(&state.api).await
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn create_monthly_review(
-    state: tauri::State<'_, AppState>,
-    input: CreateMonthlyReviewInput,
-) -> AppResult<MonthlyReview> {
-    finsight_api::commands::reports::create_monthly_review(&state.api, input).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn list_monthly_reviews(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<Vec<MonthlyReview>> {
-    finsight_api::commands::reports::list_monthly_reviews(&state.api).await
-}

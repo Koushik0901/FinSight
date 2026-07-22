@@ -29,6 +29,7 @@ pub mod investments;
 pub mod journey;
 pub mod meta;
 pub mod metrics;
+pub mod month_close;
 pub mod notifications;
 pub mod onboarding;
 pub mod planned_transactions;

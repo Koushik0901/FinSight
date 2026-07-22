@@ -168,6 +168,9 @@ impl SyncScheduler {
                     let now = chrono::Utc::now();
                     finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
                     finsight_core::notify::expire_due(conn, now)?;
+                    // Month-end close reminder (#59): raise once for the month that
+                    // just ended until it's closed; in-app/badge only.
+                    crate::commands::month_close::refresh_month_end_reminder(conn, now)?;
                     finsight_core::subscriptions::refresh_subscription_alerts(conn, now)
                 })
                 .await
