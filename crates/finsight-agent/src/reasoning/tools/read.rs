@@ -396,7 +396,10 @@ pub fn explain_metric() -> Arc<dyn Tool> {
              meaningful); explain WHY from its warnings instead of inventing a number. \
              Pass `metric` to focus on one of: net_worth, avg_monthly_income, \
              avg_monthly_expense, monthly_surplus, savings_rate, emergency_fund_months, \
-             runway_days; omit it to get all of them."
+             runway_days; or a PLANNING recommendation: debt_payoff (the payoff order, \
+             the tradeoff vs the other strategy, and any missing APR/minimum), or goals \
+             (each goal's projected completion at its current contribution). Omit it to \
+             get all the dashboard metrics."
         }
         fn parameters(&self) -> Value {
             json!({
@@ -404,15 +407,40 @@ pub fn explain_metric() -> Arc<dyn Tool> {
                 "properties": {
                     "metric": {
                         "type": "string",
-                        "description": "Optional metric key to focus on. Omit for every metric."
+                        "description": "Optional key to focus on: a dashboard metric, or 'debt_payoff' / 'goals'. Omit for every dashboard metric."
                     }
                 }
             })
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let focus = args["metric"].as_str().map(str::trim).filter(|s| !s.is_empty());
+            // Planning-recommendation explanations are produced above finsight-core
+            // (the payoff engine, the goal loader), so they're assembled in this
+            // crate. They share the MetricExplanation shape, so the model reads them
+            // exactly like a dashboard metric — and they never disagree with the plan.
+            match focus {
+                Some("debt_payoff") | Some("debt") => {
+                    let ex = crate::finance::explain_debt_payoff(ctx.conn)?;
+                    return Ok(json!({
+                        "metrics": [serde_json::to_value(ex).unwrap_or(Value::Null)],
+                        "note": "The payoff order, its total, and the tradeoff vs the other strategy come from the app's payoff engine — report as-is, never recompute. A 'caution' warning means a debt is missing its APR or minimum payment; tell the user to add it rather than guessing the rank."
+                    }));
+                }
+                Some("goals") | Some("goal") => {
+                    let list = crate::finance::explain_goals(ctx.conn)?;
+                    let metrics: Vec<Value> = list
+                        .into_iter()
+                        .map(|e| serde_json::to_value(e).unwrap_or(Value::Null))
+                        .collect();
+                    return Ok(json!({
+                        "metrics": metrics,
+                        "note": "Each goal's completion (in months) is projected at its CURRENT monthly contribution — report as-is. A 'withheld' value means no contribution is set, so there's no date; say that instead of inventing one."
+                    }));
+                }
+                _ => {}
+            }
             let all = finsight_core::provenance::explain_financial_metrics(ctx.conn, None)
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            let focus = args["metric"].as_str().map(str::trim).filter(|s| !s.is_empty());
             let metrics: Vec<Value> = all
                 .into_iter()
                 .filter(|e| focus.map_or(true, |k| e.key == k))
@@ -422,7 +450,7 @@ pub fn explain_metric() -> Arc<dyn Tool> {
             Ok(json!({
                 "metrics": metrics,
                 "note": if unknown {
-                    "No metric by that key. Valid keys: net_worth, avg_monthly_income, avg_monthly_expense, monthly_surplus, savings_rate, emergency_fund_months, runway_days. Call again with one of those, or omit `metric` for all.".to_string()
+                    "No metric by that key. Valid keys: net_worth, avg_monthly_income, avg_monthly_expense, monthly_surplus, savings_rate, emergency_fund_months, runway_days, or the planning keys debt_payoff / goals. Call again with one of those, or omit `metric` for all.".to_string()
                 } else {
                     "These figures come from the app's shared metrics layer — report them as-is, do not recompute. A value with kind 'withheld' means the app declines to state it; explain why from its warnings rather than inventing a number.".to_string()
                 }

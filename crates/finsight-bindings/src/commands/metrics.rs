@@ -36,6 +36,16 @@ pub async fn explain_financial_metrics(
     finsight_api::commands::metrics::explain_financial_metrics(&state.api, member_id).await
 }
 
+/// Structured explanations of every active goal's projected completion, one per
+/// goal (keyed `goal:{id}`), from the same ETA the plan and Copilot use.
+#[tauri::command]
+#[specta::specta]
+pub async fn explain_goals(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+    finsight_api::commands::metrics::explain_goals(&state.api).await
+}
+
 /// Each household member's share of net worth (share-weighted across accounts AND
 /// jointly-owned assets, via the metrics layer — NOT a client-side equal split),
 /// plus an "unassigned" residual so the rows sum to the household total.

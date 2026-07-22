@@ -654,6 +654,18 @@ async explainFinancialMetrics(memberId: string | null) : Promise<Result<MetricEx
 }
 },
 /**
+ * Structured explanations of every active goal's projected completion, one per
+ * goal (keyed `goal:{id}`), from the same ETA the plan and Copilot use.
+ */
+async explainGoals() : Promise<Result<MetricExplanation[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explain_goals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Project the liquid balance forward `horizonDays` (default 30, clamped 7–90),
  * optionally against a safety buffer and a hypothetical one-off outflow — all
  * evaluated purely, nothing persisted.
@@ -902,6 +914,19 @@ async reviseScenario(id: string, params: ScenarioParamsInput) : Promise<Result<S
 async clearScenarioRevision(id: string) : Promise<Result<SavedScenarioDetail, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_scenario_revision", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Structured "explain this scenario" (#71) — the same recomputed projection the
+ * comparison shows, broken into inputs/assumptions/tradeoffs/warnings; a legacy
+ * row that can't be recomputed withholds its value with the reason.
+ */
+async explainScenario(id: string) : Promise<Result<MetricExplanation, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("explain_scenario", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2719,6 +2744,13 @@ exclusions: string[];
  * Tunable assumptions that shaped it.
  */
 assumptions: MetricAssumption[]; 
+/**
+ * Material tradeoffs between this result and the competing option(s) — the
+ * "why this and not the alternative" reasoning. Empty for a descriptive
+ * metric that has no alternative (e.g. net worth); populated for a
+ * recommendation such as a debt-payoff order or a contribution level.
+ */
+tradeoffs?: string[]; 
 /**
  * The time window the figure covers.
  */

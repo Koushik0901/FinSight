@@ -88,6 +88,25 @@ describe("ExplainInspector", () => {
     expect(screen.getByText(/larger of your 12-month and 90-day average/)).toBeInTheDocument();
   });
 
+  it("renders the tradeoffs of a recommendation (#71)", () => {
+    const DEBT: MetricExplanation = {
+      key: "debt_payoff",
+      label: "Debt payoff order",
+      value: { kind: "money", cents: 1000000 },
+      definition: "The order to clear your debts — highest interest rate first.",
+      inputs: [{ label: "1. Visa", amountCents: 800000, detail: "19.9% APR — highest APR first" }],
+      exclusions: [],
+      assumptions: [{ label: "Payoff strategy", value: "Avalanche — highest interest rate first" }],
+      tradeoffs: ["A snowball order clears your first debt about 3 month(s) sooner — the early-win motivation."],
+      period: "As of today",
+      warnings: [],
+    };
+    mockData(DEBT);
+    render(<ExplainInspector metricKey="debt_payoff" currency="USD" onClose={() => {}} />);
+    expect(screen.getByText("Tradeoffs")).toBeInTheDocument();
+    expect(screen.getByText(/clears your first debt about 3 month/)).toBeInTheDocument();
+  });
+
   it("renders nothing when closed (metricKey is null)", () => {
     mockData(SAVINGS_RATE);
     render(<ExplainInspector metricKey={null} currency="USD" onClose={() => {}} />);

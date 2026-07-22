@@ -107,6 +107,18 @@ pub async fn clear_scenario_revision(
     finsight_api::commands::scenarios::clear_scenario_revision(&state.api, id).await
 }
 
+/// Structured "explain this scenario" (#71) — the same recomputed projection the
+/// comparison shows, broken into inputs/assumptions/tradeoffs/warnings; a legacy
+/// row that can't be recomputed withholds its value with the reason.
+#[tauri::command]
+#[specta::specta]
+pub async fn explain_scenario(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> AppResult<finsight_core::provenance::MetricExplanation> {
+    finsight_api::commands::scenarios::explain_scenario(&state.api, id).await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_scenario(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {

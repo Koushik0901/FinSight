@@ -17,6 +17,7 @@ import {
   useApplyScenario,
   useReviseScenario,
   useClearScenarioRevision,
+  useScenarioExplanation,
   useDeleteScenario,
 } from "../api/hooks/useScenarios";
 import { useCategoriesWithSpending } from "../api/hooks/transactions";
@@ -25,6 +26,7 @@ import Button from "../components/Button";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
+import { ExplainDrawer } from "../components/ExplainInspector";
 import { userErrorMessage } from "../utils/runtime";
 import { money } from "../utils/format";
 
@@ -211,6 +213,7 @@ function ScenarioRow({
   onRevise,
   onArchive,
   onPromote,
+  onExplain,
   onDelete,
 }: {
   s: SavedScenarioDetail;
@@ -220,6 +223,7 @@ function ScenarioRow({
   onRevise: () => void;
   onArchive: () => void;
   onPromote: () => void;
+  onExplain: () => void;
   onDelete: () => void;
 }) {
   // Compare on the recomputed result; fall back to the original for legacy rows.
@@ -256,6 +260,7 @@ function ScenarioRow({
       <td className="right num money">{fmt(shown.monthlyImpactCents)}</td>
       <td className="right">
         <div className="row-sm wrap" style={{ justifyContent: "flex-end", gap: 6 }}>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onExplain}>Explain</Button>
           <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onReopen}>Reopen</Button>
           <Button variant="ghost" size="sm" disabled={busy} onClick={onDuplicate}>Duplicate</Button>
           <Button variant="ghost" size="sm" disabled={!s.recomputable || busy} onClick={onRevise}>Revise</Button>
@@ -458,6 +463,8 @@ export default function Scenarios() {
   const [active, setActive] = useState<{ description: string; result: ScenarioResult; params: ScenarioParamsInput; months: number } | null>(null);
   const [proposal, setProposal] = useState<ScenarioPlanProposal | null>(null);
   const [revisingId, setRevisingId] = useState<string | null>(null);
+  const [explainId, setExplainId] = useState<string | null>(null);
+  const { data: explanation, isLoading: explaining } = useScenarioExplanation(explainId);
   const run = useRunScenario();
   const del = useDeleteScenario();
   const dup = useDuplicateScenario();
@@ -602,6 +609,7 @@ export default function Scenarios() {
                         }
                       }}
                       onRevise={() => setRevisingId(s.id)}
+                      onExplain={() => setExplainId(s.id)}
                       onArchive={async () => {
                         try {
                           await archive.mutateAsync({ id: s.id, archived: true });
@@ -633,6 +641,13 @@ export default function Scenarios() {
           </Card>
         )}
       </section>
+
+      <ExplainDrawer
+        explanation={explanation}
+        isLoading={explaining}
+        open={explainId !== null}
+        onClose={() => setExplainId(null)}
+      />
 
       {proposal && <PromotePanel proposal={proposal} onClose={() => setProposal(null)} />}
 

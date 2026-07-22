@@ -9,6 +9,7 @@ const promoteMutate = vi.fn();
 const reviseMutate = vi.fn();
 const applyMutate = vi.fn();
 const useSavedScenarios = vi.fn();
+const scenarioExplanation = vi.fn();
 
 vi.mock("../api/hooks/useScenarios", () => ({
   useSavedScenarios: () => useSavedScenarios(),
@@ -20,6 +21,7 @@ vi.mock("../api/hooks/useScenarios", () => ({
   useApplyScenario: () => ({ mutateAsync: applyMutate, isPending: false }),
   useReviseScenario: () => ({ mutateAsync: reviseMutate, isPending: false }),
   useClearScenarioRevision: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useScenarioExplanation: (id: string | null) => scenarioExplanation(id),
   useDeleteScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -83,6 +85,22 @@ describe("Scenarios screen", () => {
     applyMutate.mockResolvedValue({ applied: ["one_time"], skipped: [], note: "Applied 1 change(s) to your plan as planned transactions. The scenario is unchanged." });
     useSavedScenarios.mockReset();
     useSavedScenarios.mockReturnValue({ data: [] });
+    scenarioExplanation.mockReset();
+    scenarioExplanation.mockReturnValue({
+      data: {
+        key: "scenario",
+        label: "Cut income 50%",
+        value: { kind: "money", cents: -50000 },
+        definition: "How this changes your finances, projected over 24 months.",
+        inputs: [{ label: "Starting balance", amountCents: 2314000, detail: null }],
+        exclusions: [],
+        assumptions: [{ label: "Projection horizon", value: "24 months" }],
+        tradeoffs: ["Runway shortens by 20 days — from 3.2 years to 3.1 years."],
+        period: "Projected from today",
+        warnings: [],
+      },
+      isLoading: false,
+    });
   });
 
   it("renders the header and suggested chips", () => {
@@ -137,6 +155,17 @@ describe("Scenarios screen", () => {
     );
     // The result summary surfaces what was written; the scenario is unchanged.
     expect(await screen.findByText(/Applied 1 change/i)).toBeInTheDocument();
+  });
+
+  it("explains a saved scenario in the inspector, with its tradeoffs (#71)", async () => {
+    useSavedScenarios.mockReturnValue({ data: [saved({})] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    // The drawer opens with the structured explanation: its definition and the
+    // engine's own considerations, surfaced as tradeoffs.
+    expect(await screen.findByText(/projected over 24 months/i)).toBeInTheDocument();
+    expect(screen.getByText("Tradeoffs")).toBeInTheDocument();
+    expect(screen.getByText(/Runway shortens by 20 days/)).toBeInTheDocument();
   });
 
   it("revising a scenario re-evaluates the new assumptions without touching the plan (#73)", async () => {

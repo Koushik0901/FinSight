@@ -154,6 +154,24 @@ pub async fn explain_financial_metrics(
     .map_err(AppError::from)
 }
 
+/// Structured explanations of every active goal's projected completion — one per
+/// goal, keyed `goal:{id}` — from the same ETA the plan and the Copilot use. A
+/// goal with no monthly contribution honestly withholds a date instead of
+/// inventing one.
+///
+/// (Debt-payoff explanation is produced by the same-shaped
+/// `finsight_agent::finance::explain_debt_payoff`, surfaced through the Copilot's
+/// `explain_metric` tool — the debt payoff order has no dedicated screen to hang
+/// an "explain" affordance on, so it isn't exposed as a standalone command.)
+pub async fn explain_goals(
+    state: &ApiState,
+) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+    let db = (*state.db).clone();
+    run(&db, |conn| Ok(finsight_agent::finance::explain_goals(conn)?))
+        .await
+        .map_err(AppError::from)
+}
+
 /// One row of the "who owns what" household net-worth split. `member_id` None is
 /// the unassigned residual — value owned by no recorded member, i.e. by people
 /// running their OWN separate FinSight app (the cross-user share). Member slices
