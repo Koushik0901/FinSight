@@ -330,11 +330,17 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or_default();
                 // Drift: recorded baseline (if any) vs recomputed-now.
+                // Drift only compares the MONTH-SCOPED flows — income and
+                // spending — because those move only when a transaction dated in
+                // the closed month is edited (exactly the record-tampering signal
+                // criterion 4 wants). Net worth is a live balance-sheet figure
+                // that drifts every day regardless of any edit to this month, so
+                // it stays a recorded checkpoint in the snapshot but is never a
+                // drift line — else the view would cry wolf on every closed month.
                 let drift = match r.baseline_json.as_deref().and_then(|s| serde_json::from_str::<CloseBaseline>(s).ok()) {
                     Some(base) => vec![
                         drift_line("Income", base.income_cents, live_baseline.income_cents),
                         drift_line("Spending", base.expense_cents, live_baseline.expense_cents),
-                        drift_line("Net worth", base.net_worth_cents, live_baseline.net_worth_cents),
                     ]
                     .into_iter()
                     .filter(|d| d.changed_materially)

@@ -187,7 +187,7 @@ export default function MonthClose() {
             <span className="grow" />
             <button type="button" className="btn ghost" onClick={() => navigate("/budget")}>Plan next month →</button>
           </div>
-          {view.completedAt && (
+          {completed && view.completedAt && (
             <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>Recorded {new Date(view.completedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}.</div>
           )}
         </div>
