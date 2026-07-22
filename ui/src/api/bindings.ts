@@ -584,17 +584,25 @@ async getSavingsRateHistory() : Promise<Result<SavingsRatePoint[], AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async createMonthlyReview(input: CreateMonthlyReviewInput) : Promise<Result<MonthlyReview, AppError>> {
+async getMonthClose(year: number, month: number) : Promise<Result<MonthCloseView, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("create_monthly_review", { input }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_month_close", { year, month }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async listMonthlyReviews() : Promise<Result<MonthlyReview[], AppError>> {
+async saveMonthClose(input: SaveMonthCloseInput) : Promise<Result<MonthCloseView, AppError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("list_monthly_reviews") };
+    return { status: "ok", data: await TAURI_INVOKE("save_month_close", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listMonthCloses() : Promise<Result<MonthCloseListItem[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_month_closes") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -2343,6 +2351,16 @@ guidance: string | null }
  * A single prior turn from the conversation history for multi-turn awareness.
  */
 export type ChatHistoryEntry = { role: string; content: string }
+/**
+ * A data-quality or subscription-change item to review at close. Mirrors an
+ * Inbox action item (or #58 subscription changes) and carries a route to the
+ * screen that resolves it — the close never resolves it inline.
+ */
+export type CloseFlag = { id: string; category: string; priority: string; title: string; detail: string; actionRoute: string; count: number | null; 
+/**
+ * Whether the user acknowledged this at close (frozen with the record).
+ */
+acknowledged: boolean }
 export type ColumnRole = "Date" | "Amount" | "Merchant" | "Notes" | "Category" | "Skip" | "Debit" | "Credit" | "ActivityType" | "ActivitySubType" | "Symbol" | "SecurityName" | "Quantity" | "UnitPrice"
 export type CompletionProviderConfig = { kind: "unconfigured" } | { kind: "ollama"; base_url: string; model: string } | { kind: "openai_compat"; preset: string; base_url: string; model: string } | { kind: "anthropic"; model: string }
 /**
@@ -2375,7 +2393,6 @@ export type ConversationSummary = { id: string; title: string; messageCount: num
  * Tauri/specta dependency), so this DTO crosses the specta boundary instead.
  */
 export type CounterpartyVerdict = "transfer" | "settleUp" | "real"
-export type CreateMonthlyReviewInput = { year: number; month: number; notes: string | null }
 export type CsvImportMapping = { skip_header_rows: number; columns: ColumnRole[]; date_format: string; amount_convention: AmountConvention; decimal_separator?: string; delimiter?: string | null }
 export type CsvPreview = { headers: string[] | null; rows: string[][]; detected_delimiter: string; total_rows: number; encoding_note: string | null }
 export type DataHealth = { 
@@ -2399,6 +2416,10 @@ startupSummary: string; backups: BackupInfo[];
 pendingRestore: boolean }
 export type DebtPayoffResult = { strategy: string; extraMonthlyCents: number; totalInterestCents: number; totalMonths: number; payoffDateLabel: string; summaries: DebtPayoffSummary[] }
 export type DebtPayoffSummary = { accountId: string; accountName: string; initialBalanceCents: number; totalInterestCents: number; payoffMonthLabel: string; monthsToPayoff: number }
+/**
+ * One "recorded then vs recomputed now" line for a completed close.
+ */
+export type DriftLine = { label: string; recordedCents: number; currentCents: number; changedMaterially: boolean }
 export type Driver = { merchant_key: string; display: string; category: string | null; delta_cents: number; recent_monthly_cents: number; base_monthly_cents: number; recent_txns_per_month: number; base_txns_per_month: number; mechanism: Mechanism; persistence: Persistence; 
 /**
  * A sticky user verdict (one_off / expected / investment) if the user has
@@ -2720,6 +2741,30 @@ actionLabel: string | null;
  * App-relative path, e.g. `/accounts?focusAccount=abc`.
  */
 actionPath: string | null }
+export type MonthCloseListItem = { year: number; month: number; monthLabel: string; status: string; completedAt: string | null; savingsRatePct: number; netWorthCents: number }
+/**
+ * The month's key figures. Enriched over the old review snapshot with net
+ * worth, debt, and a count of subscription price changes. Free-form goal JSON
+ * is kept for the UI's progress list.
+ */
+export type MonthCloseSnapshot = { incomeCents: number; expenseCents: number; savingsCents: number; savingsRatePct: number; netWorthCents: number; debtTotalCents: number; overBudgetCategories: string[]; goalProgress: JsonValue[]; subscriptionChangeCount: number }
+export type MonthCloseView = { year: number; month: number; monthLabel: string; 
+/**
+ * "not_started" | "in_progress" | "completed" | "skipped".
+ */
+status: string; notes: string | null; completedAt: string | null; 
+/**
+ * Live figures while in progress; the FROZEN figures once completed.
+ */
+snapshot: MonthCloseSnapshot; 
+/**
+ * Live flags while in progress; the frozen (acknowledged-marked) set once completed.
+ */
+flags: CloseFlag[]; 
+/**
+ * Only populated for a completed close whose recorded figures now differ.
+ */
+drift: DriftLine[] }
 /**
  * One month's summary for the bar chart.
  */
@@ -2753,8 +2798,6 @@ export type MonthTotals = { incomeCents: number; expenseCents: number; netCents:
  */
 txnCount: number }
 export type MonthlyActual = { month: string; label: string; spentCents: number; budgetedCents: number }
-export type MonthlyReview = { id: string; year: number; month: number; monthLabel: string; notes: string | null; snapshot: MonthlyReviewSnapshot; createdAt: string }
-export type MonthlyReviewSnapshot = { incomeCents: number; expenseCents: number; savingsRatePct: number; overBudgetCategories: string[]; goalProgress: JsonValue[] }
 export type NetWorthPoint = { date: string; totalCents: number }
 export type NewAccount = { owner: string; bank: string; type: AccountType; name: string; last4: string | null; currency: string; color: string; opening_balance_cents: number; source?: string; liquidity_type?: string; emergency_fund_eligible?: boolean; goal_earmark: string | null; apy_pct: number | null; simplefin_account_id: string | null; nickname: string | null; connection_id: string | null; institution_id: string | null; external_account_id: string | null; official_name: string | null; mask: string | null; subtype: string | null; account_group?: string; available_balance_cents: number | null; balance_date: string | null; extra_json: string | null; raw_json: string | null; import_pending?: boolean; apr_pct: number | null; min_payment_cents: number | null; payoff_date: string | null; limit_cents: number | null; original_balance_cents: number | null; started_at: string | null; promo_apr_expires_on?: string | null; post_promo_apr_pct?: number | null }
 export type NewGoalInput = { name: string; goalType: string; targetCents: number; monthlyCents: number; targetDate: string | null; color: string; notes: string | null; purpose: string | null; accountId: string | null; 
@@ -3039,6 +3082,15 @@ export type RuleProposal = { id: string; whenLabel: string; description: string;
  * Rule with resolved category label and color.
  */
 export type RuleWithCategory = { id: string; pattern: string; categoryId: string; categoryLabel: string; categoryColor: string; enabled: boolean; source: string; createdAt: string }
+export type SaveMonthCloseInput = { year: number; month: number; 
+/**
+ * Target status: "in_progress" (start/resume), "completed" (freeze), "skipped".
+ */
+status: string; notes: string | null; 
+/**
+ * Flag ids the user ticked as acknowledged — recorded when completing.
+ */
+acknowledgedFlagIds?: string[] }
 /**
  * A saved scenario with everything needed to compare and act on it. The
  * `original_*` fields are exactly what was saved; `current_result`/`is_stale`

@@ -28,6 +28,7 @@ export const APP_ROUTES = [
   "/scenarios",
   "/cashflow",
   "/reports",
+  "/close",
   "/path-back",
   "/rules",
   "/settings",

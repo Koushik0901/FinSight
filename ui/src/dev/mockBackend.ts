@@ -880,6 +880,37 @@ function defaultNotifPrefs(): AnyRec {
 let mockNotifPrefs: AnyRec = defaultNotifPrefs();
 // In-memory subscription confirm/dismiss verdicts (#58), keyed by merchantKey.
 const mockSubVerdicts: Record<string, string> = {};
+
+// In-memory month-end closes (#59), keyed by "year-month".
+const mockCloses: Record<string, AnyRec> = {};
+const CLOSE_MONTHS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function buildCloseView(ds: Dataset, year: number, month: number): AnyRec {
+  const rec = mockCloses[`${year}-${month}`];
+  const status = String(rec?.status ?? "not_started");
+  const completed = status === "completed";
+  const m = (ds.metrics ?? {}) as AnyRec;
+  const income = Math.abs(Number(m.avgMonthlyIncomeCents ?? 540000));
+  const expense = Math.abs(Number(m.avgMonthlyExpenseCents ?? 388000));
+  const snapshot = {
+    incomeCents: income, expenseCents: expense, savingsCents: income - expense,
+    savingsRatePct: income > 0 ? Math.round(((income - expense) / income) * 100) : 0,
+    netWorthCents: Number(m.netWorthCents ?? ds.netWorthEnd ?? 7428000),
+    debtTotalCents: Number(m.debtCents ?? 124000),
+    overBudgetCategories: ds.accounts.length === 0 ? [] : ["Dining", "Shopping"],
+    goalProgress: [], subscriptionChangeCount: ds.accounts.length === 0 ? 0 : 2,
+  };
+  const liveFlags = ds.accounts.length === 0 ? [] : [
+    { id: "uncat", category: "review", priority: "high", title: "12 transactions need categorizing", detail: "Uncategorized spending makes the budget review unreliable.", actionRoute: "/transactions", count: 12, acknowledged: false },
+    { id: "subscription-changes", category: "bills", priority: "medium", title: "2 subscriptions changed price", detail: "Recurring charges whose price moved this month.", actionRoute: "/recurring", count: 2, acknowledged: false },
+  ];
+  return {
+    year, month, monthLabel: `${CLOSE_MONTHS[month] ?? ""} ${year}`, status,
+    notes: rec?.notes ?? null, completedAt: rec?.completedAt ?? null,
+    snapshot: completed && rec?.snapshot ? rec.snapshot : snapshot,
+    flags: completed && rec?.flags ? rec.flags : liveFlags,
+    drift: completed && rec?.drift ? rec.drift : [],
+  };
+}
 // Deliberately varied: a critical unread with a sensitive amount, a low-urgency
 // activity ping, a read item, and one held overnight (delivered_at null) — so
 // the Inbox section and badge exercise every branch.
@@ -1080,7 +1111,34 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     list_category_groups: () => ds.categoryGroups,
     get_plan_next_month_data: () => ds.planNextMonthData,
     // mutations — echo a plausible success so optimistic flows don't throw
-    create_monthly_review: () => ({ id: "mr-1", year: new Date().getFullYear(), month: new Date().getMonth() + 1, monthLabel: "This month", notes: null, snapshot: {}, createdAt: new Date().toISOString() }),
+    // ── Month-end close (#59) ──
+    get_month_close: (a) => buildCloseView(ds, Number(a?.year), Number(a?.month)),
+    save_month_close: (a) => {
+      const input = (a?.input ?? {}) as AnyRec;
+      const year = Number(input.year);
+      const month = Number(input.month);
+      const status = String(input.status);
+      const key = `${year}-${month}`;
+      const view = buildCloseView(ds, year, month) as AnyRec;
+      if (status === "completed") {
+        const ackIds = (input.acknowledgedFlagIds ?? []) as string[];
+        const flags = (view.flags as AnyRec[]).map((f) => ({ ...f, acknowledged: ackIds.includes(String(f.id)) }));
+        mockCloses[key] = { year, month, status, notes: input.notes ?? null, completedAt: isoInDays(0), snapshot: view.snapshot, flags, drift: [] };
+      } else {
+        mockCloses[key] = { ...(mockCloses[key] ?? {}), year, month, status, notes: input.notes ?? null };
+      }
+      return buildCloseView(ds, year, month);
+    },
+    list_month_closes: () =>
+      Object.values(mockCloses)
+        .map((r) => ({
+          year: Number(r.year), month: Number(r.month),
+          monthLabel: `${CLOSE_MONTHS[Number(r.month)] ?? ""} ${Number(r.year)}`,
+          status: r.status, completedAt: r.completedAt ?? null,
+          savingsRatePct: (r.snapshot as AnyRec)?.savingsRatePct ?? 0,
+          netWorthCents: (r.snapshot as AnyRec)?.netWorthCents ?? 0,
+        }))
+        .sort((x, y) => y.year - x.year || y.month - x.month),
     contribute_to_goal: () => ({ id: "gc-1" }),
     set_budget: () => null,
     create_category_group: (a) => ({ id: String(a.label ?? "group").toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: a.label, hint: a.hint ?? null, sort_order: ds.categoryGroups.length }),

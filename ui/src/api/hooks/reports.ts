@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   commands,
-  type CreateMonthlyReviewInput,
+  type MonthCloseListItem,
+  type MonthCloseView,
   type MonthTotals,
-  type MonthlyReview,
+  type SaveMonthCloseInput,
   type SavingsRatePoint,
 } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
@@ -35,11 +36,13 @@ export function useSavingsRateHistory() {
   });
 }
 
-export function useMonthlyReviews() {
-  return useQuery<MonthlyReview[]>({
-    queryKey: ["monthly-reviews"],
+/** The guided month-end close (#59) for a given month — live while in progress,
+ * frozen once completed. */
+export function useMonthClose(year: number, month: number) {
+  return useQuery<MonthCloseView>({
+    queryKey: ["month-close", year, month],
     queryFn: async () => {
-      const result = await commands.listMonthlyReviews();
+      const result = await commands.getMonthClose(year, month);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
@@ -47,16 +50,32 @@ export function useMonthlyReviews() {
   });
 }
 
-export function useCreateMonthlyReview() {
+/** Advance the close lifecycle (start/complete/skip/reopen). */
+export function useSaveMonthClose() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateMonthlyReviewInput) => {
-      const result = await commands.createMonthlyReview(input);
+    mutationFn: async (input: SaveMonthCloseInput) => {
+      const result = await commands.saveMonthClose(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["monthly-reviews"] });
+    onSuccess: (data) => {
+      qc.setQueryData(["month-close", data.year, data.month], data);
+      qc.invalidateQueries({ queryKey: ["month-closes"] });
+      qc.invalidateQueries({ queryKey: ["notifications"] });
     },
+  });
+}
+
+/** Past closes, newest first — the "revisit a recorded close" surface. */
+export function useMonthCloses() {
+  return useQuery<MonthCloseListItem[]>({
+    queryKey: ["month-closes"],
+    queryFn: async () => {
+      const result = await commands.listMonthCloses();
+      if (result.status === "error") throw new Error(result.error.message);
+      return result.data;
+    },
+    enabled: isBackendAvailable(),
   });
 }
