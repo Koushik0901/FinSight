@@ -2953,6 +2953,26 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
     let period = "Projected from today".to_string();
     let key = format!("goal:{}", g.id);
 
+    // No target amount → nothing to complete. Don't call it "funded" (a target
+    // can be cleared to 0 out-of-band, e.g. via the Copilot); withhold instead.
+    if g.target_cents <= 0 {
+        return MetricExplanation {
+            key,
+            label: g.name.clone(),
+            value: MetricValue::Withheld,
+            definition,
+            inputs,
+            exclusions: Vec::new(),
+            assumptions,
+            tradeoffs: Vec::new(),
+            period,
+            warnings: vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "This goal has no target amount set, so there's no completion date to project.".into(),
+            }],
+        };
+    }
+
     // Already funded — a real, positive state, not a projection.
     if g.remaining_cents <= 0 {
         return MetricExplanation {
@@ -2986,9 +3006,18 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
             }],
         };
     }
-    let value = match g.eta_months {
-        Some(m) => MetricValue::Months { months: m as f64 },
-        None => MetricValue::Withheld,
+    // With a target, a contribution, and something still to go, the loader
+    // always yields a finite ETA — but if it somehow doesn't, withhold WITH a
+    // reason rather than a bare "not shown".
+    let (value, warnings) = match g.eta_months {
+        Some(m) => (MetricValue::Months { months: m as f64 }, Vec::new()),
+        None => (
+            MetricValue::Withheld,
+            vec![MetricWarning {
+                level: MetricWarningLevel::Withheld,
+                message: "A completion date can't be projected for this goal right now.".into(),
+            }],
+        ),
     };
     MetricExplanation {
         key,
@@ -3000,7 +3029,7 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
         assumptions,
         tradeoffs: Vec::new(),
         period,
-        warnings: Vec::new(),
+        warnings,
     }
 }
 
@@ -3272,6 +3301,20 @@ mod tests {
         let house = out.iter().find(|e| e.key == "goal:g2").unwrap();
         assert_eq!(house.value, MetricValue::Withheld);
         assert!(house.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+    }
+
+    /// A goal with no target amount (e.g. a target cleared to 0 out-of-band) has
+    /// nothing to complete — withhold with a reason rather than declaring it
+    /// "fully funded".
+    #[test]
+    fn goal_with_no_target_is_withheld_not_called_funded() {
+        let (_dir, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed_sinking_fund(&mut conn, "gz", "Open-ended", 0, 0, 5_000, None);
+        let out = explain_goals(&mut conn).unwrap();
+        let g = out.iter().find(|e| e.key == "goal:gz").unwrap();
+        assert_eq!(g.value, MetricValue::Withheld);
+        assert!(g.warnings.iter().any(|w| w.message.contains("no target amount")));
     }
 
     /// The failure the issue describes: a 0% balance about to become 22.99% is
