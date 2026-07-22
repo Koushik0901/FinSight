@@ -81,14 +81,23 @@ pub struct SavedScenarioDetail {
 }
 
 /// One proposed plan change from promoting a scenario — a suggestion for the
-/// user to review, never an applied mutation.
+/// user to review. Most are recommendation-only; a change with `applyable=true`
+/// can be written to the plan on explicit approval (#72).
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanChange {
+    /// Stable key the apply step approves by (e.g. "one_time").
+    pub id: String,
     pub title: String,
     pub detail: String,
     pub current_cents: Option<i64>,
     pub proposed_cents: Option<i64>,
+    /// Whether this change can be mechanically applied to the plan. Only true for
+    /// changes that map to a concrete plan entity — a one-time amount becomes a
+    /// dated planned transaction. Aggregate world-assumptions (income %, monthly
+    /// spending delta) and goal mentions have no unambiguous target, so they stay
+    /// recommendations the user acts on themselves.
+    pub applyable: bool,
 }
 
 /// The reviewable result of promoting a scenario. Deliberately carries NO write
@@ -445,48 +454,58 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
                 format!("Set aside or spend about {} more each month, matching this scenario.", fmt_money(params.monthly_expense_delta_cents)),
             )
         };
-        changes.push(PlanChange { title, detail, current_cents: Some(cur), proposed_cents: Some(proposed) });
+        // Aggregate spending delta — no single budget to write it to.
+        changes.push(PlanChange { id: "expense".into(), title, detail, current_cents: Some(cur), proposed_cents: Some(proposed), applyable: false });
     }
 
     if params.income_delta_pct != 0 {
         let cur = current.avg_monthly_income_cents;
         let proposed = ((cur as f64) * (1.0 + params.income_delta_pct as f64 / 100.0)).round() as i64;
         changes.push(PlanChange {
+            id: "income".into(),
             title: "Plan around an income change".to_string(),
             detail: format!("This scenario assumes your monthly income changes by {}%. Update your plan if that becomes real.", params.income_delta_pct),
             current_cents: Some(cur),
             proposed_cents: Some(proposed),
+            applyable: false,
         });
     }
 
     if params.one_time_cents != 0 {
+        // The one concretely applyable change: a one-off becomes a dated planned transaction.
         changes.push(PlanChange {
+            id: "one_time".into(),
             title: "Set aside for a one-time amount".to_string(),
             detail: format!(
-                "Plan for a one-off of about {}{}.",
+                "Plan for a one-off of about {}{}. Applying adds it as a planned transaction.",
                 fmt_money(params.one_time_cents),
                 if params.start_month_offset > 0 { format!(" in ~{} month(s)", params.start_month_offset) } else { String::new() }
             ),
             current_cents: None,
             proposed_cents: Some(params.one_time_cents),
+            applyable: true,
         });
     }
 
     for affected in &original_result.goals_affected {
         changes.push(PlanChange {
+            id: format!("goal:{affected}"),
             title: "Revisit a goal".to_string(),
             detail: format!("{affected} — adjust its contribution or target if you go ahead."),
             current_cents: None,
             proposed_cents: None,
+            applyable: false,
         });
     }
 
     if changes.is_empty() {
         changes.push(PlanChange {
+            id: "none".into(),
             title: "No changes to your plan".to_string(),
             detail: "This scenario doesn't imply any change to your monthly commitments.".to_string(),
             current_cents: None,
             proposed_cents: None,
+            applyable: false,
         });
     }
 
@@ -494,8 +513,135 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
         scenario_id: id,
         description: row.description,
         changes,
-        note: "These are suggestions for your review — nothing has been changed. Apply each one yourself if you decide to go ahead.".to_string(),
+        note: "These are suggestions for your review — nothing has been changed. Apply the applyable ones, or act on the rest yourself.".to_string(),
     })
+}
+
+/// The outcome of applying approved scenario changes to the plan (#72).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyScenarioResult {
+    /// Changes written to the plan (a planned transaction was created).
+    pub applied: Vec<String>,
+    /// Approved-but-not-written changes, with why (unsupported, or already applied).
+    pub skipped: Vec<SkippedChange>,
+    /// Human summary of what happened.
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedChange {
+    pub id: String,
+    pub reason: String,
+}
+
+/// Apply the approved, applyable changes of a scenario to the active plan (#72).
+///
+/// The ONLY mechanically-applyable change today is a one-time amount, which
+/// becomes a dated planned transaction (part of the plan, shown on `/recurring`).
+/// Idempotent: the created transaction is tagged with the scenario id, so a
+/// re-apply detects it and skips rather than duplicating. Aggregate deltas and
+/// goal mentions are never written — they remain recommendations. The scenario
+/// itself is never mutated: applying records a decision, it doesn't consume it.
+pub async fn apply_scenario(
+    state: &ApiState,
+    id: String,
+    approved_change_ids: Vec<String>,
+) -> AppResult<ApplyScenarioResult> {
+    // Re-derive the proposal so we apply against the SAME grounded, current view
+    // the user reviewed — never a stale snapshot.
+    let proposal = promote_scenario(state, id.clone()).await?;
+
+    // Resolve the scenario's params for the concrete write.
+    let db = (*state.db).clone();
+    let id_load = id.clone();
+    let row = run(&db, move |conn| scenarios_repo::get(conn, &id_load))
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
+    let params: Option<ScenarioParamsInput> = row.params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+
+    let mut applied = Vec::new();
+    let mut skipped = Vec::new();
+
+    for change in &proposal.changes {
+        if !approved_change_ids.contains(&change.id) {
+            continue; // not approved → left as a recommendation, silently
+        }
+        if !change.applyable {
+            skipped.push(SkippedChange { id: change.id.clone(), reason: "This change is a recommendation only — apply it yourself on the linked screen.".into() });
+            continue;
+        }
+        if change.id == "one_time" {
+            let Some(p) = &params else {
+                skipped.push(SkippedChange { id: change.id.clone(), reason: "The scenario's assumptions could not be read.".into() });
+                continue;
+            };
+            let source = format!("scenario:{id}");
+            // Idempotency: if this scenario's planned transaction already exists, skip.
+            let src_check = source.clone();
+            let already = run(&db, move |conn| {
+                finsight_core::repos::planned_transactions::list(conn, finsight_core::models::PlannedTxnFilter::default())
+                    .map(|txns| txns.into_iter().any(|t| t.source == src_check))
+            })
+            .await
+            .map_err(AppError::from)?;
+            if already {
+                skipped.push(SkippedChange { id: change.id.clone(), reason: "Already applied — its planned transaction exists.".into() });
+                continue;
+            }
+            // A one-off is an outflow; date it by the scenario's start offset.
+            let due = month_offset_date(chrono::Utc::now().date_naive(), p.start_month_offset);
+            let new_txn = finsight_core::models::NewPlannedTransaction {
+                description: if p.label.is_empty() { proposal.description.clone() } else { p.label.clone() },
+                amount_cents: -p.one_time_cents.abs(),
+                account_id: None,
+                category_id: None,
+                due_date: due,
+                source,
+            };
+            run(&db, move |conn| finsight_core::repos::planned_transactions::insert(conn, new_txn))
+                .await
+                .map_err(AppError::from)?;
+            applied.push(change.id.clone());
+        } else {
+            skipped.push(SkippedChange { id: change.id.clone(), reason: "This change can't be applied automatically.".into() });
+        }
+    }
+
+    let note = if applied.is_empty() && skipped.is_empty() {
+        "Nothing was applied — this scenario has no changes that can be written to the plan. Its suggestions remain recommendations.".to_string()
+    } else if applied.is_empty() {
+        "Nothing was written to your plan. The changes you approved are recommendations to act on yourself.".to_string()
+    } else {
+        format!("Applied {} change(s) to your plan as planned transactions. The scenario is unchanged.", applied.len())
+    };
+
+    Ok(ApplyScenarioResult { applied, skipped, note })
+}
+
+/// Add whole months to a date, clamping the day to the target month's length.
+fn month_offset_date(from: chrono::NaiveDate, months: u32) -> String {
+    use chrono::Datelike;
+    let total = (from.year() * 12 + from.month0() as i32) + months as i32;
+    let year = total.div_euclid(12);
+    let month0 = total.rem_euclid(12) as u32;
+    // Clamp day to the last day of the target month.
+    let first_next = if month0 == 11 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month0 + 2, 1)
+    };
+    let last_day = first_next
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.day())
+        .unwrap_or(28);
+    let day = from.day().min(last_day);
+    chrono::NaiveDate::from_ymd_opt(year, month0 + 1, day)
+        .unwrap_or(from)
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 pub async fn delete_scenario(state: &ApiState, id: String) -> AppResult<()> {
@@ -589,5 +735,20 @@ mod tests {
         let detail = detail_from_row(row, &baseline);
         assert!(detail.current_result.is_none());
         assert!(detail.revised_result.is_none(), "not recomputable → no revised result");
+    }
+
+    #[test]
+    fn month_offset_date_clamps_day_and_wraps_year() {
+        use chrono::NaiveDate;
+        let jan31 = NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
+        assert_eq!(month_offset_date(jan31, 0), "2026-01-31");
+        // Jan 31 + 1 month → Feb 28 (2026 is not a leap year) — day clamped.
+        assert_eq!(month_offset_date(jan31, 1), "2026-02-28");
+        // Leap year clamps to 29.
+        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2028, 1, 31).unwrap(), 1), "2028-02-29");
+        // Crossing the year boundary.
+        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2026, 12, 15).unwrap(), 2), "2027-02-15");
+        // A full year forward.
+        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2026, 6, 10).unwrap(), 12), "2027-06-10");
     }
 }

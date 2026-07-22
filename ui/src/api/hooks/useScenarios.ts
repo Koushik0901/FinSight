@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   commands,
+  type ApplyScenarioResult,
   type ScenarioParamsInput,
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
@@ -135,6 +136,25 @@ export function useClearScenarioRevision() {
       return res.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+/** Apply a scenario's approved, applyable changes to the plan (#72). Only writes
+ *  what's mechanically applyable (a one-time amount → a planned transaction);
+ *  idempotent, and the scenario is never consumed. */
+export function useApplyScenario() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, approvedChangeIds }: { id: string; approvedChangeIds: string[] }): Promise<ApplyScenarioResult> => {
+      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      const res = await commands.applyScenario(id, approvedChangeIds);
+      if (res.status === "error") throw new Error(res.error.message);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-transactions"] });
+      qc.invalidateQueries({ queryKey: ["recurring"] });
+    },
   });
 }
 

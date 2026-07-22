@@ -694,6 +694,12 @@ async fn dispatch(
             ok(c::scenarios::archive_scenario(api, arg(&p, "id")?, arg(&p, "archived")?).await?)
         }
         "promote_scenario" => ok(c::scenarios::promote_scenario(api, arg(&p, "id")?).await?),
+        "apply_scenario" => ok(c::scenarios::apply_scenario(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "approvedChangeIds")?,
+        )
+        .await?),
         "revise_scenario" => {
             ok(c::scenarios::revise_scenario(api, arg(&p, "id")?, arg(&p, "params")?).await?)
         }
@@ -1093,6 +1099,7 @@ pub const SUPPORTED: &[&str] = &[
     "duplicate_scenario",
     "archive_scenario",
     "promote_scenario",
+    "apply_scenario",
     "revise_scenario",
     "clear_scenario_revision",
     "delete_scenario",

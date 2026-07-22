@@ -155,6 +155,7 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::scenarios::duplicate_scenario,
         commands::scenarios::archive_scenario,
         commands::scenarios::promote_scenario,
+        commands::scenarios::apply_scenario,
         commands::scenarios::revise_scenario,
         commands::scenarios::clear_scenario_revision,
         commands::scenarios::delete_scenario,

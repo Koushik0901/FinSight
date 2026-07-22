@@ -850,6 +850,14 @@ let mockScenarios: AnyRec[] = [
     currentResult: scResult(true, 38, -50000, ["Extends runway by 38 days."], ["House Fund: +6 mo"]),
     isStale: false, recomputable: true,
   },
+  {
+    id: "sc-car", description: "Buy a car $35k", createdAt: isoDaysAgo(1), months: 24,
+    params: scParams({ oneTimeCents: 3500000, startMonthOffset: 3, label: "Buy a car $35k" }),
+    originalResult: scResult(false, -96, 0, ["A $35k one-off dents the runway."], []),
+    originalBaseline: { balanceCents: 2314000, avgMonthlyIncomeCents: 540000, avgMonthlyExpenseCents: 388000, goalCount: 1 },
+    currentResult: scResult(false, -96, 0, ["A $35k one-off dents the runway."], []),
+    isStale: false, recomputable: true,
+  },
 ];
 function mockDetailFromParams(description: string, params: AnyRec, months: number): AnyRec {
   const cut = Number(params.incomeDeltaPct ?? 0) < 0 || Number(params.oneTimeCents ?? 0) > 0;
@@ -968,14 +976,33 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     },
     promote_scenario: (a) => {
       const s = mockScenarios.find((x) => x.id === a?.id);
+      const p = (s?.params ?? {}) as AnyRec;
       const changes: AnyRec[] = [];
-      const delta = Number((s?.params as AnyRec)?.monthlyExpenseDeltaCents ?? 0);
-      if (delta !== 0) changes.push({ title: delta < 0 ? "Trim monthly spending" : "Commit more each month", detail: `Adjust your monthly commitments by about $${Math.abs(delta) / 100}.`, currentCents: 388000, proposedCents: 388000 + delta });
-      const incPct = Number((s?.params as AnyRec)?.incomeDeltaPct ?? 0);
-      if (incPct !== 0) changes.push({ title: "Plan around an income change", detail: `This scenario assumes your monthly income changes by ${incPct}%. Update your plan if that becomes real.`, currentCents: 540000, proposedCents: Math.round(540000 * (1 + incPct / 100)) });
-      for (const g of ((s?.currentResult as AnyRec)?.goalsAffected ?? []) as string[]) changes.push({ title: "Revisit a goal", detail: `${g} — adjust its contribution or target if you go ahead.`, currentCents: null, proposedCents: null });
-      if (changes.length === 0) changes.push({ title: "No changes to your plan", detail: "This scenario doesn't imply any change to your monthly commitments.", currentCents: null, proposedCents: null });
-      return { scenarioId: String(a?.id ?? ""), description: String(s?.description ?? "Scenario"), changes, note: "These are suggestions for your review — nothing has been changed. Apply each one yourself if you decide to go ahead." };
+      const delta = Number(p.monthlyExpenseDeltaCents ?? 0);
+      if (delta !== 0) changes.push({ id: "expense", title: delta < 0 ? "Trim monthly spending" : "Commit more each month", detail: `Adjust your monthly commitments by about $${Math.abs(delta) / 100}.`, currentCents: 388000, proposedCents: 388000 + delta, applyable: false });
+      const incPct = Number(p.incomeDeltaPct ?? 0);
+      if (incPct !== 0) changes.push({ id: "income", title: "Plan around an income change", detail: `This scenario assumes your monthly income changes by ${incPct}%. Update your plan if that becomes real.`, currentCents: 540000, proposedCents: Math.round(540000 * (1 + incPct / 100)), applyable: false });
+      const oneTime = Number(p.oneTimeCents ?? 0);
+      if (oneTime !== 0) changes.push({ id: "one_time", title: "Set aside for a one-time amount", detail: `Plan for a one-off of about $${Math.abs(oneTime) / 100}. Applying adds it as a planned transaction.`, currentCents: null, proposedCents: oneTime, applyable: true });
+      for (const g of ((s?.currentResult as AnyRec)?.goalsAffected ?? []) as string[]) changes.push({ id: `goal:${g}`, title: "Revisit a goal", detail: `${g} — adjust its contribution or target if you go ahead.`, currentCents: null, proposedCents: null, applyable: false });
+      if (changes.length === 0) changes.push({ id: "none", title: "No changes to your plan", detail: "This scenario doesn't imply any change to your monthly commitments.", currentCents: null, proposedCents: null, applyable: false });
+      return { scenarioId: String(a?.id ?? ""), description: String(s?.description ?? "Scenario"), changes, note: "These are suggestions for your review — nothing has been changed. Apply the applyable ones, or act on the rest yourself." };
+    },
+    apply_scenario: (a) => {
+      const s = mockScenarios.find((x) => x.id === a?.id);
+      const approved = (a?.approvedChangeIds ?? []) as string[];
+      const oneTime = Number((s?.params as AnyRec)?.oneTimeCents ?? 0);
+      const applied: string[] = [];
+      const skipped: AnyRec[] = [];
+      for (const id of approved) {
+        if (id === "one_time" && oneTime !== 0) applied.push("one_time");
+        else if (id === "one_time") skipped.push({ id, reason: "No one-time amount to apply." });
+        else skipped.push({ id, reason: "This change is a recommendation only — apply it yourself on the linked screen." });
+      }
+      const note = applied.length > 0
+        ? `Applied ${applied.length} change(s) to your plan as planned transactions. The scenario is unchanged.`
+        : "Nothing was written to your plan. The changes you approved are recommendations to act on yourself.";
+      return { applied, skipped, note };
     },
     revise_scenario: (a) => {
       const idx = mockScenarios.findIndex((x) => x.id === a?.id);
