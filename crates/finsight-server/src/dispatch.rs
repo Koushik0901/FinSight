@@ -694,6 +694,12 @@ async fn dispatch(
             ok(c::scenarios::archive_scenario(api, arg(&p, "id")?, arg(&p, "archived")?).await?)
         }
         "promote_scenario" => ok(c::scenarios::promote_scenario(api, arg(&p, "id")?).await?),
+        "revise_scenario" => {
+            ok(c::scenarios::revise_scenario(api, arg(&p, "id")?, arg(&p, "params")?).await?)
+        }
+        "clear_scenario_revision" => {
+            ok(c::scenarios::clear_scenario_revision(api, arg(&p, "id")?).await?)
+        }
         "delete_scenario" => ok(c::scenarios::delete_scenario(api, arg(&p, "id")?).await?),
 
         // ── settings ──
@@ -1087,6 +1093,8 @@ pub const SUPPORTED: &[&str] = &[
     "duplicate_scenario",
     "archive_scenario",
     "promote_scenario",
+    "revise_scenario",
+    "clear_scenario_revision",
     "delete_scenario",
     // settings
     "get_currency",

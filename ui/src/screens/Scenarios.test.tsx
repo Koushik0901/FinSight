@@ -6,6 +6,7 @@ import type { SavedScenarioDetail, ScenarioPlanProposal } from "../api/client";
 
 const runMutate = vi.fn();
 const promoteMutate = vi.fn();
+const reviseMutate = vi.fn();
 const useSavedScenarios = vi.fn();
 
 vi.mock("../api/hooks/useScenarios", () => ({
@@ -15,6 +16,8 @@ vi.mock("../api/hooks/useScenarios", () => ({
   useDuplicateScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useArchiveScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePromoteScenario: () => ({ mutateAsync: promoteMutate, isPending: false }),
+  useReviseScenario: () => ({ mutateAsync: reviseMutate, isPending: false }),
+  useClearScenarioRevision: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteScenario: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -50,6 +53,8 @@ function saved(over: Partial<SavedScenarioDetail>): SavedScenarioDetail {
     currentResult: { ...RESULT, runwayChangeDays: -214, verdict: false },
     isStale: true,
     recomputable: true,
+    revisedParams: null,
+    revisedResult: null,
     ...over,
   };
 }
@@ -69,6 +74,8 @@ describe("Scenarios screen", () => {
     runMutate.mockResolvedValue({ result: RESULT, params: PARAMS, months: 24 });
     promoteMutate.mockReset();
     promoteMutate.mockResolvedValue(PROPOSAL);
+    reviseMutate.mockReset();
+    reviseMutate.mockResolvedValue(saved({}));
     useSavedScenarios.mockReset();
     useSavedScenarios.mockReturnValue({ data: [] });
   });
@@ -110,6 +117,33 @@ describe("Scenarios screen", () => {
     await waitFor(() => expect(promoteMutate).toHaveBeenCalledWith("s1"));
     expect(await screen.findByText("Commit more each month")).toBeInTheDocument();
     expect(screen.getByText(/nothing has been changed/)).toBeInTheDocument();
+  });
+
+  it("revising a scenario re-evaluates the new assumptions without touching the plan (#73)", async () => {
+    useSavedScenarios.mockReturnValue({ data: [saved({})] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    // The panel opens, seeded with the scenario's params, and states it's non-destructive.
+    expect(await screen.findByText(/new assumptions/i)).toBeInTheDocument();
+    expect(screen.getByText(/never changes your budgets, goals, or plan/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Re-evaluate" }));
+    await waitFor(() => expect(reviseMutate).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", params: expect.objectContaining({ monthlyExpenseDeltaCents: -30000 }) })));
+  });
+
+  it("marks a scenario that carries a revision and shows the revised-vs-original comparison", () => {
+    const revised = saved({
+      revisedParams: { incomeDeltaPct: -50, monthlyExpenseDeltaCents: 0, oneTimeCents: 0, startMonthOffset: 0, label: "r" },
+      revisedResult: { ...RESULT, runwayChangeDays: -300, verdict: false },
+    });
+    useSavedScenarios.mockReturnValue({ data: [revised] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    expect(screen.getByText("Revised")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+    // The revised result is shown against the original assumptions' result.
+    expect(screen.getByText("-300d")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Discard revision" })).toBeInTheDocument();
+    // The edit itself is legible: income was 0% before the revision to -50%.
+    expect(screen.getByText(/was 0%/)).toBeInTheDocument();
   });
 
   it("does not offer recompute/promote on a legacy scenario", () => {

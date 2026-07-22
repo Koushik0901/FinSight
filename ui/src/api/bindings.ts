@@ -871,6 +871,29 @@ async promoteScenario(id: string) : Promise<Result<ScenarioPlanProposal, AppErro
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Revise a saved scenario's assumptions (issue #73) and re-evaluate it — the
+ * original result is preserved; the returned detail adds the revised result.
+ */
+async reviseScenario(id: string, params: ScenarioParamsInput) : Promise<Result<SavedScenarioDetail, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("revise_scenario", { id, params }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Discard a scenario's revision, reverting to the original assumptions only.
+ */
+async clearScenarioRevision(id: string) : Promise<Result<SavedScenarioDetail, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_scenario_revision", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteScenario(id: string) : Promise<Result<null, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_scenario", { id }) };
@@ -3110,7 +3133,18 @@ currentResult: ScenarioResult | null;
 /**
  * Whether the current baseline differs materially from the saved one.
  */
-isStale: boolean | null; recomputable: boolean }
+isStale: boolean | null; recomputable: boolean; 
+/**
+ * A REVISED set of assumptions the user is evaluating (issue #73), or `None`.
+ */
+revisedParams: ScenarioParamsInput | null; 
+/**
+ * The revised params run against the CURRENT baseline — same baseline as
+ * `current_result`, so the difference between the two is purely the effect
+ * of the assumption edit (never confused with live-data drift). `None` when
+ * there is no revision or the row can't be recomputed.
+ */
+revisedResult: ScenarioResult | null }
 export type SavingsRatePoint = { month: string; savingsRatePct: number; incomeCents: number; expenseCents: number }
 export type ScenarioParamsInput = { incomeDeltaPct: number; monthlyExpenseDeltaCents: number; oneTimeCents: number; startMonthOffset: number; label: string }
 /**

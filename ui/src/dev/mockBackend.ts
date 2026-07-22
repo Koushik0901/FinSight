@@ -977,6 +977,23 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       if (changes.length === 0) changes.push({ title: "No changes to your plan", detail: "This scenario doesn't imply any change to your monthly commitments.", currentCents: null, proposedCents: null });
       return { scenarioId: String(a?.id ?? ""), description: String(s?.description ?? "Scenario"), changes, note: "These are suggestions for your review — nothing has been changed. Apply each one yourself if you decide to go ahead." };
     },
+    revise_scenario: (a) => {
+      const idx = mockScenarios.findIndex((x) => x.id === a?.id);
+      const sc = mockScenarios[idx];
+      if (!sc) return null;
+      const params = (a?.params as AnyRec) ?? scParams({});
+      // Recompute against the same baseline — the revised result differs from the original.
+      const revisedResult = mockDetailFromParams("revision", params, Number(sc.months ?? 24)).currentResult;
+      mockScenarios[idx] = { ...sc, revisedParams: params, revisedResult };
+      return mockScenarios[idx];
+    },
+    clear_scenario_revision: (a) => {
+      const idx = mockScenarios.findIndex((x) => x.id === a?.id);
+      const sc = mockScenarios[idx];
+      if (!sc) return null;
+      mockScenarios[idx] = { ...sc, revisedParams: null, revisedResult: null };
+      return mockScenarios[idx];
+    },
     delete_scenario: (a) => {
       mockScenarios = mockScenarios.filter((s) => s.id !== a?.id);
       return null;

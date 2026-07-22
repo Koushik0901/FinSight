@@ -256,6 +256,22 @@ pub fn list_saved_scenarios() -> Arc<dyn Tool> {
                     match (params, baseline) {
                         (Some(p), Some(b)) => {
                             let proj = forecast::project(&current, &p, months);
+                            // A revision (#73): the revised assumptions projected
+                            // against the SAME current baseline, so the model can
+                            // compare original-vs-revised without confusing it with
+                            // live-data drift.
+                            let revised = row
+                                .revised_params_json
+                                .as_deref()
+                                .and_then(parse_scenario_params)
+                                .map(|rp| {
+                                    let rproj = forecast::project(&current, &rp, months);
+                                    json!({
+                                        "stays_positive": rproj.verdict,
+                                        "runway_change_days": rproj.runway_change_days,
+                                        "monthly_impact_cents": rproj.monthly_impact_cents,
+                                    })
+                                });
                             json!({
                                 "id": row.id,
                                 "name": row.description,
@@ -268,7 +284,8 @@ pub fn list_saved_scenarios() -> Arc<dyn Tool> {
                                     "monthly_impact_cents": proj.monthly_impact_cents,
                                     "considerations": proj.considerations,
                                     "goals_affected": proj.goals_affected,
-                                }
+                                },
+                                "revised": revised,
                             })
                         }
                         _ => json!({

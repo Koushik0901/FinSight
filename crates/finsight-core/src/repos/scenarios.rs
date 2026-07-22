@@ -69,9 +69,14 @@ pub struct ScenarioRow {
     pub months: Option<i64>,
     /// Soft-archive marker; archived rows are hidden from the active list.
     pub archived_at: Option<String>,
+    /// A REVISED set of what-if params (issue #73), stored alongside the
+    /// immutable original so the scenario can be re-evaluated without rebuilding.
+    /// `None` = no revision.
+    pub revised_params_json: Option<String>,
 }
 
-const COLS: &str = "id, description, result_json, created_at, params_json, baseline_json, months, archived_at";
+const COLS: &str =
+    "id, description, result_json, created_at, params_json, baseline_json, months, archived_at, revised_params_json";
 
 fn map_row(r: &rusqlite::Row) -> rusqlite::Result<ScenarioRow> {
     Ok(ScenarioRow {
@@ -83,6 +88,7 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<ScenarioRow> {
         baseline_json: r.get(5)?,
         months: r.get(6)?,
         archived_at: r.get(7)?,
+        revised_params_json: r.get(8)?,
     })
 }
 
@@ -113,7 +119,22 @@ pub fn insert(
         baseline_json: baseline_json.map(str::to_string),
         months,
         archived_at: None,
+        revised_params_json: None,
     })
+}
+
+/// Set or clear a scenario's revised what-if params (issue #73). The original
+/// params/result/baseline are never touched.
+pub fn set_revised_params(
+    conn: &mut Connection,
+    id: &str,
+    revised_params_json: Option<&str>,
+) -> CoreResult<()> {
+    conn.execute(
+        "UPDATE scenarios SET revised_params_json = ?2 WHERE id = ?1",
+        params![id, revised_params_json],
+    )?;
+    Ok(())
 }
 
 /// Active (non-archived) scenarios, newest first.
@@ -189,6 +210,24 @@ mod tests {
         assert_eq!(listed[0].months, Some(12));
         delete(&mut conn, &row.id).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn revised_params_round_trip_leaves_original_untouched() {
+        // Issue #73: a revision stores alongside the original — never over it.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let row = insert(&mut conn, "s", r#"{"verdict":true}"#, Some(r#"{"income":1}"#), Some(r#"{"b":2}"#), Some(24)).unwrap();
+        assert!(row.revised_params_json.is_none());
+
+        set_revised_params(&mut conn, &row.id, Some(r#"{"income":9}"#)).unwrap();
+        let after = get(&mut conn, &row.id).unwrap().unwrap();
+        assert_eq!(after.revised_params_json.as_deref(), Some(r#"{"income":9}"#));
+        assert_eq!(after.params_json.as_deref(), Some(r#"{"income":1}"#), "original params untouched");
+        assert_eq!(after.result_json, r#"{"verdict":true}"#, "original result untouched");
+
+        set_revised_params(&mut conn, &row.id, None).unwrap();
+        assert!(get(&mut conn, &row.id).unwrap().unwrap().revised_params_json.is_none(), "revision cleared");
     }
 
     #[test]
