@@ -157,6 +157,37 @@ describe("Scenarios screen", () => {
     expect(await screen.findByText(/Applied 1 change/i)).toBeInTheDocument();
   });
 
+  it("cannot re-apply a change already written to the plan (#72 no double-write)", async () => {
+    useSavedScenarios.mockReturnValue({ data: [saved({})] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Promote" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Apply 1 to plan/i }));
+    await screen.findByText(/Applied 1 change/i);
+    // The applied change is now marked and the button drops to zero, disabled —
+    // a second click can't write a duplicate planned transaction.
+    expect(screen.getByText("Applied")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Apply 0 to plan/i })).toBeDisabled();
+    expect(applyMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-initialises the approval selection when a different scenario is promoted (#72)", async () => {
+    // Scenario A promotes to a recommendation-only proposal; B has an applyable change.
+    useSavedScenarios.mockReturnValue({ data: [saved({ id: "s1", description: "A" }), saved({ id: "s2", description: "B" })] });
+    promoteMutate.mockImplementation((id: string) =>
+      id === "s2"
+        ? Promise.resolve({ ...PROPOSAL, scenarioId: "s2", description: "B" })
+        : Promise.resolve({ scenarioId: "s1", description: "A", changes: [{ id: "rec", title: "Handle it yourself", detail: "", currentCents: null, proposedCents: null, applyable: false }], note: "Nothing to apply automatically." }),
+    );
+    render(<Scenarios />, { wrapper: createWrapper() });
+    // Promote A (recommendation-only), then B without closing the panel.
+    fireEvent.click(screen.getAllByRole("button", { name: "Promote" })[0]!);
+    await screen.findByText("Handle it yourself");
+    fireEvent.click(screen.getAllByRole("button", { name: "Promote" })[1]!);
+    // B's applyable change must be freshly pre-selected — not stuck on A's empty set.
+    const applyBtn = await screen.findByRole("button", { name: /Apply 1 to plan/i });
+    expect(applyBtn).toBeEnabled();
+  });
+
   it("explains a saved scenario in the inspector, with its tradeoffs (#71)", async () => {
     useSavedScenarios.mockReturnValue({ data: [saved({})] });
     render(<Scenarios />, { wrapper: createWrapper() });
@@ -177,6 +208,22 @@ describe("Scenarios screen", () => {
     expect(screen.getByText(/never changes your budgets, goals, or plan/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Re-evaluate" }));
     await waitFor(() => expect(reviseMutate).toHaveBeenCalledWith(expect.objectContaining({ id: "s1", params: expect.objectContaining({ monthlyExpenseDeltaCents: -30000 }) })));
+  });
+
+  it("re-seeds the revise inputs when switching to a different scenario (#73)", async () => {
+    useSavedScenarios.mockReturnValue({ data: [
+      saved({ id: "s1", description: "A", params: { incomeDeltaPct: -50, monthlyExpenseDeltaCents: 0, oneTimeCents: 0, startMonthOffset: 0, label: "A" } }),
+      saved({ id: "s2", description: "B", params: { incomeDeltaPct: 0, monthlyExpenseDeltaCents: 0, oneTimeCents: 3500000, startMonthOffset: 0, label: "B" } }),
+    ] });
+    render(<Scenarios />, { wrapper: createWrapper() });
+    // Revise A: income field seeded to -50.
+    fireEvent.click(screen.getAllByRole("button", { name: "Revise" })[0]!);
+    expect(await screen.findByDisplayValue("-50")).toBeInTheDocument();
+    // Switch to B without closing: its one-time ($35k) must seed fresh, and A's
+    // -50 must be gone — otherwise a re-evaluate would apply A's assumptions to B.
+    fireEvent.click(screen.getAllByRole("button", { name: "Revise" })[1]!);
+    expect(await screen.findByDisplayValue("35000")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("-50")).not.toBeInTheDocument();
   });
 
   it("marks a scenario that carries a revision and shows the revised-vs-original comparison", () => {

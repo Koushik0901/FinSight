@@ -281,14 +281,22 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
   const apply = useApplyScenario();
   const applyable = proposal.changes.filter((c) => c.applyable);
   const [approved, setApproved] = useState<Set<string>>(() => new Set(applyable.map((c) => c.id)));
+  // Changes already written to the plan this session — dropped from `approved` so
+  // a second click can't add the same planned transaction twice.
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ApplyScenarioResult | null>(null);
 
   const runApply = async () => {
     try {
       const res = await apply.mutateAsync({ id: proposal.scenarioId, approvedChangeIds: [...approved] });
       setResult(res);
-      if (res.applied.length > 0) toast.success("Applied to your plan", { description: res.note });
-      else toast(res.note);
+      if (res.applied.length > 0) {
+        setAppliedIds((prev) => new Set([...prev, ...res.applied]));
+        setApproved((prev) => { const n = new Set(prev); res.applied.forEach((id) => n.delete(id)); return n; });
+        toast.success("Applied to your plan", { description: res.note });
+      } else {
+        toast(res.note);
+      }
     } catch (e) {
       toast.error("Could not apply scenario", { description: userErrorMessage(e, "Try again.") });
     }
@@ -301,13 +309,16 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
         <Button variant="ghost" size="sm" aria-label="Close proposal" onClick={onClose}><I.X /></Button>
       </div>
       <div className="stack">
-        {proposal.changes.map((c, i) => (
+        {proposal.changes.map((c, i) => {
+          const isApplied = appliedIds.has(c.id);
+          return (
           <div key={c.id || i} className="row-md" style={{ padding: "12px 0", borderTop: i > 0 ? "1px solid var(--hairline)" : "none", alignItems: "flex-start" }}>
             {c.applyable && (
               <input
                 type="checkbox"
                 aria-label={`Approve: ${c.title}`}
-                checked={approved.has(c.id)}
+                checked={approved.has(c.id) || isApplied}
+                disabled={isApplied}
                 onChange={() => setApproved((prev) => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
                 style={{ marginTop: 3, flexShrink: 0 }}
               />
@@ -315,7 +326,7 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
             <div className="grow stack stack-xs">
               <div className="row-sm" style={{ alignItems: "center" }}>
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>{c.title}</span>
-                {c.applyable ? <Badge tone="accent">Applyable</Badge> : <Badge>Recommendation</Badge>}
+                {isApplied ? <Badge tone="positive">Applied</Badge> : c.applyable ? <Badge tone="accent">Applyable</Badge> : <Badge>Recommendation</Badge>}
               </div>
               <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.detail}</div>
             </div>
@@ -327,7 +338,8 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {applyable.length > 0 ? (
@@ -649,10 +661,19 @@ export default function Scenarios() {
         onClose={() => setExplainId(null)}
       />
 
-      {proposal && <PromotePanel proposal={proposal} onClose={() => setProposal(null)} />}
+      {/* Key by scenario so switching proposals remounts the panel — otherwise the
+          approved-changes selection (and any prior apply result) carries over from
+          the previously promoted scenario, showing "Apply 0 to plan" on a scenario
+          that actually has applyable changes. */}
+      {proposal && <PromotePanel key={proposal.scenarioId} proposal={proposal} onClose={() => setProposal(null)} />}
 
+      {/* Key by scenario id: the revise inputs are seeded from the scenario's saved
+          assumptions on mount, so without a remount, switching from one scenario's
+          Revise to another keeps the first scenario's numbers in the fields — a
+          re-evaluate would then silently apply the wrong assumptions. */}
       {revising && (
         <RevisePanel
+          key={revising.id}
           scenario={revising}
           busy={revise.isPending || clearRev.isPending}
           onClose={() => setRevisingId(null)}
