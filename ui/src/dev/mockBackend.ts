@@ -169,6 +169,10 @@ function cat(id: string, label: string, color: string, thisM: number, lastM: num
 }
 
 function recur(merchant: string, color: string, label: string, kind: string, cadence: string, amt: number, dueInDays: number, priceChange: AnyRec | null = null): AnyRec {
+  // Callers pass a positive magnitude. Real recurring rows store outflows as
+  // negative cents (income positive) — the screen's grouping, "committed" sum,
+  // and "not used in forecasts" label all key off that sign — so mirror it here.
+  const signed = kind === "income" ? Math.abs(amt) : -Math.abs(amt);
   return {
     merchantRaw: merchant,
     merchantKey: merchant.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(),
@@ -180,9 +184,9 @@ function recur(merchant: string, color: string, label: string, kind: string, cad
     cadence,
     confidence: 0.9,
     reasons: ["Regular cadence", "Stable amount"],
-    lastAmountCents: amt,
-    minAmountCents: amt,
-    maxAmountCents: amt,
+    lastAmountCents: signed,
+    minAmountCents: signed,
+    maxAmountCents: signed,
     avgGapDays: cadence === "monthly" ? 30 : 7,
     occurrences: 6,
     lastSeen: isoDaysAgo(30 - dueInDays),
@@ -195,7 +199,7 @@ function recur(merchant: string, color: string, label: string, kind: string, cad
         : cadence === "annual"
           ? Math.round(Math.abs(amt) / 12)
           : Math.round(Math.abs(amt) * (30.44 / 7)),
-    feedsProjections: amt < 0 && kind !== "income",
+    feedsProjections: signed < 0,
   };
 }
 
