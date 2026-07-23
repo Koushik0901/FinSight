@@ -1,0 +1,540 @@
+/* ──────────────────────────────────────────────────────────
+   FinSight — server-mode auth (setup / sign in / recovery).
+   Ported from the "Plutus" Claude Design login. Every rule is
+   scoped under .fs-auth so the design's generic class names
+   (.field, .panel, .submit, .brand, .check …) can't collide
+   with the app's global styles, and its self-contained token
+   set can't override the themed app shell. Keyframes are global
+   by name (unique here) — that's fine.
+   ────────────────────────────────────────────────────────── */
+
+.fs-auth {
+  /* Self-contained, dark-first tokens — the auth screens render before the
+     app's ThemeProvider sets --accent et al., so they can't rely on it. */
+  --bg:        #08080B;
+  --bg-2:      #0B0B0F;
+  --surface:   #101015;
+  --surface-2: #15151B;
+  --elevated:  #1A1A22;
+  --hover:     #1E1E27;
+
+  --line:      rgba(255, 255, 255, 0.06);
+  --line-2:    rgba(255, 255, 255, 0.10);
+  --line-3:    rgba(255, 255, 255, 0.16);
+  --hairline:  rgba(255, 255, 255, 0.04);
+
+  --ink:       #F4F4F7;
+  --ink-2:     #C8C8D0;
+  --ink-mute:  #8A8A95;
+  --ink-faint: #57575F;
+
+  --accent:     #C9F950;
+  --accent-ink: #0A0F02;
+  --accent-2:   rgba(201, 249, 80, 0.14);
+  --accent-3:   rgba(201, 249, 80, 0.28);
+
+  --sky:     #60A5FA;
+  --violet:  #A78BFA;
+  --emerald: #34D399;
+  --rose:    #FB7185;
+
+  --positive: #4ADE80;
+  --negative: #FB7185;
+
+  --a-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --a-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  color-scheme: dark;
+
+  display: grid;
+  grid-template-columns: minmax(400px, 0.86fr) 1.14fr;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+  font-family: var(--a-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--bg);
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+}
+.fs-auth *,
+.fs-auth *::before,
+.fs-auth *::after { box-sizing: border-box; }
+.fs-auth button,
+.fs-auth input { font: inherit; color: inherit; }
+.fs-auth button { background: none; border: 0; padding: 0; cursor: pointer; }
+.fs-auth a { color: var(--accent); text-decoration: none; }
+.fs-auth a:hover { color: #d8ff74; }
+.fs-auth :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* ── Left · form panel ─────────────────────────────────── */
+.fs-auth .panel {
+  position: relative;
+  background: var(--bg-2);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 40px 56px;
+  overflow-y: auto;
+  z-index: 2;
+}
+.fs-auth .panel::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(120% 80% at 30% 0%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(120% 80% at 30% 0%, #000 20%, transparent 75%);
+  pointer-events: none;
+}
+.fs-auth .panel > * { position: relative; z-index: 1; }
+
+.fs-auth .brand { display: flex; align-items: center; gap: 11px; }
+.fs-auth .brand .mark {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--accent);
+  display: grid; place-items: center;
+  position: relative;
+  box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.4), 0 0 34px rgba(201, 249, 80, 0.35);
+  animation: markpulse 4.5s ease-in-out infinite;
+}
+.fs-auth .brand .mark::after {
+  content: ""; position: absolute; inset: 6px;
+  border-radius: 3px; background: var(--accent-ink);
+}
+@keyframes markpulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.4), 0 0 30px rgba(201, 249, 80, 0.28); }
+  50%      { box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.55), 0 0 46px rgba(201, 249, 80, 0.5); }
+}
+.fs-auth .brand .wm { font-weight: 600; font-size: 16.5px; letter-spacing: -0.025em; }
+.fs-auth .brand .wm b { color: var(--accent); font-weight: 600; }
+
+.fs-auth .panel-body {
+  flex: 1;
+  display: flex; flex-direction: column; justify-content: center;
+  max-width: 400px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 44px 0;
+}
+
+.fs-auth .head-eyebrow {
+  font-family: var(--a-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex; align-items: center; gap: 9px;
+  margin-bottom: 18px;
+}
+.fs-auth .head-eyebrow .dot {
+  width: 6px; height: 6px; border-radius: 999px; background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+.fs-auth .head-title {
+  font-size: 33px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.06;
+  margin: 0; text-wrap: pretty;
+}
+.fs-auth .head-title em { font-style: normal; color: var(--accent); }
+.fs-auth .head-sub {
+  color: var(--ink-mute); font-size: 14.5px; margin: 12px 0 0; max-width: 42ch;
+  text-wrap: pretty;
+}
+
+/* ── Form ──────────────────────────────────────────────── */
+.fs-auth form { display: flex; flex-direction: column; gap: 14px; margin-top: 26px; }
+
+.fs-auth .field { position: relative; }
+.fs-auth .field .in-wrap {
+  position: relative;
+  display: flex; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.fs-auth .field.focused .in-wrap {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 3px var(--accent-2), 0 0 30px rgba(201, 249, 80, 0.08);
+}
+.fs-auth .field.invalid .in-wrap {
+  border-color: var(--negative);
+  box-shadow: 0 0 0 3px rgba(251, 113, 133, 0.14);
+}
+.fs-auth .field .lead-ico {
+  width: 44px; display: grid; place-items: center;
+  color: var(--ink-faint);
+  transition: color .18s;
+  flex-shrink: 0;
+}
+.fs-auth .field.focused .lead-ico { color: var(--accent); }
+.fs-auth .field input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0; outline: 0;
+  padding: 14px 14px 14px 0;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+.fs-auth .field input::placeholder { color: transparent; }
+.fs-auth .field .lab {
+  position: absolute;
+  left: 44px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-mute);
+  font-size: 14.5px;
+  pointer-events: none;
+  transition: transform .18s cubic-bezier(.2, .8, .2, 1), font-size .18s, color .18s;
+  padding: 0 4px;
+}
+.fs-auth .field.focused .lab,
+.fs-auth .field.filled .lab {
+  transform: translateY(-30px) translateX(-30px);
+  font-size: 11px;
+  color: var(--ink-mute);
+  font-family: var(--a-mono);
+  letter-spacing: 0.04em;
+}
+.fs-auth .field.focused .lab { color: var(--accent); }
+.fs-auth .field .lab b { color: var(--negative); }
+.fs-auth .field .trail {
+  display: flex; align-items: center; gap: 4px;
+  padding-right: 8px;
+}
+.fs-auth .field .toggle-eye {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--ink-faint);
+}
+.fs-auth .field .toggle-eye:hover { color: var(--ink); background: var(--hover); }
+.fs-auth .field .valid-check {
+  color: var(--positive);
+  opacity: 0; transform: scale(0.6);
+  transition: opacity .2s, transform .3s cubic-bezier(.2, 1.6, .4, 1);
+}
+.fs-auth .field.valid .valid-check { opacity: 1; transform: scale(1); }
+
+.fs-auth .field-err {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height .25s, opacity .2s, margin .25s;
+  font-size: 12px; color: var(--negative);
+  padding-left: 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.fs-auth .field.invalid .field-err { max-height: 30px; opacity: 1; margin-top: 7px; }
+
+/* Collapsible mode-only fields (confirm password, strength) */
+.fs-auth .collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .38s cubic-bezier(.2, .8, .2, 1), opacity .3s;
+  opacity: 0;
+}
+.fs-auth .collapse > .collapse-inner { overflow: hidden; min-height: 0; }
+.fs-auth .collapse.open { grid-template-rows: 1fr; opacity: 1; }
+
+/* Password strength */
+.fs-auth .pw-strength {
+  display: flex; flex-direction: column; gap: 7px;
+  margin-top: 2px;
+  padding: 4px 2px 0;
+}
+.fs-auth .pw-bars { display: flex; gap: 5px; }
+.fs-auth .pw-bars span {
+  flex: 1; height: 3px; border-radius: 999px; background: var(--line-2);
+  transition: background .3s;
+}
+.fs-auth .pw-meta { display: flex; justify-content: space-between; font-size: 11px; }
+.fs-auth .pw-meta .lvl { font-family: var(--a-mono); letter-spacing: 0.04em; }
+.fs-auth .pw-meta .hint { color: var(--ink-faint); }
+
+/* Row: forgot password */
+.fs-auth .form-row {
+  display: flex; align-items: center; justify-content: flex-end;
+  margin: 2px 0;
+  font-size: 13px;
+}
+
+/* Inline error banner (server-reported) */
+.fs-auth .auth-alert {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--negative);
+  background: rgba(251, 113, 133, 0.10);
+  border: 1px solid rgba(251, 113, 133, 0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* Submit */
+.fs-auth .submit {
+  position: relative;
+  height: 48px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600; font-size: 14.5px;
+  letter-spacing: -0.01em;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  overflow: hidden;
+  margin-top: 6px;
+  transition: filter .15s, transform .1s, box-shadow .2s, opacity .15s;
+  box-shadow: 0 0 0 1px var(--accent), 0 8px 30px rgba(201, 249, 80, 0.22);
+}
+.fs-auth .submit:hover { filter: brightness(1.06); box-shadow: 0 0 0 1px var(--accent), 0 10px 40px rgba(201, 249, 80, 0.34); }
+.fs-auth .submit:active { transform: translateY(1px); }
+.fs-auth .submit:disabled { cursor: default; }
+.fs-auth .submit::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
+  left: -50%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: skewX(-18deg);
+  animation: authsheen 3.6s ease-in-out infinite;
+}
+@keyframes authsheen { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+.fs-auth .submit .spinner {
+  width: 17px; height: 17px; border-radius: 999px;
+  border: 2px solid rgba(10, 15, 2, 0.25);
+  border-top-color: var(--accent-ink);
+  animation: authspin .7s linear infinite;
+}
+@keyframes authspin { to { transform: rotate(360deg); } }
+.fs-auth .submit.busy::after { display: none; }
+.fs-auth .submit .arw { transition: transform .2s; display: inline-flex; }
+.fs-auth .submit:hover .arw { transform: translateX(3px); }
+
+.fs-auth .legal {
+  color: var(--ink-faint); font-size: 12px; line-height: 1.55;
+  margin-top: 16px; text-wrap: pretty;
+}
+
+.fs-auth .panel-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--ink-faint); font-size: 12px;
+  font-family: var(--a-mono); letter-spacing: 0.02em;
+}
+.fs-auth .panel-foot .lock { display: inline-flex; align-items: center; gap: 7px; }
+
+/* ── Recovery-key reveal (setup step 2), styled to the shell ── */
+.fs-auth .rk {
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  margin-top: 22px;
+}
+.fs-auth .rk-key {
+  margin-top: 14px; padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  font-family: var(--a-mono);
+  font-size: 13.5px; letter-spacing: 0.4px; color: var(--ink);
+  word-break: break-all; line-height: 1.7;
+}
+.fs-auth .rk-check {
+  display: inline-flex; align-items: center; gap: 9px;
+  color: var(--ink-2); font-size: 13.5px; cursor: pointer; user-select: none;
+  margin-top: 18px;
+}
+.fs-auth .rk-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.fs-auth .btn-ghost {
+  align-self: flex-start; margin-top: 12px;
+  padding: 8px 14px; border-radius: 9px;
+  border: 1px solid var(--line-2); background: var(--surface-2);
+  color: var(--ink-2); font-size: 13px; font-weight: 500;
+  transition: border-color .15s, background .15s;
+}
+.fs-auth .btn-ghost:hover { border-color: var(--line-3); background: var(--elevated); }
+
+/* ── Right · 3D showcase ───────────────────────────────── */
+.fs-auth .showcase {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 120% at 78% 8%, rgba(201, 249, 80, 0.10), transparent 46%),
+    radial-gradient(90% 90% at 20% 100%, rgba(96, 165, 250, 0.10), transparent 50%),
+    var(--bg);
+}
+.fs-auth .showcase canvas.bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fs-auth .showcase canvas.net { z-index: 1; }
+.fs-auth .showcase-vignette {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: radial-gradient(75% 75% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+.fs-auth .stage {
+  position: absolute; inset: 0; z-index: 3;
+  display: grid; place-items: center;
+  perspective: 1400px;
+  perspective-origin: 50% 42%;
+}
+.fs-auth .stage-inner {
+  position: relative;
+  width: 500px; height: 560px;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.fs-auth .gcard {
+  position: absolute;
+  background: linear-gradient(150deg, rgba(23, 23, 30, 0.96), rgba(13, 13, 18, 0.95));
+  border: 1px solid var(--line-2);
+  border-radius: 18px;
+  backdrop-filter: blur(3px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 1px 0 rgba(255, 255, 255, 0.05),
+    0 34px 80px rgba(0, 0, 0, 0.7);
+  transform-style: preserve-3d;
+  opacity: 0;
+  animation: authcardin .9s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+@keyframes authcardin {
+  from { opacity: 0; transform: translateZ(-120px) translateY(30px) scale(0.94); }
+  to   { opacity: 1; }
+}
+.fs-auth .gcard::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.07), transparent 40%);
+}
+.fs-auth .card-hero {
+  width: 336px; left: 82px; top: 150px;
+  padding: 24px 26px;
+  transform: translateZ(70px);
+  animation-delay: .12s;
+}
+.fs-auth .card-hero .lbl {
+  font-family: var(--a-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex; align-items: center; gap: 8px;
+}
+.fs-auth .card-hero .lbl .d { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.fs-auth .card-hero .big {
+  font-size: 46px; font-weight: 600; letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums; margin-top: 12px; line-height: 1;
+}
+.fs-auth .card-hero .big .cur { color: var(--ink-mute); font-size: 26px; font-weight: 500; margin-right: 2px; vertical-align: 6px; }
+.fs-auth .card-hero .delta {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 14px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--positive);
+  background: rgba(74, 222, 128, 0.12);
+  padding: 4px 10px; border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.fs-auth .card-hero canvas { display: block; width: 100%; height: 74px; margin-top: 18px; }
+.fs-auth .card-mini {
+  width: 208px; padding: 15px 17px;
+  display: flex; flex-direction: column; gap: 11px;
+}
+.fs-auth .card-mini .top { display: flex; align-items: center; gap: 10px; }
+.fs-auth .card-mini .logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 12px; letter-spacing: -0.03em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.fs-auth .card-mini .nm { font-size: 12.5px; font-weight: 500; }
+.fs-auth .card-mini .sub { font-size: 10.5px; color: var(--ink-faint); font-family: var(--a-mono); }
+.fs-auth .card-mini .amt { font-size: 21px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.fs-auth .card-mini canvas { width: 100%; height: 30px; display: block; }
+.fs-auth .card-a { left: 4px; top: 34px; transform: translateZ(130px); animation-delay: .28s; }
+.fs-auth .card-b { right: -6px; top: 96px; transform: translateZ(40px); animation-delay: .4s; }
+.fs-auth .card-insight {
+  width: 300px; right: -34px; bottom: 96px;
+  padding: 15px 17px;
+  display: grid; grid-template-columns: 30px 1fr; gap: 13px; align-items: start;
+  transform: translateZ(150px);
+  animation-delay: .54s;
+}
+.fs-auth .card-insight .spark {
+  width: 30px; height: 30px; border-radius: 9px;
+  background: var(--accent-2); color: var(--accent);
+  display: grid; place-items: center;
+  border: 1px solid var(--accent-3);
+}
+.fs-auth .card-insight .txt { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; text-wrap: pretty; }
+.fs-auth .card-insight .txt b { color: var(--ink); font-weight: 600; }
+.fs-auth .card-insight .meta { font-size: 10.5px; color: var(--ink-faint); font-family: var(--a-mono); margin-top: 6px; }
+.fs-auth .card-pill {
+  left: 40px; bottom: 60px;
+  padding: 11px 15px;
+  display: flex; align-items: center; gap: 11px;
+  border-radius: 999px;
+  transform: translateZ(96px);
+  animation-delay: .66s;
+}
+.fs-auth .card-pill .avset { display: flex; }
+.fs-auth .card-pill .av {
+  width: 26px; height: 26px; border-radius: 999px;
+  display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff;
+  border: 2px solid var(--elevated);
+}
+.fs-auth .card-pill .av + .av { margin-left: -9px; }
+.fs-auth .card-pill .lab { font-size: 12px; color: var(--ink-2); }
+.fs-auth .card-pill .lab b { color: var(--ink); }
+
+.fs-auth .float { animation: authcardin .9s cubic-bezier(.2, .8, .2, 1) forwards, authdrift 9s ease-in-out infinite; }
+.fs-auth .card-hero.float    { animation-delay: .12s, 1.0s; }
+.fs-auth .card-a.float       { animation-delay: .28s, 1.4s; }
+.fs-auth .card-b.float       { animation-delay: .4s, 0.6s; }
+.fs-auth .card-insight.float { animation-delay: .54s, 1.9s; }
+.fs-auth .card-pill.float    { animation-delay: .66s, 2.3s; }
+@keyframes authdrift {
+  0%, 100% { translate: 0 0; }
+  50%      { translate: 0 -12px; }
+}
+
+.fs-auth .showcase-cap {
+  position: absolute; left: 44px; bottom: 40px; z-index: 4;
+  max-width: 420px;
+}
+.fs-auth .showcase-cap h2 {
+  font-size: 25px; font-weight: 600; letter-spacing: -0.03em; margin: 0; line-height: 1.15;
+  text-wrap: pretty;
+}
+.fs-auth .showcase-cap p {
+  color: var(--ink-mute); font-size: 13.5px; margin: 10px 0 0; text-wrap: pretty; max-width: 40ch;
+}
+.fs-auth .showcase-dots { display: flex; gap: 7px; margin-top: 18px; }
+.fs-auth .showcase-dots span {
+  width: 22px; height: 3px; border-radius: 999px; background: var(--line-2);
+  transition: background .3s, width .3s;
+}
+.fs-auth .showcase-dots span.on { background: var(--accent); width: 34px; box-shadow: 0 0 10px var(--accent-3); }
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .fs-auth {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .fs-auth .showcase { display: none; }
+  .fs-auth .panel { border-right: 0; }
+}
+@media (max-width: 520px) {
+  .fs-auth .panel { padding: 28px 22px; }
+  .fs-auth .head-title { font-size: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fs-auth .brand .mark,
+  .fs-auth .submit::after,
+  .fs-auth .float,
+  .fs-auth .gcard { animation: none; }
+  .fs-auth .gcard { opacity: 1; }
+}

@@ -1,18 +1,19 @@
 import { useState, type FormEvent } from "react";
-import Button from "../../components/Button";
-import Input from "../../components/Input";
 import RecoverScreen from "./RecoverScreen";
 import { login } from "../../api/auth";
 import { userErrorMessage } from "../../utils/runtime";
+import { AuthShell, Field, Ico } from "./authScene";
 
 /**
- * Server-mode-only login screen. Rendered by AuthGate when the app is
- * running against finsight-server and the session cookie is missing or
- * expired (either at boot or after a `finsight:auth-required` event).
+ * Server-mode-only login screen. Rendered by AuthGate when the app is running
+ * against finsight-server and the session cookie is missing or expired (either
+ * at boot or after a `finsight:auth-required` event). Presented in the shared
+ * {@link AuthShell}.
  */
 export default function LoginScreen({ onComplete }: { onComplete: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -29,7 +30,7 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
       setError(
         code === "auth.bad_credentials"
           ? "Wrong username or password."
-          : userErrorMessage(err, "Could not sign in. Try again.")
+          : userErrorMessage(err, "Could not sign in. Try again."),
       );
     } finally {
       setSubmitting(false);
@@ -44,51 +45,52 @@ export default function LoginScreen({ onComplete }: { onComplete: () => void }) 
   }
 
   return (
-    <div className="screen server-auth-screen">
-      <form className="card server-auth-card" onSubmit={(e) => void handleSubmit(e)}>
-        <p className="eyebrow">FinSight</p>
-        <h1 className="h1" style={{ fontSize: 26 }}>Sign in</h1>
-        <p className="muted" style={{ marginTop: 8 }}>Enter your username and password to continue.</p>
+    <AuthShell
+      eyebrow="Welcome back"
+      title={<>Pick up where you <em>left off</em>.</>}
+      subtitle="Sign in to your dashboard, agent insights and shared budgets."
+    >
+      <form onSubmit={(e) => void handleSubmit(e)} noValidate>
+        <Field
+          icon={Ico.user()}
+          id="login-username"
+          label="Username"
+          value={username}
+          onChange={setUsername}
+          autoComplete="username"
+          autoFocus
+        />
+        <Field
+          icon={Ico.lock()}
+          id="login-password"
+          label="Password"
+          type={showPw ? "text" : "password"}
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          trailing={
+            <button type="button" className="toggle-eye" onClick={() => setShowPw((s) => !s)} aria-label="Toggle visibility">
+              {showPw ? Ico.eyeoff() : Ico.eye()}
+            </button>
+          }
+        />
 
-        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <Input
-            label="Username"
-            id="login-username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-          />
-          <Input
-            label="Password"
-            id="login-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
+        <div className="form-row">
+          <button type="button" onClick={() => setRecovering(true)} disabled={submitting} style={{ color: "var(--ink-mute)" }}>
+            Forgot your password?
+          </button>
         </div>
 
         {error && (
-          <p role="alert" className="err" style={{ marginTop: 12 }}>
-            {error}
-          </p>
+          <div className="auth-alert" role="alert">{Ico.warn()} {error}</div>
         )}
 
-        <Button type="submit" variant="primary" style={{ marginTop: 18, width: "100%" }} disabled={submitting}>
-          {submitting ? "Signing in…" : "Sign in"}
-        </Button>
-
-        <Button
-          type="button"
-          variant="text"
-          style={{ marginTop: 10, width: "100%" }}
-          onClick={() => setRecovering(true)}
-          disabled={submitting}
-        >
-          Forgot your password?
-        </Button>
+        <button className={"submit" + (submitting ? " busy" : "")} type="submit" disabled={submitting}>
+          {submitting
+            ? <><span className="spinner" /> Signing in…</>
+            : <>Sign in <span className="arw">{Ico.arrow()}</span></>}
+        </button>
       </form>
-    </div>
+    </AuthShell>
   );
 }
