@@ -883,6 +883,8 @@ function defaultNotifPrefs(): AnyRec {
     quietHours: { start: 22, end: 7 },
     utcOffsetMinutes: 0,
     privacy: "full",
+    snoozeUntil: null,
+    digestFrequency: "off",
   };
 }
 let mockNotifPrefs: AnyRec = defaultNotifPrefs();

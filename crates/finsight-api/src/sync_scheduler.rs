@@ -164,17 +164,37 @@ impl SyncScheduler {
                 // renewal is only "early enough to act on" if it doesn't wait for
                 // the next app open. finsight-core can't reach the push layer, so
                 // the send happens here, mirroring notify_new_activity.
-                let sub_pushable = finsight_core::repos::run(&db, |conn| {
+                let (sub_pushable, digest_pushable) = finsight_core::repos::run(&db, |conn| {
                     let now = chrono::Utc::now();
                     finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
                     finsight_core::notify::expire_due(conn, now)?;
                     // Month-end close reminder (#59): raise once for the month that
                     // just ended until it's closed; in-app/badge only.
                     crate::commands::month_close::refresh_month_end_reminder(conn, now)?;
-                    finsight_core::subscriptions::refresh_subscription_alerts(conn, now)
+                    let sub = finsight_core::subscriptions::refresh_subscription_alerts(conn, now)?;
+                    // Digest (#69) runs LAST so it can batch anything raised this
+                    // cycle; with digests on, the individual producers' pushes were
+                    // withheld, so this is the one push that covers them.
+                    let digest = finsight_core::notify::build_digest(conn, now)?;
+                    Ok((sub, digest))
                 })
                 .await
-                .unwrap_or(0);
+                .unwrap_or((0, 0));
+
+                if digest_pushable > 0 {
+                    // A digest was produced this cycle — one vague buzz; the
+                    // specifics live in the in-app notification history.
+                    let payload = crate::commands::push::PushPayload {
+                        title: "Your notifications digest".into(),
+                        body: "Open FinSight to see what's new.".into(),
+                        url: "/".into(),
+                        tag: "finsight-digest".into(),
+                        badge_count: None,
+                    };
+                    if let Err(e) = crate::commands::push::send_push_for_db(&db, payload).await {
+                        tracing::warn!(error = ?e, "digest push notification failed");
+                    }
+                }
 
                 if sub_pushable > 0 {
                     // One summary buzz, not one per change. The push names no
