@@ -44,6 +44,11 @@ const DUPLICATE_RECENT_DAYS: i64 = 45;
 /// Duplicate candidates must charge within this percent of each other; two
 /// same-named services at very different prices are likely genuinely different.
 const DUPLICATE_AMOUNT_TOLERANCE_PCT: i64 = 10;
+/// A duplicate suggestion lapses after this long if un-actioned — the backstop
+/// that clears a stale pairing once one series lapses (its keyed dedup would
+/// otherwise linger, since the group's exact membership is in the dedup key). A
+/// still-valid duplicate simply re-surfaces on the next cycle after it expires.
+const DUPLICATE_TTL_DAYS: i64 = 60;
 
 /// The user's durable decision about a detected subscription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,12 +158,27 @@ pub fn set_subscription_trial(
     label: &str,
     trial_ends_at: Option<&str>,
 ) -> CoreResult<()> {
-    conn.execute(
-        "INSERT INTO subscription_overrides(merchant_key, verdict, label, trial_ends_at, created_at) \
-         VALUES(?1, 'confirmed', ?2, ?3, ?4) \
-         ON CONFLICT(merchant_key) DO UPDATE SET trial_ends_at=excluded.trial_ends_at, label=excluded.label",
-        params![merchant_key, label, trial_ends_at, Utc::now().to_rfc3339()],
-    )?;
+    match trial_ends_at {
+        // Marking a trial affirms this IS a subscription, so force the verdict to
+        // `confirmed` even on an existing row — otherwise a dismissed/cancelled
+        // series would show a trial badge whose reminder could never fire.
+        Some(ends) => {
+            conn.execute(
+                "INSERT INTO subscription_overrides(merchant_key, verdict, label, trial_ends_at, created_at) \
+                 VALUES(?1, 'confirmed', ?2, ?3, ?4) \
+                 ON CONFLICT(merchant_key) DO UPDATE SET verdict='confirmed', trial_ends_at=excluded.trial_ends_at, label=excluded.label",
+                params![merchant_key, label, ends, Utc::now().to_rfc3339()],
+            )?;
+        }
+        // Clearing a trial only nulls that column; the verdict is left untouched
+        // (and a row that never existed needs nothing cleared).
+        None => {
+            conn.execute(
+                "UPDATE subscription_overrides SET trial_ends_at = NULL WHERE merchant_key = ?1",
+                params![merchant_key],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -393,16 +413,20 @@ fn post_cancellation_alert(
     })
 }
 
-/// A conservative "same service" token: the longest alphabetic run of ≥4 chars
-/// in a merchant descriptor, lowercased. `None` when there's no strong token, so
-/// grouping never rests on a weak signal. Deliberately simple and biased toward
-/// NOT flagging — duplicate detection is a review suggestion, not an assertion.
-fn service_token(display: &str) -> Option<String> {
-    let mut best: Option<String> = None;
+/// A conservative "same service" key: the FULL set of ≥4-char alphabetic tokens
+/// in a merchant descriptor, lowercased, deduped and sorted. `None` when there's
+/// no strong token. Using the whole token set (not just the longest run) is what
+/// keeps same-brand, different-service subscriptions apart — "APPLE MUSIC"
+/// → `apple|music` vs "APPLE TV" → `apple` don't collide — while genuine
+/// variants of one service still match ("NETFLIX" and "NETFLIX.COM" both →
+/// `netflix`, since "com" is too short to count). Biased toward NOT flagging:
+/// duplicate detection is a review suggestion, not an assertion.
+fn service_key(display: &str) -> Option<String> {
+    let mut tokens: Vec<String> = Vec::new();
     let mut cur = String::new();
-    let consider = |cur: &mut String, best: &mut Option<String>| {
-        if cur.len() >= 4 && best.as_ref().map_or(true, |b: &String| cur.len() > b.len()) {
-            *best = Some(cur.clone());
+    let mut flush = |cur: &mut String, tokens: &mut Vec<String>| {
+        if cur.len() >= 4 && !tokens.iter().any(|t| t == cur) {
+            tokens.push(cur.clone());
         }
         cur.clear();
     };
@@ -410,11 +434,15 @@ fn service_token(display: &str) -> Option<String> {
         if ch.is_ascii_alphabetic() {
             cur.push(ch.to_ascii_lowercase());
         } else {
-            consider(&mut cur, &mut best);
+            flush(&mut cur, &mut tokens);
         }
     }
-    consider(&mut cur, &mut best);
-    best
+    flush(&mut cur, &mut tokens);
+    if tokens.is_empty() {
+        return None;
+    }
+    tokens.sort();
+    Some(tokens.join("|"))
 }
 
 /// Surface pairs/groups of ACTIVE subscriptions that look like the same service
@@ -444,8 +472,8 @@ fn duplicate_alerts(
         if !active {
             continue;
         }
-        if let Some(token) = service_token(&it.display_merchant) {
-            groups.entry(token).or_default().push(it);
+        if let Some(key) = service_key(&it.display_merchant) {
+            groups.entry(key).or_default().push(it);
         }
     }
 
@@ -473,8 +501,9 @@ fn duplicate_alerts(
             title: "Two subscriptions look like the same service".into(),
             body: "You may be paying for one service twice — worth a check.".into(),
             sensitive: Some(format!("Possible duplicate: {}", names.join(" & "))),
-            // Standing until the data changes or the user acts on it.
-            expires_at: None,
+            // A backstop expiry so a stale pairing (one series lapses) clears
+            // itself; a duplicate that still holds re-surfaces next cycle.
+            expires_at: Some(midnight_rfc3339(today + Duration::days(DUPLICATE_TTL_DAYS))),
             route: Some("/recurring".into()),
         });
     }
@@ -675,12 +704,47 @@ mod tests {
     }
 
     #[test]
-    fn service_token_picks_the_strongest_shared_name() {
-        assert_eq!(service_token("NETFLIX.COM"), Some("netflix".into()));
-        // netflix (7) beats the processor prefix paypal (6).
-        assert_eq!(service_token("PAYPAL *NETFLIX"), Some("netflix".into()));
-        assert_eq!(service_token("SP"), None); // nothing >= 4 chars
-        assert_eq!(service_token("A1 B2 99"), None); // no alphabetic run >= 4
+    fn service_key_uses_the_full_token_set() {
+        // Genuine variants of one service still match ("com" is too short to count).
+        assert_eq!(service_key("NETFLIX.COM"), Some("netflix".into()));
+        assert_eq!(service_key("NETFLIX"), Some("netflix".into()));
+        // Same brand, different services → different keys, so they never collide.
+        assert_eq!(service_key("APPLE MUSIC"), Some("apple|music".into()));
+        assert_ne!(service_key("APPLE MUSIC"), service_key("APPLE TV"));
+        assert_eq!(service_key("SP"), None); // nothing >= 4 chars
+        assert_eq!(service_key("A1 B2 99"), None); // no alphabetic run >= 4
+    }
+
+    #[test]
+    fn same_brand_different_services_are_not_flagged_as_duplicates() {
+        let today = NaiveDate::parse_from_str("2025-07-10", "%Y-%m-%d").unwrap();
+        // Same brand, identical price, genuinely distinct services — the classic
+        // false-positive the full-token-set key defeats.
+        let items = vec![
+            ri("applemusic", "APPLE MUSIC", RecurringKind::Subscription, -1099, "2025-07-01"),
+            ri("appletv", "APPLE TV", RecurringKind::Subscription, -1099, "2025-06-28"),
+            ri("applearcade", "APPLE ARCADE", RecurringKind::Subscription, -1099, "2025-06-30"),
+        ];
+        assert!(duplicate_alerts(&items, &HashMap::new(), today).is_empty());
+    }
+
+    #[test]
+    fn marking_a_trial_reconfirms_a_dismissed_series_so_the_reminder_fires() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        set_verdict(&conn, "acme-vpn", Some(SubscriptionVerdict::Dismissed)).unwrap();
+        set_subscription_trial(&conn, "acme-vpn", "Acme VPN", Some("2025-07-12")).unwrap();
+        // Marking a trial re-affirms it as a subscription, so the badge and the
+        // reminder stay consistent.
+        assert_eq!(load_overrides(&conn).unwrap().get("acme-vpn").unwrap().verdict, SubscriptionVerdict::Confirmed);
+        let now = "2025-07-10T12:00:00Z".parse().unwrap();
+        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 1);
+
+        // Clearing the trial nulls the date but leaves the verdict.
+        set_subscription_trial(&conn, "acme-vpn", "Acme VPN", None).unwrap();
+        let ov = load_overrides(&conn).unwrap();
+        assert!(ov.get("acme-vpn").unwrap().trial_ends_at.is_none());
+        assert_eq!(ov.get("acme-vpn").unwrap().verdict, SubscriptionVerdict::Confirmed);
     }
 
     #[test]

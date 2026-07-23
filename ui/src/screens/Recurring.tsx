@@ -38,7 +38,15 @@ function PriceChangePill({ pc, compact = false }: { pc: NonNullable<RecurringIte
 }
 
 function fmtShortDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // Parse a YYYY-MM-DD as LOCAL midnight (not UTC), so a date doesn't display
+  // one day early for viewers behind UTC.
+  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Today's date as YYYY-MM-DD in the viewer's local timezone. */
+function localToday() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
 }
 
 /**
@@ -75,7 +83,7 @@ function SubscriptionLifecycle({ item }: { item: RecurringItem }) {
         <>
           <button type="button" style={linkBtn} disabled={busy} onClick={() => { setForm("trial"); setDate(item.trialEndsAt ?? ""); }}>{item.trialEndsAt ? "Edit trial" : "Mark as trial"}</button>
           {item.trialEndsAt && <button type="button" style={linkBtn} disabled={busy} onClick={() => setTrial.mutate({ merchantKey: item.merchantKey, label, trialEndsAt: null })}>Clear trial</button>}
-          {!cancelled && <button type="button" style={linkBtn} disabled={busy} onClick={() => { setForm("cancelled"); setDate(new Date().toISOString().slice(0, 10)); }}>I cancelled this</button>}
+          {!cancelled && <button type="button" style={linkBtn} disabled={busy} onClick={() => { setForm("cancelled"); setDate(localToday()); }}>I cancelled this</button>}
         </>
       ) : (
         <span className="row row-sm" style={{ gap: 6, alignItems: "center" }}>
