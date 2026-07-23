@@ -172,8 +172,40 @@ function useCountUp(target: number, dur = 1600, delay = 200): number {
 }
 const money = (n: number) => Math.round(n).toLocaleString("en-US");
 
+/* Shared reveal timing — each figure's line draw and its count-up use the SAME
+   delay + duration + easing, so the line and the number start and finish
+   together. Staggered so the three cards animate in sequence. */
+const REVEAL = {
+  hero: { delay: 500, dur: 2200 },
+  checking: { delay: 850, dur: 2000 },
+  house: { delay: 1050, dur: 2000 },
+};
+// cubic ease-out — the exact curve useCountUp applies to its value.
+const easeOut = (p: number) => 1 - Math.pow(1 - p, 3);
+
+// Distinct simulated stories (see the cards): a checking account that sits flat
+// then takes one massive deposit; a savings account that climbs steadily.
+const JOINT_CHECKING = [9200, 9450, 9150, 9600, 9350, 9700, 9500, 9750, 13600, 14820];
+const HOUSE_FUND = [26800, 27050, 27250, 27500, 27780, 28040, 28320, 28640];
+
+/* Catmull-Rom resample → a smooth curve through the points (no stair-steps). */
+function smoothCurve(pts: number[], samples = 200): number[] {
+  const n = pts.length;
+  if (n < 3) return pts.slice();
+  const out: number[] = [];
+  for (let i = 0; i < samples; i++) {
+    const u = (i / (samples - 1)) * (n - 1);
+    const seg = Math.min(Math.floor(u), n - 2);
+    const t = u - seg;
+    const p0 = pts[Math.max(0, seg - 1)]!, p1 = pts[seg]!, p2 = pts[seg + 1]!, p3 = pts[Math.min(n - 1, seg + 2)]!;
+    const t2 = t * t, t3 = t2 * t;
+    out.push(0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3));
+  }
+  return out;
+}
+
 /* ── mini sparkline ────────────────────────────────────── */
-function Sparkline({ points, color }: { points: number[]; color: string }) {
+function Sparkline({ points, color, delay, dur }: { points: number[]; color: string; delay: number; dur: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -183,36 +215,39 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
     cv.width = w * dpr; cv.height = h * dpr; ctx.scale(dpr, dpr);
-    const min = Math.min(...points), max = Math.max(...points);
+    const pts = smoothCurve(points, 180);
+    const min = Math.min(...pts), max = Math.max(...pts);
     const pad = 3;
-    const X = (i: number) => (i / (points.length - 1)) * w;
+    const X = (i: number) => (i / (pts.length - 1)) * w;
     const Y = (val: number) => h - pad - ((val - min) / (max - min || 1)) * (h - pad * 2);
-    let prog = 0, raf = 0;
-    const draw = () => {
+    let raf = 0, to = 0, start = 0;
+    const draw = (now: number) => {
+      if (!start) start = now;
+      const p = Math.min((now - start) / dur, 1);
+      const n = Math.max(2, Math.floor(easeOut(p) * pts.length));
       ctx.clearRect(0, 0, w, h);
-      const n = Math.max(2, Math.floor(points.length * prog));
       ctx.save();
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, color + "44"); g.addColorStop(1, color + "00");
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) { const x = X(i), y = Y(points[i]!); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.beginPath(); ctx.moveTo(X(0), Y(pts[0]!));
+      for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(pts[i]!));
       ctx.lineTo(X(n - 1), h); ctx.lineTo(0, h); ctx.closePath();
       ctx.fillStyle = g; ctx.fill();
       ctx.restore();
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) { const x = X(i), y = Y(points[i]!); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
-      ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.stroke();
-      ctx.beginPath(); ctx.arc(X(n - 1), Y(points[n - 1]!), 2.4, 0, 7); ctx.fillStyle = color; ctx.fill();
-      if (prog < 1) { prog += 0.015; raf = requestAnimationFrame(draw); }
+      ctx.beginPath(); ctx.moveTo(X(0), Y(pts[0]!));
+      for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(pts[i]!));
+      ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(X(n - 1), Y(pts[n - 1]!), 2.4, 0, 7); ctx.fillStyle = color; ctx.fill();
+      if (p < 1) raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [points, color]);
+    to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, delay);
+    return () => { clearTimeout(to); cancelAnimationFrame(raf); };
+  }, [points, color, delay, dur]);
   return <canvas ref={ref} />;
 }
 
 /* ── hero net-worth chart ──────────────────────────────── */
-function HeroChart() {
+function HeroChart({ delay, dur }: { delay: number; dur: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -222,45 +257,40 @@ function HeroChart() {
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
     cv.width = w * dpr; cv.height = h * dpr; ctx.scale(dpr, dpr);
-    // A simulated net-worth climb: up over the year but with real dips and
-    // recoveries (market pullbacks, big-spend months) rather than a straight line.
-    const pts = [104, 107, 105.2, 109.5, 107.4, 112, 115.3, 113, 117.6, 115.1, 120.4, 123.8, 121.2, 126.5, 130.1, 127.6, 132.9, 135, 133.4, 137.5];
-    const min = 100, max = 140;
+    // A simulated net-worth story: a steady climb interrupted by one small dip
+    // and one large drawdown (a market correction), then a strong recovery.
+    const raw = [104, 108, 112, 115, 118, 114, 118, 123, 128, 132, 134, 126, 118, 122, 128, 133, 137.5];
+    const pts = smoothCurve(raw, 260);
+    const min = Math.min(...pts) - 1.5, max = Math.max(...pts) + 1.5;
     const X = (i: number) => (i / (pts.length - 1)) * w;
     const Y = (v: number) => h - 4 - ((v - min) / (max - min)) * (h - 10);
-    let prog = 0, raf = 0, to = 0;
-    const seg = (i: number): [number, number] => [X(i), Y(pts[i]!)];
-    const draw = () => {
+    let raf = 0, to = 0, start = 0;
+    const draw = (now: number) => {
+      if (!start) start = now;
+      const p = Math.min((now - start) / dur, 1);
+      const n = Math.max(2, Math.floor(easeOut(p) * pts.length));
       ctx.clearRect(0, 0, w, h);
-      const total = pts.length - 1;
-      const fp = prog * total;
-      const nSeg = Math.floor(fp);
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, "rgba(201,249,80,0.28)"); g.addColorStop(1, "rgba(201,249,80,0)");
       ctx.save();
-      ctx.beginPath(); ctx.moveTo(...seg(0));
-      for (let i = 1; i <= nSeg; i++) ctx.lineTo(...seg(i));
-      const tipX = fp % 1 > 0 && nSeg < total ? X(nSeg) + (X(nSeg + 1) - X(nSeg)) * (fp % 1) : X(nSeg);
-      ctx.lineTo(tipX, h); ctx.lineTo(0, h); ctx.closePath();
+      ctx.beginPath(); ctx.moveTo(X(0), Y(pts[0]!));
+      for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(pts[i]!));
+      ctx.lineTo(X(n - 1), h); ctx.lineTo(0, h); ctx.closePath();
       ctx.fillStyle = g; ctx.fill();
       ctx.restore();
-      ctx.beginPath(); ctx.moveTo(...seg(0));
-      for (let i = 1; i <= nSeg; i++) ctx.lineTo(...seg(i));
-      let hx: number, hy: number;
-      if (fp % 1 > 0 && nSeg < total) {
-        const [x1, y1] = seg(nSeg), [x2, y2] = seg(nSeg + 1), f = fp % 1;
-        hx = x1 + (x2 - x1) * f; hy = y1 + (y2 - y1) * f; ctx.lineTo(hx, hy);
-      } else { [hx, hy] = seg(nSeg); }
-      ctx.strokeStyle = "#C9F950"; ctx.lineWidth = 2.4; ctx.lineJoin = "round";
+      ctx.beginPath(); ctx.moveTo(X(0), Y(pts[0]!));
+      for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(pts[i]!));
+      ctx.strokeStyle = "#C9F950"; ctx.lineWidth = 2.4; ctx.lineJoin = "round"; ctx.lineCap = "round";
       ctx.shadowColor = "rgba(201,249,80,0.6)"; ctx.shadowBlur = 12; ctx.stroke();
       ctx.shadowBlur = 0;
-      ctx.beginPath(); ctx.arc(hx, hy, 3.4, 0, 7); ctx.fillStyle = "#C9F950"; ctx.fill();
-      ctx.beginPath(); ctx.arc(hx, hy, 6, 0, 7); ctx.strokeStyle = "rgba(201,249,80,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
-      if (prog < 1) { prog += 0.007; raf = requestAnimationFrame(draw); }
+      const tx = X(n - 1), ty = Y(pts[n - 1]!);
+      ctx.beginPath(); ctx.arc(tx, ty, 3.4, 0, 7); ctx.fillStyle = "#C9F950"; ctx.fill();
+      ctx.beginPath(); ctx.arc(tx, ty, 6, 0, 7); ctx.strokeStyle = "rgba(201,249,80,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
+      if (p < 1) raf = requestAnimationFrame(draw);
     };
-    to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, 500);
+    to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, delay);
     return () => { clearTimeout(to); cancelAnimationFrame(raf); };
-  }, []);
+  }, [delay, dur]);
   return <canvas ref={ref} />;
 }
 
@@ -400,9 +430,9 @@ function Showcase() {
     };
   }, []);
 
-  const nw = useCountUp(137515, 1900, 600);
-  const c1 = useCountUp(14820, 1600, 900);
-  const c2 = useCountUp(28640, 1600, 1050);
+  const nw = useCountUp(137515, REVEAL.hero.dur, REVEAL.hero.delay);
+  const c1 = useCountUp(14820, REVEAL.checking.dur, REVEAL.checking.delay);
+  const c2 = useCountUp(28640, REVEAL.house.dur, REVEAL.house.delay);
   const [cap, setCap] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => setCap((c) => (c + 1) % CAPS.length), 4200);
@@ -421,7 +451,7 @@ function Showcase() {
             <div className="lbl"><span className="d" /> Net worth · joint</div>
             <div className="big"><span className="cur">$</span>{money(nw)}</div>
             <div className="delta">{Ico.arrow({ style: { width: 13, height: 13, transform: "rotate(-45deg)" } })} +$13,415 this month</div>
-            <HeroChart />
+            <HeroChart delay={REVEAL.hero.delay} dur={REVEAL.hero.dur} />
           </div>
           <div className="gcard card-mini card-a float">
             <div className="top">
@@ -429,7 +459,7 @@ function Showcase() {
               <div><div className="nm">Joint Checking</div><div className="sub">MERCURY ·· 4421</div></div>
             </div>
             <div className="amt">${money(c1)}</div>
-            <Sparkline points={[13100, 12700, 13500, 13000, 13950, 13400, 14250, 13800, 14650, 14100, 15050, 14820]} color="#C9F950" />
+            <Sparkline points={JOINT_CHECKING} color="#C9F950" delay={REVEAL.checking.delay} dur={REVEAL.checking.dur} />
           </div>
           <div className="gcard card-mini card-b float">
             <div className="top">
@@ -437,7 +467,7 @@ function Showcase() {
               <div><div className="nm">House Fund</div><div className="sub">WEALTHFRONT ·· 9087</div></div>
             </div>
             <div className="amt">${money(c2)}</div>
-            <Sparkline points={[26700, 27050, 26850, 27450, 27200, 27850, 27650, 28250, 28050, 28550, 28800, 28640]} color="#34D399" />
+            <Sparkline points={HOUSE_FUND} color="#34D399" delay={REVEAL.house.delay} dur={REVEAL.house.dur} />
           </div>
           <div className="gcard card-insight float">
             <div className="spark">{Ico.spark()}</div>
