@@ -653,8 +653,8 @@ export default function Settings() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 56 }}>
-        <nav style={{ position: "sticky", top: 16, alignSelf: "start", display: "flex", flexDirection: "column", gap: 4 }}>
+      <div className="settings-layout">
+        <nav className="settings-nav">
           {sections.map(([id, label]) => <a key={id} href={`#sec-${id}`} className={`nav-item${activeSection === id ? " active" : ""}`}>{label}</a>)}
         </nav>
 
