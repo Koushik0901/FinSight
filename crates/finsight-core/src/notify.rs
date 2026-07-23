@@ -423,11 +423,20 @@ pub fn enqueue(
             || in_snooze(prefs.snooze_until.as_deref(), now));
     // A digest withholds the INDIVIDUAL push of a non-critical item (it's still
     // delivered in-app) — the periodic digest announces it. The digest
-    // notification itself must never suppress its own push.
+    // notification itself must never suppress its own push. Crucially, an item
+    // that would EXPIRE before the next digest fires must NOT be batched, or its
+    // only push is lost to the expiry sweep — a time-sensitive trial/renewal
+    // alert (short TTL) keeps its individual push even under a slow digest.
+    let outlives_next_digest = match (prefs.digest_frequency.interval_days(), new.expires_at.as_deref()) {
+        (Some(interval), Some(exp)) => DateTime::parse_from_rfc3339(exp)
+            .map_or(true, |e| e.with_timezone(&Utc) > now + chrono::Duration::days(interval)),
+        _ => true, // no expiry (standing/routine) always outlives
+    };
     let batched = !held
         && non_critical
         && prefs.digest_frequency != DigestFrequency::Off
-        && new.category != NotificationCategory::Digest;
+        && new.category != NotificationCategory::Digest
+        && outlives_next_digest;
     let id = Uuid::new_v4().to_string();
     let now_str = now.to_rfc3339();
     let delivered_at = if held { None } else { Some(now_str.clone()) };
@@ -550,14 +559,31 @@ pub fn build_digest(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usi
         .flatten()
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
         .map(|d| d.with_timezone(&Utc));
-    if let Some(last) = last {
-        if (now - last).num_days() < interval_days {
-            return Ok(0); // not due yet
+    match last {
+        // First run after enabling: establish the baseline and produce nothing,
+        // so the first real digest covers only what arrives AFTER this point —
+        // not the whole backlog already pushed individually (#69 L1).
+        None => {
+            settings::set(conn, KEY_LAST_DIGEST_AT, &now.to_rfc3339())?;
+            return Ok(0);
+        }
+        Some(last) => {
+            if (now - last).num_days() < interval_days {
+                return Ok(0); // not due yet
+            }
         }
     }
+    // Don't PRODUCE a digest that would only be held (quiet hours / active snooze)
+    // — leave the marker untouched so the next sweep after the window produces it
+    // and it actually pushes, instead of advancing past its items in silence.
+    if in_quiet_hours(prefs.quiet_hours, prefs.utc_offset_minutes, now)
+        || in_snooze(prefs.snooze_until.as_deref(), now)
+    {
+        return Ok(0);
+    }
     let now_str = now.to_rfc3339();
-    // Everything routine the user hasn't seen since the last digest (an empty
-    // `since` on the very first digest means "everything so far").
+    // Everything routine the user hasn't seen since the last digest (the first
+    // run above established the baseline, so `since` is always a real instant).
     let since = last.map(|d| d.to_rfc3339()).unwrap_or_default();
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM notifications \
@@ -567,8 +593,9 @@ pub fn build_digest(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usi
         params![since, now_str],
         |r| r.get(0),
     )?;
-    settings::set(conn, KEY_LAST_DIGEST_AT, &now_str)?;
     if count == 0 {
+        // Nothing to say — advance the marker so an idle window doesn't pile up.
+        settings::set(conn, KEY_LAST_DIGEST_AT, &now_str)?;
         return Ok(0);
     }
     let outcome = enqueue(
@@ -576,7 +603,8 @@ pub fn build_digest(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usi
         NewNotification {
             category: NotificationCategory::Digest,
             urgency: Urgency::Normal,
-            dedup_key: format!("digest.{now_str}"),
+            // Date-granular so repeat runs the same day can't mint duplicates.
+            dedup_key: format!("digest.{}", now.format("%Y-%m-%d")),
             title: "Your notifications digest".into(),
             body: format!(
                 "{count} update{} you haven't seen since your last digest.",
@@ -590,6 +618,9 @@ pub fn build_digest(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usi
         &prefs,
         now,
     )?;
+    // Advance the marker only AFTER the digest is recorded, so a failed insert
+    // doesn't skip a window's items.
+    settings::set(conn, KEY_LAST_DIGEST_AT, &now_str)?;
     Ok(if outcome.push { 1 } else { 0 })
 }
 
@@ -749,15 +780,62 @@ mod tests {
         let mut p = prefs();
         p.digest_frequency = DigestFrequency::Daily;
         save_prefs(&c, &p).unwrap();
-        enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, now()).unwrap();
-        enqueue(&mut c, note(NotificationCategory::Categorization, "cat.1", Urgency::Normal), &p, now()).unwrap();
-        // First digest is due (never run) and summarizes both, with a push.
-        assert_eq!(build_digest(&mut c, now()).unwrap(), 1);
+        let t0 = now();
+        // First run only establishes the baseline (no backlog dump).
+        assert_eq!(build_digest(&mut c, t0).unwrap(), 0);
+        // Two routine items arrive AFTER the baseline, batched (no individual push).
+        let t1 = t0 + chrono::Duration::hours(1);
+        enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, t1).unwrap();
+        enqueue(&mut c, note(NotificationCategory::Categorization, "cat.1", Urgency::Normal), &p, t1).unwrap();
+        // A day later the digest is due and summarizes both, with a push.
+        let t2 = t0 + chrono::Duration::days(2);
+        assert_eq!(build_digest(&mut c, t2).unwrap(), 1);
         let all = list(&mut c, true, 50).unwrap();
         let digest = all.iter().find(|x| x.category == NotificationCategory::Digest).expect("digest created");
         assert!(digest.body.contains('2'));
-        // Running again immediately is not due (daily) → no second digest.
-        assert_eq!(build_digest(&mut c, now()).unwrap(), 0);
+        // Running again immediately is not due → no second digest.
+        assert_eq!(build_digest(&mut c, t2).unwrap(), 0);
+    }
+
+    /// #69 M1: an alert that would expire before a slow digest fires keeps its
+    /// individual push instead of being batched and lost to the expiry sweep.
+    #[test]
+    fn a_short_lived_alert_keeps_its_push_under_a_slow_digest() {
+        let (_d, db) = fresh();
+        let mut c = db.get().unwrap();
+        let mut p = prefs();
+        p.digest_frequency = DigestFrequency::Weekly;
+        let mut soon = note(NotificationCategory::SubscriptionChange, "sub.1", Urgency::Normal);
+        soon.expires_at = Some((now() + chrono::Duration::days(2)).to_rfc3339());
+        assert!(enqueue(&mut c, soon, &p, now()).unwrap().push, "expires before the weekly digest → push now");
+        // A standing (no-expiry) routine item still batches as usual.
+        let out = enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, now()).unwrap();
+        assert_eq!(out.disposition, Disposition::Batched);
+        assert!(!out.push);
+    }
+
+    /// #69 M2: a digest that comes due inside quiet hours is not produced (and its
+    /// marker not advanced), so its items survive to a later push once the window
+    /// passes — rather than being silently skipped.
+    #[test]
+    fn a_digest_due_in_quiet_hours_waits_and_keeps_its_items() {
+        let (_d, db) = fresh();
+        let mut c = db.get().unwrap();
+        let mut p = prefs();
+        p.digest_frequency = DigestFrequency::Daily;
+        p.quiet_hours = Some((22, 7));
+        save_prefs(&c, &p).unwrap();
+        let t0 = now(); // 2pm, outside quiet
+        assert_eq!(build_digest(&mut c, t0).unwrap(), 0); // baseline
+        enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, t0 + chrono::Duration::hours(1)).unwrap();
+        // Due the next day, but at 11pm (quiet) → not produced, marker untouched.
+        let quiet: DateTime<Utc> = "2026-08-02T23:00:00Z".parse().unwrap();
+        assert_eq!(build_digest(&mut c, quiet).unwrap(), 0);
+        assert!(!list(&mut c, true, 50).unwrap().iter().any(|x| x.category == NotificationCategory::Digest));
+        // Later, outside quiet hours, it fires and includes the item.
+        let morning: DateTime<Utc> = "2026-08-03T09:00:00Z".parse().unwrap();
+        assert_eq!(build_digest(&mut c, morning).unwrap(), 1);
+        assert!(list(&mut c, true, 50).unwrap().iter().any(|x| x.category == NotificationCategory::Digest));
     }
 
     #[test]

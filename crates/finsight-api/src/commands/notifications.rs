@@ -77,7 +77,13 @@ fn dto_to_prefs(dto: NotificationPrefsDto) -> Prefs {
         disabled_categories: dto
             .categories
             .iter()
-            .filter(|c| !c.enabled && NotificationCategory::from_str(&c.key).is_some())
+            // Real, user-facing categories only. `Digest` is a delivery mode, not
+            // a content toggle, so a crafted client can't disable it this way.
+            .filter(|c| {
+                !c.enabled
+                    && NotificationCategory::from_str(&c.key)
+                        .is_some_and(|cat| cat != NotificationCategory::Digest)
+            })
             .map(|c| c.key.clone())
             .collect(),
         quiet_hours: dto
