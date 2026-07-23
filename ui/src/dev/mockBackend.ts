@@ -897,6 +897,16 @@ const mockSubVerdicts: Record<string, string> = {};
 const mockSubTrials: Record<string, string> = {};
 const mockSubCancels: Record<string, string> = {};
 
+// Financial philosophy (#32/#33). highInterestAprPct is derived read-only from
+// risk tolerance by the backend (Cautious 5 / Balanced 8 / Aggressive 12) — mirror
+// that here so the Settings copy shows a real threshold, not "undefined%".
+let mockPhilosophy: { debtStrategy: string; riskTolerance: string } = {
+  debtStrategy: "avalanche",
+  riskTolerance: "balanced",
+};
+const highInterestAprFor = (rt: string): number =>
+  rt === "cautious" ? 5 : rt === "aggressive" ? 12 : 8;
+
 // In-memory month-end closes (#59), keyed by "year-month".
 const mockCloses: Record<string, AnyRec> = {};
 const CLOSE_MONTHS = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -1121,6 +1131,37 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     set_notification_prefs: (a) => {
       if (a?.prefs) mockNotifPrefs = a.prefs as AnyRec;
       return null;
+    },
+    get_financial_philosophy: () => ({
+      ...mockPhilosophy,
+      highInterestAprPct: highInterestAprFor(mockPhilosophy.riskTolerance),
+    }),
+    set_financial_philosophy: (a) => {
+      const input = (a?.input ?? {}) as AnyRec;
+      mockPhilosophy = {
+        debtStrategy: String(input.debtStrategy ?? mockPhilosophy.debtStrategy),
+        riskTolerance: String(input.riskTolerance ?? mockPhilosophy.riskTolerance),
+      };
+      return null;
+    },
+    // A configured provider so the Settings AI-provider card shows a real state
+    // instead of "Configured — undefined (undefined)" (the `[]` fallback has no
+    // `kind`, so the unconfigured guard misses it).
+    get_completion_provider: () => ({ kind: "ollama", base_url: "http://localhost:11434", model: "llama3.1" }),
+    // Compound projection for the Goals growth card (Kiyosaki/Hill). Real backend
+    // uses the linked account's APY or a 7% long-run default; mirror the default.
+    project_goal_growth: (a) => {
+      const goalId = String(a?.goalId ?? "");
+      const years = Number(a?.years ?? 10);
+      const g = ds.goals.find((x) => x.id === goalId);
+      const annualRate = 0.07;
+      const principal = Number(g?.currentCents ?? 0);
+      const monthly = Number(g?.monthlyCents ?? 0);
+      const months = years * 12;
+      const r = annualRate / 12;
+      const growthFactor = Math.pow(1 + r, months);
+      const valueCents = principal * growthFactor + monthly * ((growthFactor - 1) / r);
+      return { years, valueCents: Math.round(valueCents), annualRate };
     },
     list_notifications: (a) => {
       if (ds.accounts.length === 0) return [];
