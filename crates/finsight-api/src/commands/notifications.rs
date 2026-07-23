@@ -5,7 +5,9 @@
 
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
-use finsight_core::notify::{self, Notification, NotificationCategory, Prefs, PrivacyLevel};
+use finsight_core::notify::{
+    self, DigestFrequency, Notification, NotificationCategory, Prefs, PrivacyLevel,
+};
 use finsight_core::repos::run;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -40,6 +42,13 @@ pub struct NotificationPrefsDto {
     /// window; the user never edits it directly.
     pub utc_offset_minutes: i32,
     pub privacy: PrivacyLevel,
+    /// A one-off "snooze until" RFC3339 instant, or null. While active it holds
+    /// individual pushes of non-critical notifications (#69). The client sets it
+    /// to `now + duration`; a past value is treated as not snoozed.
+    pub snooze_until: Option<String>,
+    /// Batch routine notifications into a periodic summary instead of pushing
+    /// each one (#69): "off" | "daily" | "weekly".
+    pub digest_frequency: DigestFrequency,
 }
 
 fn prefs_to_dto(p: &Prefs) -> NotificationPrefsDto {
@@ -56,6 +65,8 @@ fn prefs_to_dto(p: &Prefs) -> NotificationPrefsDto {
         quiet_hours: p.quiet_hours.map(|(start, end)| QuietHours { start, end }),
         utc_offset_minutes: p.utc_offset_minutes,
         privacy: p.privacy,
+        snooze_until: p.snooze_until.clone(),
+        digest_frequency: p.digest_frequency,
     }
 }
 
@@ -66,7 +77,13 @@ fn dto_to_prefs(dto: NotificationPrefsDto) -> Prefs {
         disabled_categories: dto
             .categories
             .iter()
-            .filter(|c| !c.enabled && NotificationCategory::from_str(&c.key).is_some())
+            // Real, user-facing categories only. `Digest` is a delivery mode, not
+            // a content toggle, so a crafted client can't disable it this way.
+            .filter(|c| {
+                !c.enabled
+                    && NotificationCategory::from_str(&c.key)
+                        .is_some_and(|cat| cat != NotificationCategory::Digest)
+            })
             .map(|c| c.key.clone())
             .collect(),
         quiet_hours: dto
@@ -75,6 +92,10 @@ fn dto_to_prefs(dto: NotificationPrefsDto) -> Prefs {
             .map(|q| (q.start, q.end)),
         utc_offset_minutes: notify::sanitize_offset_minutes(dto.utc_offset_minutes),
         privacy: dto.privacy,
+        // A blank string clears the snooze; anything else is stored verbatim and
+        // validated at read time (a bad/past value simply isn't snoozed).
+        snooze_until: dto.snooze_until.filter(|s| !s.is_empty()),
+        digest_frequency: dto.digest_frequency,
     }
 }
 

@@ -2518,6 +2518,15 @@ pendingRestore: boolean }
 export type DebtPayoffResult = { strategy: string; extraMonthlyCents: number; totalInterestCents: number; totalMonths: number; payoffDateLabel: string; summaries: DebtPayoffSummary[] }
 export type DebtPayoffSummary = { accountId: string; accountName: string; initialBalanceCents: number; totalInterestCents: number; payoffMonthLabel: string; monthsToPayoff: number }
 /**
+ * How often to batch routine notifications into one summary instead of pushing
+ * each individually (#69).
+ */
+export type DigestFrequency = 
+/**
+ * Push each notification as it happens (the default).
+ */
+"off" | "daily" | "weekly"
+/**
  * One "recorded then vs recomputed now" line for a completed close.
  */
 export type DriftLine = { label: string; recordedCents: number; currentCents: number; changedMaterially: boolean }
@@ -2928,7 +2937,13 @@ export type Notification = { id: string; category: NotificationCategory; urgency
  * What a notification is about. Drives the per-category user preference and how
  * events are grouped. The string form is the stored value and the preference key.
  */
-export type NotificationCategory = "cashflow_risk" | "stale_data" | "debt_deadline" | "subscription_change" | "categorization" | "goal_progress" | "month_end_review" | "security" | "sync_error" | "account_activity"
+export type NotificationCategory = "cashflow_risk" | "stale_data" | "debt_deadline" | "subscription_change" | "categorization" | "goal_progress" | "month_end_review" | "security" | "sync_error" | "account_activity" | 
+/**
+ * A batched summary of routine items (#69). Not a content category — it's a
+ * delivery mechanism controlled by `digest_frequency`, so it's kept out of
+ * the per-category toggle list and can't be individually disabled.
+ */
+"digest"
 export type NotificationCategoryPref = { 
 /**
  * Stable key (e.g. "cashflow_risk").
@@ -2944,7 +2959,18 @@ categories: NotificationCategoryPref[]; quietHours: QuietHours | null;
  * stamps this on every save so the server can evaluate the local-time quiet
  * window; the user never edits it directly.
  */
-utcOffsetMinutes: number; privacy: PrivacyLevel }
+utcOffsetMinutes: number; privacy: PrivacyLevel; 
+/**
+ * A one-off "snooze until" RFC3339 instant, or null. While active it holds
+ * individual pushes of non-critical notifications (#69). The client sets it
+ * to `now + duration`; a past value is treated as not snoozed.
+ */
+snoozeUntil: string | null; 
+/**
+ * Batch routine notifications into a periodic summary instead of pushing
+ * each one (#69): "off" | "daily" | "weekly".
+ */
+digestFrequency: DigestFrequency }
 export type OllamaProbeResult = { reachable: boolean; models: string[]; has_nomic_embed: boolean }
 export type OnboardingState = { account_count: number; category_count: number; completion_marked: boolean }
 /**

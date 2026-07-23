@@ -424,7 +424,7 @@ fn post_cancellation_alert(
 fn service_key(display: &str) -> Option<String> {
     let mut tokens: Vec<String> = Vec::new();
     let mut cur = String::new();
-    let mut flush = |cur: &mut String, tokens: &mut Vec<String>| {
+    let flush = |cur: &mut String, tokens: &mut Vec<String>| {
         if cur.len() >= 4 && !tokens.iter().any(|t| t == cur) {
             tokens.push(cur.clone());
         }
