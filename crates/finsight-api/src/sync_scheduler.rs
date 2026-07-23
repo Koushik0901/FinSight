@@ -180,10 +180,14 @@ impl SyncScheduler {
                     // One summary buzz, not one per change. The push names no
                     // amount or merchant (privacy-safe on a lock screen); the
                     // specifics live in the in-app "Changes to review" list.
+                    // Kept generic: this one push now covers price changes,
+                    // renewals, trial conversions, post-cancellation charges, and
+                    // possible duplicates (#58/#75). The specifics live in the
+                    // in-app "Changes to review" list; the lock screen stays vague.
                     let body = if sub_pushable == 1 {
-                        "A recurring charge changed price or renews soon.".to_string()
+                        "A subscription needs your attention.".to_string()
                     } else {
-                        format!("{sub_pushable} recurring charges changed price or renew soon.")
+                        format!("{sub_pushable} subscriptions need your attention.")
                     };
                     let payload = crate::commands::push::PushPayload {
                         title: "Subscription changes to review".into(),

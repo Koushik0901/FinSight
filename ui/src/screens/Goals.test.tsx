@@ -78,7 +78,7 @@ describe("Goals — explain a goal's completion (#71)", () => {
   it("opens the inspector with the goal's projected completion", async () => {
     render(<Goals />, { wrapper: createWrapper() });
     // Each goal card offers an Explain affordance; open the first.
-    fireEvent.click(screen.getAllByRole("button", { name: "Explain" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Explain" })[0]!);
     expect(await screen.findByText(/When this goal finishes at your current monthly contribution/i)).toBeInTheDocument();
     // The inspector shows what feeds the date.
     expect(screen.getByText("Still to go")).toBeInTheDocument();

@@ -7,8 +7,12 @@ import { useRecurring, useSetSubscriptionVerdict } from "../api/hooks/recurring"
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 
 const mockSetVerdict = vi.fn();
+const mockSetTrial = vi.fn();
+const mockMarkCancelled = vi.fn();
 vi.mock("../api/hooks/recurring", () => ({
   useSetSubscriptionVerdict: vi.fn(() => ({ mutate: mockSetVerdict, isPending: false })),
+  useSetSubscriptionTrial: vi.fn(() => ({ mutate: mockSetTrial, isPending: false })),
+  useMarkSubscriptionCancelled: vi.fn(() => ({ mutate: mockMarkCancelled, isPending: false })),
   useRecurring: vi.fn(() => ({
     data: [
       {
@@ -122,6 +126,29 @@ describe("Recurring — low-confidence entries", () => {
     expect(
       screen.getByText(/1 less certain entry is listed below but not counted/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Recurring — subscription lifecycle (#75)", () => {
+  it("records a free trial with a converts-on date", () => {
+    mockSetTrial.mockClear();
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark as trial" })[0]!);
+    fireEvent.change(screen.getByLabelText("Trial end date"), { target: { value: "2026-08-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mockSetTrial).toHaveBeenCalledWith(
+      expect.objectContaining({ merchantKey: "spotify", trialEndsAt: "2026-08-01" }),
+    );
+  });
+
+  it("marks a subscription cancelled (defaulting the date to today)", () => {
+    mockMarkCancelled.mockClear();
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+    fireEvent.click(screen.getAllByRole("button", { name: "I cancelled this" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mockMarkCancelled).toHaveBeenCalledWith(
+      expect.objectContaining({ merchantKey: "spotify" }),
+    );
   });
 });
 

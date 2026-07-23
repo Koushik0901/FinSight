@@ -14,7 +14,7 @@
 
 use crate::error::CoreResult;
 use crate::notify::{self, NewNotification, NotificationCategory, Urgency};
-use crate::recurring::{detect_recurring, RecurringItem};
+use crate::recurring::{detect_recurring, RecurringItem, RecurringKind};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -33,8 +33,17 @@ const RENEWAL_LEAD_DAYS: i64 = 14;
 const RENEWAL_MIN_GAP_DAYS: f64 = 300.0;
 /// A price change older than this is stale — the user has already seen charges
 /// at the new price, so a long-window scan must not first-alert on it. Also the
-/// TTL after which an un-actioned price alert lapses.
+/// TTL after which an un-actioned price alert lapses. Reused as the recency
+/// bound for a post-cancellation charge (#75).
 const PRICE_CHANGE_TTL_DAYS: i64 = 90;
+/// Lead time before a recorded trial's end date at which to warn it converts.
+const TRIAL_LEAD_DAYS: i64 = 3;
+/// Two subscriptions both charged within this many days count as "both active"
+/// for duplicate detection — an old, lapsed series isn't a live double-charge.
+const DUPLICATE_RECENT_DAYS: i64 = 45;
+/// Duplicate candidates must charge within this percent of each other; two
+/// same-named services at very different prices are likely genuinely different.
+const DUPLICATE_AMOUNT_TOLERANCE_PCT: i64 = 10;
 
 /// The user's durable decision about a detected subscription.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +52,10 @@ pub enum SubscriptionVerdict {
     Confirmed,
     /// Not a subscription (or don't alert me) — suppress its alerts.
     Dismissed,
+    /// A real subscription the user has ENDED — distinct from dismissed. Its
+    /// ongoing price/renewal alerts stop, but a charge dated after the cancel
+    /// date is surfaced ("you thought this was cancelled"). (#75)
+    Cancelled,
 }
 
 impl SubscriptionVerdict {
@@ -50,15 +63,29 @@ impl SubscriptionVerdict {
         match self {
             Self::Confirmed => "confirmed",
             Self::Dismissed => "dismissed",
+            Self::Cancelled => "cancelled",
         }
     }
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "confirmed" => Some(Self::Confirmed),
             "dismissed" => Some(Self::Dismissed),
+            "cancelled" => Some(Self::Cancelled),
             _ => None,
         }
     }
+}
+
+/// The full lifecycle record a user has attached to a detected subscription: the
+/// verdict plus the #75 facts — a captured display `label`, a `trial_ends_at`
+/// (this is a free trial converting on that date), and a `cancelled_at` (the
+/// boundary after which a charge is a surprise). Any subset may be present.
+#[derive(Debug, Clone)]
+pub struct SubscriptionOverride {
+    pub verdict: SubscriptionVerdict,
+    pub label: Option<String>,
+    pub trial_ends_at: Option<String>,
+    pub cancelled_at: Option<String>,
 }
 
 /// Set (or clear, with `None`) the user's verdict on a detected subscription,
@@ -86,18 +113,72 @@ pub fn set_verdict(
     Ok(())
 }
 
-/// All stored verdicts, keyed by merchant_key.
-pub fn load_verdicts(conn: &Connection) -> CoreResult<HashMap<String, SubscriptionVerdict>> {
-    let mut stmt = conn.prepare("SELECT merchant_key, verdict FROM subscription_overrides")?;
-    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+/// All stored lifecycle overrides, keyed by merchant_key.
+pub fn load_overrides(conn: &Connection) -> CoreResult<HashMap<String, SubscriptionOverride>> {
+    let mut stmt = conn.prepare(
+        "SELECT merchant_key, verdict, label, trial_ends_at, cancelled_at FROM subscription_overrides",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, Option<String>>(3)?,
+            r.get::<_, Option<String>>(4)?,
+        ))
+    })?;
     let mut out = HashMap::new();
     for row in rows {
-        let (k, v) = row?;
+        let (k, v, label, trial_ends_at, cancelled_at) = row?;
         if let Some(verdict) = SubscriptionVerdict::from_str(&v) {
-            out.insert(k, verdict);
+            out.insert(k, SubscriptionOverride { verdict, label, trial_ends_at, cancelled_at });
         }
     }
     Ok(out)
+}
+
+/// All stored verdicts, keyed by merchant_key (a projection of [`load_overrides`]).
+pub fn load_verdicts(conn: &Connection) -> CoreResult<HashMap<String, SubscriptionVerdict>> {
+    Ok(load_overrides(conn)?.into_iter().map(|(k, o)| (k, o.verdict)).collect())
+}
+
+/// Mark a detected subscription as a free TRIAL that converts on `trial_ends_at`
+/// (a `YYYY-MM-DD` date), or clear the trial with `None`. `label` is the display
+/// name captured now, so the reminder can name the service even if the series is
+/// later too sparse to re-detect. Marking a trial affirms it's a subscription,
+/// so a brand-new row is created `confirmed`; an existing verdict is preserved.
+pub fn set_subscription_trial(
+    conn: &Connection,
+    merchant_key: &str,
+    label: &str,
+    trial_ends_at: Option<&str>,
+) -> CoreResult<()> {
+    conn.execute(
+        "INSERT INTO subscription_overrides(merchant_key, verdict, label, trial_ends_at, created_at) \
+         VALUES(?1, 'confirmed', ?2, ?3, ?4) \
+         ON CONFLICT(merchant_key) DO UPDATE SET trial_ends_at=excluded.trial_ends_at, label=excluded.label",
+        params![merchant_key, label, trial_ends_at, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+/// Mark a detected subscription as CANCELLED as of `cancelled_at` (a `YYYY-MM-DD`
+/// date). Sets the `cancelled` verdict (distinct from `dismissed`): ongoing
+/// price/renewal alerts stop, but a charge dated after `cancelled_at` is
+/// surfaced as a surprise. `label` names the service in that alert.
+pub fn mark_subscription_cancelled(
+    conn: &Connection,
+    merchant_key: &str,
+    label: &str,
+    cancelled_at: &str,
+) -> CoreResult<()> {
+    conn.execute(
+        "INSERT INTO subscription_overrides(merchant_key, verdict, label, cancelled_at, created_at) \
+         VALUES(?1, 'cancelled', ?2, ?3, ?4) \
+         ON CONFLICT(merchant_key) DO UPDATE SET verdict='cancelled', cancelled_at=excluded.cancelled_at, label=excluded.label",
+        params![merchant_key, label, cancelled_at, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
 }
 
 /// Producer: scan detected subscriptions and enqueue notifications for material
@@ -110,17 +191,27 @@ pub fn load_verdicts(conn: &Connection) -> CoreResult<HashMap<String, Subscripti
 /// (i.e. eligible to push now).
 pub fn refresh_subscription_alerts(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usize> {
     let items = detect_recurring(conn, SCAN_WINDOW_DAYS)?;
-    let verdicts = load_verdicts(conn)?;
+    let overrides = load_overrides(conn)?;
     let prefs = notify::load_prefs(conn);
     let today = now.date_naive();
     let mut delivered = 0usize;
 
     for item in &items {
-        if matches!(
-            verdicts.get(&item.merchant_key),
-            Some(SubscriptionVerdict::Dismissed)
-        ) {
-            continue;
+        let ov = overrides.get(&item.merchant_key);
+        match ov.map(|o| o.verdict) {
+            // Dismissed = "not a subscription / don't alert" — fully silent.
+            Some(SubscriptionVerdict::Dismissed) => continue,
+            // Cancelled = a real subscription the user ended: no ongoing
+            // price/renewal alerts, but surface a charge after the cancel date.
+            Some(SubscriptionVerdict::Cancelled) => {
+                if let Some(alert) = ov.and_then(|o| post_cancellation_alert(item, o, today)) {
+                    if notify::enqueue(conn, alert, &prefs, now)?.push {
+                        delivered += 1;
+                    }
+                }
+                continue;
+            }
+            _ => {}
         }
         // Only alert on costs the app is confident enough to treat as real
         // recurring obligations — display is not gated, but a push is.
@@ -139,6 +230,24 @@ pub fn refresh_subscription_alerts(conn: &mut Connection, now: DateTime<Utc>) ->
             }
         }
     }
+
+    // Trials are user-scheduled reminders keyed off recorded overrides, not the
+    // detector — a trial has too few charges yet to be a detected series.
+    for (key, ov) in &overrides {
+        if let Some(alert) = trial_conversion_alert(key, ov, today) {
+            if notify::enqueue(conn, alert, &prefs, now)?.push {
+                delivered += 1;
+            }
+        }
+    }
+
+    // Duplicate subscriptions: two active series that look like the same service.
+    for alert in duplicate_alerts(&items, &overrides, today) {
+        if notify::enqueue(conn, alert, &prefs, now)?.push {
+            delivered += 1;
+        }
+    }
+
     Ok(delivered)
 }
 
@@ -207,6 +316,171 @@ fn renewal_alert(item: &RecurringItem, today: NaiveDate) -> Option<NewNotificati
         route: Some("/recurring".into()),
         expires_at: Some(midnight_rfc3339(next + Duration::days(3))),
     })
+}
+
+/// Build the reminder for a recorded free trial about to convert, or `None`.
+/// Driven by the user's override (not the detector) because a trial is too new
+/// to be a detected series. Only an active (confirmed) trial converts.
+fn trial_conversion_alert(
+    merchant_key: &str,
+    ov: &SubscriptionOverride,
+    today: NaiveDate,
+) -> Option<NewNotification> {
+    if ov.verdict != SubscriptionVerdict::Confirmed {
+        return None;
+    }
+    let ends = ov.trial_ends_at.as_deref().and_then(parse_date)?;
+    let days = (ends - today).num_days();
+    if !(0..=TRIAL_LEAD_DAYS).contains(&days) {
+        return None;
+    }
+    let label = ov.label.clone().filter(|s| !s.is_empty());
+    Some(NewNotification {
+        category: NotificationCategory::SubscriptionChange,
+        urgency: Urgency::Normal,
+        dedup_key: format!("sub.trial.{}.{}", merchant_key, ends.format("%Y-%m-%d")),
+        title: "A free trial is about to convert".into(),
+        body: format!("A free trial ends within {TRIAL_LEAD_DAYS} days and will start charging you."),
+        sensitive: Some(match label {
+            Some(l) => format!("{l}: free trial ends {}", ends.format("%Y-%m-%d")),
+            None => format!("A free trial ends {}", ends.format("%Y-%m-%d")),
+        }),
+        route: Some("/recurring".into()),
+        expires_at: Some(midnight_rfc3339(ends + Duration::days(1))),
+    })
+}
+
+/// Build the alert for a charge that landed AFTER the user marked a subscription
+/// cancelled, or `None`. Uses the detected series' most recent charge date; a
+/// long scan window must not first-alert an ancient surprise.
+fn post_cancellation_alert(
+    item: &RecurringItem,
+    ov: &SubscriptionOverride,
+    today: NaiveDate,
+) -> Option<NewNotification> {
+    let cancelled = ov.cancelled_at.as_deref().and_then(parse_date)?;
+    let last = parse_date(&item.last_seen)?;
+    if last <= cancelled {
+        return None; // nothing charged since the cancel date
+    }
+    if (today - last).num_days() > PRICE_CHANGE_TTL_DAYS {
+        return None;
+    }
+    let currency = item
+        .price_change
+        .as_ref()
+        .map(|pc| pc.currency.clone())
+        .unwrap_or_default();
+    let label = ov
+        .label
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| item.display_merchant.clone());
+    Some(NewNotification {
+        category: NotificationCategory::SubscriptionChange,
+        urgency: Urgency::Normal,
+        dedup_key: format!("sub.postcancel.{}.{}", item.merchant_key, last.format("%Y-%m-%d")),
+        title: "A cancelled subscription charged again".into(),
+        body: "A subscription you marked cancelled has a new charge.".into(),
+        sensitive: Some(format!(
+            "{label}: {} on {} — after you cancelled on {}",
+            fmt_money(item.last_amount_cents, &currency),
+            last.format("%Y-%m-%d"),
+            cancelled.format("%Y-%m-%d"),
+        )),
+        route: Some("/recurring".into()),
+        expires_at: Some(midnight_rfc3339(last + Duration::days(PRICE_CHANGE_TTL_DAYS))),
+    })
+}
+
+/// A conservative "same service" token: the longest alphabetic run of ≥4 chars
+/// in a merchant descriptor, lowercased. `None` when there's no strong token, so
+/// grouping never rests on a weak signal. Deliberately simple and biased toward
+/// NOT flagging — duplicate detection is a review suggestion, not an assertion.
+fn service_token(display: &str) -> Option<String> {
+    let mut best: Option<String> = None;
+    let mut cur = String::new();
+    let consider = |cur: &mut String, best: &mut Option<String>| {
+        if cur.len() >= 4 && best.as_ref().map_or(true, |b: &String| cur.len() > b.len()) {
+            *best = Some(cur.clone());
+        }
+        cur.clear();
+    };
+    for ch in display.chars() {
+        if ch.is_ascii_alphabetic() {
+            cur.push(ch.to_ascii_lowercase());
+        } else {
+            consider(&mut cur, &mut best);
+        }
+    }
+    consider(&mut cur, &mut best);
+    best
+}
+
+/// Surface pairs/groups of ACTIVE subscriptions that look like the same service
+/// — a possible double-charge worth a review. Conservative by construction:
+/// only genuine subscriptions, only recently-active ones, grouped by a strong
+/// shared token, and only when their amounts are close (very different prices
+/// ⇒ probably different services). One standing alert per group.
+fn duplicate_alerts(
+    items: &[RecurringItem],
+    overrides: &HashMap<String, SubscriptionOverride>,
+    today: NaiveDate,
+) -> Vec<NewNotification> {
+    let mut groups: HashMap<String, Vec<&RecurringItem>> = HashMap::new();
+    for it in items {
+        if it.kind != RecurringKind::Subscription {
+            continue;
+        }
+        if matches!(
+            overrides.get(&it.merchant_key).map(|o| o.verdict),
+            Some(SubscriptionVerdict::Dismissed) | Some(SubscriptionVerdict::Cancelled)
+        ) {
+            continue;
+        }
+        // Both must be currently active — an old lapsed series isn't a live double-charge.
+        let active = parse_date(&it.last_seen)
+            .map_or(false, |d| d <= today && (today - d).num_days() <= DUPLICATE_RECENT_DAYS);
+        if !active {
+            continue;
+        }
+        if let Some(token) = service_token(&it.display_merchant) {
+            groups.entry(token).or_default().push(it);
+        }
+    }
+
+    let mut out = Vec::new();
+    for group in groups.into_values() {
+        if group.len() < 2 {
+            continue;
+        }
+        // Amount guard: only flag when the charges are close.
+        let amounts: Vec<i64> = group.iter().map(|it| it.last_amount_cents.abs()).collect();
+        let (min, max) = (
+            *amounts.iter().min().unwrap_or(&0),
+            *amounts.iter().max().unwrap_or(&0),
+        );
+        if max == 0 || (max - min) * 100 / max > DUPLICATE_AMOUNT_TOLERANCE_PCT {
+            continue;
+        }
+        let mut keys: Vec<&str> = group.iter().map(|it| it.merchant_key.as_str()).collect();
+        keys.sort_unstable();
+        let names: Vec<String> = group.iter().map(|it| it.display_merchant.clone()).collect();
+        out.push(NewNotification {
+            category: NotificationCategory::SubscriptionChange,
+            urgency: Urgency::Normal,
+            dedup_key: format!("sub.dupe.{}", keys.join("+")),
+            title: "Two subscriptions look like the same service".into(),
+            body: "You may be paying for one service twice — worth a check.".into(),
+            sensitive: Some(format!("Possible duplicate: {}", names.join(" & "))),
+            // Standing until the data changes or the user acts on it.
+            expires_at: None,
+            route: Some("/recurring".into()),
+        });
+    }
+    // Deterministic order for stable delivery/testing.
+    out.sort_by(|a, b| a.dedup_key.cmp(&b.dedup_key));
+    out
 }
 
 /// Format cents in the series' currency, never assuming a symbol — an empty
@@ -370,5 +644,146 @@ mod tests {
         let now = "2025-11-01T12:00:00Z".parse().unwrap();
         assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 0);
         assert_eq!(notify::list(&mut conn, false, 50).unwrap().len(), 0);
+    }
+
+    // ── #75: trials, post-cancellation, duplicates ──────────────────────────
+
+    /// A minimal RecurringItem for the pure duplicate/token tests, so they don't
+    /// depend on the detector's classification of synthetic descriptors.
+    fn ri(key: &str, display: &str, kind: RecurringKind, amount: i64, last_seen: &str) -> RecurringItem {
+        RecurringItem {
+            merchant_key: key.into(),
+            display_merchant: display.into(),
+            kind,
+            confidence: 0.9,
+            reasons: vec![],
+            occurrences: 6,
+            median_amount_cents: amount,
+            last_amount_cents: amount,
+            min_amount_cents: amount,
+            max_amount_cents: amount,
+            avg_gap_days: 30.0,
+            cadence_regularity: 0.9,
+            amount_stability: 0.9,
+            cadence: "monthly".into(),
+            category_label: None,
+            category_color: None,
+            last_seen: last_seen.into(),
+            next_expected: None,
+            price_change: None,
+        }
+    }
+
+    #[test]
+    fn service_token_picks_the_strongest_shared_name() {
+        assert_eq!(service_token("NETFLIX.COM"), Some("netflix".into()));
+        // netflix (7) beats the processor prefix paypal (6).
+        assert_eq!(service_token("PAYPAL *NETFLIX"), Some("netflix".into()));
+        assert_eq!(service_token("SP"), None); // nothing >= 4 chars
+        assert_eq!(service_token("A1 B2 99"), None); // no alphabetic run >= 4
+    }
+
+    #[test]
+    fn duplicate_subscriptions_flag_same_service_similar_price() {
+        let today = NaiveDate::parse_from_str("2025-07-10", "%Y-%m-%d").unwrap();
+        let items = vec![
+            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
+            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-06-28"),
+            ri("spotify", "SPOTIFY", RecurringKind::Subscription, -999, "2025-07-02"),
+        ];
+        let alerts = duplicate_alerts(&items, &HashMap::new(), today);
+        assert_eq!(alerts.len(), 1, "the two Netflix series flag; Spotify is alone");
+        assert!(alerts[0].sensitive.as_deref().unwrap().contains("NETFLIX"));
+    }
+
+    #[test]
+    fn duplicate_detection_respects_price_activity_and_verdict_guards() {
+        let today = NaiveDate::parse_from_str("2025-07-10", "%Y-%m-%d").unwrap();
+        // Same token, very different prices → likely different services, no flag.
+        let diff_price = vec![
+            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
+            ri("netflixann", "NETFLIX ANNUAL", RecurringKind::Subscription, -19999, "2025-06-28"),
+        ];
+        assert!(duplicate_alerts(&diff_price, &HashMap::new(), today).is_empty());
+
+        // One series lapsed months ago → not an active double-charge.
+        let lapsed = vec![
+            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
+            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-01-01"),
+        ];
+        assert!(duplicate_alerts(&lapsed, &HashMap::new(), today).is_empty());
+
+        // A dismissed series is excluded from duplicate consideration.
+        let mut ov = HashMap::new();
+        ov.insert(
+            "netflixcom".to_string(),
+            SubscriptionOverride { verdict: SubscriptionVerdict::Dismissed, label: None, trial_ends_at: None, cancelled_at: None },
+        );
+        let dismissed = vec![
+            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
+            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-06-28"),
+        ];
+        assert!(duplicate_alerts(&dismissed, &ov, today).is_empty());
+
+        // Non-subscription recurring items (a variable bill) are never dupes.
+        let bills = vec![
+            ri("hydro", "HYDRO ONE", RecurringKind::Bill, -8000, "2025-07-01"),
+            ri("hydrox", "HYDRO ONE EAST", RecurringKind::Bill, -8000, "2025-06-28"),
+        ];
+        assert!(duplicate_alerts(&bills, &HashMap::new(), today).is_empty());
+    }
+
+    #[test]
+    fn recorded_trial_warns_once_before_it_converts() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        // No detected series needed — a trial is user-recorded, keyed directly.
+        set_subscription_trial(&conn, "acme-vpn", "Acme VPN", Some("2025-07-12")).unwrap();
+        let now = "2025-07-10T12:00:00Z".parse().unwrap();
+        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 1, "warns 2 days before conversion");
+        let all = notify::list(&mut conn, true, 50).unwrap();
+        assert!(all.iter().any(|n| n.sensitive.as_deref().unwrap_or("").contains("Acme VPN")));
+        // Idempotent for the same trial end date.
+        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 0);
+
+        // A trial still far off does not warn.
+        let (_d2, db2) = fresh();
+        let mut conn2 = db2.get().unwrap();
+        set_subscription_trial(&conn2, "acme-vpn", "Acme VPN", Some("2025-09-30")).unwrap();
+        assert_eq!(refresh_subscription_alerts(&mut conn2, now).unwrap(), 0);
+    }
+
+    #[test]
+    fn charge_after_cancellation_is_surfaced_but_not_before() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        seed(&conn);
+        monthly(&conn, "NETFLIX", "2025-01-05", 6, -1599); // Jan..Jun
+        charge(&conn, "NETFLIX", "2025-07-05", -1599); // the surprise charge
+        let key = detect_recurring(&conn, 1100)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.display_merchant.to_uppercase().contains("NETFLIX"))
+            .map(|i| i.merchant_key)
+            .expect("netflix series detected");
+        mark_subscription_cancelled(&conn, &key, "Netflix", "2025-06-20").unwrap();
+        let now = "2025-07-08T12:00:00Z".parse().unwrap();
+        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 1);
+        let all = notify::list(&mut conn, true, 50).unwrap();
+        assert!(all.iter().any(|n| n.title.contains("charged again")));
+
+        // No charge after the cancel date → nothing surfaced.
+        let (_d2, db2) = fresh();
+        let mut conn2 = db2.get().unwrap();
+        seed(&conn2);
+        monthly(&conn2, "NETFLIX", "2025-01-05", 6, -1599); // last charge ~2025-06-04
+        let key2 = detect_recurring(&conn2, 1100)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.display_merchant.to_uppercase().contains("NETFLIX"))
+            .map(|i| i.merchant_key)
+            .unwrap();
+        mark_subscription_cancelled(&conn2, &key2, "Netflix", "2025-06-20").unwrap(); // after the last charge
+        assert_eq!(refresh_subscription_alerts(&mut conn2, now).unwrap(), 0);
     }
 }

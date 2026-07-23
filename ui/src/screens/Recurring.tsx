@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
-import { useRecurring, useSetSubscriptionVerdict } from "../api/hooks/recurring";
+import {
+  useRecurring,
+  useSetSubscriptionVerdict,
+  useSetSubscriptionTrial,
+  useMarkSubscriptionCancelled,
+} from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 import type { PlannedTransaction, RecurringItem } from "../api/client";
 import { money } from "../utils/format";
@@ -29,6 +34,58 @@ function PriceChangePill({ pc, compact = false }: { pc: NonNullable<RecurringIte
     >
       {up ? "↑" : "↓"} {pc.pct >= 0 ? "+" : ""}{Math.round(pc.pct)}%
     </span>
+  );
+}
+
+function fmtShortDate(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * Subscription lifecycle (#75): trial / cancelled badges plus the affordances to
+ * record them. Marking a trial schedules a heads-up before it converts; marking
+ * cancelled stops ongoing alerts and surfaces any charge dated after the cancel
+ * date. Only shown for genuine subscriptions.
+ */
+function SubscriptionLifecycle({ item }: { item: RecurringItem }) {
+  const setTrial = useSetSubscriptionTrial();
+  const markCancelled = useMarkSubscriptionCancelled();
+  const [form, setForm] = useState<null | "trial" | "cancelled">(null);
+  const [date, setDate] = useState("");
+  if (item.kind !== "subscription") return null;
+  const label = prettyMerchant(item.merchantRaw);
+  const busy = setTrial.isPending || markCancelled.isPending;
+  const cancelled = item.verdict === "cancelled";
+
+  const submit = () => {
+    if (!date) return;
+    if (form === "trial") setTrial.mutate({ merchantKey: item.merchantKey, label, trialEndsAt: date });
+    else markCancelled.mutate({ merchantKey: item.merchantKey, label, cancelledAt: date });
+    setForm(null);
+    setDate("");
+  };
+
+  const linkBtn = { background: "none", border: "none", padding: 0, font: "inherit", color: "var(--ink-mute)", textDecoration: "underline", cursor: "pointer" } as const;
+
+  return (
+    <div className="row row-sm" style={{ marginTop: 5, fontSize: 12, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      {item.trialEndsAt && <span className="chip" style={{ fontSize: 11, padding: "1px 8px", color: "var(--accent)", borderColor: "var(--accent)" }}>Trial ends {fmtShortDate(item.trialEndsAt)}</span>}
+      {cancelled && <span className="chip warning" style={{ fontSize: 11, padding: "1px 8px" }}>Cancelled{item.cancelledAt ? ` ${fmtShortDate(item.cancelledAt)}` : ""}</span>}
+      {form === null ? (
+        <>
+          <button type="button" style={linkBtn} disabled={busy} onClick={() => { setForm("trial"); setDate(item.trialEndsAt ?? ""); }}>{item.trialEndsAt ? "Edit trial" : "Mark as trial"}</button>
+          {item.trialEndsAt && <button type="button" style={linkBtn} disabled={busy} onClick={() => setTrial.mutate({ merchantKey: item.merchantKey, label, trialEndsAt: null })}>Clear trial</button>}
+          {!cancelled && <button type="button" style={linkBtn} disabled={busy} onClick={() => { setForm("cancelled"); setDate(new Date().toISOString().slice(0, 10)); }}>I cancelled this</button>}
+        </>
+      ) : (
+        <span className="row row-sm" style={{ gap: 6, alignItems: "center" }}>
+          <span className="muted">{form === "trial" ? "Trial ends" : "Cancelled on"}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label={form === "trial" ? "Trial end date" : "Cancellation date"} style={{ fontSize: 12 }} />
+          <button type="button" className="btn primary sm" disabled={!date || busy} onClick={submit}>Save</button>
+          <button type="button" style={linkBtn} onClick={() => { setForm(null); setDate(""); }}>Cancel</button>
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -181,7 +238,7 @@ export default function Recurring() {
                     const canDismiss = item.kind !== "income";
                     return (
                     <tr key={`${group.label}-${item.merchantKey}`} title={(item.reasons ?? []).join(" · ")} style={dismissed ? { opacity: 0.5 } : undefined}>
-                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}{item.priceChange && <PriceChangePill pc={item.priceChange} compact />}{dismissed && <span className="chip" style={{ marginLeft: 6, fontSize: 11, padding: "1px 8px" }}>dismissed</span>}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence{item.kind !== "income" && !item.feedsProjections ? " · not used in forecasts" : ""}{canDismiss && <>{" · "}<button type="button" aria-label={`${dismissed ? "Restore" : "Dismiss"} ${prettyMerchant(item.merchantRaw)}`} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: dismissed ? null : "dismissed" })} disabled={setVerdict.isPending} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--ink-mute)", textDecoration: "underline", cursor: "pointer" }}>{dismissed ? "Restore" : "Dismiss"}</button></>}</div></div></div></td>
+                      <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}{item.priceChange && <PriceChangePill pc={item.priceChange} compact />}{dismissed && <span className="chip" style={{ marginLeft: 6, fontSize: 11, padding: "1px 8px" }}>dismissed</span>}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence{item.kind !== "income" && !item.feedsProjections ? " · not used in forecasts" : ""}{canDismiss && <>{" · "}<button type="button" aria-label={`${dismissed ? "Restore" : "Dismiss"} ${prettyMerchant(item.merchantRaw)}`} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: dismissed ? null : "dismissed" })} disabled={setVerdict.isPending} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--ink-mute)", textDecoration: "underline", cursor: "pointer" }}>{dismissed ? "Restore" : "Dismiss"}</button></>}</div><SubscriptionLifecycle item={item} /></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
                       <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
                       <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { decimals: 2 })}</span></td>

@@ -888,6 +888,8 @@ function defaultNotifPrefs(): AnyRec {
 let mockNotifPrefs: AnyRec = defaultNotifPrefs();
 // In-memory subscription confirm/dismiss verdicts (#58), keyed by merchantKey.
 const mockSubVerdicts: Record<string, string> = {};
+const mockSubTrials: Record<string, string> = {};
+const mockSubCancels: Record<string, string> = {};
 
 // In-memory month-end closes (#59), keyed by "year-month".
 const mockCloses: Record<string, AnyRec> = {};
@@ -1144,12 +1146,34 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
       return netWorthSeries(months, ds.netWorthStart, ds.netWorthEnd);
     },
     list_recurring: () =>
-      ds.recurring.map((r) => ({ ...r, verdict: mockSubVerdicts[String(r.merchantKey)] ?? r.verdict ?? null })),
+      ds.recurring.map((r) => {
+        const key = String(r.merchantKey);
+        const cancelled = mockSubCancels[key];
+        return {
+          ...r,
+          verdict: cancelled ? "cancelled" : (mockSubVerdicts[key] ?? r.verdict ?? null),
+          trialEndsAt: mockSubTrials[key] ?? (r.trialEndsAt as string | undefined) ?? null,
+          cancelledAt: cancelled ?? (r.cancelledAt as string | undefined) ?? null,
+        };
+      }),
     set_subscription_verdict: (a) => {
       const key = String(a?.merchantKey ?? "");
       const verdict = a?.verdict;
       if (verdict === "confirmed" || verdict === "dismissed") mockSubVerdicts[key] = verdict;
       else delete mockSubVerdicts[key];
+      return null;
+    },
+    set_subscription_trial: (a) => {
+      const key = String(a?.merchantKey ?? "");
+      const ends = a?.trialEndsAt;
+      if (typeof ends === "string" && ends) mockSubTrials[key] = ends;
+      else delete mockSubTrials[key];
+      return null;
+    },
+    mark_subscription_cancelled: (a) => {
+      const key = String(a?.merchantKey ?? "");
+      const on = a?.cancelledAt;
+      if (typeof on === "string" && on) mockSubCancels[key] = on;
       return null;
     },
     list_manual_assets: () => ds.manualAssets,
