@@ -203,7 +203,7 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
       for (let i = 0; i < n; i++) { const x = X(i), y = Y(points[i]!); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
       ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.stroke();
       ctx.beginPath(); ctx.arc(X(n - 1), Y(points[n - 1]!), 2.4, 0, 7); ctx.fillStyle = color; ctx.fill();
-      if (prog < 1) { prog += 0.03; raf = requestAnimationFrame(draw); }
+      if (prog < 1) { prog += 0.015; raf = requestAnimationFrame(draw); }
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
@@ -222,8 +222,10 @@ function HeroChart() {
     const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
     cv.width = w * dpr; cv.height = h * dpr; ctx.scale(dpr, dpr);
-    const pts = [108, 112, 116, 119, 124, 131, 137.5];
-    const min = 104, max = 140;
+    // A simulated net-worth climb: up over the year but with real dips and
+    // recoveries (market pullbacks, big-spend months) rather than a straight line.
+    const pts = [104, 107, 105.2, 109.5, 107.4, 112, 115.3, 113, 117.6, 115.1, 120.4, 123.8, 121.2, 126.5, 130.1, 127.6, 132.9, 135, 133.4, 137.5];
+    const min = 100, max = 140;
     const X = (i: number) => (i / (pts.length - 1)) * w;
     const Y = (v: number) => h - 4 - ((v - min) / (max - min)) * (h - 10);
     let prog = 0, raf = 0, to = 0;
@@ -254,7 +256,7 @@ function HeroChart() {
       ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(hx, hy, 3.4, 0, 7); ctx.fillStyle = "#C9F950"; ctx.fill();
       ctx.beginPath(); ctx.arc(hx, hy, 6, 0, 7); ctx.strokeStyle = "rgba(201,249,80,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
-      if (prog < 1) { prog += 0.014; raf = requestAnimationFrame(draw); }
+      if (prog < 1) { prog += 0.007; raf = requestAnimationFrame(draw); }
     };
     to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, 500);
     return () => { clearTimeout(to); cancelAnimationFrame(raf); };
@@ -427,7 +429,7 @@ function Showcase() {
               <div><div className="nm">Joint Checking</div><div className="sub">MERCURY ·· 4421</div></div>
             </div>
             <div className="amt">${money(c1)}</div>
-            <Sparkline points={[12100, 12500, 13200, 12950, 13400, 14100, 14820]} color="#C9F950" />
+            <Sparkline points={[13100, 12700, 13500, 13000, 13950, 13400, 14250, 13800, 14650, 14100, 15050, 14820]} color="#C9F950" />
           </div>
           <div className="gcard card-mini card-b float">
             <div className="top">
@@ -435,7 +437,7 @@ function Showcase() {
               <div><div className="nm">House Fund</div><div className="sub">WEALTHFRONT ·· 9087</div></div>
             </div>
             <div className="amt">${money(c2)}</div>
-            <Sparkline points={[27040, 27240, 27520, 27860, 28100, 28340, 28640]} color="#34D399" />
+            <Sparkline points={[26700, 27050, 26850, 27450, 27200, 27850, 27650, 28250, 28050, 28550, 28800, 28640]} color="#34D399" />
           </div>
           <div className="gcard card-insight float">
             <div className="spark">{Ico.spark()}</div>

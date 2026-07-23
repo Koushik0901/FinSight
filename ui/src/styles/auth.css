@@ -198,11 +198,15 @@
 }
 .fs-auth .field.focused .lab,
 .fs-auth .field.filled .lab {
-  transform: translateY(-30px) translateX(-30px);
+  transform: translateY(-32px) translateX(-30px);
   font-size: 11px;
   color: var(--ink-mute);
   font-family: var(--a-mono);
   letter-spacing: 0.04em;
+  /* The label floats onto the box's top border — give it the panel background
+     so it cuts a clean notch through the outline instead of colliding with it. */
+  background: var(--bg-2);
+  border-radius: 4px;
 }
 .fs-auth .field.focused .lab { color: var(--accent); }
 .fs-auth .field .lab b { color: var(--negative); }
