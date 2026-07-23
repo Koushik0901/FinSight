@@ -67,8 +67,16 @@ pub struct RecurringItem {
     /// A detected material price change on this series, if any (#58).
     pub price_change: Option<PriceChangeDto>,
     /// The user's durable verdict on this series: "confirmed" | "dismissed" |
-    /// null. A dismissed series is suppressed from price-change/renewal alerts.
+    /// "cancelled" | null. A dismissed series is suppressed from alerts; a
+    /// cancelled one stops ongoing alerts but flags a charge after the cancel
+    /// date (#75).
     pub verdict: Option<String>,
+    /// If the user marked this a free trial, the date it converts (`YYYY-MM-DD`);
+    /// a heads-up fires shortly before. `null` when not a trial (#75).
+    pub trial_ends_at: Option<String>,
+    /// If the user marked this cancelled, the cancel date (`YYYY-MM-DD`); a
+    /// charge after it is surfaced as a surprise. `null` otherwise (#75).
+    pub cancelled_at: Option<String>,
 }
 
 fn kind_str(kind: RecurringKind) -> &'static str {
@@ -88,8 +96,8 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
         // 13-month window so annual charges are detectable; the detector anchors
         // on the most recent transaction so historical imports still work.
         let items = detect_recurring(conn, 395)?;
-        // The user's confirm/dismiss verdicts, attached by merchant key.
-        let verdicts = subscriptions::load_verdicts(conn)?;
+        // The user's lifecycle overrides (verdict + trial/cancel), by merchant key.
+        let overrides = subscriptions::load_overrides(conn)?;
         Ok(items
             .into_iter()
             // Show genuine recurring commitments + income only. Repeat purchases
@@ -105,7 +113,9 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
                 monthly_equivalent_cents: i.monthly_equivalent_cents(),
                 feeds_projections: i.is_projection_obligation(),
                 price_change: i.price_change.as_ref().map(PriceChangeDto::from),
-                verdict: verdicts.get(&i.merchant_key).map(|v| v.as_str().to_string()),
+                verdict: overrides.get(&i.merchant_key).map(|o| o.verdict.as_str().to_string()),
+                trial_ends_at: overrides.get(&i.merchant_key).and_then(|o| o.trial_ends_at.clone()),
+                cancelled_at: overrides.get(&i.merchant_key).and_then(|o| o.cancelled_at.clone()),
                 merchant_key: i.merchant_key,
                 merchant_raw: i.display_merchant,
                 category_label: i.category_label.unwrap_or_default(),
@@ -142,4 +152,39 @@ pub async fn set_subscription_verdict(
     run(&db, move |conn| subscriptions::set_verdict(conn, &merchant_key, parsed))
         .await
         .map_err(AppError::from)
+}
+
+/// Mark a detected subscription as a free TRIAL converting on `trial_ends_at`
+/// (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
+/// display name captured for the reminder. A heads-up fires shortly before the
+/// date (#75).
+pub async fn set_subscription_trial(
+    state: &ApiState,
+    merchant_key: String,
+    label: String,
+    trial_ends_at: Option<String>,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        subscriptions::set_subscription_trial(conn, &merchant_key, &label, trial_ends_at.as_deref())
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+/// Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
+/// Ongoing price/renewal alerts stop; a charge dated after the cancel date is
+/// surfaced as a surprise. `label` names the service in that alert (#75).
+pub async fn mark_subscription_cancelled(
+    state: &ApiState,
+    merchant_key: String,
+    label: String,
+    cancelled_at: String,
+) -> AppResult<()> {
+    let db = (*state.db).clone();
+    run(&db, move |conn| {
+        subscriptions::mark_subscription_cancelled(conn, &merchant_key, &label, &cancelled_at)
+    })
+    .await
+    .map_err(AppError::from)
 }

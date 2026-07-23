@@ -560,6 +560,30 @@ async setSubscriptionVerdict(merchantKey: string, verdict: string | null) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Mark a detected subscription as a free trial converting on `trial_ends_at`
+ * (or clear it with null); a heads-up fires shortly before (#75).
+ */
+async setSubscriptionTrial(merchantKey: string, label: string, trialEndsAt: string | null) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_subscription_trial", { merchantKey, label, trialEndsAt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Mark a detected subscription cancelled as of `cancelled_at`; a charge after
+ * that date is surfaced as a surprise (#75).
+ */
+async markSubscriptionCancelled(merchantKey: string, label: string, cancelledAt: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_subscription_cancelled", { merchantKey, label, cancelledAt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getReportData(scope: string, memberId: string | null) : Promise<Result<ReportData, AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_report_data", { scope, memberId }) };
@@ -3108,9 +3132,21 @@ feedsProjections: boolean;
 priceChange: PriceChangeDto | null; 
 /**
  * The user's durable verdict on this series: "confirmed" | "dismissed" |
- * null. A dismissed series is suppressed from price-change/renewal alerts.
+ * "cancelled" | null. A dismissed series is suppressed from alerts; a
+ * cancelled one stops ongoing alerts but flags a charge after the cancel
+ * date (#75).
  */
-verdict: string | null }
+verdict: string | null; 
+/**
+ * If the user marked this a free trial, the date it converts (`YYYY-MM-DD`);
+ * a heads-up fires shortly before. `null` when not a trial (#75).
+ */
+trialEndsAt: string | null; 
+/**
+ * If the user marked this cancelled, the cancel date (`YYYY-MM-DD`); a
+ * charge after it is surfaced as a surprise. `null` otherwise (#75).
+ */
+cancelledAt: string | null }
 export type ReportData = { monthly: MonthSummary[]; monthlyLastYear: MonthSummary[]; topCategories: CategoryTotal[]; topMerchants: MerchantTotal[] }
 export type RestorationEnvelope = { id: string; label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; openedOn: string; counterpartyPattern: string | null; closedAt: string | null; note: string | null; createdAt: string }
 export type RestorationEnvelopeInput = { label: string; sourceAccountId: string | null; destinationAccountId: string | null; originalCents: number; 

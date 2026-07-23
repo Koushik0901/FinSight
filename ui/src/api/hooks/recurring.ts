@@ -43,3 +43,34 @@ export function useSetSubscriptionVerdict() {
     },
   });
 }
+
+/**
+ * Mark a detected subscription as a free trial converting on `trialEndsAt`
+ * (`YYYY-MM-DD`), or clear it with null. A heads-up notification fires shortly
+ * before the date (#75).
+ */
+export function useSetSubscriptionTrial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { merchantKey: string; label: string; trialEndsAt: string | null }) => {
+      const result = await commands.setSubscriptionTrial(vars.merchantKey, vars.label, vars.trialEndsAt);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["recurring"] }),
+  });
+}
+
+/**
+ * Mark a detected subscription cancelled as of `cancelledAt` (`YYYY-MM-DD`).
+ * Ongoing alerts stop; a charge after that date is surfaced as a surprise (#75).
+ */
+export function useMarkSubscriptionCancelled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { merchantKey: string; label: string; cancelledAt: string }) => {
+      const result = await commands.markSubscriptionCancelled(vars.merchantKey, vars.label, vars.cancelledAt);
+      if (result.status === "error") throw new Error(result.error.message);
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["recurring"] }),
+  });
+}

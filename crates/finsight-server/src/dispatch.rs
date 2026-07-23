@@ -657,6 +657,20 @@ async fn dispatch(
             arg(&p, "verdict")?,
         )
         .await?),
+        "set_subscription_trial" => ok(c::recurring::set_subscription_trial(
+            api,
+            arg(&p, "merchantKey")?,
+            arg(&p, "label")?,
+            arg(&p, "trialEndsAt")?,
+        )
+        .await?),
+        "mark_subscription_cancelled" => ok(c::recurring::mark_subscription_cancelled(
+            api,
+            arg(&p, "merchantKey")?,
+            arg(&p, "label")?,
+            arg(&p, "cancelledAt")?,
+        )
+        .await?),
 
         // ── reports ──
         "get_report_data" => ok(c::reports::get_report_data(
@@ -1088,6 +1102,8 @@ pub const SUPPORTED: &[&str] = &[
     // recurring
     "list_recurring",
     "set_subscription_verdict",
+    "set_subscription_trial",
+    "mark_subscription_cancelled",
     // reports
     "get_report_data",
     "get_month_totals",
