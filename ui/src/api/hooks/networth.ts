@@ -15,6 +15,11 @@ export function useNetWorthHistory(days: number) {
       return result.data;
     },
     enabled: isBackendAvailable(),
+    // Keep the current chart on screen while a range switch refetches, instead
+    // of collapsing to [] (which blanks the chart + flips the trend chip to
+    // "Baseline building" for a frame — the flicker users see on the Today
+    // range selector). Same pattern as the cash-flow horizon selector.
+    placeholderData: (prev) => prev,
   });
 }
 
