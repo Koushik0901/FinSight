@@ -1,0 +1,56 @@
+// SYNTHETIC SEED CORPUS — issue #89 (Slice 2b). Every merchant name and
+// transaction below is INVENTED for testing the #88 harness end-to-end. None
+// of it is drawn from any real user's account data, and it is NOT a real-world
+// precision benchmark. See eval/CATEGORIZATION_CORPUS.md for the full format
+// spec, methodology, and what a real corpus would need.
+//
+// A handful of entries deliberately reuse merchant keywords that already ship
+// in finsight_core::categorize::KEYWORD_MAP (generic words like "pizza",
+// "cafe", "parking", "pharmacy", "mortgage", plus a few widely-known public
+// brand names like Costco/Netflix/Best Buy) so the REAL builtin matcher has
+// something legitimate to hit — that is testing shipped code against its own
+// public vocabulary, not fabricating a result. The majority of entries use
+// wholly fictional merchant names with no keyword overlap, so honest coverage
+// gaps show up in the baseline rather than being hidden.
+//
+// One entry ("Esso Corner Store", line g5t below is labelled groceries) is a
+// deliberate TRAP: the builtin matcher's gas-station keyword will mis-fire as
+// "transport" even though this purchase's ground truth is a convenience-store
+// grocery run. This keeps the baseline honest — precision is not artificially
+// 100%.
+//
+// Format: one JSON object per line. Lines starting with `//` or blank are
+// skipped by the loader (mirrors eval/benchmark.jsonl's convention).
+{"id":"d1","merchant_id":"m-pinecrest-pizza","merchant_text":"Pinecrest Pizza Co","category":"dining"}
+{"id":"d2","merchant_id":"m-pinecrest-pizza","merchant_text":"Pinecrest Pizza Co #2 Delivery","category":"dining"}
+{"id":"d3","merchant_id":"m-hollow-cafe","merchant_text":"The Hollow Cafe","category":"dining"}
+{"id":"d4","merchant_id":"m-riverbend-diner","merchant_text":"Riverbend Diner","category":"dining","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"d5","merchant_id":"m-noodle-nook","merchant_text":"Noodle Nook Kitchen","category":"dining","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"d6","merchant_id":"m-blue-teapot","merchant_text":"Blue Teapot Coffee House","category":"dining"}
+{"id":"g1","merchant_id":"m-brightloaf","merchant_text":"Brightloaf Grocers #12","category":"groceries","notes":"rule-source target (see synthetic_rules)"}
+{"id":"g2","merchant_id":"m-brightloaf","merchant_text":"Brightloaf Grocers #45","category":"groceries","notes":"rule-source target (see synthetic_rules)"}
+{"id":"g3","merchant_id":"m-fieldfresh","merchant_text":"FieldFresh Produce Market","category":"groceries","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"g4","merchant_id":"m-thriftwell","merchant_text":"Thriftwell Foods #9","category":"groceries","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"g5","merchant_id":"m-costco-public","merchant_text":"Costco Wholesale #331","category":"groceries","notes":"public brand keyword already in KEYWORD_MAP"}
+{"id":"g5t","merchant_id":"m-esso-corner","merchant_text":"Esso Corner Store","category":"groceries","notes":"TRAP: gas-station brand keyword 'esso' maps to transport in the builtin matcher, but this purchase was a small grocery/convenience run — a realistic false-positive source"}
+{"id":"t1","merchant_id":"m-westside-parking","merchant_text":"Westside Parking Garage","category":"transport"}
+{"id":"t2","merchant_id":"m-metro-transit","merchant_text":"Metro Transit Fare Card","category":"transport"}
+{"id":"t3","merchant_id":"m-swiftcab","merchant_text":"SwiftCab Rideshare","category":"transport","notes":"no builtin keyword overlap by design; rule-source target"}
+{"id":"s1","merchant_id":"m-netflix-public","merchant_text":"Netflix.com","category":"subscriptions","notes":"public brand keyword already in KEYWORD_MAP"}
+{"id":"s2","merchant_id":"m-cloudnote","merchant_text":"CloudNote App Subscription","category":"subscriptions","notes":"no builtin keyword overlap by design; rule-source target"}
+{"id":"s3","merchant_id":"m-cloudnote","merchant_text":"CloudNote App Subscription Renewal","category":"subscriptions","notes":"no builtin keyword overlap by design; rule-source target"}
+{"id":"u1","merchant_id":"m-bright-hydro","merchant_text":"BrightGrid Hydro Payment","category":"utilities"}
+{"id":"u2","merchant_id":"m-northwave-internet","merchant_text":"NorthWave Internet and Phone","category":"utilities","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"u3","merchant_id":"m-northwave-internet","merchant_text":"NorthWave Internet and Phone Autopay","category":"utilities","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"sh1","merchant_id":"m-daily-dollar","merchant_text":"Daily Dollar Variety","category":"shopping","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"sh2","merchant_id":"m-homeharbor","merchant_text":"Home Harbor Hardware","category":"shopping","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"sh3","merchant_id":"m-craftbox","merchant_text":"CraftBox Supplies","category":"shopping","notes":"no builtin keyword overlap by design; rule-source target"}
+{"id":"sh4","merchant_id":"m-bestbuy-public","merchant_text":"Best Buy #2210","category":"shopping","notes":"public brand keyword already in KEYWORD_MAP"}
+{"id":"tr1","merchant_id":"m-skyline-air","merchant_text":"Skyline Air Holidays","category":"travel","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"tr2","merchant_id":"m-wanderway","merchant_text":"WanderWay Booking Co","category":"travel","notes":"no builtin keyword overlap by design — honest coverage gap"}
+{"id":"h1","merchant_id":"m-westgate-pharmacy","merchant_text":"Westgate Pharmacy","category":"health"}
+{"id":"h2","merchant_id":"m-oakridge-dental","merchant_text":"Oakridge Dental Clinic","category":"health"}
+{"id":"h3","merchant_id":"m-riverside-physio","merchant_text":"Riverside Physio Studio","category":"health"}
+{"id":"ho1","merchant_id":"m-cedarpoint-mortgage","merchant_text":"CedarPoint Mortgage Servicing","category":"housing"}
+{"id":"ho2","merchant_id":"m-oldtown-rentals","merchant_text":"Oldtown Rentals Monthly Rent Payment","category":"housing"}
+{"id":"gf1","merchant_id":"m-thoughtful-gifts","merchant_text":"Thoughtful Gifts Boutique","category":"gifts","notes":"no builtin keyword overlap — 'gifts' has zero KEYWORD_MAP entries at all; rule-source target"}
