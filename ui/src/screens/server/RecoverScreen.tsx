@@ -1,19 +1,16 @@
 import { useState, type FormEvent } from "react";
-import Button from "../../components/Button";
-import Input from "../../components/Input";
-import { RecoveryKeyReveal } from "../../components/RecoveryKeyReveal";
 import { recoverAccount } from "../../api/auth";
 import { userErrorMessage } from "../../utils/runtime";
+import { AuthShell, Field, Ico, RecoveryReveal } from "./authScene";
 
 /**
  * Server-mode-only password recovery. Reached from LoginScreen's "Forgot your
- * password?" link.
+ * password?" link, presented in the shared {@link AuthShell}.
  *
  * `POST /api/auth/recover` exchanges a username + recovery key for a new
  * password. On success the server rotates the recovery key and establishes a
- * session — so the user is already signed in by the time we render the new
- * key. That key is shown exactly once (RecoveryKeyReveal, same treatment as
- * first-run setup) before handing off to the app.
+ * session — so the user is already signed in by the time we render the new key.
+ * That key is shown exactly once (RecoveryReveal) before handing off to the app.
  *
  * The `auth.bad_recovery_key` message is deliberately generic: it must not
  * reveal whether the username exists or only the key was wrong.
@@ -29,6 +26,7 @@ export default function RecoverScreen({
   const [recoveryKey, setRecoveryKey] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null);
@@ -36,16 +34,18 @@ export default function RecoverScreen({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
     if (!username.trim() || !recoveryKey.trim() || !newPassword) {
       setError("Fill in every field to continue.");
+      return;
+    }
+    if (newPassword.length < 10) {
+      setError("New password must be at least 10 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
       setError("Passwords don't match.");
       return;
     }
-
     setSubmitting(true);
     try {
       const result = await recoverAccount(username.trim(), recoveryKey.trim(), newPassword);
@@ -68,80 +68,80 @@ export default function RecoverScreen({
 
   if (newRecoveryKey) {
     return (
-      <div className="screen server-auth-screen">
-        <RecoveryKeyReveal recoveryKey={newRecoveryKey} onContinue={onComplete} />
-      </div>
+      <AuthShell
+        eyebrow="Save your new recovery key"
+        title={<>Your key has <em>rotated</em>.</>}
+        subtitle="Your old recovery key no longer works. Store this new one somewhere safe — it's the only way back in next time."
+      >
+        <RecoveryReveal recoveryKey={newRecoveryKey} onContinue={onComplete} />
+      </AuthShell>
     );
   }
 
   return (
-    <div className="screen server-auth-screen">
-      <form className="card server-auth-card" onSubmit={(e) => void handleSubmit(e)}>
-        <p className="eyebrow">FinSight</p>
-        <h1 className="h1" style={{ fontSize: 26 }}>Reset your password</h1>
-        <p className="muted" style={{ marginTop: 8 }}>
-          Enter the recovery key you saved when your account was created. You&apos;ll get a new
-          recovery key to replace it.
-        </p>
-
-        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <Input
-            label="Username"
-            id="recover-username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-          />
-          <Input
-            label="Recovery key"
-            id="recover-key"
-            type="text"
-            value={recoveryKey}
-            onChange={(e) => setRecoveryKey(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="aaaaaaaa-bbbbbbbb-…"
-          />
-          <Input
-            label="New password"
-            id="recover-new-password"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            autoComplete="new-password"
-            hint="At least 10 characters."
-          />
-          <Input
-            label="Confirm new password"
-            id="recover-confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-        </div>
+    <AuthShell
+      eyebrow="Account recovery"
+      title={<>Reset your <em>password</em>.</>}
+      subtitle="Enter the recovery key you saved when your account was created. You'll get a fresh key to replace it."
+    >
+      <form onSubmit={(e) => void handleSubmit(e)} noValidate>
+        <Field
+          icon={Ico.user()}
+          id="recover-username"
+          label="Username"
+          value={username}
+          onChange={setUsername}
+          autoComplete="username"
+          autoFocus
+        />
+        <Field
+          icon={Ico.key()}
+          id="recover-key"
+          label="Recovery key"
+          value={recoveryKey}
+          onChange={setRecoveryKey}
+          autoComplete="off"
+        />
+        <Field
+          icon={Ico.lock()}
+          id="recover-new-password"
+          label="New password"
+          type={showPw ? "text" : "password"}
+          value={newPassword}
+          onChange={setNewPassword}
+          autoComplete="new-password"
+          trailing={
+            <button type="button" className="toggle-eye" onClick={() => setShowPw((s) => !s)} aria-label="Toggle visibility">
+              {showPw ? Ico.eyeoff() : Ico.eye()}
+            </button>
+          }
+        />
+        <Field
+          icon={Ico.lock()}
+          id="recover-confirm-password"
+          label="Confirm new password"
+          type={showPw ? "text" : "password"}
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          autoComplete="new-password"
+        />
 
         {error && (
-          <p role="alert" className="err" style={{ marginTop: 12 }}>
-            {error}
-          </p>
+          <div className="auth-alert" role="alert">{Ico.warn()} {error}</div>
         )}
 
-        <Button type="submit" variant="primary" style={{ marginTop: 18, width: "100%" }} disabled={submitting}>
-          {submitting ? "Resetting…" : "Reset password"}
-        </Button>
+        <button className={"submit" + (submitting ? " busy" : "")} type="submit" disabled={submitting}>
+          {submitting
+            ? <><span className="spinner" /> Resetting…</>
+            : <>Reset password <span className="arw">{Ico.arrow()}</span></>}
+        </button>
 
-        <Button
-          type="button"
-          variant="text"
-          style={{ marginTop: 10, width: "100%" }}
-          onClick={onCancel}
-          disabled={submitting}
-        >
-          Back to sign in
-        </Button>
+        <div className="form-row" style={{ justifyContent: "center", marginTop: 10 }}>
+          <button type="button" onClick={onCancel} disabled={submitting} style={{ color: "var(--ink-mute)" }}>
+            Back to sign in
+          </button>
+        </div>
       </form>
-    </div>
+    </AuthShell>
   );
 }

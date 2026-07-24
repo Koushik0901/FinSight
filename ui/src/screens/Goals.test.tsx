@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Goals, { buildHorizonRows } from "./Goals";
+import Goals, { buildHorizonRows, horizonTickLabel } from "./Goals";
 import { createWrapper, createWrapperWithEntries } from "../test-utils";
 
 const mockUpdateMonthly = vi.fn().mockResolvedValue(undefined);
@@ -173,6 +173,32 @@ describe("Goals — buildHorizonRows", () => {
     const noTargetDate = { ...baseGoal, id: "nt1", goalType: "save-by-date", targetCents: 400000, currentCents: 0, monthlyCents: 20000, targetDate: null };
     const { rows } = buildHorizonRows([noTargetDate]);
     expect(rows[0]!.needsAttention).toBe(false);
+  });
+});
+
+describe("Goals — horizonTickLabel", () => {
+  // Anchor "now" so the assertions are deterministic regardless of when the
+  // suite runs. January keeps every offset inside the same simple arithmetic.
+  const jan2026 = new Date(2026, 0, 15);
+
+  it("shows only the month for near-term ticks (<12 months out)", () => {
+    expect(horizonTickLabel(0, jan2026)).toBe("Jan");
+    expect(horizonTickLabel(6, jan2026)).toBe("Jul");
+    expect(horizonTickLabel(11, jan2026)).toBe("Dec");
+  });
+
+  it("adds an apostrophe-year once the horizon reaches a year out", () => {
+    // 13 months from Jan 2026 -> Feb 2027, shown as "Feb '27" (not "Feb 27").
+    expect(horizonTickLabel(13, jan2026)).toBe("Feb '27");
+    expect(horizonTickLabel(24, jan2026)).toBe("Jan '28");
+  });
+
+  it("never renders a bare 2-digit number that could be misread as a day-of-month", () => {
+    for (let m = 12; m <= 72; m += 6) {
+      const label = horizonTickLabel(m, jan2026);
+      // The trailing number must be apostrophe-prefixed, marking it as a year.
+      expect(label).toMatch(/ '\d{2}$/);
+    }
   });
 });
 

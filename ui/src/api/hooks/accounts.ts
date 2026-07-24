@@ -91,6 +91,10 @@ export function useAccountBalanceTimeline(accountId: string | undefined, since: 
       return result.data;
     },
     enabled: !!accountId && isBackendAvailable(),
+    // Keep the current curve on screen while the range selector's refetch is in
+    // flight, so switching 3M↔1Y swaps the body smoothly instead of blanking it
+    // (same flicker fix as the Today net-worth range selector).
+    placeholderData: (prev) => prev,
   });
 }
 

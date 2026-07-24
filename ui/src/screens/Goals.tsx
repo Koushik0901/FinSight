@@ -7,6 +7,7 @@ import { useGoals, useCreateGoal, useUpdateGoalMonthly, useProjectGoalGrowth } f
 import { useGoalExplanations } from "../api/hooks/metrics";
 import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
+import { blurAmounts } from "../utils/blurAmounts";
 import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
@@ -67,7 +68,7 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
 
   return (
     <div className="card" style={{ padding: 22 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr", gap: 24, alignItems: "center" }}>
+      <div className="goal-card-row">
         <div>
           <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
             <span className="chip">{TYPE_LABELS[goal.goalType] || goal.goalType}</span>
@@ -76,12 +77,16 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
           </div>
           <h2 className="h1" style={{ fontSize: 24 }}>{goal.name}</h2>
           <div className="muted" style={{ marginTop: 6 }}>
-            {goal.goalType === "debt-payoff"
-              ? `Paying ${money(goal.monthlyCents)}/month`
-              : goal.goalType === "spending-cap"
-                ? `Cap of ${money(goal.targetCents)} this month`
-                : `Auto-moves ${money(goal.monthlyCents)}/month`}
-            {goal.targetDate && ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`}
+            {blurAmounts(
+              (goal.goalType === "debt-payoff"
+                ? `Paying ${money(goal.monthlyCents)}/month`
+                : goal.goalType === "spending-cap"
+                  ? `Cap of ${money(goal.targetCents)} this month`
+                  : `Auto-moves ${money(goal.monthlyCents)}/month`) +
+                (goal.targetDate
+                  ? ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+                  : ""),
+            )}
           </div>
           {goal.accountId && linkedAccountName && <div className="muted" style={{ marginTop: 8 }}>Linked to {linkedAccountName}</div>}
         </div>
@@ -177,6 +182,24 @@ export function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; window
   return { rows, windowMonths };
 }
 
+/**
+ * Label for a horizon axis tick `monthsOut` months from now. Near-term ticks
+ * (<12 months) show just the month ("Jul"); once the horizon crosses a year we
+ * append an apostrophe-year ("Feb '28"). The apostrophe is deliberate: a plain
+ * "Feb 28" reads as February 28th, while "Feb '28" is unmistakably a year — and
+ * it stays compact enough that five ticks don't collide on a phone-width axis
+ * (a full "Feb 2028" is wide enough that the rightmost ticks overlap at 375px).
+ */
+export function horizonTickLabel(monthsOut: number, now: Date = new Date()): string {
+  const date = new Date(now);
+  date.setDate(1);
+  date.setMonth(date.getMonth() + monthsOut);
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  if (monthsOut < 12) return month;
+  const year = String(date.getFullYear() % 100).padStart(2, "0");
+  return `${month} '${year}`;
+}
+
 function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
   const { rows, windowMonths } = useMemo(() => buildHorizonRows(goals), [goals]);
   if (rows.length === 0) return null;
@@ -184,12 +207,9 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
   const tickCount = 5;
   const ticks = Array.from({ length: tickCount }, (_, i) => {
     const monthsOut = Math.round((i / (tickCount - 1)) * windowMonths);
-    const date = new Date();
-    date.setDate(1);
-    date.setMonth(date.getMonth() + monthsOut);
     return {
       xPercent: (monthsOut / windowMonths) * 100,
-      label: date.toLocaleDateString("en-US", { month: "short", year: monthsOut >= 12 ? "2-digit" : undefined }),
+      label: horizonTickLabel(monthsOut),
     };
   });
 
@@ -225,7 +245,7 @@ function GoalsHorizon({ goals }: { goals: GoalDto[] }) {
                 <div style={{ position: "absolute", left: 0, top: "50%", width: `${(row.xPercent * row.pct) / 100}%`, height: 2, background: color }} />
                 <div style={{ position: "absolute", left: `${row.xPercent}%`, top: "50%", transform: "translate(-50%, -50%)", width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: "var(--surface)" }} />
                 <div style={labelStyle}>
-                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · {money(row.goal.targetCents)}</span>
+                  {row.goal.name} <span className="muted mono" style={{ fontSize: 12 }}>· {etaLabel(row.months)} · <span className="blurable">{money(row.goal.targetCents)}</span></span>
                   {row.needsAttention && <span className="mono" style={{ fontSize: 12, color: "var(--negative)" }}> · Behind schedule</span>}
                 </div>
               </div>
@@ -285,7 +305,7 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
       </div>
 
       <div className="card" style={{ padding: 26 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+        <div className="goal-whatif-grid">
           <div>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Goal</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }} role="radiogroup" aria-label="Scenario goal">
@@ -422,7 +442,7 @@ function CompoundGrowthProjector({ goals }: { goals: GoalDto[] }) {
       </div>
       <div className="card" style={{ padding: 26 }}>
         <p className="muted" style={{ marginTop: 0 }}>
-          Projecting <strong>{selected.name}</strong> — {money(selected.currentCents)} now plus {money(selected.monthlyCents)}/month, compounding at {ratePct}% a year.
+          Projecting <strong>{selected.name}</strong> — <span className="blurable">{money(selected.currentCents)}</span> now plus <span className="blurable">{money(selected.monthlyCents)}</span>/month, compounding at {ratePct}% a year.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14, marginTop: 8 }}>
           {horizons.map((h) => {
@@ -433,7 +453,7 @@ function CompoundGrowthProjector({ goals }: { goals: GoalDto[] }) {
                 <div className="figure money" style={{ fontSize: 28, marginTop: 8 }}>{h.value != null ? money(h.value) : "—"}</div>
                 {growth != null && growth > 0 && (
                   <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
-                    {money(contributed(h.years))} in · <span style={{ color: "var(--positive)" }}>+{money(growth)} growth</span>
+                    <span className="blurable">{money(contributed(h.years))}</span> in · <span style={{ color: "var(--positive)" }}>+<span className="blurable">{money(growth)}</span> growth</span>
                   </div>
                 )}
               </div>

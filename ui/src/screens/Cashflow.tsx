@@ -3,6 +3,7 @@ import { useCashflowForecast } from "../api/hooks/cashflow";
 import { useFinancialMetrics } from "../api/hooks/metrics";
 import type { CashflowForecast, CashflowEvent } from "../api/client";
 import { money } from "../utils/format";
+import { blurAmounts } from "../utils/blurAmounts";
 
 const HORIZONS = [30, 60, 90] as const;
 
@@ -199,13 +200,13 @@ export default function Cashflow() {
                   {cautions.map((w, i) => (
                     <div key={`c-${i}`} className="explain-warn caution" style={{ marginTop: 10 }}>
                       <span className="explain-warn-ic" aria-hidden="true">!</span>
-                      <span>{w.message}</span>
+                      <span>{blurAmounts(w.message)}</span>
                     </div>
                   ))}
                   {infos.map((w, i) => (
                     <div key={`i-${i}`} className="explain-warn info" style={{ marginTop: 10 }}>
                       <span className="explain-warn-ic" aria-hidden="true">i</span>
-                      <span>{w.message}</span>
+                      <span>{blurAmounts(w.message)}</span>
                     </div>
                   ))}
                 </>
