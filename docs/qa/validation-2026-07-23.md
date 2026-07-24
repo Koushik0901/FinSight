@@ -33,7 +33,9 @@ Persistent sessions mean other devices stay signed in across restarts, so a "sig
 
 **Follow-up (noted, not built):** password-*change* (vs recover) leaves persisted sessions valid — defensible (SMK-wrapped key is password-independent). Recover already sweeps them (compromise path).
 
-**PENDING live proof (both features):** needs one user login on the new binary (the dev session was old-code, memory-only). Sequence: user logs in once → (a) restart server → confirm still authed with no re-login (persistence); (b) with a 2nd device signed in, click "Sign out other devices" → 2nd device drops, this one stays (sign-out-others).
+**LIVE PROOF — DONE (2026-07-24):**
+- **Persistence:** user logged in (persisted row written: 32-byte token hash, 72-byte SMK-wrapped key). Server killed + restarted as a fresh process (in-memory store empty) → the browser's existing cookie returned **provider 200 / list_accounts 200 with no re-login**. The session was recovered from disk. ✅
+- **Sign out other devices:** the button renders in Settings → Account; `POST /api/auth/sign-out-others` → **200 `{signedOut: 0}`** with only this session present, and the current session stays valid afterward. Multi-device removal (2 others purged, current kept, survives restart) is covered by the unit test. ✅
 
 ---
 
