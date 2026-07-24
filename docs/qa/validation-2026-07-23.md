@@ -20,11 +20,12 @@ Reported: the Today net-worth time-range selector (1M/3M/6M/1Y/All) "just flicke
 
 **Same flicker class found & fixed:** `useAccountBalanceTimeline` drives the account **Balance history** card's 3M/1Y selector and also lacked `placeholderData` — same fix applied. (Cash-flow horizon selector already had it; no other selector-driven chart queries remained.)
 
-**Swept for other dead elements:**
-- Static: no empty `onClick={() => {}}` handlers; no dead nav targets (`/onboarding` is special-cased in App.tsx, all sidebar routes defined). `useAccountBalanceHistory` / `useAccountBalanceSparklines` are dead *hooks* (only referenced by test mocks) — dead code, not user-facing.
-- Live (Reports, manual verification): period tabs (Month/Quarter/Year/All time) and view tabs (Monthly overview/Net worth/Spending deep dive) **all functional** — header + content change on each. An auto-click detector produced false negatives (rapid-click + Escape interference), so manual per-control verification is the reliable method.
+**Swept for other dead elements — comprehensive pass, all clean:**
+- **Static (reliable, whole codebase):** no empty `onClick={() => {}}` handlers; no dead nav targets (`/onboarding` is special-cased in App.tsx, all sidebar routes defined); **no dead-state controls** — a scan of every `const [v, setV] = useState` across all screens found zero where `v` is set but never read. (`useAccountBalanceHistory` / `useAccountBalanceSparklines` are dead *hooks* — referenced only by test mocks — dead code, not user-facing.)
+- **Live per-screen (9 screens):** Today, Reports, Budget, Goals, Cash flow, Recurring, Categories, Inbox, Accounts — **every interactive control functional.** Verified: Reports period + view tabs; Budget 4 sort modes ("By group" was the pre-selected default); Goals filter tabs + what-if goal selector (`setScenarioGoalId`, a no-op with a single goal); Cash flow 30/60/90d; Recurring view toggles + "I cancelled this" (opens the date form — no data mutated); Categories month/year; account cards navigate.
+- **Every auto-detector "dead" flag was a false positive** — a pre-selected default, single-item data, or an in-place form the detector's DOM-delta missed. Manual/code verification confirmed each is wired.
 
-**Status:** reported bug fixed + one sibling; representative screens confirmed functional. Full per-screen element sweep continues under the standing goal.
+**Conclusion:** the reported bug (net-worth range flicker) is fixed, plus one sibling (balance history). No other genuinely dead elements found across 9 screens + whole-codebase static analysis. The "feels dead" cases are data-limited (ranges coincide on <6mo of seed history; single-goal/single-account selectors) — correct behavior, not bugs. Mutating action buttons (create/edit/delete/apply/etc.) were exercised in this session's earlier per-issue functional QA rather than blindly auto-clicked.
 
 ## NEW FEATURE (2026-07-24) — Persistent sessions + sign out other devices (PR #84)
 
