@@ -1214,6 +1214,38 @@ async declineRuleProposal(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listCategoryProposals() : Promise<Result<CategoryProposal[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_proposals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async acceptCategoryProposal(id: string) : Promise<Result<UpdateTxnResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_category_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async correctCategoryProposal(id: string, categoryId: string) : Promise<Result<UpdateTxnResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("correct_category_proposal", { id, categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async rejectCategoryProposal(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reject_category_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAgentSessions() : Promise<Result<AgentSession[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_agent_sessions") };
@@ -2420,6 +2452,51 @@ export type CategoryDto = { id: string; label: string; color: string; group_id: 
 export type CategoryGroup = { id: string; label: string; hint: string | null; sort_order: number }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
+/**
+ * A first-class record of an automated categorization SUGGESTION for a
+ * transaction, decoupled from the canonical `transactions.category_id`
+ * write it may or may not have made (see `applied`).
+ * 
+ * One LIVE row per transaction (`txn_id` is UNIQUE in the schema): a new
+ * automated suggestion for the same transaction supersedes whatever
+ * proposal was there before, so `status == "pending"` always means "the
+ * current outstanding suggestion". Full per-attempt provenance already
+ * lives in the append-only `categorizations` table (V003) — this table
+ * exists to drive the review queue, not to be a second audit log.
+ */
+export type CategoryProposal = { id: string; txnId: string; proposedCategoryId: string; 
+/**
+ * 'llm' today; reserved for a future ML pass ('ml') per issue #87 scope —
+ * that pass is not built in this issue.
+ */
+source: string; confidence: number; rationale: string | null; 
+/**
+ * Ranked candidate categories as a JSON array string (opaque to
+ * finsight-core — not parsed or validated here). NULL until a
+ * multi-candidate pass exists; today it holds the single winning
+ * candidate for forward compatibility.
+ */
+candidatesJson: string | null; 
+/**
+ * "pending" | "accepted" | "corrected" | "rejected"
+ */
+status: string; 
+/**
+ * Whether THIS proposal's category was written to
+ * `transactions.category_id` when the row was created. Always `true`
+ * today (the LLM pass still auto-writes canonical exactly as before);
+ * a future ML pass could insert `applied = false` (a suggestion with no
+ * canonical write) — the schema can express that without another
+ * migration, even though this issue does not build the unapplied path.
+ */
+applied: boolean; model: string | null; createdAt: string; 
+/**
+ * Set when a human resolves the proposal via accept/correct/reject.
+ * NULL means either still pending, or auto-accepted without review
+ * (status = "accepted" with reviewed_at = NULL is the auto case; a
+ * human decision always stamps this).
+ */
+reviewedAt: string | null }
 /**
  * One category's 12-month total.
  */

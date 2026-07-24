@@ -9,7 +9,7 @@ use finsight_agent::{
         anthropic::AnthropicProvider, ollama::OllamaProvider, openai_compat::OpenAiCompatProvider,
     },
     reasoning::{engine::ReasoningEngine, tools::ToolSet},
-    CompletionProvider, ReasoningResult, LOW_CONFIDENCE_THRESHOLD,
+    CompletionProvider, ReasoningResult,
 };
 use finsight_core::models::{MissingDataItem, NewRule, RuleProposal};
 use finsight_core::repos::{rule_proposals, rules, run};
@@ -212,14 +212,13 @@ pub async fn test_completion_provider(
 pub async fn get_needs_review_count(state: &ApiState) -> AppResult<u32> {
     let db = (*state.db).clone();
     run(&db, |conn| {
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transactions \
-             WHERE ai_confidence < ?1 \
-               AND (SELECT source FROM categorizations c \
-                    WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm'",
-            rusqlite::params![LOW_CONFIDENCE_THRESHOLD],
-            |r| r.get(0),
-        )?;
+        // Issue #87: reads from category_proposals, the single source of
+        // truth for "the AI suggested this and nobody has weighed in yet".
+        // Kept in lockstep with the `needs_review` transaction-filter preset
+        // (repos::transactions::list) and the Inbox's low-confidence action
+        // item (commands::inbox::get_action_items) — all three must agree on
+        // one population.
+        let count = finsight_core::repos::category_proposals::count(conn, "pending")?;
         Ok(count as u32)
     })
     .await

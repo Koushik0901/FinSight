@@ -10,6 +10,7 @@ pub mod assets;
 pub mod budget;
 pub mod cashflow;
 pub mod categories;
+pub mod category_proposals;
 pub mod copilot;
 pub mod copilot_chat;
 pub mod data_health;
