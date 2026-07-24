@@ -12,6 +12,20 @@ This session's work is now separated into reviewable PRs:
 - **[#83](https://github.com/Koushik0901/FinSight/pull/83)** — QA validation branch (`chore/validate-shipped-issues`): the 14/14-screen validation, auth redesign, the critical `build_baseline` SQL fix, and the responsive / privacy-blur / horizon-label UI fixes.
 - **[#84](https://github.com/Koushik0901/FinSight/pull/84)** — `feat/persistent-sessions` off `main`: **persistent sessions + sign out other devices** (below). Isolated from the QA work; `cargo test -p finsight-server --lib` = 59 passed.
 
+## Dead / non-functional element hunt (2026-07-24, ongoing standing goal)
+
+Reported: the Today net-worth time-range selector (1M/3M/6M/1Y/All) "just flickers, nothing changes."
+
+**Root cause (fixed):** the selector *is* wired (setRange → days → `useNetWorthHistory(days)` → chart), and 1M genuinely changes the trend + chart (2 points, "$1,977" vs 4 points, "$6,704"). Two things made it feel dead: (1) **the query had no `placeholderData`, so each range switch dropped the data to `[]` for a frame — the chart blanked and the trend chip flashed "Baseline building" (the flicker)**; (2) the seed only has ~3 months of net-worth snapshots, so 3M/6M/1Y/All coincide (no data beyond 3M — a data limitation, correct behavior, not a bug). Fix: `placeholderData: (prev) => prev` on `useNetWorthHistory`. Verified live: after clicking 1M the chart **retains the previous data** (never blanks to "Baseline building"), then transitions smoothly. Every click now gives feedback (active button + trend label update immediately). Committed f8d1405 on #83.
+
+**Same flicker class found & fixed:** `useAccountBalanceTimeline` drives the account **Balance history** card's 3M/1Y selector and also lacked `placeholderData` — same fix applied. (Cash-flow horizon selector already had it; no other selector-driven chart queries remained.)
+
+**Swept for other dead elements:**
+- Static: no empty `onClick={() => {}}` handlers; no dead nav targets (`/onboarding` is special-cased in App.tsx, all sidebar routes defined). `useAccountBalanceHistory` / `useAccountBalanceSparklines` are dead *hooks* (only referenced by test mocks) — dead code, not user-facing.
+- Live (Reports, manual verification): period tabs (Month/Quarter/Year/All time) and view tabs (Monthly overview/Net worth/Spending deep dive) **all functional** — header + content change on each. An auto-click detector produced false negatives (rapid-click + Escape interference), so manual per-control verification is the reliable method.
+
+**Status:** reported bug fixed + one sibling; representative screens confirmed functional. Full per-screen element sweep continues under the standing goal.
+
 ## NEW FEATURE (2026-07-24) — Persistent sessions + sign out other devices (PR #84)
 
 User request: *"use sessions … similar to how immich uses, because we don't want to log in every time."* Previously sessions were in-memory only (`sessions.rs`), so every server restart forced a re-login. Implemented server-master-key–wrapped persistent sessions:
