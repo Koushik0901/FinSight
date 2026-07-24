@@ -588,6 +588,26 @@ pub(crate) async fn logout(State(st): State<Arc<ServerState>>, jar: CookieJar) -
     (StatusCode::OK, [clear_cookie_header()], Json(serde_json::json!({}))).into_response()
 }
 
+/// Sign out every OTHER device for the current user, keeping this session.
+/// Requires a live session. With persistent sessions, other devices stay signed
+/// in across restarts, so this is the "it wasn't me" / lost-device control. The
+/// current session's own cookie is untouched, so the caller stays signed in.
+pub(crate) async fn sign_out_others(
+    State(st): State<Arc<ServerState>>,
+    jar: CookieJar,
+) -> Response {
+    let Some(cookie) = jar.get(SESSION_COOKIE) else {
+        return err_response(StatusCode::UNAUTHORIZED, "auth.required", "authentication required");
+    };
+    let token = cookie.value();
+    let Some((user_id, _key, _admin)) = st.sessions.get(token) else {
+        return err_response(StatusCode::UNAUTHORIZED, "auth.required", "authentication required");
+    };
+    let removed = st.sessions.remove_user_except(&user_id, token);
+    tracing::info!(user_id = %user_id, removed, "signed out other devices");
+    (StatusCode::OK, Json(serde_json::json!({ "signedOut": removed }))).into_response()
+}
+
 // -------------------------------------------------------------- recover ---
 
 #[derive(Deserialize)]

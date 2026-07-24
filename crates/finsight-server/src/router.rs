@@ -36,6 +36,7 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         .route("/api/auth/setup", post(crate::auth::setup))
         .route("/api/auth/login", post(crate::auth::login))
         .route("/api/auth/logout", post(crate::auth::logout))
+        .route("/api/auth/sign-out-others", post(crate::auth::sign_out_others))
         .route("/api/auth/recover", post(crate::auth::recover))
         .route(
             "/api/auth/users",

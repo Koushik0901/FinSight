@@ -99,6 +99,18 @@ export async function logout(): Promise<void> {
   }
 }
 
+/**
+ * Sign out every OTHER device for the current user, keeping THIS session
+ * signed in. With persistent sessions other devices stay logged in across
+ * restarts, so this is the "it wasn't me" / lost-device control. Returns how
+ * many sessions were revoked. Does not touch the local session marker — the
+ * caller stays signed in here.
+ */
+export async function signOutOtherSessions(): Promise<number> {
+  const out = (await postJson("/api/auth/sign-out-others", {})) as { signedOut?: number };
+  return out.signedOut ?? 0;
+}
+
 // ------------------------------------------------- offline boot marker ---
 // A NON-SENSITIVE flag recording only that *some* authenticated session has
 // existed on this device. It is never a credential: no token, no key, no

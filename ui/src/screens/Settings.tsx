@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { fetchAuthStatus, isServerMode, logout } from "../api/auth";
+import { fetchAuthStatus, isServerMode, logout, signOutOtherSessions } from "../api/auth";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
 import {
   useCompletionProvider,
@@ -502,6 +502,7 @@ export default function Settings() {
   const sectionIds = useMemo(() => sections.map(([id]) => id), [sections]);
   const activeSection = useActiveSection(sectionIds);
   const [signingOut, setSigningOut] = useState(false);
+  const [signingOutOthers, setSigningOutOthers] = useState(false);
   // Admin-only "Manage users" link in the Account section — resolved once at
   // mount from /api/auth/status. Failures are swallowed: the link simply
   // stays hidden (desktop builds never fetch this at all, serverMode guards
@@ -533,6 +534,23 @@ export default function Settings() {
     } finally {
       setSigningOut(false);
       window.dispatchEvent(new CustomEvent("finsight:auth-required"));
+    }
+  };
+
+  const handleSignOutOthers = async () => {
+    setSigningOutOthers(true);
+    try {
+      const count = await signOutOtherSessions();
+      // This device stays signed in; only other sessions were revoked.
+      toast.success(
+        count > 0
+          ? `Signed out ${count} other ${count === 1 ? "device" : "devices"}`
+          : "No other devices were signed in",
+      );
+    } catch (error) {
+      toast.error("Couldn't sign out other devices", { description: userErrorMessage(error) });
+    } finally {
+      setSigningOutOthers(false);
     }
   };
 
@@ -682,6 +700,16 @@ export default function Settings() {
                   </button>
                 </div>
               )}
+              <div className="s-row">
+                <div>
+                  <div className="label">Sign out other devices</div>
+                  <div className="desc">Revoke every other signed-in session but keep this one. Use this if you've lost a device or signed in somewhere you shouldn't have.</div>
+                </div>
+                <div />
+                <button className="btn outline sm" type="button" disabled={signingOutOthers} onClick={() => void handleSignOutOthers()}>
+                  {signingOutOthers ? "Signing out…" : "Sign out other devices"}
+                </button>
+              </div>
               <div className="s-row">
                 <div>
                   <div className="label">Sign out</div>
