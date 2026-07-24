@@ -32,19 +32,46 @@ impl Prediction {
 /// `confidence = 1.0` in every `categorizations` insert for `source =
 /// 'builtin'`).
 ///
-/// **Fidelity caveat:** this measures `builtin_category` in isolation, NOT
-/// the full `apply_builtin_categorization` pass. Production additionally (a)
-/// skips any row it treats as a transfer entirely (`if treat_as_transfer {
-/// continue; }` — transfers are never categorized), (b) only assigns
-/// categories that exist in the user's `categories` table, and (c) checks
-/// `activity_category` (investment activity typing) before falling back to
-/// the merchant keyword map. None of those gates are exercised by this
-/// corpus (nothing here is transfer-shaped or an investment row), so the
-/// numbers coincide today — but a real corpus containing e-transfer / card-
-/// payment descriptors would need those gates modeled too, or "builtin
-/// precision" from this harness would diverge from what the shipped pass
-/// actually does.
+/// **Fidelity caveat — the remaining gaps all INFLATE, never deflate.** This
+/// wraps `builtin_category`, not the full `apply_builtin_categorization` pass.
+/// Every production gate this harness does not model is a gate that makes
+/// production emit *nothing* where the harness emits a prediction. If that
+/// prediction happens to match the row's label, the harness scores a point
+/// production never earned — measured precision comes out **higher** than the
+/// shipped pass would deliver. For a "≥98% precision" auto-apply gate,
+/// inflation is the direction that matters.
+///
+/// Modeled here:
+/// - **Transfer skip** (partially, see below): production does
+///   `if treat_as_transfer { continue; }` — transfers are never categorized.
+///   The guard below reproduces the `finsight_core::categorize::is_transfer`
+///   half of that, which is the largest closable share.
+///
+/// Still unmodeled (each one inflating):
+/// - `transfer_peer_id` pairing and `TransferContext::is_self_transfer`
+///   (owner names / owned-bank aliases) — the other two inputs to production's
+///   `treat_as_transfer`. Both need database state (a paired counter-leg, the
+///   user's own identity), which a flat labeled corpus does not carry.
+/// - The **category-existence gate**: production only assigns a category that
+///   exists in the user's `categories` table. A user who deleted a starter
+///   category gets nothing where this harness scores a hit.
+/// - **Investment activity typing** (`activity_category`, which beats the
+///   keyword map in production). Not modelable at all today: [`LabeledExample`]
+///   has no `activity_type` field, so the corpus format would have to grow one
+///   first.
+///
+/// See `eval/CATEGORIZATION_CORPUS.md` ("Fidelity to production") for the same
+/// list in prose, which is what a contributor reads before this doc comment.
 pub fn predict_builtin(merchant_text: &str) -> Prediction {
+    // Abstain on transfer-shaped rows: production never categorizes a
+    // transfer, so a category emitted here would be a prediction the shipped
+    // pass does not make. Uses the SAME production predicate
+    // (`finsight_core::categorize::is_transfer`) the real pass folds into
+    // `treat_as_transfer`, so this tracks any future change to the keyword
+    // lists automatically.
+    if finsight_core::categorize::is_transfer(merchant_text) {
+        return Prediction::abstain();
+    }
     match finsight_core::categorize::builtin_category(merchant_text) {
         Some(cat) => Prediction::of(cat, 1.0),
         None => Prediction::abstain(),
@@ -133,6 +160,61 @@ mod tests {
     fn builtin_abstains_on_no_overlap() {
         let pred = predict_builtin("Riverbend Diner");
         assert_eq!(pred, Prediction::abstain());
+    }
+
+    /// The inflation guard: a transfer-shaped descriptor that ALSO hits the
+    /// keyword map must abstain, because production skips the row entirely
+    /// (`treat_as_transfer` → `continue`) and never records a categorization.
+    /// Without this, the harness would score such a row as a correct builtin
+    /// prediction against any defensible label — measuring a precision the
+    /// shipped pass does not deliver.
+    #[test]
+    fn builtin_abstains_on_transfer_shaped_rows_that_hit_the_keyword_map() {
+        for descriptor in [
+            // "autopay" is a UNILATERAL_TRANSFER_KEYWORD (credit-card autopay);
+            // "netflix" is in KEYWORD_MAP → subscriptions.
+            "AUTOPAY THANK YOU / NETFLIX.COM",
+            // "internet withdrawal to" is a unilateral own-account marker;
+            // "hydro" is in KEYWORD_MAP → utilities.
+            "INTERNET WITHDRAWAL TO 00931 BC HYDRO",
+            // pairing-eligible vocabulary + an explicit own-account marker,
+            // which is the second arm of `is_transfer`; " rent " → housing.
+            "INTERNET TRANSFER 106001023942 TO ACCOUNT 04930 RENT ",
+        ] {
+            // Precondition: the keyword map really does fire on this string,
+            // so the abstention below is the guard doing work rather than a
+            // vacuous "nothing matched anyway".
+            assert!(
+                finsight_core::categorize::builtin_category(descriptor).is_some(),
+                "test descriptor {descriptor:?} must hit KEYWORD_MAP for this test to mean anything"
+            );
+            assert!(
+                finsight_core::categorize::is_transfer(descriptor),
+                "test descriptor {descriptor:?} must be transfer-shaped by production's own predicate"
+            );
+            assert_eq!(
+                predict_builtin(descriptor),
+                Prediction::abstain(),
+                "transfer-shaped row {descriptor:?} must abstain — production never categorizes it"
+            );
+        }
+    }
+
+    /// Negative control: the guard must not swallow ordinary merchants that
+    /// merely contain payment-ish words, or it would deflate coverage instead.
+    #[test]
+    fn builtin_still_fires_on_ordinary_merchants() {
+        for (descriptor, expected) in [
+            ("BrightGrid Hydro Payment", "utilities"),
+            ("Oldtown Rentals Monthly Rent Payment", "housing"),
+            ("Best Buy #2210", "shopping"),
+        ] {
+            assert_eq!(
+                predict_builtin(descriptor).category.as_deref(),
+                Some(expected),
+                "{descriptor:?} is not a transfer and must still be categorized"
+            );
+        }
     }
 
     #[test]

@@ -23,17 +23,68 @@ code against its own public vocabulary, not fabricating a result.
 Any number this harness reports against the synthetic seed carries the
 `caveat` field in its JSON output verbatim:
 
-> SYNTHETIC SEED DATA baseline — computed against invented, clearly-fictional
-> transactions … This is NOT a measured real-world precision claim.
+> SYNTHETIC SEED DATA baseline — the corpus file declares `provenance:
+> synthetic` … This is NOT a measured real-world precision claim.
 
 Treat every synthetic-seed number as "the harness works," not "the
 categorizer is 91% precise."
+
+## Provenance is declared by the corpus, not by the harness
+
+Every corpus file **must** declare where its labels came from, on a comment
+line:
+
+```
+// provenance: synthetic
+```
+
+Accepted values: `synthetic` | `real`. The rules, all enforced by
+`crates/finsight-eval/src/categorization/corpus.rs`:
+
+- A corpus that declares **no** provenance **fails to load.** There is no
+  default in either direction.
+- The report's `caveat` string and its `corpus_provenance` field are both
+  *derived* from this directive (`CorpusProvenance::caveat`). Nothing in the
+  harness hardcodes synthetic language.
+
+This exists because the caveat used to be a fixed string literal in
+`report::run`, which failed the harness's single most important property in
+both directions: a real corpus pointed at via `--corpus` would have silently
+inherited "SYNTHETIC SEED DATA", and the obvious fix (edit or flag away the
+literal) would have silently stripped the warning from the default, no-arg
+invocation that reads the synthetic seed. Now a real corpus declares `real`
+and gets a caveat with no synthetic language in it, the synthetic seed cannot
+lose its warning without an explicit edit to the corpus file, and both
+directions are pinned by tests (`corpus.rs`:
+`bundled_seed_declares_synthetic_provenance`,
+`a_corpus_with_no_provenance_directive_is_rejected`; `report.rs`:
+`a_real_corpus_report_does_not_claim_synthetic`).
+
+## `merchant_id` validation
+
+The merchant-disjoint split partitions on **exact string equality** of
+`merchant_id`, so the loader rejects two things outright rather than letting
+them silently defeat the split:
+
+- **Near-duplicate spellings.** `m-brightloaf`, `M-Brightloaf`, and
+  `"m-brightloaf "` are one merchant but three split keys — they can land on
+  opposite sides of the holdout while `merchant_sets_disjoint` still reports
+  `true`. Any two distinct `merchant_id` values that agree after trim +
+  lowercase are a load error naming both spellings. Pick one canonical form.
+- **Blank ids.** An empty or whitespace `merchant_id` buckets every such row
+  into a single pseudo-merchant. Also a load error.
+
+Normalization is used only to *detect* these; the split still compares the
+exact string, so the fix is to correct the data rather than have the harness
+paper over it.
 
 ## Corpus file format
 
 One JSON object per line (JSONL), matching the `eval/benchmark.jsonl`
 convention: blank lines and `//`-prefixed comment lines are skipped by the
-loader (`crates/finsight-eval/src/categorization/corpus.rs::load_corpus_jsonl`).
+loader (`crates/finsight-eval/src/categorization/corpus.rs::load_corpus_jsonl`),
+except for the required `// provenance:` directive described above, which the
+loader parses before skipping comments.
 
 ```json
 {"id": "g1", "merchant_id": "m-brightloaf", "merchant_text": "Brightloaf Grocers #12", "category": "groceries", "notes": "optional"}
@@ -100,6 +151,58 @@ Reading these honestly:
 Every one of these numbers is computed against invented data. None of them
 supports or refutes the epic's "≥98% precision" claim.
 
+The committed artifact is **pinned by a test**
+(`report.rs::committed_baseline_artifact_matches_the_bundled_corpus`): it must
+equal a fresh run over the bundled corpus at `holdout_fraction=0.3`,
+`seed=42`. Editing the corpus or the harness without regenerating the artifact
+fails `cargo test -p finsight-eval` instead of leaving two checked-in files
+that quietly disagree.
+
+Each source in the JSON carries **two** threshold sweeps, scoped by field
+name: `threshold_sweep_full_corpus` (in-sample, over the whole corpus) and
+`threshold_sweep_holdout` (over the merchant-disjoint holdout only). Both are
+degenerate single steps today because `builtin`/`rule` always predict at
+confidence 1.0 — but once a confidence-bearing source exists (#90's encoder),
+**an auto-apply cutoff must be picked from the holdout curve.** The in-sample
+curve overstates precision, which is exactly the direction that would break a
+≥98% gate.
+
+## Fidelity to production: what the `builtin` predictor does and does not model
+
+`predictors::predict_builtin` wraps the real shipped keyword table
+(`finsight_core::categorize::builtin_category`), not the full
+`apply_builtin_categorization` pass. **Every gap between the two inflates
+measured precision — none of them deflates it.** The mechanism is always the
+same: production has a gate that makes it emit *nothing* for a row, this
+harness has no such gate and emits a prediction, and if that prediction
+happens to match the label the harness banks a point production never earned.
+For a "≥98% precision" auto-apply gate, inflation is the direction that
+matters.
+
+**Modeled (as of this harness):** the `is_transfer` half of production's
+transfer skip. `predict_builtin` abstains on any descriptor for which
+`finsight_core::categorize::is_transfer` is true, because production does
+`if treat_as_transfer { continue; }` and never records a categorization for
+such a row. Without the guard, a descriptor like
+`AUTOPAY THANK YOU / NETFLIX.COM` (transfer keyword `autopay` **and**
+`KEYWORD_MAP` hit `netflix` → `subscriptions`) would score as a correct
+builtin prediction against a defensible `subscriptions` label while production
+categorizes it as nothing at all. Pinned by
+`predictors.rs::builtin_abstains_on_transfer_shaped_rows_that_hit_the_keyword_map`.
+
+**Still unmodeled, all inflating:**
+
+| Production gate | Why it's not modeled | Effect on this harness's `builtin` number |
+|---|---|---|
+| `transfer_peer_id` pairing (`pair_transfers`) | Needs a matching counter-leg in another account — DB state a flat labeled corpus doesn't carry | Rows production skips as paired transfers get scored here |
+| `TransferContext::is_self_transfer` (owner names, owned-bank aliases) | Needs the user's own identity | Same: person-to-own-account moves get scored here |
+| Category-existence gate (`existing.contains(cat)`) | Needs the user's `categories` table; a user who deleted a starter category gets nothing where this harness scores a hit | Inflates coverage and precision |
+| `activity_category` investment typing (beats the keyword map in production) | **Not modelable at all today** — `LabeledExample` has no `activity_type` field, so the corpus format would have to grow one first | An investment row would be scored on its merchant keyword instead of its activity type |
+
+A real corpus containing e-transfer / card-payment / brokerage descriptors
+needs these modeled (or the corpus format extended) before this harness's
+`builtin` precision can be quoted as what the shipped pass delivers.
+
 ## How the merchant-disjoint split works
 
 `crates/finsight-eval/src/categorization/split.rs::merchant_disjoint_split`
@@ -125,8 +228,12 @@ generalization to unseen merchants.
 1. Append one JSON line to `eval/categorization_corpus.synthetic.jsonl` (or a
    new corpus file, if/when a real one exists — see below), following the
    field table above. Give each genuinely-new merchant its own `merchant_id`;
-   reuse an existing `merchant_id` for another transaction from a merchant
-   already in the corpus.
+   reuse the *exact* existing `merchant_id` for another transaction from a
+   merchant already in the corpus (a near-duplicate spelling is a load error,
+   by design). **A brand-new corpus file must start with its own
+   `// provenance: synthetic` or `// provenance: real` directive** — it won't
+   load otherwise, and that directive is what decides the caveat printed on
+   every number derived from it.
 2. Run the harness:
    ```bash
    cargo run -p finsight-eval --bin categorization_eval -- \
@@ -136,7 +243,7 @@ generalization to unseen merchants.
    or `--holdout-fraction` / `--seed` to change the split. If you changed the
    corpus, regenerate the committed baseline artifact too (see the command in
    "Recorded baseline" above) so the checked-in numbers don't drift from the
-   checked-in corpus.
+   checked-in corpus — the pin test will fail until you do.
 3. Run the harness's own tests after any change to the split/confusion/
    threshold logic:
    ```bash
