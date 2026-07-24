@@ -5,6 +5,27 @@ on `:8674` (throwaway scratchpad data dir), signed in as `tester`, driven throug
 the in-app browser. One record per screen; each screen graded **Verified**,
 **Repaired & Verified**, or **Blocked**.
 
+---
+
+## NEW FEATURE (2026-07-24) — Persistent sessions (survive server restart)
+
+User request: *"use sessions … similar to how immich uses, because we don't want to log in every time."* Previously sessions were in-memory only (`sessions.rs`), so every server restart forced a re-login. Implemented server-master-key–wrapped persistent sessions:
+
+- **`crypto.rs`** — `load_or_create_server_key` (SMK: 32 bytes from **`FINSIGHT_SESSION_KEY`** env, else `<data_dir>/session.key`, generated 0600), `wrap/unwrap_key_with_server_key` (XChaCha20-Poly1305), `hash_session_token` (SHA-256).
+- **`users.db`** — new `sessions` table (`token_hash` PK = SHA-256(token) so a stolen DB never yields a live cookie; `wrapped_db_key` = DB key wrapped under SMK; `expires_unix`) + CRUD (`persist/recover/slide/delete/delete_user/purge`).
+- **`SessionStore`** — optional persistence (in-memory `Default` unchanged for tests). `create` mirrors to disk; `get` recovers on an in-memory miss (unwraps with SMK, **slides expiry**); `remove`/`remove_user` **purge the row** (logout/recover/delete → no resurrection); startup purges expired.
+- **Auth handlers unchanged** (persistence is encapsulated). Recover already sweeps sessions → persisted rows invalidated on the compromise path.
+
+**Security tradeoff (documented in code):** SMK + `users.db` together can decrypt an *active* session's DB at rest — the Immich-style posture the user asked for, weaker than the prior "unwrapped keys never touch disk." Mitigation: `FINSIGHT_SESSION_KEY` lets an operator keep the master key off the data volume.
+
+**Tests:** +9 unit tests (crypto ×3, sessions ×6 incl. the load-bearing `removed_session_does_not_resurrect_on_restart`); **`cargo test -p finsight-server --lib` = 58 passed, 0 failed.** Server rebuilt; `session.key` + `sessions` table confirmed created on the live box.
+
+**Follow-ups (noted, not built):** (1) password-*change* (vs recover) leaves persisted sessions valid — defensible (SMK-wrapped key is password-independent), revisit if a "sign out other devices" affordance is wanted; (2) **this wants its own branch/PR off main** — it's currently stacked on the QA branch + uncommitted #58 work; keep the commits separable.
+
+**PENDING live proof:** restart-survival needs one user login on the new binary (the session live during dev was old-code, memory-only). Sequence: user logs in once → restart server → confirm still authed with no re-login.
+
+---
+
 Per-screen checklist (applied uniformly):
 - Empty / loading / error / populated states
 - Data create / edit / delete / persist (reload survives) / refresh
@@ -148,11 +169,67 @@ Remaining: Settings, Rules & agents, Copilot (Copilot AI needs an LLM key — re
 ---
 
 ## First full pass complete — 14/14 screens
-**Verified (13):** Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports, Categories, Goals, Scenarios, Path back, Settings, Rules & agents.
-**Blocked (1):** Copilot AI Q&A (no LLM key) — screen itself renders.
+**Verified (14):** Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports, Categories, Goals, Scenarios, Path back, Settings, Rules & agents, **Copilot**.
+**~~Blocked (1): Copilot~~ — RESOLVED 2026-07-24** (see below).
+
+### Copilot AI Q&A — VERIFIED (was blocked on LLM key)
+User configured OpenRouter (`deepseek/deepseek-v4-flash`) via Settings → Agent. Sent a live grounded query ("overview of my accounts, savings rate, standout spending") through the real UI:
+- **Plan → tool loop → grounded answer**, all real: `Financial Snapshot`, `get spending breakdown`, `find anomalies`, `explain spending change` tool calls all completed.
+- **Typed generative-UI blocks rendered** (not markdown): accounts table (Everyday Checking $11,794.14 / Savings $20,500 / Rewards Visa −$1,240 / Total Liquid $32,294.14), a missing-APR caution on the Visa, a metrics table (income $5,200 / expenses $3,000.46 / **surplus $2,199.54 / savings rate 42%** — internally consistent / EF 10.8mo), spending breakdown, and an Upcoming Bills table (Rent $1,800, subscriptions).
+- **Cross-feature integration confirmed:** the answer surfaced "a planned car purchase of $35,000 coming up in October" — the exact scenario applied during the #72 QA earlier, proving the applied-scenario planned-transaction flows into the Copilot's context.
+- Grounded, framework-aligned advice (emergency fund / savings rate / debt); "no anomalies found." Completed in 33.4s. **No fallback, no `no_provider` error.**
+- Minor spot-check flagged (non-blocking): the answer named "July's higher Costco spend" as the watch item — likely from `explain spending change`, worth confirming it's tool-grounded not embellished on a future pass.
 
 **Defects found & FIXED this session (verified):** critical build_baseline SQL (scenario 500s); #72 stale-panel + double-apply; #73 stale-panel; Settings responsive overflow; auth-screen invisible inputs; a11y reduced-motion; RecoverScreen pw validation; + 4 dev-mock fidelity fixes. Full auth redesign shipped.
 
 **Seed artifacts correctly NOT filed as bugs (advisor discipline):** EF "<1 month" (eligibility flag), Netflix price-step not flagged (≥3-charge baseline), transfer misclassification (pair_transfers not run on manual data), "Shell subscription" (identical gas), net-worth Today-vs-Reports (stale reading), Budget "$0 spent" (uncategorized) — all resolved by fixing the seed, not the code.
 
 **Open follow-ups (non-blocking):** transfer-verdict real-UI-flow repro; Today "nothing needs attention" vs Inbox wording; budget-set CRUD; #58 price-change seed extension; systematic responsive/privacy batch; Copilot with an LLM key.
+
+### Transfer-verdict flow (open finding #1) — RESOLVED, not a bug
+- Root cause of my earlier confusion: I used `apply_transfer_verdict_to_similar` (bulk) which is **scoped to the transfer-review queue** (`transfer_review_predicate`) — it only rules rows the app already flags as transfer-like, so my arbitrary rows matched 0 (the RPC "succeeded" changing nothing).
+- The real per-transaction path `set_transaction_transfer(id, true)` sets `is_transfer=1` (transactions.rs:497). Reproduced: marked all 4 VISA PAYMENT occurrences → **VISA PAYMENT left Recurring** (11→10 items; subs 5→4). Marked the TFR/PAYMENT pairs too → Recurring now lists only real bills/subs/income, no transfers. Net worth unchanged.
+- **Verdict: the transfer-verdict → is_transfer → detect_recurring exclusion chain works correctly.** No code change. Cross-cutting transfer "pollution" on Recurring/Reports/Cash flow was purely the manual-seed + wrong-RPC artifact.
+
+### Budget-set CRUD (follow-up) — Verified
+- `set_budget(groceries, $600)` → persisted; Budget UI reflects it: BUDGETED $600, Groceries "$822 spent of $600 · Over by $222", "Cover from another envelope" affordance. (Top-level "551% spent" is expected with only one category budgeted.)
+
+### Inbox A (Today "nothing needs attention" vs Inbox) — RESOLVED, not a bug
+- Today's panel uses `useNeedsReviewCount()` = transactions **flagged for a decision** (low-confidence/transfer-review/anomaly), gated with anomalyCount. The Inbox's "87 need categorizing" = **uncategorized cleanup** count. Two legitimately different metrics — "nothing flagged for review" ≠ "nothing to categorize". Defensible wording; not misleading given the panel scope. No change. (Advisor discipline — another near-phantom avoided.)
+
+## Responsive sweep (375px, iPhone-SE width) — all 14 routes VERIFIED
+
+Measured document horizontal overflow (`scrollWidth − clientWidth`) on the **real backend** at 375×812 across every route. Method: JS offender-detection walking the DOM for elements whose right edge passes the viewport, distinguishing genuine page-overflow from opt-in internal scrollers (tables, filter pills) and fixed-element victims.
+
+**Defects found & FIXED (verified live, 0 overflow after):**
+- **Budget — 26px overflow.** The `.budget-grid` stat cards (`minmax(260px,1fr)`) sat inside a `1.4fr 3fr` hero grid that never collapsed, so the 3fr column was narrower than the 260px min-track. Fix: `.budget-hero-grid` responsive class (collapses to 1 col ≤640px) + `.budget-grid` single-column at ≤640px. Result: the three stat cards now stack cleanly. ([app.css](ui/src/styles/app.css), [Budget.tsx:381](ui/src/screens/Budget.tsx#L381))
+- **Goals — 108px→0.** Two inline `gridTemplateColumns` (`1.5fr 1fr 1fr` goal-card row and `1fr 1fr` what-if grid) didn't collapse. Fix: `.goal-card-row` / `.goal-whatif-grid` classes, single-col ≤640px.
+- **Goals filter pill — overflowed the viewport.** The 6-segment `.toolbar` (`All / Save by date / … / Sinking fund`) is wider than 375px. Fix: at ≤640px the toolbar becomes a horizontal scroller (`overflow-x:auto`, `min-width:0` flex buttons) — keeps the segmented-pill look, swipes sideways. ([app.css](ui/src/styles/app.css))
+- **App shell sub-pixel bleed.** A residual ~13px document jiggle traced to flex min-content rounding in `.screen-*` (no visible content past the edge). Fix: `.main-inner { overflow-x: clip }` at ≤900px — clips the phantom bleed while leaving `overflow-y` visible (so sticky headers/dropdowns still work) and inner opt-in scrollers intact.
+
+**Final sweep — 0 horizontal overflow on all 14 routes** at 375px: `/ · today · inbox · accounts · budget · goals · cashflow · scenarios · recurring · reports · categories · transactions · settings · journey`.
+
+### Goals horizon axis label — mislabel FIXED (data-independent)
+- **Defect:** the "When each goal lands" horizon axis formatted ticks ≥12 months out with `year:"2-digit"` → "Feb 28", "Apr 31", "Nov 32" — which read as invalid calendar days (Apr 31 doesn't exist), not years. Any goal >1yr out hit this. ([Goals.tsx:192](ui/src/screens/Goals.tsx#L192))
+- **First fix** (`year:"numeric"` → "Feb 2028") removed the ambiguity but the wider labels **collided** at the phone-width right edge.
+- **Final fix:** extracted `horizonTickLabel(monthsOut, now)` (exported, unit-tested) using the apostrophe-year convention → "Feb '28 · Sep '29 · Apr '31 · Nov '32" — unambiguously a year, compact enough that 5 ticks clear each other at 375px (verified: adjacent labels 2px apart, no overlap). +3 regression tests in `Goals.test.tsx` (34 pass).
+
+## Privacy-mode (amount blur) sweep — leaks found & FIXED
+
+Enabled privacy (`finsight.tweaks.privacy=true` → ThemeProvider stamps `[data-privacy="on"]` on `<html>`, which blurs `.money/.num/.figure/.blurable`) on the **real backend** and walked every money-bearing route for `$`-amounts whose element wasn't covered by a blur hook. The headline figures were always blurred; the gap was **contextual amounts** — the feature promises "blur all financial numbers," so these were real leaks.
+
+**Verified via screenshot** (Budget, Cash flow, Goals) then closed, re-audited to **0 leaks**:
+- **Budget:** "$144/day pace" sub, "Over by $3,855" projected npill, per-envelope "Over by $222" status chip, group subtotals (`.muted mono`), and the "of $600" budgeted sub in the 5-month history table. Fix: wrapped each amount in `.blurable` (chip blurs only when its label carries a `$`, so "On track" stays crisp). ([Budget.tsx](ui/src/screens/Budget.tsx))
+- **Goals:** goal subtitle "Auto-moves $400/month", horizon marker "$30,000", compound-projector intro "$0 now plus $400/month", and the projection cards "$48,000 in · +$21,234 growth" (×3). Fix: `.blurable` wraps + `blurAmounts()` on the subtitle prose. ([Goals.tsx](ui/src/screens/Goals.tsx))
+- **Cash flow:** the "Good to know" cards leaked "NETFLIX.COM (about **$18**) is due…" etc. Fix: new **`blurAmounts()`** util ([blurAmounts.tsx](ui/src/utils/blurAmounts.tsx)) splits app-generated prose and wraps only `$`-tokens in `.blurable` — so the amount blurs while merchant/date/advice stay readable (screenshot-confirmed). +5 unit tests.
+
+**Intentionally NOT blurred (documented, by design):**
+- **User-typed scenario descriptions** ("Buy a car $35k", "Add $500/mo to savings" on Scenarios/Recurring) — free text the user authored; blurring a substring of someone's own words needs a dollar-regex over arbitrary text, which is fragile and semantically wrong. Confirmed user-typed via the save form's free-text input ([Scenarios.tsx:548](ui/src/screens/Scenarios.tsx#L548)).
+- **Framework milestone copy** ("Dave Ramsey's Baby Step 1: save $1,000", "Build your first $1,000 buffer" on Inbox/Journey) — fixed generic labels identical for every user, not the user's own balances.
+- **What-if slider scale bounds** ($0 / $750 / $1,500 on Goals) — the range control's fixed scale, reveals no private data (the live selected value uses `.figure`, which *is* blurred).
+
+### Pre-existing bug fixed in passing — CashFlow filename casing
+While type-checking the privacy fix, found `tsc --noEmit` was **failing** on a casing conflict: the file is `CashFlow.tsx` but `App.tsx` and the test imported `./screens/Cashflow` / `./Cashflow`. Works on Windows (case-insensitive FS) but breaks `tsc` and would break a case-sensitive Linux CI build. (My earlier `tsc | head` checks masked it by reading `head`'s exit code, not tsc's.) Fixed by aligning both imports to the real filename `CashFlow`. tsc now genuinely clean (exit 0).
+
+---
+

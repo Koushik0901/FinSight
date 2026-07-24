@@ -98,7 +98,7 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
           </div>
           <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{remaining < 0 ? "over budget" : "left to spend"}</div>
         </div>
-        <span className={`chip ${toneClass}`}>{status.label}</span>
+        <span className={`chip ${toneClass}${status.label.includes("$") ? " blurable" : ""}`}>{status.label}</span>
       </div>
 
       <div className="goal-bar" style={{ marginTop: 16, height: 7 }}>
@@ -378,7 +378,7 @@ export default function Budget() {
       )}
 
       <div className="card accent" style={{ padding: 28 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 3fr", gap: 24 }}>
+        <div className="budget-hero-grid">
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
@@ -397,8 +397,8 @@ export default function Budget() {
           </div>
           <div className="budget-grid">
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
-            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}/day pace</div></div>
-            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by {money(projectedEom - totalAvailable)}</span> : <span className="npill pos">Under by {money(totalAvailable - projectedEom)}</span>}</div></div>
+            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub"><span className="blurable">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}</span>/day pace</div></div>
+            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by <span className="blurable">{money(projectedEom - totalAvailable)}</span></span> : <span className="npill pos">Under by <span className="blurable">{money(totalAvailable - projectedEom)}</span></span>}</div></div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 18, marginBottom: 0, maxWidth: 900 }}>{insight}</p>
@@ -428,7 +428,7 @@ export default function Budget() {
             <div key={label}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
                 <div className="eyebrow">{label}</div>
-                {sort === "group" && <span className="muted mono" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
+                {sort === "group" && <span className="muted mono blurable" style={{ fontSize: 12.5 }}>{money(groupSpent)} / {money(groupBudget)}</span>}
               </div>
               <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
@@ -487,7 +487,7 @@ export default function Budget() {
                         return (
                           <td key={m.month} className="right">
                             <span className={`money ${over ? "neg" : ""}`}>{money(m.spentCents)}</span>
-                            {m.budgetedCents > 0 && <span className="muted" style={{ fontSize: 11, display: "block" }}>of {money(m.budgetedCents)}</span>}
+                            {m.budgetedCents > 0 && <span className="muted" style={{ fontSize: 11, display: "block" }}>of <span className="blurable">{money(m.budgetedCents)}</span></span>}
                           </td>
                         );
                       })}
