@@ -92,3 +92,18 @@ _(appended as each screen is validated)_
 
 ## Remaining screens to QA
 Cash flow · Reports · Categories · Goals · Scenarios · Path back · Copilot · Rules & agents · Settings. Plus: budget-set CRUD, transfer-verdict real-flow repro, price-change seed extension, responsive/privacy batch.
+
+### Cash flow — `/cashflow` — Verified
+- SAFE TO SPEND $32,058 = lowest projected balance (Jul 30) − buffer; consistent.
+- **Buffer control:** setting buffer $5,000 → safe-to-spend recomputed to exactly $27,058 (−$5,000). Horizon toggle (30/60/90d), test-purchase input, projected-balance chart, upcoming dated events, and "GOOD TO KNOW" just-after-window bill warnings (#55) all render.
+- Transfer mis-classification propagates here (TFR legs in Upcoming; VISA PAYMENT as an obligation) but paired legs net out in the liquid projection — same cross-cutting artifact as Recurring.
+
+### Reports — `/reports` — Verified (1 candidate to trace)
+- Savings rate 38%, avg monthly spend $3,601, runway 9mo; monthly overview chart; top categories + top merchants all numerically correct (Housing $7,200 = 4×1,800; Subscriptions $162; Health $180 = 4×45; etc.). Month/Quarter/Year/All-time toggles + Export present.
+- **Cross-cutting artifact:** "Uncategorized $2,600 (8 txns)" in top categories = the transfers (TFR $2,000 + VISA PAYMENT $600) counted as spend — same is_transfer root as Recurring/Cash flow.
+- **CANDIDATE (trace):** net worth shows **$31,054** here vs **$30,904** on Today — $150 gap (= one VISA PAYMENT). Possibly an as-of-date / future-txn-inclusion difference between the two net-worth surfaces, or a real inconsistency. → trace both sources.
+
+## QA progress: 7/14 screens
+Done: Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports (all Verified; findings queued).
+Remaining: Categories, Goals, Scenarios, Path back, Copilot, Rules & agents, Settings.
+Open findings: Recurring transfer-verdict real-flow repro; Today/Inbox "nothing needs attention" wording; net-worth Today-vs-Reports $150 gap; budget-set CRUD; #58 price-change seed extension; responsive/privacy batch.
