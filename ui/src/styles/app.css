@@ -2923,6 +2923,12 @@ body::-webkit-scrollbar-track,
   .bottom-nav-item.active,
   .bottom-nav-item[aria-current="page"] {
     color: var(--accent);
+    font-weight: 650;
+  }
+
+  .bottom-nav-item.active .bottom-nav-ico-wrap,
+  .bottom-nav-item[aria-current="page"] .bottom-nav-ico-wrap {
+    background: var(--accent-2);
   }
 
   .bottom-nav-ico-wrap {
@@ -2931,6 +2937,7 @@ body::-webkit-scrollbar-track,
     place-items: center;
     width: 22px;
     height: 22px;
+    border-radius: 7px;
   }
 
   .bottom-nav-ico-wrap .ico {
