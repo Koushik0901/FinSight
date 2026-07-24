@@ -466,6 +466,7 @@ export default function Budget() {
         <section className="section">
           <div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div>
           <div className="card flush">
+            <div className="tbl-scroll">
             <table className="tbl">
               <thead>
                 <tr>
@@ -497,6 +498,7 @@ export default function Budget() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       )}

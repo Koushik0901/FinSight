@@ -130,7 +130,7 @@ export default function StepCategories({ onNext }: Props) {
       <div className="onb-right">
         <div className="card">
           <div className="eyebrow"><span className="dot" />Preview</div>
-          <div className="h3" style={{ marginBottom: 10 }}>How this will look in the app</div>
+          <h3 className="h3" style={{ marginBottom: 10 }}>How this will look in the app</h3>
           <div className="stack stack-sm">
             {rows.slice(0, 10).map((row) => (
               <div key={row.id} className="onb-category-preview">

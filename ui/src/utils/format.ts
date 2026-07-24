@@ -8,6 +8,26 @@ interface MoneyOpts {
 }
 
 /**
+ * `Intl.NumberFormat` construction is expensive (tens of µs) and money() runs
+ * per table cell on every render, so instances are cached by their resolved
+ * options — the key space is tiny (a handful of currencies × a handful of
+ * decimals/notation combos), never unbounded.
+ */
+const numberFormatCache = new Map<string, Intl.NumberFormat>();
+
+function getNumberFormat(currency: string | null, extra: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `${currency ?? ""}|${JSON.stringify(extra)}`;
+  let fmt = numberFormatCache.get(key);
+  if (!fmt) {
+    fmt = currency
+      ? new Intl.NumberFormat("en-US", { style: "currency", currency, ...extra })
+      : new Intl.NumberFormat("en-US", extra);
+    numberFormatCache.set(key, fmt);
+  }
+  return fmt;
+}
+
+/**
  * `Intl.NumberFormat` THROWS a RangeError on a currency code that is not three
  * ASCII letters, which would take down the whole screen. Account currencies can
  * come from arbitrary CSV imports, so anything unrecognised falls back to
@@ -21,13 +41,9 @@ function formatIn(
 ): string {
   const isIso4217 = /^[A-Za-z]{3}$/.test(currency);
   if (isIso4217) {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: currency.toUpperCase(),
-      ...extra,
-    }).format(cents / 100);
+    return getNumberFormat(currency.toUpperCase(), extra).format(cents / 100);
   }
-  const amount = new Intl.NumberFormat("en-US", extra).format(cents / 100);
+  const amount = getNumberFormat(null, extra).format(cents / 100);
   return currency ? `${currency} ${amount}` : amount;
 }
 

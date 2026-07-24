@@ -70,7 +70,7 @@ export default function StepAccounts({ onNext }: Props) {
           <div className="onb-roster-head">
             <div>
               <div className="eyebrow"><span className="dot" />Your account roster</div>
-              <div className="h3">What FinSight will track</div>
+              <h3 className="h3">What FinSight will track</h3>
             </div>
             <span className="chip" aria-live="polite">
               {accounts.length} account{accounts.length === 1 ? "" : "s"}

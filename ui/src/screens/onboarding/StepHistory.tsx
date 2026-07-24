@@ -84,7 +84,7 @@ export default function StepHistory({ onBack, onNext }: Props) {
           <div className="onb-roster-head">
             <div>
               <div className="eyebrow"><span className="dot" />Activity sources</div>
-              <div className="h3">History by account</div>
+              <h3 className="h3">History by account</h3>
             </div>
           </div>
 
