@@ -117,3 +117,42 @@ Open findings: Recurring transfer-verdict real-flow repro; Today/Inbox "nothing 
 ## QA progress: 8/14 screens verified
 Done: Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports, Categories.
 Remaining: Goals, Scenarios, Path back, Copilot, Rules & agents, Settings.
+
+### Goals — `/goals` — Verified
+- Emergency Fund (build-balance, on track): ETA Oct 2032 / 75 months ($30k ÷ $400/mo exact), $0 of $30,000 progress. Horizon timeline, what-if slider (+$0..$1,500), Pause/Explain/Adjust all render.
+- **Compound Growth projector works on the real backend** (was em-dashes in the mock — confirmed mock gap): 10yr $69,234 / 20yr $208,371 / 30yr $487,988; annuity math verified ($400/mo @7% → $69,234 at 10y). Type filters (save-by-date/build-balance/etc.) present.
+- Note: goal progress $0 (goal_contributions ledger) is distinct from the EF-eligible Savings account — by design (goal balance ≠ account earmark).
+
+### Scenarios — `/scenarios` — Verified
+- Composer + quick-start chips render. Saved "Buy a car $35k" shows correct **Stale + Revised** badges and the revised "Stays afloat? Yes / +0d / $0" state (from the earlier revise-to-no-car). Actions Explain/Reopen/Duplicate/Revise/Promote/Archive present. (Core #71/#72/#73 already confirmed on the real backend.)
+
+### Path back — `/path-back` — Verified
+- Spending-recovery analysis with real data: RECENT $3,955/mo vs NORMAL $3,478 (12mo median), GAP $477 ("within your normal"). Levers ("trim these" $0) + self-correcting ("leave them" $11) correctly surface Audible (+$10, new recurring) and Netflix price step (+$1). "Ask Copilot to plan it" CTA.
+
+## QA progress: 11/14 screens verified
+Remaining: Settings, Rules & agents, Copilot (Copilot AI needs an LLM key — render-only test possible).
+
+### Settings — `/settings` — Verified
+- All sections render on the real server (Profile, Financial targets, How you want advice, Privacy & data, Data & backups, Agent, AI Provider, Appearance, Connections, Notifications, Keyboard, About, Account).
+- **"treating debt at or above 8% APR as urgent"** shows correctly — confirms the earlier "undefined% APR" was a pure mock gap (real backend supplies 8% for Balanced risk tolerance).
+- Server-mode Account section works (Users / Manage users / Sign out with password note). Data integrity "Healthy".
+- **#69 notification prefs confirmed on real SQLCipher**: get/set round-trip — digest→weekly + snooze persisted, then restored. (Container-query responsive fix from earlier is in this build.)
+
+### Rules & agents — `/rules` — Verified
+- "No rules yet" empty state (I categorized directly, no rule created) with clear explanation. Trust Dial (auto-categorize high autonomy, apply-rules on). Agent activity log correctly lists the 79 categorizations as "user · 100% conf".
+
+### Copilot — `/copilot` — Render Verified · AI Q&A BLOCKED (external dependency)
+- Screen renders: greeting, "Copilot ready", 6 suggested prompts, real-data context (99 transactions · 3 accounts · 100% local).
+- **Blocked:** the real backend's completion provider is `unconfigured`; the AI planner/tools need an LLM API key that this throwaway server has none of (and I won't add a real key). Grounded generative-UI blocks and Q&A are therefore not exercisable here. Graceful-degradation of a sent query was inconclusive (suggested-prompt click didn't submit) — flagged for the LLM-configured follow-up.
+
+---
+
+## First full pass complete — 14/14 screens
+**Verified (13):** Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports, Categories, Goals, Scenarios, Path back, Settings, Rules & agents.
+**Blocked (1):** Copilot AI Q&A (no LLM key) — screen itself renders.
+
+**Defects found & FIXED this session (verified):** critical build_baseline SQL (scenario 500s); #72 stale-panel + double-apply; #73 stale-panel; Settings responsive overflow; auth-screen invisible inputs; a11y reduced-motion; RecoverScreen pw validation; + 4 dev-mock fidelity fixes. Full auth redesign shipped.
+
+**Seed artifacts correctly NOT filed as bugs (advisor discipline):** EF "<1 month" (eligibility flag), Netflix price-step not flagged (≥3-charge baseline), transfer misclassification (pair_transfers not run on manual data), "Shell subscription" (identical gas), net-worth Today-vs-Reports (stale reading), Budget "$0 spent" (uncategorized) — all resolved by fixing the seed, not the code.
+
+**Open follow-ups (non-blocking):** transfer-verdict real-UI-flow repro; Today "nothing needs attention" vs Inbox wording; budget-set CRUD; #58 price-change seed extension; systematic responsive/privacy batch; Copilot with an LLM key.
