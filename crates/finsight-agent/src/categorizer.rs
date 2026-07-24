@@ -233,11 +233,46 @@ pub async fn run_job(
                     category_id: Some(cat_id.clone()),
                     source: "llm".to_string(),
                     confidence,
-                    model: Some(model),
+                    model: Some(model.clone()),
                 })?;
                 conn.execute(
                     "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
                     params![cat_id, confidence, rationale, txn_id],
+                )?;
+                // Issue #87 (Slice 1), additive: record a proposal ALONGSIDE
+                // the canonical write above — zero change to what counts as
+                // "categorized" today (`applied = true`, the write already
+                // happened). Below-threshold confidence is the only signal
+                // that puts a proposal in the review queue (`status =
+                // "pending"`); at/above threshold it is immediately
+                // "accepted" with `reviewed_at` left NULL (auto-accepted, not
+                // a human decision — see `CategoryProposal::reviewed_at`).
+                // This only runs for txn_ids/category_ids already validated
+                // above (`valid_category_ids` excludes archived categories,
+                // `chunk_txn_ids` excludes hallucinated ids), so it inherits
+                // the same abstain-on-archived and no-dangling-FK guarantees
+                // as the canonical write.
+                let status = if confidence < LOW_CONFIDENCE_THRESHOLD {
+                    "pending"
+                } else {
+                    "accepted"
+                };
+                finsight_core::repos::category_proposals::upsert(
+                    &mut conn,
+                    finsight_core::models::NewCategoryProposal {
+                        txn_id: txn_id.clone(),
+                        proposed_category_id: cat_id.clone(),
+                        source: "llm".to_string(),
+                        confidence,
+                        rationale: Some(rationale.clone()),
+                        candidates_json: Some(
+                            json!([{"category_id": cat_id.clone(), "confidence": confidence}])
+                                .to_string(),
+                        ),
+                        status: status.to_string(),
+                        applied: true,
+                        model: Some(model),
+                    },
                 )?;
                 Ok::<_, anyhow::Error>(())
             })
@@ -796,6 +831,426 @@ mod tests {
         assert_eq!(
             cat, None,
             "the LLM write must be skipped once the reset barrier advanced mid-run"
+        );
+    }
+
+    // ── Issue #87 (Slice 1): proposal + provenance foundation ───────────────
+
+    #[tokio::test]
+    async fn llm_pass_emits_a_pending_proposal_below_threshold_and_auto_accepts_above() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1 + account
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES('t2','a1','2024-01-16T00:00:00Z',900,'STARBUCKS','cleared',0,'2024-01-16T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.4, "rationale": "maybe food"},
+                {"txn_id": "t2", "category_id": "cat1", "confidence": 0.9, "rationale": "clearly coffee"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        // Below threshold: canonical is still written (additive), but the
+        // proposal is "pending" — this is the row the review queue reads.
+        let low = finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+            .unwrap()
+            .expect("a proposal was recorded for the low-confidence write");
+        assert_eq!(low.status, "pending");
+        assert!(low.applied, "the LLM pass still auto-writes canonical today");
+        assert_eq!(low.proposed_category_id, "cat1");
+        assert_eq!(low.source, "llm");
+        assert!(low.reviewed_at.is_none());
+        let t1_cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            t1_cat.as_deref(),
+            Some("cat1"),
+            "additive: canonical write happens regardless of confidence"
+        );
+
+        // At/above threshold: auto-accepted, not sitting in the review queue,
+        // and NOT a human decision (reviewed_at stays NULL).
+        let high = finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t2")
+            .unwrap()
+            .expect("a proposal was recorded for the high-confidence write too");
+        assert_eq!(high.status, "accepted");
+        assert!(high.reviewed_at.is_none(), "auto-accept is not a human review");
+
+        assert_eq!(
+            finsight_core::repos::category_proposals::count(&mut conn, "pending").unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn rule_pass_does_not_emit_a_category_proposal() {
+        // Only the LLM pass is in scope for issue #87 — the rule pass's
+        // canonical write is unaccompanied by a proposal row.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn);
+            rules::insert(
+                &mut conn,
+                NewRule {
+                    pattern: "CHIPOTLE".to_string(),
+                    category_id: "cat1".to_string(),
+                    source: "user".to_string(),
+                    treatment: "categorize".to_string(),
+                },
+            )
+            .unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: json!([]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        assert!(
+            finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .is_none(),
+            "the rule pass must not create a category_proposals row"
+        );
+    }
+
+    #[tokio::test]
+    async fn transfers_are_never_proposed_by_the_llm_pass() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE (not a transfer)
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+                 VALUES('t2','a1','2024-02-01T00:00:00Z',298614,'PAYMENT RECEIVED - THANK YOU','cleared',0,1,'2024-02-01T00:00:00Z')",
+                [],
+            ).unwrap();
+            // A user-confirmed transfer verdict (transfer_override) on a third row.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,transfer_override,created_at) \
+                 VALUES('t3','a1','2024-02-02T00:00:00Z',-50000,'INTERNET TRANSFER 123','cleared',0,1,1,'2024-02-02T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"},
+                {"txn_id": "t2", "category_id": "cat1", "confidence": 0.8, "rationale": "guessed"},
+                {"txn_id": "t3", "category_id": "cat1", "confidence": 0.8, "rationale": "guessed"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        for txn_id in ["t2", "t3"] {
+            assert!(
+                finsight_core::repos::category_proposals::get_for_txn(&mut conn, txn_id)
+                    .unwrap()
+                    .is_none(),
+                "no proposal must ever be recorded for a transfer/transfer_override row ({txn_id})"
+            );
+        }
+        // The real spending txn still got proposed.
+        assert!(finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn investment_rows_are_never_proposed() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1 + checking account a1
+            conn.execute(
+                "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+                 VALUES('inv','Me','Brokerage','Investment','Brokerage','USD','#000','manual','2024-01-01T00:00:00Z')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,activity_type,created_at) \
+                 VALUES('t2','inv','2024-02-01T00:00:00Z',-100000,'BUY VTI','cleared',0,'Trade','2024-02-01T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.9, "rationale": "Fast food"},
+                {"txn_id": "t2", "category_id": "cat1", "confidence": 0.8, "rationale": "guessed"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        assert!(
+            finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t2")
+                .unwrap()
+                .is_none(),
+            "an investment-account trade must never get a category proposal"
+        );
+    }
+
+    #[tokio::test]
+    async fn user_categorized_rows_are_never_reproposed() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1
+            conn.execute("UPDATE transactions SET category_id='cat1' WHERE id='t1'", []).unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES('c1','t1','cat1','user',1.0,'2024-01-16T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            // Even if the model tried to weigh in, t1 is excluded from the
+            // uncategorized batch sent to it (category_id is already set).
+            response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.4, "rationale": "guess"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        assert!(
+            finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .is_none(),
+            "a user-set category must never be shadowed by a fresh AI proposal"
+        );
+    }
+
+    #[tokio::test]
+    async fn abstains_on_archived_category_no_dangling_proposal() {
+        // An archived category is excluded from `valid_category_ids`, so an
+        // LLM response naming it is treated exactly like a hallucinated id:
+        // skipped, with neither a canonical write nor a proposal row.
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn);
+            conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat-archived','g1','Old','#000',1)", []).unwrap();
+            conn.execute(
+                "UPDATE categories SET archived_at = '2024-01-01T00:00:00Z' WHERE id = 'cat-archived'",
+                [],
+            )
+            .unwrap();
+        }
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([{"txn_id": "t1", "category_id": "cat-archived", "confidence": 0.9, "rationale": "guess"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let mut conn = db.get().unwrap();
+        let cat_id: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert!(cat_id.is_none(), "must abstain rather than write an archived category");
+        assert!(
+            finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .is_none(),
+            "must abstain rather than leave a dangling proposal referencing an archived category"
+        );
+    }
+
+    /// Acceptance criterion #2, the load-bearing one: the repointed
+    /// `category_proposals`-backed review population must be a ROW-FOR-ROW
+    /// match for today's `ai_confidence IS NOT NULL AND ai_confidence < 0.6
+    /// AND latest source = 'llm'` predicate, on a realistic mix of sources —
+    /// not just same-shape, same-COUNT.
+    #[tokio::test]
+    async fn needs_review_population_matches_the_legacy_predicate_exactly() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1 + a1 (t1 reused as the low-confidence LLM row below)
+            // t2: rule-categorized (source='rule'), never touches the LLM.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
+                 VALUES('t2','a1','2024-01-02T00:00:00Z',-1200,'NETFLIX','cat1','cleared',0,'2024-01-02T00:00:00Z')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES('rc1','t2','cat1','rule',1.0,'2024-01-02T00:00:00Z')",
+                [],
+            ).unwrap();
+            // t3: user-categorized directly (source='user'), never touched by AI.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
+                 VALUES('t3','a1','2024-01-03T00:00:00Z',-1500,'RENT','cat1','cleared',0,'2024-01-03T00:00:00Z')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES('uc1','t3','cat1','user',1.0,'2024-01-03T00:00:00Z')",
+                [],
+            ).unwrap();
+            // t4: builtin-source categorization (crates/finsight-core/src/
+            // categorize.rs writes source='builtin', confidence 1.0) — never
+            // an LLM decision, so never in the review queue.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
+                 VALUES('t4','a1','2024-01-04T00:00:00Z',-2200,'HYDRO ONE','cat1','cleared',0,'2024-01-04T00:00:00Z')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES('bc1','t4','cat1','builtin',1.0,'2024-01-04T00:00:00Z')",
+                [],
+            ).unwrap();
+            // t5: will be LLM-categorized at low confidence, THEN manually
+            // corrected via the ordinary edit path — the sneaky case: it must
+            // drop out of the review population entirely.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES('t5','a1','2024-01-05T00:00:00Z',-800,'MYSTERY SHOP','cleared',0,'2024-01-05T00:00:00Z')",
+                [],
+            ).unwrap();
+            // t6: LLM-categorized ABOVE the threshold — the AI touched it, but
+            // confidently, so it must NOT be in the review queue. This is the
+            // row that catches the "review count balloons to everything the
+            // LLM ever touched" regression.
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES('t6','a1','2024-01-06T00:00:00Z',-1100,'OBVIOUS GROCER','cleared',0,'2024-01-06T00:00:00Z')",
+                [],
+            ).unwrap();
+        }
+
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([
+                {"txn_id": "t1", "category_id": "cat1", "confidence": 0.4, "rationale": "low"},
+                {"txn_id": "t5", "category_id": "cat1", "confidence": 0.35, "rationale": "low"},
+                {"txn_id": "t6", "category_id": "cat1", "confidence": 0.95, "rationale": "high"}
+            ]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        // Now the user manually recategorizes t5 through the ordinary edit
+        // path (repos::transactions::update), same as the transaction drawer.
+        {
+            let mut conn = db.get().unwrap();
+            finsight_core::repos::transactions::update(
+                &mut conn,
+                "t5",
+                finsight_core::models::TxnPatch {
+                    category_id: Some(Some("cat1".to_string())),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+
+        let mut conn = db.get().unwrap();
+
+        // The OLD predicate, computed directly against the same seeded data.
+        let mut legacy_stmt = conn
+            .prepare(
+                "SELECT id FROM transactions \
+                 WHERE ai_confidence IS NOT NULL AND ai_confidence < 0.6 \
+                   AND (SELECT source FROM categorizations c \
+                        WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm' \
+                 ORDER BY id",
+            )
+            .unwrap();
+        let legacy: Vec<String> = legacy_stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        drop(legacy_stmt);
+
+        // The NEW predicate: category_proposals.status = 'pending'.
+        let mut new_stmt = conn
+            .prepare("SELECT txn_id FROM category_proposals WHERE status = 'pending' ORDER BY txn_id")
+            .unwrap();
+        let fresh: Vec<String> = new_stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        drop(new_stmt);
+
+        // The seeded mix, and why exactly one row qualifies:
+        //   t1  LLM @ 0.40  (below threshold, untouched since)  -> IN
+        //   t2  rule source, confidence 1.0                     -> out
+        //   t3  user source, confidence 1.0                     -> out
+        //   t4  builtin source, confidence 1.0                  -> out
+        //   t5  LLM @ 0.35 then user-corrected via `update`     -> out
+        //   t6  LLM @ 0.95  (above threshold)                   -> out
+        assert_eq!(
+            legacy,
+            vec!["t1".to_string()],
+            "sanity: only t1 matches the legacy predicate (t5 corrected, t6 above threshold, t2/t3/t4 never an LLM decision)"
+        );
+        assert_eq!(
+            fresh, legacy,
+            "the proposal-backed review population must exactly match the legacy predicate, row for row"
+        );
+
+        // And the repos::transactions::list "needs_review" preset (what the
+        // Transactions screen actually queries) agrees too.
+        let listed = finsight_core::repos::transactions::list(
+            &mut conn,
+            finsight_core::repos::transactions::TxnFilter {
+                filter_preset: Some("needs_review".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let listed_ids: Vec<String> = listed.into_iter().map(|t| t.id).collect();
+        assert_eq!(listed_ids, vec!["t1".to_string()]);
+
+        // …as does `commands::agent::get_needs_review_count`'s underlying
+        // count (the badge) — one population, three surfaces.
+        assert_eq!(
+            finsight_core::repos::category_proposals::count(&mut conn, "pending").unwrap(),
+            legacy.len() as i64
         );
     }
 }
