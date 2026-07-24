@@ -230,9 +230,127 @@ pub async fn unwrap_key_with_recovery_display_async(
         .expect(BLOCKING_PANIC)
 }
 
+// ------------------------------------------------- server session key ---
+//
+// Persistent sessions (survive server restarts) need the server to recover a
+// session's unwrapped DB key WITHOUT the user's password. Each persisted
+// session stores its DB key wrapped under a SERVER master key (SMK) — a 32-byte
+// secret held for the process's whole lifetime.
+//
+// SECURITY TRADEOFF, stated plainly: whoever holds the SMK *and* a persisted
+// session row can decrypt that session's SQLCipher DB at rest — and since the
+// primary user stays logged in, the SMK effectively always decrypts their DB.
+// That is the cost of "stay logged in across restarts" for an encrypted-at-rest
+// app, and it matches the self-hosted idiom (a server-held secret, like
+// Immich's JWT/DB credentials). So the SMK can be supplied via the
+// `FINSIGHT_SESSION_KEY` env var — letting an operator keep it OFF the data
+// volume, which restores meaningful at-rest protection — and is only generated
+// into `<data_dir>/session.key` when that override is absent.
+
+pub const SERVER_KEY_ENV: &str = "FINSIGHT_SESSION_KEY";
+
+/// Resolve the server session master key: `FINSIGHT_SESSION_KEY` (64 hex chars)
+/// if set, else the persisted `session.key`, else a freshly generated key
+/// written to that path (0600 on Unix). The env path never touches disk, so an
+/// operator can keep the master key entirely off the data volume.
+pub fn load_or_create_server_key(session_key_path: &std::path::Path) -> std::io::Result<[u8; 32]> {
+    if let Ok(hex_key) = std::env::var(SERVER_KEY_ENV) {
+        if let Ok(bytes) = hex::decode(hex_key.trim()) {
+            if let Ok(key) = <[u8; 32]>::try_from(bytes.as_slice()) {
+                return Ok(key);
+            }
+        }
+        // A set-but-malformed override is almost certainly an operator mistake
+        // (truncated paste, wrong length). Fail loudly rather than silently
+        // minting a fresh key that would invalidate every persisted session.
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{SERVER_KEY_ENV} must be exactly 64 hex characters (32 bytes)"),
+        ));
+    }
+    if let Ok(existing) = std::fs::read(session_key_path) {
+        if let Ok(key) = <[u8; 32]>::try_from(existing.as_slice()) {
+            return Ok(key);
+        }
+        // A corrupt/short key file is unrecoverable — sessions wrapped under the
+        // old key can't be read regardless — so regenerating is the only way
+        // forward. The only cost is a one-time re-login for everyone.
+    }
+    let key = generate_db_key(); // same CSPRNG, 32 bytes
+    write_key_file(session_key_path, &key)?;
+    Ok(key)
+}
+
+fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> std::io::Result<()> {
+    std::fs::write(path, key)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+/// Wrap a 32-byte DB key under the server master key for at-rest storage in the
+/// sessions table. Output is `nonce || ciphertext` (XChaCha20-Poly1305), the
+/// same envelope shape as the password/recovery wrappers above.
+pub fn wrap_key_with_server_key(
+    server_key: &[u8; 32],
+    dbkey: &[u8; DB_KEY_LEN],
+) -> Result<Vec<u8>, CryptoError> {
+    wrap_with_kek(server_key, dbkey)
+}
+
+/// Reverse of [`wrap_key_with_server_key`]. Returns `Unwrap` on a wrong key or
+/// tampered ciphertext (AEAD tag mismatch).
+pub fn unwrap_key_with_server_key(
+    server_key: &[u8; 32],
+    wrapped: &[u8],
+) -> Result<[u8; DB_KEY_LEN], CryptoError> {
+    let v = unwrap_with_kek(server_key, wrapped)?;
+    v.as_slice().try_into().map_err(|_| CryptoError::Unwrap)
+}
+
+/// SHA-256 of an opaque session token, used as the persisted primary key. The
+/// token is 256-bit random, so a plain hash (no salt, no KDF) suffices: a
+/// stolen `users.db` yields only hashes, never a usable session cookie.
+pub fn hash_session_token(token: &str) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(token.as_bytes()).to_vec()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_key_wrap_unwrap_round_trip() {
+        let smk = generate_db_key();
+        let dbkey = generate_db_key();
+        let wrapped = wrap_key_with_server_key(&smk, &dbkey).unwrap();
+        assert_eq!(unwrap_key_with_server_key(&smk, &wrapped).unwrap(), dbkey);
+        // A different server key must NOT unwrap it.
+        let other = generate_db_key();
+        assert!(unwrap_key_with_server_key(&other, &wrapped).is_err());
+    }
+
+    #[test]
+    fn load_or_create_server_key_generates_then_reuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.key");
+        assert!(!path.exists());
+        let k1 = load_or_create_server_key(&path).unwrap();
+        assert!(path.exists(), "first call must persist the generated key");
+        let k2 = load_or_create_server_key(&path).unwrap();
+        assert_eq!(k1, k2, "second call must read the same key back, not regenerate");
+    }
+
+    #[test]
+    fn hash_session_token_is_deterministic_and_distinct() {
+        assert_eq!(hash_session_token("abc"), hash_session_token("abc"));
+        assert_ne!(hash_session_token("abc"), hash_session_token("abd"));
+        assert_eq!(hash_session_token("abc").len(), 32); // SHA-256 = 32 bytes
+    }
 
     #[tokio::test]
     async fn async_wrappers_match_their_blocking_counterparts() {

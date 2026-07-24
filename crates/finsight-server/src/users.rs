@@ -70,7 +70,19 @@ impl UsersDb {
                 wrapped_key_recovery BLOB NOT NULL,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
-            );",
+            );
+            -- Persistent sessions (survive restarts). The DB key is stored
+            -- wrapped under the server master key; the token is stored ONLY as
+            -- its SHA-256 hash, so a stolen users.db never yields a live cookie.
+            -- See crypto::load_or_create_server_key for the security tradeoff.
+            CREATE TABLE IF NOT EXISTS sessions (
+                token_hash BLOB PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                is_admin INTEGER NOT NULL,
+                wrapped_db_key BLOB NOT NULL,
+                expires_unix INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);",
         )?;
         Ok(Self(Mutex::new(conn)))
     }
@@ -186,9 +198,123 @@ impl UsersDb {
 
     pub fn delete_user(&self, id: &str) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
+        // Drop the user's persisted sessions in the same breath — a deleted
+        // account's sessions must never be recoverable on the next restart.
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![id])?;
         conn.execute("DELETE FROM users WHERE id = ?1", params![id])?;
         Ok(())
     }
+
+    // -------------------------------------------------- persistent sessions ---
+
+    /// Write (or overwrite) a persisted session so it survives a restart. The
+    /// caller wraps `wrapped_db_key` under the server master key first.
+    pub fn persist_session(
+        &self,
+        token_hash: &[u8],
+        user_id: &str,
+        is_admin: bool,
+        wrapped_db_key: &[u8],
+        expires_unix: i64,
+    ) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO sessions (token_hash, user_id, is_admin, wrapped_db_key, expires_unix)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![token_hash, user_id, is_admin as i64, wrapped_db_key, expires_unix],
+        )?;
+        Ok(())
+    }
+
+    /// Look up a still-valid persisted session by its token hash. Returns `None`
+    /// for a missing OR expired row (the caller passes the current unix time),
+    /// so a resurrected-but-expired session is never handed back.
+    pub fn recover_session(
+        &self,
+        token_hash: &[u8],
+        now_unix: i64,
+    ) -> rusqlite::Result<Option<PersistedSession>> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT user_id, is_admin, wrapped_db_key FROM sessions
+             WHERE token_hash = ?1 AND expires_unix > ?2",
+            params![token_hash, now_unix],
+            |r| {
+                Ok(PersistedSession {
+                    user_id: r.get(0)?,
+                    is_admin: r.get::<_, i64>(1)? != 0,
+                    wrapped_db_key: r.get(2)?,
+                })
+            },
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            e => Err(e),
+        })
+    }
+
+    /// Extend a persisted session's expiry (called when a session is recovered
+    /// after a restart, so a continuously-used session slides forward instead of
+    /// hard-expiring 30 days after it was first created).
+    pub fn slide_session_expiry(
+        &self,
+        token_hash: &[u8],
+        new_expires_unix: i64,
+    ) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE sessions SET expires_unix = ?2 WHERE token_hash = ?1",
+            params![token_hash, new_expires_unix],
+        )?;
+        Ok(())
+    }
+
+    /// Remove one persisted session (logout). MUST run on every logout, or the
+    /// signed-out session resurrects on the next restart.
+    pub fn delete_session(&self, token_hash: &[u8]) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
+        Ok(())
+    }
+
+    /// Remove every persisted session for a user (admin delete / sign-out-all).
+    pub fn delete_user_sessions(&self, user_id: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![user_id])?;
+        Ok(())
+    }
+
+    /// Remove every persisted session for a user EXCEPT the one whose token
+    /// hash is `keep_token_hash` (sign out other devices). Returns how many
+    /// rows were removed.
+    pub fn delete_user_sessions_except(
+        &self,
+        user_id: &str,
+        keep_token_hash: &[u8],
+    ) -> rusqlite::Result<usize> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND token_hash != ?2",
+            params![user_id, keep_token_hash],
+        )
+    }
+
+    /// Drop every already-expired session. Called once at startup so the table
+    /// doesn't accumulate dead rows across restarts. Returns the count removed.
+    pub fn purge_expired_sessions(&self, now_unix: i64) -> rusqlite::Result<usize> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("DELETE FROM sessions WHERE expires_unix <= ?1", params![now_unix])
+    }
+}
+
+/// A persisted session row, minus the token hash the caller already holds.
+pub struct PersistedSession {
+    pub user_id: String,
+    pub is_admin: bool,
+    /// DB key wrapped under the server master key — unwrap with
+    /// `crypto::unwrap_key_with_server_key` before use.
+    pub wrapped_db_key: Vec<u8>,
 }
 
 #[cfg(test)]

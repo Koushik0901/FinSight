@@ -4,13 +4,14 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
-import { fetchAuthStatus, logout } from "../api/auth";
+import { fetchAuthStatus, logout, signOutOtherSessions } from "../api/auth";
 
 vi.mock("../api/auth", async () => {
   const actual = await vi.importActual<typeof import("../api/auth")>("../api/auth");
   return {
     ...actual,
     logout: vi.fn(),
+    signOutOtherSessions: vi.fn().mockResolvedValue(0),
     fetchAuthStatus: vi.fn().mockResolvedValue({
       needsSetup: false,
       authenticated: true,
@@ -243,7 +244,7 @@ describe("Settings — server-mode Account section", () => {
   it("desktop mode: no Account section, no Sign out button", () => {
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.queryByRole("heading", { name: "Account" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^sign out$/i })).toBeNull();
   });
 
   it("server mode: renders the Account section with a Sign out button", () => {
@@ -251,7 +252,9 @@ describe("Settings — server-mode Account section", () => {
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Account" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    // Exact match — a plain /sign out/i now also hits "Sign out other devices".
+    expect(screen.getByRole("button", { name: /^sign out$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out other devices" })).toBeInTheDocument();
   });
 
   it("Sign out calls logout() and dispatches finsight:auth-required", async () => {
@@ -260,7 +263,7 @@ describe("Settings — server-mode Account section", () => {
     const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     render(<Settings />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^sign out$/i }));
 
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
     await waitFor(() =>
@@ -274,10 +277,25 @@ describe("Settings — server-mode Account section", () => {
     const dispatchSpy = vi.spyOn(window, "dispatchEvent");
 
     render(<Settings />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^sign out$/i }));
 
     await waitFor(() =>
       expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
+    );
+  });
+
+  it("Sign out other devices calls signOutOtherSessions() and keeps this session", async () => {
+    (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
+    vi.mocked(signOutOtherSessions).mockResolvedValue(2);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    render(<Settings />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: "Sign out other devices" }));
+
+    await waitFor(() => expect(signOutOtherSessions).toHaveBeenCalledTimes(1));
+    // Unlike a full sign-out, this must NOT drop the current session.
+    expect(dispatchSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "finsight:auth-required" }),
     );
   });
 

@@ -14,7 +14,9 @@ pub struct OutboundEvent {
 /// DB (opened lazily by `registry::get_or_bootstrap` with the key unwrapped
 /// at login time, see `sessions.rs`).
 pub struct ServerState {
-    pub users: crate::users::UsersDb,
+    /// Shared so the session store can persist/recover sessions in the same
+    /// `users.db` (see `sessions::SessionStore::with_persistence`).
+    pub users: Arc<crate::users::UsersDb>,
     pub sessions: crate::sessions::SessionStore,
     /// Per-username failure budget guarding `login` and `recover`. In-memory
     /// and shared across requests — see `sessions::LoginThrottle`.
@@ -46,10 +48,17 @@ impl ServerState {
         throttle: crate::sessions::LoginThrottle,
     ) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(data_dir)?;
-        let users = crate::users::UsersDb::open(&data_dir.join("users.db"))?;
+        let users = Arc::new(crate::users::UsersDb::open(&data_dir.join("users.db"))?);
+        // Persistent sessions: the server master key wraps each session's DB key
+        // on disk so a restart no longer forces every user to sign in again.
+        // Supplied via FINSIGHT_SESSION_KEY, else generated into session.key.
+        let server_key = crate::crypto::load_or_create_server_key(&data_dir.join("session.key"))?;
+        let sessions =
+            crate::sessions::SessionStore::with_persistence(Arc::clone(&users), server_key);
+        sessions.purge_expired_persisted();
         Ok(Arc::new(Self {
             users,
-            sessions: crate::sessions::SessionStore::default(),
+            sessions,
             throttle,
             registry: crate::registry::Registry::default(),
             data_dir: data_dir.to_path_buf(),
