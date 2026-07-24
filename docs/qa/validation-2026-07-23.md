@@ -7,7 +7,12 @@ the in-app browser. One record per screen; each screen graded **Verified**,
 
 ---
 
-## NEW FEATURE (2026-07-24) — Persistent sessions (survive server restart)
+## PR split (2026-07-24)
+This session's work is now separated into reviewable PRs:
+- **[#83](https://github.com/Koushik0901/FinSight/pull/83)** — QA validation branch (`chore/validate-shipped-issues`): the 14/14-screen validation, auth redesign, the critical `build_baseline` SQL fix, and the responsive / privacy-blur / horizon-label UI fixes.
+- **[#84](https://github.com/Koushik0901/FinSight/pull/84)** — `feat/persistent-sessions` off `main`: **persistent sessions + sign out other devices** (below). Isolated from the QA work; `cargo test -p finsight-server --lib` = 59 passed.
+
+## NEW FEATURE (2026-07-24) — Persistent sessions + sign out other devices (PR #84)
 
 User request: *"use sessions … similar to how immich uses, because we don't want to log in every time."* Previously sessions were in-memory only (`sessions.rs`), so every server restart forced a re-login. Implemented server-master-key–wrapped persistent sessions:
 
@@ -20,9 +25,15 @@ User request: *"use sessions … similar to how immich uses, because we don't wa
 
 **Tests:** +9 unit tests (crypto ×3, sessions ×6 incl. the load-bearing `removed_session_does_not_resurrect_on_restart`); **`cargo test -p finsight-server --lib` = 58 passed, 0 failed.** Server rebuilt; `session.key` + `sessions` table confirmed created on the live box.
 
-**Follow-ups (noted, not built):** (1) password-*change* (vs recover) leaves persisted sessions valid — defensible (SMK-wrapped key is password-independent), revisit if a "sign out other devices" affordance is wanted; (2) **this wants its own branch/PR off main** — it's currently stacked on the QA branch + uncommitted #58 work; keep the commits separable.
+### Sign out other devices (added to PR #84)
+Persistent sessions mean other devices stay signed in across restarts, so a "sign out everywhere but here" control is now meaningful:
+- **`POST /api/auth/sign-out-others`** ([auth.rs](../../crates/finsight-server/src/auth.rs)) revokes every OTHER session for the user (in-memory + persisted rows) while keeping the caller's — `SessionStore::remove_user_except` + `UsersDb::delete_user_sessions_except`.
+- Surfaced as a **"Sign out other devices"** button in Settings → Account ([Settings.tsx](../../ui/src/screens/Settings.tsx), `auth.signOutOtherSessions`).
+- +1 backend test (`sign_out_others_keeps_current_and_purges_the_rest_across_restart`), +1 Settings test. Endpoint confirmed live (401 unauthed, not 404); button confirmed in the shipped bundle.
 
-**PENDING live proof:** restart-survival needs one user login on the new binary (the session live during dev was old-code, memory-only). Sequence: user logs in once → restart server → confirm still authed with no re-login.
+**Follow-up (noted, not built):** password-*change* (vs recover) leaves persisted sessions valid — defensible (SMK-wrapped key is password-independent). Recover already sweeps them (compromise path).
+
+**PENDING live proof (both features):** needs one user login on the new binary (the dev session was old-code, memory-only). Sequence: user logs in once → (a) restart server → confirm still authed with no re-login (persistence); (b) with a 2nd device signed in, click "Sign out other devices" → 2nd device drops, this one stays (sign-out-others).
 
 ---
 
