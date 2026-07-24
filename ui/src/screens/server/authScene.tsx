@@ -18,6 +18,12 @@ import {
 import { toast } from "sonner";
 import "../../styles/auth.css";
 
+/** True when the viewer asked the OS to minimise motion. The showcase honours it
+ *  in CSS (auth.css); the JS-driven canvas/parallax animations check this too so
+ *  they render a static final state instead of continuous motion. */
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
 /* ── icons ─────────────────────────────────────────────── */
 type IcoProps = SVGProps<SVGSVGElement>;
 export const Ico = {
@@ -154,6 +160,7 @@ export function PasswordStrength({ pw, open }: { pw: string; open: boolean }) {
 function useCountUp(target: number, dur = 1600, delay = 200): number {
   const [v, setV] = useState(0);
   useEffect(() => {
+    if (prefersReducedMotion()) { setV(target); return; }
     let raf = 0;
     let t0 = 0;
     const to = window.setTimeout(() => {
@@ -221,10 +228,7 @@ function Sparkline({ points, color, delay, dur }: { points: number[]; color: str
     const X = (i: number) => (i / (pts.length - 1)) * w;
     const Y = (val: number) => h - pad - ((val - min) / (max - min || 1)) * (h - pad * 2);
     let raf = 0, to = 0, start = 0;
-    const draw = (now: number) => {
-      if (!start) start = now;
-      const p = Math.min((now - start) / dur, 1);
-      const n = Math.max(2, Math.floor(easeOut(p) * pts.length));
+    const render = (n: number) => {
       ctx.clearRect(0, 0, w, h);
       ctx.save();
       const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -238,6 +242,12 @@ function Sparkline({ points, color, delay, dur }: { points: number[]; color: str
       for (let i = 1; i < n; i++) ctx.lineTo(X(i), Y(pts[i]!));
       ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
       ctx.beginPath(); ctx.arc(X(n - 1), Y(pts[n - 1]!), 2.4, 0, 7); ctx.fillStyle = color; ctx.fill();
+    };
+    if (prefersReducedMotion()) { render(pts.length); return; }
+    const draw = (now: number) => {
+      if (!start) start = now;
+      const p = Math.min((now - start) / dur, 1);
+      render(Math.max(2, Math.floor(easeOut(p) * pts.length)));
       if (p < 1) raf = requestAnimationFrame(draw);
     };
     to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, delay);
@@ -265,10 +275,7 @@ function HeroChart({ delay, dur }: { delay: number; dur: number }) {
     const X = (i: number) => (i / (pts.length - 1)) * w;
     const Y = (v: number) => h - 4 - ((v - min) / (max - min)) * (h - 10);
     let raf = 0, to = 0, start = 0;
-    const draw = (now: number) => {
-      if (!start) start = now;
-      const p = Math.min((now - start) / dur, 1);
-      const n = Math.max(2, Math.floor(easeOut(p) * pts.length));
+    const render = (n: number) => {
       ctx.clearRect(0, 0, w, h);
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, "rgba(201,249,80,0.28)"); g.addColorStop(1, "rgba(201,249,80,0)");
@@ -286,6 +293,12 @@ function HeroChart({ delay, dur }: { delay: number; dur: number }) {
       const tx = X(n - 1), ty = Y(pts[n - 1]!);
       ctx.beginPath(); ctx.arc(tx, ty, 3.4, 0, 7); ctx.fillStyle = "#C9F950"; ctx.fill();
       ctx.beginPath(); ctx.arc(tx, ty, 6, 0, 7); ctx.strokeStyle = "rgba(201,249,80,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
+    };
+    if (prefersReducedMotion()) { render(pts.length); return; }
+    const draw = (now: number) => {
+      if (!start) start = now;
+      const p = Math.min((now - start) / dur, 1);
+      render(Math.max(2, Math.floor(easeOut(p) * pts.length)));
       if (p < 1) raf = requestAnimationFrame(draw);
     };
     to = window.setTimeout(() => { raf = requestAnimationFrame(draw); }, delay);
@@ -325,7 +338,8 @@ function useShowcaseBg(
       nctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
-    const ro = new ResizeObserver(resize); ro.observe(host);
+    const animate = !prefersReducedMotion();
+    const ro = new ResizeObserver(() => { resize(); if (!animate) frame(); }); ro.observe(host);
     let t = 0;
     const frame = () => {
       t++;
@@ -369,7 +383,7 @@ function useShowcaseBg(
         nctx.beginPath(); nctx.arc(px(p), py(p), p.r, 0, 7);
         nctx.fillStyle = `rgba(230,245,190,${tw})`; nctx.fill();
       }
-      raf = requestAnimationFrame(frame);
+      if (animate) raf = requestAnimationFrame(frame);
     };
     frame();
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
@@ -393,6 +407,8 @@ function Showcase() {
   useEffect(() => {
     const h = host.current, s = stage.current;
     if (!h || !s) return;
+    // Reduced motion: keep the stage static — no orbit, no cursor/tilt parallax.
+    if (prefersReducedMotion()) { s.style.transform = "none"; return; }
     let tmx = 0, tmy = 0, mx = 0, my = 0, gx = 0, gy = 0, raf = 0;
     const t0 = performance.now();
     const onMove = (e: MouseEvent) => {

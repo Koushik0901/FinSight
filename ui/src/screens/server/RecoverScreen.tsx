@@ -38,6 +38,10 @@ export default function RecoverScreen({
       setError("Fill in every field to continue.");
       return;
     }
+    if (newPassword.length < 10) {
+      setError("New password must be at least 10 characters.");
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError("Passwords don't match.");
       return;
