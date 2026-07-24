@@ -37,22 +37,26 @@
 //! matter of writing one more `predict_*` function — no changes needed to
 //! `confusion`, `threshold`, or `split`.
 //!
-//! Also: `predictors::predict_builtin` measures
+//! Also: `predictors::predict_builtin` wraps
 //! `finsight_core::categorize::builtin_category` (the keyword lookup table)
-//! in isolation, NOT the full `apply_builtin_categorization` pass — see that
-//! function's doc comment for the gates (transfer skip, category-existence
-//! check, investment activity typing) this harness does not yet model. They
-//! don't matter for the current synthetic corpus (nothing in it is
-//! transfer-shaped) but would need to be added before this harness's
-//! `builtin` number is trustworthy against a real corpus containing
-//! transfer-like descriptors.
+//! plus a transfer abstain guard, NOT the full `apply_builtin_categorization`
+//! pass. The gates it still cannot model (transfer *pairing* and self-transfer
+//! identity, the category-existence check, investment activity typing) all
+//! push the same way: production emits nothing where this harness emits a
+//! prediction, so measured precision comes out **inflated**, never deflated.
+//! See `predictors::predict_builtin`'s doc comment and the "Fidelity to
+//! production" section of `eval/CATEGORIZATION_CORPUS.md`.
 //!
 //! ## Synthetic vs. real
 //! The only corpus shipped in this repo today
-//! (`eval/categorization_corpus.synthetic.jsonl`) is **invented data** — see
-//! its header and `eval/CATEGORIZATION_CORPUS.md`. Every [`report::CategorizationEvalReport`]
-//! carries an explicit `caveat` field for exactly this reason: the JSON output
-//! itself says "not a real precision claim," not just this doc comment.
+//! (`eval/categorization_corpus.synthetic.jsonl`) is **invented data** — and
+//! it says so itself, via the required `// provenance: synthetic` directive
+//! its first line declares. Every [`report::CategorizationEvalReport`] carries
+//! a `corpus_provenance` field and a `caveat` string **derived from that
+//! directive** ([`corpus::CorpusProvenance::caveat`]) — never hardcoded at the
+//! report site, so a real corpus cannot inherit synthetic language and the
+//! synthetic seed cannot lose its warning. A corpus that declares no
+//! provenance fails to load.
 
 pub mod confusion;
 pub mod corpus;

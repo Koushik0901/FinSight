@@ -1,3 +1,11 @@
+// provenance: synthetic
+//
+// ^ REQUIRED DIRECTIVE. The loader refuses a corpus that declares no
+// provenance, and the eval report's caveat is derived from this line — it is
+// not hardcoded anywhere in the harness. Deleting it breaks the load; changing
+// it to `real` is an explicit, reviewable claim that this file contains
+// human-labeled real transactions. Accepted values: synthetic | real.
+//
 // SYNTHETIC SEED CORPUS — issue #89 (Slice 2b). Every merchant name and
 // transaction below is INVENTED for testing the #88 harness end-to-end. None
 // of it is drawn from any real user's account data, and it is NOT a real-world

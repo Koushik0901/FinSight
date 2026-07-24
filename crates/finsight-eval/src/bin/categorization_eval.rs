@@ -7,7 +7,16 @@
 //! Usage:
 //!   cargo run -p finsight-eval --bin categorization_eval -- \
 //!     --corpus eval/categorization_corpus.synthetic.jsonl \
-//!     [--holdout-fraction 0.3] [--seed 42] [--out eval/runs/categorization_baseline.json]
+//!     [--holdout-fraction 0.3] [--seed 42] \
+//!     [--out eval/categorization_baseline.synthetic.json]
+//!
+//! (`eval/categorization_baseline.synthetic.json` is the committed artifact
+//! this repo keeps in step with the bundled corpus — the `.synthetic.` marker
+//! in the filename is load-bearing, so don't drop it when regenerating.)
+//!
+//! The report's caveat is derived from the `// provenance:` directive the
+//! corpus file declares, not from anything in this binary — see
+//! `categorization::corpus::CorpusProvenance`.
 //!
 //! See `eval/CATEGORIZATION_CORPUS.md` for the corpus format and how to add
 //! new labeled examples.
@@ -36,17 +45,29 @@ struct Args {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let examples = corpus::load_corpus_jsonl(&args.corpus)?;
-    eprintln!("loaded {} labeled examples from {}", examples.len(), args.corpus);
+    let loaded = corpus::load_corpus_jsonl(&args.corpus)?;
+    eprintln!(
+        "loaded {} labeled examples from {} (provenance: {})",
+        loaded.examples.len(),
+        loaded.source_path,
+        loaded.provenance.as_str()
+    );
 
-    let stats = corpus::corpus_stats(&examples);
+    let stats = corpus::corpus_stats(&loaded.examples);
     eprintln!(
         "  {} unique merchants, {} categories",
         stats.unique_merchants,
         stats.category_distribution.len()
     );
 
-    let rep = report::run(&examples, args.holdout_fraction, args.seed);
+    // Provenance comes from the corpus file, never from this binary — the
+    // report's caveat is derived from it.
+    let rep = report::run(
+        &loaded.examples,
+        loaded.provenance,
+        args.holdout_fraction,
+        args.seed,
+    );
     let json = serde_json::to_string_pretty(&rep)?;
 
     match &args.out {

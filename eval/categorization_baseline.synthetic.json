@@ -1,5 +1,6 @@
 {
-  "caveat": "SYNTHETIC SEED DATA baseline — computed against invented, clearly-fictional transactions (eval/categorization_corpus.synthetic.jsonl) for harness end-to-end validation. This is NOT a measured real-world precision claim. A real corpus (issue #89) does not exist in this repo yet.",
+  "corpus_provenance": "synthetic",
+  "caveat": "SYNTHETIC SEED DATA baseline — the corpus file declares `provenance: synthetic`: invented, clearly-fictional transactions that exist to validate this harness end to end. This is NOT a measured real-world precision claim, and no figure below may be quoted as one.",
   "corpus_stats": {
     "total_examples": 33,
     "unique_merchants": 29,
@@ -131,7 +132,7 @@
           "total": 11
         }
       },
-      "threshold_sweep": [
+      "threshold_sweep_full_corpus": [
         {
           "threshold": 0.0,
           "n_total": 33,
@@ -203,6 +204,80 @@
           "n_correct": 15,
           "precision": 0.9375,
           "coverage": 0.48484848484848486
+        }
+      ],
+      "threshold_sweep_holdout": [
+        {
+          "threshold": 0.0,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
         }
       ]
     },
@@ -278,7 +353,7 @@
           "total": 11
         }
       },
-      "threshold_sweep": [
+      "threshold_sweep_full_corpus": [
         {
           "threshold": 0.0,
           "n_total": 33,
@@ -350,6 +425,80 @@
           "n_correct": 8,
           "precision": 1.0,
           "coverage": 0.24242424242424243
+        }
+      ],
+      "threshold_sweep_holdout": [
+        {
+          "threshold": 0.0,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
         }
       ]
     }
