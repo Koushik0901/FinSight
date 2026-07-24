@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FinSight — self-hosted personal finance that stays home</title>
+<meta name="description" content="FinSight is a self-hosted, local-first personal-finance workspace with a grounded AI copilot. It runs on your own machine, encrypts every account, and never sends your data to anyone's cloud." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800;900&family=Hanken+Grotesk:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   FinSight — landing. Dark-first "private instrument" aesthetic.
+   OKLCH throughout; neutrals tinted toward the lime signal hue
+   (~128) at very low chroma so the whole surface coheres with
+   the one accent. Accent kept to ~10% of visual weight.
+   ============================================================ */
+:root{
+  --hue: 128;                        /* the FinSight lime hue */
+  /* surfaces — near-black, faintly green-tinted */
+  --bg:        oklch(0.155 0.008 var(--hue));
+  --bg-deep:   oklch(0.125 0.010 var(--hue));
+  --surface:   oklch(0.185 0.009 var(--hue));
+  --surface-2: oklch(0.215 0.011 var(--hue));
+  --elevated:  oklch(0.245 0.012 var(--hue));
+  /* ink */
+  --ink:       oklch(0.965 0.008 var(--hue));
+  --ink-mute:  oklch(0.740 0.012 var(--hue));
+  --ink-faint: oklch(0.560 0.012 var(--hue));
+  /* lines */
+  --line:      oklch(0.30 0.010 var(--hue));
+  --line-soft: oklch(0.25 0.009 var(--hue));
+  /* the signal */
+  --lime:      oklch(0.88 0.185 var(--hue));
+  --lime-deep: oklch(0.80 0.175 var(--hue));
+  --lime-ink:  oklch(0.24 0.06 var(--hue));      /* text on lime */
+  --lime-ghost:oklch(0.88 0.185 var(--hue) / 0.12);
+  --warn:      oklch(0.80 0.135 62);
+  /* spacing (4pt, semantic) */
+  --s-2:2px;--s-4:4px;--s-8:8px;--s-12:12px;--s-16:16px;--s-24:24px;
+  --s-32:32px;--s-48:48px;--s-64:64px;--s-96:96px;--s-128:128px;
+  --maxw: 1160px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);   /* ease-out-quint-ish */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Hanken Grotesk",ui-sans-serif,system-ui,sans-serif;
+  font-size:16px;line-height:1.6;letter-spacing:-0.006em;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+/* a very quiet field of light behind the fold, never a "glow accent" cliché */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:
+    radial-gradient(120% 80% at 85% -10%, oklch(0.88 0.185 var(--hue) / 0.07), transparent 60%),
+    radial-gradient(90% 60% at 0% 0%, oklch(0.30 0.02 var(--hue) / 0.5), transparent 55%);
+}
+::selection{background:var(--lime-ghost);color:var(--ink)}
+a{color:inherit;text-decoration:none}
+h1,h2,h3{font-family:"Schibsted Grotesk",sans-serif;font-weight:800;letter-spacing:-0.03em;line-height:1.02}
+.mono{font-family:"Geist Mono","Geist Mono",ui-monospace,monospace;font-weight:400;letter-spacing:0}
+.wrap{max-width:var(--maxw);margin-inline:auto;padding-inline:clamp(20px,5vw,40px)}
+
+/* eyebrow / section label */
+.eyebrow{
+  font-family:"Geist Mono",ui-monospace,monospace;font-size:12px;font-weight:500;
+  letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-faint);
+  display:inline-flex;align-items:center;gap:10px;
+}
+.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--lime);
+  box-shadow:0 0 0 0 var(--lime-ghost);animation:pulse 3.4s var(--ease) infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 oklch(0.88 0.185 var(--hue)/0.35)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:9px;height:46px;padding:0 20px;
+  border-radius:11px;font-weight:600;font-size:15px;letter-spacing:-0.01em;
+  border:1px solid transparent;cursor:pointer;transition:transform .18s var(--ease),background .18s var(--ease),border-color .18s var(--ease)}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--lime);color:var(--lime-ink);font-weight:700}
+.btn-primary:hover{background:var(--lime-deep)}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--ink-faint);background:var(--surface)}
+.btn svg{width:16px;height:16px}
+
+/* ---------- nav ---------- */
+nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:oklch(0.155 0.008 var(--hue) / 0.72);border-bottom:1px solid var(--line-soft)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+.brand{display:flex;align-items:center;gap:11px;font-family:"Schibsted Grotesk";font-weight:800;font-size:18px;letter-spacing:-0.03em}
+.mark{width:26px;height:26px;border-radius:8px;background:var(--lime);position:relative;display:grid;place-items:center;flex:0 0 auto}
+.mark::after{content:"";width:11px;height:11px;border:2.4px solid var(--lime-ink);border-radius:4px;border-right-color:transparent;border-bottom-color:transparent;transform:rotate(45deg) translate(1px,-1px)}
+.nav-links{display:flex;align-items:center;gap:6px}
+.nav-links a{padding:8px 12px;border-radius:8px;color:var(--ink-mute);font-size:14.5px;font-weight:500;transition:color .15s,background .15s}
+.nav-links a:hover{color:var(--ink);background:var(--surface)}
+.nav-cta{margin-left:6px}
+@media(max-width:720px){.nav-links a:not(.nav-cta){display:none}}
+
+/* ---------- hero ---------- */
+.hero{padding-top:clamp(56px,9vw,104px);padding-bottom:clamp(48px,7vw,84px);position:relative}
+.hero-grid{display:grid;grid-template-columns:1.05fr 0.95fr;gap:clamp(32px,5vw,72px);align-items:center}
+@media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:44px}}
+.hero h1{font-size:clamp(40px,6.4vw,74px);font-weight:900;margin-top:22px;max-width:15ch}
+.hero h1 em{font-style:normal;color:var(--lime)}
+.lede{margin-top:24px;font-size:clamp(17px,2.1vw,20px);line-height:1.55;color:var(--ink-mute);max-width:52ch}
+.hero-cta{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+.hero-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:30px}
+.chip{font-family:"Geist Mono",monospace;font-size:12px;letter-spacing:0.02em;color:var(--ink-mute);
+  border:1px solid var(--line-soft);border-radius:999px;padding:6px 12px;display:inline-flex;gap:7px;align-items:center;background:oklch(0.185 0.009 var(--hue)/0.5)}
+.chip b{color:var(--lime);font-weight:500}
+
+/* reveal-on-load */
+.rise{opacity:0;transform:translateY(14px);animation:rise .9s var(--ease) forwards}
+.d1{animation-delay:.05s}.d2{animation-delay:.14s}.d3{animation-delay:.24s}.d4{animation-delay:.34s}.d5{animation-delay:.46s}.d6{animation-delay:.58s}
+@keyframes rise{to{opacity:1;transform:none}}
+
+/* ---------- hero product card ---------- */
+.device{
+  background:linear-gradient(180deg,var(--surface) 0%,var(--bg-deep) 140%);
+  border:1px solid var(--line);border-radius:var(--radius-lg);
+  box-shadow:0 40px 80px -40px oklch(0 0 0/0.7),0 0 0 1px oklch(1 0 0/0.02) inset;
+  padding:22px;position:relative;overflow:hidden}
+.device::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:radial-gradient(90% 60% at 100% 0%, var(--lime-ghost), transparent 55%)}
+.dev-top{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}
+.dev-status{display:flex;gap:8px}
+.pill{font-family:"Geist Mono",monospace;font-size:11px;color:var(--ink-mute);border:1px solid var(--line-soft);border-radius:999px;padding:4px 10px;display:inline-flex;gap:6px;align-items:center}
+.pill.on{color:var(--lime);border-color:oklch(0.88 0.185 var(--hue)/0.3)}
+.pill .d{width:5px;height:5px;border-radius:50%;background:currentColor}
+.dev-label{font-family:"Geist Mono",monospace;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-faint);margin-top:26px}
+.figure{font-family:"Schibsted Grotesk";font-weight:900;font-size:clamp(40px,7vw,58px);letter-spacing:-0.04em;line-height:1;margin-top:6px;font-variant-numeric:tabular-nums}
+.trendrow{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.npill{font-size:13px;font-weight:600;color:var(--lime);background:var(--lime-ghost);border-radius:999px;padding:4px 11px;font-variant-numeric:tabular-nums}
+.trendrow .sub{color:var(--ink-faint);font-size:13px}
+.spark{margin-top:20px;width:100%;height:74px;display:block}
+.spark path.line{fill:none;stroke:var(--lime);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;
+  stroke-dasharray:600;stroke-dashoffset:600;animation:draw 1.9s var(--ease) .5s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.spark path.fill{fill:url(#g);opacity:0;animation:fadein 1.2s ease .9s forwards}
+@keyframes fadein{to{opacity:0.35}}
+.dev-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}
+.stat{background:oklch(0.16 0.008 var(--hue)/0.7);border:1px solid var(--line-soft);border-radius:12px;padding:12px 13px}
+.stat .k{font-family:"Geist Mono",monospace;font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-faint)}
+.stat .v{font-family:"Schibsted Grotesk";font-weight:700;font-size:19px;margin-top:5px;font-variant-numeric:tabular-nums}
+.stat .v.lime{color:var(--lime)}
+
+/* ---------- marquee trust strip ---------- */
+.strip{border-block:1px solid var(--line-soft);background:var(--bg-deep);overflow:hidden;margin-top:8px}
+.strip .track{display:flex;gap:0;white-space:nowrap;animation:slide 34s linear infinite;width:max-content}
+@media(prefers-reduced-motion:reduce){.strip .track{animation:none}}
+.strip .track:hover{animation-play-state:paused}
+.strip-item{font-family:"Geist Mono",monospace;font-size:13px;letter-spacing:0.04em;color:var(--ink-mute);padding:16px 34px;display:inline-flex;align-items:center;gap:10px}
+.strip-item::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--lime);opacity:.7}
+@keyframes slide{to{transform:translateX(-50%)}}
+
+/* ---------- sections ---------- */
+section{position:relative}
+.sec{padding-block:clamp(72px,10vw,128px)}
+.sec-head{max-width:60ch}
+.sec-head h2{font-size:clamp(30px,4.4vw,50px);font-weight:800;margin-top:18px}
+.sec-head p{margin-top:18px;font-size:clamp(16px,1.9vw,18.5px);color:var(--ink-mute);max-width:56ch}
+
+/* feature — lead (copilot) : asymmetric split */
+.lead{display:grid;grid-template-columns:0.9fr 1.1fr;gap:clamp(28px,5vw,64px);align-items:center;margin-top:56px}
+@media(max-width:900px){.lead{grid-template-columns:1fr;gap:36px}}
+.lead h3{font-size:clamp(24px,3vw,32px);font-weight:800;letter-spacing:-0.025em}
+.lead p{margin-top:16px;color:var(--ink-mute);max-width:44ch}
+.mini-list{margin-top:22px;display:flex;flex-direction:column;gap:12px}
+.mini-list li{list-style:none;display:flex;gap:12px;align-items:flex-start;color:var(--ink);font-size:15px}
+.mini-list .tick{flex:0 0 auto;width:20px;height:20px;border-radius:6px;background:var(--lime-ghost);color:var(--lime);display:grid;place-items:center;margin-top:1px}
+.mini-list .tick svg{width:12px;height:12px}
+.mini-list small{color:var(--ink-faint);display:block;font-size:13px;margin-top:2px}
+
+/* copilot mock */
+.copilot{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px;box-shadow:0 30px 60px -40px oklch(0 0 0/.7)}
+.co-q{display:flex;gap:11px;align-items:flex-start}
+.co-av{width:28px;height:28px;border-radius:8px;flex:0 0 auto;background:var(--surface-2);border:1px solid var(--line);display:grid;place-items:center;font-family:"Geist Mono";font-size:12px;color:var(--ink-mute)}
+.co-bub{background:var(--surface-2);border:1px solid var(--line-soft);border-radius:12px;border-top-left-radius:4px;padding:11px 14px;font-size:14.5px;color:var(--ink)}
+.co-plan{margin-top:16px;border:1px solid var(--line-soft);border-radius:12px;overflow:hidden}
+.co-plan .hd{font-family:"Geist Mono";font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-faint);padding:10px 14px;border-bottom:1px solid var(--line-soft);background:var(--bg-deep)}
+.co-tbl{width:100%;border-collapse:collapse;font-size:14px}
+.co-tbl td{padding:10px 14px;border-bottom:1px solid var(--line-soft)}
+.co-tbl tr:last-child td{border-bottom:0}
+.co-tbl td:last-child{text-align:right;font-family:"Geist Mono";font-variant-numeric:tabular-nums;color:var(--ink)}
+.co-tbl .pos{color:var(--lime)}
+.co-tag{display:inline-flex;align-items:center;gap:7px;font-family:"Geist Mono";font-size:11px;color:var(--ink-faint);margin-top:14px}
+.co-tag b{color:var(--lime);font-weight:500}
+
+/* feature grid — self-adjusting, varied not identical */
+.fgrid{margin-top:56px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.fcard{padding:26px 24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);transition:border-color .2s var(--ease),transform .2s var(--ease)}
+.fcard:hover{border-color:oklch(0.88 0.185 var(--hue)/0.4);transform:translateY(-2px)}
+.fcard .ic{width:34px;height:34px;border-radius:9px;background:var(--lime-ghost);color:var(--lime);display:grid;place-items:center;margin-bottom:18px}
+.fcard .ic svg{width:18px;height:18px}
+.fcard h4{font-family:"Schibsted Grotesk";font-weight:700;font-size:18px;letter-spacing:-0.02em}
+.fcard p{margin-top:9px;color:var(--ink-mute);font-size:14.5px;line-height:1.55}
+/* one wide card breaks the grid rhythm */
+.fcard.wide{grid-column:1/-1;display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;background:linear-gradient(100deg,var(--surface),var(--bg-deep))}
+@media(max-width:560px){.fcard.wide{grid-template-columns:1fr}}
+.fcard.wide .ic{margin-bottom:0}
+
+/* framework — editorial numbered */
+.frame{background:var(--bg-deep);border-block:1px solid var(--line-soft)}
+.frame-list{margin-top:52px;display:grid;grid-template-columns:1fr 1fr;gap:0 clamp(32px,5vw,72px)}
+@media(max-width:760px){.frame-list{grid-template-columns:1fr}}
+.principle{display:grid;grid-template-columns:auto 1fr;gap:20px;padding:26px 0;border-bottom:1px solid var(--line-soft);align-items:baseline}
+.principle .n{font-family:"Geist Mono";font-size:13px;color:var(--lime);font-weight:500;padding-top:3px}
+.principle h4{font-family:"Schibsted Grotesk";font-weight:700;font-size:19px;letter-spacing:-0.02em}
+.principle p{margin-top:6px;color:var(--ink-mute);font-size:14.5px}
+.principle .src{font-family:"Geist Mono";font-size:11px;color:var(--ink-faint);margin-top:8px;letter-spacing:0.04em}
+
+/* self-host terminal */
+.host-grid{display:grid;grid-template-columns:1fr 1.15fr;gap:clamp(28px,5vw,64px);align-items:center;margin-top:52px}
+@media(max-width:900px){.host-grid{grid-template-columns:1fr;gap:36px}}
+.steps{display:flex;flex-direction:column;gap:22px}
+.step{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:baseline}
+.step .num{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);display:grid;place-items:center;font-family:"Geist Mono";font-size:13px;color:var(--lime)}
+.step h4{font-family:"Schibsted Grotesk";font-weight:700;font-size:17px}
+.step p{color:var(--ink-mute);font-size:14px;margin-top:3px}
+.terminal{background:oklch(0.12 0.008 var(--hue));border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;box-shadow:0 30px 60px -40px oklch(0 0 0/.8)}
+.term-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line-soft);background:var(--bg-deep)}
+.term-bar .d{width:11px;height:11px;border-radius:50%;background:var(--line)}
+.term-bar .t{font-family:"Geist Mono";font-size:12px;color:var(--ink-faint);margin-left:8px}
+.term-body{padding:20px;font-family:"Geist Mono",monospace;font-size:13px;line-height:1.9;overflow-x:auto}
+.term-body .p{color:var(--lime)}
+.term-body .c{color:var(--ink)}
+.term-body .o{color:var(--ink-faint)}
+.term-body .cm{color:var(--ink-faint)}
+
+/* privacy diagram */
+.priv{display:grid;grid-template-columns:1fr 1fr;gap:clamp(28px,5vw,64px);align-items:center;margin-top:52px}
+@media(max-width:820px){.priv{grid-template-columns:1fr;gap:36px}}
+.diagram{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);padding:30px;position:relative}
+.node{border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--bg-deep);display:flex;gap:13px;align-items:center}
+.node .ic{width:34px;height:34px;border-radius:9px;background:var(--surface-2);display:grid;place-items:center;color:var(--lime);flex:0 0 auto}
+.node .ic svg{width:18px;height:18px}
+.node .nm{font-family:"Schibsted Grotesk";font-weight:700;font-size:15px}
+.node .ds{font-family:"Geist Mono";font-size:11px;color:var(--ink-faint);margin-top:2px;letter-spacing:0.02em}
+.link{display:flex;align-items:center;gap:12px;padding:10px 6px;margin-inline:auto;width:fit-content}
+.link .wire{width:2px;height:26px;background:linear-gradient(var(--lime),transparent);border-radius:2px}
+.link .lab{font-family:"Geist Mono";font-size:11px;color:var(--lime)}
+.barred{border:1px dashed var(--line);border-radius:12px;padding:14px 16px;display:flex;gap:12px;align-items:center;opacity:.75;margin-top:8px}
+.barred .x{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--warn);border:1px solid oklch(0.8 0.135 62/.4)}
+.barred .tx{font-size:13px;color:var(--ink-mute)}
+.barred .tx b{color:var(--ink)}
+
+/* cta band */
+.cta{padding-block:clamp(72px,10vw,120px);text-align:center}
+.cta h2{font-size:clamp(30px,5vw,54px);font-weight:900;max-width:18ch;margin-inline:auto}
+.cta p{margin-top:18px;color:var(--ink-mute);max-width:48ch;margin-inline:auto;font-size:17px}
+.cta .hero-cta{justify-content:center}
+
+/* footer */
+footer{border-top:1px solid var(--line-soft);padding-block:44px;background:var(--bg-deep)}
+footer .wrap{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+footer .muted{color:var(--ink-faint);font-size:13.5px}
+footer .fl{display:flex;gap:22px;flex-wrap:wrap}
+footer a{color:var(--ink-mute);font-size:14px}
+footer a:hover{color:var(--lime)}
+
+@media(prefers-reduced-motion:reduce){
+  .rise,.spark path.line,.spark path.fill,.eyebrow .dot{animation:none !important;opacity:1 !important;transform:none !important;stroke-dashoffset:0 !important}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span> FinSight</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#framework">Framework</a>
+      <a href="#selfhost">Self-host</a>
+      <a href="#privacy">Privacy</a>
+      <a class="btn btn-primary nav-cta" href="https://github.com/Koushik0901/FinSight">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header class="hero wrap" id="top">
+  <div class="hero-grid">
+    <div>
+      <span class="eyebrow rise d1"><span class="dot"></span> Local-first · Self-hosted · Open source</span>
+      <h1 class="rise d2">Understand your money.<br><em>Give up nothing.</em></h1>
+      <p class="lede rise d3">FinSight is a self-hosted personal-finance workspace with a grounded AI copilot. It runs on <em style="color:var(--ink);font-style:normal">your</em> machine, encrypts every account, and never ships a single transaction to anyone's cloud.</p>
+      <div class="hero-cta rise d4">
+        <a class="btn btn-primary" href="#selfhost">Self-host it
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Koushik0901/FinSight">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10 10 0 0 0 12 2Z"/></svg>
+          View source
+        </a>
+      </div>
+      <div class="hero-chips rise d5">
+        <span class="chip"><b>◆</b> Encrypted per user</span>
+        <span class="chip"><b>◆</b> Bring your own LLM key — or run fully offline</span>
+        <span class="chip"><b>◆</b> Installable PWA</span>
+      </div>
+    </div>
+
+    <!-- living product card -->
+    <div class="device rise d4" aria-hidden="true">
+      <div class="dev-top">
+        <span class="eyebrow" style="font-size:11px;letter-spacing:0.1em">Today</span>
+        <div class="dev-status">
+          <span class="pill"><span class="d"></span> Local-only</span>
+          <span class="pill on"><span class="d"></span> Agent · standing by</span>
+        </div>
+      </div>
+      <div class="dev-label">Net worth</div>
+      <div class="figure" id="nw">$0</div>
+      <div class="trendrow">
+        <span class="npill">↑ $6,704 over 6M</span>
+        <span class="sub">$3,305 spent this month · 45% above last month's pace</span>
+      </div>
+      <svg class="spark" viewBox="0 0 320 74" preserveAspectRatio="none">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="oklch(0.88 0.185 128)"/><stop offset="1" stop-color="oklch(0.88 0.185 128 / 0)"/>
+        </linearGradient></defs>
+        <path class="fill" d="M4 60 L70 52 L140 40 L210 30 L280 16 L316 8 L316 74 L4 74 Z"/>
+        <path class="line" d="M4 60 L70 52 L140 40 L210 30 L280 16 L316 8"/>
+      </svg>
+      <div class="dev-stats">
+        <div class="stat"><div class="k">Liquid</div><div class="v">$32,294</div></div>
+        <div class="stat"><div class="k">Invested</div><div class="v">$0</div></div>
+        <div class="stat"><div class="k">Runway</div><div class="v lime">322d</div></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ TRUST STRIP ============ -->
+<div class="strip" aria-hidden="true">
+  <div class="track">
+    <span class="strip-item">No cloud</span><span class="strip-item">Per-user SQLCipher encryption</span>
+    <span class="strip-item">Argon2id key wrapping</span><span class="strip-item">Runs on a Raspberry Pi</span>
+    <span class="strip-item">Grounded AI — numbers from your data, not the model</span><span class="strip-item">Offline-capable PWA</span>
+    <span class="strip-item">Open source</span>
+    <span class="strip-item">No cloud</span><span class="strip-item">Per-user SQLCipher encryption</span>
+    <span class="strip-item">Argon2id key wrapping</span><span class="strip-item">Runs on a Raspberry Pi</span>
+    <span class="strip-item">Grounded AI — numbers from your data, not the model</span><span class="strip-item">Offline-capable PWA</span>
+    <span class="strip-item">Open source</span>
+  </div>
+</div>
+
+<!-- ============ FEATURES ============ -->
+<section class="sec wrap" id="features">
+  <div class="sec-head">
+    <span class="eyebrow"><span class="dot"></span> The workspace</span>
+    <h2>A calm instrument for the whole picture.</h2>
+    <p>Accounts, budgets, goals, cash flow, and scenarios — all computed by one shared engine, so the number on your dashboard is the same number the copilot reasons about.</p>
+  </div>
+
+  <!-- lead feature: the copilot -->
+  <div class="lead">
+    <div>
+      <span class="eyebrow" style="margin-bottom:14px">Grounded AI copilot</span>
+      <h3>An assistant that reads your data — and shows its work.</h3>
+      <p>Ask a plain question. FinSight plans, calls its own finance tools, and answers in typed, validated cards — with the figures synthesized from your ledger, never hallucinated by the model.</p>
+      <ul class="mini-list">
+        <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Typed generative-UI blocks<small>Accounts, spending, projections — rendered natively, not as markdown.</small></div></li>
+        <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Your key, or fully local<small>OpenAI-compatible, Anthropic, or a local Ollama model. Nothing is required.</small></div></li>
+        <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Explain any number<small>Every figure traces back to the transactions that produced it.</small></div></li>
+      </ul>
+    </div>
+
+    <!-- copilot mock -->
+    <div class="copilot">
+      <div class="co-q">
+        <span class="co-av">You</span>
+        <div class="co-bub">Give me a quick overview — accounts, savings rate, and anything that stands out this month.</div>
+      </div>
+      <div class="co-plan">
+        <div class="hd">Financial snapshot · grounded</div>
+        <table class="co-tbl">
+          <tr><td>Avg monthly income</td><td>$5,200</td></tr>
+          <tr><td>Avg monthly expenses</td><td>$3,000</td></tr>
+          <tr><td>Monthly surplus</td><td class="pos">+$2,200</td></tr>
+          <tr><td>Savings rate</td><td class="pos">42%</td></tr>
+          <tr><td>Emergency fund</td><td>10.8 months</td></tr>
+        </table>
+      </div>
+      <div class="co-tag"><b>✦</b> Reasoned through your data · 4 tools · fully local</div>
+    </div>
+  </div>
+
+  <!-- feature grid -->
+  <div class="fgrid">
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></div>
+      <h4>Envelope budgets</h4>
+      <p>Rollover, category groups, budgeted-vs-spent history, and a guided seven-step Plan Next Month.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <h4>Safe-to-spend cash flow</h4>
+      <p>A daily projection from dated bills, subscriptions, and a smooth everyday burn — so today's number is honest.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18M6 20V10M11 20V4M16 20v-8"/></svg></div>
+      <h4>Goals & compounding</h4>
+      <p>Emergency funds, sinking funds, debt payoff — with a 10/20/30-year compound-growth projector.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6 4 4 6-8"/><path d="M4 21h16"/></svg></div>
+      <h4>Scenarios</h4>
+      <p>Save, compare, and promote what-ifs against a durable baseline. Exploration never touches your live plan.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 1 0-18 0"/><path d="M12 8v4M12 16h.01"/></svg></div>
+      <h4>Subscription radar</h4>
+      <p>Detects price hikes, trials about to convert, renewals, and duplicate charges before they surprise you.</p>
+    </div>
+    <div class="fcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><path d="M9.5 12a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0" stroke-dasharray="1 3"/><path d="M4 4l16 16"/></svg></div>
+      <h4>Privacy mode</h4>
+      <p>Blur every figure with one toggle — safe to open in a coffee shop, on a call, or over someone's shoulder.</p>
+    </div>
+    <div class="fcard wide">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4Z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <div>
+        <h4>Month-end close, imports, and honest math</h4>
+        <p>A guided month-end review, CSV import that self-seeds and auto-categorizes, and financial engines that live in one place so the app and the copilot always agree to the cent.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FRAMEWORK ============ -->
+<section class="frame">
+  <div class="sec wrap" id="framework">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="dot"></span> The Financial Freedom Framework</span>
+      <h2>Opinionated where it matters. Quiet everywhere else.</h2>
+      <p>The copilot is guided by principles drawn from six personal-finance books — surfaced as gentle nudges and real features, never gamified points or guilt.</p>
+    </div>
+    <div class="frame-list">
+      <div class="principle"><div class="n">01</div><div><h4>Pay yourself first</h4><p>A savings-rate floor of at least 10%, nudged the moment you dip below it.</p><div class="src">Babylon · Ramsey</div></div></div>
+      <div class="principle"><div class="n">02</div><div><h4>Emergency fund</h4><p>Three to six months of runway, tracked as a first-class goal.</p><div class="src">Ramsey · Sethi</div></div></div>
+      <div class="principle"><div class="n">03</div><div><h4>Debt snowball</h4><p>Smallest balance first, ordered for you and wired into payoff planning.</p><div class="src">Ramsey</div></div></div>
+      <div class="principle"><div class="n">04</div><div><h4>Conscious spending</h4><p>Needs, wants, savings, investment — an allocation you can actually see.</p><div class="src">Sethi</div></div></div>
+      <div class="principle"><div class="n">05</div><div><h4>Compound growth</h4><p>Long-horizon projections that make patience feel concrete.</p><div class="src">Hill · Kiyosaki</div></div></div>
+      <div class="principle"><div class="n">06</div><div><h4>Behaviour beats math</h4><p>The copilot surfaces the pattern worth changing, not just the raw number.</p><div class="src">Housel</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SELF-HOST ============ -->
+<section class="sec wrap" id="selfhost">
+  <div class="sec-head">
+    <span class="eyebrow"><span class="dot"></span> Self-hosting</span>
+    <h2>Yours in three commands.</h2>
+    <p>Run the server on any box you control — a spare laptop, a home server, a Raspberry Pi — and reach it privately over Tailscale or behind Caddy. First run walks you through setup.</p>
+  </div>
+  <div class="host-grid">
+    <div class="steps">
+      <div class="step"><div class="num">1</div><div><h4>Start the server</h4><p>A single Rust binary. Data lands in an encrypted directory you own.</p></div></div>
+      <div class="step"><div class="num">2</div><div><h4>Create your account</h4><p>Your database key is wrapped by your password and a one-time recovery key — the server never stores it in the clear.</p></div></div>
+      <div class="step"><div class="num">3</div><div><h4>Import & connect</h4><p>Drop in a CSV or link SimpleFIN, add your LLM key in Settings, and the copilot comes online — or skip it and stay fully offline.</p></div></div>
+    </div>
+    <div class="terminal">
+      <div class="term-bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="t">~/finsight — zsh</span></div>
+      <div class="term-body">
+<span class="cm"># run the self-hosted server (data dir is yours)</span><br>
+<span class="p">$</span> <span class="c">cargo run -p finsight-server</span><br>
+<span class="o">  INFO finsight-server listening on http://localhost:8674</span><br>
+<br>
+<span class="cm"># ...or with Docker, reachable over your tailnet</span><br>
+<span class="p">$</span> <span class="c">docker run -v ./data:/data -p 8674:8674 finsight</span><br>
+<span class="o">  ✓ first-run setup ready · open the URL to create your account</span><br>
+<br>
+<span class="cm"># it stays put — no telemetry, no outbound calls</span><br>
+<span class="p">$</span> <span class="c">curl localhost:8674/api/health</span><br>
+<span class="o">  {"status":"ok"}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRIVACY ============ -->
+<section class="frame">
+  <div class="sec wrap" id="privacy">
+    <div class="sec-head">
+      <span class="eyebrow"><span class="dot"></span> Local-first by construction</span>
+      <h2>Your data has nowhere to leak, because it never leaves.</h2>
+      <p>There is no FinSight cloud to breach. Each user gets their own SQLCipher database, wrapped by a key only your password (or recovery key) can open. Sessions live on the box you run.</p>
+    </div>
+    <div class="priv">
+      <div>
+        <ul class="mini-list" style="gap:16px">
+          <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Per-user SQLCipher encryption<small>One encrypted database each, keyed by Argon2id.</small></div></li>
+          <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Bring your own model — or none<small>Point the copilot at a local Ollama and disconnect from the internet entirely.</small></div></li>
+          <li><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></span><div>Encrypted offline cache<small>The installed PWA keeps a seven-day, AES-GCM-encrypted local cache.</small></div></li>
+        </ul>
+      </div>
+      <div class="diagram" aria-hidden="true">
+        <div class="node"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span><div><div class="nm">Your device</div><div class="ds">browser · installed PWA</div></div></div>
+        <div class="link"><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><span class="lab">encrypted · same network</span><span class="wire"></span></div></div>
+        <div class="node"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4Z"/><path d="M9 12l2 2 4-4"/></svg></span><div><div class="nm">Your server</div><div class="ds">SQLCipher · your keys · your box</div></div></div>
+        <div class="barred"><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></span><div class="tx"><b>Anyone's cloud.</b> No account servers, no analytics, no phone-home.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="cta wrap">
+  <span class="eyebrow" style="justify-content:center;display:flex"><span class="dot"></span> Open source · MIT-spirited</span>
+  <h2 style="margin-top:20px">Money software that stays on your side.</h2>
+  <p>Clone it, run it, and own your financial data end to end. No sign-up, no waitlist, no cloud.</p>
+  <div class="hero-cta" style="margin-top:32px">
+    <a class="btn btn-primary" href="https://github.com/Koushik0901/FinSight">Get FinSight on GitHub
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    <a class="btn btn-ghost" href="#selfhost">Read the self-host guide</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark" aria-hidden="true"></span> FinSight</a>
+    <div class="fl">
+      <a href="#features">Features</a>
+      <a href="#framework">Framework</a>
+      <a href="#selfhost">Self-host</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/Koushik0901/FinSight">GitHub</a>
+    </div>
+    <span class="muted">Self-hosted personal finance · your data, your machine.</span>
+  </div>
+</footer>
+
+<script>
+// Hero net-worth count-up — one quiet moment, respects reduced motion.
+// The final value is written up-front so the figure is correct even when rAF
+// is throttled (backgrounded/uncomposited tab); the 0→target reveal only kicks
+// in once the first frame actually fires.
+(function(){
+  var el=document.getElementById('nw'); if(!el) return;
+  var target=31054, fmt=function(n){return '$'+Math.round(n).toLocaleString('en-US')};
+  el.textContent=fmt(target);
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var start=null, dur=1600;
+  function ease(p){return 1-Math.pow(1-p,4);}
+  function step(t){ if(!start){start=t; el.textContent=fmt(0);} var p=Math.min((t-start)/dur,1);
+    el.textContent=fmt(target*ease(p)); if(p<1)requestAnimationFrame(step);}
+  requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
