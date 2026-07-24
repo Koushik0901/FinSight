@@ -1,5 +1,11 @@
 <!doctype html>
-<html lang="en">
+<!-- Dark-first defaults so design tokens (--surface-2, --line-2, --pad-*, all
+     defined only under [data-theme]/[data-density]) exist from the very first
+     paint. Without this, anything rendered before <App/> mounts its
+     ThemeProvider — the server-mode auth/setup screens (AuthGate renders them
+     instead of App) — had transparent, borderless inputs. ThemeProvider keeps
+     these in sync with the user's saved preference once the app mounts. -->
+<html lang="en" data-theme="dark" data-density="cozy">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />

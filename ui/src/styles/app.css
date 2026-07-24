@@ -1224,6 +1224,48 @@
 .s-row .label { font-size: 13.5px; color: var(--ink); font-weight: 500; line-height: 1.4; }
 .s-row .desc { font-size: 12.5px; color: var(--ink-mute); margin-top: 4px; max-width: 50ch; line-height: 1.5; }
 
+/* Settings shell is a query container so its two-pane layout responds to the
+   space it actually has, not the viewport — the available width depends on
+   whether the app sidebar is showing, so a viewport breakpoint mis-fires. */
+.screen-settings {
+  container-type: inline-size;
+}
+
+/* Settings two-pane shell: sticky section nav + content. */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 56px;
+}
+.settings-nav {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Below ~760px of settings width the 200px nav + a settings row's 260px label
+   column can't both fit, so it forces horizontal page scroll. Collapse to a
+   single column: section links become a wrapping strip, rows stack. */
+@container (max-width: 760px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .s-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
 
 /* ── Sidebar ──────────────────────────────────────────── */
 

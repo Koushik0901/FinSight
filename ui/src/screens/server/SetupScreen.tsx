@@ -1,21 +1,22 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import Button from "../../components/Button";
-import Input from "../../components/Input";
-import { RecoveryKeyReveal } from "../../components/RecoveryKeyReveal";
 import { setup } from "../../api/auth";
 import { userErrorMessage } from "../../utils/runtime";
+import { AuthShell, Field, Ico, PasswordStrength, RecoveryReveal } from "./authScene";
+
+const MIN_PASSWORD_LEN = 10;
 
 /**
- * Server-mode-only first-run setup wizard. Rendered by AuthGate when
+ * Server-mode-only first-run setup. Rendered by AuthGate when
  * `GET /api/auth/status` reports `needsSetup: true` (no users exist yet).
  * Two steps: create the admin account, then reveal the recovery key exactly
- * once (via RecoveryKeyReveal) before handing off to the app.
+ * once before handing off to the app. Presented in the shared {@link AuthShell}.
  */
 export default function SetupScreen({ onComplete }: { onComplete: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
@@ -23,16 +24,18 @@ export default function SetupScreen({ onComplete }: { onComplete: () => void }) 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
     if (!username.trim() || !password) {
       setError("Enter a username and password.");
+      return;
+    }
+    if (password.length < MIN_PASSWORD_LEN) {
+      setError(`Password must be at least ${MIN_PASSWORD_LEN} characters.`);
       return;
     }
     if (password !== confirmPassword) {
       setError("Passwords don't match.");
       return;
     }
-
     setSubmitting(true);
     try {
       const result = await setup(username.trim(), password);
@@ -53,58 +56,74 @@ export default function SetupScreen({ onComplete }: { onComplete: () => void }) 
 
   if (recoveryKey) {
     return (
-      <div className="screen server-auth-screen">
-        <RecoveryKeyReveal recoveryKey={recoveryKey} onContinue={onComplete} />
-      </div>
+      <AuthShell
+        eyebrow="Save your recovery key"
+        title={<>This is shown <em>once</em>.</>}
+        subtitle="If you ever forget your password, this recovery key is the only way back into your data. Store it somewhere safe — a password manager or a printed copy. FinSight never keeps a copy."
+      >
+        <RecoveryReveal recoveryKey={recoveryKey} onContinue={onComplete} />
+      </AuthShell>
     );
   }
 
   return (
-    <div className="screen server-auth-screen">
-      <form className="card server-auth-card" onSubmit={(e) => void handleSubmit(e)}>
-        <p className="eyebrow">Welcome to FinSight</p>
-        <h1 className="h1" style={{ fontSize: 26 }}>Create your account</h1>
-        <p className="muted" style={{ marginTop: 8 }}>
-          This is the first run on this server — create an admin account to secure your data.
-        </p>
-
-        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <Input
-            label="Username"
-            id="setup-username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            autoFocus
-          />
-          <Input
-            label="Password"
-            id="setup-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-          <Input
-            label="Confirm password"
-            id="setup-confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-        </div>
+    <AuthShell
+      eyebrow="Create your account"
+      title={<>Money, made <em>legible</em>.</>}
+      subtitle="This is the first run on this server. Create the admin account that secures your data — everything is encrypted at rest with a key only you hold."
+    >
+      <form onSubmit={(e) => void handleSubmit(e)} noValidate>
+        <Field
+          icon={Ico.user()}
+          id="setup-username"
+          label="Username"
+          value={username}
+          onChange={setUsername}
+          autoComplete="username"
+          required
+          autoFocus
+        />
+        <Field
+          icon={Ico.lock()}
+          id="setup-password"
+          label="Password"
+          type={showPw ? "text" : "password"}
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          required
+          trailing={
+            <button type="button" className="toggle-eye" onClick={() => setShowPw((s) => !s)} aria-label="Toggle visibility">
+              {showPw ? Ico.eyeoff() : Ico.eye()}
+            </button>
+          }
+        />
+        <PasswordStrength pw={password} open={password.length > 0} />
+        <Field
+          icon={Ico.lock()}
+          id="setup-confirm-password"
+          label="Confirm password"
+          type={showPw ? "text" : "password"}
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          autoComplete="new-password"
+          required
+        />
 
         {error && (
-          <p role="alert" className="err" style={{ marginTop: 12 }}>
-            {error}
-          </p>
+          <div className="auth-alert" role="alert">{Ico.warn()} {error}</div>
         )}
 
-        <Button type="submit" variant="primary" style={{ marginTop: 18, width: "100%" }} disabled={submitting}>
-          {submitting ? "Creating…" : "Create account"}
-        </Button>
+        <button className={"submit" + (submitting ? " busy" : "")} type="submit" disabled={submitting}>
+          {submitting
+            ? <><span className="spinner" /> Creating…</>
+            : <>Create account <span className="arw">{Ico.arrow()}</span></>}
+        </button>
+
+        <p className="legal">
+          A recovery key is shown next — it's the only way back in if you forget your password. FinSight uses local, encrypted storage and never moves your money.
+        </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }

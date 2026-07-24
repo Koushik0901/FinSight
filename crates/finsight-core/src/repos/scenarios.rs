@@ -29,7 +29,7 @@ pub fn build_baseline(conn: &mut Connection) -> CoreResult<Snapshot> {
                   (CAST(strftime('%Y','now') AS INTEGER) - CAST(strftime('%Y', MIN(posted_at)) AS INTEGER)) * 12\
                   + (CAST(strftime('%m','now') AS INTEGER) - CAST(strftime('%m', MIN(posted_at)) AS INTEGER)) + 1,\
                   1)\
-         FROM transactions\
+         FROM transactions \
          WHERE posted_at >= date('now','-12 months')",
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -261,5 +261,69 @@ mod tests {
         // The original is untouched.
         set_archived(&mut conn, &copy.id, false).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 2);
+    }
+
+    fn seed_account(conn: &mut Connection) -> String {
+        use crate::models::{AccountType, NewAccount};
+        crate::repos::accounts::insert(
+            conn,
+            NewAccount {
+                promo_apr_expires_on: None, post_promo_apr_pct: None,
+                owner: "Me".into(), bank: "Bank".into(), r#type: AccountType::Checking,
+                name: "Ch".into(), last4: None, currency: "USD".into(), color: "#fff".into(),
+                opening_balance_cents: 0, source: "manual".into(), liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true, goal_earmark: None, apy_pct: None,
+                simplefin_account_id: None, nickname: None, connection_id: None,
+                institution_id: None, external_account_id: None, official_name: None,
+                mask: None, subtype: None, account_group: "cash".into(),
+                available_balance_cents: None, balance_date: None, extra_json: None,
+                raw_json: None, import_pending: false, apr_pct: None, min_payment_cents: None,
+                payoff_date: None, limit_cents: None, original_balance_cents: None, started_at: None,
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    fn seed_txn(conn: &mut Connection, account_id: &str, amount_cents: i64, merchant: &str) {
+        use crate::models::{NewTransaction, TransactionStatus};
+        crate::repos::transactions::insert(
+            conn,
+            NewTransaction {
+                account_id: account_id.to_string(), posted_at: chrono::Utc::now(),
+                amount_cents, merchant_raw: merchant.into(), category_id: None, notes: None,
+                status: TransactionStatus::Cleared, imported_id: None, source: None,
+                raw_synced_data: None, pending: false, external_tx_id: None,
+                external_account_id: None, activity: None,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn build_baseline_runs_on_empty_db() {
+        // Regression: the multi-line SQL used `\` line-continuations, which strip
+        // the newline AND the next line's leading indentation — joining
+        // `transactions` and `WHERE` into `transactionsWHERE`, a syntax error that
+        // 500'd every scenario command (save/run/promote/list) at runtime and was
+        // invisible in the mock harness. Guard that the query is valid SQL.
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let base = build_baseline(&mut conn).unwrap();
+        assert_eq!(base.avg_monthly_income_cents, 0);
+        assert_eq!(base.avg_monthly_expense_cents, 0);
+    }
+
+    #[test]
+    fn build_baseline_averages_income_and_expense() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let acct = seed_account(&mut conn);
+        seed_txn(&mut conn, &acct, 500_000, "PAYROLL"); // income (+)
+        seed_txn(&mut conn, &acct, -120_000, "RENT"); // expense (−)
+        let base = build_baseline(&mut conn).unwrap();
+        // Both dated today → the elapsed span clamps to 1 month, so avg == sum.
+        assert_eq!(base.avg_monthly_income_cents, 500_000);
+        assert_eq!(base.avg_monthly_expense_cents, 120_000);
     }
 }
