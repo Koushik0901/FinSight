@@ -107,3 +107,13 @@ Cash flow · Reports · Categories · Goals · Scenarios · Path back · Copilot
 Done: Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports (all Verified; findings queued).
 Remaining: Categories, Goals, Scenarios, Path back, Copilot, Rules & agents, Settings.
 Open findings: Recurring transfer-verdict real-flow repro; Today/Inbox "nothing needs attention" wording; net-worth Today-vs-Reports $150 gap; budget-set CRUD; #58 price-change seed extension; responsive/privacy batch.
+
+### Categories — `/categories` — Verified
+- THIS MONTH $3,305 with per-category vs-June deltas (Groceries $822 vs $362 = anomaly visible), spending-type tags (Fixed/Investments/Savings/Guilt-free — conscious-spending model), Manage + New category, This-month/vs-average/Year toggles. Empty categories (Gifts/Travel $0) handled. PACE 0% (no budget set — consistent with Budget).
+
+### Net-worth Today-vs-Reports candidate — RESOLVED (not a bug)
+- Empirically: net worth now = **$31,054** per BOTH the metrics layer AND the accounts sum (they agree). Reloaded Today → also $31,054. The earlier $30,904 was a stale reading taken before an intervening balance change. No source inconsistency. (Verified before filing — advisor discipline.)
+
+## QA progress: 8/14 screens verified
+Done: Today, Inbox, Accounts, Budget, Recurring, Cash flow, Reports, Categories.
+Remaining: Goals, Scenarios, Path back, Copilot, Rules & agents, Settings.
