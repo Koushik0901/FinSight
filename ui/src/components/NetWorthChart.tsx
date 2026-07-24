@@ -74,7 +74,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
       {!embed && (
         <div className="bigchart-head">
           <div>
-            <div className="h3">Net worth · last {rangeLabel}</div>
+            <h3 className="h3">Net worth · last {rangeLabel}</h3>
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
           </div>
           {controls}

@@ -154,7 +154,7 @@ export default function StepAgent({ onDone }: Props) {
         <div className="onb-right">
           <Card className="stack stack-md">
             <div className="eyebrow"><span className="dot" />What happens next</div>
-            <div className="h3">FinSight will:</div>
+            <h3 className="h3">FinSight will:</h3>
             <div className="stack stack-xs muted" style={{ fontSize: 13.5 }}>
               <div>• Categorize transactions automatically</div>
               <div>• Mark low-confidence items for quick review</div>

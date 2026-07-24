@@ -117,7 +117,7 @@ export default function SplitModal({ open, onClose, transactionId, totalCents, e
             style={{ width: 90, background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 6, padding: "6px 8px", fontSize: 14, color: "var(--ink)" }}
           />
           {rows.length > 2 && (
-            <button type="button" onClick={() => removeRow(row.id)} style={{ color: "var(--ink-faint)", fontSize: 18, lineHeight: 1, padding: "4px 6px", background: "none", border: "none", cursor: "pointer" }}>×</button>
+            <button type="button" onClick={() => removeRow(row.id)} aria-label="Remove split row" style={{ color: "var(--ink-faint)", fontSize: 18, lineHeight: 1, padding: "4px 6px", background: "none", border: "none", cursor: "pointer" }}>×</button>
           )}
         </div>
       ))}

@@ -288,12 +288,21 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                   return (
                     <div
                       key={s.categoryId}
+                      role="button"
+                      aria-label={on ? `Raise ${s.label} to ${fmt(s.suggestedCents)} — accepted` : `Accept: raise ${s.label} to ${fmt(s.suggestedCents)}`}
+                      tabIndex={0}
                       onClick={() => acceptAdjustment(s)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          acceptAdjustment(s);
+                        }
+                      }}
                       style={{ padding: 14, background: on ? "var(--accent-2)" : "var(--surface-2)", border: `1px solid ${on ? "var(--accent-3)" : "var(--line)"}`, borderRadius: 8, cursor: "pointer" }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{ fontSize: 14, fontWeight: 500 }}>Raise {s.label} to {fmt(s.suggestedCents)}</span>
-                        <span className={`tog ${on ? "on" : ""}`} />
+                        <span className={`tog ${on ? "on" : ""}`} aria-hidden="true" />
                       </div>
                       <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>Over budget {s.monthsOver} of the last 3 months.</div>
                     </div>
@@ -309,6 +318,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
             <div className="num-step">Step 7 of 7 · Review</div>
             <h1>Review &amp; apply.</h1>
             <p className="lead">Confirm the amounts below before applying next month's plan.</p>
+            <div className="tbl-scroll">
             <table className="tbl" style={{ width: "100%" }}>
               <tbody>
                 <tr><td>Fixed costs</td><td className="right" style={{ fontFamily: "var(--mono)" }}><span className="money">{fmt(fixedTotal)}</span></td></tr>
@@ -317,6 +327,7 @@ export default function PlanNextMonthModal({ onClose }: Props) {
                 <tr><td>Goals</td><td className="right" style={{ fontFamily: "var(--mono)" }}><span className="money">{fmt(goalTotal)}</span></td></tr>
               </tbody>
             </table>
+            </div>
           </div>
         );
       default:

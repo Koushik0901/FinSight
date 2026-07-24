@@ -167,7 +167,7 @@ export default function Reports() {
           <div className="bigchart-head">
             <div>
               <div className="eyebrow">Monthly overview</div>
-              <div className="h3" style={{ marginTop: 6 }}>Income and expenses over time</div>
+              <h3 className="h3" style={{ marginTop: 6 }}>Income and expenses over time</h3>
               {yoyDeltaPct !== null && (
                 <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
                   {money(totalExpense)} spent this period · {yoyDeltaPct >= 0 ? "up" : "down"} {Math.abs(yoyDeltaPct)}% vs the same months last year ({money(totalExpenseLastYear)})
@@ -206,7 +206,7 @@ export default function Reports() {
           <div className="bigchart-head">
             <div>
               <div className="eyebrow">Spending deep dive</div>
-              <div className="h3" style={{ marginTop: 6 }}>Where it concentrates, this period</div>
+              <h3 className="h3" style={{ marginTop: 6 }}>Where it concentrates, this period</h3>
             </div>
           </div>
           <div style={{ padding: "0 22px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -227,7 +227,8 @@ export default function Reports() {
 
       <div className="section" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         <div className="card flush">
-          <div className="card-head"><div className="h3">Top categories</div></div>
+          <div className="card-head"><h3 className="h3">Top categories</h3></div>
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead><tr><th>Category</th><th className="right">Amount</th><th className="right">Txns</th></tr></thead>
             <tbody>
@@ -236,10 +237,12 @@ export default function Reports() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div className="card flush">
-          <div className="card-head"><div className="h3">Top merchants</div></div>
+          <div className="card-head"><h3 className="h3">Top merchants</h3></div>
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead><tr><th>Merchant</th><th>Category</th><th className="right">Amount</th><th className="right">Txns</th></tr></thead>
             <tbody>
@@ -253,6 +256,7 @@ export default function Reports() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

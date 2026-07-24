@@ -223,7 +223,7 @@
 .fs-auth .field .valid-check {
   color: var(--positive);
   opacity: 0; transform: scale(0.6);
-  transition: opacity .2s, transform .3s cubic-bezier(.2, 1.6, .4, 1);
+  transition: opacity .2s, transform .3s var(--ease-out-soft);
 }
 .fs-auth .field.valid .valid-check { opacity: 1; transform: scale(1); }
 

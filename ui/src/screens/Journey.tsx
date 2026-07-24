@@ -64,7 +64,7 @@ export default function Journey() {
 
       {stageOne?.status === "current" && stageOne.progressPct < 50 && (
         <Card tone="accent" className="stack stack-md" style={{ marginBottom: 20 }}>
-          <div className="h3">Start by linking your first account</div>
+          <h3 className="h3">Start by linking your first account</h3>
           <p className="muted" style={{ fontSize: 13.5 }}>
             Stage 1 begins once you connect at least one account and import enough transactions to see your real cash flow.
           </p>
@@ -124,7 +124,7 @@ export default function Journey() {
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                   <div className="stack stack-xs">
                     <div className="eyebrow">Stage {milestone.stage}</div>
-                    <div className="h3" style={{ marginTop: 6, fontSize: 16 }}>{milestone.name}</div>
+                    <h3 className="h3" style={{ marginTop: 6, fontSize: 16 }}>{milestone.name}</h3>
                     <p className="muted" style={{ fontSize: 13.5, marginTop: 8, lineHeight: 1.55 }}>
                       {milestone.description}
                     </p>

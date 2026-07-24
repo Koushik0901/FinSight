@@ -1,9 +1,17 @@
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { ResponsiveBar } from "@nivo/bar";
-import { ResponsiveLine } from "@nivo/line";
+import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import type { AgentAnswer, AgentResponseBlock } from "../api/client";
+
+const chartTooltipStyle = {
+  background: "var(--elevated)",
+  border: "1px solid var(--line)",
+  borderRadius: 8,
+  color: "var(--ink)",
+  fontSize: 12,
+};
+const chartAxisTick = { fill: "var(--ink-mute)", fontSize: 11 };
 
 type Props = {
   answer: Pick<AgentAnswer, "prose" | "responseBlocks">;
@@ -72,54 +80,33 @@ function ChartBlock({ block }: { block: Extract<AgentResponseBlock, { kind: "bar
     <div className="agent-rich-block stack stack-sm">
       {block.title && <p className="eyebrow">{block.title}</p>}
       <div className="agent-rich-chart" role="img" aria-label={block.title ?? "Agent response chart"}>
-        {block.kind === "barChart" ? (
-          <ResponsiveBar
-            data={safeData.map((point) => ({ label: point.label, [seriesLabel]: point.value }))}
-            keys={[seriesLabel]}
-            indexBy="label"
-            margin={{ top: 16, right: 16, bottom: 48, left: 54 }}
-            padding={0.32}
-            valueScale={{ type: "linear" }}
-            colors={["var(--accent)"]}
-            borderRadius={6}
-            enableLabel={false}
-            axisTop={null}
-            axisRight={null}
-            theme={{
-              text: { fill: "var(--ink-mute)", fontSize: 11 },
-              grid: { line: { stroke: "var(--line)" } },
-              axis: {
-                ticks: { line: { stroke: "var(--line)" }, text: { fill: "var(--ink-mute)" } },
-                legend: { text: { fill: "var(--ink-mute)" } },
-              },
-              tooltip: { container: { background: "var(--elevated)", color: "var(--ink)" } },
-            }}
-          />
-        ) : (
-          <ResponsiveLine
-            data={[{ id: seriesLabel, data: safeData.map((point) => ({ x: point.label, y: point.value })) }]}
-            margin={{ top: 16, right: 20, bottom: 48, left: 54 }}
-            xScale={{ type: "point" }}
-            yScale={{ type: "linear", min: "auto", max: "auto", stacked: false, reverse: false }}
-            curve="monotoneX"
-            colors={["var(--accent)"]}
-            pointSize={7}
-            pointBorderWidth={2}
-            pointBorderColor="var(--surface)"
-            useMesh
-            axisTop={null}
-            axisRight={null}
-            theme={{
-              text: { fill: "var(--ink-mute)", fontSize: 11 },
-              grid: { line: { stroke: "var(--line)" } },
-              axis: {
-                ticks: { line: { stroke: "var(--line)" }, text: { fill: "var(--ink-mute)" } },
-                legend: { text: { fill: "var(--ink-mute)" } },
-              },
-              tooltip: { container: { background: "var(--elevated)", color: "var(--ink)" } },
-            }}
-          />
-        )}
+        <ResponsiveContainer width="100%" height="100%">
+          {block.kind === "barChart" ? (
+            <BarChart data={safeData} margin={{ top: 16, right: 16, bottom: 8, left: 8 }}>
+              <CartesianGrid vertical={false} stroke="var(--line)" />
+              <XAxis dataKey="label" tick={chartAxisTick} axisLine={{ stroke: "var(--line)" }} tickLine={false} />
+              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={48} />
+              <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={chartTooltipStyle} labelStyle={{ color: "var(--ink-mute)" }} />
+              <Bar dataKey="value" name={seriesLabel} fill="var(--accent)" radius={[6, 6, 0, 0]} maxBarSize={40} />
+            </BarChart>
+          ) : (
+            <LineChart data={safeData} margin={{ top: 16, right: 20, bottom: 8, left: 8 }}>
+              <CartesianGrid vertical={false} stroke="var(--line)" />
+              <XAxis dataKey="label" tick={chartAxisTick} axisLine={{ stroke: "var(--line)" }} tickLine={false} />
+              <YAxis tick={chartAxisTick} axisLine={false} tickLine={false} width={48} />
+              <Tooltip contentStyle={chartTooltipStyle} labelStyle={{ color: "var(--ink-mute)" }} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                name={seriesLabel}
+                stroke="var(--accent)"
+                strokeWidth={2}
+                dot={{ r: 4, fill: "var(--accent)", strokeWidth: 0 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          )}
+        </ResponsiveContainer>
       </div>
     </div>
   );

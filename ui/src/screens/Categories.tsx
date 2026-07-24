@@ -290,10 +290,11 @@ export default function Categories() {
         <div className="card flush">
           <div className="card-head">
             <div>
-              <div className="h3">All categories</div>
+              <h3 className="h3">All categories</h3>
               <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>“Spending type” tags each category for the conscious-spending breakdown (Fixed, Investments, Savings, Guilt-free). Use “Manage” to rename, add categorizer guidance, or archive.</div>
             </div>
           </div>
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -401,6 +402,7 @@ export default function Categories() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </section>
     </div>

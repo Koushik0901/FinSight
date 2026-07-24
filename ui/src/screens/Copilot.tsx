@@ -494,7 +494,11 @@ function stabilizeStreamingMarkdown(text: string): string {
 function CopilotMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const markdown = streaming ? stabilizeStreamingMarkdown(text) : text;
   return (
-    <div className="agent-rich-markdown copilot-answer-md">
+    <div
+      className="agent-rich-markdown copilot-answer-md"
+      role="status"
+      aria-live={streaming ? "off" : "polite"}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}

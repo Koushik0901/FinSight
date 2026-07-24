@@ -206,7 +206,7 @@ export function CommandPalette({ open, onClose }: Props) {
                 ← Back
               </button>
             </div>
-            <div className="cmdk-answer-body">
+            <div className="cmdk-answer-body" role="status" aria-live="polite">
               {askAgent.isPending && !answer ? (
                 <div className="cmdk-thinking">
                   <span className="spinner" aria-hidden="true" />

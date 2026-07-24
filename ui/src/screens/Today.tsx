@@ -95,7 +95,7 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
   return (
     <div className="card accent" style={{ height: "100%" }}>
       <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Smart sweep</div>
-      <div className="h3" style={{ marginBottom: 10 }}>You have {money(netCents)} unallocated this month.</div>
+      <h3 className="h3" style={{ marginBottom: 10 }}>You have {money(netCents)} unallocated this month.</h3>
       <p className="muted" style={{ marginTop: 0, lineHeight: 1.6 }}>
         Put surplus cash to work before it disappears into drift. FinSight can park it in your next goal or let you choose where it goes.
       </p>
@@ -122,7 +122,7 @@ function HealthScoreCard({ score, savingsPoints, onExplain }: { score: ReturnTyp
           </div>
           <div className="stack stack-xs">
             <div className="eyebrow">Financial health</div>
-            <div className="h3">Your scorecard this month</div>
+            <h3 className="h3">Your scorecard this month</h3>
             {/* Savings rate here IS the rolling-90-day metric the explanation
                 reads, so its ⓘ is consistent. Emergency-fund months on this card
                 comes from the health-score context (rolling expense), NOT the
@@ -294,7 +294,7 @@ export default function Today() {
       <section className="section today-split">
         <div className="card">
           <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Morning briefing · 60 seconds</div>
-          <div className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</div>
+          <h3 className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</h3>
           <p className="muted" style={{ marginTop: 0, lineHeight: 1.65, fontSize: 14 }}>{briefingText}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
             <button className="btn sm" type="button" onClick={() => navigate("/inbox")}>See what needs attention</button>
@@ -305,14 +305,14 @@ export default function Today() {
         {celebrateMilestones.length > 0 ? (
           <div className="card accent">
             <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Milestone unlocked</div>
-            <div className="h3" style={{ marginBottom: 10 }}>Net worth crossed {milestoneLabel(celebrateMilestones[0]!, primaryCurrency)}</div>
+            <h3 className="h3" style={{ marginBottom: 10 }}>Net worth crossed {milestoneLabel(celebrateMilestones[0]!, primaryCurrency)}</h3>
             <p className="muted" style={{ lineHeight: 1.6 }}>Quiet compounding is working. Take a moment, then decide where the next increment should go.</p>
             <button className="btn ghost sm" type="button" onClick={() => setDismissedMilestones((prev) => [...prev, celebrateMilestones[0]!])}>Dismiss</button>
           </div>
         ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} onExplain={setExplainKey} />}
       </section>
 
-      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month-end close</div><div className="h3">Close out {prevMonthLabel} — verify the data and record its snapshot.</div></div><button className="btn primary" type="button" onClick={() => navigate("/close")}>Start close</button></div></div></section>}
+      {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month-end close</div><h3 className="h3">Close out {prevMonthLabel} — verify the data and record its snapshot.</h3></div><button className="btn primary" type="button" onClick={() => navigate("/close")}>Start close</button></div></div></section>}
 
       {activeCats.length > 0 && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 16, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 14 }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Spent this month</div><div className="figure money" style={{ fontSize: 44, lineHeight: 1 }}>{money(totalSpendRaw)}</div></div><button className="btn sm" type="button" onClick={() => navigate("/categories")}>Open categories →</button></div><div className="stream" style={{ height: 16, marginBottom: 18 }}>{activeCats.map((c) => <span key={c.id} title={`${c.label}: ${money(c.thisMonthCents)}`} style={{ width: `${(c.thisMonthCents / totalSpend) * 100}%`, background: c.color || "var(--ink-faint)" }} />)}</div><div className="today-cat-grid">{activeCats.slice(0, 5).map((c) => { const delta = c.thisMonthCents - c.lastMonthCents; const deltaLabel = c.lastMonthCents > 0 ? `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} vs last month` : "New activity this month"; return <div key={c.id} className="card tight" style={{ padding: 16, minWidth: 0 }}><div className="row row-sm" style={{ marginBottom: 8 }}><span className="cswatch" style={{ background: c.color || "var(--ink-faint)" }} /><span className="strong" style={{ fontSize: 13.5 }}>{c.label}</span></div><div className="figure money" style={{ fontSize: 20 }}>{money(c.thisMonthCents)}</div><div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{deltaLabel}</div></div>; })}</div></div></section>}
 

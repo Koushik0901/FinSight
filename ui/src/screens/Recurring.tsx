@@ -226,6 +226,7 @@ export default function Recurring() {
 
       <section className="section">
         <div className="card flush">
+          <div className="tbl-scroll">
           <table className="tbl">
             <thead>
               <tr>
@@ -257,6 +258,7 @@ export default function Recurring() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </section>
 

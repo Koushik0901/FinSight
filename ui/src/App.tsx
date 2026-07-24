@@ -14,7 +14,6 @@ import { Toaster, toast } from "sonner";
 import { markRouteStart, markRouteContent, perf } from "./utils/perf";
 import { Sidebar } from "./components/Sidebar";
 import { BottomNav } from "./components/BottomNav";
-import { CommandPalette } from "./components/CommandPalette";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { useTweaks } from "./state/tweaks";
 import { useOnboardingState } from "./api/hooks/onboarding";
@@ -51,6 +50,12 @@ const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
 // DEV-only: gallery of the Copilot generative-UI blocks (never routed in prod builds).
 const GenUiPreview = lazy(() => import("./dev/GenUiPreview"));
+// Pulls in @nivo/bar, @nivo/line, and react-markdown via AgentResponseRenderer —
+// code-split so those land only when the palette is actually opened, not in
+// the entry bundle.
+const CommandPalette = lazy(() =>
+  import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette }))
+);
 import Onboarding from "./screens/Onboarding";
 
 function recoverRoute() {
@@ -203,6 +208,9 @@ export function App() {
   const { data: onboarding } = useOnboardingState();
   useOnboardingRedirect(onboarding);
   const [cmdOpen, setCmdOpen] = useState(false);
+  // Latches true on first open so the CommandPalette chunk (and its nivo/
+  // react-markdown deps) is only ever fetched once the user actually wants it.
+  const [hasOpenedCmd, setHasOpenedCmd] = useState(false);
   const { privacy, setPrivacy } = useTweaks();
   const isOnboarding = location.pathname === "/onboarding";
 
@@ -224,6 +232,7 @@ export function App() {
       if (meta && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCmdOpen((o) => !o);
+        setHasOpenedCmd(true);
       }
       if (meta && e.key === ".") {
         e.preventDefault();
@@ -273,7 +282,12 @@ export function App() {
         </RouteErrorBoundary>
       ) : (
         <div className="app">
-          <Sidebar onOpenCmd={() => setCmdOpen(true)} />
+          <Sidebar
+            onOpenCmd={() => {
+              setCmdOpen(true);
+              setHasOpenedCmd(true);
+            }}
+          />
           <main id="main" className="main" tabIndex={-1}>
             <div className="main-inner">
               <UnfinishedImportBanner />
@@ -332,7 +346,11 @@ export function App() {
         </button>
       )}
 
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+      {hasOpenedCmd && (
+        <Suspense fallback={null}>
+          <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+        </Suspense>
+      )}
       <Toaster richColors position="bottom-right" />
     </ThemeProvider>
   );

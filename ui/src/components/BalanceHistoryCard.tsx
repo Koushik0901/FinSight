@@ -73,7 +73,7 @@ export default function BalanceHistoryCard({ account }: { account: AccountSummar
     <div className="card" style={{ marginTop: 14, padding: 16 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
         <div>
-          <div className="h3">Balance history</div>
+          <h3 className="h3">Balance history</h3>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             Rebuilt from this account&rsquo;s transactions, so it finds the real high point &mdash; not
             just the highest day that happened to get recorded.

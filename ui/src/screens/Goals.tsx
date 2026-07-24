@@ -521,7 +521,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div className="h3">New goal</div>
+      <h3 className="h3">New goal</h3>
       <div className="form-grid" style={{ marginTop: 18 }}>
         <label className="stack stack-xs"><span className="muted">Name</span><input className="control" value={name} onChange={(e) => setName(e.target.value)} placeholder="Italy fund" /></label>
         <label className="stack stack-xs"><span className="muted">Type</span><select className="control" value={goalType} onChange={(e) => setGoalType(e.target.value as GoalFilter)}>{Object.entries(TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

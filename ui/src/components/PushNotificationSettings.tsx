@@ -148,7 +148,12 @@ export default function PushNotificationSettings() {
           aria-disabled={busy || blocked}
           tabIndex={0}
           onClick={() => !blocked && void toggle(!subscribed)}
-          onKeyDown={(e) => e.key === "Enter" && !blocked && void toggle(!subscribed)}
+          onKeyDown={(e) => {
+            if ((e.key === "Enter" || e.key === " ") && !blocked) {
+              e.preventDefault();
+              void toggle(!subscribed);
+            }
+          }}
         />
       </div>
 

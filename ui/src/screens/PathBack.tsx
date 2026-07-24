@@ -208,7 +208,7 @@ export default function PathBack() {
         <Card
           header={
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <div className="h3">Your levers · trim these</div>
+              <h3 className="h3">Your levers · trim these</h3>
               <span className="num money" style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>
                 ~{money(plan.recoverable_recurring_cents)}
               </span>
@@ -236,7 +236,7 @@ export default function PathBack() {
           tone="muted"
           header={
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <div className="h3">Self-correcting · leave them</div>
+              <h3 className="h3">Self-correcting · leave them</h3>
               <span className="num money" style={{ fontSize: 14, color: "var(--ink-mute)", fontWeight: 600 }}>
                 ~{money(plan.self_correcting_cents)}
               </span>

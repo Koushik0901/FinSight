@@ -146,6 +146,7 @@ export default function UsersAdmin() {
         )}
 
         {!loading && !loadError && (
+          <div className="tbl-scroll">
           <table className="tbl" style={{ marginTop: 16 }}>
             <thead>
               <tr>
@@ -185,6 +186,7 @@ export default function UsersAdmin() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

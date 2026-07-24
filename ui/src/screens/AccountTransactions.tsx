@@ -53,8 +53,10 @@ function avatarText(name: string) {
   return name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "TX";
 }
 
+const txnDateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return txnDateFormat.format(new Date(iso));
 }
 
 /** Filter presets that may arrive via the `?filter=` query param (Financial
@@ -296,8 +298,21 @@ export default function AccountTransactions() {
                   const merchantName = transaction.merchant_label ?? prettyMerchant(transaction.merchant_raw);
                   const avatarBg = transaction.merchant_color || avatarColor(merchantName);
                   const txnAccount = account ?? accountById[transaction.account_id];
+                  const openEditor = () => setEditTxnId(transaction.id);
                   return (
-                    <tr key={transaction.id} onClick={() => setEditTxnId(transaction.id)} style={{ cursor: "pointer" }}>
+                    <tr
+                      key={transaction.id}
+                      onClick={openEditor}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openEditor();
+                        }
+                      }}
+                      tabIndex={0}
+                      aria-label={`Edit transaction: ${merchantName}, ${money(transaction.amount_cents, { currency: txnAccount?.currency || "USD", decimals: 2 })}`}
+                      style={{ cursor: "pointer" }}
+                    >
                       <td style={{ width: 76 }}><span className="mono faint">{formatDate(transaction.posted_at)}</span></td>
                       <td>
                         <div className="row row-sm" style={{ alignItems: "center" }}>
