@@ -22,6 +22,9 @@ const TABLES_TO_WIPE: &[&str] = &[
     "budgets",
     "categories",
     "categorizations",
+    // Per-category exemplars (V062). `categories` is wiped, so these must be
+    // too — foreign keys are disabled for the wipe, so CASCADE won't do it.
+    "category_examples",
     "category_groups",
     "conversation_messages",
     "conversations",
