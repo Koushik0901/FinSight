@@ -23,6 +23,13 @@ const TABLES_TO_WIPE: &[&str] = &[
     "categories",
     "categorizations",
     "category_groups",
+    // V061's `ON DELETE CASCADE` from transactions does NOT save us here:
+    // `delete_all_data` disables `PRAGMA foreign_keys` for the wipe, so the
+    // cascade never fires. Left out, proposals survive as orphans and the
+    // pending-count badge (inbox::get_action_items /
+    // agent::get_needs_review_count, neither of which joins transactions)
+    // sticks forever on a freshly-wiped ledger.
+    "category_proposals",
     "conversation_messages",
     "conversations",
     "csv_import_mappings",
@@ -264,6 +271,65 @@ mod tests {
         assert!(recurring::detect_recurring(&conn, 400).unwrap().iter().any(|i| i.merchant_key.contains("spotify")));
         assert!(anomaly::recompute_anomalies(&mut conn).unwrap() >= 1);
         assert!(super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+    }
+
+    /// Regression (review finding 2): a full reset must leave zero category
+    /// proposals. `delete_all_data` turns `PRAGMA foreign_keys` OFF for the
+    /// wipe, so V061's `ON DELETE CASCADE` from `transactions` never fires —
+    /// the table has to be wiped explicitly. Orphaned proposals are not
+    /// cosmetic: `inbox::get_action_items` and `agent::get_needs_review_count`
+    /// both count `status='pending'` with no join against `transactions`, so
+    /// the badge would persist forever on a wiped ledger, and accept/correct
+    /// on the orphan errors with `QueryReturnedNoRows`.
+    #[test]
+    fn wipes_category_proposals_leaving_no_orphan_review_queue() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')", []).unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
+             VALUES('t1','a1','2024-01-01T00:00:00Z',-1000,'AMAZON','cat1','cleared',0,'2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        super::super::category_proposals::upsert(
+            &mut conn,
+            crate::models::NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.4,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::category_proposals::count(&mut conn, "pending").unwrap(),
+            1
+        );
+
+        delete_all_data(&mut conn).unwrap();
+
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_proposals", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 0, "no proposal may survive a full reset");
+        assert_eq!(
+            super::super::category_proposals::count(&mut conn, "pending").unwrap(),
+            0,
+            "the needs-review badge must read zero on a wiped ledger"
+        );
     }
 
     #[test]

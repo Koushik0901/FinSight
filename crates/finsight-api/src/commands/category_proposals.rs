@@ -18,6 +18,7 @@ use crate::ApiState;
 use finsight_core::models::{CategoryProposal, TxnPatch};
 use finsight_core::repos::{category_proposals, run, transactions};
 use finsight_core::CoreError;
+use rusqlite::OptionalExtension;
 
 /// The current review queue — proposals still awaiting a human decision.
 pub async fn list_category_proposals(state: &ApiState) -> AppResult<Vec<CategoryProposal>> {
@@ -42,6 +43,35 @@ fn pending_or_error(
     Ok(proposal)
 }
 
+/// The category being written must still exist AND be active. The FK on
+/// `transactions.category_id` only catches ids that do not exist — an
+/// ARCHIVED category still has a row, so the FK happily accepts it. A
+/// proposal can easily outlive its target: the LLM proposes category X, the
+/// user archives X while consolidating their category list, then clicks
+/// Accept. Without this check that money silently drops out of every
+/// active-category view. Mirrors the precedent in
+/// `finsight_agent::executor`'s `recategorize_bulk` arm, which runs this
+/// exact query before applying an assignment.
+fn active_category_or_error(
+    conn: &mut rusqlite::Connection,
+    category_id: &str,
+) -> Result<(), CoreError> {
+    let active: bool = conn
+        .query_row(
+            "SELECT 1 FROM categories WHERE id = ?1 AND archived_at IS NULL",
+            [category_id],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if !active {
+        return Err(CoreError::InvalidState(format!(
+            "category `{category_id}` no longer exists or has been archived"
+        )));
+    }
+    Ok(())
+}
+
 /// The user agrees with the proposed category. Writes it as if the user had
 /// typed it into the transaction-edit drawer — the write is a `source='user'`
 /// categorization from this point on, not an unreviewed AI guess.
@@ -49,6 +79,7 @@ pub async fn accept_category_proposal(state: &ApiState, id: String) -> AppResult
     let db = (*state.db).clone();
     run(&db, move |conn| {
         let proposal = pending_or_error(conn, &id)?;
+        active_category_or_error(conn, &proposal.proposed_category_id)?;
         let (transaction, rule) = transactions::update(
             conn,
             &proposal.txn_id,
@@ -79,6 +110,7 @@ pub async fn correct_category_proposal(
     let db = (*state.db).clone();
     run(&db, move |conn| {
         let proposal = pending_or_error(conn, &id)?;
+        active_category_or_error(conn, &category_id)?;
         let (transaction, rule) = transactions::update(
             conn,
             &proposal.txn_id,
@@ -357,6 +389,113 @@ mod tests {
         reject_category_proposal(&state, proposal_id.clone()).await.unwrap();
         let second = accept_category_proposal(&state, proposal_id).await;
         assert!(second.is_err(), "accepting an already-rejected proposal must error, not silently reapply");
+    }
+
+    /// Regression (review finding 3): a proposal can outlive its target
+    /// category. The FK on `transactions.category_id` only rejects ids that do
+    /// not EXIST — an archived category still has a row, so nothing else stops
+    /// accept/correct from writing it. The harm is silent: the transaction
+    /// keeps a category that every active-category view filters out, so the
+    /// money simply vanishes from budgets and reports.
+    #[tokio::test]
+    async fn accept_onto_an_archived_category_errors_and_leaves_canonical_untouched() {
+        let (_dir, state) = fresh_state();
+        let proposal_id = {
+            let mut conn = state.db.get().unwrap();
+            seed_base(&mut conn);
+            seed_txn(&mut conn, "t1", "BEANS CAFE");
+            let p = category_proposals::upsert(
+                &mut conn,
+                NewCategoryProposal {
+                    txn_id: "t1".to_string(),
+                    proposed_category_id: "cat1".to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.4,
+                    rationale: None,
+                    candidates_json: None,
+                    status: "pending".to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+            // The user consolidates their category list AFTER the proposal
+            // was made.
+            conn.execute(
+                "UPDATE categories SET archived_at = '2024-02-01T00:00:00Z' WHERE id = 'cat1'",
+                [],
+            )
+            .unwrap();
+            p.id
+        };
+
+        let result = accept_category_proposal(&state, proposal_id.clone()).await;
+        assert!(result.is_err(), "accept must refuse an archived category");
+
+        let mut conn = state.db.get().unwrap();
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat, None, "no archived category may be written to canonical");
+        // The proposal is still actionable — the user can correct it to a live
+        // category instead of being stuck with an un-resolvable queue item.
+        let still = category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap();
+        assert_eq!(still.status, "pending");
+    }
+
+    #[tokio::test]
+    async fn correct_onto_an_archived_category_errors_and_leaves_canonical_untouched() {
+        let (_dir, state) = fresh_state();
+        let proposal_id = {
+            let mut conn = state.db.get().unwrap();
+            seed_base(&mut conn);
+            seed_txn(&mut conn, "t1", "BEANS CAFE");
+            let p = category_proposals::upsert(
+                &mut conn,
+                NewCategoryProposal {
+                    txn_id: "t1".to_string(),
+                    proposed_category_id: "cat1".to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.4,
+                    rationale: None,
+                    candidates_json: None,
+                    status: "pending".to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE categories SET archived_at = '2024-02-01T00:00:00Z' WHERE id = 'cat2'",
+                [],
+            )
+            .unwrap();
+            p.id
+        };
+
+        // User picks cat2 — which they archived.
+        let result =
+            correct_category_proposal(&state, proposal_id.clone(), "cat2".to_string()).await;
+        assert!(result.is_err(), "correct must refuse an archived category");
+
+        let mut conn = state.db.get().unwrap();
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat, None, "no archived category may be written to canonical");
+        assert_eq!(
+            category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap().status,
+            "pending"
+        );
+
+        // Correcting to a still-active category works normally.
+        correct_category_proposal(&state, proposal_id.clone(), "cat1".to_string())
+            .await
+            .expect("an active category is still accepted");
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("cat1"));
     }
 
     #[tokio::test]

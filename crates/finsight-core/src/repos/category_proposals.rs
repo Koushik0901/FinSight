@@ -35,9 +35,41 @@ fn map_row(r: &rusqlite::Row) -> rusqlite::Result<CategoryProposal> {
 }
 
 /// Create the current outstanding proposal for a transaction, superseding
-/// whatever proposal row already existed for it (one live row per `txn_id`
-/// — see the migration comment for why). `reviewed_at` is always reset to
-/// NULL: a freshly (re)proposed suggestion has not been reviewed yet.
+/// whatever *still-pending* proposal row already existed for it (one live row
+/// per `txn_id` — see the migration comment for why). `reviewed_at` is reset
+/// to NULL on supersede: a freshly (re)proposed suggestion has not been
+/// reviewed yet.
+///
+/// ## Supersede policy: a RESOLVED proposal is never re-opened
+///
+/// The `ON CONFLICT` branch is guarded on `status = 'pending'`. Once a human
+/// has accepted / corrected / rejected a proposal, an automated re-proposal
+/// leaves the row completely untouched — the same category or a different
+/// one, it makes no difference. The call still succeeds and returns the
+/// (unchanged) resolved row, so re-proposal is a silent no-op for callers.
+///
+/// Why uniformly, rather than "re-open only if the category differs":
+/// `status` + `reviewed_at` are the ONLY durable record of the human's
+/// decision (there is one live row per `txn_id` and no proposal history
+/// table — `categorizations` logs canonical writes, not suggestions). A
+/// re-proposal carries no new information about that decision; a *differing*
+/// category is model sampling noise, not evidence the user was wrong. If a
+/// differing category could re-open the row, a rejection would be trivially
+/// defeatable — the model need only guess differently on the next re-check
+/// and the "rejected" verdict is erased with no trace.
+///
+/// The honest tradeoff: a resolved proposal now permanently blocks any future
+/// automated proposal for that transaction. That is the safe direction (it
+/// can never erase a decision the user made), and loosening it — e.g. a
+/// "re-open after N days" or an explicit user-initiated re-propose — is a
+/// separate, additive change.
+///
+/// Note that `reject` deliberately does not null `transactions.ai_confidence`,
+/// so a rejected row keeps matching the categorizer's `load_low_confidence`
+/// query and gets re-proposed-then-suppressed on every "Re-check". That is
+/// harmless churn (the review queue reads `status = 'pending'`, which this
+/// guard keeps it out of) — it must NOT be "fixed" by having reject mutate
+/// canonical AI columns.
 pub fn upsert(conn: &mut Connection, row: NewCategoryProposal) -> CoreResult<CategoryProposal> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
@@ -56,7 +88,8 @@ pub fn upsert(conn: &mut Connection, row: NewCategoryProposal) -> CoreResult<Cat
             applied = excluded.applied, \
             model = excluded.model, \
             created_at = excluded.created_at, \
-            reviewed_at = NULL",
+            reviewed_at = NULL \
+         WHERE category_proposals.status = 'pending'",
         params![
             id,
             row.txn_id,
@@ -290,6 +323,94 @@ mod tests {
         assert_eq!(live.proposed_category_id, "cat2");
         assert_eq!(live.status, "accepted");
         assert_eq!(count(&mut conn, "pending").unwrap(), 0);
+    }
+
+    /// Regression (review finding 1a): a RESOLVED proposal must never be
+    /// resurrected into `pending` by an automated re-proposal.
+    ///
+    /// The concrete scenario: the user rejects an LLM "Food" guess on t1.
+    /// `reject` deliberately leaves `transactions.ai_confidence` alone, so t1
+    /// still matches the categorizer's `load_low_confidence` query and gets
+    /// re-sent to the LLM on the next "Re-check" — which the Inbox action
+    /// item's own copy invites. If `upsert` superseded unconditionally, the
+    /// rejection would be silently erased (status back to `pending`,
+    /// `reviewed_at` back to NULL) with no trace, and Accept would then write
+    /// the rejected guess to canonical.
+    #[test]
+    fn upsert_does_not_resurrect_a_resolved_proposal() {
+        for (resolved_status, reproposed_category) in [
+            // The model repeats itself…
+            ("rejected", "cat1"),
+            // …or guesses differently. Neither may re-open the row: a
+            // differing category is sampling noise, not evidence the user's
+            // decision was wrong — see the `upsert` supersede policy.
+            ("rejected", "cat2"),
+            ("accepted", "cat2"),
+            ("corrected", "cat2"),
+        ] {
+            let (_d, db) = fresh_db();
+            let mut conn = db.get().unwrap();
+            seed_base(&mut conn);
+            seed_txn(&mut conn, "t1", "cat1");
+
+            let p = upsert(
+                &mut conn,
+                NewCategoryProposal {
+                    txn_id: "t1".to_string(),
+                    proposed_category_id: "cat1".to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.3,
+                    rationale: None,
+                    candidates_json: None,
+                    status: "pending".to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+            set_status(&mut conn, &p.id, resolved_status).unwrap();
+            let resolved = get(&mut conn, &p.id).unwrap().unwrap();
+
+            // The re-check re-proposes for the same transaction.
+            let returned = upsert(
+                &mut conn,
+                NewCategoryProposal {
+                    txn_id: "t1".to_string(),
+                    proposed_category_id: reproposed_category.to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.45,
+                    rationale: Some("re-check".to_string()),
+                    candidates_json: None,
+                    status: "pending".to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+
+            // Row is untouched — including `reviewed_at`, which is what proves
+            // the human decision itself was not re-stamped or cleared.
+            let after = get_for_txn(&mut conn, "t1").unwrap().unwrap();
+            assert_eq!(after.id, p.id, "{resolved_status}: no fresh row replaced it");
+            assert_eq!(after.status, resolved_status, "{resolved_status}: status preserved");
+            assert_eq!(
+                after.proposed_category_id, "cat1",
+                "{resolved_status}: the resolved row's category is not overwritten"
+            );
+            assert_eq!(
+                after.reviewed_at, resolved.reviewed_at,
+                "{resolved_status}: the human decision timestamp is untouched"
+            );
+            assert!(
+                (after.confidence - 0.3).abs() < 1e-9,
+                "{resolved_status}: the re-proposal's confidence did not leak in"
+            );
+            // The suppressed call still succeeds and reports the live row.
+            assert_eq!(returned.id, p.id);
+            assert_eq!(returned.status, resolved_status);
+            // And critically: it never re-enters the review queue.
+            assert_eq!(count(&mut conn, "pending").unwrap(), 0, "{resolved_status}");
+        }
     }
 
     #[test]

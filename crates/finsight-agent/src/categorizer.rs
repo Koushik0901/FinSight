@@ -136,6 +136,23 @@ pub async fn run_job(
                     "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
                     params![cat_id, txn_id],
                 )?;
+                // Issue #87: this is a canonical write through a path that is
+                // NOT accept/correct/reject, so it must resolve any live
+                // proposal — same contract as `repos::transactions::update`.
+                // It matters in rerun mode (`RecategorizeLowConfidence`),
+                // where `load_low_confidence` re-selects rows that may still
+                // carry a pending proposal: a user who adds a merchant rule
+                // and hits "Re-check" is giving a deliberate, stronger signal
+                // than the stale LLM guess. Without this, the proposal stays
+                // `pending` and clicking Accept later REVERTS the user's own
+                // rule back to that guess. Unconditional (no `rerun_mode`
+                // branch) — `resolve_for_txn` already no-ops unless a pending
+                // proposal exists.
+                finsight_core::repos::category_proposals::resolve_for_txn(
+                    &mut conn,
+                    &txn_id,
+                    Some(&cat_id),
+                )?;
                 Ok::<_, anyhow::Error>(())
             }).await??;
             drop(lease);
@@ -1089,6 +1106,229 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "must abstain rather than leave a dangling proposal referencing an archived category"
+        );
+    }
+
+    /// Regression (review finding 1a), end to end: reject → "Re-check" must
+    /// stay rejected.
+    ///
+    /// `reject_category_proposal` deliberately does not touch
+    /// `transactions.ai_confidence`, and `load_low_confidence` (unlike
+    /// `load_uncategorized`) has no `category_id IS NULL` filter — so a
+    /// rejected row is genuinely re-selected and re-proposed by every
+    /// `RecategorizeLowConfidence` run, which the Inbox action item's own
+    /// copy invites the user to trigger. The `upsert` guard is the only thing
+    /// standing between that and a silently-erased rejection.
+    #[tokio::test]
+    async fn a_rejected_proposal_survives_a_recheck_that_reproposes_it() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1 + a1 (no rules -> LLM path)
+        }
+        // First pass: low confidence -> pending proposal.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.4, "rationale": "maybe food"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        // The user rejects it. This is exactly what
+        // `commands::category_proposals::reject_category_proposal` does:
+        // resolve the proposal, leave canonical (and ai_confidence) alone.
+        let (proposal_id, rejected_at) = {
+            let mut conn = db.get().unwrap();
+            let p = finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .unwrap();
+            assert_eq!(p.status, "pending");
+            finsight_core::repos::category_proposals::set_status(&mut conn, &p.id, "rejected")
+                .unwrap();
+            let after =
+                finsight_core::repos::category_proposals::get(&mut conn, &p.id).unwrap().unwrap();
+            (p.id, after.reviewed_at)
+        };
+
+        // "Re-check": the LLM re-proposes the very same category at a
+        // slightly different confidence.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.45, "rationale": "still maybe food"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(
+            &db,
+            AgentJob::RecategorizeLowConfidence,
+            provider,
+            Arc::new(|_| {}),
+        )
+        .await
+        .unwrap();
+
+        let mut conn = db.get().unwrap();
+        // Proof the re-check really did re-select and re-process t1 (this is
+        // the churn described in the `upsert` policy doc): the additive
+        // canonical write landed with the new confidence.
+        let conf: Option<f64> = conn
+            .query_row("SELECT ai_confidence FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            (conf.unwrap() - 0.45).abs() < 1e-9,
+            "sanity: the re-check did re-process t1, so the guard is what protects the rejection"
+        );
+
+        // …and yet the rejection is fully intact.
+        let after = finsight_core::repos::category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .expect("the rejected row was not replaced by a fresh one");
+        assert_eq!(after.status, "rejected", "a re-proposal must not resurrect a rejection");
+        assert_eq!(
+            after.reviewed_at, rejected_at,
+            "the human decision timestamp must not be cleared or re-stamped"
+        );
+        assert_eq!(
+            finsight_core::repos::category_proposals::count(&mut conn, "pending").unwrap(),
+            0,
+            "the rejected transaction must not reappear in the review queue"
+        );
+    }
+
+    /// Regression (review finding 1b): the rule pass in RERUN mode writes
+    /// canonical directly, and must resolve the live proposal.
+    ///
+    /// The scenario: t1 has a pending proposal for cat1 ("Food"). The user
+    /// adds a merchant rule mapping CHIPOTLE -> cat2 — a deliberate, stronger
+    /// signal than a 0.4-confidence guess — and hits "Re-check".
+    /// `load_low_confidence` re-selects t1 (it has no `category_id IS NULL`
+    /// filter), Step 1's rule pass matches and writes cat2 + nulls
+    /// `ai_confidence`. Without `resolve_for_txn` the proposal stayed
+    /// `pending` with `proposed_category_id = cat1`, so t1 lingered in the
+    /// review queue and clicking Accept reverted the user's own rule.
+    ///
+    /// This is also a genuine parity gap that
+    /// `needs_review_population_matches_the_legacy_predicate_exactly` does
+    /// not cover: that test only exercises a `transactions::update`-driven
+    /// correction, never a rule-pass one in rerun mode. Under the legacy
+    /// `ai_confidence`-based predicate this row drops out; under the
+    /// proposal-backed one it would have stayed.
+    #[tokio::test]
+    async fn rule_pass_in_rerun_mode_resolves_the_pending_proposal_it_overwrites() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn); // t1 CHIPOTLE + cat1 + a1
+            conn.execute(
+                "INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat2','g1','Groceries','#0f0',1)",
+                [],
+            )
+            .unwrap();
+        }
+        // First pass: no rules, LLM proposes cat1 at low confidence.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([{"txn_id": "t1", "category_id": "cat1", "confidence": 0.4, "rationale": "maybe food"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(&db, AgentJob::CategorizeAll, provider, Arc::new(|_| {}))
+            .await
+            .unwrap();
+
+        let proposal_id = {
+            let mut conn = db.get().unwrap();
+            let p = finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .unwrap();
+            assert_eq!(p.status, "pending");
+            assert_eq!(p.proposed_category_id, "cat1");
+            // The user now teaches the app the real answer.
+            rules::insert(
+                &mut conn,
+                NewRule {
+                    pattern: "CHIPOTLE".to_string(),
+                    category_id: "cat2".to_string(),
+                    source: "user".to_string(),
+                    treatment: "categorize".to_string(),
+                },
+            )
+            .unwrap();
+            p.id
+        };
+
+        // "Re-check". The rule matches in Step 1, so `remaining` is empty and
+        // the LLM is never consulted — hence the empty mock response.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "gpt-test".into(),
+            response: json!([]),
+            tool_turns: Mutex::new(vec![]),
+        });
+        run_job(
+            &db,
+            AgentJob::RecategorizeLowConfidence,
+            provider,
+            Arc::new(|_| {}),
+        )
+        .await
+        .unwrap();
+
+        let mut conn = db.get().unwrap();
+        let (cat, conf): (Option<String>, Option<f64>) = conn
+            .query_row(
+                "SELECT category_id, ai_confidence FROM transactions WHERE id='t1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("cat2"), "the rule wins the canonical write");
+        assert_eq!(conf, None, "the rule pass nulls the LLM confidence");
+
+        let after = finsight_core::repos::category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            after.status, "corrected",
+            "the rule's canonical write must resolve the proposal it overwrote"
+        );
+        assert!(after.reviewed_at.is_some());
+        assert_eq!(
+            finsight_core::repos::category_proposals::count(&mut conn, "pending").unwrap(),
+            0,
+            "accepting a stale proposal must not be able to revert the user's rule"
+        );
+
+        // Parity with the legacy predicate on THIS shape (the one the existing
+        // parity test never exercises): ai_confidence is now NULL, so the old
+        // query drops t1 — and so must the proposal-backed one.
+        let legacy: Vec<String> = conn
+            .prepare(
+                "SELECT id FROM transactions \
+                 WHERE ai_confidence IS NOT NULL AND ai_confidence < 0.6 \
+                   AND (SELECT source FROM categorizations c \
+                        WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm'",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(legacy.is_empty(), "sanity: the legacy predicate drops a rule-corrected row");
+        let listed = finsight_core::repos::transactions::list(
+            &mut conn,
+            finsight_core::repos::transactions::TxnFilter {
+                filter_preset: Some("needs_review".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            listed.is_empty(),
+            "the needs_review screen must agree with the legacy predicate on this shape too"
         );
     }
 
