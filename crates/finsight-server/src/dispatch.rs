@@ -200,6 +200,25 @@ async fn dispatch(
         "list_recent_agent_activity" => {
             ok(c::agent::list_recent_agent_activity(api, arg(&p, "limit")?).await?)
         }
+        "list_category_proposals" => {
+            ok(c::category_proposals::list_category_proposals(api).await?)
+        }
+        "accept_category_proposal" => ok(c::category_proposals::accept_category_proposal(
+            api,
+            arg(&p, "id")?,
+        )
+        .await?),
+        "correct_category_proposal" => ok(c::category_proposals::correct_category_proposal(
+            api,
+            arg(&p, "id")?,
+            arg(&p, "categoryId")?,
+        )
+        .await?),
+        "reject_category_proposal" => ok(c::category_proposals::reject_category_proposal(
+            api,
+            arg(&p, "id")?,
+        )
+        .await?),
 
         // ── assets ──
         "list_manual_assets" => ok(c::assets::list_manual_assets(api).await?),
@@ -960,6 +979,10 @@ pub const SUPPORTED: &[&str] = &[
     "accept_rule_proposal",
     "decline_rule_proposal",
     "list_recent_agent_activity",
+    "list_category_proposals",
+    "accept_category_proposal",
+    "correct_category_proposal",
+    "reject_category_proposal",
     // assets
     "list_manual_assets",
     "create_manual_asset",

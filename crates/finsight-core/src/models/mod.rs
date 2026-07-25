@@ -3,6 +3,7 @@ mod agent_memory;
 mod alert;
 mod categorization;
 mod category;
+mod category_proposal;
 mod connection;
 mod copilot;
 mod holding;
@@ -29,6 +30,7 @@ pub use agent_memory::AgentMemory;
 pub use alert::SimpleFinAlert;
 pub use categorization::{Categorization, NewCategorization};
 pub use category::{Category, CategoryGroup};
+pub use category_proposal::{CategoryProposal, NewCategoryProposal};
 pub use connection::{NewSimpleFinConnection, SimpleFinConnection, SimpleFinConnectionPatch};
 pub use copilot::{
     AgentActionBundle, AgentActionItem, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
