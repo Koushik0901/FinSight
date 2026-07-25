@@ -171,6 +171,40 @@ describe("CategoryReview — the queue itself", () => {
     expect(filter.filterPreset).toBe("needs_review");
   });
 
+  it("never shrinks the enrichment limit when resolving an item crosses a bucket boundary", async () => {
+    // 76 pending sizes the fetch at 200; 75 would size it at 100. A limit that
+    // shrank would be a brand-new query key with no cached data, and the
+    // render gate would blank the whole screen to a loading stub the moment
+    // the user dismissed one item — a harder flash than the one the
+    // quantization was added to prevent.
+    const batch = (n: number) =>
+      Array.from({ length: n }, (_, i) => proposal({ id: `prop-${i}`, txnId: `txn-${i}` }));
+    listCategoryProposals.mockResolvedValueOnce({ status: "ok", data: batch(76) });
+    listCategoryProposals.mockResolvedValue({ status: "ok", data: batch(75) });
+    listTransactions.mockResolvedValue({
+      status: "ok",
+      data: batch(76).map((p) => txn({ id: p.txnId })),
+    });
+
+    const limits = () => listTransactions.mock.calls.map((c) => (c[0] as { limit: number }).limit);
+
+    render(<CategoryReview />, { wrapper: createWrapper() });
+    await screen.findByText("76 categorizations to confirm.");
+    expect(limits()).toContain(200);
+
+    // Dismissing invalidates the queue, which refetches it at 75.
+    const [firstDismiss] = screen.getAllByRole("button", { name: /Dismiss the suggestion/ });
+    fireEvent.click(firstDismiss!);
+    await waitFor(() => expect(rejectCategoryProposal).toHaveBeenCalled());
+    await screen.findByText("75 categorizations to confirm.");
+
+    // The limit is monotonic, so dropping back under the boundary never mints a
+    // cold query key — and the queue stays on screen instead of blanking.
+    expect(limits()).toEqual([...limits()].sort((a, b) => a - b));
+    expect(limits().at(-1)).toBe(200);
+    expect(screen.queryByText("Loading review queue…")).not.toBeInTheDocument();
+  });
+
   it("shows an all-caught-up empty state when nothing is pending", async () => {
     listCategoryProposals.mockResolvedValue({ status: "ok", data: [] });
 

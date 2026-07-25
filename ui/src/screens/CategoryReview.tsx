@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { CategoryProposal, CategoryDto, Transaction } from "../api/client";
@@ -29,14 +29,33 @@ const PAGE_SIZE = 25;
  * status='pending')` — so `count` transactions is already full coverage; the
  * head-room absorbs a proposal recorded between the two queries.
  *
- * Quantized to whole hundreds so the value (and therefore the query key) does
- * not move every time one item is resolved. Without that, the enrichment query
- * would be re-keyed and refetched after every accept/dismiss, and the rows
- * would flash their "details unavailable" fallback while the new key had no
- * cached data.
+ * Quantized to whole hundreds so the value — and therefore the transactions
+ * query key, which the filter is part of — does not move every time one item
+ * is resolved.
  */
-function enrichmentLimit(count: number): number {
+export function enrichmentLimit(count: number): number {
   return Math.max(1, Math.ceil((count + 25) / 100)) * 100;
+}
+
+/**
+ * The enrichment limit for this session, which only ever GROWS.
+ *
+ * Quantizing alone is not enough: resolving one item can carry the count back
+ * across a bucket boundary (76 -> 75 recomputes 200 -> 100), and a shrinking
+ * limit is a brand-new query key with no cached data. The shared
+ * `useTransactions` hook sets no `placeholderData`, so that key starts
+ * `isLoading`, and the render gate below would blank the whole screen to a
+ * loading stub right after an accept or dismiss.
+ *
+ * A high-water mark makes the key monotonic: it can only ever step up (to cover
+ * a growing queue), never back down, so resolving items never re-keys.
+ * Over-fetching a stale-high limit costs nothing — the population is bounded by
+ * the pending proposals themselves, not by this number.
+ */
+function useEnrichmentLimit(count: number): number {
+  const highWater = useRef(0);
+  if (count > highWater.current) highWater.current = count;
+  return enrichmentLimit(highWater.current);
 }
 
 function formatDate(iso: string): string {
@@ -236,12 +255,13 @@ export default function CategoryReview() {
   const { data: proposals = [], isLoading, error } = useCategoryProposals();
   const { data: categories = [] } = useCategories();
   const { data: accounts = [] } = useAccounts();
+  const limit = useEnrichmentLimit(proposals.length);
 
   // Enrichment only. Queue membership comes from `category_proposals`; this
   // fetch just supplies merchant/date/amount for the same rows.
   const { data: transactions = [], isLoading: enrichmentLoading } = useTransactions({
     accountId: null,
-    limit: enrichmentLimit(proposals.length),
+    limit,
     offset: null,
     search: null,
     filterPreset: "needs_review",
