@@ -64,6 +64,10 @@ const D = {
     key: ["spending-breakdown"],
     fn: async () => unwrap(await commands.getSpendingBreakdown()),
   }, // Budget.tsx inline
+  categoryProposals: {
+    key: ["category-proposals"],
+    fn: async () => unwrap(await commands.listCategoryProposals()),
+  }, // useCategoryProposals
 } as const satisfies Record<string, Descriptor>;
 
 /**
@@ -89,6 +93,7 @@ const ROUTE_PREFETCH: Record<string, readonly Descriptor[]> = {
   "/recurring": [D.recurring],
   "/goals": [D.goals],
   "/inbox": [D.needsReview],
+  "/review": [D.categoryProposals],
 };
 
 /** Prefetch a route's summary queries. No-op when no backend is available or for an unmapped path. */
