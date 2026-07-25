@@ -148,18 +148,27 @@ describe("CategoryReview — the queue itself", () => {
     expect(screen.getByRole("button", { name: /^Confirm Coffee/ })).toBeInTheDocument();
   });
 
-  it("sizes the enrichment fetch to cover the whole queue", async () => {
-    listCategoryProposals.mockResolvedValue({
+  it("sizes the enrichment fetch to cover the whole queue, not one default page", async () => {
+    // 140 pending proposals: the backend's default limit is 100, so a fetch
+    // that did not scale with the queue would leave 40 rows without their
+    // transaction — the exact silent-truncation this sizing exists to avoid.
+    const many = Array.from({ length: 140 }, (_, i) =>
+      proposal({ id: `prop-${i}`, txnId: `txn-${i}` })
+    );
+    listCategoryProposals.mockResolvedValue({ status: "ok", data: many });
+    listTransactions.mockResolvedValue({
       status: "ok",
-      data: [proposal(), proposal({ id: "prop-2", txnId: "txn-2" })],
+      data: many.map((p, i) => txn({ id: p.txnId, merchant_label: `Merchant ${i}` })),
     });
 
     render(<CategoryReview />, { wrapper: createWrapper() });
 
-    await waitFor(() => expect(listTransactions).toHaveBeenCalled());
+    await waitFor(() => {
+      const last = listTransactions.mock.calls.at(-1)?.[0] as { limit: number };
+      expect(last.limit).toBeGreaterThanOrEqual(many.length);
+    });
     const filter = listTransactions.mock.calls.at(-1)?.[0] as { limit: number; filterPreset: string };
     expect(filter.filterPreset).toBe("needs_review");
-    expect(filter.limit).toBeGreaterThanOrEqual(2);
   });
 
   it("shows an all-caught-up empty state when nothing is pending", async () => {

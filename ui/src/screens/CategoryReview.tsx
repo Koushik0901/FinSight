@@ -22,14 +22,22 @@ import * as I from "../components/Icons";
 const PAGE_SIZE = 25;
 
 /**
- * Head-room on the enrichment fetch so a proposal recorded between the two
- * queries still finds its transaction. The two populations are identical by
- * construction — `needs_review` is literally
- * `t.id IN (SELECT txn_id FROM category_proposals WHERE status='pending')` —
- * so `proposals.length` alone would already cover the queue; the buffer just
- * absorbs the race.
+ * Size the enrichment fetch to cover the WHOLE queue.
+ *
+ * The two populations are identical by construction — `needs_review` is
+ * literally `t.id IN (SELECT txn_id FROM category_proposals WHERE
+ * status='pending')` — so `count` transactions is already full coverage; the
+ * head-room absorbs a proposal recorded between the two queries.
+ *
+ * Quantized to whole hundreds so the value (and therefore the query key) does
+ * not move every time one item is resolved. Without that, the enrichment query
+ * would be re-keyed and refetched after every accept/dismiss, and the rows
+ * would flash their "details unavailable" fallback while the new key had no
+ * cached data.
  */
-const ENRICHMENT_HEADROOM = 25;
+function enrichmentLimit(count: number): number {
+  return Math.max(1, Math.ceil((count + 25) / 100)) * 100;
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -231,9 +239,9 @@ export default function CategoryReview() {
 
   // Enrichment only. Queue membership comes from `category_proposals`; this
   // fetch just supplies merchant/date/amount for the same rows.
-  const { data: transactions = [] } = useTransactions({
+  const { data: transactions = [], isLoading: enrichmentLoading } = useTransactions({
     accountId: null,
-    limit: proposals.length + ENRICHMENT_HEADROOM,
+    limit: enrichmentLimit(proposals.length),
     offset: null,
     search: null,
     filterPreset: "needs_review",
@@ -263,6 +271,11 @@ export default function CategoryReview() {
 
   if (isLoading) return <div className="stub">Loading review queue…</div>;
   if (error) return <div className="stub">Error loading the review queue.</div>;
+  // Hold the list back until the enrichment fetch has settled, so rows never
+  // paint their "details unavailable" fallback on the way to having real data.
+  if (proposals.length > 0 && enrichmentLoading) {
+    return <div className="stub">Loading review queue…</div>;
+  }
 
   return (
     <div className="screen screen-category-review">
