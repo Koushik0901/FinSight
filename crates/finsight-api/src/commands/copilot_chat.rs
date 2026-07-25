@@ -1457,6 +1457,7 @@ fn should_emit_response_block(block: &AgentResponseBlock) -> bool {
         AgentResponseBlock::WatchList(_) => true,
         AgentResponseBlock::ActionPlan(_) => true,
         AgentResponseBlock::Clarification(_) => true,
+        AgentResponseBlock::CategoryReviewQueue(_) => true,
     }
 }
 
@@ -1624,6 +1625,18 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                 && b.options
                     .iter()
                     .all(|o| label_ok(&o.id) && label_ok(&o.label) && opt_label_ok(&o.hint))
+        }
+        AgentResponseBlock::CategoryReviewQueue(b) => {
+            // 6 mirrors `MAX_REVIEW_QUEUE_ITEMS` in the block validator and the
+            // Zod schema's `.max()`. Merchant names come from the ledger, so
+            // the label bound is what stops one pathological import row from
+            // getting the whole block rejected at the client.
+            b.items.len() <= 6
+                && b.items
+                    .iter()
+                    .all(|i| label_ok(&i.merchant)
+                        && label_ok(&i.proposed_category)
+                        && opt_label_ok(&i.date))
         }
     }
 }

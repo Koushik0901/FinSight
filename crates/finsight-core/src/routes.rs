@@ -41,6 +41,7 @@ pub const APP_ROUTES: &[&str] = &[
     "/close",
     "/path-back",
     "/rules",
+    "/review",
     "/settings",
     "/settings/users",
     "/copilot",
