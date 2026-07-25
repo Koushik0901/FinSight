@@ -2168,6 +2168,20 @@ export type AgentAllocationSegment = { label: string; amountCents: number; ratio
 export type AgentAllocationSplitBlock = { totalCents: number; segments: AgentAllocationSegment[] }
 export type AgentAnswer = { prose: string; reasoning: string; plan: string[]; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: MissingDataItem[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
 export type AgentCategoryBreakdownBlock = { periodLabel: string; rows: AgentCategoryRow[] }
+/**
+ * The categorization review queue (issue #94), as a Copilot block.
+ * 
+ * SERVER-RENDERED: the model emits only `{"kind":"categoryReviewQueue"}` and
+ * every field below is rebuilt from `category_proposals` in
+ * `hydrate_response_blocks`. Both fields therefore default — a thin emission
+ * must survive `parse_response_blocks`, which runs BEFORE hydration, or the
+ * block would be dropped before it ever got its data.
+ */
+export type AgentCategoryReviewQueueBlock = { 
+/**
+ * Total pending proposals — may exceed `items.len()`, which is capped.
+ */
+pendingCount?: number; items?: AgentReviewQueueItem[] }
 export type AgentCategoryRow = { categoryKey: string; amountCents: number; isFixed: boolean; isLever: boolean }
 export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
@@ -2259,7 +2273,7 @@ export type AgentRecatRow = { merchant: string; categoryKey: string; confidence:
 export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock) | ({ kind: "clarification" } & AgentClarificationBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock) | ({ kind: "clarification" } & AgentClarificationBlock) | ({ kind: "categoryReviewQueue" } & AgentCategoryReviewQueueBlock)
 export type AgentReviewCategory = { label: string; amountCents: number; 
 /**
  * Optional flag: "over" | "fixed" | "lever". None = plain bar.
@@ -2271,6 +2285,22 @@ export type AgentReviewMonth = { label: string; spentCents: number; subtitle: st
  * the server keys on it to compute label/spentCents/categories from core.
  */
 period?: string | null }
+/**
+ * One outstanding categorization suggestion, as shown in the Copilot.
+ */
+export type AgentReviewQueueItem = { merchant: string; proposedCategory: string; confidence: number; 
+/**
+ * None when the transaction row could not be resolved.
+ */
+amountCents: number | null; date: string | null; 
+/**
+ * Whether the proposed category was ALREADY written to
+ * `transactions.category_id` when the proposal was recorded. This is a
+ * different axis from the review status and the card must not collapse
+ * them: `applied` says whether budgets are already counting it, the
+ * pending status says whether a human has weighed in.
+ */
+applied: boolean }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentSpendTimelineBlock = { title: string | null; subtitle: string | null; points: AgentTimelinePoint[] }

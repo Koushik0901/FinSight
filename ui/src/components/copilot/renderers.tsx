@@ -25,6 +25,7 @@ import { SpendingDriversCard } from "./cards/SpendingDriversCard";
 import { WatchListCard } from "./cards/WatchListCard";
 import { ActionPlanCard } from "./cards/ActionPlanCard";
 import { ClarificationCard } from "./cards/ClarificationCard";
+import { CategoryReviewQueueCard } from "./cards/CategoryReviewQueueCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",
@@ -278,6 +279,8 @@ export function FinSightResponseBlock({
       return <ActionPlanCard block={block} />;
     case "clarification":
       return <ClarificationCard block={block} />;
+    case "categoryReviewQueue":
+      return <CategoryReviewQueueCard block={block} />;
     default:
       return null;
   }

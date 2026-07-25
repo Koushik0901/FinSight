@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { FinSightResponseBlock } from "./renderers";
 
 describe("FinSightResponseBlock — existing generic kinds", () => {
@@ -107,6 +108,25 @@ describe("FinSightResponseBlock — composite finance kinds dispatch", () => {
       />
     );
     expect(screen.getByText("needs a balance set")).toBeInTheDocument();
+  });
+
+  it("dispatches categoryReviewQueue to the CategoryReviewQueueCard", () => {
+    render(
+      <MemoryRouter>
+        <FinSightResponseBlock
+          isRunning={false}
+          block={{
+            kind: "categoryReviewQueue",
+            pendingCount: 2,
+            items: [
+              { merchant: "BEANS CAFE", proposedCategory: "Coffee", confidence: 0.42, amountCents: -1842, date: null, applied: true },
+            ],
+          }}
+        />
+      </MemoryRouter>
+    );
+    expect(screen.getByText("2 categorizations waiting on you")).toBeInTheDocument();
+    expect(screen.getByText("BEANS CAFE")).toBeInTheDocument();
   });
 
   it("dispatches spendTimeline, spendingDrivers, watchList, and actionPlan", () => {

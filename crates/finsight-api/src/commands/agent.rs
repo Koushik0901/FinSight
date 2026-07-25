@@ -750,6 +750,41 @@ pub struct AgentActionPlanBlock {
     pub items: Vec<String>,
 }
 
+/// One outstanding categorization suggestion, as shown in the Copilot.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReviewQueueItem {
+    pub merchant: String,
+    pub proposed_category: String,
+    pub confidence: f64,
+    /// None when the transaction row could not be resolved.
+    pub amount_cents: Option<i64>,
+    pub date: Option<String>,
+    /// Whether the proposed category was ALREADY written to
+    /// `transactions.category_id` when the proposal was recorded. This is a
+    /// different axis from the review status and the card must not collapse
+    /// them: `applied` says whether budgets are already counting it, the
+    /// pending status says whether a human has weighed in.
+    pub applied: bool,
+}
+
+/// The categorization review queue (issue #94), as a Copilot block.
+///
+/// SERVER-RENDERED: the model emits only `{"kind":"categoryReviewQueue"}` and
+/// every field below is rebuilt from `category_proposals` in
+/// `hydrate_response_blocks`. Both fields therefore default — a thin emission
+/// must survive `parse_response_blocks`, which runs BEFORE hydration, or the
+/// block would be dropped before it ever got its data.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCategoryReviewQueueBlock {
+    /// Total pending proposals — may exceed `items.len()`, which is capped.
+    #[serde(default)]
+    pub pending_count: i64,
+    #[serde(default)]
+    pub items: Vec<AgentReviewQueueItem>,
+}
+
 /// One grounded choice in a clarification. Filled by the SERVER from real data
 /// — never by the model, which may only choose the question. A model-invented
 /// option could name an account the user does not have, and clicking it would
@@ -826,6 +861,7 @@ pub enum AgentResponseBlock {
     WatchList(AgentWatchListBlock),
     ActionPlan(AgentActionPlanBlock),
     Clarification(AgentClarificationBlock),
+    CategoryReviewQueue(AgentCategoryReviewQueueBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -1071,8 +1107,27 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                     .iter()
                     .all(|o| !o.id.trim().is_empty() && !o.label.trim().is_empty())
         }
+        AgentResponseBlock::CategoryReviewQueue(b) => {
+            // No minimum on `items`, unlike every other list block: an EMPTY
+            // queue is the meaningful "you're all caught up" state, and this
+            // block is server-rendered — the model emits it bare and hydration
+            // fills it, so a `!items.is_empty()` bound here would drop the
+            // block before it ever got its data.
+            b.pending_count >= 0
+                && b.items.len() <= MAX_REVIEW_QUEUE_ITEMS
+                && b.items.iter().all(|i| {
+                    !i.merchant.trim().is_empty()
+                        && !i.proposed_category.trim().is_empty()
+                        && (0.0..=1.0).contains(&i.confidence)
+                })
+        }
     }
 }
+
+/// How many queue items a Copilot card shows before deferring to `/review`.
+/// The card is a pointer at the queue, not the queue itself. Mirrored by the
+/// Zod schema's `.max()`; the parity corpus checks they agree.
+const MAX_REVIEW_QUEUE_ITEMS: usize = 6;
 
 pub(crate) fn build_toolset() -> ToolSet {
     // Single source of truth in finsight-agent so the shipped app and the
@@ -1518,6 +1573,15 @@ fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentR
                     *block = AgentResponseBlock::SpendingReview(fresh);
                 }
             }
+            AgentResponseBlock::CategoryReviewQueue(_) => {
+                // Unconditional replace, no merge: the model is told to emit
+                // this block bare, and a merge would let an invented merchant
+                // or confidence score through into something the user reads as
+                // "here is what the agent is unsure about".
+                *block = AgentResponseBlock::CategoryReviewQueue(
+                    synthesize_category_review_queue(conn),
+                );
+            }
             AgentResponseBlock::Clarification(model) => {
                 let mut grounded = model.clone();
                 // The model chooses the question; the SERVER chooses the
@@ -1723,6 +1787,77 @@ fn synthesize_accounts_overview(
         subtitle,
         rows,
     })
+}
+
+/// Character budget for a ledger-sourced label inside a review-queue item.
+/// Well under the 400-char artifact label bound both sides enforce.
+const REVIEW_QUEUE_LABEL_CHARS: usize = 120;
+
+fn truncate_label(value: String) -> String {
+    if value.chars().count() <= REVIEW_QUEUE_LABEL_CHARS {
+        return value;
+    }
+    let mut out: String = value.chars().take(REVIEW_QUEUE_LABEL_CHARS - 1).collect();
+    out.push('…');
+    out
+}
+
+/// Build the `categoryReviewQueue` block entirely from core data.
+///
+/// Membership is `category_proposals.status = 'pending'` — the same single
+/// population the `/review` screen, the `needs_review` transaction-filter
+/// preset and the `get_needs_review_count` badge read, so the Copilot cannot
+/// quote a different number than the sidebar shows.
+///
+/// A read failure degrades to an empty queue rather than propagating: the card
+/// then says "nothing waiting", which is the same thing an actually-empty queue
+/// says. That is the one direction this can safely err — under-reporting sends
+/// the user to a screen that shows them the truth, whereas inventing items
+/// would have them hunting for suggestions that do not exist.
+fn synthesize_category_review_queue(
+    conn: &mut rusqlite::Connection,
+) -> AgentCategoryReviewQueueBlock {
+    let pending_count = finsight_core::repos::category_proposals::count(conn, "pending")
+        .unwrap_or(0);
+
+    let items = conn
+        .prepare(
+            "SELECT COALESCE(m.canonical_name, t.merchant_raw), c.label, p.confidence, \
+                    t.amount_cents, t.posted_at, p.applied \
+             FROM category_proposals p \
+             JOIN transactions t ON t.id = p.txn_id \
+             JOIN categories c ON c.id = p.proposed_category_id \
+             LEFT JOIN merchants m ON m.id = t.merchant_id \
+             WHERE p.status = 'pending' \
+             ORDER BY p.created_at DESC \
+             LIMIT ?1",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([MAX_REVIEW_QUEUE_ITEMS as i64], |r| {
+                Ok(AgentReviewQueueItem {
+                    // Truncated at the source rather than trusted: merchant
+                    // strings come straight off an import, and one pathological
+                    // 900-character descriptor would trip the artifact label
+                    // bound and silently drop the entire block at the client.
+                    merchant: truncate_label(r.get::<_, String>(0)?),
+                    proposed_category: truncate_label(r.get::<_, String>(1)?),
+                    // Clamped rather than trusted: a stored value outside 0..=1
+                    // would fail `valid_response_block` and silently drop the
+                    // whole block at the last step of the pipeline.
+                    confidence: r.get::<_, f64>(2)?.clamp(0.0, 1.0),
+                    amount_cents: r.get(3)?,
+                    date: r.get(4)?,
+                    applied: r.get::<_, i64>(5)? != 0,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+        .unwrap_or_default();
+
+    AgentCategoryReviewQueueBlock {
+        pending_count,
+        items,
+    }
 }
 
 const MONTH_NAMES: [&str; 12] = [
@@ -3852,6 +3987,104 @@ mod tests {
             "the unknown-balance account is badged, not fabricated as $0"
         );
         assert!(b.title.as_deref().unwrap().contains("2 account"));
+    }
+
+    /// Seed one pending and one already-resolved proposal, so the queue block
+    /// has to filter on `status` rather than just counting the table.
+    fn seed_review_queue(conn: &mut rusqlite::Connection) {
+        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','Food',0)", []).unwrap();
+        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat-coffee','g1','Coffee','#0f0',0)", []).unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('a1','You','Bank','Checking','Chq','USD','#fff','manual','2026-01-01T00:00:00Z')", []).unwrap();
+        for (id, merchant) in [("t1", "BEANS CAFE"), ("t2", "OLD STORE")] {
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES(?1,'a1','2026-07-14T00:00:00Z',-1842,?2,'cleared',0,'2026-07-14T00:00:00Z')",
+                rusqlite::params![id, merchant],
+            ).unwrap();
+        }
+        for (id, txn, status, created) in [
+            ("p1", "t1", "pending", "2026-07-14T01:00:00Z"),
+            ("p2", "t2", "accepted", "2026-07-13T01:00:00Z"),
+        ] {
+            conn.execute(
+                "INSERT INTO category_proposals(id,txn_id,proposed_category_id,source,confidence,rationale,candidates_json,status,applied,model,created_at) \
+                 VALUES(?1,?2,'cat-coffee','llm',0.42,NULL,NULL,?3,1,'test-model',?4)",
+                rusqlite::params![id, txn, status, created],
+            ).unwrap();
+        }
+    }
+
+    /// The model is instructed to emit `{"kind":"categoryReviewQueue"}` and
+    /// nothing else. `parse_response_blocks` runs BEFORE hydration, so that
+    /// bare object must survive both serde and `valid_response_block` — a
+    /// missing `#[serde(default)]` or a `!items.is_empty()` bound would drop
+    /// the block before it could ever be filled.
+    #[test]
+    fn a_bare_category_review_queue_block_survives_parse_before_hydration() {
+        let raw = serde_json::json!({ "response_blocks": [ { "kind": "categoryReviewQueue" } ] });
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(blocks.len(), 1, "a thin server-rendered block must not be dropped at parse");
+        assert!(matches!(blocks[0], AgentResponseBlock::CategoryReviewQueue(_)));
+    }
+
+    #[test]
+    fn category_review_queue_is_hydrated_from_core_ignoring_model_data() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_review_queue(&mut conn);
+
+        let mut blocks = vec![AgentResponseBlock::CategoryReviewQueue(
+            AgentCategoryReviewQueueBlock {
+                pending_count: 999,
+                items: vec![AgentReviewQueueItem {
+                    merchant: "HALLUCINATED".into(),
+                    proposed_category: "Invented".into(),
+                    confidence: 0.99,
+                    amount_cents: Some(1),
+                    date: None,
+                    applied: false,
+                }],
+            },
+        )];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::CategoryReviewQueue(b) = &blocks[0] else {
+            panic!("expected categoryReviewQueue")
+        };
+        assert_eq!(b.pending_count, 1, "count comes from core, and excludes resolved proposals");
+        assert_eq!(b.items.len(), 1);
+        assert_eq!(b.items[0].merchant, "BEANS CAFE");
+        assert_eq!(b.items[0].proposed_category, "Coffee");
+        assert_eq!(b.items[0].amount_cents, Some(-1842));
+        assert!(b.items[0].applied, "the applied axis is carried, not inferred from status");
+        assert!(
+            !b.items.iter().any(|i| i.merchant == "HALLUCINATED"),
+            "model-supplied rows are replaced, never merged"
+        );
+        assert!(valid_response_block(&blocks[0]));
+    }
+
+    #[test]
+    fn an_empty_review_queue_hydrates_to_a_valid_all_caught_up_block() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+
+        let mut blocks = vec![AgentResponseBlock::CategoryReviewQueue(
+            AgentCategoryReviewQueueBlock { pending_count: 7, items: Vec::new() },
+        )];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::CategoryReviewQueue(b) = &blocks[0] else {
+            panic!("expected categoryReviewQueue")
+        };
+        assert_eq!(b.pending_count, 0);
+        assert!(b.items.is_empty());
+        // "Nothing to review" is a real answer — it must not be filtered out as
+        // a malformed empty list the way every other list block would be.
+        assert!(
+            valid_response_block(&blocks[0]),
+            "an empty queue is the all-caught-up state, not an invalid block"
+        );
     }
 
     #[test]

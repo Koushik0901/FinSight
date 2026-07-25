@@ -68,6 +68,18 @@ const SAMPLES: { title: string; block: CopilotResponseBlock }[] = [
     },
   },
   {
+    title: "categoryReviewQueue",
+    block: {
+      kind: "categoryReviewQueue",
+      pendingCount: 9,
+      items: [
+        { merchant: "BEANS CAFE #114", proposedCategory: "Dining", confidence: 0.42, amountCents: -1842, date: "2026-07-14T00:00:00Z", applied: true },
+        { merchant: "SQ *THE MARKET", proposedCategory: "Groceries", confidence: 0.51, amountCents: -8630, date: "2026-07-12T00:00:00Z", applied: true },
+        { merchant: "PADDLE.NET* HELIOS", proposedCategory: "Subscriptions", confidence: 0.33, amountCents: -1200, date: "2026-07-09T00:00:00Z", applied: true },
+      ],
+    },
+  },
+  {
     title: "spendTimeline",
     block: {
       kind: "spendTimeline",
