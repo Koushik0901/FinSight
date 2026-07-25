@@ -343,6 +343,21 @@ async fn dispatch(
         )
         .await?),
 
+        // ── category examples (#91) ──
+        "add_category_example" => ok(c::category_examples::add_category_example(
+            api,
+            arg(&p, "categoryId")?,
+            arg(&p, "exampleText")?,
+            arg(&p, "sourceTxnId")?,
+        )
+        .await?),
+        "remove_category_example" => {
+            ok(c::category_examples::remove_category_example(api, arg(&p, "id")?).await?)
+        }
+        "list_category_examples" => {
+            ok(c::category_examples::list_category_examples(api, arg(&p, "categoryId")?).await?)
+        }
+
         // ── copilot (action bundles / sessions) ──
         "list_agent_sessions" => ok(c::copilot::list_agent_sessions(api).await?),
         "create_agent_session" => ok(c::copilot::create_agent_session(
@@ -1018,6 +1033,10 @@ pub const SUPPORTED: &[&str] = &[
     "list_category_groups",
     "create_category_group",
     "set_category_group",
+    // category examples (#91)
+    "add_category_example",
+    "remove_category_example",
+    "list_category_examples",
     // copilot
     "list_agent_sessions",
     "create_agent_session",

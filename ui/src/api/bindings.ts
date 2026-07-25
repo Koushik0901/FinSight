@@ -117,6 +117,30 @@ async setCategoryGroup(categoryId: string, groupId: string) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
+async addCategoryExample(categoryId: string, exampleText: string, sourceTxnId: string | null) : Promise<Result<CategoryExample, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_category_example", { categoryId, exampleText, sourceTxnId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeCategoryExample(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_category_example", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listCategoryExamples(categoryId: string) : Promise<Result<CategoryExample[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_examples", { categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -2479,6 +2503,31 @@ export type Category = { id: string; group_id: string; label: string; color: str
  */
 guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
+/**
+ * A user-curated exemplar transaction description for a category.
+ * 
+ * Keyed by the category's STABLE `id`, so examples survive a rename exactly
+ * the way `categories.guidance` does (rename touches `label` only).
+ * 
+ * `example_text` is a denormalized snapshot rather than a join through
+ * `source_txn_id`: a factory reset wipes `transactions`, and a CSV re-import
+ * churns transaction ids, so a pure reference would silently lose a curated
+ * exemplar set. `source_txn_id` is provenance only — NULL means hand-typed
+ * or the source transaction is gone (the FK is `ON DELETE SET NULL`).
+ * 
+ * Nothing reads these yet. Issue #92 embeds `example_text` into a
+ * prototype/centroid vector per category.
+ */
+export type CategoryExample = { id: string; categoryId: string; 
+/**
+ * The exemplar description text (trimmed, never empty).
+ */
+exampleText: string; 
+/**
+ * Optional provenance breadcrumb back to the transaction the user added
+ * this from. NULL = hand-typed, or the transaction has since been deleted.
+ */
+sourceTxnId: string | null; createdAt: string }
 export type CategoryGroup = { id: string; label: string; hint: string | null; sort_order: number }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }

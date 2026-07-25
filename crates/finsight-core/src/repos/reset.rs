@@ -22,6 +22,9 @@ const TABLES_TO_WIPE: &[&str] = &[
     "budgets",
     "categories",
     "categorizations",
+    // Per-category exemplars (V062). `categories` is wiped, so these must be
+    // too — foreign keys are disabled for the wipe, so CASCADE won't do it.
+    "category_examples",
     "category_groups",
     // V061's `ON DELETE CASCADE` from transactions does NOT save us here:
     // `delete_all_data` disables `PRAGMA foreign_keys` for the wipe, so the
