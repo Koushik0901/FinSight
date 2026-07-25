@@ -1,0 +1,506 @@
+{
+  "corpus_provenance": "synthetic",
+  "caveat": "SYNTHETIC SEED DATA baseline — the corpus file declares `provenance: synthetic`: invented, clearly-fictional transactions that exist to validate this harness end to end. This is NOT a measured real-world precision claim, and no figure below may be quoted as one.",
+  "corpus_stats": {
+    "total_examples": 33,
+    "unique_merchants": 29,
+    "examples_per_merchant": {
+      "m-bestbuy-public": 1,
+      "m-blue-teapot": 1,
+      "m-bright-hydro": 1,
+      "m-brightloaf": 2,
+      "m-cedarpoint-mortgage": 1,
+      "m-cloudnote": 2,
+      "m-costco-public": 1,
+      "m-craftbox": 1,
+      "m-daily-dollar": 1,
+      "m-esso-corner": 1,
+      "m-fieldfresh": 1,
+      "m-hollow-cafe": 1,
+      "m-homeharbor": 1,
+      "m-metro-transit": 1,
+      "m-netflix-public": 1,
+      "m-noodle-nook": 1,
+      "m-northwave-internet": 2,
+      "m-oakridge-dental": 1,
+      "m-oldtown-rentals": 1,
+      "m-pinecrest-pizza": 2,
+      "m-riverbend-diner": 1,
+      "m-riverside-physio": 1,
+      "m-skyline-air": 1,
+      "m-swiftcab": 1,
+      "m-thoughtful-gifts": 1,
+      "m-thriftwell": 1,
+      "m-wanderway": 1,
+      "m-westgate-pharmacy": 1,
+      "m-westside-parking": 1
+    },
+    "category_distribution": {
+      "dining": 6,
+      "gifts": 1,
+      "groceries": 6,
+      "health": 3,
+      "housing": 2,
+      "shopping": 4,
+      "subscriptions": 3,
+      "transport": 3,
+      "travel": 2,
+      "utilities": 3
+    }
+  },
+  "holdout_fraction": 0.3,
+  "split_seed": 42,
+  "sources": [
+    {
+      "source": "builtin",
+      "full_corpus": {
+        "n_total": 33,
+        "n_predicted": 16,
+        "n_correct": 15,
+        "precision": 0.9375,
+        "coverage": 0.48484848484848486,
+        "matrix": {
+          "source": "builtin",
+          "counts": {
+            "<abstain>": {
+              "dining": 2,
+              "gifts": 1,
+              "groceries": 4,
+              "shopping": 3,
+              "subscriptions": 2,
+              "transport": 1,
+              "travel": 2,
+              "utilities": 2
+            },
+            "dining": {
+              "dining": 4
+            },
+            "groceries": {
+              "groceries": 1
+            },
+            "health": {
+              "health": 3
+            },
+            "housing": {
+              "housing": 2
+            },
+            "shopping": {
+              "shopping": 1
+            },
+            "subscriptions": {
+              "subscriptions": 1
+            },
+            "transport": {
+              "groceries": 1,
+              "transport": 2
+            },
+            "utilities": {
+              "utilities": 1
+            }
+          },
+          "total": 33
+        }
+      },
+      "holdout_only": {
+        "n_total": 11,
+        "n_predicted": 4,
+        "n_correct": 4,
+        "precision": 1.0,
+        "coverage": 0.36363636363636365,
+        "matrix": {
+          "source": "builtin",
+          "counts": {
+            "<abstain>": {
+              "dining": 1,
+              "gifts": 1,
+              "groceries": 3,
+              "subscriptions": 2
+            },
+            "dining": {
+              "dining": 1
+            },
+            "groceries": {
+              "groceries": 1
+            },
+            "housing": {
+              "housing": 1
+            },
+            "subscriptions": {
+              "subscriptions": 1
+            }
+          },
+          "total": 11
+        }
+      },
+      "threshold_sweep_full_corpus": [
+        {
+          "threshold": 0.0,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 33,
+          "n_predicted": 16,
+          "n_correct": 15,
+          "precision": 0.9375,
+          "coverage": 0.48484848484848486
+        }
+      ],
+      "threshold_sweep_holdout": [
+        {
+          "threshold": 0.0,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 11,
+          "n_predicted": 4,
+          "n_correct": 4,
+          "precision": 1.0,
+          "coverage": 0.36363636363636365
+        }
+      ]
+    },
+    {
+      "source": "rule",
+      "full_corpus": {
+        "n_total": 33,
+        "n_predicted": 8,
+        "n_correct": 8,
+        "precision": 1.0,
+        "coverage": 0.24242424242424243,
+        "matrix": {
+          "source": "rule",
+          "counts": {
+            "<abstain>": {
+              "dining": 5,
+              "groceries": 4,
+              "health": 3,
+              "housing": 2,
+              "shopping": 3,
+              "subscriptions": 1,
+              "transport": 2,
+              "travel": 2,
+              "utilities": 3
+            },
+            "dining": {
+              "dining": 1
+            },
+            "gifts": {
+              "gifts": 1
+            },
+            "groceries": {
+              "groceries": 2
+            },
+            "shopping": {
+              "shopping": 1
+            },
+            "subscriptions": {
+              "subscriptions": 2
+            },
+            "transport": {
+              "transport": 1
+            }
+          },
+          "total": 33
+        }
+      },
+      "holdout_only": {
+        "n_total": 11,
+        "n_predicted": 5,
+        "n_correct": 5,
+        "precision": 1.0,
+        "coverage": 0.45454545454545453,
+        "matrix": {
+          "source": "rule",
+          "counts": {
+            "<abstain>": {
+              "dining": 2,
+              "groceries": 2,
+              "housing": 1,
+              "subscriptions": 1
+            },
+            "gifts": {
+              "gifts": 1
+            },
+            "groceries": {
+              "groceries": 2
+            },
+            "subscriptions": {
+              "subscriptions": 2
+            }
+          },
+          "total": 11
+        }
+      },
+      "threshold_sweep_full_corpus": [
+        {
+          "threshold": 0.0,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 33,
+          "n_predicted": 8,
+          "n_correct": 8,
+          "precision": 1.0,
+          "coverage": 0.24242424242424243
+        }
+      ],
+      "threshold_sweep_holdout": [
+        {
+          "threshold": 0.0,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.3,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.5,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.6,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.7,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.8,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.9,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 0.95,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        },
+        {
+          "threshold": 1.0,
+          "n_total": 11,
+          "n_predicted": 5,
+          "n_correct": 5,
+          "precision": 1.0,
+          "coverage": 0.45454545454545453
+        }
+      ]
+    }
+  ]
+}

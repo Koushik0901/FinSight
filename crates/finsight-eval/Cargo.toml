@@ -4,10 +4,20 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-# Headless evaluation harness for the FinSight Copilot. NOT part of the shipped
-# app — a dev/CI tool that drives the real ReasoningEngine + tool loop over a
-# deterministic synthetic household so answer quality can be graded offline.
+# Headless evaluation harnesses for FinSight. NOT part of the shipped app —
+# dev/CI tools. Two independent harnesses live here:
+#   1. `finsight-eval` (src/main.rs) — the Copilot answer-quality benchmark:
+#      drives the real ReasoningEngine + tool loop over a deterministic
+#      synthetic household so answer quality can be graded offline.
+#   2. `categorization_eval` (src/bin/) — the categorization precision/coverage
+#      harness (issues #88/#89): confusion matrix by source, merchant-disjoint
+#      split, confidence-threshold sweep. Its logic lives in the lib target
+#      (src/lib.rs → src/categorization/) so it is unit-testable via
+#      `cargo test -p finsight-eval` and reusable by future consumers.
 
+# The lib target (src/lib.rs) is auto-detected; it carries the categorization
+# harness. The Copilot benchmark bin is declared explicitly because its entry
+# point is src/main.rs rather than src/bin/.
 [[bin]]
 name = "finsight-eval"
 path = "src/main.rs"
