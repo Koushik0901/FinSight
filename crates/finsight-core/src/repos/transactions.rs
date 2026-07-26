@@ -173,7 +173,18 @@ pub fn list(conn: &mut Connection, filter: TxnFilter) -> CoreResult<Vec<Transact
     }
     match filter.filter_preset.as_deref() {
         Some("needs_review") => {
-            conditions.push("t.ai_confidence IS NOT NULL AND t.ai_confidence < 0.6".to_string());
+            // Issue #87: reads from category_proposals (the single source of
+            // truth for "the AI suggested this and nobody has weighed in
+            // yet") instead of re-deriving low-confidence-and-not-since-
+            // overwritten from transactions.ai_confidence + a correlated
+            // categorizations subquery. Kept in lockstep with
+            // `commands::agent::get_needs_review_count` and the Inbox's
+            // low-confidence action item — all three must agree on one
+            // population, or the badge count and the filtered list drift.
+            conditions.push(
+                "t.id IN (SELECT txn_id FROM category_proposals WHERE status = 'pending')"
+                    .to_string(),
+            );
         }
         Some("anomalies") => {
             conditions.push("t.is_anomaly = 1".to_string());
@@ -395,6 +406,17 @@ pub fn update(
             "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
             params![cat, id],
         )?;
+        // Resolve any outstanding category proposal for this transaction.
+        // This is the SAME choke point the new `accept`/`correct`/`reject`
+        // commands (issue #87) go through when they delegate here, but it
+        // also has to fire for the ordinary transaction-edit path (this
+        // function, called directly) — otherwise a pending proposal lingers
+        // in the review queue after a user manually recategorizes via some
+        // other route, even though `ai_confidence` above was just reset to
+        // NULL (which is what made the OLD ai_confidence-based review
+        // predicate drop the row in this exact scenario). See
+        // `repos::category_proposals::resolve_for_txn`.
+        crate::repos::category_proposals::resolve_for_txn(conn, id, cat.as_deref())?;
         // Check for rule proposal (only when setting a category, not clearing)
         if let Some(category_id) = cat {
             let merchant_raw: String = conn.query_row(
@@ -1183,6 +1205,89 @@ mod tests {
         };
         let (_, rule) = update(&mut conn, &txn_id, patch).unwrap();
         assert!(rule.is_none()); // rule already exists → no proposal
+    }
+
+    /// Issue #87 acceptance criterion #2: `update` is the single choke point
+    /// for every category-writing path (the new accept/correct/reject
+    /// commands AND the ordinary transaction-edit drawer both funnel through
+    /// it), so it must resolve any outstanding `category_proposals` row for
+    /// the transaction — otherwise a proposal left "pending" lingers in the
+    /// review queue forever after a user manually recategorizes some other
+    /// way, even though `ai_confidence` (the OLD review signal) was just
+    /// reset to NULL a few lines above.
+    #[test]
+    fn update_resolves_a_pending_category_proposal_for_the_same_category() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        let proposal = crate::repos::category_proposals::upsert(
+            &mut conn,
+            crate::models::NewCategoryProposal {
+                txn_id: txn_id.clone(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.4,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
+
+        let patch = TxnPatch {
+            category_id: Some(Some("cat1".into())),
+            ..Default::default()
+        };
+        update(&mut conn, &txn_id, patch).unwrap();
+
+        let resolved = crate::repos::category_proposals::get(&mut conn, &proposal.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.status, "accepted");
+        assert!(resolved.reviewed_at.is_some());
+        assert_eq!(
+            crate::repos::category_proposals::count(&mut conn, "pending").unwrap(),
+            0,
+            "the transaction must drop out of the review queue"
+        );
+    }
+
+    #[test]
+    fn update_resolves_a_pending_category_proposal_as_corrected_when_category_differs() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let (_, txn_id) = seed(&mut conn);
+        conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat2','g1','Shopping','#0f0',1)", []).unwrap();
+        let proposal = crate::repos::category_proposals::upsert(
+            &mut conn,
+            crate::models::NewCategoryProposal {
+                txn_id: txn_id.clone(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.4,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
+
+        // The user, editing through the ordinary drawer (not accept/correct),
+        // picks a DIFFERENT category than the AI proposed.
+        let patch = TxnPatch {
+            category_id: Some(Some("cat2".into())),
+            ..Default::default()
+        };
+        update(&mut conn, &txn_id, patch).unwrap();
+
+        let resolved = crate::repos::category_proposals::get(&mut conn, &proposal.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.status, "corrected");
     }
 
     #[test]

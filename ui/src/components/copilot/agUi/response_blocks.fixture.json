@@ -513,5 +513,102 @@
       "textPlaceholder": null,
       "referenceType": null
     }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "categoryReviewQueue"
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": 0,
+      "items": []
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": 3,
+      "items": [
+        {
+          "merchant": "BEANS CAFE",
+          "proposedCategory": "Coffee",
+          "confidence": 0.42,
+          "amountCents": -1842,
+          "date": "2026-07-14T00:00:00Z",
+          "applied": true
+        },
+        {
+          "merchant": "UNKNOWN VENDOR",
+          "proposedCategory": "Shopping",
+          "confidence": 0.31,
+          "amountCents": null,
+          "date": null,
+          "applied": false
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": -1,
+      "items": []
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": 1,
+      "items": [
+        {
+          "merchant": "   ",
+          "proposedCategory": "Coffee",
+          "confidence": 0.42,
+          "amountCents": -1842,
+          "date": null,
+          "applied": true
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": 1,
+      "items": [
+        {
+          "merchant": "BEANS CAFE",
+          "proposedCategory": "Coffee",
+          "confidence": 1.4,
+          "amountCents": -1842,
+          "date": null,
+          "applied": true
+        }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "categoryReviewQueue",
+      "pendingCount": 7,
+      "items": [
+        { "merchant": "A", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "B", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "C", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "D", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "E", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "F", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true },
+        { "merchant": "G", "proposedCategory": "Coffee", "confidence": 0.5, "amountCents": -1, "date": null, "applied": true }
+      ]
+    }
   }
 ]

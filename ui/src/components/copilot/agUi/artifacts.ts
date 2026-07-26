@@ -16,6 +16,9 @@ const MAX_LABEL = 400;
 // choices a picker is worse than a text box, so the cap is a usability bound
 // rather than a payload-size one.
 const MAX_CLARIFICATION_OPTIONS = 8;
+// The review-queue card is a pointer at `/review`, not the queue itself.
+// Mirrors `MAX_REVIEW_QUEUE_ITEMS` in the Rust validator.
+const MAX_REVIEW_QUEUE_ITEMS = 6;
 
 const shortString = z.string().max(MAX_LABEL);
 /// Mirrors Rust's `!s.trim().is_empty()` checks — plain `.min(1)` would accept a
@@ -254,6 +257,31 @@ const CopilotResponseBlockUnion = z.discriminatedUnion("kind", [
     // block falls back to free text — a degraded question still beats a
     // fabricated option list.
     referenceType: shortString.nullish(),
+  }),
+  // The categorization review queue. SERVER-RENDERED: the model emits this
+  // block bare and the server fills every field from `category_proposals`, so
+  // both fields default here exactly as they do on the Rust side — a thin
+  // emission has to survive validation before it can be hydrated.
+  z.object({
+    kind: z.literal("categoryReviewQueue"),
+    pendingCount: z.number().int().nonnegative().default(0),
+    // No `.min(1)`, unlike every other list block: an empty queue is the
+    // meaningful "all caught up" state, not a malformed list.
+    items: z
+      .array(
+        z.object({
+          merchant: requiredString,
+          proposedCategory: requiredString,
+          confidence: z.number().min(0).max(1),
+          amountCents: z.number().int().nullish(),
+          date: shortString.nullish(),
+          // Whether this category is ALREADY on the transaction. Separate from
+          // the pending review status, and the card must not conflate them.
+          applied: z.boolean(),
+        }),
+      )
+      .max(MAX_REVIEW_QUEUE_ITEMS)
+      .default([]),
   }),
 ]);
 

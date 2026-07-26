@@ -117,6 +117,30 @@ async setCategoryGroup(categoryId: string, groupId: string) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
+async addCategoryExample(categoryId: string, exampleText: string, sourceTxnId: string | null) : Promise<Result<CategoryExample, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_category_example", { categoryId, exampleText, sourceTxnId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async removeCategoryExample(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_category_example", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listCategoryExamples(categoryId: string) : Promise<Result<CategoryExample[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_examples", { categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listTransactions(filter: TxnFilterInput) : Promise<Result<Transaction[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_transactions", { filter }) };
@@ -1214,6 +1238,38 @@ async declineRuleProposal(id: string) : Promise<Result<null, AppError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async listCategoryProposals() : Promise<Result<CategoryProposal[], AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_category_proposals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async acceptCategoryProposal(id: string) : Promise<Result<UpdateTxnResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("accept_category_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async correctCategoryProposal(id: string, categoryId: string) : Promise<Result<UpdateTxnResult, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("correct_category_proposal", { id, categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async rejectCategoryProposal(id: string) : Promise<Result<null, AppError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reject_category_proposal", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listAgentSessions() : Promise<Result<AgentSession[], AppError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_agent_sessions") };
@@ -2146,6 +2202,20 @@ export type AgentAllocationSegment = { label: string; amountCents: number; ratio
 export type AgentAllocationSplitBlock = { totalCents: number; segments: AgentAllocationSegment[] }
 export type AgentAnswer = { prose: string; reasoning: string; plan: string[]; trace: string[]; changes: AgentChange[]; actionLabel: string | null; actionPath: string | null; bundleId: string | null; assumptions: string[]; dataSources: string[]; missingData: MissingDataItem[]; alternatives: AgentScenarioAlternative[]; followUpQuestions: string[]; responseBlocks: AgentResponseBlock[] }
 export type AgentCategoryBreakdownBlock = { periodLabel: string; rows: AgentCategoryRow[] }
+/**
+ * The categorization review queue (issue #94), as a Copilot block.
+ * 
+ * SERVER-RENDERED: the model emits only `{"kind":"categoryReviewQueue"}` and
+ * every field below is rebuilt from `category_proposals` in
+ * `hydrate_response_blocks`. Both fields therefore default — a thin emission
+ * must survive `parse_response_blocks`, which runs BEFORE hydration, or the
+ * block would be dropped before it ever got its data.
+ */
+export type AgentCategoryReviewQueueBlock = { 
+/**
+ * Total pending proposals — may exceed `items.len()`, which is capped.
+ */
+pendingCount?: number; items?: AgentReviewQueueItem[] }
 export type AgentCategoryRow = { categoryKey: string; amountCents: number; isFixed: boolean; isLever: boolean }
 export type AgentChange = { kind: string; description: string }
 export type AgentChartBlock = { title: string | null; seriesLabel: string | null; data: AgentChartPoint[] }
@@ -2237,7 +2307,7 @@ export type AgentRecatRow = { merchant: string; categoryKey: string; confidence:
 export type AgentRecategorizationPreviewBlock = { count: number; rows: AgentRecatRow[]; more: number; bundleId: string }
 export type AgentRecipe = { id: string; title: string; description: string; recipeKind: string; promptTemplate: string; cadence: string; dayOfWeek: number | null; dayOfMonth: number | null; status: string; lastRunAt: string | null; nextRunAt: string | null; runCount: number; createdAt: string; updatedAt: string }
 export type AgentRecipeRun = { id: string; recipeId: string; bundleId: string | null; triggeredAt: string; status: string; error: string | null; createdAt: string }
-export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock) | ({ kind: "clarification" } & AgentClarificationBlock)
+export type AgentResponseBlock = { kind: "markdown"; markdown: string } | ({ kind: "table" } & AgentTableBlock) | ({ kind: "barChart" } & AgentChartBlock) | ({ kind: "lineChart" } & AgentChartBlock) | { kind: "metricGrid"; metrics: AgentMetricBlock[] } | { kind: "callout"; tone: string; title: string | null; body: string } | ({ kind: "transactionTable" } & AgentTransactionTableBlock) | ({ kind: "affordabilityVerdict" } & AgentAffordabilityVerdictBlock) | ({ kind: "categoryBreakdown" } & AgentCategoryBreakdownBlock) | ({ kind: "allocationSplit" } & AgentAllocationSplitBlock) | ({ kind: "rankedOptions" } & AgentRankedOptionsBlock) | ({ kind: "comparisonBars" } & AgentComparisonBarsBlock) | ({ kind: "recategorizationPreview" } & AgentRecategorizationPreviewBlock) | ({ kind: "spendingReview" } & AgentSpendingReviewBlock) | ({ kind: "accountsOverview" } & AgentAccountsOverviewBlock) | ({ kind: "spendTimeline" } & AgentSpendTimelineBlock) | ({ kind: "spendingDrivers" } & AgentSpendingDriversBlock) | ({ kind: "watchList" } & AgentWatchListBlock) | ({ kind: "actionPlan" } & AgentActionPlanBlock) | ({ kind: "clarification" } & AgentClarificationBlock) | ({ kind: "categoryReviewQueue" } & AgentCategoryReviewQueueBlock)
 export type AgentReviewCategory = { label: string; amountCents: number; 
 /**
  * Optional flag: "over" | "fixed" | "lever". None = plain bar.
@@ -2260,6 +2330,22 @@ export type AgentReviewMonth = { label?: string; spentCents?: number; subtitle: 
  * the server keys on it to compute label/spentCents/categories from core.
  */
 period?: string | null }
+/**
+ * One outstanding categorization suggestion, as shown in the Copilot.
+ */
+export type AgentReviewQueueItem = { merchant: string; proposedCategory: string; confidence: number; 
+/**
+ * None when the transaction row could not be resolved.
+ */
+amountCents: number | null; date: string | null; 
+/**
+ * Whether the proposed category was ALREADY written to
+ * `transactions.category_id` when the proposal was recorded. This is a
+ * different axis from the review status and the card must not collapse
+ * them: `applied` says whether budgets are already counting it, the
+ * pending status says whether a human has weighed in.
+ */
+applied: boolean }
 export type AgentScenarioAlternative = { name: string; summary: string; tradeoff: string }
 export type AgentSession = { id: string; title: string; status: string; taskType: string; createdAt: string; updatedAt: string }
 export type AgentSpendTimelineBlock = { title: string | null; subtitle: string | null; points: AgentTimelinePoint[] }
@@ -2438,9 +2524,79 @@ export type Category = { id: string; group_id: string; label: string; color: str
  */
 guidance: string | null; sort_order: number; archived_at: string | null }
 export type CategoryDto = { id: string; label: string; color: string; group_id: string; group_label: string; spending_type: string | null }
+/**
+ * A user-curated exemplar transaction description for a category.
+ * 
+ * Keyed by the category's STABLE `id`, so examples survive a rename exactly
+ * the way `categories.guidance` does (rename touches `label` only).
+ * 
+ * `example_text` is a denormalized snapshot rather than a join through
+ * `source_txn_id`: a factory reset wipes `transactions`, and a CSV re-import
+ * churns transaction ids, so a pure reference would silently lose a curated
+ * exemplar set. `source_txn_id` is provenance only — NULL means hand-typed
+ * or the source transaction is gone (the FK is `ON DELETE SET NULL`).
+ * 
+ * Nothing reads these yet. Issue #92 embeds `example_text` into a
+ * prototype/centroid vector per category.
+ */
+export type CategoryExample = { id: string; categoryId: string; 
+/**
+ * The exemplar description text (trimmed, never empty).
+ */
+exampleText: string; 
+/**
+ * Optional provenance breadcrumb back to the transaction the user added
+ * this from. NULL = hand-typed, or the transaction has since been deleted.
+ */
+sourceTxnId: string | null; createdAt: string }
 export type CategoryGroup = { id: string; label: string; hint: string | null; sort_order: number }
 export type CategoryHistory = { categoryId: string; label: string; color: string; monthly: MonthlyActual[] }
 export type CategoryPlanRow = { categoryId: string; label: string; color: string; groupLabel: string; budgetCents: number; m0Cents: number; m1Cents: number; m2Cents: number }
+/**
+ * A first-class record of an automated categorization SUGGESTION for a
+ * transaction, decoupled from the canonical `transactions.category_id`
+ * write it may or may not have made (see `applied`).
+ * 
+ * One LIVE row per transaction (`txn_id` is UNIQUE in the schema): a new
+ * automated suggestion for the same transaction supersedes whatever
+ * proposal was there before, so `status == "pending"` always means "the
+ * current outstanding suggestion". Full per-attempt provenance already
+ * lives in the append-only `categorizations` table (V003) — this table
+ * exists to drive the review queue, not to be a second audit log.
+ */
+export type CategoryProposal = { id: string; txnId: string; proposedCategoryId: string; 
+/**
+ * 'llm' today; reserved for a future ML pass ('ml') per issue #87 scope —
+ * that pass is not built in this issue.
+ */
+source: string; confidence: number; rationale: string | null; 
+/**
+ * Ranked candidate categories as a JSON array string (opaque to
+ * finsight-core — not parsed or validated here). NULL until a
+ * multi-candidate pass exists; today it holds the single winning
+ * candidate for forward compatibility.
+ */
+candidatesJson: string | null; 
+/**
+ * "pending" | "accepted" | "corrected" | "rejected"
+ */
+status: string; 
+/**
+ * Whether THIS proposal's category was written to
+ * `transactions.category_id` when the row was created. Always `true`
+ * today (the LLM pass still auto-writes canonical exactly as before);
+ * a future ML pass could insert `applied = false` (a suggestion with no
+ * canonical write) — the schema can express that without another
+ * migration, even though this issue does not build the unapplied path.
+ */
+applied: boolean; model: string | null; createdAt: string; 
+/**
+ * Set when a human resolves the proposal via accept/correct/reject.
+ * NULL means either still pending, or auto-accepted without review
+ * (status = "accepted" with reviewed_at = NULL is the auto case; a
+ * human decision always stamps this).
+ */
+reviewedAt: string | null }
 /**
  * One category's 12-month total.
  */

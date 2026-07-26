@@ -41,6 +41,7 @@ const Reports = lazy(() => import("./screens/Reports"));
 const MonthClose = lazy(() => import("./screens/MonthClose"));
 const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
+const CategoryReview = lazy(() => import("./screens/CategoryReview"));
 const Settings = lazy(() => import("./screens/Settings"));
 // Server-mode-only admin surface; the route resolves for everyone but the
 // screen itself renders nothing outside server mode / for non-admins.
@@ -317,6 +318,8 @@ export function App() {
                     <Route path="/close" element={<MonthClose />} />
                     <Route path="/path-back" element={<PathBack />} />
                     <Route path="/rules" element={<Rules />} />
+                    {/* The categorization review queue (category_proposals). */}
+                    <Route path="/review" element={<CategoryReview />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/settings/users" element={<UsersAdmin />} />
                     <Route path="/copilot" element={<Copilot />} />

@@ -39,6 +39,7 @@ const MORE_ITEMS: MoreEntry[] = [
   { path: "/path-back", label: "Path back", Icon: I.Flow },
   { path: "/journey", label: "Journey", Icon: I.Journey },
   { path: "/copilot", label: "Copilot", Icon: I.Brain },
+  { path: "/review", label: "Review queue", Icon: I.Check },
   { path: "/rules", label: "Rules & agents", Icon: I.Bolt },
   { path: "/recipes", label: "Recipes", Icon: I.Recipe },
   { path: "/settings", label: "Settings", Icon: I.Gear },

@@ -1,0 +1,66 @@
+//! Categorization precision/coverage eval harness (issue #88, "Slice 2") and
+//! its labeled-corpus primitives (issue #89, "Slice 2b").
+//!
+//! ## Why this exists
+//! `finsight-eval`'s existing benchmark (`crate::main`) is exclusively a
+//! Copilot answer-quality harness (LLM-as-judge over NL questions). It has no
+//! labeled transaction corpus, no classifier precision/recall, and its seed
+//! household's merchants fully overlap between "training" context and scored
+//! questions — the opposite of a held-out split. It is structurally unable to
+//! answer "is the categorizer's ≥98% precision claim real" (see the scoping
+//! comment on epic #74). This module is new machinery for that question, not
+//! an extension of the existing benchmark.
+//!
+//! ## Module map
+//! - [`corpus`] — the labeled-example type, a JSONL loader, and corpus stats
+//!   (issue #89's format).
+//! - [`split`] — the merchant-disjoint split primitive + its disjointness
+//!   checker (issue #88's hard requirement: no merchant leaks across halves).
+//! - [`predictors`] — wraps the REAL production `builtin` matcher
+//!   (`finsight_core::categorize::builtin_category`) plus a small
+//!   harness-only `rule` matcher that mirrors production semantics (see that
+//!   module's doc comment for why it's a deliberate, documented duplication
+//!   rather than a `finsight-agent` dependency).
+//! - [`confusion`] — the confusion-matrix type (predicted × actual, broken
+//!   out by source), with precision/coverage derived from it.
+//! - [`threshold`] — the confidence-cutoff sweep (precision/coverage as a
+//!   function of threshold).
+//! - [`report`] — orchestrates the above into one JSON-serializable report;
+//!   this is what `src/bin/categorization_eval.rs` runs.
+//!
+//! ## What this is NOT
+//! There is no `llm` (or future ML/embedding) baseline computed by the bundled
+//! runner: producing one honestly requires calling a real provider or a real
+//! model, which is out of scope for this session's synthetic-only baseline.
+//! The types here are source-agnostic (a `Prediction` is just
+//! `{category, confidence}`), so wiring in a live `llm` predictor later is a
+//! matter of writing one more `predict_*` function — no changes needed to
+//! `confusion`, `threshold`, or `split`.
+//!
+//! Also: `predictors::predict_builtin` wraps
+//! `finsight_core::categorize::builtin_category` (the keyword lookup table)
+//! plus a transfer abstain guard, NOT the full `apply_builtin_categorization`
+//! pass. The gates it still cannot model (transfer *pairing* and self-transfer
+//! identity, the category-existence check, investment activity typing) all
+//! push the same way: production emits nothing where this harness emits a
+//! prediction, so measured precision comes out **inflated**, never deflated.
+//! See `predictors::predict_builtin`'s doc comment and the "Fidelity to
+//! production" section of `eval/CATEGORIZATION_CORPUS.md`.
+//!
+//! ## Synthetic vs. real
+//! The only corpus shipped in this repo today
+//! (`eval/categorization_corpus.synthetic.jsonl`) is **invented data** — and
+//! it says so itself, via the required `// provenance: synthetic` directive
+//! its first line declares. Every [`report::CategorizationEvalReport`] carries
+//! a `corpus_provenance` field and a `caveat` string **derived from that
+//! directive** ([`corpus::CorpusProvenance::caveat`]) — never hardcoded at the
+//! report site, so a real corpus cannot inherit synthetic language and the
+//! synthetic seed cannot lose its warning. A corpus that declares no
+//! provenance fails to load.
+
+pub mod confusion;
+pub mod corpus;
+pub mod predictors;
+pub mod report;
+pub mod split;
+pub mod threshold;

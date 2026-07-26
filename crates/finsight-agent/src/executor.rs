@@ -1,7 +1,10 @@
 use finsight_core::{
     error::{CoreError, CoreResult},
     models::{AgentActionItem, AgentNavigationTarget, NewPlannedTransaction, NewRule},
-    repos::{agent_memory, budgets, copilot_actions, planned_transactions, rules, scenarios},
+    repos::{
+        agent_memory, budgets, category_proposals, copilot_actions, planned_transactions, rules,
+        scenarios,
+    },
 };
 use rusqlite::{params, Connection};
 use serde::Deserialize;
@@ -279,6 +282,16 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 params![payload.category_id, payload.transaction_id],
             )?;
             ensure_changed(changed, "transaction")?;
+            // Issue #87: a canonical write through a path that is NOT
+            // accept/correct/reject must resolve any live proposal, or the
+            // transaction stays in the review queue and a later Accept
+            // reverts this deliberate categorization back to the stale LLM
+            // guess. Same contract as `repos::transactions::update`.
+            category_proposals::resolve_for_txn(
+                conn,
+                &payload.transaction_id,
+                Some(&payload.category_id),
+            )?;
             let (merchant_raw, category_label): (String, String) = conn.query_row(
                 "SELECT t.merchant_raw, COALESCE(c.label, ?3)
                  FROM transactions t
@@ -888,5 +901,87 @@ mod tests {
             .unwrap();
         assert_eq!(stored.status, "failed");
         assert_eq!(stored.items[0].status, "failed");
+    }
+
+    /// Regression (review finding 1c): `set_transaction_category` is a
+    /// reachable Copilot tool that writes canonical `category_id` directly.
+    /// Without resolving the live proposal, the transaction stayed in the
+    /// review queue with a stale `proposed_category_id`, and clicking Accept
+    /// later REVERTED the Copilot's (user-approved) categorization back to
+    /// the old LLM guess.
+    #[test]
+    fn set_transaction_category_resolves_a_live_proposal() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn); // cat1 Groceries
+        conn.execute(
+            "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES('cat2','grp1','Dining','#ff0000',1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,ai_confidence,status,is_anomaly,created_at) \
+             VALUES('t1','a1','2024-01-15T00:00:00Z',-1500,'MYSTERY SHOP','cat1',0.4,'cleared',0,'2024-01-15T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // The LLM pass left a pending proposal for cat1.
+        let proposal = category_proposals::upsert(
+            &mut conn,
+            finsight_core::models::NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.4,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
+
+        let bundle = copilot_actions::insert_bundle(
+            &mut conn, None, "Recat", "Summary", "Rationale", 0.9, None, None,
+        )
+        .unwrap();
+        let item = copilot_actions::insert_item(
+            &mut conn,
+            &bundle.id,
+            "set_transaction_category",
+            &serde_json::json!({"transactionId":"t1","categoryId":"cat2"}).to_string(),
+            "Rationale",
+            0.8,
+            0,
+        )
+        .unwrap();
+        copilot_actions::set_item_status(&mut conn, &item.id, "approved").unwrap();
+
+        let result = execute_bundle(&mut conn, &bundle.id).unwrap();
+        assert_eq!(result.succeeded, 1, "{:?}", result.executed[0].error);
+
+        let after = category_proposals::get(&mut conn, &proposal.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            after.status, "corrected",
+            "the Copilot's canonical write must resolve the proposal, not leave it pending"
+        );
+        assert_eq!(
+            category_proposals::count(&mut conn, "pending").unwrap(),
+            0,
+            "the transaction must leave the review queue"
+        );
+        let cat: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("cat2"));
     }
 }

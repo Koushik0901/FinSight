@@ -3,7 +3,6 @@ use crate::{
     ApiState,
 };
 use chrono::{Datelike, Duration, NaiveDate, Utc};
-use finsight_agent::LOW_CONFIDENCE_THRESHOLD;
 use finsight_core::repos::run;
 
 /// How far ahead of a promotional-rate expiry to start warning. Long enough to
@@ -164,16 +163,13 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
         }
 
         // ── 3. Low-confidence AI categorizations ─────────────────────────────
-        let low_confidence_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM transactions \
-                 WHERE ai_confidence IS NOT NULL AND ai_confidence < ?1 \
-                   AND (SELECT source FROM categorizations c \
-                        WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm'",
-                params![LOW_CONFIDENCE_THRESHOLD],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
+        // Issue #87: reads from category_proposals, the single source of
+        // truth for "the AI suggested this and nobody has weighed in yet".
+        // Kept in lockstep with `commands::agent::get_needs_review_count` and
+        // the `needs_review` transaction-filter preset — all three must
+        // agree on one population.
+        let low_confidence_count: i64 =
+            finsight_core::repos::category_proposals::count(conn, "pending").unwrap_or(0);
 
         if low_confidence_count > 0 {
             items.push(ActionItem {

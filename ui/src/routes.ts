@@ -31,6 +31,7 @@ export const APP_ROUTES = [
   "/close",
   "/path-back",
   "/rules",
+  "/review",
   "/settings",
   "/settings/users",
   "/copilot",

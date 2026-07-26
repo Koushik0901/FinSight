@@ -58,6 +58,7 @@ const NAV: NavSection[] = [
     label: "Workshop",
     items: [
       { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
+      { id: "review", path: "/review", label: "Review queue", Icon: I.Check },
       { id: "rules", path: "/rules", label: "Rules & agents", Icon: I.Bolt },
       { id: "settings", path: "/settings", label: "Settings", Icon: I.Gear },
     ],
@@ -112,12 +113,17 @@ export function Sidebar({ onOpenCmd }: Props) {
     if (id === "accounts" && accounts.length > 0) return <span className="badge">{accounts.length}</span>;
     if (id === "goals" && goals.length > 0) return <span className="badge">{goals.length}</span>;
     if (id === "copilot" && pendingBundleCount > 0) return <span className="badge accent">{pendingBundleCount}</span>;
+    // `needsReview` is the pending-proposal count, so it belongs on the screen
+    // that actually clears them.
+    if (id === "review" && needsReview > 0) return <span className="badge accent">{needsReview}</span>;
     return null;
   };
 
   const renderPulse = (id: string) => {
     if (id === "inbox" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
-    if (id === "rules" && needsReview > 0) return <span className="pulse" />;
+    // Was on "rules", which has no accept/reject affordance — the count now
+    // pulses on the queue it can actually be cleared from.
+    if (id === "review" && needsReview > 0) return <span className="pulse" />;
     return null;
   };
 
