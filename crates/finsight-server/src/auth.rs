@@ -743,6 +743,17 @@ pub(crate) async fn recover(
     // password must not survive it. The user's own new session is created
     // after this sweep.
     st.sessions.remove_user(&rec.id);
+    // API/MCP tokens must go too, and they are the more urgent half: each one
+    // wraps its own copy of the DB key, so a leaked bearer would otherwise keep
+    // working after the reset — recovery would revoke the cookie the attacker
+    // doesn't need and leave the credential they do. (Recovery re-wraps the
+    // SAME db key rather than rotating it, so revocation is what makes the
+    // token stop working, not re-encryption.)
+    let revoked_tokens = st.users.delete_user_api_tokens(&rec.id).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "could not revoke API tokens during recovery");
+        0
+    });
+    let _ = st.users.delete_user_oauth_codes(&rec.id);
     // A runtime owns the event broadcaster and background sync task. Revoking
     // only cookies leaves an already-open SSE connection subscribed to that
     // runtime, so recovery must evict it as part of the same revocation.
@@ -751,7 +762,8 @@ pub(crate) async fn recover(
 
     tracing::info!(
         user_id = %rec.id,
-        "recovery key redeemed: password reset, recovery key rotated, prior sessions revoked"
+        revoked_tokens,
+        "recovery key redeemed: password reset, recovery key rotated, prior sessions and API tokens revoked"
     );
 
     let db_key_hex = crate::crypto::db_key_to_hex(&dbkey);

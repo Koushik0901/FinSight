@@ -74,6 +74,25 @@ fn recover_req(username: &str, recovery_key: &str, new_password: &str) -> Reques
         .unwrap()
 }
 
+fn create_token_req(cookie: &str, name: &str, scope: Option<&str>) -> Request<Body> {
+    let mut body = serde_json::json!({ "name": name });
+    if let Some(s) = scope {
+        body["scope"] = serde_json::json!(s);
+    }
+    Request::post("/api/auth/tokens")
+        .header("content-type", "application/json")
+        .header("cookie", cookie)
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+fn list_tokens_req(cookie: &str) -> Request<Body> {
+    Request::get("/api/auth/tokens")
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .unwrap()
+}
+
 fn rpc_req(cmd: &str, cookie: &str) -> Request<Body> {
     Request::post(format!("/api/rpc/{cmd}"))
         .header("content-type", "application/json")
@@ -858,4 +877,255 @@ async fn setup_retry_after_a_failed_migration_still_migrates_the_original_data()
     // Old locations are cleared, including the now-redundant plaintext keyfile.
     assert!(!data_dir.join("data.sqlcipher").exists());
     assert!(!data_dir.join("db.key").exists());
+}
+
+// ---------------------------------------------------- MCP / API tokens ---
+
+#[tokio::test]
+async fn token_create_list_and_revoke_round_trip() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let cookie = cookie_from(&res);
+
+    assert_eq!(json_body(app.clone().oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
+        serde_json::json!([]), "a fresh account has no tokens");
+
+    let res = app
+        .clone()
+        .oneshot(create_token_req(&cookie, "Claude Desktop", Some("full")))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let created = json_body(res).await;
+    let token = created["token"].as_str().unwrap().to_string();
+    assert!(token.starts_with("finsight_pat_"));
+    assert_eq!(created["scope"], "full");
+
+    // The list view must never echo the secret back — it is shown exactly once,
+    // at creation. Anything else turns a stored list into a credential dump.
+    let listed = json_body(app.clone().oneshot(list_tokens_req(&cookie)).await.unwrap()).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["name"], "Claude Desktop");
+    assert!(listed[0].get("token").is_none());
+    assert!(listed[0].get("tokenHash").is_none());
+    assert!(listed[0].get("wrappedDbKey").is_none());
+    assert!(listed[0]["lastUsedAt"].is_null());
+
+    let id = listed[0]["id"].as_str().unwrap().to_string();
+    let res = app
+        .clone()
+        .oneshot(
+            Request::delete(format!("/api/auth/tokens/{id}"))
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(json_body(app.oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
+        serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn token_scope_defaults_to_read_and_rejects_unknown_values() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let cookie = cookie_from(&res);
+
+    // Omitting `scope` must NOT silently grant write access.
+    let created = json_body(
+        app.clone()
+            .oneshot(create_token_req(&cookie, "unscoped", None))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(created["scope"], "read");
+
+    for bad in ["admin", "", "FULL"] {
+        let res = app
+            .clone()
+            .oneshot(create_token_req(&cookie, "x", Some(bad)))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "scope {bad:?} must be rejected");
+    }
+
+    // Empty / oversized names are rejected too.
+    let res = app
+        .clone()
+        .oneshot(create_token_req(&cookie, "   ", Some("read")))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let long = "n".repeat(65);
+    let res = app.oneshot(create_token_req(&cookie, &long, Some("read"))).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn token_endpoints_require_a_session() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+
+    for req in [
+        Request::get("/api/auth/tokens").body(Body::empty()).unwrap(),
+        Request::post("/api/auth/tokens")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"x"}"#))
+            .unwrap(),
+        Request::delete("/api/auth/tokens/whatever").body(Body::empty()).unwrap(),
+    ] {
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+}
+
+/// Tokens are per-account credentials: one user must not be able to enumerate
+/// or revoke another's by id.
+#[tokio::test]
+async fn tokens_are_isolated_between_users() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let admin_cookie = cookie_from(&res);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/auth/users")
+                .header("content-type", "application/json")
+                .header("cookie", &admin_cookie)
+                .body(Body::from(
+                    serde_json::json!({"username":"bob","password":"hunter22-plus"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bob_cookie = cookie_from(&app.clone().oneshot(login_req("bob", "hunter22-plus")).await.unwrap());
+
+    let created = json_body(
+        app.clone()
+            .oneshot(create_token_req(&admin_cookie, "admin token", Some("full")))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let admin_token_id = created["id"].as_str().unwrap().to_string();
+
+    // Bob sees none of it...
+    assert_eq!(json_body(app.clone().oneshot(list_tokens_req(&bob_cookie)).await.unwrap()).await,
+        serde_json::json!([]));
+    // ...and naming the right id doesn't let him revoke it.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::delete(format!("/api/auth/tokens/{admin_token_id}"))
+                .header("cookie", &bob_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    let still_there = json_body(app.oneshot(list_tokens_req(&admin_cookie)).await.unwrap()).await;
+    assert_eq!(still_there.as_array().unwrap().len(), 1);
+}
+
+/// Recovery is the flow you run when you think the account is compromised. A
+/// PAT wraps its own copy of the DB key, so leaving tokens alive would revoke
+/// the cookie an attacker doesn't need and keep the credential they do.
+#[tokio::test]
+async fn recovery_revokes_existing_api_tokens() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state, &test_ui_dir());
+
+    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let cookie = cookie_from(&res);
+    let recovery_key = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+
+    app.clone()
+        .oneshot(create_token_req(&cookie, "leaked token", Some("full")))
+        .await
+        .unwrap();
+    assert_eq!(
+        json_body(app.clone().oneshot(list_tokens_req(&cookie)).await.unwrap())
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let res = app
+        .clone()
+        .oneshot(recover_req("alice", &recovery_key, "brand-new-password-9"))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let new_cookie = cookie_from(&res);
+
+    assert_eq!(
+        json_body(app.oneshot(list_tokens_req(&new_cookie)).await.unwrap()).await,
+        serde_json::json!([]),
+        "recovery must revoke every API token, not just sessions"
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_user_purges_their_api_tokens() {
+    let (state, _dir) = fresh_state();
+    let app = build_router(state.clone(), &test_ui_dir());
+    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let admin_cookie = cookie_from(&res);
+
+    app.clone()
+        .oneshot(
+            Request::post("/api/auth/users")
+                .header("content-type", "application/json")
+                .header("cookie", &admin_cookie)
+                .body(Body::from(
+                    serde_json::json!({"username":"bob","password":"hunter22-plus"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bob_cookie = cookie_from(&app.clone().oneshot(login_req("bob", "hunter22-plus")).await.unwrap());
+    app.clone()
+        .oneshot(create_token_req(&bob_cookie, "bob token", Some("full")))
+        .await
+        .unwrap();
+
+    let bob_id = state
+        .users
+        .list_users()
+        .unwrap()
+        .into_iter()
+        .find(|u| u.username == "bob")
+        .unwrap()
+        .id;
+    assert_eq!(state.users.list_api_tokens(&bob_id).unwrap().len(), 1);
+
+    let res = app
+        .oneshot(
+            Request::delete(format!("/api/auth/users/{bob_id}"))
+                .header("cookie", &admin_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        state.users.list_api_tokens(&bob_id).unwrap().is_empty(),
+        "a deleted account's tokens must not keep unlocking its data"
+    );
 }

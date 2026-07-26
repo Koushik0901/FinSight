@@ -230,6 +230,29 @@ pub async fn unwrap_key_with_recovery_display_async(
         .expect(BLOCKING_PANIC)
 }
 
+// --------------------------------------------------------- API tokens ---
+//
+// An MCP/API access token is 32 random bytes (like the recovery key), so it is
+// used DIRECTLY as the KEK that wraps the user's DB key — no KDF needed. The
+// token itself is stored only as a SHA-256 hash (lookup index); the AEAD tag on
+// the wrapped key is the real verification, so a stolen users.db yields neither
+// a usable token nor a DB key.
+
+pub fn wrap_key_with_token(
+    token_bytes: &[u8; 32],
+    dbkey: &[u8; DB_KEY_LEN],
+) -> Result<Vec<u8>, CryptoError> {
+    wrap_with_kek(token_bytes, dbkey)
+}
+
+pub fn unwrap_key_with_token(
+    token_bytes: &[u8; 32],
+    wrapped: &[u8],
+) -> Result<[u8; DB_KEY_LEN], CryptoError> {
+    let v = unwrap_with_kek(token_bytes, wrapped)?;
+    v.as_slice().try_into().map_err(|_| CryptoError::Unwrap)
+}
+
 // ------------------------------------------------- server session key ---
 //
 // Persistent sessions (survive server restarts) need the server to recover a
@@ -322,6 +345,21 @@ pub fn hash_session_token(token: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_wrap_unwrap_round_trip_and_rejects_wrong_token() {
+        let token = generate_db_key(); // same shape: 32 random bytes
+        let dbkey = generate_db_key();
+        let wrapped = wrap_key_with_token(&token, &dbkey).unwrap();
+        assert_eq!(unwrap_key_with_token(&token, &wrapped).unwrap(), dbkey);
+        let other = generate_db_key();
+        assert!(unwrap_key_with_token(&other, &wrapped).is_err());
+        // Tampered ciphertext must fail the AEAD tag, not decrypt garbage.
+        let mut tampered = wrapped.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0x01;
+        assert!(unwrap_key_with_token(&token, &tampered).is_err());
+    }
 
     #[test]
     fn server_key_wrap_unwrap_round_trip() {

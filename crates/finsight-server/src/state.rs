@@ -56,6 +56,21 @@ impl ServerState {
         let sessions =
             crate::sessions::SessionStore::with_persistence(Arc::clone(&users), server_key);
         sessions.purge_expired_persisted();
+        // In-flight OAuth codes live ~10 minutes; anything still on disk at
+        // startup is dead by definition. Best-effort — a failure here must not
+        // stop the server from booting.
+        match users.purge_expired_oauth_codes(chrono::Utc::now().timestamp()) {
+            Ok(n) if n > 0 => tracing::info!(count = n, "purged expired OAuth authorization codes"),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "could not purge expired OAuth codes"),
+        }
+        // Expired access tokens are already refused at auth time; this only
+        // keeps the table from growing without bound as connectors refresh.
+        match users.purge_expired_api_tokens(chrono::Utc::now().timestamp()) {
+            Ok(n) if n > 0 => tracing::info!(count = n, "purged expired access tokens"),
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "could not purge expired access tokens"),
+        }
         Ok(Arc::new(Self {
             users,
             sessions,
