@@ -1,5 +1,160 @@
 [
   {
+    "expectValid": false,
+    "block": { "kind": "markdown", "markdown": "   " }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "table", "title": null, "columns": [], "rows": [] }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "table",
+      "title": null,
+      "columns": ["A", "B"],
+      "rows": [["only-one-cell"]]
+    }
+  },
+  {
+    "expectValid": true,
+    "block": {
+      "kind": "table",
+      "title": null,
+      "columns": ["A", "B"],
+      "rows": [["1", "2"]]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "barChart", "title": null, "seriesLabel": null, "data": [] }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "lineChart", "title": null, "seriesLabel": null, "data": [] }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "metricGrid", "metrics": [] }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "callout", "tone": "info", "title": null, "body": "  " }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "transactionTable",
+      "count": 1,
+      "totalCents": 100,
+      "rows": [{ "date": "2026-05-03", "merchant": "  ", "categoryKey": "Dining", "amountCents": 100, "flag": null }],
+      "more": 0
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "affordabilityVerdict",
+      "canAfford": true,
+      "headline": "   ",
+      "sub": "fine",
+      "caveat": null,
+      "fundingSource": null
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "categoryBreakdown",
+      "periodLabel": "  ",
+      "rows": [{ "categoryKey": "Housing", "amountCents": 1, "isFixed": true, "isLever": false }]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "allocationSplit",
+      "totalCents": 100,
+      "segments": [{ "label": "  ", "amountCents": 100, "rationale": "r", "categoryKey": "debt" }]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "rankedOptions",
+      "title": "  ",
+      "options": [{ "rankTone": "primary", "label": "A", "detail": "d", "rationale": "r" }]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "comparisonBars",
+      "title": "T",
+      "current": { "label": "  ", "amountCents": 1 },
+      "prior": { "label": "P", "amountCents": 2 }
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "recategorizationPreview",
+      "count": 1,
+      "rows": [{ "merchant": "M", "categoryKey": "C", "confidence": 0.5 }],
+      "more": 0,
+      "bundleId": "   "
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendTimeline",
+      "title": null,
+      "subtitle": null,
+      "points": [
+        { "label": "  ", "amountCents": 1, "highlight": false, "annotation": null, "projected": false },
+        { "label": "Feb", "amountCents": 2, "highlight": false, "annotation": null, "projected": false }
+      ]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendingDrivers",
+      "title": "Drivers",
+      "subtitle": null,
+      "drivers": [{ "label": "Travel", "tag": "planned", "amountDisplay": "  ", "note": null }]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "watchList",
+      "title": "Watch",
+      "items": [{ "label": "  ", "detail": "d", "amountDisplay": null }]
+    }
+  },
+  {
+    "expectValid": false,
+    "block": { "kind": "actionPlan", "title": "Plan", "items": ["  "] }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "spendingReview",
+      "months": [
+        {
+          "label": "May 2026",
+          "spentCents": 100,
+          "subtitle": null,
+          "categories": [{ "label": "  ", "amountCents": 50, "tag": null }],
+          "summary": null,
+          "actions": []
+        }
+      ]
+    }
+  },
+  {
     "expectValid": true,
     "block": {
       "kind": "accountsOverview",
@@ -24,12 +179,29 @@
     }
   },
   {
-    "expectValid": false,
+    "expectValid": true,
     "block": {
       "kind": "accountsOverview",
       "title": null,
       "subtitle": null,
       "rows": []
+    }
+  },
+  {
+    "expectValid": false,
+    "block": {
+      "kind": "accountsOverview",
+      "title": null,
+      "subtitle": null,
+      "rows": [
+        {
+          "name": "   ",
+          "subtitle": null,
+          "typeLabel": "Checking",
+          "amountCents": 100,
+          "badge": null
+        }
+      ]
     }
   },
   {

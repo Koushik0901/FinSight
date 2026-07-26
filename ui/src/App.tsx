@@ -36,7 +36,7 @@ const Recurring = lazy(() => import("./screens/Recurring"));
 const Goals = lazy(() => import("./screens/Goals"));
 const Journey = lazy(() => import("./screens/Journey"));
 const Scenarios = lazy(() => import("./screens/Scenarios"));
-const Cashflow = lazy(() => import("./screens/CashFlow"));
+const Cashflow = lazy(() => import("./screens/Cashflow"));
 const Reports = lazy(() => import("./screens/Reports"));
 const MonthClose = lazy(() => import("./screens/MonthClose"));
 const PathBack = lazy(() => import("./screens/PathBack"));

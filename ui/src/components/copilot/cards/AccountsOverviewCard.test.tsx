@@ -19,3 +19,17 @@ test("renders header, a negative balance, and the needs-balance badge", () => {
   expect(screen.getByText("Credit")).toBeInTheDocument();
   expect(screen.getByText("needs a balance set")).toBeInTheDocument();
 });
+
+/**
+ * This kind is server-rendered: the model emits a bare
+ * `{"kind":"accountsOverview"}` and the server fills the rows from the ledger.
+ * An unfilled block therefore means "the server declined", which covers a failed
+ * accounts read as well as a genuinely account-less user — so it must render
+ * nothing rather than an empty table that asserts "you have no accounts".
+ */
+test("renders nothing when the server did not fill in any rows", () => {
+  const { container } = render(
+    <AccountsOverviewCard block={{ kind: "accountsOverview", title: "Accounts", subtitle: null, rows: [] }} />,
+  );
+  expect(container).toBeEmptyDOMElement();
+});

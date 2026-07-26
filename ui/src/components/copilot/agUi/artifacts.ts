@@ -27,29 +27,44 @@ const shortString = z.string().max(MAX_LABEL);
 const requiredString = shortString.refine((s) => s.trim().length > 0, {
   message: "must not be blank",
 });
+/// Long-form counterpart of `requiredString`, for the MAX_TEXT-capped prose
+/// fields (`markdown`, a callout `body`) that Rust likewise rejects when blank.
+const requiredText = z.string().max(MAX_TEXT).refine((s) => s.trim().length > 0, {
+  message: "must not be blank",
+});
 
 /// Discriminated union mirroring the Rust `AgentResponseBlock` — the only shape
 /// the backend ever puts inside a `FinSightResponseBlock` artifact. Every branch
 /// is bounded so an oversized or malformed block is rejected, not rendered.
-export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("markdown"), markdown: z.string().max(MAX_TEXT) }),
+///
+/// Not exported directly: `CopilotResponseBlockSchema` below wraps it with the
+/// cross-field checks that `z.discriminatedUnion` cannot host (its members must
+/// be plain objects, so a `.refine()` on a branch is a construction error).
+const CopilotResponseBlockUnion = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("markdown"), markdown: requiredText }),
+  // `.min(1)` on columns mirrors Rust's `!columns.is_empty()`. The row-width
+  // check (Rust's `row.len() == columns.len()`) can't live here because
+  // `z.discriminatedUnion` only accepts plain object members — it's applied to
+  // the whole union below. The `.max()` bounds stay at the ARTIFACT_MAX_* values
+  // they mirror, deliberately looser than Rust's tighter semantic caps (8 cols /
+  // 50 rows), which are enforced server-side before anything is emitted.
   z.object({
     kind: z.literal("table"),
     title: shortString.nullable(),
-    columns: z.array(shortString).max(MAX_TABLE_COLS),
+    columns: z.array(shortString).min(1).max(MAX_TABLE_COLS),
     rows: z.array(z.array(shortString).max(MAX_TABLE_COLS)).max(MAX_TABLE_ROWS),
   }),
   z.object({
     kind: z.literal("barChart"),
     title: shortString.nullable(),
     seriesLabel: shortString.nullable(),
-    data: z.array(z.object({ label: shortString, value: z.number().finite() })).max(MAX_CHART_POINTS),
+    data: z.array(z.object({ label: shortString, value: z.number().finite() })).min(1).max(MAX_CHART_POINTS),
   }),
   z.object({
     kind: z.literal("lineChart"),
     title: shortString.nullable(),
     seriesLabel: shortString.nullable(),
-    data: z.array(z.object({ label: shortString, value: z.number().finite() })).max(MAX_CHART_POINTS),
+    data: z.array(z.object({ label: shortString, value: z.number().finite() })).min(1).max(MAX_CHART_POINTS),
   }),
   z.object({
     kind: z.literal("metricGrid"),
@@ -62,13 +77,14 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
           tone: shortString.nullable(),
         }),
       )
+      .min(1)
       .max(MAX_METRICS),
   }),
   z.object({
     kind: z.literal("callout"),
     tone: shortString,
     title: shortString.nullable(),
-    body: z.string().max(MAX_TEXT),
+    body: requiredText,
   }),
   z.object({
     kind: z.literal("transactionTable"),
@@ -78,8 +94,8 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       .array(
         z.object({
           date: shortString,
-          merchant: shortString,
-          categoryKey: shortString,
+          merchant: requiredString,
+          categoryKey: requiredString,
           amountCents: z.number().int(),
           flag: shortString.nullable(),
         }),
@@ -101,16 +117,16 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("affordabilityVerdict"),
     canAfford: z.boolean(),
-    headline: shortString,
-    sub: shortString,
+    headline: requiredString,
+    sub: requiredString,
     caveat: shortString.nullable(),
     fundingSource: z.object({ label: shortString, detail: shortString }).nullable(),
   }),
   z.object({
     kind: z.literal("categoryBreakdown"),
-    periodLabel: shortString,
+    periodLabel: requiredString,
     rows: z
-      .array(z.object({ categoryKey: shortString, amountCents: z.number().int(), isFixed: z.boolean(), isLever: z.boolean() }))
+      .array(z.object({ categoryKey: requiredString, amountCents: z.number().int(), isFixed: z.boolean(), isLever: z.boolean() }))
       .min(1)
       .max(30),
   }),
@@ -118,41 +134,47 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     kind: z.literal("allocationSplit"),
     totalCents: z.number().int().positive(),
     segments: z
-      .array(z.object({ label: shortString, amountCents: z.number().int().nonnegative(), rationale: shortString, categoryKey: shortString }))
+      .array(z.object({ label: requiredString, amountCents: z.number().int().nonnegative(), rationale: shortString, categoryKey: shortString }))
       .min(1)
       .max(12),
   }),
   z.object({
     kind: z.literal("rankedOptions"),
-    title: shortString,
+    title: requiredString,
     options: z
-      .array(z.object({ rankTone: z.enum(["primary", "neutral", "muted"]), label: shortString, detail: shortString, rationale: shortString }))
+      .array(z.object({ rankTone: z.enum(["primary", "neutral", "muted"]), label: requiredString, detail: shortString, rationale: shortString }))
       .min(1)
       .max(10),
   }),
   z.object({
     kind: z.literal("comparisonBars"),
-    title: shortString,
-    current: z.object({ label: shortString, amountCents: z.number().int().nonnegative() }),
-    prior: z.object({ label: shortString, amountCents: z.number().int().nonnegative() }),
+    title: requiredString,
+    current: z.object({ label: requiredString, amountCents: z.number().int().nonnegative() }),
+    prior: z.object({ label: requiredString, amountCents: z.number().int().nonnegative() }),
   }),
   z.object({
     kind: z.literal("recategorizationPreview"),
     count: z.number().int().nonnegative(),
     rows: z.array(z.object({ merchant: shortString, categoryKey: shortString, confidence: z.number().min(0).max(1) })).min(1).max(20),
     more: z.number().int().nonnegative(),
-    bundleId: z.string().min(1).max(MAX_LABEL),
+    // `requiredString`, not `.min(1)`: Rust rejects a whitespace-only bundle id,
+    // and a bundle id that does not resolve makes the approval action a dead end.
+    bundleId: requiredString,
   }),
   z.object({
     kind: z.literal("spendingReview"),
     months: z
       .array(
         z.object({
-          label: shortString,
+          // `requiredString` even though Rust's PRE-hydration gate accepts a
+          // blank label when `period` is set: this schema validates the payload
+          // the server SENDS, and `prune_unhydrated_blocks` drops any month
+          // hydration did not label. See the note above about the two contracts.
+          label: requiredString,
           spentCents: z.number().int(),
           subtitle: shortString.nullable(),
           categories: z
-            .array(z.object({ label: shortString, amountCents: z.number().int(), tag: z.enum(["over", "fixed", "lever"]).nullable() }))
+            .array(z.object({ label: requiredString, amountCents: z.number().int(), tag: z.enum(["over", "fixed", "lever"]).nullable() }))
             .max(10),
           summary: z.string().max(MAX_TEXT).nullable(),
           actions: z.array(shortString).max(6),
@@ -166,38 +188,45 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
     kind: z.literal("accountsOverview"),
     title: shortString.nullable(),
     subtitle: shortString.nullable(),
+    // No `.min(1)`, matching the Rust pre-hydration gate: this kind is
+    // server-rendered, so an empty `rows` is a well-formed block the server
+    // simply has not filled. The server drops those before sending
+    // (`renderable_after_hydration`), and `AccountsOverviewCard` renders
+    // nothing for one — so "empty means show nothing" is the single shared
+    // meaning on both sides. Rejecting it here instead would demote the block
+    // to the generic tool row, which is noisier than silence.
     rows: z
-      .array(z.object({ name: shortString, subtitle: shortString.nullable(), typeLabel: shortString, amountCents: z.number().int().nullable(), badge: shortString.nullable() }))
-      .min(1)
-      .max(30),
+      .array(z.object({ name: requiredString, subtitle: shortString.nullable(), typeLabel: requiredString, amountCents: z.number().int().nullable(), badge: shortString.nullable() }))
+      .max(30)
+      .optional(),
   }),
   z.object({
     kind: z.literal("spendTimeline"),
     title: shortString.nullable(),
     subtitle: shortString.nullable(),
     points: z
-      .array(z.object({ label: shortString, amountCents: z.number().int(), highlight: z.boolean().optional().default(false), annotation: shortString.nullable(), projected: z.boolean().optional().default(false) }))
+      .array(z.object({ label: requiredString, amountCents: z.number().int(), highlight: z.boolean().optional().default(false), annotation: shortString.nullable(), projected: z.boolean().optional().default(false) }))
       .min(2)
       .max(24),
   }),
   z.object({
     kind: z.literal("spendingDrivers"),
-    title: shortString,
+    title: requiredString,
     subtitle: shortString.nullable(),
     drivers: z
-      .array(z.object({ label: shortString, tag: z.enum(["planned", "trend", "prices", "anomaly", "creep", "mixed"]), amountDisplay: shortString, note: shortString.nullable() }))
+      .array(z.object({ label: requiredString, tag: z.enum(["planned", "trend", "prices", "anomaly", "creep", "mixed"]), amountDisplay: requiredString, note: shortString.nullable() }))
       .min(1)
       .max(8),
   }),
   z.object({
     kind: z.literal("watchList"),
-    title: shortString,
-    items: z.array(z.object({ label: shortString, detail: z.string().max(MAX_TEXT), amountDisplay: shortString.nullable() })).min(1).max(8),
+    title: requiredString,
+    items: z.array(z.object({ label: requiredString, detail: z.string().max(MAX_TEXT), amountDisplay: shortString.nullable() })).min(1).max(8),
   }),
   z.object({
     kind: z.literal("actionPlan"),
     title: shortString.nullable(),
-    items: z.array(shortString).min(1).max(8),
+    items: z.array(requiredString).min(1).max(8),
   }),
   // A question the Copilot needs answered before it can continue. One shape
   // covers all three modes so the interaction reads as a single feature: no
@@ -255,6 +284,20 @@ export const CopilotResponseBlockSchema = z.discriminatedUnion("kind", [
       .default([]),
   }),
 ]);
+
+/// The union plus the cross-field checks a discriminated-union branch cannot
+/// carry. Mirrors Rust's `row.len() == columns.len()` for the generic `table`
+/// kind: a ragged table renders cells under the wrong headers, and a number
+/// shown against the wrong label is worse than no table at all.
+export const CopilotResponseBlockSchema = CopilotResponseBlockUnion.superRefine((block, ctx) => {
+  if (block.kind === "table" && block.rows.some((row) => row.length !== block.columns.length)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["rows"],
+      message: "every table row must have exactly one cell per column",
+    });
+  }
+});
 
 /// Strict per-component prop schemas. A component is only allowlisted if it has a
 /// schema here; anything else is rejected as an unknown component. Keep this in
