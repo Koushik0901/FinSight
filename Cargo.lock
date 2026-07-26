@@ -2055,6 +2055,7 @@ dependencies = [
  "finsight-agent",
  "finsight-api",
  "finsight-core",
+ "finsight-eval",
  "futures-util",
  "hex",
  "rand 0.8.6",
