@@ -17,6 +17,17 @@ use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 /// See the parent module doc for why this exact model was chosen.
 pub const DEFAULT_MODEL_ID: &str = "sentence-transformers/all-MiniLM-L6-v2";
 
+/// Pinned commit on the model repo's `main` branch, verified reachable at
+/// <https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/config.json>.
+/// Deliberately NOT `"main"`: `main` is a moving ref, and `model_id` alone is
+/// meant to be a stable cache/vector-space key (see [`super::SentenceEncoder::model_id`]
+/// and issue #92's planned use of it to invalidate stale stored vectors on a
+/// model swap) — pinning here means a future weight update is a visible,
+/// explicit code change (bump this constant) rather than a silent content
+/// change under an unchanged `model_id` that `download_if_missing`'s
+/// present-file cache check would never detect.
+const MODEL_REVISION: &str = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41";
+
 /// Files pulled from the HuggingFace repo. `model.safetensors` is the
 /// weights file candle can mmap directly — deliberately not one of the
 /// PyTorch/ONNX/OpenVINO/TF variants the repo also publishes.
@@ -36,10 +47,15 @@ pub struct MiniLmEncoder {
 
 impl MiniLmEncoder {
     /// Loads the encoder, downloading model files into
-    /// `models_dir/<model_id>/` first if they aren't already cached there.
-    /// Network access is only needed on a cold cache.
+    /// `models_dir/<model_id>/<revision>/` first if they aren't already
+    /// cached there. Network access is only needed on a cold cache.
     pub async fn load(models_dir: &Path, model_id: &str) -> Result<Self> {
-        let model_dir = models_dir.join(model_id);
+        // The revision is part of the cache path (not just the download URL)
+        // so that bumping `MODEL_REVISION` in a future change automatically
+        // busts the cache — old weights under the old revision are never
+        // mistaken for the new one via the present-file check, because
+        // they'd sit at a different path entirely.
+        let model_dir = models_dir.join(model_id).join(MODEL_REVISION);
         download_if_missing(&model_dir, model_id).await?;
 
         let load_dir = model_dir.clone();
@@ -64,8 +80,31 @@ impl MiniLmEncoder {
         let dims = config.hidden_size;
 
         let tokenizer_path = model_dir.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
+        let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| anyhow::anyhow!("loading tokenizer {}: {e}", tokenizer_path.display()))?;
+        // Configured once, here, on the owned tokenizer before it's wrapped in
+        // `Arc` and shared — NOT per `embed()` call. `Tokenizer` carries a full
+        // WordPiece vocab + normalizer + processors; cloning it per call (the
+        // previous approach) would silently contradict this struct's own
+        // "cheap to clone" claim below with a real deep copy on every embed.
+        //
+        // `PaddingStrategy::BatchLongest` pads each `encode_batch` call to
+        // *that call's own* longest member, not a fixed global length, so one
+        // static setting is correct for both a batch of many texts (padded to
+        // match each other) and a "batch" of one (its own length is already
+        // the longest, so zero padding tokens are ever added) — no per-call
+        // reconfiguration needed. Covered by `embed_end_to_end_real_model`'s
+        // batched-vs-single-call comparison.
+        tokenizer
+            .with_truncation(Some(TruncationParams {
+                max_length: 512,
+                ..Default::default()
+            }))
+            .map_err(|e| anyhow::anyhow!("configuring truncation: {e}"))?;
+        tokenizer.with_padding(Some(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
 
         let weights_path = model_dir.join("model.safetensors");
         // SAFETY: mmap'ing a safetensors file this process downloaded itself
@@ -117,26 +156,8 @@ fn embed_blocking(
     texts: &[String],
 ) -> Result<Vec<Vec<f32>>> {
     let device = Device::Cpu;
-    let mut tokenizer = tokenizer.clone();
-    tokenizer
-        .with_truncation(Some(TruncationParams {
-            max_length: 512,
-            ..Default::default()
-        }))
-        .map_err(|e| anyhow::anyhow!("configuring truncation: {e}"))?;
-    // Only pad when batching more than one text — a lone text needs no
-    // padding, and skipping it keeps the single-text path byte-identical to
-    // what a batch-of-one would produce with the real (non-padded) length.
-    let padding = if texts.len() > 1 {
-        Some(PaddingParams {
-            strategy: PaddingStrategy::BatchLongest,
-            ..Default::default()
-        })
-    } else {
-        None
-    };
-    tokenizer.with_padding(padding);
-
+    // Truncation + padding are already configured once on `tokenizer` at load
+    // time (see `load_from_dir`) — no per-call clone or reconfiguration.
     let encodings = tokenizer
         .encode_batch(texts.to_vec(), true)
         .map_err(|e| anyhow::anyhow!("tokenizing: {e}"))?;
@@ -179,10 +200,12 @@ fn normalize_l2(v: &Tensor) -> candle_core::Result<Tensor> {
 }
 
 /// Downloads any of [`MODEL_FILES`] not already present in `model_dir` from
-/// the public HuggingFace resolve endpoint. A file already on disk is
-/// assumed complete and is not re-fetched — downloads write to a `.part`
-/// sibling and rename over the real name only on success, so a crash or
-/// killed process mid-download never leaves a truncated file that a later
+/// the public HuggingFace resolve endpoint, pinned to [`MODEL_REVISION`] —
+/// never `main`, which is a moving ref and could silently serve different
+/// bytes under the same `model_id` on a different day. A file already on
+/// disk is assumed complete and is not re-fetched — downloads write to a
+/// `.part` sibling and rename over the real name only on success, so a crash
+/// or killed process mid-download never leaves a truncated file that a later
 /// run would mistake for a cached one.
 async fn download_if_missing(model_dir: &Path, model_id: &str) -> Result<()> {
     if MODEL_FILES.iter().all(|f| model_dir.join(f).is_file()) {
@@ -197,7 +220,7 @@ async fn download_if_missing(model_dir: &Path, model_id: &str) -> Result<()> {
         if dest.is_file() {
             continue;
         }
-        let url = format!("https://huggingface.co/{model_id}/resolve/main/{file}");
+        let url = format!("https://huggingface.co/{model_id}/resolve/{MODEL_REVISION}/{file}");
         tracing::info!(url = %url, "downloading sentence-encoder model file (first use only)");
         let resp = client
             .get(&url)

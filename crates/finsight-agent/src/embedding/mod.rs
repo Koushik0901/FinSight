@@ -19,11 +19,13 @@
 //!   separate Ollama process. This repo's self-hosting pitch
 //!   (`docs/self-hosting.md`) is "one container, no extra services" — an
 //!   external dependency for a categorization nicety cuts against that.
-//! - **`candle` (pure Rust) — chosen.** No native linking, so it cannot
-//!   destabilize the existing OpenSSL/Perl build, and it runs entirely on
-//!   CPU, matching this repo's actual deploy targets: a thin Tauri webview
+//! - **`candle` (pure Rust) — chosen.** Its own tensor/model code has no
+//!   native linking (unlike `ort`'s full onnxruntime), and it runs entirely
+//!   on CPU, matching this repo's actual deploy targets: a thin Tauri webview
 //!   shell with no local compute budget to spare, and a modest self-hosted
-//!   NAS/Docker box — neither is a GPU box.
+//!   NAS/Docker box — neither is a GPU box. Not *zero* native surface area
+//!   though — see the binary-size note below, `tokenizers` still brings in
+//!   one small native shim candle doesn't control.
 //!
 //! ## RSS / binary-size tradeoff (explicit, per the issue)
 //!
@@ -32,10 +34,25 @@
 //!
 //! - **Binary size**: `candle-core` + `candle-nn` + `candle-transformers` +
 //!   `tokenizers` add roughly tens of MB to the compiled
-//!   `finsight-agent`-linked artifacts (a pure-Rust, CPU-only build — no
-//!   `cuda`/`mkl`/`accelerate` feature is enabled). For comparison, `ort`
-//!   would instead ship a bundled ~20-30MB native onnxruntime shared library
-//!   per target platform, on top of its own Rust bindings.
+//!   `finsight-agent`-linked artifacts (a CPU-only build — no `cuda`/`mkl`/
+//!   `accelerate` feature is enabled). This is not a fully native-linking-free
+//!   build, though: `tokenizers`' default features pull in `onig`/`onig_sys`
+//!   (native C, Oniguruma regex). Our own direct `tokenizers` dependency (see
+//!   `Cargo.toml`) drops it: `onig` is swapped for `fancy-regex`, a pure-Rust
+//!   regex engine (`tokenizers` requires exactly one of the two to compile at
+//!   all — neither is truly optional). `candle-core` 0.11 still pins its own
+//!   separate `tokenizers 0.22` line with its `onig` feature on — a different
+//!   semver-major (0.x) line, so Cargo can't unify features across it — so
+//!   `onig`/`onig_sys` still enters the build graph transitively via
+//!   `candle-core` regardless, not fixable here without patching/forking it
+//!   (confirmed via `cargo tree -p finsight-agent -i onig_sys`; `esaxx-rs`,
+//!   `tokenizers`' other potentially-native dependency, resolves with zero
+//!   features enabled anywhere in this graph per `cargo metadata`, so its
+//!   native C++ `cpp` acceleration path is not active here — it builds pure
+//!   Rust). `candle` is still the meaningfully smaller and less fragile
+//!   choice: one small, single-purpose native regex shim, not a full
+//!   onnxruntime C++ runtime (`ort`'s alternative, see the decision above)
+//!   plus its own bundled shared library per target platform.
 //! - **RSS**: model *weights* (~90MB on disk for MiniLM, see below) are not
 //!   loaded at process start — see "Lazy load" below — so a server that
 //!   never triggers semantic categorization pays no extra idle RSS. Once
@@ -49,20 +66,24 @@
 //!
 //! Model weights are **not** committed to git or bundled into the compiled
 //! binary. [`candle_encoder`] downloads them on first real use from
-//! HuggingFace (`https://huggingface.co/<model_id>/resolve/main/<file>`,
-//! public repo, no auth needed) into `<FINSIGHT_DATA_DIR>/models/<model_id>/`
-//! — the same `FINSIGHT_DATA_DIR` that already holds the per-user SQLCipher
-//! DBs, so model weights live alongside other self-hosted state instead of a
-//! new top-level convention. A present-file check skips re-downloading.
-//! Downloads reuse the workspace's existing `reqwest` dependency — no second
-//! HTTP client.
+//! HuggingFace, pinned to a specific commit — never the moving `main` ref
+//! (`https://huggingface.co/<model_id>/resolve/<revision>/<file>`, public
+//! repo, no auth needed) — into
+//! `<FINSIGHT_DATA_DIR>/models/<model_id>/<revision>/`, the same
+//! `FINSIGHT_DATA_DIR` that already holds the per-user SQLCipher DBs, so
+//! model weights live alongside other self-hosted state instead of a new
+//! top-level convention. Putting the revision in the cache path (not just
+//! the URL) matters: it means a future revision bump can never be mistaken
+//! for already-cached weights by the present-file check — old and new
+//! revisions simply live at different paths. Downloads reuse the workspace's
+//! existing `reqwest` dependency — no second HTTP client.
 //!
 //! **Known limitation, intentionally not solved here**: a deployment with no
 //! internet egress (e.g. an air-gapped NAS behind a locked-down firewall)
 //! cannot fetch the ~90MB of weights on first use, and semantic
 //! categorization will fail with a download error until the operator
-//! pre-populates `<data_dir>/models/<model_id>/` by hand. Air-gapped
-//! deployment support is out of scope for this slice.
+//! pre-populates `<data_dir>/models/<model_id>/<revision>/` by hand.
+//! Air-gapped deployment support is out of scope for this slice.
 //!
 //! ## Model
 //!
