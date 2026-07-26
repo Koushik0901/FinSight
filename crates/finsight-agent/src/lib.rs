@@ -4,6 +4,7 @@ pub mod agent;
 pub mod anomaly;
 pub mod categorizer;
 pub mod context;
+pub mod embedding;
 pub mod executor;
 pub mod finance;
 pub mod navigation;
@@ -157,9 +158,3 @@ pub trait CompletionProvider: Send + Sync {
     }
 }
 
-/// Stub retained for Phase 5 (embedding-based nearest-neighbor search).
-#[async_trait]
-pub trait EmbeddingProvider: Send + Sync {
-    fn model_id(&self) -> &str;
-    fn dimensions(&self) -> usize;
-}

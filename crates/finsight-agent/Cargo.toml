@@ -15,6 +15,15 @@ tokio.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rusqlite.workspace = true
 uuid.workspace = true
+tracing.workspace = true
+# Local CPU sentence-embedding encoder (issue #90) — see
+# `src/embedding/mod.rs` for the ort/candle/Ollama decision. Pure-Rust,
+# CPU-only (no cuda/mkl/accelerate feature): no native linking added to a
+# workspace already working around a fragile vendored-OpenSSL/Perl toolchain.
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = "0.23"
 
 [dev-dependencies]
 tempfile.workspace = true
