@@ -487,9 +487,9 @@ pub async fn set_transaction_flags(
 pub struct TransferVerdictResult {
     pub transaction: finsight_core::models::Transaction,
     /// LIKE pattern identifying the siblings (pass to
-    /// `apply_transfer_verdict_to_similar`), e.g. `%swathi%`.
+    /// `apply_transfer_verdict_to_similar`), e.g. `%jordan%`.
     pub similar_pattern: Option<String>,
-    /// Human-readable counterparty ("swathi") for the offer text.
+    /// Human-readable counterparty ("jordan") for the offer text.
     pub similar_label: Option<String>,
     pub similar_count: i64,
 }

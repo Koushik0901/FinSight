@@ -14,8 +14,8 @@ describe("prettyMerchant", () => {
   });
 
   it("never renames — words and casing stay exactly as the bank wrote them", () => {
-    expect(prettyMerchant("Internet Banking E-TRANSFER 106001023942 Swathi")).toBe(
-      "Internet Banking E-TRANSFER 106001023942 Swathi"
+    expect(prettyMerchant("Internet Banking E-TRANSFER 106001023942 Jordan")).toBe(
+      "Internet Banking E-TRANSFER 106001023942 Jordan"
     );
   });
 

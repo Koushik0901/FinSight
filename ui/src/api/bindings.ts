@@ -3552,11 +3552,11 @@ export type TransferSuggestionInfo = { id: string; confidence: string; detectedA
 export type TransferVerdictResult = { transaction: Transaction; 
 /**
  * LIKE pattern identifying the siblings (pass to
- * `apply_transfer_verdict_to_similar`), e.g. `%swathi%`.
+ * `apply_transfer_verdict_to_similar`), e.g. `%jordan%`.
  */
 similarPattern: string | null; 
 /**
- * Human-readable counterparty ("swathi") for the offer text.
+ * Human-readable counterparty ("jordan") for the offer text.
  */
 similarLabel: string | null; similarCount: number }
 /**

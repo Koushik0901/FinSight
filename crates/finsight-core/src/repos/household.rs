@@ -2,7 +2,7 @@
 //!
 //! An account with 2+ owners is a JOINT account — jointness is derived from
 //! `account_owners`, never stored as a flag. `accounts.owner` (legacy TEXT)
-//! is kept in sync as a display string ("Koushik & Swathi", "Household" when
+//! is kept in sync as a display string ("Koushik & Jordan", "Household" when
 //! unassigned) so older read paths and AI context stay meaningful.
 
 use crate::error::{CoreError, CoreResult};
@@ -294,13 +294,13 @@ mod tests {
         insert_account(&conn, "sav", "Tangerine Savings");
 
         let koushik = create_member(&mut conn, "Koushik", Some("#38BDF8")).unwrap();
-        let swathi = create_member(&mut conn, "Swathi", Some("#F472B6")).unwrap();
+        let jordan = create_member(&mut conn, "Jordan", Some("#F472B6")).unwrap();
 
         // Joint: two owners.
-        set_account_owners(&mut conn, "sav", &[koushik.id.clone(), swathi.id.clone()]).unwrap();
+        set_account_owners(&mut conn, "sav", &[koushik.id.clone(), jordan.id.clone()]).unwrap();
         let owners = list_account_owners(&mut conn).unwrap();
         assert_eq!(owners.len(), 2, "joint account has two ownership rows");
-        assert_eq!(owner_display(&conn, "sav"), "Koushik & Swathi");
+        assert_eq!(owner_display(&conn, "sav"), "Koushik & Jordan");
 
         // Back to sole ownership.
         set_account_owners(&mut conn, "sav", &[koushik.id.clone()]).unwrap();
@@ -317,8 +317,8 @@ mod tests {
     fn member_names_are_unique_case_insensitively() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        create_member(&mut conn, "Swathi", None).unwrap();
-        let dup = create_member(&mut conn, "  swathi ", None);
+        create_member(&mut conn, "Jordan", None).unwrap();
+        let dup = create_member(&mut conn, "  jordan ", None);
         assert!(dup.is_err(), "duplicate member names must be rejected");
         let blank = create_member(&mut conn, "   ", None);
         assert!(blank.is_err(), "blank names must be rejected");
@@ -330,7 +330,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         insert_account(&conn, "sav", "Tangerine Savings");
         let a = create_member(&mut conn, "Koushik", None).unwrap();
-        let b = create_member(&mut conn, "Swathi", None).unwrap();
+        let b = create_member(&mut conn, "Jordan", None).unwrap();
         set_account_owners(&mut conn, "sav", &[a.id.clone(), b.id.clone()]).unwrap();
 
         delete_member(&mut conn, &b.id).unwrap();
@@ -360,7 +360,7 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let a = create_member(&mut conn, "Koushik", None).unwrap();
-        let b = create_member(&mut conn, "Swathi", None).unwrap();
+        let b = create_member(&mut conn, "Jordan", None).unwrap();
         assert!(self_member(&mut conn).unwrap().is_none(), "no self by default");
         assert!(!a.is_self, "create_member never marks self");
 
@@ -398,7 +398,7 @@ mod tests {
         ).unwrap();
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) \
-             VALUES('t_friend','chq','2026-06-22T00:00:00Z',-50000,'Internet Banking E-TRANSFER 105950894357 Swathi','cleared','2026-06-22T00:00:00Z')",
+             VALUES('t_friend','chq','2026-06-22T00:00:00Z',-50000,'Internet Banking E-TRANSFER 105950894357 Jordan','cleared','2026-06-22T00:00:00Z')",
             [],
         ).unwrap();
 
@@ -430,7 +430,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         insert_account(&conn, "chq", "Joint Chequing");
         let a = create_member(&mut conn, "Koushik", None).unwrap();
-        let b = create_member(&mut conn, "Swathi", None).unwrap();
+        let b = create_member(&mut conn, "Jordan", None).unwrap();
 
         set_account_owner_shares(
             &mut conn,
@@ -447,7 +447,7 @@ mod tests {
             owners.iter().find(|o| o.member_id == a.id).unwrap().share_bps,
             Some(7000)
         );
-        assert_eq!(owner_display(&conn, "chq"), "Koushik & Swathi", "display still syncs");
+        assert_eq!(owner_display(&conn, "chq"), "Koushik & Jordan", "display still syncs");
 
         conn.execute(
             "INSERT INTO manual_assets(id,name,asset_type,value_cents,currency,created_at,updated_at) \

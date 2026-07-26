@@ -923,11 +923,11 @@ mod tests {
         )
         .unwrap();
 
-        insert_series(&conn, "Internet Banking E-TRANSFER 100000000001 Swathi", "2025-01-01", 30, 8, -160_000, 0.01, Some("housing"), 0);
+        insert_series(&conn, "Internet Banking E-TRANSFER 100000000001 Jordan", "2025-01-01", 30, 8, -160_000, 0.01, Some("housing"), 0);
         insert_series(&conn, "Internet Banking E-TRANSFER 200000000002 Landlord", "2025-01-05", 30, 8, -50_000, 0.01, None, 0);
 
         let items = detect_recurring(&conn, 400).unwrap();
-        let rent = find(&items, "swathi").expect("categorized rent is a distinct, surfaced series");
+        let rent = find(&items, "jordan").expect("categorized rent is a distinct, surfaced series");
         assert!(
             !matches!(rent.kind, RecurringKind::Transfer),
             "categorized rent must not be dismissed as a transfer (got {:?})",

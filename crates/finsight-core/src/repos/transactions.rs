@@ -565,7 +565,7 @@ pub fn set_transfer_override(
 
 /// The other UNDECIDED transactions that share this transaction's transfer
 /// counterparty, so one verdict can be offered for all of them ("also mark the
-/// other 11 e-transfers with swathi"). Returns `(like_pattern, count)` — or
+/// other 11 e-transfers with jordan"). Returns `(like_pattern, count)` — or
 /// `None` when the descriptor has no counterparty to generalize on (a bare
 /// "INTERNET TRANSFER <ref>" is unique per row; bulk would be meaningless).
 ///
@@ -668,8 +668,8 @@ pub fn apply_verdict_to_matching(
     let ids: Vec<String> = {
         // Scoped to the transfer-review vocabulary — the same predicate that
         // decides what the review card shows — so a bulk verdict never rules
-        // rows the user never saw (e.g. "%joe%" sweeping uncategorized
-        // Trader Joe's groceries alongside a Joe e-transfer).
+        // rows the user never saw (e.g. "%sam%" sweeping uncategorized
+        // Trader Joe's groceries alongside a Sam e-transfer).
         let sql = format!(
             "SELECT id FROM transactions t \
              WHERE lower(t.merchant_raw) LIKE ?1 AND {}",
@@ -1327,7 +1327,7 @@ mod tests {
         // Simulate an ambiguous e-transfer the pipeline mis-treated as income:
         // categorized and anomaly-flagged. (Keyword pass says NOT a transfer.)
         conn.execute(
-            "UPDATE transactions SET merchant_raw = 'INTERAC e-Transfer From: SATHVIK', \
+            "UPDATE transactions SET merchant_raw = 'INTERAC e-Transfer From: ALEX', \
              category_id = 'cat1', is_anomaly = 1 WHERE id = ?1",
             params![txn_id],
         )
@@ -1437,9 +1437,9 @@ mod tests {
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
              ('rv1',?1,'2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared','2026-05-01T12:00:00Z',0,NULL),\
-             ('rv2',?1,'2026-05-02T12:00:00Z', 150000,'INTERAC e-Transfer From: SATHVIK','cleared','2026-05-02T12:00:00Z',0,NULL),\
+             ('rv2',?1,'2026-05-02T12:00:00Z', 150000,'INTERAC e-Transfer From: ALEX','cleared','2026-05-02T12:00:00Z',0,NULL),\
              ('rv3',?1,'2026-05-03T12:00:00Z',-50000,'Internet Withdrawal to Tangerine','cleared','2026-05-03T12:00:00Z',1,NULL),\
-             ('rv4',?1,'2026-05-04T12:00:00Z', 90000,'INTERAC e-Transfer From: swathi','cleared','2026-05-04T12:00:00Z',0,0)",
+             ('rv4',?1,'2026-05-04T12:00:00Z', 90000,'INTERAC e-Transfer From: jordan','cleared','2026-05-04T12:00:00Z',0,0)",
             params![acc_id],
         )
         .unwrap();
@@ -1471,20 +1471,20 @@ mod tests {
         // internal transfer that must never ride a counterparty verdict.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
-             ('s1',?1,'2026-01-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105152493591 Swathi','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
-             ('s2',?1,'2026-02-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105249142383 SWATHI','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
-             ('s3',?1,'2026-03-01T12:00:00Z', 300000,'Internet Banking E-TRANSFER 011654884429 swathi','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
-             ('s4',?1,'2026-04-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105583684812 Swathi','cleared','2026-04-01T12:00:00Z',0,NULL,'cat1'),\
-             ('s5',?1,'2026-05-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105588077665 Swathi','cleared','2026-05-01T12:00:00Z',0,0,NULL),\
+             ('s1',?1,'2026-01-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105152493591 Jordan','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('s2',?1,'2026-02-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105249142383 JORDAN','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('s3',?1,'2026-03-01T12:00:00Z', 300000,'Internet Banking E-TRANSFER 011654884429 jordan','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
+             ('s4',?1,'2026-04-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105583684812 Jordan','cleared','2026-04-01T12:00:00Z',0,NULL,'cat1'),\
+             ('s5',?1,'2026-05-01T12:00:00Z',-300000,'Internet Banking E-TRANSFER 105588077665 Jordan','cleared','2026-05-01T12:00:00Z',0,0,NULL),\
              ('u1',?1,'2026-05-02T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared','2026-05-02T12:00:00Z',0,NULL,NULL)",
             params![acc_id],
         )
         .unwrap();
 
-        // The offer: ruling s1 finds the two other undecided swathi rows.
+        // The offer: ruling s1 finds the two other undecided jordan rows.
         let siblings = transfer_verdict_siblings(&mut conn, "s1").unwrap();
         let (pattern, n) = siblings.expect("a person e-transfer generalizes");
-        assert_eq!(pattern, "%swathi%");
+        assert_eq!(pattern, "%jordan%");
         assert_eq!(n, 2, "s2+s3 are undecided; s4 categorized, s5 ruled — excluded");
 
         // A bare internal transfer has no counterparty — no bulk offer.
@@ -1547,7 +1547,7 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('su1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+             ('su1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer sam','cleared','2026-05-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
@@ -1575,7 +1575,7 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('rl1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+             ('rl1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer sam','cleared','2026-05-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
@@ -1612,7 +1612,7 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('tf1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-05-01T12:00:00Z',0,NULL)",
+             ('tf1',?1,'2026-05-01T12:00:00Z',-50000,'e-transfer sam','cleared','2026-05-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
@@ -1626,18 +1626,18 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let (acc_id, _) = seed(&mut conn);
-        // Two undecided "joe" e-transfers, plus one already categorized (decided).
+        // Two undecided "sam" e-transfers, plus one already categorized (decided).
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
-             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer joe 001','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
-             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer joe 002','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
-             ('j3',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer joe 003','cleared','2026-03-01T12:00:00Z',0,NULL,'cat1')",
+             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer sam 001','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer sam 002','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('j3',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer sam 003','cleared','2026-03-01T12:00:00Z',0,NULL,'cat1')",
             params![acc_id],
         )
         .unwrap();
 
         let applied =
-            apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+            apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
         assert_eq!(applied, 2, "only the two undecided rows are ruled");
 
         let (j1_settled, j2_settled): (i64, i64) = conn
@@ -1666,23 +1666,23 @@ mod tests {
 
     #[test]
     fn apply_verdict_does_not_sweep_non_transfer_lookalikes() {
-        // "%joe%" should only rule rows that actually look like a transfer
+        // "%sam%" should only rule rows that actually look like a transfer
         // (the transfer-review vocabulary) — not every uncategorized
-        // transaction whose merchant happens to contain "joe", e.g. Trader
-        // Joe's groceries. Ruling those in would also persist a "%joe%"
+        // transaction whose merchant happens to contain "sam", e.g. Trader
+        // Joe's groceries. Ruling those in would also persist a "%sam%"
         // treatment rule that mis-nets future Trader Joe's purchases.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
-             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Sam','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
              ('g1',?1,'2026-01-02T12:00:00Z',-8000,'TRADER JOE''S #123','cleared','2026-01-02T12:00:00Z',0,NULL,NULL)",
             params![acc_id],
         )
         .unwrap();
 
-        let applied = apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        let applied = apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
         assert_eq!(applied, 1, "only the e-transfer-vocab row is ruled");
 
         let e1_settled: i64 = conn
@@ -1703,7 +1703,7 @@ mod tests {
 
     #[test]
     fn apply_verdict_leaves_an_existing_categorize_rule_untouched() {
-        // A pre-existing user rule that categorizes "%joe%" (e.g. a friend
+        // A pre-existing user rule that categorizes "%sam%" (e.g. a friend
         // whose name overlaps a merchant pattern) must not be flipped to a
         // transfer/settle_up treatment by a later bulk counterparty verdict.
         let (_d, db) = fresh_db();
@@ -1712,7 +1712,7 @@ mod tests {
         crate::repos::rules::insert(
             &mut conn,
             crate::models::NewRule {
-                pattern: "%joe%".to_string(),
+                pattern: "%sam%".to_string(),
                 category_id: "cat1".to_string(),
                 source: "user".to_string(),
                 treatment: "categorize".to_string(),
@@ -1721,17 +1721,17 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
-             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL)",
+             ('e1',?1,'2026-01-01T12:00:00Z',-5000,'Internet Banking E-TRANSFER 111 Sam','cleared','2026-01-01T12:00:00Z',0,NULL,NULL)",
             params![acc_id],
         )
         .unwrap();
 
-        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
 
         let (treatment, rule_count): (String, i64) = conn
             .query_row(
-                "SELECT (SELECT treatment FROM rules WHERE lower(pattern) = '%joe%'), \
-                        (SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%')",
+                "SELECT (SELECT treatment FROM rules WHERE lower(pattern) = '%sam%'), \
+                        (SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%sam%')",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -1747,25 +1747,25 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer joe 001','cleared','2026-01-01T12:00:00Z',0,NULL)",
+             ('j1',?1,'2026-01-01T12:00:00Z',-50000,'e-transfer sam 001','cleared','2026-01-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
 
-        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
 
         let rule: (String, bool, String) = conn
             .query_row(
-                "SELECT pattern, enabled, treatment FROM rules WHERE lower(pattern) = '%joe%'",
+                "SELECT pattern, enabled, treatment FROM rules WHERE lower(pattern) = '%sam%'",
                 [],
                 |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!(rule, ("%joe%".to_string(), true, "settle_up".to_string()));
+        assert_eq!(rule, ("%sam%".to_string(), true, "settle_up".to_string()));
 
         let rule_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%sam%'",
                 [],
                 |r| r.get(0),
             )
@@ -1776,14 +1776,14 @@ mod tests {
         // the rule — upsert, not insert-always.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer joe 002','cleared','2026-02-01T12:00:00Z',0,NULL)",
+             ('j2',?1,'2026-02-01T12:00:00Z',-50000,'e-transfer sam 002','cleared','2026-02-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
-        apply_verdict_to_matching(&mut conn, "%joe%", Verdict::SettleUp).unwrap();
+        apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
         let rule_count2: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%joe%'",
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%sam%'",
                 [],
                 |r| r.get(0),
             )
@@ -1793,14 +1793,14 @@ mod tests {
         // Verdict::Real is the default treatment — nothing to persist.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override) VALUES\
-             ('sw1',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer swathi 001','cleared','2026-03-01T12:00:00Z',0,NULL)",
+             ('sw1',?1,'2026-03-01T12:00:00Z',-50000,'e-transfer jordan 001','cleared','2026-03-01T12:00:00Z',0,NULL)",
             params![acc_id],
         )
         .unwrap();
-        apply_verdict_to_matching(&mut conn, "%swathi%", Verdict::Real).unwrap();
+        apply_verdict_to_matching(&mut conn, "%jordan%", Verdict::Real).unwrap();
         let real_rule_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%swathi%'",
+                "SELECT COUNT(*) FROM rules WHERE lower(pattern) = '%jordan%'",
                 [],
                 |r| r.get(0),
             )
@@ -1817,23 +1817,23 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('l1',?1,'2026-01-05T12:00:00Z',-300000,'E-TRANSFER 111 Joe','cleared','2026-01-05T12:00:00Z'),\
-             ('r1',?1,'2026-03-09T12:00:00Z', 250000,'E-TRANSFER 222 Joe','cleared','2026-03-09T12:00:00Z')",
+             ('l1',?1,'2026-01-05T12:00:00Z',-300000,'E-TRANSFER 111 Sam','cleared','2026-01-05T12:00:00Z'),\
+             ('r1',?1,'2026-03-09T12:00:00Z', 250000,'E-TRANSFER 222 Sam','cleared','2026-03-09T12:00:00Z')",
             params![acc_id],
         )
         .unwrap();
 
-        let joe = counterparty_position(&conn, "joe")
+        let sam = counterparty_position(&conn, "sam")
             .unwrap()
-            .expect("joe has a position");
-        assert_eq!(joe.outflow_cents, 300000, "lent out");
-        assert_eq!(joe.inflow_cents, 250000, "repaid");
-        assert_eq!(joe.net_cents, -50000, "down $500");
-        assert_eq!(joe.owed_to_user_cents(), 50000, "$500 outstanding with them");
-        assert_eq!(joe.owed_by_user_cents(), 0);
-        assert_eq!(joe.txn_count, 2);
-        assert_eq!(joe.first_at.as_deref(), Some("2026-01-05"));
-        assert_eq!(joe.last_at.as_deref(), Some("2026-03-09"));
+            .expect("sam has a position");
+        assert_eq!(sam.outflow_cents, 300000, "lent out");
+        assert_eq!(sam.inflow_cents, 250000, "repaid");
+        assert_eq!(sam.net_cents, -50000, "down $500");
+        assert_eq!(sam.owed_to_user_cents(), 50000, "$500 outstanding with them");
+        assert_eq!(sam.owed_by_user_cents(), 0);
+        assert_eq!(sam.txn_count, 2);
+        assert_eq!(sam.first_at.as_deref(), Some("2026-01-05"));
+        assert_eq!(sam.last_at.as_deref(), Some("2026-03-09"));
     }
 
     /// The distinction from the review queue: that one deliberately narrows to
@@ -1846,8 +1846,8 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,settle_up,category_id) VALUES\
-             ('a1',?1,'2026-01-01T12:00:00Z',-10000,'E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL),\
-             ('a2',?1,'2026-02-01T12:00:00Z',-20000,'E-TRANSFER 222 Joe','cleared','2026-02-01T12:00:00Z',1,'cat1')",
+             ('a1',?1,'2026-01-01T12:00:00Z',-10000,'E-TRANSFER 111 Sam','cleared','2026-01-01T12:00:00Z',0,NULL),\
+             ('a2',?1,'2026-02-01T12:00:00Z',-20000,'E-TRANSFER 222 Sam','cleared','2026-02-01T12:00:00Z',1,'cat1')",
             params![acc_id],
         )
         .unwrap();
@@ -1855,14 +1855,14 @@ mod tests {
         let queue_total: i64 = list_unresolved_counterparties(&conn)
             .unwrap()
             .iter()
-            .filter(|g| g.label == "joe")
+            .filter(|g| g.label == "sam")
             .map(|g| g.outflow_cents)
             .sum();
         assert_eq!(queue_total, 10000, "the queue hides the settled leg, by design");
 
-        let joe = counterparty_position(&conn, "joe").unwrap().unwrap();
-        assert_eq!(joe.outflow_cents, 30000, "the tab counts both legs");
-        assert_eq!(joe.txn_count, 2);
+        let sam = counterparty_position(&conn, "sam").unwrap().unwrap();
+        assert_eq!(sam.outflow_cents, 30000, "the tab counts both legs");
+        assert_eq!(sam.txn_count, 2);
     }
 
     #[test]
@@ -1971,11 +1971,11 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('p1',?1,'2026-01-01T12:00:00Z',-1000,'E-TRANSFER 1 Joe','cleared','2026-01-01T12:00:00Z')",
+             ('p1',?1,'2026-01-01T12:00:00Z',-1000,'E-TRANSFER 1 Sam','cleared','2026-01-01T12:00:00Z')",
             params![acc_id],
         )
         .unwrap();
-        for needle in ["joe", "%joe%", "Joe", " JOE "] {
+        for needle in ["sam", "%sam%", "Sam", " SAM "] {
             assert!(
                 counterparty_position(&conn, needle).unwrap().is_some(),
                 "{needle:?} should resolve to the same person"
@@ -1990,12 +1990,12 @@ mod tests {
         let (acc_id, _) = seed(&mut conn);
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,is_transfer,transfer_override,category_id) VALUES\
-             ('j1',?1,'2026-01-01T12:00:00Z',-30000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
-             ('j2',?1,'2026-02-01T12:00:00Z',-20000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
-             ('j3',?1,'2026-03-01T12:00:00Z', 10000,'Internet Banking E-TRANSFER 222 Joe','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
-             ('s1',?1,'2026-04-01T12:00:00Z',-40000,'E-TRANSFER 333 Swathi','cleared','2026-04-01T12:00:00Z',0,NULL,NULL),\
+             ('j1',?1,'2026-01-01T12:00:00Z',-30000,'Internet Banking E-TRANSFER 111 Sam','cleared','2026-01-01T12:00:00Z',0,NULL,NULL),\
+             ('j2',?1,'2026-02-01T12:00:00Z',-20000,'Internet Banking E-TRANSFER 111 Sam','cleared','2026-02-01T12:00:00Z',0,NULL,NULL),\
+             ('j3',?1,'2026-03-01T12:00:00Z', 10000,'Internet Banking E-TRANSFER 222 Sam','cleared','2026-03-01T12:00:00Z',0,NULL,NULL),\
+             ('s1',?1,'2026-04-01T12:00:00Z',-40000,'E-TRANSFER 333 Jordan','cleared','2026-04-01T12:00:00Z',0,NULL,NULL),\
              ('u1',?1,'2026-05-01T12:00:00Z', -5000,'Internet Banking INTERNET TRANSFER 000000999','cleared','2026-05-01T12:00:00Z',0,NULL,NULL),\
-             ('d1',?1,'2026-06-01T12:00:00Z',-10000,'Internet Banking E-TRANSFER 444 Joe','cleared','2026-06-01T12:00:00Z',0,NULL,'cat1')",
+             ('d1',?1,'2026-06-01T12:00:00Z',-10000,'Internet Banking E-TRANSFER 444 Sam','cleared','2026-06-01T12:00:00Z',0,NULL,'cat1')",
             params![acc_id],
         )
         .unwrap();
@@ -2003,24 +2003,24 @@ mod tests {
         let groups = list_unresolved_counterparties(&conn).unwrap();
 
         // The decided (categorized) row must never appear, nor may it inflate
-        // the "joe" group's count.
-        let joe = groups
+        // the "sam" group's count.
+        let sam = groups
             .iter()
-            .find(|g| g.label == "joe")
-            .expect("a joe group exists");
-        assert_eq!(joe.pattern.as_deref(), Some("%joe%"));
-        assert_eq!(joe.txn_count, 3, "j1+j2+j3 only; d1 is decided (categorized)");
-        assert_eq!(joe.inflow_cents, 10000);
-        assert_eq!(joe.outflow_cents, 50000);
+            .find(|g| g.label == "sam")
+            .expect("a sam group exists");
+        assert_eq!(sam.pattern.as_deref(), Some("%sam%"));
+        assert_eq!(sam.txn_count, 3, "j1+j2+j3 only; d1 is decided (categorized)");
+        assert_eq!(sam.inflow_cents, 10000);
+        assert_eq!(sam.outflow_cents, 50000);
 
-        let swathi = groups
+        let jordan = groups
             .iter()
-            .find(|g| g.label == "swathi")
-            .expect("a swathi group exists");
-        assert_eq!(swathi.pattern.as_deref(), Some("%swathi%"));
-        assert_eq!(swathi.txn_count, 1);
-        assert_eq!(swathi.inflow_cents, 0);
-        assert_eq!(swathi.outflow_cents, 40000);
+            .find(|g| g.label == "jordan")
+            .expect("a jordan group exists");
+        assert_eq!(jordan.pattern.as_deref(), Some("%jordan%"));
+        assert_eq!(jordan.txn_count, 1);
+        assert_eq!(jordan.inflow_cents, 0);
+        assert_eq!(jordan.outflow_cents, 40000);
 
         let unnamed = groups
             .iter()
@@ -2034,8 +2034,8 @@ mod tests {
         // nothing from the seeded ordinary AMAZON purchase.
         assert_eq!(groups.len(), 3);
 
-        // Ordered by net exposure (|inflow - outflow|) descending: swathi
-        // (40000) and joe (40000) tie for largest, both ahead of the unnamed
+        // Ordered by net exposure (|inflow - outflow|) descending: jordan
+        // (40000) and sam (40000) tie for largest, both ahead of the unnamed
         // bucket (5000).
         let unnamed_pos = groups.iter().position(|g| g.label == "Unnamed internal transfers").unwrap();
         assert_eq!(unnamed_pos, 2, "smallest net exposure sorts last");
