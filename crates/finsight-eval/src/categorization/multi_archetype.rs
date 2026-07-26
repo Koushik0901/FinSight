@@ -89,6 +89,15 @@ const HIT_RATIO_TOLERANCE: f64 = 0.10;
 /// transfer keyword lists plus an investment/brokerage list that has no
 /// real FinSight predicate to call — this corpus's own invented-data
 /// exclusion, not a shipped feature).
+// Note for future contributors adding merchants to the generator: several
+// entries below are bare substrings on purpose (matching production's own
+// broad "pairing hint" vocabulary), which means an otherwise-innocent
+// invented name containing that substring will trip this check — e.g.
+// "wire" below forbids any merchant name containing "wire" at all
+// (a "Wiremill Hardware" or "Hardwire Supply Co" would fail). That is
+// intentional, not a bug: it mirrors `PAIRING_HINT_KEYWORDS` faithfully.
+// If a future merchant name collides, rename the merchant instead of
+// narrowing this list.
 const FORBIDDEN_VOCAB: &[&str] = &[
     // Transfer vocabulary (finsight_core::categorize::
     // UNILATERAL_TRANSFER_KEYWORDS / PAIRING_HINT_KEYWORDS / CC_COUNTERPARTY_HINTS).

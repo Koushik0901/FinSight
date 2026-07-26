@@ -246,11 +246,16 @@ definition, and word bank in this corpus is this script's own invention.
 ### Merchant catalog
 
 ~330 unique fictional merchant identities across the 10 starter categories,
-each with 4-9 realistic surface-text variants sharing one `merchant_id`
-(store numbers, `POS PURCHASE` tags, city+province suffixes, trailing
-reference digits, ALL-CAPS vs Title Case, `&`/`AND` and apostrophe-drop
-punctuation variants — standard, publicly-known bank/card statement
-formatting conventions, not derived from any specific account). Every name
+each with 8-9 realistic surface-text variants generated per merchant
+(9 when the base name contains `&` or an apostrophe and so gets an extra
+punctuation variant, 8 otherwise) sharing one `merchant_id` — not every
+generated variant necessarily appears in a final row, since which variant a
+given transaction uses is itself a random draw, but the full 8-9-variant
+pool exists for every merchant (store numbers, `POS PURCHASE` tags,
+city+province suffixes, trailing reference digits, ALL-CAPS vs Title Case,
+`&`/`AND` and apostrophe-drop punctuation variants — standard,
+publicly-known bank/card statement formatting conventions, not derived
+from any specific account). Every name
 is invented; **no real brand names appear anywhere in this file**, unlike
 the small seed, which deliberately uses a handful of real public brand
 names (Costco, Netflix, Best Buy) for specific rows. This corpus took the
