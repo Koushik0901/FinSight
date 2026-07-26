@@ -404,7 +404,101 @@ replacement database.
 
 ---
 
-## 9. Current limits
+## 9. Connect Claude or ChatGPT (MCP)
+
+FinSight speaks the **Model Context Protocol**, so you can point Claude
+Desktop, claude.ai, ChatGPT, or Claude Code at your server and use your own AI
+subscription instead of configuring a provider key for the in-app Copilot. The
+external assistant gets the *same* tools the in-app Copilot uses — the 43-tool
+set is shared code, not a reimplementation — plus five tools for reviewing and
+applying proposals.
+
+Endpoint: **`https://<your-server>/mcp`** (shown in Settings → Connections).
+
+### Can your client reach it?
+
+| Client | What it needs |
+|---|---|
+| **Claude Code**, `mcp-remote`, other local bridges | Any reachable URL — LAN, Tailscale, or `http://localhost:8674`. Uses an access token. |
+| **claude.ai**, **Claude Desktop** custom connectors, **ChatGPT** | A **publicly reachable HTTPS origin**. These connect *from Anthropic's/OpenAI's servers*, not from your laptop, so `localhost` and a plain Tailscale tailnet are invisible to them. Use Recipe B (public domain + Caddy) or `tailscale funnel`. They run the OAuth flow automatically. |
+
+Recipe A's `tailscale serve` is tailnet-only. `tailscale funnel 8674` exposes the
+same server publicly if you'd rather not run your own domain.
+
+### Two ways to authenticate
+
+**Access token (for Claude Code and local bridges).** Settings → Connections →
+Create token. The token is shown **once**. Then:
+
+```bash
+claude mcp add --transport http finsight https://your-server/mcp --header "Authorization: Bearer finsight_pat_..."
+```
+
+**OAuth (for cloud connectors).** Paste `https://your-server/mcp` into the
+client's "add custom connector" box. It registers itself, sends you to
+FinSight's consent screen, you pick an access level, and it receives a token —
+no copy-pasting. The connector then appears in Settings → Connections under its
+own name, revocable like any other token.
+
+OAuth-issued tokens are **short-lived and renew themselves**: the connector gets
+an access token good for an hour plus a refresh token, and swaps them silently
+in the background. You never see this happen. Revoking the connector in Settings
+kills both halves, so it cannot renew its way back in. Tokens you create by hand
+do *not* expire — you pasted them into a config file, and having them stop
+working on a timer would just look like a broken integration.
+
+### Widgets
+
+Some results come back as a small card — net worth, a spending breakdown, a
+transaction list, an affordability verdict — instead of a wall of JSON. This
+uses the MCP Apps UI standard, so a client that supports it (ChatGPT, and Claude
+surfaces as they adopt it) renders the card inline, and a client that doesn't
+just shows the same numbers as text. Nothing is lost either way; the tools are
+fully usable headless.
+
+The cards are self-contained HTML with no external requests, so they work under
+the strictest client CSP and never phone home.
+
+### Access levels
+
+- **Read only** — analysis only. The assistant can read accounts,
+  transactions, budgets, goals, and every projection, but cannot change
+  anything. Start here.
+- **Read and write** — additionally lets the assistant *propose* changes and,
+  once you agree in the conversation, apply them.
+
+With a read-write token the flow is deliberately three steps: the assistant
+drafts a proposal, tells you what it would change, and only calls approve +
+execute after you say yes. Every proposal is saved as a pending bundle visible
+in FinSight itself, so you can always see (and apply, or reject) what an
+assistant suggested.
+
+An assistant can only apply proposals **it** drafted. Approving is meant to
+record "you agreed, in this conversation", and nothing else was there to see
+that agreement — so a proposal made inside FinSight, or by a different
+connected assistant, comes back as a refusal rather than being applied. Those
+stay yours to review in the app. (If you have both Claude and ChatGPT connected
+and ask the second one to apply the first one's suggestion, this is why it
+declines.)
+
+### Security notes
+
+- A token is stored only as a hash, and it wraps its own copy of your database
+  key — so a stolen `users.db` yields neither a usable token nor readable data.
+  The flip side: **the token itself unlocks your financial data**, so treat it
+  like a password.
+- Resetting your password with a recovery key **revokes every token**,
+  including OAuth-issued connectors. Reconnect afterwards.
+- `/mcp` never accepts session cookies, only bearer tokens.
+- If discovery reports the wrong origin behind your proxy (an `http://` issuer,
+  or an internal hostname), set **`FINSIGHT_PUBLIC_ORIGIN=https://your-server`**
+  in the container environment.
+- Tokens travel in an `Authorization` header. Reverse proxies don't log request
+  headers by default; if you've enabled that, exclude it.
+
+---
+
+## 10. Current limits
 
 - **Long-lived Copilot streaming requests.** Chat answers stream over a
   single held-open HTTP request. Some reverse proxies cut idle connections
