@@ -15,6 +15,30 @@ tokio.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 rusqlite.workspace = true
 uuid.workspace = true
+tracing.workspace = true
+# Local CPU sentence-embedding encoder (issue #90) — see
+# `src/embedding/mod.rs` for the ort/candle/Ollama decision and the RSS/
+# native-dependency tradeoff written out in full. CPU-only (no cuda/mkl/
+# accelerate feature). NOT fully native-free: `tokenizers`' default features
+# pull `onig`/`onig_sys` (native C, Oniguruma). Our own direct dependency
+# below drops it: `onig` is replaced with `fancy-regex` (tokenizers requires
+# exactly one of the two — it won't compile with neither — and fancy-regex
+# is pure Rust, no native code). `candle-core` 0.11 pins its OWN separate
+# `tokenizers 0.22` line (a different semver line, so Cargo can't unify
+# features across it) with its `onig` feature on, so `onig`/`onig_sys` still
+# enters the build graph transitively via candle-core regardless, not
+# removable here without patching/forking it — confirmed via
+# `cargo tree -p finsight-agent -i onig_sys`. (`esaxx-rs`, tokenizers'
+# OTHER potentially-native dependency, resolves with zero features enabled
+# throughout this whole graph — confirmed via `cargo metadata` — so its
+# native C++ `cpp` acceleration path is not active anywhere here; it builds
+# pure Rust.) Still meaningfully smaller and less fragile than `ort`'s
+# alternative: a full native onnxruntime C++ library, not one small native
+# regex shim.
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 
 [dev-dependencies]
 tempfile.workspace = true
