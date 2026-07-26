@@ -8,6 +8,10 @@ license.workspace = true
 finsight-api = { path = "../finsight-api" }
 finsight-core = { path = "../finsight-core" }
 finsight-agent = { path = "../finsight-agent" }
+# Lib target only (src/categorization/…) — the private, local-only precision-eval
+# admin route (src/admin_eval.rs) over an admin's own real categorizations.
+# NOT the `finsight-eval` bin / Copilot benchmark harness.
+finsight-eval = { path = "../finsight-eval" }
 axum = { version = "0.8", features = ["json", "multipart"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 tokio.workspace = true

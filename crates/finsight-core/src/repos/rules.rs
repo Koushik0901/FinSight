@@ -147,8 +147,8 @@ pub fn apply_treatment_rules(conn: &mut Connection) -> CoreResult<u32> {
         let ids: Vec<String> = {
             // Scoped to the transfer-review vocabulary (same predicate the
             // review card itself uses) so a persisted rule never sweeps rows
-            // that never appeared on the card, e.g. "%joe%" catching Trader
-            // Joe's groceries alongside a Joe e-transfer.
+            // that never appeared on the card, e.g. "%sam%" catching Trader
+            // Joe's groceries alongside a Sam e-transfer.
             let sql = format!(
                 "SELECT id FROM transactions t \
                  WHERE lower(t.merchant_raw) LIKE lower(?1) AND {}",
@@ -256,19 +256,19 @@ mod tests {
             [],
         )
         .unwrap();
-        // A settle_up rule for "joe", persisted from an earlier bulk verdict.
+        // A settle_up rule for "sam", persisted from an earlier bulk verdict.
         conn.execute(
             "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at,treatment) \
-             VALUES('r1','%joe%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
+             VALUES('r1','%sam%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
             [],
         )
         .unwrap();
-        // A fresh import brings in both an inflow and an outflow leg for joe,
+        // A fresh import brings in both an inflow and an outflow leg for sam,
         // neither decided yet.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,transfer_override) VALUES\
-             ('in1','chk','2026-07-01T12:00:00Z', 30000,'e-transfer joe','cleared','2026-07-01T12:00:00Z',NULL),\
-             ('out1','chk','2026-07-02T12:00:00Z',-50000,'e-transfer joe','cleared','2026-07-02T12:00:00Z',NULL)",
+             ('in1','chk','2026-07-01T12:00:00Z', 30000,'e-transfer sam','cleared','2026-07-01T12:00:00Z',NULL),\
+             ('out1','chk','2026-07-02T12:00:00Z',-50000,'e-transfer sam','cleared','2026-07-02T12:00:00Z',NULL)",
             [],
         )
         .unwrap();
@@ -299,14 +299,14 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at,treatment) \
-             VALUES('r1','%joe%','',1,'user','2026-01-01T00:00:00Z','transfer')",
+             VALUES('r1','%sam%','',1,'user','2026-01-01T00:00:00Z','transfer')",
             [],
         )
         .unwrap();
         // The user already ruled this exact row before the treatment rule ran.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,transfer_override,is_transfer) VALUES\
-             ('t1','chk','2026-07-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-07-01T12:00:00Z',1,1)",
+             ('t1','chk','2026-07-01T12:00:00Z',-50000,'e-transfer sam','cleared','2026-07-01T12:00:00Z',1,1)",
             [],
         )
         .unwrap();
@@ -327,7 +327,7 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at,treatment) \
-             VALUES('r1','%joe%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
+             VALUES('r1','%sam%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
             [],
         )
         .unwrap();
@@ -336,8 +336,8 @@ mod tests {
         // still NULL on both — the pairing pass never sets it.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at,transfer_override,is_transfer,transfer_peer_id) VALUES\
-             ('p1','chk','2026-07-01T12:00:00Z',-50000,'e-transfer joe','cleared','2026-07-01T12:00:00Z',NULL,1,'p2'),\
-             ('p2','chk','2026-07-01T12:00:00Z', 50000,'e-transfer joe','cleared','2026-07-01T12:00:00Z',NULL,1,'p1')",
+             ('p1','chk','2026-07-01T12:00:00Z',-50000,'e-transfer sam','cleared','2026-07-01T12:00:00Z',NULL,1,'p2'),\
+             ('p2','chk','2026-07-01T12:00:00Z', 50000,'e-transfer sam','cleared','2026-07-01T12:00:00Z',NULL,1,'p1')",
             [],
         )
         .unwrap();
@@ -361,9 +361,9 @@ mod tests {
 
     #[test]
     fn apply_treatment_rules_does_not_sweep_non_transfer_lookalikes() {
-        // A persisted "%joe%" settle_up rule must only auto-treat rows that
+        // A persisted "%sam%" settle_up rule must only auto-treat rows that
         // actually look like a transfer (the transfer-review vocabulary) —
-        // not every future uncategorized row whose merchant contains "joe",
+        // not every future uncategorized row whose merchant contains "sam",
         // e.g. Trader Joe's groceries. Otherwise every import silently
         // mis-nets Trader Joe's purchases as settled-up.
         let (_d, db) = fresh_db();
@@ -376,13 +376,13 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO rules(id,pattern,category_id,enabled,source,created_at,treatment) \
-             VALUES('r1','%joe%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
+             VALUES('r1','%sam%','',1,'user','2026-01-01T00:00:00Z','settle_up')",
             [],
         )
         .unwrap();
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('e1','chk','2026-07-01T12:00:00Z',-50000,'Internet Banking E-TRANSFER 111 Joe','cleared','2026-07-01T12:00:00Z'),\
+             ('e1','chk','2026-07-01T12:00:00Z',-50000,'Internet Banking E-TRANSFER 111 Sam','cleared','2026-07-01T12:00:00Z'),\
              ('g1','chk','2026-07-02T12:00:00Z',-8000,'TRADER JOE''S #123','cleared','2026-07-02T12:00:00Z')",
             [],
         )
@@ -419,7 +419,7 @@ mod tests {
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
 
         let rule = NewRule {
-            pattern: "%joe%".to_string(),
+            pattern: "%sam%".to_string(),
             category_id: "cat1".to_string(),
             source: "user".to_string(),
             treatment: "settle_up".to_string(),

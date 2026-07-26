@@ -5,7 +5,7 @@
 **Origin:** F0 follow-up. The audit established that FinSight can auto-detect
 internal transfers and household e-transfers, but the dominant residual leak on
 real data is **genuinely ambiguous bidirectional person-to-person e-transfers**
-(friends: joe / vyshnavi / sathvik / jin, ~$10k each, both directions). These
+(friends: sam / morgan / alex / taylor, ~$10k each, both directions). These
 cannot be auto-classified — they need a fast, sticky, confirm-once **review
 workflow**, not more detection heuristics.
 
@@ -26,7 +26,7 @@ already built and shipped (V046):
   both `apply_builtin_categorization` and `pair_transfers`, so it survives
   re-imports and re-categorization.
 - `transactions::transfer_verdict_siblings(id)` → `(%name%, count)` — the other
-  UNDECIDED rows sharing this counterparty ("also rule the other 11 with Joe").
+  UNDECIDED rows sharing this counterparty ("also rule the other 11 with Sam").
 - `transactions::apply_transfer_override_to_matching(pattern, is_transfer)` — bulk
   apply one verdict to a counterparty's undecided rows.
 - Tauri commands `set_transaction_transfer` / `apply_transfer_verdict_to_similar`.
@@ -59,7 +59,7 @@ A per-transaction treatment, ruled once per counterparty and generalized:
 A `settle_up=1` row contributes its **signed negation to expense and nothing to
 income**: an outflow (`amount_cents<0`) adds `−amount_cents` to expense; an
 inflow (`amount_cents>0`) subtracts `amount_cents` from expense. Worked example —
-Joe (`$11,475` out, `$3,000` in):
+Sam (`$11,475` out, `$3,000` in):
 
 ```
 expense += 11,475 − 3,000 = 8,475      income += 0
@@ -143,11 +143,11 @@ A new card in the `Inbox` needs-review feed: **"People with unresolved money (N)
 
 ```
 People with unresolved money            $38,000 undecided · 5 people
-  Swathi      11 txns   $19,360 out               [ Transfer ][ Settle-up ][ Real ]
-  Joe         12 txns   $11,475 out · $3,000 in   [ Transfer ][ Settle-up ][ Real ]
-  Vyshnavi     9 txns   $11,150 out               [ Transfer ][ Settle-up ][ Real ]
-  Sathvik      9 txns   $10,927 out · $2,800 in   [ Transfer ][ Settle-up ][ Real ]
-  Jin Y        3 txns    $2,555 out               [ Transfer ][ Settle-up ][ Real ]
+  Jordan      11 txns   $19,360 out               [ Transfer ][ Settle-up ][ Real ]
+  Sam         12 txns   $11,475 out · $3,000 in   [ Transfer ][ Settle-up ][ Real ]
+  Morgan     9 txns   $11,150 out               [ Transfer ][ Settle-up ][ Real ]
+  Alex      9 txns   $10,927 out · $2,800 in   [ Transfer ][ Settle-up ][ Real ]
+  Taylor R        3 txns    $2,555 out               [ Transfer ][ Settle-up ][ Real ]
 ```
 
 - New read command `list_unresolved_counterparties()` → rows of
@@ -164,11 +164,11 @@ People with unresolved money            $38,000 undecided · 5 people
 
 Core (Rust):
 - Settle-up netting: a `settle_up` inflow reduces expense and adds `0` income;
-  Joe fixture nets to `$8,475` expense / `$0` income in `cashflow_between`.
+  Sam fixture nets to `$8,475` expense / `$0` income in `cashflow_between`.
 - Verdict transitions: each of transfer/settle_up/real sets the right fields,
   clears category/anomaly appropriately, and removes the row from the undecided
   predicate; re-import keeps the verdict (sticky).
-- Rule-treatment on import: a `%joe%` settle_up rule flags a *new* imported Joe
+- Rule-treatment on import: a `%sam%` settle_up rule flags a *new* imported Sam
   row `settle_up=1`; an explicit per-row `transfer_override` beats it.
 - `list_unresolved_counterparties` groups by counterparty with correct
   in/out/count and excludes decided/categorized/paired rows.

@@ -393,17 +393,17 @@ mod tests {
         // $10,000 came out of the car fund; $3,000 went to a friend, $2,500 came back.
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('l1','chk','2026-01-15T12:00:00Z',-300000,'E-TRANSFER 1 Joe','cleared','2026-01-15T12:00:00Z'),\
-             ('r1','chk','2026-02-20T12:00:00Z', 250000,'E-TRANSFER 2 Joe','cleared','2026-02-20T12:00:00Z')",
+             ('l1','chk','2026-01-15T12:00:00Z',-300000,'E-TRANSFER 1 Sam','cleared','2026-01-15T12:00:00Z'),\
+             ('r1','chk','2026-02-20T12:00:00Z', 250000,'E-TRANSFER 2 Sam','cleared','2026-02-20T12:00:00Z')",
             [],
         )
         .unwrap();
 
-        let env = open_envelope(&conn, 1_000_000, Some("joe"));
+        let env = open_envelope(&conn, 1_000_000, Some("sam"));
         let st = status(&mut conn, &env.id).unwrap().unwrap();
 
         assert_eq!(st.left_to_restore_cents, 1_000_000, "nothing has gone back yet");
-        assert_eq!(st.collectable_cents, 50_000, "$500 outstanding with Joe");
+        assert_eq!(st.collectable_cents, 50_000, "$500 outstanding with Sam");
         assert_eq!(
             st.fund_yourself_cents, 950_000,
             "the rest is the user's own to move or replace"
@@ -464,12 +464,12 @@ mod tests {
         seed_checking(&conn, "chk");
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('l1','chk','2026-01-15T12:00:00Z',-900000,'E-TRANSFER 1 Joe','cleared','2026-01-15T12:00:00Z')",
+             ('l1','chk','2026-01-15T12:00:00Z',-900000,'E-TRANSFER 1 Sam','cleared','2026-01-15T12:00:00Z')",
             [],
         )
         .unwrap();
 
-        let env = open_envelope(&conn, 100_000, Some("joe"));
+        let env = open_envelope(&conn, 100_000, Some("sam"));
         let st = status(&mut conn, &env.id).unwrap().unwrap();
         assert_eq!(st.collectable_cents, 100_000, "capped at what is left");
         assert_eq!(st.fund_yourself_cents, 0);
@@ -484,7 +484,7 @@ mod tests {
         seed_checking(&conn, "chk");
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-             ('l1','chk','2026-01-15T12:00:00Z',-300000,'E-TRANSFER 1 Joe','cleared','2026-01-15T12:00:00Z')",
+             ('l1','chk','2026-01-15T12:00:00Z',-300000,'E-TRANSFER 1 Sam','cleared','2026-01-15T12:00:00Z')",
             [],
         )
         .unwrap();

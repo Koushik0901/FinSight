@@ -90,11 +90,11 @@ fn settle_up_inflow_nets_against_expense_never_income() {
     let (_d, db) = fresh_db();
     let conn = db.get().unwrap();
     insert_account(&conn, "chk");
-    // Joe: $11,475 out (expense) + $3,000 in — ruled settle-up.
+    // Sam: $11,475 out (expense) + $3,000 in — ruled settle-up.
     conn.execute(
         "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,settle_up,status,created_at) VALUES\
-         ('o','chk','2026-05-02T12:00:00Z',-1147500,'e-transfer joe',0,1,'cleared',datetime('now')),\
-         ('i','chk','2026-05-10T12:00:00Z', 300000,'e-transfer joe',0,1,'cleared',datetime('now'))",
+         ('o','chk','2026-05-02T12:00:00Z',-1147500,'e-transfer sam',0,1,'cleared',datetime('now')),\
+         ('i','chk','2026-05-10T12:00:00Z', 300000,'e-transfer sam',0,1,'cleared',datetime('now'))",
         [],
     ).unwrap();
     let (income, expense) = income_expense_since(&conn, "2026-05-01T00:00:00Z").unwrap();
@@ -190,7 +190,7 @@ fn settle_up_verdict_marks_and_leaves_the_undecided_queue() {
     insert_account(&conn, "chk");
     conn.execute(
         "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
-         ('j','chk','2026-05-02T12:00:00Z',-50000,'Internet Banking E-TRANSFER 111 Joe','cleared',datetime('now'))",
+         ('j','chk','2026-05-02T12:00:00Z',-50000,'Internet Banking E-TRANSFER 111 Sam','cleared',datetime('now'))",
         [],
     ).unwrap();
     let t = set_counterparty_verdict(&mut conn, "j", Verdict::SettleUp).unwrap();
@@ -244,7 +244,7 @@ Then generalize the bulk apply to take a `Verdict` (route each id through `set_c
 **Files:**
 - Modify + Test: `crates/finsight-core/src/repos/transactions.rs`
 
-- [ ] **Step 1: Write the failing test** — insert 3 undecided `e-transfer joe` rows (2 out, 1 in) + a decided row; assert one group `{label:"joe", txn_count:3, outflow, inflow}` and the decided row excluded.
+- [ ] **Step 1: Write the failing test** — insert 3 undecided `e-transfer sam` rows (2 out, 1 in) + a decided row; assert one group `{label:"sam", txn_count:3, outflow, inflow}` and the decided row excluded.
 
 - [ ] **Step 2: Run to fail.**
 
@@ -273,7 +273,7 @@ Then generalize the bulk apply to take a `Verdict` (route each id through `set_c
 - Modify: `ui/src/api/hooks/inbox.ts` (or `transactions.ts`) — `useUnresolvedCounterparties`, `useSetCounterpartyVerdict`
 - Modify: `ui/src/screens/Inbox.tsx` (render the card in the needs-review feed)
 
-- [ ] **Step 1: Write the failing test** — render `UnresolvedPeopleCard` with two mock counterparties (Joe: out+in, Swathi: out only); assert both rows render with net in/out, three verb buttons each, and that clicking "Settle-up" for Joe calls the verdict mutation with Joe's pattern and optimistically removes the row. Amounts carry `className="money"`.
+- [ ] **Step 1: Write the failing test** — render `UnresolvedPeopleCard` with two mock counterparties (Sam: out+in, Jordan: out only); assert both rows render with net in/out, three verb buttons each, and that clicking "Settle-up" for Sam calls the verdict mutation with Sam's pattern and optimistically removes the row. Amounts carry `className="money"`.
 
 - [ ] **Step 2: Run to fail** (`cd ui && npx vitest run src/components/inbox/UnresolvedPeopleCard.test.tsx`).
 
@@ -304,7 +304,7 @@ Then generalize the bulk apply to take a `Verdict` (route each id through `set_c
 - Create + Test: `crates/finsight-core/src/repos/rules.rs::apply_treatment_rules(conn)` — for each active rule with `treatment IN ('transfer','settle_up')`, apply to matching rows that are still undecided (both signs), **but never override an explicit per-row `transfer_override`** (precedence). Mirror `apply_to_uncategorized`'s LIKE semantics.
 - Modify: the post-import cascade (where `pair_transfers` runs — `crates/finsight-agent/src/*` or the import command) to call `apply_treatment_rules` after pairing.
 
-- [ ] **Step 1: Write failing test** — a `%joe% settle_up` rule + a fresh imported `e-transfer joe` inflow → after `apply_treatment_rules`, the row has `settle_up=1`; a row with explicit `transfer_override=1` is untouched.
+- [ ] **Step 1: Write failing test** — a `%sam% settle_up` rule + a fresh imported `e-transfer sam` inflow → after `apply_treatment_rules`, the row has `settle_up=1`; a row with explicit `transfer_override=1` is untouched.
 - [ ] **Step 2: fail → Step 3: implement → Step 4: pass → Step 5: commit** `feat(core): counterparty verdicts persist to future imports`.
 
 ---
@@ -316,7 +316,7 @@ Then generalize the bulk apply to take a `Verdict` (route each id through `set_c
 **Files:**
 - Modify: `crates/finsight-app/tests/audit_probe.rs`
 
-- [ ] **Step 1:** In the probe, after the cascade, apply a **settle-up verdict by generic rule** to the largest unresolved counterparties *found in the data* (iterate `list_unresolved_counterparties`, rule the top-N as settle-up) — never hard-code "joe/swathi". Print before/after income & expense.
+- [ ] **Step 1:** In the probe, after the cascade, apply a **settle-up verdict by generic rule** to the largest unresolved counterparties *found in the data* (iterate `list_unresolved_counterparties`, rule the top-N as settle-up) — never hard-code "sam/jordan". Print before/after income & expense.
 - [ ] **Step 2: Run** `cargo test -p finsight-app --release --test audit_probe -- --ignored --nocapture` and record that expense sheds the netted repayments and income sheds the inflows. This is a *measurement*, not an assertion, per the general-harness rule.
 - [ ] **Step 3: Commit** `test(audit): measure settle-up netting on real data by pattern`.
 

@@ -616,7 +616,7 @@ imported the REAL `cibc-savings-all-time-statements.csv` (220 rows, matching
 the Appendix A ground truth) and confirmed `builtinCategorized`/
 `transfersPaired` populate correctly, own-account transfers get flagged while
 ambiguous person e-transfers correctly stay `Uncategorized`, and the
-"Possible transfers" surface lists exactly the ambiguous rows (swathi ×11,
+"Possible transfers" surface lists exactly the ambiguous rows (jordan ×11,
 matching the earlier probe finding) → the bulk-verdict "Also mark N more"
 offer fires correctly on real data → Delete-All → every screen checked
 (Today, `/transactions`) returns to its intentional empty state.

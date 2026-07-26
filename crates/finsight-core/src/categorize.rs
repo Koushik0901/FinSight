@@ -604,7 +604,7 @@ pub(crate) const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
 ///
 /// For a normal merchant the raw string is the right key — matching future
 /// identical rows. But a person-to-person transfer descriptor
-/// ("Internet Banking E-TRANSFER 106001023942 Swathi") carries a UNIQUE reference
+/// ("Internet Banking E-TRANSFER 106001023942 Jordan") carries a UNIQUE reference
 /// number every time, so a rule keyed on the raw string would only ever match
 /// that one row — the single most important recurring cost, rent-by-e-transfer,
 /// would never stick. So for a transfer/e-transfer descriptor, generalize to
@@ -1299,7 +1299,7 @@ mod tests {
         assert!(!is_transfer("INTERAC e-Transfer To: Koushik C"));
         assert!(!is_transfer("INTERAC e-Transfer From: BRITISH"));
         assert!(!is_transfer("Email Money Transfer to Alice"));
-        assert!(!is_transfer("Internet Banking E-TRANSFER 011630 SREE VYSHNAVI"));
+        assert!(!is_transfer("Internet Banking E-TRANSFER 011630 MORGAN LEE"));
         // Payroll and government benefits ride "Electronic Funds Transfer
         // DEPOSIT" too — must never be unilaterally flagged as a transfer.
         assert!(!is_transfer("Electronic Funds Transfer DEPOSIT 387402_260630 Infoblox"));
@@ -1321,8 +1321,8 @@ mod tests {
         // key on the COUNTERPARTY so one confirmation catches every future payment
         // to that person (F3: rent-by-e-transfer becomes visible and sticky).
         assert_eq!(
-            suggested_rule_pattern("Internet Banking E-TRANSFER 106001023942 Swathi"),
-            "%swathi%"
+            suggested_rule_pattern("Internet Banking E-TRANSFER 106001023942 Jordan"),
+            "%jordan%"
         );
         assert_eq!(suggested_rule_pattern("INTERAC e-Transfer To: Koushik"), "%koushik%");
         // Normal merchants keep the exact string (unchanged behavior).
@@ -1342,14 +1342,14 @@ mod tests {
     #[test]
     fn redact_for_llm_strips_names_and_reference_numbers() {
         // Person-to-person e-transfer: name AND reference number removed.
-        let r = redact_for_llm("Internet Banking E-TRANSFER 011654884429 swathi");
-        assert!(!r.to_lowercase().contains("swathi"), "name must be dropped: {r}");
+        let r = redact_for_llm("Internet Banking E-TRANSFER 011654884429 jordan");
+        assert!(!r.to_lowercase().contains("jordan"), "name must be dropped: {r}");
         assert!(!r.contains("011654884429"), "reference number masked: {r}");
         assert!(r.to_lowercase().contains("transfer"), "category vocab kept: {r}");
 
-        let r2 = redact_for_llm("INTERAC e-Transfer From: SATHVIK DIVILI");
-        assert!(!r2.to_uppercase().contains("SATHVIK"));
-        assert!(!r2.to_uppercase().contains("DIVILI"));
+        let r2 = redact_for_llm("INTERAC e-Transfer From: ALEX RIVERA");
+        assert!(!r2.to_uppercase().contains("ALEX"));
+        assert!(!r2.to_uppercase().contains("RIVERA"));
 
         // Ordinary merchants keep their NAME (only digit runs are masked).
         let tim = redact_for_llm("TIM HORTONS #3356 BURNABY");
@@ -1452,7 +1452,7 @@ mod tests {
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,created_at) VALUES\
              ('a','chk','2026-05-01T12:00:00Z',-200000,'Internet Banking INTERNET TRANSFER 000000135957','cleared',datetime('now')),\
-             ('b','sav','2026-05-01T12:00:00Z', 200000,'Internet Banking E-TRANSFER 000000999888 Swathi','cleared',datetime('now'))",
+             ('b','sav','2026-05-01T12:00:00Z', 200000,'Internet Banking E-TRANSFER 000000999888 Jordan','cleared',datetime('now'))",
             [],
         )
         .unwrap();

@@ -50,6 +50,11 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             get(crate::tokens::list).post(crate::tokens::create),
         )
         .route("/api/auth/tokens/{id}", delete(crate::tokens::revoke))
+        // Debug-only diagnostic, not a shared command: measures THIS admin's
+        // own real categorization corrections locally. See
+        // `admin_eval`'s module doc for why it deliberately bypasses
+        // `/api/rpc/{cmd}` and the generated bindings contract.
+        .route("/api/admin/private-category-eval", get(crate::admin_eval::private_category_eval))
         .route(
             "/api/import/csv",
             post(crate::uploads::upload_csv)
