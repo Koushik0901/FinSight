@@ -125,8 +125,8 @@ describe("TransactionDrawer — edit mode", () => {
     const { toast } = await import("sonner");
     setTransfer.mockResolvedValueOnce({
       transaction: { ...existingTxn, is_transfer: true },
-      similarPattern: "%swathi%",
-      similarLabel: "swathi",
+      similarPattern: "%jordan%",
+      similarLabel: "jordan",
       similarCount: 11,
     });
     render(
@@ -138,12 +138,12 @@ describe("TransactionDrawer — edit mode", () => {
 
     const [, opts] = vi.mocked(toast.success).mock.calls.at(-1)!;
     const action = (opts as unknown as { action?: { label: string; onClick: () => Promise<void> } }).action;
-    expect(action?.label).toMatch(/11 more with «swathi»/);
+    expect(action?.label).toMatch(/11 more with «jordan»/);
 
     // Taking the offer rules the whole counterparty in one call.
     applySimilar.mockResolvedValueOnce(11);
     await action!.onClick();
-    expect(applySimilar).toHaveBeenCalledWith({ pattern: "%swathi%", isTransfer: true });
+    expect(applySimilar).toHaveBeenCalledWith({ pattern: "%jordan%", isTransfer: true });
   });
 
   it("reflects the transfer verdict immediately from the mutation result, without waiting on the `transaction` prop to update", async () => {

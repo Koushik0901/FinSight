@@ -1204,7 +1204,7 @@ mod tests {
     #[test]
     fn settle_up_inflow_nets_against_expense_never_income() {
         // Settle-up (person-to-person reimbursement) rows never count as income;
-        // an inflow nets back against expense instead. Joe: we paid out $11,475
+        // an inflow nets back against expense instead. Sam: we paid out $11,475
         // on his behalf, he paid back $3,000 — net expense $8,475, income $0.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
@@ -1215,14 +1215,14 @@ mod tests {
             conn.execute(
                 "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
                                           status, is_anomaly, is_transfer, created_at, settle_up) \
-                 VALUES(?1, ?2, '2026-05-15T00:00:00Z', ?3, 'e-transfer joe', 'cleared', 0, 0, \
+                 VALUES(?1, ?2, '2026-05-15T00:00:00Z', ?3, 'e-transfer sam', 'cleared', 0, 0, \
                         '2026-05-15T00:00:00Z', 1)",
                 params![uuid::Uuid::new_v4().to_string(), chk, amount],
             )
             .unwrap();
         };
-        insert_settle_up(&conn, -1_147_500); // 'o' — we paid out on Joe's behalf
-        insert_settle_up(&conn, 300_000); // 'i' — Joe paid us back
+        insert_settle_up(&conn, -1_147_500); // 'o' — we paid out on Sam's behalf
+        insert_settle_up(&conn, 300_000); // 'i' — Sam paid us back
 
         let (income, expense) = income_expense_since(&conn, "2026-05-01T00:00:00Z").unwrap();
         assert_eq!(income, 0, "settle-up inflow is never income");

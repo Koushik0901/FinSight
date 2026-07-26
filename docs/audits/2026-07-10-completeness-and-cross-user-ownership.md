@@ -173,7 +173,7 @@ the user saves money. Ranked by impact:
 >   transfers — savings staying tight/negative for a heavy travel month is
 >   *correct*, not a bug.
 >   **Bulk verdicts: DONE** — the review population clusters by counterparty
->   (samples/: swathi ×11, joe ×12, …), so ruling one e-transfer offers "also
+>   (samples/: jordan ×11, sam ×12, …), so ruling one e-transfer offers "also
 >   mark N more with «name»" (`transfer_verdict_siblings` +
 >   `apply_transfer_verdict_to_similar`, riding the same counterparty
 >   generalization as the F3 rule proposals); each row still goes through
@@ -227,7 +227,7 @@ high-confidence gaps:
 - **`INTERAC e-Transfer From: <operator's own name>`** ($1,500, self→self) is
   counted as **income**. A self-name signal (ties into the operator/"self" member
   of Part 1) flags own e-transfers.
-- **Genuinely ambiguous** person-to-person e-transfers (swathi / SATHVIK) inflate
+- **Genuinely ambiguous** person-to-person e-transfers (jordan / ALEX) inflate
   income and need a *user review affordance* ("is this income or a transfer/
   reimbursement?"), not a silent guess. Prior audit's P0-1(d) proposed this.
 **Acceptance:** probe expense ≈ real (~$2.5–3.5k/mo), savings rate positive; bare
@@ -262,7 +262,7 @@ free of self-transfers; no regression on the INTERAC-purchase non-transfer test.
 > routed to the confirm-once review surface (`suggested_rule_pattern`), NOT
 > auto-detected. The audit's "$2.5–3.5k/mo expense" target was too aggressive;
 > the top rolling-window expenses are mostly genuine merchants (heavy travel). The
-> "Swathi = partner" household assumption was NOT baked into the probe (that would
+> "Jordan = partner" household assumption was NOT baked into the probe (that would
 > overfit to one user); the probe registers only the operator, and the household
 > feature is validated generically by a unit test.
 
