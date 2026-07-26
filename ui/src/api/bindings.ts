@@ -2126,7 +2126,17 @@ export type AgentAccountRow = { name: string; subtitle: string | null; typeLabel
  * None → account has no known balance; renderer shows `badge` instead.
  */
 amountCents: number | null; badge: string | null }
-export type AgentAccountsOverviewBlock = { title: string | null; subtitle: string | null; rows: AgentAccountRow[] }
+/**
+ * The user's accounts.
+ * 
+ * SERVER-RENDERED: the system prompt asks the model for a bare
+ * `{"kind":"accountsOverview"}` — no rows, balances, title, or badges — and
+ * `synthesize_accounts_overview` fills all of it from the ledger, so a balance
+ * can be neither invented nor omitted. `rows` is therefore `#[serde(default)]`:
+ * the requested emission genuinely has no `rows` key on the wire, and without
+ * the default it died on `missing field "rows"` before hydration could run.
+ */
+export type AgentAccountsOverviewBlock = { title: string | null; subtitle: string | null; rows?: AgentAccountRow[] }
 export type AgentActionBundle = { id: string; sessionId: string | null; title: string; summary: string; rationale: string; confidence: number; status: string; providerId: string | null; modelId: string | null; createdAt: string; updatedAt: string; items: AgentActionItem[] }
 export type AgentActionItem = { id: string; bundleId: string; actionKind: string; payloadJson: string; previewJson: string | null; rationale: string; confidence: number; status: string; validationErrors: string | null; sortOrder: number; createdAt: string; updatedAt: string }
 export type AgentActionPlanBlock = { title: string | null; items: string[] }
@@ -2233,7 +2243,18 @@ export type AgentReviewCategory = { label: string; amountCents: number;
  * Optional flag: "over" | "fixed" | "lever". None = plain bar.
  */
 tag: string | null }
-export type AgentReviewMonth = { label: string; spentCents: number; subtitle: string | null; categories: AgentReviewCategory[]; summary: string | null; actions: string[]; 
+/**
+ * A month in a spending review.
+ * 
+ * Every data-bearing field is `#[serde(default)]` because this block is
+ * SERVER-RENDERED: the system prompt tells the model to emit only `period`, a
+ * `summary`, and `actions`, and `synthesize_spending_review` computes the rest
+ * from the ledger. Without the defaults, the emission the prompt asks for fails
+ * typed deserialize on `missing field "label"` and is dropped before hydration
+ * ever runs — so only a model that DISOBEYS and invents numbers gets rendered,
+ * the exact inversion server synthesis exists to prevent.
+ */
+export type AgentReviewMonth = { label?: string; spentCents?: number; subtitle: string | null; categories?: AgentReviewCategory[]; summary: string | null; actions?: string[]; 
 /**
  * `YYYY-MM` join key. The model supplies this (which months to review);
  * the server keys on it to compute label/spentCents/categories from core.

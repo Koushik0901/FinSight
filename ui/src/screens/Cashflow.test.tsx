@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import Cashflow from "./CashFlow";
+import Cashflow from "./Cashflow";
 import type { CashflowForecast } from "../api/client";
 
 const useCashflowForecast = vi.fn();

@@ -650,14 +650,27 @@ pub struct AgentReviewCategory {
     pub tag: Option<String>,
 }
 
+/// A month in a spending review.
+///
+/// Every data-bearing field is `#[serde(default)]` because this block is
+/// SERVER-RENDERED: the system prompt tells the model to emit only `period`, a
+/// `summary`, and `actions`, and `synthesize_spending_review` computes the rest
+/// from the ledger. Without the defaults, the emission the prompt asks for fails
+/// typed deserialize on `missing field "label"` and is dropped before hydration
+/// ever runs — so only a model that DISOBEYS and invents numbers gets rendered,
+/// the exact inversion server synthesis exists to prevent.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentReviewMonth {
+    #[serde(default)]
     pub label: String,
+    #[serde(default)]
     pub spent_cents: i64,
     pub subtitle: Option<String>,
+    #[serde(default)]
     pub categories: Vec<AgentReviewCategory>,
     pub summary: Option<String>,
+    #[serde(default)]
     pub actions: Vec<String>,
     /// `YYYY-MM` join key. The model supplies this (which months to review);
     /// the server keys on it to compute label/spentCents/categories from core.
@@ -682,11 +695,20 @@ pub struct AgentAccountRow {
     pub badge: Option<String>,
 }
 
+/// The user's accounts.
+///
+/// SERVER-RENDERED: the system prompt asks the model for a bare
+/// `{"kind":"accountsOverview"}` — no rows, balances, title, or badges — and
+/// `synthesize_accounts_overview` fills all of it from the ledger, so a balance
+/// can be neither invented nor omitted. `rows` is therefore `#[serde(default)]`:
+/// the requested emission genuinely has no `rows` key on the wire, and without
+/// the default it died on `missing field "rows"` before hydration could run.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentAccountsOverviewBlock {
     pub title: Option<String>,
     pub subtitle: Option<String>,
+    #[serde(default)]
     pub rows: Vec<AgentAccountRow>,
 }
 
@@ -941,6 +963,13 @@ fn coerce_block_value(mut v: serde_json::Value) -> serde_json::Value {
     v
 }
 
+/// PRE-hydration gate: is this a well-formed *request* from the model?
+///
+/// For the server-rendered kinds (`accountsOverview`, `spendingReview`) the
+/// request is deliberately data-less, so this must not demand data — only that
+/// whatever the model DID send is well-shaped and within bounds. The question
+/// "does the block carry enough to render?" belongs to
+/// `renderable_after_hydration`, which runs once the server has filled it in.
 fn valid_response_block(block: &AgentResponseBlock) -> bool {
     match block {
         AgentResponseBlock::Markdown { markdown } => !markdown.trim().is_empty(),
@@ -1012,7 +1041,12 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
             !b.months.is_empty()
                 && b.months.len() <= 6
                 && b.months.iter().all(|m| {
-                    !m.label.trim().is_empty()
+                    // A month must be IDENTIFIABLE, by either of the two shapes
+                    // that can produce one: the thin server-rendered request
+                    // (a `period` for hydration to key on, no label) or a fully
+                    // model-supplied month (a label). Demanding a label outright
+                    // rejected the very emission the prompt asks for.
+                    (!m.label.trim().is_empty() || m.period.is_some())
                         && m.categories.len() <= 10
                         && m.actions.len() <= 6
                         && m.categories.iter().all(|c| {
@@ -1024,9 +1058,13 @@ fn valid_response_block(block: &AgentResponseBlock) -> bool {
                         })
                 })
         }
+        // No `!rows.is_empty()` here: empty IS the documented emission for this
+        // server-rendered kind, and hydration fills it. Requiring rows at this
+        // gate meant the block only survived when the model invented rows.
+        // Whether the block can actually be RENDERED is a different question,
+        // asked after hydration by `renderable_after_hydration`.
         AgentResponseBlock::AccountsOverview(b) => {
-            !b.rows.is_empty()
-                && b.rows.len() <= 30
+            b.rows.len() <= 30
                 && b.rows
                     .iter()
                     .all(|r| !r.name.trim().is_empty() && !r.type_label.trim().is_empty())
@@ -1385,15 +1423,15 @@ pub(crate) fn reasoning_result_to_agent_answer(
     // shape/size and caps the count; the copilot_chat emit path applies artifact
     // bounds on top, so a malformed or oversized block is dropped, never
     // rendered.
-    let mut response_blocks = parse_response_blocks(&serde_json::json!({
-        "response_blocks": result.response_blocks,
-    }));
-    // Single hydration funnel: rebuild the data-bearing fields of the marquee
-    // blocks from grounded core data. Requiring `conn` here means every answer
-    // path (stream, stream-fallback, deep-answer, ask_agent) is compiler-forced
-    // through this — no path can ship a model's raw (ungrounded, maybe-malformed)
-    // marquee block.
-    hydrate_response_blocks(conn, &mut response_blocks);
+    // Requiring `conn` here is what forces every answer path that builds through
+    // THIS function (stream, stream-fallback, deep-answer) to ground its blocks.
+    // It is not the only such path — `ask_agent`'s simple mode assembles its
+    // `AgentAnswer` by hand — which is why the parse/hydrate/prune sequence lives
+    // behind the single `ground_response_blocks` name that both of them call.
+    let response_blocks = ground_response_blocks(
+        conn,
+        &serde_json::json!({ "response_blocks": result.response_blocks }),
+    );
 
     AgentAnswer {
         prose: result.content,
@@ -1501,23 +1539,44 @@ fn answer_consulted_debts(trace: &[String]) -> bool {
 
 /// The ONE place model-requested marquee blocks get their data-bearing fields
 /// rebuilt from grounded core data. A registered kind is fully re-derived from
-/// the DB (the model's numbers are ignored — this guarantees the block is valid
-/// and its numbers match the answer's snapshot); an unregistered kind passes
-/// through untouched, preserving the existing model-emitted behavior. Populated
-/// per-kind in A2/A3.
+/// the DB (the model's numbers are ignored — this guarantees its numbers match
+/// the answer's snapshot); an unregistered kind passes through untouched,
+/// preserving the existing model-emitted behavior.
+///
+/// "Ignored" is unconditional: a registered kind the server cannot build is
+/// emptied here, not left as the model wrote it, and `prune_unhydrated_blocks`
+/// then drops it. The block either carries the ledger's numbers or it does not
+/// ship — there is no third case where the model's own figures survive.
 fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentResponseBlock]) {
     for block in blocks.iter_mut() {
         match block {
+            // Replace or CLEAR — never leave the model's own version standing.
+            // `if let Some(fresh)` looks harmless but inverts the guarantee
+            // exactly when it matters most: synthesis declines precisely when
+            // the server has nothing to stand behind (no accounts, or a failed
+            // read), and falling back to the model's block then ships the
+            // fabricated balances this funnel exists to stop — unchallenged,
+            // because there was no real data to contradict them. Emptied blocks
+            // are dropped by `prune_unhydrated_blocks`.
             AgentResponseBlock::AccountsOverview(_) => {
-                if let Some(fresh) = synthesize_accounts_overview(conn) {
-                    *block = AgentResponseBlock::AccountsOverview(fresh);
-                }
+                *block = AgentResponseBlock::AccountsOverview(
+                    synthesize_accounts_overview(conn).unwrap_or(AgentAccountsOverviewBlock {
+                        title: None,
+                        subtitle: None,
+                        rows: Vec::new(),
+                    }),
+                );
             }
             AgentResponseBlock::SpendingReview(model) => {
                 let model = model.clone();
-                if let Some(fresh) = synthesize_spending_review(conn, &model) {
-                    *block = AgentResponseBlock::SpendingReview(fresh);
-                }
+                // Same rule, and it also settles the month the model labeled
+                // itself instead of supplying a `period`: those numbers are the
+                // model's invention, so `synthesize_spending_review` drops the
+                // month and it never reaches the screen.
+                *block = AgentResponseBlock::SpendingReview(
+                    synthesize_spending_review(conn, &model)
+                        .unwrap_or(AgentSpendingReviewBlock { months: Vec::new() }),
+                );
             }
             AgentResponseBlock::Clarification(model) => {
                 let mut grounded = model.clone();
@@ -1538,6 +1597,76 @@ fn hydrate_response_blocks(conn: &mut rusqlite::Connection, blocks: &mut [AgentR
             }
             _ => {}
         }
+    }
+}
+
+/// Parse → hydrate → prune: the complete journey from a model's raw
+/// `response_blocks` array to blocks that are safe to render.
+///
+/// Every answer path must go through THIS rather than calling
+/// `parse_response_blocks` alone. Parsing without hydrating ships the model's
+/// own numbers for the server-rendered kinds — the single thing server synthesis
+/// exists to prevent — and hydrating without pruning ships blocks the server
+/// declined to fill. Keeping the three steps behind one name is what stops a new
+/// answer path from silently getting one of them wrong; `ask_agent`'s simple
+/// mode did exactly that for as long as it called `parse_response_blocks` by
+/// itself.
+pub(crate) fn ground_response_blocks(
+    conn: &mut rusqlite::Connection,
+    raw: &serde_json::Value,
+) -> Vec<AgentResponseBlock> {
+    let mut blocks = parse_response_blocks(raw);
+    hydrate_response_blocks(conn, &mut blocks);
+    prune_unhydrated_blocks(&mut blocks);
+    blocks
+}
+
+/// POST-hydration pass: drop whatever hydration did not fill.
+///
+/// `hydrate_response_blocks` empties a server-rendered block it cannot build, so
+/// by here "empty" means "the server has nothing to stand behind" and the block
+/// goes. A `spendingReview` legitimately comes back with FEWER months than were
+/// asked for (only the periods with ledger data survive), which is why the block
+/// is judged on having any months at all rather than on matching the request.
+///
+/// The per-month sweep is belt-and-braces: synthesis only ever emits months it
+/// labeled, so it should find nothing. It stays because an unlabeled month is
+/// the one shape that renders as a blank "$0 spent" card, and `SpendingReviewCard`
+/// filters them the same way — so if one ever did slip through, both sides would
+/// agree to show nothing instead of disagreeing about it.
+fn prune_unhydrated_blocks(blocks: &mut Vec<AgentResponseBlock>) {
+    for block in blocks.iter_mut() {
+        if let AgentResponseBlock::SpendingReview(b) = block {
+            b.months.retain(|m| !m.label.trim().is_empty());
+        }
+    }
+    blocks.retain(renderable_after_hydration);
+}
+
+/// POST-hydration gate: did the server actually fill this block in?
+///
+/// `valid_response_block` accepts a server-rendered block in its thin request
+/// form — that IS the documented emission. This asks the separate question of
+/// whether the block that came OUT of hydration carries anything to render, and
+/// drops it if not.
+///
+/// Dropping is deliberate: an empty `accountsOverview` is NOT rendered as a
+/// "no accounts yet" empty state. `synthesize_accounts_overview` returns `None`
+/// for two very different reasons — the user genuinely has no accounts, and the
+/// accounts read FAILED (`list_summaries(conn).ok()?`) — and it does not
+/// distinguish them. An empty-state card would flatly tell a user with seven
+/// accounts that they have none whenever that read errored. Silence cannot make
+/// that claim, and the prose answer still stands on its own.
+fn renderable_after_hydration(block: &AgentResponseBlock) -> bool {
+    match block {
+        AgentResponseBlock::AccountsOverview(b) => !b.rows.is_empty(),
+        // A month that hydration did not fill has an empty label and zero spend
+        // — an unlabeled, empty card. Same reasoning: say nothing rather than
+        // show a month that reads as "you spent $0".
+        AgentResponseBlock::SpendingReview(b) => {
+            !b.months.is_empty() && b.months.iter().all(|m| !m.label.trim().is_empty())
+        }
+        _ => true,
     }
 }
 
@@ -1746,9 +1875,18 @@ fn synthesize_spending_review(
         let Some(period) = m.period.as_deref() else {
             continue;
         };
-        let categories = finsight_core::spending::baseline::month_category_breakdown(conn, period, 6)
-            .ok()
-            .filter(|c| !c.is_empty())?;
+        // Skip THIS month, don't abandon the block: the `?` here used to return
+        // None for the whole review the moment any single requested month had no
+        // breakdown, contradicting this function's own contract ("A requested
+        // month with no spending data is dropped") and throwing away the months
+        // that did have data. The all-empty case is still caught below.
+        let Some(categories) =
+            finsight_core::spending::baseline::month_category_breakdown(conn, period, 6)
+                .ok()
+                .filter(|c| !c.is_empty())
+        else {
+            continue;
+        };
         let spent_cents = finsight_core::spending::baseline::month_total(conn, period).unwrap_or(0);
         let (y, mo) = finsight_core::spending::parse_ym(period);
         let label = MONTH_NAMES
@@ -2502,6 +2640,19 @@ pub async fn ask_agent(
         });
         let action_path = action_label.as_ref().and(action_path);
 
+        // Simple mode builds its answer by hand instead of going through
+        // `reasoning_result_to_agent_answer`, so it must call the grounding
+        // funnel itself — otherwise it is the one path that can ship a model's
+        // ungrounded marquee block. The system prompt above offers only the six
+        // basic kinds, but "the prompt didn't ask for it" is not a guarantee
+        // about what a model emits.
+        let raw_for_blocks = raw.clone();
+        let response_blocks = run(&db, move |conn| {
+            Ok::<_, finsight_core::CoreError>(ground_response_blocks(conn, &raw_for_blocks))
+        })
+        .await
+        .map_err(AppError::from)?;
+
         let mut answer = AgentAnswer {
             prose,
             reasoning: String::new(),
@@ -2516,7 +2667,7 @@ pub async fn ask_agent(
             missing_data: Vec::new(),
             alternatives: Vec::new(),
             follow_up_questions: Vec::new(),
-            response_blocks: parse_response_blocks(&raw),
+            response_blocks,
         };
         validate_finance_answer(&question, &mut answer);
         enrich_agent_answer(&mut answer);
@@ -3179,6 +3330,59 @@ mod tests {
         assert!(matches!(answer.response_blocks[0], AgentResponseBlock::Table(_)));
     }
 
+    /// End-to-end over the exact path the bug lived on: the model emits the bare
+    /// `{"kind":"accountsOverview"}` the system prompt asks for, and the answer
+    /// that comes out the other side carries a block whose every row came from
+    /// the ledger. Before the fix this returned zero blocks — parse dropped the
+    /// thin emission on `missing field "rows"`, so `synthesize_accounts_overview`
+    /// never ran and the block only ever appeared when the model ignored the
+    /// instruction and made the balances up.
+    #[test]
+    fn a_bare_accounts_overview_emission_comes_back_filled_from_the_ledger() {
+        let thin_result = || finsight_agent::reasoning::messages::ReasoningResult {
+            content: "Here are your accounts.".to_string(),
+            reasoning: String::new(),
+            plan: Vec::new(),
+            trace: vec!["Called tool: get_net_worth".to_string()],
+            changes: Vec::new(),
+            draft_actions: Vec::new(),
+            assumptions: Vec::new(),
+            data_sources: Vec::new(),
+            missing_data: Vec::new(),
+            follow_up_questions: Vec::new(),
+            response_blocks: vec![serde_json::json!({ "kind": "accountsOverview" })],
+            is_real_answer: true,
+            hit_time_budget: false,
+            usage: Default::default(),
+        };
+
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Mercury','Checking','Joint Checking','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('chk',date('now'),1482042,'manual')", []).unwrap();
+
+        let answer = reasoning_result_to_agent_answer(thin_result(), None, &mut conn);
+        assert_eq!(answer.response_blocks.len(), 1, "the thin block must survive and hydrate");
+        let AgentResponseBlock::AccountsOverview(b) = &answer.response_blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows.len(), 1);
+        assert_eq!(b.rows[0].name, "Joint Checking");
+        assert_eq!(b.rows[0].amount_cents, Some(1_482_042));
+        assert!(b.title.as_deref().unwrap().contains("1 account"));
+
+        // Same emission against a ledger with no accounts: hydration declines and
+        // the block is dropped rather than rendered as an empty table.
+        let (_dir2, db2) = fresh_db();
+        let mut empty_conn = db2.get().unwrap();
+        let answer = reasoning_result_to_agent_answer(thin_result(), None, &mut empty_conn);
+        assert!(
+            answer.response_blocks.is_empty(),
+            "an unfillable block is dropped, never shown as an empty accounts table"
+        );
+        assert_eq!(answer.prose, "Here are your accounts.", "the prose answer still stands");
+    }
+
     #[test]
     fn genuine_no_tool_answer_is_usable_but_bare_plan_is_not() {
         // A correct decline/clarification legitimately calls no tool — it must
@@ -3621,7 +3825,7 @@ mod tests {
     }
 
     #[test]
-    fn accounts_overview_valid_and_rejects_empty_rows() {
+    fn accounts_overview_valid_and_accepts_empty_rows_pre_hydration() {
         let ok = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
             title: Some("7 accounts".into()),
             subtitle: Some("$137,515 tracked · 1 missing a balance".into()),
@@ -3644,12 +3848,31 @@ mod tests {
         });
         assert!(valid_response_block(&ok));
 
+        // Empty rows is the model's DOCUMENTED request form, so the
+        // pre-hydration gate accepts it; `renderable_after_hydration` is what
+        // stops an unfilled one from reaching the screen (covered by
+        // `unhydrated_server_rendered_blocks_are_dropped_not_rendered_empty`).
         let empty = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
             title: None,
             subtitle: None,
             rows: vec![],
         });
-        assert!(!valid_response_block(&empty));
+        assert!(valid_response_block(&empty));
+        assert!(!renderable_after_hydration(&empty));
+
+        // A row the model DID send still has to be well-shaped.
+        let blank_row = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![AgentAccountRow {
+                name: "  ".into(),
+                subtitle: None,
+                type_label: "Checking".into(),
+                amount_cents: Some(1),
+                badge: None,
+            }],
+        });
+        assert!(!valid_response_block(&blank_row));
 
         let v = serde_json::to_value(&ok).unwrap();
         assert_eq!(v["kind"], "accountsOverview");
@@ -3785,12 +4008,113 @@ mod tests {
         assert_eq!(b.rows[0].amount_cents, Some(14820));
     }
 
+    /// The documented happy path for the SERVER-RENDERED kinds: the exact
+    /// emission `build_system_prompt` asks the model for must survive parse so
+    /// that hydration gets a chance to fill it.
+    ///
+    /// This regressed silently in the worst possible direction — the thin,
+    /// obedient emission was dropped ("missing field `rows`", then again on the
+    /// non-empty-rows check), so the ONLY accountsOverview a user ever saw was
+    /// one where the model disobeyed and invented balances. Server synthesis
+    /// exists precisely to prevent that, and it never ran.
+    #[test]
+    fn thin_server_rendered_emissions_survive_parse() {
+        // Verbatim from the block catalogue in the system prompt.
+        let raw = serde_json::json!({ "response_blocks": [ { "kind": "accountsOverview" } ] });
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(blocks.len(), 1, "bare accountsOverview must reach hydration");
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert!(b.rows.is_empty(), "rows stay empty until hydration fills them");
+
+        // Ditto spendingReview: period + summary + actions, nothing else.
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "spendingReview", "months": [
+                { "period": "2026-05", "summary": "A steady month.",
+                  "actions": ["Glance at the PG&E bill"] }
+            ]}
+        ]});
+        let blocks = parse_response_blocks(&raw);
+        assert_eq!(blocks.len(), 1, "thin spendingReview must reach hydration");
+        let AgentResponseBlock::SpendingReview(b) = &blocks[0] else {
+            panic!("expected spendingReview")
+        };
+        assert_eq!(b.months[0].period.as_deref(), Some("2026-05"));
+        assert_eq!(b.months[0].summary.as_deref(), Some("A steady month."));
+        assert!(b.months[0].label.is_empty() && b.months[0].categories.is_empty());
+    }
+
+    /// A month with neither a label nor a period is unusable by either shape:
+    /// hydration has no key to compute from and the card has no title to show.
+    #[test]
+    fn spending_review_month_needs_a_label_or_a_period() {
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "spendingReview", "months": [ { "summary": "Vague." } ] }
+        ]});
+        assert!(parse_response_blocks(&raw).is_empty());
+    }
+
+    /// The post-hydration gate. Empty server-rendered blocks are DROPPED, not
+    /// rendered as an empty state — `synthesize_accounts_overview` returns None
+    /// both for "no accounts" and for a failed accounts read, so an empty-state
+    /// card would tell a user with seven accounts that they have none.
+    #[test]
+    fn unhydrated_server_rendered_blocks_are_dropped_not_rendered_empty() {
+        let empty = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: None,
+            subtitle: None,
+            rows: vec![],
+        });
+        assert!(!renderable_after_hydration(&empty));
+
+        let thin_month = AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: String::new(),
+                spent_cents: 0,
+                subtitle: None,
+                categories: vec![],
+                summary: Some("A steady month.".into()),
+                actions: vec![],
+                period: Some("2026-05".into()),
+            }],
+        });
+        assert!(!renderable_after_hydration(&thin_month));
+
+        // A block the server DID fill passes both gates.
+        let filled = AgentResponseBlock::AccountsOverview(AgentAccountsOverviewBlock {
+            title: Some("1 account".into()),
+            subtitle: None,
+            rows: vec![AgentAccountRow {
+                name: "Chq".into(),
+                subtitle: None,
+                type_label: "Checking".into(),
+                amount_cents: Some(100),
+                badge: None,
+            }],
+        });
+        assert!(valid_response_block(&filled) && renderable_after_hydration(&filled));
+    }
+
     /// Rust half of the Rust<->Zod parity corpus. The frontend
     /// `ui/.../parity.test.ts` loads the SAME fixture file and runs each block
     /// through `CopilotResponseBlockSchema`. A verdict mismatch on any case means
     /// the two hand-maintained validations have drifted — fix the field-level
     /// bound until both sides agree. (Semantic validity only; size bounds live in
     /// `copilot_chat.rs` and are validated separately.)
+    ///
+    /// READ THIS BEFORE ADDING A SERVER-RENDERED KIND. The two halves answer
+    /// subtly different questions: this one runs `parse_response_blocks`, the
+    /// PRE-hydration request gate, while Zod validates the payload the server
+    /// actually SENDS, i.e. post-hydration. For every other kind those coincide.
+    /// For `accountsOverview` they only coincide because "empty" means the same
+    /// thing on both sides — the server drops an unfilled block
+    /// (`prune_unhydrated_blocks`) and the card renders nothing for one — so
+    /// accepting it is harmless either way. One `expectValid` boolean cannot
+    /// express "valid as a request, invalid as a rendering", so keep the corpus
+    /// to cases where both readings agree and cover the thin, data-less emission
+    /// with a Rust-only test (`thin_server_rendered_emissions_survive_parse`)
+    /// instead of adding it here.
     #[test]
     fn rust_verdicts_match_the_parity_corpus() {
         // Shared with ui/.../parity.test.ts (which imports it as JSON). Path is
@@ -3889,5 +4213,150 @@ mod tests {
         assert_eq!(m.spent_cents, 70000, "spent recomputed from core, not the model's 999");
         assert!(!m.categories.is_empty(), "categories recomputed from core");
         assert_eq!(m.label, "May 2026", "label derived from the period, not the model");
+    }
+
+    /// A requested month with no spending data is dropped — the month, not the
+    /// whole review. The `?` this replaced abandoned every other month too, so
+    /// asking for "the last three months" when one of them happened to be empty
+    /// returned no review at all.
+    #[test]
+    fn spending_review_drops_only_the_month_that_has_no_data() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Bank','Checking','Chq','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','chk','2026-05-10',-40000,'Store',NULL,'posted',datetime('now'))", []).unwrap();
+
+        let thin = |period: &str| AgentReviewMonth {
+            label: String::new(),
+            spent_cents: 0,
+            subtitle: None,
+            categories: vec![],
+            summary: Some(format!("Notes for {period}")),
+            actions: vec![],
+            period: Some(period.to_string()),
+        };
+        // 2026-04 has no transactions at all; 2026-05 does.
+        let mut blocks = vec![AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![thin("2026-04"), thin("2026-05")],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+
+        let AgentResponseBlock::SpendingReview(b) = &blocks[0] else {
+            panic!("expected spendingReview")
+        };
+        assert_eq!(b.months.len(), 1, "the month with data survives on its own");
+        assert_eq!(b.months[0].label, "May 2026");
+        assert_eq!(b.months[0].spent_cents, 40000);
+        assert!(renderable_after_hydration(&blocks[0]));
+    }
+
+    /// `ground_response_blocks` is the contract BOTH answer-assembly paths share
+    /// — `reasoning_result_to_agent_answer` and `ask_agent`'s hand-built simple
+    /// mode. `ask_agent` needs a live provider so it can't be driven end-to-end
+    /// here; pinning the shared function is what keeps either call site from
+    /// regressing to a bare `parse_response_blocks`, which is exactly how simple
+    /// mode came to ship ungrounded blocks.
+    #[test]
+    fn grounding_replaces_model_numbers_and_drops_what_it_cannot_fill() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Mercury','Checking','Joint Checking','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('chk',date('now'),1482042,'manual')", []).unwrap();
+
+        // A model that ignored the "emit only the kind" instruction and invented
+        // an account with a made-up balance. Grounding must overwrite it.
+        let raw = serde_json::json!({ "response_blocks": [
+            { "kind": "accountsOverview", "rows": [
+                { "name": "HALLUCINATED", "subtitle": null, "typeLabel": "?",
+                  "amountCents": 999, "badge": null }
+            ]}
+        ]});
+        let blocks = ground_response_blocks(&mut conn, &raw);
+        assert_eq!(blocks.len(), 1);
+        let AgentResponseBlock::AccountsOverview(b) = &blocks[0] else {
+            panic!("expected accountsOverview")
+        };
+        assert_eq!(b.rows.len(), 1);
+        assert_eq!(b.rows[0].name, "Joint Checking", "the invented row is replaced, not merged");
+        assert_eq!(b.rows[0].amount_cents, Some(1_482_042));
+
+        // Same invented block against a ledger with no accounts: there is nothing
+        // to ground it with, so it is dropped rather than shipped as the model
+        // wrote it. This is the case that matters most — it is precisely when the
+        // server has no data that a model's invention would go unchallenged.
+        let (_dir2, db2) = fresh_db();
+        let mut empty = db2.get().unwrap();
+        assert!(ground_response_blocks(&mut empty, &raw).is_empty());
+    }
+
+    /// A month the model labeled ITSELF, with no `period` for the server to key
+    /// on, carries model-invented numbers — `spentCents` and `categories` that
+    /// no ledger produced. It is dropped, not salvaged for its nice-looking
+    /// label. Grounding is the whole point of this block kind: a month is worth
+    /// showing only if the server built its figures.
+    #[test]
+    fn a_month_the_server_could_not_ground_is_dropped_even_when_the_model_labeled_it() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let mut blocks = vec![AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![
+                // Model-supplied month, no period for hydration to key on.
+                AgentReviewMonth {
+                    label: "May 2026".into(),
+                    spent_cents: 70000,
+                    subtitle: None,
+                    categories: vec![AgentReviewCategory {
+                        label: "Housing".into(),
+                        amount_cents: 70000,
+                        tag: None,
+                    }],
+                    summary: Some("Kept it tight.".into()),
+                    actions: vec![],
+                    period: None,
+                },
+                // Thin month whose period has no ledger data at all.
+                AgentReviewMonth {
+                    label: String::new(),
+                    spent_cents: 0,
+                    subtitle: None,
+                    categories: vec![],
+                    summary: Some("Nothing to report.".into()),
+                    actions: vec![],
+                    period: Some("2026-04".into()),
+                },
+            ],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+        prune_unhydrated_blocks(&mut blocks);
+
+        assert!(
+            blocks.is_empty(),
+            "neither month could be grounded, so nothing ships — not even the \
+             model's own $700 figure wearing a plausible May 2026 label"
+        );
+
+        // Give the SAME block a real May to work from: now the labeled month is
+        // rebuilt from the ledger and survives, with the server's number.
+        conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('chk','You','Bank','Checking','Chq','USD','#000','manual','liquid',0,'cash',datetime('now'))", []).unwrap();
+        conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,created_at) VALUES('t1','chk','2026-05-10',-40000,'Store',NULL,'posted',datetime('now'))", []).unwrap();
+        let mut blocks = vec![AgentResponseBlock::SpendingReview(AgentSpendingReviewBlock {
+            months: vec![AgentReviewMonth {
+                label: "IGNORED".into(),
+                spent_cents: 70000,
+                subtitle: None,
+                categories: vec![],
+                summary: Some("Kept it tight.".into()),
+                actions: vec![],
+                period: Some("2026-05".into()),
+            }],
+        })];
+        hydrate_response_blocks(&mut conn, &mut blocks);
+        prune_unhydrated_blocks(&mut blocks);
+        let AgentResponseBlock::SpendingReview(b) = &blocks[0] else {
+            panic!("expected spendingReview")
+        };
+        assert_eq!(b.months[0].label, "May 2026");
+        assert_eq!(b.months[0].spent_cents, 40000, "the ledger's number, not the model's 70000");
+        assert_eq!(b.months[0].summary.as_deref(), Some("Kept it tight."), "prose is still the model's");
     }
 }

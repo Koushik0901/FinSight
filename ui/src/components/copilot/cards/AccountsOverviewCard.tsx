@@ -9,8 +9,18 @@ type Block = Extract<CopilotResponseBlock, { kind: "accountsOverview" }>;
  * a type chip and a right-aligned balance (negative in the negative token). An
  * account with no known balance carries a null amountCents and shows a badge
  * (e.g. "needs a balance set") instead — never a fabricated $0.
+ *
+ * Renders NOTHING when there are no rows. This kind is server-rendered: the
+ * model emits a bare `{"kind":"accountsOverview"}` and the server fills the rows
+ * from the ledger, so an empty block means the server declined to fill it —
+ * which happens both when the user has no accounts and when the accounts read
+ * failed. A titled empty table would assert "you have no accounts" in a case
+ * where the truth may be "we could not read them". The server already drops
+ * these; this mirrors that decision so the two sides agree.
  */
 export function AccountsOverviewCard({ block }: { block: Block }) {
+  const rows = block.rows ?? [];
+  if (rows.length === 0) return null;
   return (
     <div className="cp-card cp-accounts">
       {(block.title || block.subtitle) && (
@@ -20,7 +30,7 @@ export function AccountsOverviewCard({ block }: { block: Block }) {
         </div>
       )}
       <div className="cp-accounts-rows">
-        {block.rows.map((r, i) => (
+        {rows.map((r, i) => (
           <div key={`${r.name}-${i}`} className="cp-account-row">
             <div className="cp-account-id">
               <span className="cp-account-name">{r.name}</span>
