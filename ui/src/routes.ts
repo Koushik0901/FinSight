@@ -47,6 +47,10 @@ export const NON_LINKABLE_ROUTES = [
   "/accounts/:id/transactions",
   "/copilot/ag-ui-spike",
   "/dev/genui-preview",
+  // OAuth consent. Only ever reached by an external client redirecting the
+  // browser here with authorization parameters, so a backend-generated link to
+  // it could never carry the state that makes it meaningful.
+  "/oauth/authorize",
 ] as const;
 
 export type AppRoutePath = (typeof APP_ROUTES)[number];
