@@ -195,7 +195,7 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
             "get_net_worth"
         }
         fn description(&self) -> &str {
-            "Get current net worth: assets (confirmed account balances plus manual assets) minus liabilities. Accounts without a confirmed balance are reported separately as unknown and excluded from the total — mention them as unknown, never as $0."
+            "Get current net worth. Report `net_worth_cents` as the net worth — it ALREADY has debt subtracted, so never subtract `liability_cents` from it again. Accounts without a confirmed balance are reported separately as unknown and excluded from the total — mention them as unknown, never as $0."
         }
         fn parameters(&self) -> Value {
             json!({"type": "object", "properties": {}})
@@ -203,7 +203,27 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
             let b = finsight_core::repos::net_worth::breakdown(ctx.conn)
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            Ok(serde_json::to_value(b)?)
+            let mut v = serde_json::to_value(b)?;
+            // `liability_cents` is informational: card/loan balances are already
+            // carried as negatives inside `known_account_balance_cents` (see
+            // NetWorthBreakdown's docs, which explain the double-ledger bug that
+            // shaped this). The struct comment never reaches the model, though —
+            // it sees only this JSON, where a "total assets" and a "liabilities"
+            // field sitting side by side read as an obvious subtraction. Say so
+            // in the payload, the way explain_metric does, so the one number the
+            // user hears is the one the app computed.
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert(
+                    "note".to_string(),
+                    json!(
+                        "net_worth_cents is final: liability_cents is ALREADY included in it as \
+                         negative account balances, and total_assets_cents is likewise net of debt, \
+                         not gross. Quote net_worth_display as-is; do not add or subtract these \
+                         fields from each other."
+                    ),
+                );
+            }
+            Ok(v)
         }
     }
     Arc::new(T)
@@ -1130,26 +1150,28 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
                 &month_start,
             )
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            let balance: i64 = ctx.conn.query_row(
-                "SELECT COALESCE(SUM(balance_cents), 0) FROM accounts WHERE archived_at IS NULL",
-                [],
-                |r| r.get(0),
-            )?;
+            // Balances live in `account_balances`, never on `accounts` — this
+            // used to hand-roll `SUM(accounts.balance_cents)`, a column that
+            // does not exist, so the tool failed outright with a SQL error.
+            // Routed through the metrics layer instead, which is the single
+            // source for balances (currency-aware, debt signed correctly) and
+            // for the runway definition, so this agrees with Today, the
+            // snapshot, and `explain_metric` rather than inventing a third
+            // answer.
+            let balances = finsight_core::metrics::balance_breakdown(ctx.conn)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let balance = balances.liquid_cents;
             let daily_net = if day_of_month > 0 {
                 (income - expense) / day_of_month
             } else {
                 0
             };
-            let avg_daily_burn = if day_of_month > 0 {
-                expense / day_of_month
-            } else {
-                0
-            };
-            let runway_days = if avg_daily_burn > 0 {
-                balance / avg_daily_burn
-            } else {
-                9999
-            };
+            let averages = finsight_core::metrics::rolling_averages(ctx.conn, 90)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let runway_days = finsight_core::metrics::runway_days(
+                balance,
+                averages.avg_monthly_expense_cents,
+            );
             let projected_monthly_net = (income + extra_income) - (expense + extra_expense);
             let projections: Vec<Value> = (1..=months).map(|m| {
                 json!({"month": m, "projected_net_cents": projected_monthly_net * m, "projected_balance_cents": balance + projected_monthly_net * m})
@@ -1554,7 +1576,7 @@ pub fn run_purchase_affordability() -> Arc<dyn Tool> {
             "run_purchase_affordability"
         }
         fn description(&self) -> &str {
-            "Model whether a one-time purchase is affordable. Pass the purchase amount in cents (amount_cents). Weighs emergency cash, monthly surplus, obligations, and high-interest debt, and suggests wait/save alternatives. Be cautious: do not approve a purchase that would drop the user below their emergency floor or lean on high-APR debt. Use for 'can I afford X for $N' questions."
+            "Model whether a one-time purchase is affordable. Pass the purchase amount in cents as `purchase_amount_cents`. Weighs emergency cash, monthly surplus, obligations, and high-interest debt, and suggests wait/save alternatives. Be cautious: do not approve a purchase that would drop the user below their emergency floor or lean on high-APR debt. Use for 'can I afford X for $N' questions."
         }
         fn parameters(&self) -> Value {
             json!({"type":"object","properties":{"purchase_amount_cents":{"type":"integer"}},"required":["purchase_amount_cents"]})
