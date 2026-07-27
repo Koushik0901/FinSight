@@ -97,7 +97,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
     // `attempt` is retry-only churn (Retry button); `serverMode` is stable
     // for the life of the app (set once at boot by installHttpBackend).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverMode, attempt]);
 
   useEffect(() => {

@@ -161,7 +161,6 @@ export function installHttpBackend(): void {
   try {
     w.__TAURI_INTERNALS__ = shim;
   } catch {
-    // eslint-disable-next-line no-console
     console.warn(
       "installHttpBackend: __TAURI_INTERNALS__ is read-only (real Tauri webview); " +
         "leaving the native bridge in place. RPC over HTTP is unavailable at this origin.",

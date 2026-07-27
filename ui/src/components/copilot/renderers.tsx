@@ -16,7 +16,6 @@ import { AffordabilityVerdictCard } from "./cards/AffordabilityVerdictCard";
 import { CategoryBreakdownCard } from "./cards/CategoryBreakdownCard";
 import { AllocationSplitCard } from "./cards/AllocationSplitCard";
 import { RankedOptionsCard } from "./cards/RankedOptionsCard";
-import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 import { RecategorizationPreviewCard } from "./cards/RecategorizationPreviewCard";
 import { SpendingReviewCard } from "./cards/SpendingReviewCard";
 import { AccountsOverviewCard } from "./cards/AccountsOverviewCard";
@@ -26,6 +25,7 @@ import { WatchListCard } from "./cards/WatchListCard";
 import { ActionPlanCard } from "./cards/ActionPlanCard";
 import { ClarificationCard } from "./cards/ClarificationCard";
 import { CategoryReviewQueueCard } from "./cards/CategoryReviewQueueCard";
+import { ComparisonBarsCard } from "./cards/ComparisonBarsCard";
 
 const ALL_TOOL_NAMES = [
   "get_financial_snapshot",

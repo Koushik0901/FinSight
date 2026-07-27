@@ -1,4 +1,4 @@
-/* ── Onboarding (Plutus-aligned) ───────────────────────── */
+/* ── FinSight onboarding ───────────────────────────────── */
 
 .onb-shell {
   min-height: min(840px, calc(100vh - 92px));
@@ -527,5 +527,15 @@
   .onb-account-row > :is(.chip, .btn) {
     grid-column: 2;
     justify-self: start;
+  }
+}
+@media (pointer: coarse) {
+  .onb-shell :is(button, input, select, textarea) {
+    min-height: var(--touch-target);
+  }
+
+  .onb-step-pip {
+    min-width: var(--touch-target);
+    width: var(--touch-target);
   }
 }

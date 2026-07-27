@@ -16,7 +16,6 @@ export default function UnfinishedImportBanner() {
   });
 
   if (unfinished.length === 0) return null;
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const top = unfinished[0]!;
 
   async function discard() {

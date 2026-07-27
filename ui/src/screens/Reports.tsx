@@ -56,8 +56,8 @@ export default function Reports() {
   const { data: metrics } = useFinancialMetrics();
   const { data: nwHistory = [] } = useNetWorthHistory(SCOPE_DAYS[scope]);
 
-  const monthly = data?.monthly ?? [];
-  const monthlyLastYear = data?.monthlyLastYear ?? [];
+  const monthly = useMemo(() => data?.monthly ?? [], [data?.monthly]);
+  const monthlyLastYear = useMemo(() => data?.monthlyLastYear ?? [], [data?.monthlyLastYear]);
   const totalIncome = monthly.reduce((sum, month) => sum + month.incomeCents, 0);
   const totalExpense = monthly.reduce((sum, month) => sum + month.expenseCents, 0);
   const totalExpenseLastYear = monthlyLastYear.reduce((sum, month) => sum + month.expenseCents, 0);

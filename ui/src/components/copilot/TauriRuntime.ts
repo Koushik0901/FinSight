@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -837,10 +837,11 @@ export function useTauriCopilotRuntime(initialConversationId?: string | null): {
   );
 
   const runtime = useRemoteThreadListRuntime({
-    runtimeHook: () =>
-      useLocalRuntime(adapter, {
+    runtimeHook: function useFinSightLocalRuntime() {
+      return useLocalRuntime(adapter, {
         unstable_enableMessageQueue: true,
-      }),
+      });
+    },
     adapter: threadListAdapter,
     threadId: initialConversationId ?? undefined,
     onThreadIdChange: (threadId) => {

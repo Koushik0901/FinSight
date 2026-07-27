@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { fireEvent } from "@testing-library/react";
 import Recurring from "./Recurring";
 import { createWrapperWithEntries } from "../test-utils";
-import { useRecurring, useSetSubscriptionVerdict } from "../api/hooks/recurring";
+import { useRecurring } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 
 const mockSetVerdict = vi.fn();

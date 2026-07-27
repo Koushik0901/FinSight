@@ -176,7 +176,15 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
     <Drawer open={open} onClose={onClose} title={isEdit ? "Edit Transaction" : "Add transaction"}>
       <form onSubmit={handleSubmit(onSubmit)} className="drawer-form">
         {isEdit && displayTxn?.is_anomaly && (
-          <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--negative)", marginBottom: 4 }}>
+          <div
+            className="card tight"
+            style={{
+              padding: 12,
+              borderColor: "color-mix(in oklab, var(--negative) 36%, var(--line))",
+              background: "color-mix(in oklab, var(--negative) 7%, var(--surface))",
+              marginBottom: 4,
+            }}
+          >
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Flagged as unusual</div>
             {displayTxn.ai_explanation && (
               <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>{displayTxn.ai_explanation}</div>
@@ -200,7 +208,15 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
           </div>
         )}
         {isEdit && displayTxn?.is_transfer && (
-          <div className="card tight" style={{ padding: 12, borderLeft: "3px solid var(--accent)", marginBottom: 4 }}>
+          <div
+            className="card tight"
+            style={{
+              padding: 12,
+              borderColor: "color-mix(in oklab, var(--accent) 36%, var(--line))",
+              background: "color-mix(in oklab, var(--accent) 7%, var(--surface))",
+              marginBottom: 4,
+            }}
+          >
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Transfer between your accounts</div>
             <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>
               {displayTxn.transfer_peer_account_name

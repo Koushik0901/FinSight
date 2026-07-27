@@ -105,7 +105,12 @@ export default function MonthClose() {
                   aria-checked={isAcked(f.id, f.acknowledged)}
                   aria-label={`Acknowledge: ${f.title}`}
                   disabled={completed}
-                  onClick={() => setAcked((prev) => { const n = new Set(prev); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })}
+                  onClick={() => setAcked((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(f.id)) next.delete(f.id);
+                    else next.add(f.id);
+                    return next;
+                  })}
                   style={{ width: 18, height: 18, flexShrink: 0, borderRadius: 5, border: "1.5px solid var(--line)", background: isAcked(f.id, f.acknowledged) ? "var(--accent)" : "var(--surface-2)", cursor: completed ? "default" : "pointer" }}
                 />
                 <div className="grow" style={{ minWidth: 0 }}>

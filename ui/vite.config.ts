@@ -2,6 +2,39 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+function vendorChunk(id: string) {
+  const path = id.replaceAll("\\", "/");
+  if (!path.includes("/node_modules/")) return undefined;
+
+  if ([
+    "/node_modules/react/",
+    "/node_modules/react-dom/",
+    "/node_modules/react-router/",
+    "/node_modules/react-router-dom/",
+    "/node_modules/scheduler/",
+    "/node_modules/use-sync-external-store/",
+  ].some((segment) => path.includes(segment))) return "vendor-react";
+
+  if (["/node_modules/@tanstack/", "/node_modules/zustand/", "/node_modules/idb-keyval/"].some((segment) => path.includes(segment))) {
+    return "vendor-data";
+  }
+
+  if ([
+    "/node_modules/recharts/",
+    "/node_modules/recharts-scale/",
+    "/node_modules/victory-vendor/",
+    "/node_modules/react-smooth/",
+    "/node_modules/d3-",
+    "/node_modules/lodash/",
+    "/node_modules/eventemitter3/",
+  ].some((segment) => path.includes(segment))) return "vendor-charts";
+
+  if (["/node_modules/react-markdown/", "/node_modules/remark-", "/node_modules/rehype-", "/node_modules/unified/", "/node_modules/micromark"].some((segment) => path.includes(segment))) {
+    return "vendor-markdown";
+  }
+
+  return undefined;
+}
 export default defineConfig({
   plugins: [
     react(),
@@ -77,6 +110,15 @@ export default defineConfig({
       devOptions: { enabled: false }, // never register the SW in `npm run dev`
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Stable framework/data/chart chunks improve repeat navigation and
+        // keep optional charting code out of the application entry bundle.
+        manualChunks: vendorChunk,
+      },
+    },
+  },
   clearScreen: false,
   server: {
     port: 5173,

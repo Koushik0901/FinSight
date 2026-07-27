@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import StepAgent from "./StepAgent";
 import { createWrapper } from "../../test-utils";
-import { useSaveProviderApiKey, useSetCompletionProvider, useTestCompletionProvider } from "../../api/hooks/agent";
+import { useSaveProviderApiKey, useSetCompletionProvider } from "../../api/hooks/agent";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));

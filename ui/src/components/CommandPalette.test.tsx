@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { CommandPalette } from "./CommandPalette";
 import type { ReactNode } from "react";
+import { axe } from "vitest-axe";
 
 const askMutate = vi.fn();
 vi.mock("../api/hooks/agent", () => ({
@@ -23,9 +24,34 @@ function wrap(node: ReactNode) {
 }
 
 describe("CommandPalette — Ask the agent mode", () => {
+  it("has no axe violations", async () => {
+    const { container } = render(wrap(<CommandPalette open={true} onClose={() => {}} />));
+    const results = await axe(container);
+    expect(results.violations).toEqual([]);
+  });
+
+  it("keeps focus inside the modal and restores the invoking control", async () => {
+    const outside = document.createElement("button");
+    outside.textContent = "Open palette";
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const view = render(wrap(<CommandPalette open={true} onClose={() => {}} />));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Command palette input" })).toHaveFocus());
+
+    outside.focus();
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement);
+    });
+
+    view.rerender(wrap(<CommandPalette open={false} onClose={() => {}} />));
+    await waitFor(() => expect(outside).toHaveFocus());
+    outside.remove();
+  });
+
   it("shows 'Ask the agent' section when query is typed", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "am I over budget?" } });
     await waitFor(() => {
       expect(screen.getByText("Ask the agent")).toBeInTheDocument();
@@ -35,7 +61,7 @@ describe("CommandPalette — Ask the agent mode", () => {
 
   it("switches to answer mode when ask item is clicked", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "what is my net worth?" } });
     await waitFor(() => screen.getByText(/Ask: what is my net worth\?/));
     fireEvent.click(screen.getByText(/Ask: what is my net worth\?/));
@@ -46,7 +72,7 @@ describe("CommandPalette — Ask the agent mode", () => {
 
   it("returns to list mode when Back is clicked", async () => {
     render(wrap(<CommandPalette open={true} onClose={() => {}} />));
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "top spending?" } });
     await waitFor(() => screen.getByText(/Ask: top spending\?/));
     fireEvent.click(screen.getByText(/Ask: top spending\?/));
@@ -65,7 +91,7 @@ describe("CommandPalette — Ask the agent mode", () => {
   it("Escape in answer mode returns to list without closing", async () => {
     const onClose = vi.fn();
     render(wrap(<CommandPalette open={true} onClose={onClose} />));
-    const input = screen.getByRole("textbox");
+    const input = screen.getByRole("combobox");
     fireEvent.change(input, { target: { value: "savings rate?" } });
     await waitFor(() => screen.getByText(/Ask: savings rate\?/));
     fireEvent.click(screen.getByText(/Ask: savings rate\?/));

@@ -770,10 +770,6 @@ function EmptyThreadState({
 
   return (
     <div className="cp-hero">
-      <div className="cp-hero-glow" aria-hidden="true">
-        <div className="cp-glow-orb cp-glow-1" />
-        <div className="cp-glow-orb cp-glow-2" />
-      </div>
       <div className="cp-hero-inner">
         <div className="cp-hero-avatar">
           <span className="cp-avatar-ring">
@@ -795,7 +791,6 @@ function EmptyThreadState({
               onClick={() => onPrompt(p.label)}
               title={p.detail}
             >
-              <I.Sparkle width={12} height={12} className="cp-chip-ico" />
               <span>{p.label}</span>
             </button>
           ))}
@@ -960,6 +955,7 @@ function CopilotComposerBox({
       <button
         type="button"
         className="copilot-context-btn"
+        aria-label="Focus the composer with financial context attached"
         title="FinSight automatically attaches relevant financial context"
         onClick={() => composerRef.current?.focus()}
       >

@@ -1,6 +1,7 @@
 import React from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { axe } from "vitest-axe";
 import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
@@ -69,6 +70,30 @@ vi.mock("../api/hooks/settings", () => ({
   useSetAutoCategorizeEnabled: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteAllData: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false })),
 }));
+vi.mock("../api/hooks/dataHealth", () => ({
+  useDataHealth: vi.fn(() => ({
+    data: {
+      integrityStatus: "ok",
+      integrityCheckedAt: "2026-07-26T12:00:00Z",
+      lastBackupAt: "2026-07-26T12:00:00Z",
+      dbBytes: 1024,
+      walBytes: 0,
+      startupWarnings: [],
+      startupSummary: "Ready",
+      backups: [{
+        path: "C:\\backups\\data.backup-20260726.sqlcipher",
+        name: "data.backup-20260726.sqlcipher",
+        createdAt: "2026-07-26T12:00:00Z",
+        bytes: 512,
+      }],
+      pendingRestore: false,
+    },
+    isLoading: false,
+  })),
+  useCreateBackup: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useStageRestore: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useCancelRestore: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+}));
 vi.mock("../api/hooks/notifications", () => ({
   useNotificationPrefs: vi.fn(() => ({
     data: {
@@ -115,6 +140,13 @@ describe("Settings — Appearance section", () => {
     expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cozy/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /compact/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Currency" })).toBeInTheDocument();
+  });
+
+  it("has no structural axe violations", async () => {
+    const { container } = render(<Settings />, { wrapper: createWrapper() });
+    const results = await axe(container);
+    expect(results.violations).toEqual([]);
   });
 
   it("renders data export section with both buttons", () => {
@@ -130,6 +162,8 @@ describe("Settings — Agent section", () => {
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.getByText("Auto-categorize new transactions")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Privacy mode" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Auto-categorize new transactions" })).toBeInTheDocument();
   });
 
   it("shows agent memory (relocated from Insights) and forgets on click", () => {

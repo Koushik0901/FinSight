@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import FocusLock from "react-focus-lock";
 import * as I from "./Icons";
 import { useAskAgent } from "../api/hooks/agent";
 import type { AgentAnswer } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
-import { AgentResponseRenderer } from "./AgentResponseRenderer";
+
+const AgentResponseRenderer = lazy(() =>
+  import("./AgentResponseRenderer").then((module) => ({ default: module.AgentResponseRenderer }))
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -58,74 +62,51 @@ export function CommandPalette({ open, onClose }: Props) {
   const [answer, setAnswer] = useState<AgentAnswer | null>(null);
   const [activeQuery, setActiveQuery] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const askAgent = useAskAgent();
+  const lastActiveRef = useRef<HTMLElement | null>(null);
+  const listboxId = useId();
+  const askAgentMutation = useAskAgent();
+  const { mutate: askAgent } = askAgentMutation;
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 30);
-      setQ("");
-      setSel(0);
-      setMode("list");
-      setAnswer(null);
-      setActiveQuery("");
-    }
+    if (!open) return;
+    lastActiveRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 30);
+    setQ("");
+    setSel(0);
+    setMode("list");
+    setAnswer(null);
+    setActiveQuery("");
+    return () => {
+      window.clearTimeout(focusTimer);
+      const focusTarget = lastActiveRef.current;
+      lastActiveRef.current = null;
+      focusTarget?.focus();
+    };
   }, [open]);
 
   const trimmed = q.trim();
-  const askItem: CmdItem | null = trimmed
-    ? { kind: "ask", label: `Ask: ${trimmed}`, Icon: I.Sparkle, query: trimmed }
-    : null;
-
-  const filtered: CmdItem[] = [];
-  if (trimmed) {
-    const s = trimmed.toLowerCase();
-    const matches = [...NAV_ITEMS, ...ACT_ITEMS].filter((x) => x.label.toLowerCase().includes(s));
-    filtered.push(...matches);
-    if (askItem) filtered.push(askItem);
-  } else {
-    filtered.push(...NAV_ITEMS, ...ACT_ITEMS);
-  }
+  const filtered = useMemo<CmdItem[]>(() => {
+    if (!trimmed) return [...NAV_ITEMS, ...ACT_ITEMS];
+    const query = trimmed.toLowerCase();
+    const matches = [...NAV_ITEMS, ...ACT_ITEMS].filter((item) =>
+      item.label.toLowerCase().includes(query)
+    );
+    return [
+      ...matches,
+      { kind: "ask", label: `Ask: ${trimmed}`, Icon: I.Sparkle, query: trimmed },
+    ];
+  }, [trimmed]);
 
   useEffect(() => {
     setSel(0);
   }, [q]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (mode === "answer") {
-          setMode("list");
-          return;
-        }
-        onClose();
-        return;
-      }
-      if (mode === "answer") return;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSel((s) => Math.min(filtered.length - 1, s + 1));
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSel((s) => Math.max(0, s - 1));
-      }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const item = filtered[sel];
-        if (item) handleItem(item);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, filtered, sel, mode, onClose]);
-
-  const handleItem = (item: CmdItem) => {
+  const handleItem = useCallback((item: CmdItem) => {
     if (item.kind === "ask" && item.query) {
       setActiveQuery(item.query);
       setMode("answer");
       setAnswer(null);
-      askAgent.mutate(
+      askAgent(
         { question: item.query },
         {
           onSuccess: (data) => setAnswer(data),
@@ -164,7 +145,39 @@ export function CommandPalette({ open, onClose }: Props) {
     } else {
       onClose();
     }
-  };
+  }, [askAgent, navigate, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (mode === "answer") {
+          setMode("list");
+          return;
+        }
+        onClose();
+        return;
+      }
+      if (mode === "answer") return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSel((s) => Math.min(filtered.length - 1, s + 1));
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSel((s) => Math.max(0, s - 1));
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const item = filtered[sel];
+        if (item) handleItem(item);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, filtered, sel, mode, onClose, handleItem]);
 
   if (!open) return null;
 
@@ -181,6 +194,7 @@ export function CommandPalette({ open, onClose }: Props) {
       return (
         <div
           key={myIdx}
+          id={`${listboxId}-option-${myIdx}`}
           className={`cmdk-item${isSel ? " sel" : ""}`}
           role="option"
           aria-selected={isSel}
@@ -195,6 +209,7 @@ export function CommandPalette({ open, onClose }: Props) {
     });
 
   return (
+    <FocusLock returnFocus={false}>
     <div className="cmdk-mask" onClick={onClose} role="dialog" aria-modal="true" aria-label="Command palette">
       <div className={`cmdk${mode === "answer" ? " answer" : ""}`} onClick={(e) => e.stopPropagation()}>
         {mode === "answer" ? (
@@ -207,14 +222,16 @@ export function CommandPalette({ open, onClose }: Props) {
               </button>
             </div>
             <div className="cmdk-answer-body" role="status" aria-live="polite">
-              {askAgent.isPending && !answer ? (
+              {askAgentMutation.isPending && !answer ? (
                 <div className="cmdk-thinking">
                   <span className="spinner" aria-hidden="true" />
                   <span>Thinking…</span>
                 </div>
               ) : answer ? (
                 <>
-                  <AgentResponseRenderer answer={answer} compact />
+                  <Suspense fallback={<div className="cmdk-thinking">Rendering answer…</div>}>
+                    <AgentResponseRenderer answer={answer} compact />
+                  </Suspense>
                   {answer.actionLabel && answer.actionPath && (
                     <div className="cmdk-answer-action">
                       <button
@@ -243,10 +260,15 @@ export function CommandPalette({ open, onClose }: Props) {
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search, jump to page, or ask the agent…"
                 aria-label="Command palette input"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls={listboxId}
+                aria-expanded="true"
+                aria-activedescendant={filtered.length > 0 ? `${listboxId}-option-${Math.min(sel, filtered.length - 1)}` : undefined}
               />
               <span className="kbd">esc</span>
             </div>
-            <div className="cmdk-list" role="listbox">
+            <div id={listboxId} className="cmdk-list" role="listbox" aria-label="Commands and destinations">
               {filtered.length === 0 && !trimmed && (
                 <div className="cmdk-item muted">Start typing to search or ask the agent a question</div>
               )}
@@ -290,5 +312,6 @@ export function CommandPalette({ open, onClose }: Props) {
         )}
       </div>
     </div>
+    </FocusLock>
   );
 }

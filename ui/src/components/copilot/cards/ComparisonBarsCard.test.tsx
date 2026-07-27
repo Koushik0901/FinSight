@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { ComparisonBarsCard } from "./ComparisonBarsCard";
 
 describe("ComparisonBarsCard", () => {
-  it("delegates to FinSightBarComparison with the block's title/current/prior, only once streaming has finished", () => {
+  it("delegates to FinSightBarComparison with the block's title/current/prior, only once streaming has finished", async () => {
     render(
       <ComparisonBarsCard
         isRunning={false}
@@ -15,7 +15,7 @@ describe("ComparisonBarsCard", () => {
         }}
       />
     );
-    expect(screen.getByText("Dining · this month vs average")).toBeInTheDocument();
+    expect(await screen.findByText("Dining · this month vs average")).toBeInTheDocument();
     expect(screen.getByText("May 2026")).toBeInTheDocument();
     expect(screen.getByText("12-mo avg")).toBeInTheDocument();
     expect(screen.getByText(/\$412/)).toBeInTheDocument();

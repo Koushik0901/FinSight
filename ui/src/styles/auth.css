@@ -1,12 +1,7 @@
-/* ──────────────────────────────────────────────────────────
-   FinSight — server-mode auth (setup / sign in / recovery).
-   Ported from the "Plutus" Claude Design login. Every rule is
-   scoped under .fs-auth so the design's generic class names
-   (.field, .panel, .submit, .brand, .check …) can't collide
-   with the app's global styles, and its self-contained token
-   set can't override the themed app shell. Keyframes are global
-   by name (unique here) — that's fine.
-   ────────────────────────────────────────────────────────── */
+/* FinSight server-mode auth (setup / sign in / recovery).
+   The shell is intentionally restrained and trust-led. Every rule is scoped
+   under .fs-auth so its generic class names and self-contained tokens cannot
+   collide with the authenticated app. */
 
 .fs-auth {
   /* Self-contained, dark-first tokens — the auth screens render before the
@@ -25,8 +20,8 @@
 
   --ink:       #F4F4F7;
   --ink-2:     #C8C8D0;
-  --ink-mute:  #8A8A95;
-  --ink-faint: #57575F;
+  --ink-mute:  #A0A0AA;
+  --ink-faint: #858590;
 
   --accent:     #C9F950;
   --accent-ink: #0A0F02;
@@ -34,6 +29,7 @@
   --accent-3:   rgba(201, 249, 80, 0.28);
 
   --sky:     #60A5FA;
+  --warning: #FBBF24;
   --violet:  #A78BFA;
   --emerald: #34D399;
   --rose:    #FB7185;
@@ -83,17 +79,6 @@
   overflow-y: auto;
   z-index: 2;
 }
-.fs-auth .panel::before {
-  content: "";
-  position: absolute; inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 34px 34px;
-  mask-image: radial-gradient(120% 80% at 30% 0%, #000 20%, transparent 75%);
-  -webkit-mask-image: radial-gradient(120% 80% at 30% 0%, #000 20%, transparent 75%);
-  pointer-events: none;
-}
 .fs-auth .panel > * { position: relative; z-index: 1; }
 
 .fs-auth .brand { display: flex; align-items: center; gap: 11px; }
@@ -102,16 +87,11 @@
   background: var(--accent);
   display: grid; place-items: center;
   position: relative;
-  box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.4), 0 0 34px rgba(201, 249, 80, 0.35);
-  animation: markpulse 4.5s ease-in-out infinite;
+  border: 1px solid rgba(201, 249, 80, 0.42);
 }
 .fs-auth .brand .mark::after {
   content: ""; position: absolute; inset: 6px;
   border-radius: 3px; background: var(--accent-ink);
-}
-@keyframes markpulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.4), 0 0 30px rgba(201, 249, 80, 0.28); }
-  50%      { box-shadow: 0 0 0 1px rgba(201, 249, 80, 0.55), 0 0 46px rgba(201, 249, 80, 0.5); }
 }
 .fs-auth .brand .wm { font-weight: 600; font-size: 16.5px; letter-spacing: -0.025em; }
 .fs-auth .brand .wm b { color: var(--accent); font-weight: 600; }
@@ -136,7 +116,6 @@
 }
 .fs-auth .head-eyebrow .dot {
   width: 6px; height: 6px; border-radius: 999px; background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
 }
 .fs-auth .head-title {
   font-size: 33px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.06;
@@ -163,7 +142,7 @@
 .fs-auth .field.focused .in-wrap {
   border-color: var(--accent);
   background: var(--surface-2);
-  box-shadow: 0 0 0 3px var(--accent-2), 0 0 30px rgba(201, 249, 80, 0.08);
+  box-shadow: 0 0 0 3px var(--accent-2);
 }
 .fs-auth .field.invalid .in-wrap {
   border-color: var(--negative);
@@ -292,20 +271,11 @@
   display: flex; align-items: center; justify-content: center; gap: 9px;
   overflow: hidden;
   margin-top: 6px;
-  transition: filter .15s, transform .1s, box-shadow .2s, opacity .15s;
-  box-shadow: 0 0 0 1px var(--accent), 0 8px 30px rgba(201, 249, 80, 0.22);
+  transition: filter .15s, transform .1s, opacity .15s;
 }
-.fs-auth .submit:hover { filter: brightness(1.06); box-shadow: 0 0 0 1px var(--accent), 0 10px 40px rgba(201, 249, 80, 0.34); }
+.fs-auth .submit:hover { filter: brightness(1.04); }
 .fs-auth .submit:active { transform: translateY(1px); }
 .fs-auth .submit:disabled { cursor: default; }
-.fs-auth .submit::after {
-  content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
-  left: -50%;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  transform: skewX(-18deg);
-  animation: authsheen 3.6s ease-in-out infinite;
-}
-@keyframes authsheen { 0% { left: -60%; } 55%, 100% { left: 130%; } }
 .fs-auth .submit .spinner {
   width: 17px; height: 17px; border-radius: 999px;
   border: 2px solid rgba(10, 15, 2, 0.25);
@@ -313,7 +283,6 @@
   animation: authspin .7s linear infinite;
 }
 @keyframes authspin { to { transform: rotate(360deg); } }
-.fs-auth .submit.busy::after { display: none; }
 .fs-auth .submit .arw { transition: transform .2s; display: inline-flex; }
 .fs-auth .submit:hover .arw { transform: translateX(3px); }
 
@@ -362,162 +331,88 @@
 }
 .fs-auth .btn-ghost:hover { border-color: var(--line-3); background: var(--elevated); }
 
-/* ── Right · 3D showcase ───────────────────────────────── */
+/* ── Right · trust brief ────────────────────────────────── */
 .fs-auth .showcase {
   position: relative;
   overflow: hidden;
-  background:
-    radial-gradient(120% 120% at 78% 8%, rgba(201, 249, 80, 0.10), transparent 46%),
-    radial-gradient(90% 90% at 20% 100%, rgba(96, 165, 250, 0.10), transparent 50%),
-    var(--bg);
-}
-.fs-auth .showcase canvas.bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.fs-auth .showcase canvas.net { z-index: 1; }
-.fs-auth .showcase-vignette {
-  position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  background: radial-gradient(75% 75% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55));
-}
-.fs-auth .stage {
-  position: absolute; inset: 0; z-index: 3;
-  display: grid; place-items: center;
-  perspective: 1400px;
-  perspective-origin: 50% 42%;
-}
-.fs-auth .stage-inner {
-  position: relative;
-  width: 500px; height: 560px;
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-.fs-auth .gcard {
-  position: absolute;
-  background: linear-gradient(150deg, rgba(23, 23, 30, 0.96), rgba(13, 13, 18, 0.95));
-  border: 1px solid var(--line-2);
-  border-radius: 18px;
-  backdrop-filter: blur(3px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.07) inset,
-    0 1px 0 rgba(255, 255, 255, 0.05),
-    0 34px 80px rgba(0, 0, 0, 0.7);
-  transform-style: preserve-3d;
-  opacity: 0;
-  animation: authcardin .9s cubic-bezier(.2, .8, .2, 1) forwards;
-}
-@keyframes authcardin {
-  from { opacity: 0; transform: translateZ(-120px) translateY(30px) scale(0.94); }
-  to   { opacity: 1; }
-}
-.fs-auth .gcard::before {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.07), transparent 40%);
-}
-.fs-auth .card-hero {
-  width: 336px; left: 82px; top: 150px;
-  padding: 24px 26px;
-  transform: translateZ(70px);
-  animation-delay: .12s;
-}
-.fs-auth .card-hero .lbl {
-  font-family: var(--a-mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--ink-faint);
-  display: flex; align-items: center; gap: 8px;
-}
-.fs-auth .card-hero .lbl .d { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-.fs-auth .card-hero .big {
-  font-size: 46px; font-weight: 600; letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums; margin-top: 12px; line-height: 1;
-}
-.fs-auth .card-hero .big .cur { color: var(--ink-mute); font-size: 26px; font-weight: 500; margin-right: 2px; vertical-align: 6px; }
-.fs-auth .card-hero .delta {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 14px;
-  font-size: 12.5px; font-weight: 500;
-  color: var(--positive);
-  background: rgba(74, 222, 128, 0.12);
-  padding: 4px 10px; border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-}
-.fs-auth .card-hero canvas { display: block; width: 100%; height: 74px; margin-top: 18px; }
-.fs-auth .card-mini {
-  width: 208px; padding: 15px 17px;
-  display: flex; flex-direction: column; gap: 11px;
-}
-.fs-auth .card-mini .top { display: flex; align-items: center; gap: 10px; }
-.fs-auth .card-mini .logo {
-  width: 30px; height: 30px; border-radius: 8px;
-  display: grid; place-items: center;
-  color: #fff; font-weight: 700; font-size: 12px; letter-spacing: -0.03em;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-.fs-auth .card-mini .nm { font-size: 12.5px; font-weight: 500; }
-.fs-auth .card-mini .sub { font-size: 10.5px; color: var(--ink-faint); font-family: var(--a-mono); }
-.fs-auth .card-mini .amt { font-size: 21px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.fs-auth .card-mini canvas { width: 100%; height: 30px; display: block; }
-.fs-auth .card-a { left: 4px; top: 34px; transform: translateZ(130px); animation-delay: .28s; }
-.fs-auth .card-b { right: -6px; top: 96px; transform: translateZ(40px); animation-delay: .4s; }
-.fs-auth .card-insight {
-  width: 300px; right: -34px; bottom: 96px;
-  padding: 15px 17px;
-  display: grid; grid-template-columns: 30px 1fr; gap: 13px; align-items: start;
-  transform: translateZ(150px);
-  animation-delay: .54s;
-}
-.fs-auth .card-insight .spark {
-  width: 30px; height: 30px; border-radius: 9px;
-  background: var(--accent-2); color: var(--accent);
-  display: grid; place-items: center;
-  border: 1px solid var(--accent-3);
-}
-.fs-auth .card-insight .txt { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; text-wrap: pretty; }
-.fs-auth .card-insight .txt b { color: var(--ink); font-weight: 600; }
-.fs-auth .card-insight .meta { font-size: 10.5px; color: var(--ink-faint); font-family: var(--a-mono); margin-top: 6px; }
-.fs-auth .card-pill {
-  left: 40px; bottom: 60px;
-  padding: 11px 15px;
-  display: flex; align-items: center; gap: 11px;
-  border-radius: 999px;
-  transform: translateZ(96px);
-  animation-delay: .66s;
-}
-.fs-auth .card-pill .avset { display: flex; }
-.fs-auth .card-pill .av {
-  width: 26px; height: 26px; border-radius: 999px;
-  display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff;
-  border: 2px solid var(--elevated);
-}
-.fs-auth .card-pill .av + .av { margin-left: -9px; }
-.fs-auth .card-pill .lab { font-size: 12px; color: var(--ink-2); }
-.fs-auth .card-pill .lab b { color: var(--ink); }
-
-.fs-auth .float { animation: authcardin .9s cubic-bezier(.2, .8, .2, 1) forwards, authdrift 9s ease-in-out infinite; }
-.fs-auth .card-hero.float    { animation-delay: .12s, 1.0s; }
-.fs-auth .card-a.float       { animation-delay: .28s, 1.4s; }
-.fs-auth .card-b.float       { animation-delay: .4s, 0.6s; }
-.fs-auth .card-insight.float { animation-delay: .54s, 1.9s; }
-.fs-auth .card-pill.float    { animation-delay: .66s, 2.3s; }
-@keyframes authdrift {
-  0%, 100% { translate: 0 0; }
-  50%      { translate: 0 -12px; }
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(48px, 8vw, 96px);
+  background: var(--bg-2);
+  color: var(--ink);
 }
 
-.fs-auth .showcase-cap {
-  position: absolute; left: 44px; bottom: 40px; z-index: 4;
-  max-width: 420px;
+.fs-auth .showcase-rule {
+  width: 56px;
+  height: 2px;
+  margin-bottom: 32px;
+  background: var(--accent);
 }
-.fs-auth .showcase-cap h2 {
-  font-size: 25px; font-weight: 600; letter-spacing: -0.03em; margin: 0; line-height: 1.15;
-  text-wrap: pretty;
-}
-.fs-auth .showcase-cap p {
-  color: var(--ink-mute); font-size: 13.5px; margin: 10px 0 0; text-wrap: pretty; max-width: 40ch;
-}
-.fs-auth .showcase-dots { display: flex; gap: 7px; margin-top: 18px; }
-.fs-auth .showcase-dots span {
-  width: 22px; height: 3px; border-radius: 999px; background: var(--line-2);
-  transition: background .3s, width .3s;
-}
-.fs-auth .showcase-dots span.on { background: var(--accent); width: 34px; box-shadow: 0 0 10px var(--accent-3); }
 
+.fs-auth .showcase-copy {
+  max-width: 600px;
+}
+
+.fs-auth .showcase-kicker {
+  margin: 0 0 16px;
+  color: var(--ink-mute);
+  font-family: var(--a-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.fs-auth .showcase-copy h2 {
+  max-width: 13ch;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(34px, 4vw, 58px);
+  font-weight: 560;
+  letter-spacing: -.045em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.fs-auth .showcase-copy > p:last-child {
+  max-width: 54ch;
+  margin: 24px 0 0;
+  color: var(--ink-mute);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.fs-auth .showcase-points {
+  display: grid;
+  max-width: 680px;
+  margin: 56px 0 0;
+}
+
+.fs-auth .showcase-points > div {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+  gap: 24px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+
+.fs-auth .showcase-points > div:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.fs-auth .showcase-points dt {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fs-auth .showcase-points dd {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 13px;
+  line-height: 1.5;
+}
 /* ── Responsive ────────────────────────────────────────── */
 @media (max-width: 860px) {
   .fs-auth {
@@ -533,12 +428,4 @@
 @media (max-width: 520px) {
   .fs-auth .panel { padding: 28px 22px; }
   .fs-auth .head-title { font-size: 28px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fs-auth .brand .mark,
-  .fs-auth .submit::after,
-  .fs-auth .float,
-  .fs-auth .gcard { animation: none; }
-  .fs-auth .gcard { opacity: 1; }
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { axe } from "vitest-axe";
 import { BottomNav } from "./BottomNav";
 import { createWrapperWithEntries } from "../test-utils";
 
@@ -39,7 +40,14 @@ describe("BottomNav", () => {
     renderAt("/");
     for (const label of ["Today", "Inbox", "Accounts", "Budget", "Goals", "More"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getByRole(label === "More" ? "button" : "link", { name: label })).toBeInTheDocument();
     }
+  });
+
+  it("has no axe violations when compact labels are visually hidden", async () => {
+    const { container } = renderAt("/");
+    const results = await axe(container);
+    expect(results.violations).toEqual([]);
   });
 
   it("marks the current route's tab active", () => {

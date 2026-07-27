@@ -161,7 +161,7 @@ export function detectDateFormat(values: string[]): string | null {
 
 export function detectAmountConvention(
   roles: ColumnRole[],
-  rows: string[][],
+  _rows: string[][],
 ): AmountConvention {
   if (roles.includes("Debit") && roles.includes("Credit")) {
     return "split_debit_credit";

@@ -940,7 +940,7 @@ function buildCloseView(ds: Dataset, year: number, month: number): AnyRec {
 // Deliberately varied: a critical unread with a sensitive amount, a low-urgency
 // activity ping, a read item, and one held overnight (delivered_at null) — so
 // the Inbox section and badge exercise every branch.
-let mockNotifications: AnyRec[] = [
+const mockNotifications: AnyRec[] = [
   { id: "n-cash", category: "cashflow_risk", urgency: "critical", title: "Balance dips below your buffer", body: "Your projected balance goes negative before your next paycheck", sensitive: "-$142 on the 3rd", route: "/cashflow", createdAt: isoDaysAgo(0), deliveredAt: isoDaysAgo(0), readAt: null, resolvedAt: null },
   { id: "n-act", category: "account_activity", urgency: "low", title: "New transactions synced", body: "3 new transactions arrived from your linked accounts", sensitive: null, route: "/transactions", createdAt: isoDaysAgo(0), deliveredAt: isoDaysAgo(0), readAt: null, resolvedAt: null },
   { id: "n-sub", category: "subscription_change", urgency: "normal", title: "A subscription renews soon", body: "Your streaming plan renews in 3 days", sensitive: "$16.99/mo", route: "/recurring", createdAt: isoDaysAgo(1), deliveredAt: null, readAt: null, resolvedAt: null },
@@ -1365,7 +1365,6 @@ export function installMockBackend(kindRaw: string | null) {
     const warned = w.__finsightMockWarned as Set<string>;
     if (!warned.has(cmd)) {
       warned.add(cmd);
-      // eslint-disable-next-line no-console
       console.info(`[mock] unfixtured command "${cmd}" → default`);
     }
     return fallback(cmd);
@@ -1395,7 +1394,6 @@ export function installMockBackend(kindRaw: string | null) {
   // the mock as a pre-navigation desktop shell — mirrors __FINSIGHT_HTTP__.
   w.__FINSIGHT_MOCK__ = true;
 
-  // eslint-disable-next-line no-console
   console.info(
     `%c FinSight mock backend active `,
     "background:#C9F950;color:#0A0F02;font-weight:700;border-radius:4px;",

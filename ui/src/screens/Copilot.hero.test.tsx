@@ -258,7 +258,7 @@ describe("Copilot hero", () => {
     const { container } = render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() => expect(screen.getByText(/42 transaction/i)).toBeInTheDocument());
     expect(container.querySelector(".cp-hero")).toBeInTheDocument();
-    expect(container.querySelector(".cp-hero-glow")).toBeInTheDocument();
+    expect(container.querySelector(".cp-hero-glow")).not.toBeInTheDocument();
     expect(container.querySelector(".cp-hero-inner")).toBeInTheDocument();
     expect(container.querySelector(".copilot-prompt-card")).not.toBeInTheDocument();
   });

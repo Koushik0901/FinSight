@@ -63,7 +63,6 @@ const SECTIONS = [
   ["keyboard", "Keyboard"],
   ["about", "About"],
 ] as const;
-const SECTION_IDS = SECTIONS.map(([id]) => id);
 // Server-mode-only nav entry (Sign out) — appended when isServerMode() so the
 // desktop app's nav/section list is byte-identical to before this feature.
 const SERVER_ACCOUNT_SECTION = ["account", "Account"] as const;
@@ -361,9 +360,9 @@ function DataBackupsSection() {
             {(!health || health.backups.length === 0) ? (
               <div className="muted" style={{ fontSize: 13 }}>No backups yet. One is created automatically before each app update.</div>
             ) : (
-              <div className="tbl" role="table">
+              <div className="tbl" role="list" aria-label="Available backups">
                 {health.backups.map((b) => (
-                  <div key={b.path} className="row" role="row" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
+                  <div key={b.path} className="row" role="listitem" style={{ alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
                     <div style={{ minWidth: 0 }}>
                       <div className="mono" style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis" }}>{b.name.replace(/^data\.backup-/, "").replace(/\.sqlcipher$/, "")}</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>{fmtWhen(b.createdAt)} · {fmtBytes(b.bytes)}</div>
@@ -732,7 +731,7 @@ export default function Settings() {
             <div className="s-row">
               <div><div className="label">Privacy mode</div><div className="desc">Blur displayed amounts when you are sharing your screen or want extra discretion.</div></div>
               <div className="muted">Shortcut: ⌘.</div>
-              <Tog checked={privacy} onChange={setPrivacy} />
+              <Tog checked={privacy} onChange={setPrivacy} ariaLabel="Privacy mode" />
             </div>
             <div className="s-row">
               <div><div className="label">Export data</div><div className="desc">Download the full dataset as JSON or CSV whenever you want a local backup.</div></div>
@@ -747,7 +746,7 @@ export default function Settings() {
           </Section>
 
           <Section id="agent" title="Agent" description="Control what the agent does automatically, and what it remembers.">
-            <div className="s-row"><div><div className="label">Auto-categorize new transactions</div><div className="desc">Automatically categorize transactions after each import or sync, using your configured AI provider.</div></div><div className="muted">{autoCategorizeEnabled ? "Currently on" : "Currently off"}</div><Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} /></div>
+            <div className="s-row"><div><div className="label">Auto-categorize new transactions</div><div className="desc">Automatically categorize transactions after each import or sync, using your configured AI provider.</div></div><div className="muted">{autoCategorizeEnabled ? "Currently on" : "Currently off"}</div><Tog checked={autoCategorizeEnabled} onChange={(value) => setAutoCategorizeMutation.mutate(value)} ariaLabel="Auto-categorize new transactions" /></div>
             <AgentMemoryPanel />
             <div className="card tight" style={{ marginTop: 12 }}>
               <div className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
@@ -796,7 +795,7 @@ export default function Settings() {
             <div className="s-row"><div><div className="label">Theme</div><div className="desc">Switch between dark and light modes.</div></div><div className="toolbar"><button className={theme === "dark" ? "on" : ""} type="button" onClick={() => setTheme("dark")}>Dark</button><button className={theme === "light" ? "on" : ""} type="button" onClick={() => setTheme("light")}>Light</button></div><div /></div>
             <div className="s-row"><div><div className="label">Density</div><div className="desc">Use cozy spacing or fit more on screen.</div></div><div className="toolbar"><button className={density === "cozy" ? "on" : ""} type="button" onClick={() => setDensity("cozy")}>Cozy</button><button className={density === "compact" ? "on" : ""} type="button" onClick={() => setDensity("compact")}>Compact</button></div><div /></div>
             <div className="s-row"><div><div className="label">Accent</div><div className="desc">Pick the accent used in hero states and active controls.</div></div><div className="row row-sm wrap">{(Object.entries(ACCENTS) as [AccentId, { hex: string }][]).map(([id, value]) => <button key={id} type="button" aria-label={id} onClick={() => setAccent(id)} style={{ width: 28, height: 28, borderRadius: 999, background: value.hex, border: accent === id ? "2px solid var(--ink)" : "1px solid var(--line)" }} />)}</div><div /></div>
-            <div className="s-row"><div><div className="label">Currency</div><div className="desc">Used for all money formatting in the app.</div></div><div><select className="control" value={currentCurrency} onChange={(e) => setCurrencyMutation.mutate(e.target.value)} style={{ maxWidth: 140 }}>{CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><div /></div>
+            <div className="s-row"><div><div className="label" id="settings-currency-label">Currency</div><div className="desc">Used for all money formatting in the app.</div></div><div><select className="control" aria-labelledby="settings-currency-label" value={currentCurrency} onChange={(e) => setCurrencyMutation.mutate(e.target.value)} style={{ maxWidth: 140 }}>{CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><div /></div>
           </Section>
 
           <Section id="connections" title="Connections" description="Bank feeds and background sync via SimpleFin.">

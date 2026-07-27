@@ -218,7 +218,7 @@ self.addEventListener("fetch", function (event) {
   let url;
   try {
     url = new URL(request.url);
-  } catch (_e) {
+  } catch {
     return;
   }
   if (url.pathname !== "/share-target") return;
@@ -256,7 +256,7 @@ self.addEventListener("fetch", function (event) {
         // 303 forces the follow-up request to be a GET, so a reload of the
         // landing page never re-submits the share.
         return Response.redirect("/?shared=1", 303);
-      } catch (_e) {
+      } catch {
         // Never surface a raw error page into the share sheet's launched window
         // — send the user into the app with a flag it can turn into a toast.
         return Response.redirect("/?shared=error", 303);

@@ -240,7 +240,6 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       const { rows_imported, rows_skipped_duplicates, rows_queued_for_review, errors } = summary;
       const importedNoun = rows_imported === 1 ? "transaction" : "transactions";
       const duplicateNoun = rows_skipped_duplicates === 1 ? "duplicate" : "duplicates";
-      const queuedNoun = rows_queued_for_review === 1 ? "item" : "items";
       const parts: string[] = [];
       if (rows_imported > 0) {
         parts.push(`Imported ${rows_imported} ${importedNoun}`);

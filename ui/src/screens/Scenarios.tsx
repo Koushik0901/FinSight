@@ -181,7 +181,7 @@ function Results({
                 await save.mutateAsync({ description, params, months });
                 toast.success("Scenario saved", { description: "Find it in Saved scenarios below to compare and promote." });
                 onSaved();
-              } catch (e) {
+              } catch {
                 toast.error("Could not save scenario");
               }
             }}
@@ -319,7 +319,12 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
                 aria-label={`Approve: ${c.title}`}
                 checked={approved.has(c.id) || isApplied}
                 disabled={isApplied}
-                onChange={() => setApproved((prev) => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
+                onChange={() => setApproved((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(c.id)) next.delete(c.id);
+                  else next.add(c.id);
+                  return next;
+                })}
                 style={{ marginTop: 3, flexShrink: 0 }}
               />
             )}

@@ -1,5 +1,4 @@
-/* Monoline icon set — 16px, stroke 1.4, currentColor
-   Ported from the Plutus design prototype. */
+/* FinSight monoline icon set — 16px, stroke 1.4, currentColor. */
 
 import type { SVGProps } from "react";
 

@@ -16,7 +16,6 @@
  *   { title, body, url?, tag?, badgeCount? }
  */
 
-/* eslint-disable no-undef */
 
 function finsightPushPayload(event) {
   // A push with no payload is legal (some services strip it), and a malformed
@@ -29,10 +28,10 @@ function finsightPushPayload(event) {
     const parsed = event.data.json();
     if (parsed && typeof parsed === "object") return parsed;
     return fallback;
-  } catch (_e) {
+  } catch {
     try {
       return { title: "FinSight", body: event.data.text() };
-    } catch (_e2) {
+    } catch {
       return fallback;
     }
   }
@@ -63,7 +62,7 @@ self.addEventListener("push", function (event) {
           } else if (self.navigator.clearAppBadge) {
             await self.navigator.clearAppBadge();
           }
-        } catch (_e) {
+        } catch {
           // Badging unsupported here; the notification still landed.
         }
       }
@@ -90,7 +89,7 @@ self.addEventListener("notificationclick", function (event) {
           if ("navigate" in client) {
             try {
               await client.navigate(target);
-            } catch (_e) {
+            } catch {
               // Cross-origin or otherwise refused — focus alone is fine.
             }
           }

@@ -40,7 +40,7 @@ export default function SimpleFinDialog({ open, onClose }: Props) {
       } else {
         toast("No accounts found. Check your SimpleFin bridge setup.");
       }
-    } catch (e) {
+    } catch {
       toast.error("Failed to connect. The token may have expired or been used already.");
     }
   };
@@ -76,7 +76,7 @@ export default function SimpleFinDialog({ open, onClose }: Props) {
       await importAccounts.mutateAsync(reqs);
       toast.success(`Imported ${reqs.length} account(s)`);
       onClose();
-    } catch (e) {
+    } catch {
       toast.error("Failed to import accounts");
     }
   };

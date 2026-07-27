@@ -99,7 +99,8 @@
   --ink:       #F4F4F7;
   --ink-2:     #C8C8D0;
   --ink-mute:  #A5A5B0;   /* accessible for small text on surface */
-  --ink-faint: #6B6B75;   /* decorative only; do not use for body text */
+  --ink-faint: oklch(65% 0.018 285); /* lowest accessible text tone: 4.5:1+ on elevated surfaces */
+  --ink-decorative: #6B6B75; /* non-text marks, inactive chart fills, and separators */
   --text:   var(--ink);
   --text-2: var(--ink-2);
   --text-3: var(--ink-mute);
@@ -162,7 +163,8 @@
   --ink:       rgba(0,0,0,0.92);
   --ink-2:     rgba(0,0,0,0.68);
   --ink-mute:  rgba(0,0,0,0.55);   /* accessible for small text on white */
-  --ink-faint: rgba(0,0,0,0.32);   /* decorative only */
+  --ink-faint: oklch(52% 0.008 85); /* lowest accessible text tone: 4.5:1+ on warm surfaces */
+  --ink-decorative: rgba(0,0,0,0.32); /* non-text marks, inactive chart fills, and separators */
   --text:   var(--ink);
   --text-2: var(--ink-2);
   --text-3: var(--ink-mute);

@@ -105,7 +105,6 @@ function makeSink(): PerfSink {
       entries.push(e);
       if (entries.length > RING) entries.shift();
       // Console breadcrumb so a live measurement pass sees it without exporting.
-      // eslint-disable-next-line no-console
       console.info(`[perf] ${e.kind} ${e.label} ${e.ms.toFixed(1)}ms${e.detail ? ` (${e.detail})` : ""}`);
     },
     clear() {

@@ -75,6 +75,7 @@ export function BottomNav() {
             key={t.id}
             to={t.path}
             end={t.path === "/"}
+            aria-label={t.label}
             onMouseEnter={() => warm(t.path)}
             onFocus={() => warm(t.path)}
             className={({ isActive }) => `bottom-nav-item${isActive ? " active" : ""}`}
@@ -92,6 +93,7 @@ export function BottomNav() {
           onClick={() => setMoreOpen(true)}
           aria-haspopup="dialog"
           aria-expanded={moreOpen}
+          aria-label="More"
         >
           <span className="bottom-nav-ico-wrap" aria-hidden="true">
             <I.More className="ico" />
