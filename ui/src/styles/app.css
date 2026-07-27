@@ -477,19 +477,25 @@
   user-select: none;
 }
 
-/* ── Section header ───────────────────────────────────── */
+/* ── Page header ──────────────────────────────────────── */
 
-.screen-header {
+.page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 24px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.page-header-ruled {
+  align-items: flex-end;
+  gap: var(--space-6);
+  padding-bottom: var(--space-6);
   border-bottom: 1px solid var(--hairline);
   margin-bottom: 28px;
 }
 
-.screen-header-text,
+.page-header-main,
 .card,
 .stat,
 .rule,
@@ -498,31 +504,61 @@
   min-width: 0;
 }
 
+.page-header-eyebrow,
 .screen-eyebrow {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-mute);
   font-family: var(--mono);
-  margin-bottom: var(--space-1);
 }
 
-.screen-header-text h1 {
+.page-header-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+}
+
+.screen-eyebrow { margin-bottom: var(--space-1); }
+
+.page-header-eyebrow .dot {
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.page-header-title {
   font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-weight: 620;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
   color: var(--ink);
   margin: 0;
-  line-height: 1.1;
 }
 
-.screen-header h1 {
-  margin: 0;
+.page-header-ruled .page-header-title {
   font-size: 30px;
-  font-weight: 620;
-  letter-spacing: -0.03em;
 }
 
+.page-header-description {
+  max-width: 75ch;
+  margin: var(--space-2) 0 0;
+  color: var(--ink-mute);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Legacy section-heading composition. Page-level uses belong in PageHeader. */
 .day-hdr {
   display: flex;
   align-items: flex-start;
@@ -3024,9 +3060,13 @@ body::-webkit-scrollbar-track,
     padding: 12px 16px 16px !important;
   }
 
-  .screen-header {
+  .page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .page-header-actions {
+    justify-content: flex-start;
   }
 
   .cmdk-mask {

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useMonthClose, useMonthCloses, useSaveMonthClose } from "../api/hooks/reports";
 import { money } from "../utils/format";
+import PageHeader from "../components/PageHeader";
 
 /** The month the close targets: from ?year=&month=, else the month that just ended. */
 function useTargetMonth() {
@@ -64,13 +65,11 @@ export default function MonthClose() {
 
   return (
     <div className="screen screen-month-close">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Month-end close</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Close out {view.monthLabel}.</h1>
-        </div>
-        <span className="chip" style={{ alignSelf: "flex-start" }}>{STATUS_LABEL[view.status] ?? view.status}</span>
-      </div>
+      <PageHeader
+        eyebrow="Month-end close"
+        title={<>Close out {view.monthLabel}.</>}
+        actions={<span className="chip">{STATUS_LABEL[view.status] ?? view.status}</span>}
+      />
 
       {/* Drift — a completed close whose numbers have since moved. */}
       {completed && view.drift.length > 0 && (

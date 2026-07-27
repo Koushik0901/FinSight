@@ -7,6 +7,7 @@ import { useFinancialMetrics } from "../api/hooks/metrics";
 import NetWorthChart from "../components/NetWorthChart";
 import MemberSwitcher from "../components/MemberSwitcher";
 import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
+import PageHeader from "../components/PageHeader";
 
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
@@ -121,13 +122,11 @@ export default function Reports() {
 
   return (
     <div className="screen screen-reports">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Reports · {scopeLabel}</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>How money is moving.</h1>
-          <div className="muted" style={{ marginTop: 6 }}>See the shape of your money over time.{scope === "all" && monthly.length >= 24 ? " Showing the most recent 24 months." : ""}</div>
-        </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
+      <PageHeader
+        eyebrow={<>Reports · {scopeLabel}</>}
+        title="How money is moving."
+        description={<>See the shape of your money over time.{scope === "all" && monthly.length >= 24 ? " Showing the most recent 24 months." : ""}</>}
+        actions={<div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           <div className="toolbar">
             <button className={scope === "month" ? "on" : ""} type="button" onClick={() => setScope("month")}>Month</button>
             <button className={scope === "quarter" ? "on" : ""} type="button" onClick={() => setScope("quarter")}>Quarter</button>
@@ -135,8 +134,8 @@ export default function Reports() {
             <button className={scope === "all" ? "on" : ""} type="button" onClick={() => setScope("all")}>All time</button>
           </div>
           <button className="btn outline sm" type="button" onClick={handleExport}>Export</button>
-        </div>
-      </div>
+        </div>}
+      />
 
       <UnconvertedCurrencies holdings={metrics?.unconvertedHoldings} primary={metrics?.currency} />
 

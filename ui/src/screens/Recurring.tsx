@@ -13,6 +13,7 @@ import { money } from "../utils/format";
 import { prettyMerchant } from "../utils/merchant";
 import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";
 import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
+import PageHeader from "../components/PageHeader";
 
 function recurringGroup(item: { kind: string; lastAmountCents: number }) {
   // Group by the deterministically-classified kind (Phase 6). Falls back to
@@ -164,17 +165,15 @@ export default function Recurring() {
 
   return (
     <div className="screen screen-recurring">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Recurring · {items.length} items · {subscriptionsCount} subscriptions</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>What happens every month.</h1>
-        </div>
-        <div className="toolbar">
+      <PageHeader
+        eyebrow={<>Recurring · {items.length} items · {subscriptionsCount} subscriptions</>}
+        title="What happens every month."
+        actions={<div className="toolbar">
           <button className={view === "monthly" ? "on" : ""} type="button" onClick={() => setView("monthly")}>Monthly</button>
           <button className={view === "upcoming" ? "on" : ""} type="button" onClick={() => setView("upcoming")}>Upcoming</button>
           <button className={view === "all" ? "on" : ""} type="button" onClick={() => setView("all")}>All</button>
-        </div>
-      </div>
+        </div>}
+      />
 
       <div className="card accent" style={{ padding: 28 }}>
         <div className="eyebrow"><span className="dot" />Monthly committed</div>

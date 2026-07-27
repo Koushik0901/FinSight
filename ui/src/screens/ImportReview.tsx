@@ -13,6 +13,7 @@ import { getAccountDisplayName } from "../utils/accounts";
 import Button from "../components/Button";
 import Card from "../components/Card";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 
 function MatchCard({
   candidateId,
@@ -195,15 +196,11 @@ export default function ImportReview() {
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" />
-            Import Review · {candidates.length} pending
-          </div>
-          <h1>Reconcile imported activity before it lands.</h1>
-        </div>
-      </header>
+      <PageHeader
+        variant="ruled"
+        eyebrow={<>Import Review · {candidates.length} pending</>}
+        title="Reconcile imported activity before it lands."
+      />
 
       {candidates.length === 0 ? (
         <EmptyState

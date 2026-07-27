@@ -11,8 +11,8 @@ import Badge from "../components/Badge";
 import Input from "../components/Input";
 import EmptyState from "../components/EmptyState";
 import { CopilotNudge } from "../components/CopilotNudge";
+import PageHeader from "../components/PageHeader";
 import * as I from "../components/Icons";
-
 const CLASS_BADGE: Record<PeriodClass, { tone: "warning" | "accent" | "positive" | "default"; label: string }> = {
   regime_shift: { tone: "warning", label: "Regime shift — not a blip" },
   episodic_spike: { tone: "accent", label: "One-month spike" },
@@ -136,23 +136,21 @@ export default function PathBack() {
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" />
-            Path back · {view.period}
-          </div>
-          <h1>Getting back to your normal.</h1>
-        </div>
-        <div className="row-md wrap" style={{ alignItems: "center" }}>
-          <CopilotNudge
-            prompt="Help me build a plan to get my spending back to my normal."
-            label="Ask Copilot to plan it"
-            variant="accent"
-          />
-          <Badge tone={classBadge.tone}>{classBadge.label}</Badge>
-        </div>
-      </header>
+      <PageHeader
+        variant="ruled"
+        eyebrow={<>Path back · {view.period}</>}
+        title="Getting back to your normal."
+        actions={
+          <>
+            <CopilotNudge
+              prompt="Help me build a plan to get my spending back to my normal."
+              label="Ask Copilot to plan it"
+              variant="accent"
+            />
+            <Badge tone={classBadge.tone}>{classBadge.label}</Badge>
+          </>
+        }
+      />
 
       <div className="stat-row" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         <div className="stat">

@@ -16,8 +16,8 @@ import Card from "../components/Card";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
 import CategoryPicker from "../components/CategoryPicker";
+import PageHeader from "../components/PageHeader";
 import * as I from "../components/Icons";
-
 /** How many queue items render before the user asks for more. */
 const PAGE_SIZE = 25;
 
@@ -299,19 +299,19 @@ export default function CategoryReview() {
 
   return (
     <div className="screen screen-category-review">
-      <header className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Workshop · Review queue</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>
+      <PageHeader
+        eyebrow="Workshop · Review queue"
+        title={
+          <>
             {proposals.length === 0
               ? "Nothing to review."
               : `${proposals.length} categorization${proposals.length === 1 ? "" : "s"} to confirm.`}
-          </h1>
-        </div>
-        <Button variant="outline" onClick={() => navigate("/transactions?filter=needs_review")}>
+          </>
+        }
+        actions={<Button variant="outline" onClick={() => navigate("/transactions?filter=needs_review")}>
           Open in ledger
-        </Button>
-      </header>
+        </Button>}
+      />
 
       <p className="muted" style={{ maxWidth: 680, marginTop: -12, marginBottom: 28, fontSize: 14, lineHeight: 1.6 }}>
         When the agent categorizes a transaction it wasn’t sure about, it lands

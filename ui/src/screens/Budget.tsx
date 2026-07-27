@@ -8,8 +8,8 @@ import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 import { money } from "../utils/format";
-
 type SortKey = "group" | "stress" | "size" | "activity";
 
 function envelopeStatus(env: BudgetEnvelope) {
@@ -337,12 +337,10 @@ export default function Budget() {
 
   return (
     <div className="screen screen-budget">
-      <header className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Budget · {monthLabel} · day {today} of {totalDays}</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the plan stands today.</h1>
-        </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
+      <PageHeader
+        eyebrow={<>Budget · {monthLabel} · day {today} of {totalDays}</>}
+        title="Where the plan stands today."
+        actions={<div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           {members.length > 0 && (
             <div className="budget-scope" role="group" aria-label="Whose spending to show">
               <button
@@ -368,8 +366,8 @@ export default function Budget() {
             </div>
           )}
           <button className="btn primary" type="button" onClick={() => setShowPlan(true)}>Plan next month</button>
-        </div>
-      </header>
+        </div>}
+      />
       {scopeMemberId !== null && (
         <p className="muted budget-scope-note">
           Showing {members.find((m) => m.id === scopeMemberId)?.name}&apos;s share of the spend against

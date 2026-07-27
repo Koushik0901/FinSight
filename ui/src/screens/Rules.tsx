@@ -13,11 +13,11 @@ import Card from "../components/Card";
 import Input from "../components/Input";
 import Select from "../components/Select";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 import { useRuleProposals, useAcceptRuleProposal, useDeclineRuleProposal } from "../api/hooks/proposals";
 import { useRecentAgentActivity } from "../api/hooks/insights";
 
-function RuleCard({ rule }: { rule: RuleWithCategory }) {
-  const toggle = useToggleRule();
+function RuleCard({ rule }: { rule: RuleWithCategory }) {  const toggle = useToggleRule();
 
   const handleToggle = async () => {
     try {
@@ -201,15 +201,13 @@ export default function Rules() {
 
   return (
     <div className="screen screen-rules">
-      <header className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Workshop · Rules & agents</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Automate the mundane.</h1>
-        </div>
-        <Button variant="default" onClick={() => setShowNewRule(true)}>
+      <PageHeader
+        eyebrow="Workshop · Rules & agents"
+        title="Automate the mundane."
+        actions={<Button variant="default" onClick={() => setShowNewRule(true)}>
           + New rule
-        </Button>
-      </header>
+        </Button>}
+      />
 
       <p className="muted" style={{ maxWidth: 660, marginTop: -12, marginBottom: 28, fontSize: 14, lineHeight: 1.6 }}>
         Rules are how FinSight quietly stays organized. The agent writes them

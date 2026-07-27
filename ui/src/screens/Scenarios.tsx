@@ -26,10 +26,10 @@ import Button from "../components/Button";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 import { ExplainDrawer } from "../components/ExplainInspector";
 import { userErrorMessage } from "../utils/runtime";
 import { money } from "../utils/format";
-
 type Range = "6" | "12" | "24";
 
 // Uses the user's configured display currency (falls back to USD).
@@ -528,13 +528,11 @@ export default function Scenarios() {
 
   return (
     <div className="screen screen-scenarios">
-      <header className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Scenarios · what-if</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Play out the possibilities.</h1>
-          <div className="muted" style={{ marginTop: 6 }}>Imagine a future, see the math.</div>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="Scenarios · what-if"
+        title="Play out the possibilities."
+        description="Imagine a future, see the math."
+      />
 
       <form
         onSubmit={(e) => {

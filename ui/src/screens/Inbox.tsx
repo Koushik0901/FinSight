@@ -21,6 +21,7 @@ import Button from "../components/Button";
 import Card from "../components/Card";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 import * as I from "../components/Icons";
 import { CopilotNudge } from "../components/CopilotNudge";
 import UnresolvedPeopleCard from "../components/inbox/UnresolvedPeopleCard";
@@ -452,27 +453,25 @@ export default function Inbox() {
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" />
-            Inbox · {allCount} item{allCount !== 1 ? "s" : ""}
-          </div>
-          <h1>What needs your attention.</h1>
-        </div>
-        <div className="row-md wrap">
-          {allCount > 0 && (
-            <CopilotNudge
-              prompt="I have some action items in my financial inbox. Help me prioritize and tackle them one by one."
-              label="Help me work through these"
-              variant="accent"
-            />
-          )}
-          <Button variant="ghost" size="icon" onClick={handleRefresh} title="Refresh inbox" aria-label="Refresh inbox">
-            <I.Repeat width={14} height={14} />
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        variant="ruled"
+        eyebrow={<>Inbox · {allCount} item{allCount !== 1 ? "s" : ""}</>}
+        title="What needs your attention."
+        actions={
+          <>
+            {allCount > 0 && (
+              <CopilotNudge
+                prompt="I have some action items in my financial inbox. Help me prioritize and tackle them one by one."
+                label="Help me work through these"
+                variant="accent"
+              />
+            )}
+            <Button variant="ghost" size="icon" onClick={handleRefresh} title="Refresh inbox" aria-label="Refresh inbox">
+              <I.Repeat width={14} height={14} />
+            </Button>
+          </>
+        }
+      />
 
       <p className="muted" style={{ maxWidth: 620, fontSize: 14, lineHeight: 1.6, marginTop: -12, marginBottom: 24 }}>
         Prioritized actions computed from your live data — no manual curation needed.

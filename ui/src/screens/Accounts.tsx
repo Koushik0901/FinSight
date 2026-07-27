@@ -17,6 +17,7 @@ import { getAccountDisplayName } from "../utils/accounts";
 import { accountTypeColor } from "../utils/accountColor";
 import AccountDrawer from "../components/AccountDrawer";
 import AssetDrawer from "../components/AssetDrawer";
+import PageHeader from "../components/PageHeader";
 
 function formatStamp(value: string | null | undefined) {
   if (!value) return "Never synced";
@@ -107,12 +108,10 @@ export default function Accounts() {
 
   return (
     <div className="screen screen-accounts">
-      <header className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />ACCOUNTS · {accounts.length} CONNECTED</div>
-          <h1 className="h1" style={{ marginTop: 6 }}>Everything in one place.</h1>
-        </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
+      <PageHeader
+        eyebrow={<>Accounts · {accounts.length} connected</>}
+        title="Everything in one place."
+        actions={<div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           <button className="btn primary sm" type="button" aria-label="Add account, asset, or liability" onClick={() => setChooserOpen(true)}>+ Add</button>
           {hasSimpleFin && (
             <button
@@ -130,8 +129,8 @@ export default function Accounts() {
               Sync banks
             </button>
           )}
-        </div>
-      </header>
+        </div>}
+      />
 
       <div className="stat-row">
         <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: scopeCurrency })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>

@@ -7,6 +7,7 @@ import Card from "../components/Card";
 import Badge from "../components/Badge";
 import ProgressBar from "../components/ProgressBar";
 import * as I from "../components/Icons";
+import PageHeader from "../components/PageHeader";
 
 const QUOTES = {
   early: "“A journey of a thousand miles begins with a single step.” — Lao Tzu",
@@ -49,18 +50,12 @@ export default function Journey() {
 
   return (
     <div className="screen">
-      <div className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" />
-            Journey · {data.completedCount} of 7 milestones completed
-          </div>
-          <h1>Your Financial Journey</h1>
-          <p className="muted" style={{ margin: "10px 0 0", fontSize: 14 }}>
-            Track your progress from financial stability to freedom.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        variant="ruled"
+        eyebrow={<>Journey · {data.completedCount} of 7 milestones completed</>}
+        title="Your Financial Journey"
+        description="Track your progress from financial stability to freedom."
+      />
 
       {stageOne?.status === "current" && stageOne.progressPct < 50 && (
         <Card tone="accent" className="stack stack-md" style={{ marginBottom: 20 }}>

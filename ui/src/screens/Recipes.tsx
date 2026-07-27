@@ -22,6 +22,7 @@ import Select from "../components/Select";
 import TextArea from "../components/TextArea";
 import Badge from "../components/Badge";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 
 type Cadence = "daily" | "weekly" | "monthly";
 type AppLikeError = Error & { code?: string };
@@ -597,29 +598,25 @@ export default function Recipes() {
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <div className="screen-header-text">
-          <div className="screen-eyebrow">
-            <span className="dot" />
-            Trusted recipes · draft-only automation
-          </div>
-          <h1>Recipes</h1>
-          <p className="muted" style={{ marginTop: 8, maxWidth: 720, lineHeight: 1.6 }}>
-            Automate recurring financial reviews. Every recipe builds fresh context, asks the planner for draft actions, and sends the bundle to Copilot for approval before anything changes.
-          </p>
-        </div>
-        <div className="row-md wrap" style={{ justifyContent: "flex-end" }}>
-          <CopilotNudge
-            prompt="Look at my current spending patterns and suggest one trusted recipe I should automate next. Keep it draft-only."
-            label="Ask Copilot for an idea"
-            description="Generate a recipe concept from your current finances"
-            variant="accent"
-          />
-          <Button variant="primary" onClick={openCustom}>
-            <I.Plus /> New recipe
-          </Button>
-        </div>
-      </header>
+      <PageHeader
+        variant="ruled"
+        eyebrow="Trusted recipes · draft-only automation"
+        title="Recipes"
+        description="Automate recurring financial reviews. Every recipe builds fresh context, asks the planner for draft actions, and sends the bundle to Copilot for approval before anything changes."
+        actions={
+          <>
+            <CopilotNudge
+              prompt="Look at my current spending patterns and suggest one trusted recipe I should automate next. Keep it draft-only."
+              label="Ask Copilot for an idea"
+              description="Generate a recipe concept from your current finances"
+              variant="accent"
+            />
+            <Button variant="primary" onClick={openCustom}>
+              <I.Plus /> New recipe
+            </Button>
+          </>
+        }
+      />
 
       {sortedRecipes.length === 0 ? (
         <Card className="stack stack-md">

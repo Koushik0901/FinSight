@@ -12,6 +12,7 @@ import { getAccountDisplayName } from "../utils/accounts";
 import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
 import { ExplainDrawer } from "../components/ExplainInspector";
+import PageHeader from "../components/PageHeader";
 
 type GoalFilter = "all" | "save-by-date" | "build-balance" | "debt-payoff" | "spending-cap" | "sinking-fund";
 
@@ -603,13 +604,11 @@ export default function Goals() {
 
   return (
     <div className="screen screen-goals">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Goals · {goals.length} active</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Things you're moving toward.</h1>
-        </div>
-        <button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button>
-      </div>
+      <PageHeader
+        eyebrow={<>Goals · {goals.length} active</>}
+        title="Things you're moving toward."
+        actions={<button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button>}
+      />
 
       <p className="muted" style={{ maxWidth: 720, marginTop: 0 }}>A goal is a horizon line on your future runway. The agent keeps it visible so everyday choices still point toward something larger.</p>
 

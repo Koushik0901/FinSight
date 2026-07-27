@@ -34,6 +34,7 @@ import DeleteAllDataDialog from "../components/DeleteAllDataDialog";
 import PushNotificationSettings from "../components/PushNotificationSettings";
 import NotificationPolicySettings from "../components/NotificationPolicySettings";
 import { Toggle as Tog } from "../components/Toggle";
+import PageHeader from "../components/PageHeader";
 import { useTweaks, ACCENTS, type AccentId } from "../state/tweaks";
 import type { CompletionProviderConfig } from "../api/client";
 import { userErrorMessage } from "../utils/runtime";
@@ -663,12 +664,7 @@ export default function Settings() {
 
   return (
     <div className="screen screen-settings">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow">Settings</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Make it yours.</h1>
-        </div>
-      </div>
+      <PageHeader eyebrow="Settings" title="Make it yours." dot={false} />
 
       <div className="settings-layout">
         <nav className="settings-nav">

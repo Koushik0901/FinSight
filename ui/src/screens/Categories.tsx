@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
 import {
   useCategoriesWithSpending,
   useSetCategorySpendingType,
@@ -186,20 +187,18 @@ export default function Categories() {
 
   return (
     <div className="screen screen-categories">
-      <div className="day-hdr">
-        <div>
-          <div className="eyebrow"><span className="dot" />Categories · {scope === "year" ? "Year" : monthLabel}</div>
-          <h1 className="h1" style={{ fontSize: 28, marginTop: 6 }}>Where the money is going.</h1>
-        </div>
-        <div className="row row-sm" style={{ gap: 8, flexWrap: "wrap" }}>
+      <PageHeader
+        eyebrow={<>Categories · {scope === "year" ? "Year" : monthLabel}</>}
+        title="Where the money is going."
+        actions={<div className="row row-sm" style={{ gap: 8, flexWrap: "wrap" }}>
           <div className="toolbar" role="tablist" aria-label="Category time scope">
             <button className={scope === "month" ? "on" : ""} type="button" onClick={() => setScope("month")}>This month</button>
             <button className={scope === "avg" ? "on" : ""} type="button" onClick={() => setScope("avg")}>vs. average</button>
             <button className={scope === "year" ? "on" : ""} type="button" onClick={() => setScope("year")}>Year</button>
           </div>
           <button className="btn primary sm" type="button" onClick={() => setNewCatOpen((v) => !v)}>New category</button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {newCatOpen && (
         <div className="card" style={{ padding: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
