@@ -12,6 +12,28 @@ members = [
 ]
 default-members = ["src-tauri"]
 
+# Release builds get cross-crate inlining. `thin` LTO rather than `fat`: on a
+# workspace this size fat LTO costs minutes of link time for the last few
+# percent, and this repo already fights `target/` size and link pressure.
+#
+# Be honest about the effect: FinSight's request path is dominated by SQLCipher
+# page decryption and disk I/O, not by code the optimizer can hoist, so this is
+# a build-configuration best practice with a small effect on request latency —
+# unlike the compression and caching work, which changes bytes on the wire.
+# Where it does show up is the CPU-bound stretches: CSV import parsing, the
+# categorizer pipeline, and forecast/cashflow projection.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# Keep unwinding: `panic = "abort"` would gain little here and Tauri's runtime
+# and the Tokio blocking pool both expect to catch a panic rather than take the
+# whole process down with it.
+
+# Deliberately NOT setting `[profile.dev.package."*"] opt-level = 2`. It is a
+# commonly-cited trick and it does speed up test *execution*, but it forces a
+# full rebuild of every dependency into a second set of artifacts — and this
+# workspace already carries a 20-47GB target/ that has caused link failures
+# when it fills the disk. It also does nothing for the shipped app.
 [workspace.package]
 edition = "2021"
 license = "AGPL-3.0-or-later"

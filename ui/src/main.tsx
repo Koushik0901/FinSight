@@ -24,12 +24,22 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 5_000,
-      // FinSight is a local-first desktop app: the SQLite ledger only changes
-      // via in-app actions (mutations, imports, sync), and each of those
-      // already invalidates precisely. Refetching every active query whenever
-      // the window regains focus would just replay that whole query set as an
-      // IPC + SQL storm for no new data — so turn it off.
+      // FinSight is a local-first app: the SQLite ledger only changes via
+      // in-app actions (mutations, imports, sync), and each of those already
+      // invalidates precisely. That premise — the one the disabled
+      // window-focus refetch below already rests on — argues for a much longer
+      // staleTime than the 5s this used to run with.
+      //
+      // At 5s, navigating Today → Budget → Today refetched Today's entire
+      // query set on the way back, every time, for data that provably had not
+      // changed: an RPC round trip plus a SQL fan-out to render bytes already
+      // sitting in the cache. At 60s that return trip is instant, and the
+      // window in which anything could go stale without invalidating is
+      // narrow and self-correcting (out-of-band changes — a second device, a
+      // background SimpleFIN sync — arrive over SSE anyway).
+      staleTime: 60_000,
+      // Refetching every active query whenever the window regains focus would
+      // replay that whole query set as an IPC + SQL storm for no new data.
       refetchOnWindowFocus: false,
     },
   },

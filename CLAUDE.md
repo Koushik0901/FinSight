@@ -184,6 +184,38 @@ Money math lives in `finsight-core` so the app and the Copilot compute identical
 - **Server auth state:** the prior-session marker contains no credential; logout/401 must clear it and purge both the in-memory QueryClient and IndexedDB cache
 - **Server secrets:** LLM keys and SimpleFIN access URLs belong in the authenticated user's SQLCipher settings through `finsight-api::secrets`, never in a process-global keychain slot
 
+### Delivery performance (compression, caching, bundles)
+
+The transport rules live in `crates/finsight-server/src/router.rs` and are
+pinned by tests in its `mod tests`.
+
+- **Compression is attached PER ROUTE, never to the whole `Router`.** tower-http's
+  encoder buffers, so an SSE response routed through it withholds frames until
+  that buffer fills — Copilot token streaming and import progress would arrive
+  in lumps. `/api/events` therefore gets no compression layer, and
+  `sse_event_stream_is_never_compressed` fails if someone "simplifies" this
+  into one global `.layer()`. `/api/rpc/{cmd}`, `/mcp`, and both static
+  services do get it.
+- **Two cache policies, and the split matters.** `/assets/*` is content-hashed
+  by Vite, so it's `immutable` for a year. Everything else — `index.html`,
+  `sw.js`, the manifest, icons — keeps its filename across deploys and must
+  stay `no-cache`, or an installed client pins itself to a stale shell and
+  never sees another release.
+- **Static assets are precompressed at build time**, not per request:
+  `ui/scripts/precompress.mjs` (node:zlib, no dependency) writes `.br`/`.gz`
+  siblings at max quality and `ServeDir::precompressed_br()` serves them.
+  `npm run build` runs it; a build that skips it still works, just slower —
+  `CompressionLayer` compresses on the fly as the fallback.
+- **Keep the entry bundle lean.** Every screen is `lazy()`. A *static* import in
+  `App.tsx` costs every user on every page load: `Onboarding` and
+  `ShareTargetImport` each reached `AccountDrawer`, which pulls in
+  react-hook-form **and** zod, and that put the whole form stack in the entry
+  chunk. When adding anything to `App.tsx`, check what it drags in behind it.
+- To see what's actually in a chunk, build with `--sourcemap` and read the
+  `.map`'s `sources` — grepping minified output tells you nothing, and Rollup
+  names shared chunks after an arbitrary member module (the 353kB
+  `featureFlag-*.js` chunk is the AG-UI runtime, not a feature flag).
+
 ## Testing
 
 Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/src/test/setup.ts`. The axe a11y tests produce jsdom canvas warnings in stderr — these are expected and non-fatal.

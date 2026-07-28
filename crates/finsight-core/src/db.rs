@@ -50,24 +50,42 @@ impl Db {
                 // unencrypted pages to swap if enabled.
                 conn.pragma_update(None, "journal_mode", "WAL")?;
                 conn.pragma_update(None, "synchronous", "NORMAL")?;
-                // negative value = KiB → 64 MiB
-                conn.pragma_update(None, "cache_size", -65536_i64)?;
+                // negative value = KiB → 32 MiB. Halved from 64 MiB when
+                // max_size went 4 → 8 below: SQLite's page cache is per
+                // connection and NOT shared, so the pool's memory ceiling is
+                // max_size × cache_size. Keeping that product constant buys
+                // double the read concurrency at the same worst-case footprint.
+                conn.pragma_update(None, "cache_size", -32768_i64)?;
                 conn.pragma_update(None, "foreign_keys", true)?;
+                // Keep sorter/temp-table spill in RAM. A win twice over: GROUP
+                // BY / ORDER BY over a large transaction set stops round-
+                // tripping through a temp file, AND those spills never reach
+                // the disk — SQLCipher does not encrypt temp files written to
+                // the default location, so this closes a plaintext leak on the
+                // same line that makes the query faster.
+                conn.pragma_update(None, "temp_store", "MEMORY")?;
                 // ms
                 conn.pragma_update(None, "busy_timeout", 5000_i64)?;
                 Ok(())
             });
 
-        // 4 connections is plenty for a single-user desktop app.
+        // 8 readers. This pool is per user (the server builds one lazily per
+        // logged-in account), and it is the binding constraint on how fast a
+        // screen paints: a route like Today fans out ~10 tanstack-query calls
+        // at once, `run()` hands each to a Tokio blocking thread, and then they
+        // all queue here. WAL lets readers run concurrently with each other and
+        // with a writer, so the old ceiling of 4 was serialising work SQLite
+        // was perfectly willing to do in parallel. Paired with the halved
+        // per-connection cache_size above, the memory ceiling is unchanged.
         //
         // min_idle = Some(0): r2d2's default is min_idle = max_size, which builds
-        // all 4 connections eagerly in parallel during Pool::build(). Each runs
+        // every connection eagerly in parallel during Pool::build(). Each runs
         // with_init, and on SQLCipher + WAL the first connection holds the *-shm
         // file briefly while setting up WAL mode; the other three race for the
         // same lock and surface a transient "database is locked" error at
         // startup. Lazy construction (min_idle = 0) sidesteps the race entirely.
         let pool = Pool::builder()
-            .max_size(4)
+            .max_size(8)
             .min_idle(Some(0))
             .build(manager)
             .map_err(|e| {
@@ -189,12 +207,111 @@ fn prune_backups(dir: &Path, keep: usize) {
 pub fn run_migrations(db: &Db) -> CoreResult<()> {
     let mut conn = db.get()?;
     migrations::runner().run(&mut *conn)?;
+    analyze_with_bounded_cost(&conn);
     Ok(())
+}
+
+/// Give the query planner table statistics to work from.
+///
+/// Nothing in this codebase had ever run ANALYZE, so with 55 indexes across
+/// 60-odd migrations SQLite was choosing between them on built-in heuristics
+/// alone — which is how a query ends up scanning `transactions` when a
+/// perfectly good index was sitting right there.
+///
+/// **Why not `PRAGMA optimize`**, which is the usual advice: it picks what to
+/// analyse from *the current connection's* in-memory record of which tables
+/// that connection has modified. Every DB handle here comes out of an r2d2
+/// pool, so the connection running this has modified nothing, and `optimize`
+/// correctly concludes there is nothing to do — on every startup, forever. It
+/// is a silent no-op behind a pool. That is what
+/// `migrations_populate_query_planner_statistics` caught, and it is the whole
+/// reason this is a plain ANALYZE.
+///
+/// **Why unconditionally**, rather than only when `sqlite_stat1` is absent:
+/// the first run happens on an empty database, where ANALYZE creates the table
+/// but has nothing to record. Gating on "no stats yet" would therefore mark
+/// the job done at exactly the moment it accomplished nothing, and the user
+/// who later imports five years of transactions would never get statistics.
+///
+/// **Why that is affordable**: `analysis_limit` caps the rows examined per
+/// index, so this is bounded work — a few hundred row visits per index rather
+/// than a full scan — which is precisely the knob SQLite added to make ANALYZE
+/// cheap enough to run routinely. The estimates come out approximate, which is
+/// all the planner needs.
+///
+/// Best-effort: failing to gather statistics means "run with the heuristics we
+/// had", never a failed startup, so migrations are never rolled back over it.
+fn analyze_with_bounded_cost(conn: &Connection) {
+    if let Err(e) = conn.execute_batch("PRAGMA analysis_limit=400; ANALYZE;") {
+        tracing::debug!("ANALYZE skipped, query planner keeps its previous stats: {e}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `run_migrations` ends by gathering query-planner statistics, and that is
+    /// the kind of call that fails silently: errors go to `tracing::debug!`,
+    /// and on an empty database it legitimately has nothing to record. A test
+    /// that merely ran migrations on a fresh DB would pass whether the code
+    /// worked or was deleted outright.
+    ///
+    /// So this models the shape that actually matters — a database that was
+    /// created empty and only later filled with data, which is every real user
+    /// — and asserts on the artifact ANALYZE produces. Rows in `sqlite_stat1`
+    /// mean the planner has statistics instead of guessing between 55 indexes.
+    ///
+    /// This is also the regression test for two specific wrong implementations:
+    /// `PRAGMA optimize` (a no-op behind a connection pool) and "ANALYZE only
+    /// when `sqlite_stat1` is missing" (marks itself done during the empty
+    /// first run, so real data never gets analysed).
+    #[test]
+    fn migrations_populate_query_planner_statistics() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let key = crate::keychain::generate_random_key();
+        let db = crate::Db::open(&dir.path().join("main.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+
+        {
+            let conn = db.get().unwrap();
+            for i in 0..500 {
+                conn.execute(
+                    "INSERT INTO settings(key, value) VALUES(?1, '\"v\"')",
+                    [format!("probe-{i}")],
+                )
+                .unwrap();
+            }
+        }
+
+        // Second pass: migrations are already applied, so this exercises only
+        // the analysis step — exactly what every subsequent startup does.
+        run_migrations(&db).unwrap();
+
+        let conn = db.get().unwrap();
+        let stats: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_stat1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            stats, 1,
+            "run_migrations should have run ANALYZE and created sqlite_stat1; \
+             0 means the statistics step is a silent no-op"
+        );
+
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM sqlite_stat1", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            rows > 0,
+            "sqlite_stat1 exists but holds no statistics — ANALYZE ran on the empty \
+             database and then never again, so the planner still has nothing for the \
+             500 rows inserted since"
+        );
+    }
 
     #[test]
     fn backup_creates_a_readable_encrypted_snapshot_and_prunes() {

@@ -84,6 +84,20 @@ export default defineConfig({
         // Precache the built app shell. Navigation falls back to index.html
         // (SPA). Do NOT cache /api/* — those are live, auth'd, and event streams.
         globPatterns: ["**/*.{js,css,html,svg,woff2,png,ico}"],
+        // Chunks that exist in dist/ but can never execute in a production
+        // install. Without this they were still precached — every PWA install
+        // downloaded them up front, on the install path, for nothing:
+        //   mockBackend    the DEV-only `?mock=` fixture harness; main.tsx
+        //                  gates its dynamic import on `import.meta.env.DEV`.
+        //   GenUiPreview   dev-only gallery of Copilot blocks, never routed.
+        //   CopilotAgUiSpike  a spike screen kept for reference.
+        // Excluding them from the PRECACHE does not remove them from dist/, so
+        // a dev build serving the same directory still resolves them normally.
+        globIgnores: [
+          "**/mockBackend-*.js",
+          "**/GenUiPreview-*.js",
+          "**/CopilotAgUiSpike-*.js",
+        ],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [],
