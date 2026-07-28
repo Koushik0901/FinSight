@@ -1,15 +1,8 @@
 use finsight_core::repos::{accounts, categories, transactions};
-use finsight_core::Db;
-use tempfile::tempdir;
 
 #[test]
 fn seed_walks_skeleton_creates_expected_counts() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("seed.sqlcipher");
-    let key = "ef".repeat(32);
-    let db = Db::open(&path, &key).unwrap();
-    finsight_core::db::run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     finsight_core::seed::walking_skeleton(&db).unwrap();
 
     let mut conn = db.get().unwrap();
@@ -22,12 +15,7 @@ fn seed_walks_skeleton_creates_expected_counts() {
 
 #[test]
 fn seed_is_idempotent_no_duplicates() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("seed2.sqlcipher");
-    let key = "ef".repeat(32);
-    let db = Db::open(&path, &key).unwrap();
-    finsight_core::db::run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     finsight_core::seed::walking_skeleton(&db).unwrap();
     finsight_core::seed::walking_skeleton(&db).unwrap();
 
@@ -37,12 +25,7 @@ fn seed_is_idempotent_no_duplicates() {
 
 #[test]
 fn seed_recovers_from_partial_reference_data() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("partial.sqlcipher");
-    let key = "ef".repeat(32);
-    let db = Db::open(&path, &key).unwrap();
-    finsight_core::db::run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     // Simulate "previous run wrote some reference data and crashed":
     // pre-populate one category group + one merchant with the same IDs the
     // seed uses, then run the seed.

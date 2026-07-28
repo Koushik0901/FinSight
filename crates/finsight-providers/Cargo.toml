@@ -23,9 +23,9 @@ rust_decimal.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+finsight-core = { path = "../finsight-core", features = ["testing"] }
 tempfile.workspace = true
 uuid.workspace = true
-finsight-core = { path = "../finsight-core" }
 wiremock = "0.6"
 criterion = { version = "0.5", features = ["html_reports"] }
 

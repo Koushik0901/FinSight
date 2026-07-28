@@ -1,14 +1,9 @@
 // We can't wire tauri::State in tests, so we test the underlying finsight_core pieces directly.
-use finsight_core::{db::run_migrations, keychain, sample::seed_household, settings, Db};
-use tempfile::TempDir;
+use finsight_core::{sample::seed_household, settings};
 
 #[test]
 fn fresh_db_reports_zero_then_sample_increments() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("ob.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     {
         let conn = db.get().unwrap();
         let zero: i64 = conn

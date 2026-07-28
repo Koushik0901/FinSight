@@ -41,4 +41,5 @@ candle-transformers = "0.11"
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 
 [dev-dependencies]
+finsight-core = { path = "../finsight-core", features = ["testing"] }
 tempfile.workspace = true

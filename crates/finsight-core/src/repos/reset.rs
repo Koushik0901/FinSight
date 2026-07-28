@@ -82,16 +82,13 @@ pub fn delete_all_data(conn: &mut Connection) -> CoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, models::NewAccount, repos::accounts, Db};
+    use crate::{models::NewAccount, repos::accounts, Db};
     use rusqlite::params;
     use tempfile::TempDir;
     use uuid::Uuid;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("reset.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         (dir, db)
     }
 

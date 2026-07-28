@@ -6,11 +6,10 @@
 //! Run: cargo test -p finsight-bindings --release --test audit_probe -- --ignored --nocapture
 
 use finsight_core::models::{AccountType, NewAccount};
-use finsight_core::{db::run_migrations, keychain, metrics, Db};
+use finsight_core::metrics;
 use finsight_providers::csv::mapping::{AmountConvention, ColumnRole, CsvImportMapping};
 use finsight_providers::CsvProvider;
 use std::path::PathBuf;
-use tempfile::TempDir;
 
 fn bank_for(name: &str) -> &'static str {
     if name.starts_with("Amex") {
@@ -187,11 +186,7 @@ fn specs() -> Vec<Spec> {
 #[test]
 #[ignore]
 fn audit_import_samples_and_dump_everything() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("audit.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     let samples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples");
 
     // 1. Create accounts + import each CSV through the REAL pipeline.

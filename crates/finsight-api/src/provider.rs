@@ -153,14 +153,11 @@ pub fn build_copilot_router_from_settings(db: &Db) -> Option<Arc<dyn CompletionP
 mod tests {
     use super::*;
     use crate::secrets;
-    use finsight_core::{db::run_migrations, keychain};
+    
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("provider.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         (dir, db)
     }
 

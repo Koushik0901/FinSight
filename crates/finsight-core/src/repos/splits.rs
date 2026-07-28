@@ -83,8 +83,6 @@ pub fn set(conn: &mut Connection, txn_id: &str, splits: &[SplitInput]) -> CoreRe
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::accounts,
         repos::transactions,
@@ -93,10 +91,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("splits.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         (dir, db)
     }
 

@@ -1,14 +1,9 @@
 use finsight_core::models::{AccountType, NewAccount};
 use finsight_core::repos::accounts;
 use finsight_core::Db;
-use tempfile::tempdir;
 
 fn open() -> (Db, tempfile::TempDir) {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("a.sqlcipher");
-    let key = "ab".repeat(32);
-    let db = Db::open(&path, &key).unwrap();
-    finsight_core::db::run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     (db, dir)
 }
 

@@ -90,14 +90,11 @@ pub fn save(conn: &Connection, account_id: &str, mapping: &CsvImportMapping) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh_db_with_account() -> (TempDir, Db, String) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("m.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let acct_id = uuid::Uuid::new_v4().to_string();
         db.get().unwrap().execute(
             "INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at, source) \

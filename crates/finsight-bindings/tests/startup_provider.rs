@@ -1,16 +1,11 @@
 use finsight_bindings::commands::agent::CompletionProviderConfig;
-use finsight_core::{db::run_migrations, keychain, settings, Db};
-use tempfile::TempDir;
+use finsight_core::settings;
 
 /// Verifies that the llm_provider → completion_provider migration runs
 /// when completion_provider is absent but llm_provider is present.
 #[test]
 fn migrate_llm_provider_to_completion_provider() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("mp.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     // Simulate a Phase 2 DB state: llm_provider set, completion_provider absent.
     {
         let conn = db.get().unwrap();
@@ -41,11 +36,7 @@ fn migrate_llm_provider_to_completion_provider() {
 /// Verifies that load_completion_provider_config returns the saved config.
 #[test]
 fn load_completion_provider_config_round_trip() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("rt.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     let saved = CompletionProviderConfig::OpenAiCompat {
         preset: "openrouter".to_string(),
         base_url: "https://openrouter.ai/api/v1".to_string(),
@@ -100,11 +91,7 @@ fn no_test_touches_the_production_llm_keychain_service() {
 /// Verifies that load_completion_provider_config returns Unconfigured when absent.
 #[test]
 fn load_completion_provider_config_unconfigured_when_missing() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("missing.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (_dir, db) = finsight_core::testing::migrated_db();
     let loaded = finsight_bindings::load_completion_provider_config(&db).unwrap();
     assert!(
         matches!(loaded, CompletionProviderConfig::Unconfigured),

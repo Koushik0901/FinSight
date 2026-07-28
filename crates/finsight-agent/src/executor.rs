@@ -520,8 +520,6 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, copilot_actions, goals, transactions},
         Db,
@@ -529,10 +527,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("executor.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         (dir, db)
     }
 

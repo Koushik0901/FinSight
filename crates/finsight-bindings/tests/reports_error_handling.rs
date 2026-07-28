@@ -6,16 +6,13 @@
 //! this replicates the exact SQL + row-collection pattern reports.rs now
 //! uses and proves it distinguishes "no data" from "failed to load data".
 
-use finsight_core::{db::run_migrations, keychain, Db};
+use finsight_core::Db;
 use rusqlite::params;
 use tempfile::TempDir;
 use uuid::Uuid;
 
 fn fresh_db() -> (TempDir, Db) {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("reports_err.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     (dir, db)
 }
 

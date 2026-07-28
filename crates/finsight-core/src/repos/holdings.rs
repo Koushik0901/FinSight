@@ -56,8 +56,6 @@ pub fn list_by_account(conn: &mut Connection, account_id: &str) -> CoreResult<Ve
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewSimpleFinConnection, Security},
         repos::{accounts, connections, securities},
         Db,
@@ -65,10 +63,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("t.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         (dir, db)
     }
 

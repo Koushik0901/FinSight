@@ -1,11 +1,8 @@
-use finsight_core::{db::run_migrations, keychain, Db};
+use finsight_core::Db;
 use tempfile::TempDir;
 
 fn fresh_db() -> (TempDir, Db) {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("cc.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     (dir, db)
 }
 

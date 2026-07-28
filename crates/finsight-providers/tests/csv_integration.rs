@@ -1,6 +1,6 @@
 use chrono::Utc;
 use finsight_core::models::{NewTransaction, TransactionStatus};
-use finsight_core::{db::run_migrations, keychain, repos::transactions, Db};
+use finsight_core::{repos::transactions, Db};
 use finsight_providers::{AmountConvention, ColumnRole, CsvImportMapping, CsvProvider};
 use rusqlite::params;
 use std::path::PathBuf;
@@ -13,10 +13,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn fresh_db() -> (TempDir, Db, String) {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("ci.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     let acct = uuid::Uuid::new_v4().to_string();
     db.get().unwrap().execute(
         "INSERT INTO accounts(id, owner, bank, type, name, currency, color, created_at, source) \
