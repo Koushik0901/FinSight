@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { commands } from "./client";
 import { isBackendAvailable } from "../utils/runtime";
+import { prefetchRouteChunk } from "../utils/routePrefetch";
 import { TXN_PAGE_SIZE } from "./hooks/transactions";
 import type { TxnFilterInput } from "./client";
 
@@ -96,8 +97,18 @@ const ROUTE_PREFETCH: Record<string, readonly Descriptor[]> = {
   "/review": [D.categoryProposals],
 };
 
-/** Prefetch a route's summary queries. No-op when no backend is available or for an unmapped path. */
+/**
+ * Prefetch a route's summary queries AND its lazy JavaScript chunk.
+ *
+ * The chunk comes first and sits outside the backend guard on purpose: it is
+ * the round-trip the user actually waits on when visiting a screen for the
+ * first time (the data can't even start rendering until the code that renders
+ * it has arrived), and it is worth warming whether or not a backend answers.
+ *
+ * No-op for an unmapped path, in both halves.
+ */
 export function prefetchRoute(qc: QueryClient, path: string): void {
+  prefetchRouteChunk(path);
   if (!isBackendAvailable()) return;
   const descriptors = ROUTE_PREFETCH[path];
   if (!descriptors) return;
