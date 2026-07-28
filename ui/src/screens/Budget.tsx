@@ -10,6 +10,7 @@ import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import { money } from "../utils/format";
+import { getBudgetReadiness } from "../utils/dataReadiness";
 type SortKey = "group" | "stress" | "size" | "activity";
 
 function envelopeStatus(env: BudgetEnvelope) {
@@ -19,9 +20,9 @@ function envelopeStatus(env: BudgetEnvelope) {
   if (env.spentCents > available) {
     return { label: `Over by ${money(env.spentCents - available)}`, tone: "negative" as const, severity: 3 };
   }
-  if (pct > 90) return { label: "Tight", tone: "warning" as const, severity: 2 };
-  if (pct > 60) return { label: "On pace", tone: "accent" as const, severity: 1 };
-  return { label: "Plenty left", tone: "positive" as const, severity: 0 };
+  if (pct > 90) return { label: "Almost used", tone: "warning" as const, severity: 2 };
+  if (pct > 60) return { label: "Watch", tone: "accent" as const, severity: 1 };
+  return { label: "Available", tone: "positive" as const, severity: 0 };
 }
 
 function BudgetInput({ envelope, onClose }: { envelope: BudgetEnvelope; onClose: () => void }) {
@@ -79,11 +80,7 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
       style={{
         padding: 22,
         borderColor: status.tone === "negative" ? "var(--negative)" : status.tone === "warning" ? "var(--warning)" : "var(--line)",
-        background: status.tone === "negative"
-          ? "linear-gradient(180deg, var(--negative-2) 0%, var(--surface) 70%)"
-          : status.tone === "warning"
-            ? "linear-gradient(180deg, var(--warning-2) 0%, var(--surface) 70%)"
-            : "var(--surface)",
+        background: status.tone === "negative" ? "var(--negative-2)" : status.tone === "warning" ? "var(--warning-2)" : "var(--surface)",
       }}
     >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -170,7 +167,7 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
 
 export default function Budget() {
   const navigate = useNavigate();
-  const { data: envelopes = [], isLoading, error } = useBudgetEnvelopes();
+  const { data: envelopes = [], isLoading, error, refetch } = useBudgetEnvelopes();
   const { data: history = [] } = useBudgetHistory(5);
   const { data: totals } = useMonthTotals();
   const { data: goals = [] } = useGoals();
@@ -221,6 +218,15 @@ export default function Budget() {
   const totalAvailable = totalBudget + totalCarryover;
   const totalSpent = sorted.reduce((sum, env) => sum + env.spentCents, 0);
   const projectedEom = today > 0 ? Math.round((totalSpent / today) * totalDays) : 0;
+  const fundedEnvelopeCount = sorted.filter((env) => env.budgetCents > 0 || env.carryoverCents !== 0).length;
+  const transactionCount = sorted.reduce((sum, env) => sum + env.txnCount, 0);
+  const readiness = getBudgetReadiness({
+    envelopeCount: sorted.length,
+    fundedEnvelopeCount,
+    transactionCount,
+    spentCents: totalSpent,
+    dayOfMonth: today,
+  });
   const remaining = totalAvailable - totalSpent;
   const toBudget = (totals?.incomeCents ?? 0) - totalBudget;
   const unbudgeted = sorted.filter((env) => env.budgetCents <= 0 && env.spentCents <= 0 && env.carryoverCents === 0);
@@ -235,11 +241,13 @@ export default function Budget() {
     return acc;
   }, {}));
 
-  const insight = attention.length > 0
-    ? `${attention.length} envelope${attention.length === 1 ? "" : "s"} need attention. ${projectedEom > totalBudget ? "You are trending over plan." : "The rest of the month still fits the plan."}`
-    : projectedEom > totalBudget
-      ? "You are trending over plan even though no single envelope is flashing red yet."
-      : "The month is on pace right now — most envelopes still have room.";
+  const insight = readiness === "estimated"
+    ? "Your plan is set. FinSight will estimate the month after it observes at least 10 transactions or a week of spending."
+    : attention.length > 0
+      ? `${attention.length} envelope${attention.length === 1 ? "" : "s"} need attention. ${projectedEom > totalBudget ? "You are trending over plan." : "The rest of the month still fits the plan."}`
+      : projectedEom > totalBudget
+        ? "You are trending over plan even though no single category is over its limit yet."
+        : "Spending is within the plan based on the activity recorded so far.";
 
   const totalTagged = breakdown ? breakdown.fixedCents + breakdown.investmentsCents + breakdown.savingsCents + breakdown.guiltFreeCents + breakdown.untaggedCents : 0;
 
@@ -333,7 +341,44 @@ export default function Budget() {
       </div>
     );
   }
-  if (error) return <div className="stub" role="alert">Error loading budget.</div>;
+  if (error) {
+    return (
+      <div className="stub route-load-problem" role="alert">
+        <div className="card">
+          <h1>Budget could not load</h1>
+          <p className="muted">Your plan is unchanged. Check the connection, then try loading it again.</p>
+          <button className="btn primary" type="button" onClick={() => void refetch()}>Try again</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (envelopes.length === 0) {
+    return (
+      <div className="screen screen-budget">
+        <PageHeader
+          eyebrow={<>Budget · {monthLabel}</>}
+          title="Build your first monthly plan."
+        />
+        <EmptyState
+          title="Start with categories you actually spend in"
+          description="Create a simple plan or import transaction history first. FinSight will not estimate pace or project the month until there is enough activity to support it."
+          details={
+            <ul className="empty-unlocks">
+              <li>Set practical limits for the month</li>
+              <li>See what remains after recorded spending</li>
+              <li>Unlock end-of-month estimates after enough activity</li>
+            </ul>
+          }
+          actions={<>
+            <button className="btn primary" type="button" onClick={() => setShowPlan(true)}>Create first budget</button>
+            <button className="btn outline" type="button" onClick={() => navigate("/accounts")}>Import transactions</button>
+          </>}
+        />
+        {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}
+      </div>
+    );
+  }
 
   return (
     <div className="screen screen-budget">
@@ -375,7 +420,17 @@ export default function Budget() {
         </p>
       )}
 
-      <div className="card accent" style={{ padding: 28 }}>
+      {readiness === "unavailable" && (
+        <EmptyState
+          compact
+          title="Set the first budget amounts"
+          description="Your categories are here, but no money has been assigned yet. FinSight will wait to show pace and projections until the plan has real activity behind it."
+          actions={<button className="btn primary sm" type="button" onClick={() => setShowPlan(true)}>Plan categories</button>}
+        />
+      )}
+
+      {readiness !== "unavailable" && (
+      <div className="card budget-overview" style={{ padding: 28 }}>
         <div className="budget-hero-grid">
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
@@ -395,13 +450,26 @@ export default function Budget() {
           </div>
           <div className="budget-grid">
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
-            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub"><span className="blurable">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}</span>/day pace</div></div>
-            <div className="stat accent"><div className="label">Projected EOM</div><div className="value money">{money(projectedEom)}</div><div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by <span className="blurable">{money(projectedEom - totalAvailable)}</span></span> : <span className="npill pos">Under by <span className="blurable">{money(totalAvailable - projectedEom)}</span></span>}</div></div>
+            <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{readiness === "reliable" ? <><span className="blurable">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}</span>/day pace</> : <>{transactionCount} recorded transaction{transactionCount === 1 ? "" : "s"}</>}</div></div>
+            <div className="stat accent">
+              <div className="label">End-of-month estimate</div>
+              {readiness === "reliable" ? (
+                <>
+                  <div className="value money">{money(projectedEom)}</div>
+                  <div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by <span className="blurable">{money(projectedEom - totalAvailable)}</span></span> : <span className="npill pos">Under by <span className="blurable">{money(totalAvailable - projectedEom)}</span></span>}</div>
+                </>
+              ) : (
+                <><div className="value">—</div><div className="sub">Needs more activity</div></>
+              )}
+            </div>
           </div>
         </div>
         <p className="muted" style={{ marginTop: 18, marginBottom: 0, maxWidth: 900 }}>{insight}</p>
       </div>
 
+      )}
+
+      {readiness !== "unavailable" && (
       <div className="card tight" style={{ marginTop: 16, padding: 18, display: "grid", gridTemplateColumns: "1.7fr auto", gap: 16, alignItems: "center" }}>
         <div>
           <div className="eyebrow"><span className="dot" />To budget · unassigned</div>
@@ -410,16 +478,19 @@ export default function Budget() {
             <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0)}</span> income · <span className="money">{money(totalBudget)}</span> assigned</div>
           </div>
         </div>
-        <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={contribute.isPending} onClick={() => void handleParkInGoal()}>Park in {parkableGoal?.name ?? "a goal"}</button></div>
+        {toBudget > 0
+          ? <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={contribute.isPending} onClick={() => void handleParkInGoal()}>Park in {parkableGoal?.name ?? "a goal"}</button></div>
+          : <span className="muted">No unassigned income to move.</span>}
       </div>
 
+      )}
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
       {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div className="budget-grid">{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
 
-      <section className="section">
-        <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Each one, on its own.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
-        {sorted.length === 0 ? <EmptyState title="No envelopes yet" description="Import transactions or set a budget to see the month take shape." /> : <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => {
+      {grouped.length > 0 && <section className="section">
+        <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Review every category.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => {
           const groupSpent = items.reduce((sum, env) => sum + env.spentCents, 0);
           const groupBudget = items.reduce((sum, env) => sum + env.budgetCents, 0);
           return (
@@ -431,15 +502,15 @@ export default function Budget() {
               <div className="budget-grid">{items.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div>
             </div>
           );
-        })}</div>}
-      </section>
+        })}</div>
+      </section>}
 
       {unbudgeted.length > 0 && (
         <section className="section">
           <div className="day-hdr" style={{ marginBottom: 14 }}>
             <div>
               <div className="eyebrow"><span className="dot" />Not yet budgeted · {unbudgeted.length}</div>
-              <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>These don't have a plan yet.</h2>
+              <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Set limits for these categories.</h2>
             </div>
           </div>
           <div className="budget-grid">

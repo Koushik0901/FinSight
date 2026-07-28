@@ -38,7 +38,7 @@ function renderAt(path: string) {
 describe("BottomNav", () => {
   it("renders the 5 primary tabs plus More", () => {
     renderAt("/");
-    for (const label of ["Today", "Inbox", "Accounts", "Budget", "Goals", "More"]) {
+    for (const label of ["Today", "Accounts", "Budget", "Goals", "Copilot", "More"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
       expect(screen.getByRole(label === "More" ? "button" : "link", { name: label })).toBeInTheDocument();
     }
@@ -58,23 +58,23 @@ describe("BottomNav", () => {
     expect(todayTab).not.toHaveClass("active");
   });
 
-  it("shows an inbox pulse indicator when review items are pending", () => {
+  it("shows a Review pulse on More when decisions are pending", () => {
     needsReviewMock.count = 3;
     renderAt("/");
-    expect(screen.getByTestId("bottom-nav-inbox-pulse")).toBeInTheDocument();
+    expect(screen.getByTestId("bottom-nav-review-pulse")).toBeInTheDocument();
     needsReviewMock.count = 0;
   });
 
-  it("does not show an inbox pulse when nothing needs review", () => {
+  it("does not show a Review pulse when nothing needs review", () => {
     renderAt("/");
-    expect(screen.queryByTestId("bottom-nav-inbox-pulse")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bottom-nav-review-pulse")).not.toBeInTheDocument();
   });
 
   it("opens the More sheet and lists secondary destinations", () => {
     renderAt("/");
     fireEvent.click(screen.getByText("More"));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    for (const label of ["Categories", "Recurring", "Reports", "Settings", "Journey"]) {
+    for (const label of ["Review", "Categories", "Recurring", "Reports", "Settings", "Journey"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });

@@ -53,6 +53,7 @@ import { useAccounts } from "../api/hooks/accounts";
 import { useNavigate } from "react-router-dom";
 import { useClarifications } from "../state/clarifications";
 import { commands, type AgentNavigationTarget } from "../api/client";
+import { normalizeCount } from "../utils/dataReadiness";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import { sourcesFromToolTrace } from "../components/copilot/toolSources";
 import { useTauriAgUiRuntime } from "../components/copilot/agUi/TauriAgUiRuntime";
@@ -68,6 +69,10 @@ import type { ExecutionSummary } from "../api/client";
 
 const SUGGESTED_PROMPTS = [
   {
+    label: "Explain this month's spending",
+    detail: "See the drivers, outliers, and changes that shaped this month.",
+  },
+  {
     label: "Plan next month's budget",
     detail: "Use recent spending and goals to propose a practical allocation.",
   },
@@ -76,20 +81,8 @@ const SUGGESTED_PROMPTS = [
     detail: "Find messy transactions and suggest safe categorization steps.",
   },
   {
-    label: "Improve my savings rate",
-    detail: "Identify cuts that matter without making the budget brittle.",
-  },
-  {
-    label: "Explain this month's spending",
-    detail: "Summarize the drivers, outliers, and trend changes.",
-  },
-  {
     label: "Check my financial risks",
     detail: "Review cash buffer, debt pressure, and upcoming obligations.",
-  },
-  {
-    label: "Create a faster debt payoff plan",
-    detail: "Compare payoff ordering and monthly contribution tradeoffs.",
   },
 ];
 
@@ -721,39 +714,38 @@ function AssistantMessage({
  * fabricated) so the empty state is honest: when no data has been imported it
  * says so plainly, which is also the after-Delete-All-Data experience.
  */
-function CopilotGroundingStats() {
+function useCopilotDataReadiness() {
   const { data: accounts = [] } = useAccounts();
-  const { data: txnCount = 0 } = useQuery({
+  const { data: rawTransactionCount = 0 } = useQuery({
     queryKey: ["transaction-count"],
     queryFn: async () => {
       const res = await commands.getTransactionCount();
       return res.status === "ok" ? res.data : 0;
     },
   });
+  const transactionCount = normalizeCount(rawTransactionCount);
+  return {
+    accountsCount: accounts.length,
+    transactionCount,
+    hasFinancialData: transactionCount > 0 || accounts.length > 0,
+  };
+}
 
-  if (txnCount === 0 && accounts.length === 0) {
+function CopilotGroundingStats({ accountsCount, transactionCount }: { accountsCount: number; transactionCount: number }) {
+  if (transactionCount === 0 && accountsCount === 0) {
     return (
       <p className="copilot-empty-ground copilot-empty-ground-empty">
         <I.Lock width={11} height={11} />
-        No financial data imported yet — import a CSV to give the Copilot something to work with.
+        No financial data attached yet.
       </p>
     );
   }
 
   return (
     <div className="copilot-empty-ground">
-      <span>
-        <I.Flow width={11} height={11} />
-        {txnCount.toLocaleString()} transaction{txnCount === 1 ? "" : "s"}
-      </span>
-      <span>
-        <I.Wallet width={11} height={11} />
-        {accounts.length} account{accounts.length === 1 ? "" : "s"}
-      </span>
-      <span>
-        <I.Lock width={11} height={11} />
-        100% local
-      </span>
+      <span><I.Flow width={11} height={11} />{transactionCount.toLocaleString()} transaction{transactionCount === 1 ? "" : "s"}</span>
+      <span><I.Wallet width={11} height={11} />{accountsCount} account{accountsCount === 1 ? "" : "s"}</span>
+      <span><I.Lock width={11} height={11} />FinSight data attached</span>
     </div>
   );
 }
@@ -761,41 +753,45 @@ function CopilotGroundingStats() {
 function EmptyThreadState({
   onPrompt,
   children,
+  hasFinancialData,
+  accountsCount,
+  transactionCount,
 }: {
   onPrompt: (text: string) => void;
   children: ReactNode;
+  hasFinancialData: boolean;
+  accountsCount: number;
+  transactionCount: number;
 }) {
-  const h = new Date().getHours();
-  const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-
+  const navigate = useNavigate();
   return (
     <div className="cp-hero">
       <div className="cp-hero-inner">
-        <div className="cp-hero-avatar">
-          <span className="cp-avatar-ring">
-            <span className="cp-avatar-core" />
-          </span>
-        </div>
-        <h1 className="cp-hero-h1">{greeting}.</h1>
+        <p className="cp-hero-kicker">Private financial workspace</p>
+        <h2 className="cp-hero-h1">{hasFinancialData ? "Turn your numbers into a decision." : "Start with data FinSight can verify."}</h2>
         <p className="cp-hero-sub">
-          Ask for a plan, explanation, cleanup pass, or tradeoff analysis. FinSight can use
-          your local accounts, budgets, goals, and transactions when a tool is needed.
+          {hasFinancialData
+            ? "Ask FinSight to explain what changed, compare tradeoffs, or prepare a plan using the data attached below."
+            : "Add an account or import transactions for account-specific analysis. You can still ask general questions, but answers will not claim to be grounded in your finances."}
         </p>
         {children}
-        <div className="cp-hero-chips">
-          {SUGGESTED_PROMPTS.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              className="cp-hero-chip"
-              onClick={() => onPrompt(p.label)}
-              title={p.detail}
-            >
-              <span>{p.label}</span>
-            </button>
-          ))}
-        </div>
-        <CopilotGroundingStats />
+        {hasFinancialData ? (
+          <div className="cp-starting-points" aria-label="Suggested questions">
+            <span className="cp-starting-label">Starting points</span>
+            <div className="cp-starting-list">
+              {SUGGESTED_PROMPTS.map((p, index) => (
+                <button key={p.label} type="button" className="cp-starting-point" onClick={() => onPrompt(p.label)} title={p.detail}>
+                  <span className="cp-starting-index" aria-hidden="true">0{index + 1}</span>
+                  <span className="cp-starting-copy"><span className="cp-starting-point-label">{p.label}</span><span className="cp-starting-detail">{p.detail}</span></span>
+                  <I.ArrowRight className="cp-starting-arrow" width={14} height={14} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <button className="btn outline" type="button" onClick={() => navigate("/accounts")}>Add financial data</button>
+        )}
+        <CopilotGroundingStats accountsCount={accountsCount} transactionCount={transactionCount} />
       </div>
     </div>
   );
@@ -872,6 +868,7 @@ function CopilotThread({
   const threadRuntime = useThreadRuntime();
   const thread = useThread();
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const dataReadiness = useCopilotDataReadiness();
 
   const handlePrompt = useCallback(
     (text: string) => {
@@ -886,9 +883,14 @@ function CopilotThread({
       <ThreadPrimitive.Root className="copilot-thread">
         <ThreadPrimitive.Viewport className="copilot-viewport copilot-scrollbar">
           <AuiIf condition={(s) => s.thread.isEmpty}>
-            <EmptyThreadState onPrompt={handlePrompt}>
+            <EmptyThreadState
+              onPrompt={handlePrompt}
+              hasFinancialData={dataReadiness.hasFinancialData}
+              accountsCount={dataReadiness.accountsCount}
+              transactionCount={dataReadiness.transactionCount}
+            >
               <div className="copilot-empty-composer">
-                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} />
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} hasFinancialData={dataReadiness.hasFinancialData} />
               </div>
             </EmptyThreadState>
           </AuiIf>
@@ -915,7 +917,7 @@ function CopilotThread({
           <AuiIf condition={(s) => !s.thread.isEmpty}>
             <ThreadPrimitive.ViewportFooter className="copilot-viewport-footer">
               <div className="copilot-composer-wrap">
-                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} />
+                <CopilotComposerBox composerRef={composerRef} isRunning={thread.isRunning} latestMeta={latestMeta} hasFinancialData={dataReadiness.hasFinancialData} />
               </div>
             </ThreadPrimitive.ViewportFooter>
           </AuiIf>
@@ -929,10 +931,12 @@ function CopilotComposerBox({
   composerRef,
   isRunning,
   latestMeta,
+  hasFinancialData,
 }: {
   composerRef: React.RefObject<HTMLTextAreaElement>;
   isRunning: boolean;
   latestMeta: MessageMeta | null;
+  hasFinancialData: boolean;
 }) {
   const pendingClarification = useClarifications((s) => s.pending);
 
@@ -955,18 +959,19 @@ function CopilotComposerBox({
       <button
         type="button"
         className="copilot-context-btn"
-        aria-label="Focus the composer with financial context attached"
-        title="FinSight automatically attaches relevant financial context"
+        aria-label={hasFinancialData ? "Focus the composer with FinSight data attached" : "Focus the composer without financial data attached"}
+        title={hasFinancialData ? "Relevant FinSight data is attached" : "No financial data is attached yet"}
         onClick={() => composerRef.current?.focus()}
       >
         <I.Plus width={16} height={16} />
       </button>
       <div className="cp-composer-model">
         <span className="cp-model-dot" />
-        <span>{latestMeta?.modelId ? `${latestMeta.providerId} · ${latestMeta.modelId}` : "Copilot ready"}</span>
+        <span>{latestMeta?.modelId ? `${latestMeta.providerId} · ${latestMeta.modelId}` : hasFinancialData ? "Ready with FinSight data" : "General guidance only"}</span>
       </div>
       <ComposerPrimitive.Input
         ref={composerRef}
+        aria-label="Ask FinSight about your finances"
         placeholder='Ask FinSight to plan, explain, or clean up your finances...'
         className="copilot-composer-input"
         autoFocus
@@ -990,7 +995,7 @@ function CopilotHeader({ threadControls = true }: { threadControls?: boolean }) 
   return (
     <header className="copilot-header">
       <div className="copilot-title-block">
-        <p className="copilot-kicker">Workshop</p>
+        <p className="copilot-kicker">Copilot</p>
         <h1>Copilot</h1>
         <span>Plan, explain, and act on your FinSight data.</span>
       </div>
@@ -1059,7 +1064,7 @@ function CopilotAgUiHeader({
   return (
     <header className="copilot-header">
       <div className="copilot-title-block">
-        <p className="copilot-kicker">Workshop</p>
+        <p className="copilot-kicker">Copilot</p>
         <h1>Copilot</h1>
         <span>Plan, explain, and act on your FinSight data.</span>
       </div>

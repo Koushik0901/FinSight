@@ -246,21 +246,26 @@ describe("Copilot hero", () => {
     render(<Copilot />, { wrapper: createWrapper() });
     expect(await screen.findByText(/42 transaction/i)).toBeInTheDocument();
     expect(screen.queryByText(/1,247 transaction/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Ask FinSight about your finances/i })).toBeInTheDocument();
   });
 
-  it("renders suggestion chips instead of the old prompt-card grid", async () => {
+  it("renders structured financial starting points instead of suggestion chips", async () => {
     render(<Copilot />, { wrapper: createWrapper() });
-    const chip = await screen.findByRole("button", { name: /Plan next month's budget/i });
-    expect(chip.className).toContain("cp-hero-chip");
+    const startingPoint = await screen.findByRole("button", { name: /Plan next month's budget/i });
+    expect(startingPoint.className).toContain("cp-starting-point");
+    expect(document.querySelector(".cp-hero-chip")).not.toBeInTheDocument();
   });
 
-  it("wraps the empty state in the new .cp-hero shell structure", async () => {
+  it("keeps one page heading and a subordinate decision prompt without an assistant avatar", async () => {
     const { container } = render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() => expect(screen.getByText(/42 transaction/i)).toBeInTheDocument());
     expect(container.querySelector(".cp-hero")).toBeInTheDocument();
     expect(container.querySelector(".cp-hero-glow")).not.toBeInTheDocument();
     expect(container.querySelector(".cp-hero-inner")).toBeInTheDocument();
     expect(container.querySelector(".copilot-prompt-card")).not.toBeInTheDocument();
+    expect(container.querySelector(".cp-hero-avatar")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Copilot" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /Turn your numbers into a decision/i })).toBeInTheDocument();
   });
 
   it("is still honest about an empty workspace (no fabricated data)", async () => {
@@ -268,7 +273,9 @@ describe("Copilot hero", () => {
     txnCountMock.count = 0;
     render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() =>
-      expect(screen.getByText(/No financial data imported yet/i)).toBeInTheDocument()
+      expect(screen.getByText(/No financial data attached yet/i)).toBeInTheDocument()
     );
+    expect(screen.getByText(/General guidance only/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Suggested questions")).not.toBeInTheDocument();
   });
 });

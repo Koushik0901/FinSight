@@ -4,7 +4,7 @@
   --accent-ink: #0A0F02;
   --accent-2:   rgba(201, 249, 80, 0.12);
   --accent-3:   rgba(201, 249, 80, 0.24);
-  --accent-glow: 0 0 48px rgba(201, 249, 80, 0.24);
+  --accent-glow: none;
 
   /* Brand mark — a desaturated lime kept only for the logo and celebratory moments */
   --brand:     #C9F950;
@@ -124,7 +124,7 @@
      whisper-thin sheen falling off toward the middle, and a soft ambient
      shadow that grounds them on the background. Tuned per theme below. */
   --edge-hi:   rgba(255,255,255,0.06);   /* top inset catch-light */
-  --card-sheen: linear-gradient(180deg, rgba(255,255,255,0.035) 0%, rgba(255,255,255,0.006) 34%, rgba(255,255,255,0) 60%);
+  --card-sheen: none;
   --elev-1: 0 1px 2px rgba(0,0,0,0.30), 0 8px 22px -14px rgba(0,0,0,0.60);
   --elev-2: 0 2px 4px rgba(0,0,0,0.32), 0 22px 44px -18px rgba(0,0,0,0.66);
   --elev-3: 0 4px 8px rgba(0,0,0,0.34), 0 40px 80px -24px rgba(0,0,0,0.72);
@@ -132,9 +132,7 @@
   /* Ambient light that turns the flat canvas into a lit room. Two soft,
      large-radius glows in opposite corners — warm lime top-right, cool
      depth bottom-left — kept low enough not to touch text contrast. */
-  --app-ambient:
-    radial-gradient(1100px 620px at 88% -8%, rgba(201,249,80,0.05), rgba(0,0,0,0) 60%),
-    radial-gradient(900px 700px at -6% 108%, rgba(96,165,250,0.045), rgba(0,0,0,0) 62%);
+  --app-ambient: none;
 
   /* Disciplined accent — a calmer lime tint for routine surfaces so the
      saturated --accent stays reserved for the single most important thing. */
@@ -183,13 +181,11 @@
 
   /* Material system — light theme: paper resting on warm off-white */
   --edge-hi:   rgba(255,255,255,0.9);
-  --card-sheen: linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 46%);
+  --card-sheen: none;
   --elev-1: 0 1px 2px rgba(24,20,12,0.05), 0 8px 20px -12px rgba(24,20,12,0.16);
   --elev-2: 0 2px 4px rgba(24,20,12,0.06), 0 20px 40px -18px rgba(24,20,12,0.20);
   --elev-3: 0 4px 8px rgba(24,20,12,0.07), 0 36px 72px -24px rgba(24,20,12,0.24);
-  --app-ambient:
-    radial-gradient(1100px 620px at 88% -8%, rgba(150,190,60,0.10), rgba(0,0,0,0) 60%),
-    radial-gradient(900px 700px at -6% 108%, rgba(96,165,250,0.07), rgba(0,0,0,0) 62%);
+  --app-ambient: none;
   --accent-soft: rgba(120,150,40,0.10);
   --accent-line: rgba(120,150,40,0.28);
 }

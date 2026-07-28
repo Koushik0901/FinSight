@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData } from "../api/client";
 import { money } from "../utils/format";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import { useFinancialMetrics } from "../api/hooks/metrics";
+import { useAccounts } from "../api/hooks/accounts";
 import NetWorthChart from "../components/NetWorthChart";
 import MemberSwitcher from "../components/MemberSwitcher";
 import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
 import PageHeader from "../components/PageHeader";
+import EmptyState from "../components/EmptyState";
+import { getReportReadiness } from "../utils/dataReadiness";
 
 type Scope = "month" | "quarter" | "year" | "all";
 type Tab = "overview" | "networth" | "spending";
@@ -47,15 +51,17 @@ function useReportData(scope: Scope, memberId: string | null) {
 const SCOPE_DAYS: Record<Scope, number> = { month: 30, quarter: 90, year: 365, all: 36500 };
 
 export default function Reports() {
+  const navigate = useNavigate();
   // Default to a window that reflects the imported data (which is often
   // historical) rather than the current calendar month, which may be empty.
   const [scope, setScope] = useState<Scope>("year");
   const [tab, setTab] = useState<Tab>("overview");
   const [memberId, setMemberId] = useState<string | null>(null);
-  const { data, isLoading, error } = useReportData(scope, memberId);
+  const { data, isLoading, error, refetch } = useReportData(scope, memberId);
   const netWorth = useNetWorth();
   const { data: metrics } = useFinancialMetrics();
   const { data: nwHistory = [] } = useNetWorthHistory(SCOPE_DAYS[scope]);
+  const { data: accounts = [] } = useAccounts();
 
   const monthly = useMemo(() => data?.monthly ?? [], [data?.monthly]);
   const monthlyLastYear = useMemo(() => data?.monthlyLastYear ?? [], [data?.monthlyLastYear]);
@@ -70,8 +76,8 @@ export default function Reports() {
   // Average monthly spend over the scope's months that actually had outflow — a
   // stable figure across scopes, unlike calendar month-to-date which reads $0
   // for historical imports.
-  const activeExpenseMonths = monthly.filter((m) => m.expenseCents > 0).length || 1;
-  const avgMonthlyExpense = Math.round(totalExpense / activeExpenseMonths);
+  const activeExpenseMonths = monthly.filter((m) => m.expenseCents > 0).length;
+  const avgMonthlyExpense = activeExpenseMonths > 0 ? Math.round(totalExpense / activeExpenseMonths) : 0;
   // Runway comes from the shared metrics layer, the same definition Today shows
   // — not a scope-specific recomputation. Null when there is too little history
   // to state one; render that as unknown rather than as zero, which would read
@@ -84,10 +90,8 @@ export default function Reports() {
   const maxBar = Math.max(1, ...chartValues.flatMap((month) => [month.incomeCents, month.expenseCents]));
   const topCategoriesByAmount = useMemo(() => [...(data?.topCategories ?? [])].sort((a, b) => b.totalCents - a.totalCents), [data]);
   const maxCategoryAmount = Math.max(1, ...topCategoriesByAmount.map((category) => category.totalCents));
-
-  // True when the selected window actually contains transaction activity, so we
-  // can distinguish a real empty period from a query still loading / errored.
-  const hasActivity = monthly.some((m) => m.incomeCents !== 0 || m.expenseCents !== 0);
+  const readiness = getReportReadiness(monthly, accounts, metrics?.runwayDays);
+  const hasActivity = readiness.hasActivity;
 
   const scopeLabel = useMemo(() => {
     if (scope === "quarter") return "Quarter";
@@ -118,8 +122,33 @@ export default function Reports() {
   };
 
   if (isLoading) return <div className="stub">Loading reports…</div>;
-  if (error) return <div className="stub" role="alert">Error loading reports.</div>;
+  if (error) return <div className="stub" role="alert"><p>Reports could not load.</p><button className="btn outline sm" type="button" onClick={() => void refetch()}>Try again</button></div>;
 
+  if (!hasActivity) {
+    return (
+      <div className="screen screen-reports">
+        <PageHeader
+          eyebrow={<>Reports · {scopeLabel}</>}
+          title="Build a history before drawing conclusions."
+          description="FinSight will not turn missing activity into zero-valued results."
+          actions={scope !== "all" ? <button className="btn outline sm" type="button" onClick={() => setScope("all")}>Show all time</button> : undefined}
+        />
+        <UnconvertedCurrencies holdings={metrics?.unconvertedHoldings} primary={metrics?.currency} />
+        <EmptyState
+          title={`No financial history in ${scopeLabel.toLowerCase()}`}
+          description="Import transactions to unlock savings rate, spending trends, category comparisons, and runway."
+          details={
+            <ul className="empty-unlocks">
+              <li>{readiness.netWorth === "reliable" ? `Known account balances currently total ${money(netWorth)}.` : "Net worth appears after at least one confirmed balance is available."}</li>
+              <li>Average spend becomes an estimate after one active month and reliable after two.</li>
+              <li>Savings rate needs a period with both income and spending.</li>
+            </ul>
+          }
+          actions={<button className="btn primary" type="button" onClick={() => navigate("/accounts")}>Import transactions</button>}
+        />
+      </div>
+    );
+  }
   return (
     <div className="screen screen-reports">
       <PageHeader
@@ -155,10 +184,10 @@ export default function Reports() {
       </div>
 
       <div className="stat-row">
-        <div className="stat"><div className="label">Savings rate</div><div className="value">{savingsRate}%</div><div className="sub">Income vs. spend</div></div>
-        <div className="stat"><div className="label">Net worth</div><div className="value money">{money(netWorth)}</div><div className="sub">Tracked balances</div></div>
-        <div className="stat"><div className="label">Avg monthly spend</div><div className="value money">{money(avgMonthlyExpense)}</div><div className="sub">Across this period</div></div>
-        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths ?? "—"}</div><div className="sub">{runwayMonths !== null ? "Months liquid covers at avg burn" : "Needs about a month of history"}</div></div>
+        <div className="stat"><div className="label">Savings rate</div><div className="value">{readiness.savingsRate === "reliable" ? `${savingsRate}%` : "—"}</div><div className="sub">{readiness.savingsRate === "reliable" ? "Income kept after spending" : "Needs income and spending"}</div></div>
+        <div className="stat"><div className="label">Net worth</div><div className="value money">{readiness.netWorth === "reliable" ? money(netWorth) : "—"}</div><div className="sub">{readiness.netWorth === "reliable" ? "Confirmed balances" : "Needs a confirmed balance"}</div></div>
+        <div className="stat"><div className="label">Average monthly spend</div><div className="value money">{readiness.averageSpend !== "unavailable" ? money(avgMonthlyExpense) : "—"}</div><div className="sub">{readiness.averageSpend === "reliable" ? "Across active months" : readiness.averageSpend === "estimated" ? "Early estimate · one active month" : "Needs spending history"}</div></div>
+        <div className="stat accent"><div className="label">Runway</div><div className="value">{runwayMonths ?? "—"}</div><div className="sub">{runwayMonths !== null ? "Months of typical spending covered" : "Needs about a month of history"}</div></div>
       </div>
 
       {tab === "overview" && (
@@ -166,7 +195,7 @@ export default function Reports() {
           <div className="bigchart-head">
             <div>
               <div className="eyebrow">Monthly overview</div>
-              <h3 className="h3" style={{ marginTop: 6 }}>Income and expenses over time</h3>
+              <h2 className="h3" style={{ marginTop: 6 }}>Income and expenses over time</h2>
               {yoyDeltaPct !== null && (
                 <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
                   {money(totalExpense)} spent this period · {yoyDeltaPct >= 0 ? "up" : "down"} {Math.abs(yoyDeltaPct)}% vs the same months last year ({money(totalExpenseLastYear)})
@@ -205,7 +234,7 @@ export default function Reports() {
           <div className="bigchart-head">
             <div>
               <div className="eyebrow">Spending deep dive</div>
-              <h3 className="h3" style={{ marginTop: 6 }}>Where it concentrates, this period</h3>
+              <h2 className="h3" style={{ marginTop: 6 }}>Where it concentrates, this period</h2>
             </div>
           </div>
           <div style={{ padding: "0 22px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -226,7 +255,7 @@ export default function Reports() {
 
       <div className="section" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         <div className="card flush">
-          <div className="card-head"><h3 className="h3">Top categories</h3></div>
+          <div className="card-head"><h2 className="h3">Top categories</h2></div>
           <div className="tbl-scroll">
           <table className="tbl">
             <thead><tr><th>Category</th><th className="right">Amount</th><th className="right">Txns</th></tr></thead>
@@ -240,7 +269,7 @@ export default function Reports() {
         </div>
 
         <div className="card flush">
-          <div className="card-head"><h3 className="h3">Top merchants</h3></div>
+          <div className="card-head"><h2 className="h3">Top merchants</h2></div>
           <div className="tbl-scroll">
           <table className="tbl">
             <thead><tr><th>Merchant</th><th>Category</th><th className="right">Amount</th><th className="right">Txns</th></tr></thead>

@@ -106,6 +106,7 @@ export default function PathBack() {
   if (!view) {
     return (
       <EmptyState
+        headingLevel={1}
         icon={<I.Flow style={{ color: "var(--ink-mute)", width: 40, height: 40 }} />}
         title="No spending to analyze yet"
         description="Import some transactions and come back."
@@ -138,7 +139,7 @@ export default function PathBack() {
     <div className="screen">
       <PageHeader
         variant="ruled"
-        eyebrow={<>Path back · {view.period}</>}
+        eyebrow={<>Recovery plan · {view.period}</>}
         title="Getting back to your normal."
         actions={
           <>
@@ -206,7 +207,7 @@ export default function PathBack() {
         <Card
           header={
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <h3 className="h3">Your levers · trim these</h3>
+              <h2 className="h3">Your levers · trim these</h2>
               <span className="num money" style={{ fontSize: 14, color: "var(--accent)", fontWeight: 600 }}>
                 ~{money(plan.recoverable_recurring_cents)}
               </span>
@@ -234,7 +235,7 @@ export default function PathBack() {
           tone="muted"
           header={
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <h3 className="h3">Self-correcting · leave them</h3>
+              <h2 className="h3">Self-correcting · leave them</h2>
               <span className="num money" style={{ fontSize: 14, color: "var(--ink-mute)", fontWeight: 600 }}>
                 ~{money(plan.self_correcting_cents)}
               </span>

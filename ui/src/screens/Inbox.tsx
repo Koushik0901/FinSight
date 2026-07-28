@@ -411,7 +411,7 @@ function ImportReviewCard({ item }: { item: ImportCandidateWithMatches }) {
   );
 }
 
-export default function Inbox() {
+export default function Inbox({ embedded = false }: { embedded?: boolean }) {
   const { data: items = [], isLoading, error, dataUpdatedAt } = useActionItems();
   const { data: alerts = [] } = useSimpleFinAlerts();
   const { data: transfers = [] } = useSimpleFinTransferSuggestions();
@@ -452,7 +452,8 @@ export default function Inbox() {
   if (error) return <div className="stub">Error loading inbox.</div>;
 
   return (
-    <div className="screen">
+    <div className={embedded ? "review-pane" : "screen"}>
+      {!embedded && <>
       <PageHeader
         variant="ruled"
         eyebrow={<>Inbox · {allCount} item{allCount !== 1 ? "s" : ""}</>}
@@ -479,6 +480,7 @@ export default function Inbox() {
           <span style={{ marginLeft: 8, fontSize: 12, color: "var(--ink-faint)" }}>Updated {lastUpdated}</span>
         )}
       </p>
+      </>}
 
       {importReview.length > 0 && (
         <section className="stack stack-md" style={{ marginBottom: 24 }} aria-labelledby="inbox-import-review">

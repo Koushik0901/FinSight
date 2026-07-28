@@ -5085,3 +5085,122 @@ body::-webkit-scrollbar-track,
 .cf-evlabel { flex: 1; font-size: 13.5px; color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-evamt { font-size: 13.5px; font-weight: 600; flex: none; color: var(--ink); }
 .cf-evamt.in { color: var(--positive); }
+
+/* ── Quiet financial instrument pass ─────────────────────
+   Routine surfaces stay flat and calm. Lime is reserved for state and action;
+   depth remains on overlays, drawers, and other genuinely elevated layers. */
+.main::before,
+[data-theme="light"] .main::before {
+  background: none;
+}
+
+.eyebrow,
+.page-header-eyebrow,
+.nav-section {
+  font-family: var(--sans);
+  letter-spacing: 0.065em;
+}
+
+.eyebrow .dot,
+.page-header-eyebrow .dot,
+.dot,
+.chip .dot {
+  box-shadow: none;
+}
+
+.card,
+.empty-panel {
+  background: var(--surface);
+  box-shadow: none;
+}
+.card.accent,
+.budget-overview {
+  background: color-mix(in oklab, var(--accent) 5%, var(--surface));
+  border-color: var(--accent-line);
+  box-shadow: none;
+}
+.card.warn {
+  background: color-mix(in oklab, var(--warning) 5%, var(--surface));
+  border-color: color-mix(in oklab, var(--warning) 42%, var(--line));
+}
+.card.hover:hover {
+  transform: translateY(-1px);
+  box-shadow: none;
+}
+.empty-panel::before { display: none; }
+
+.btn.primary,
+.btn.primary:hover,
+.goal-bar > span,
+.progress-bar > span,
+.screen-budget [title="Spent"] {
+  box-shadow: none !important;
+}
+
+.stat.accent {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.nav-item.active,
+.nav-item[aria-current="page"] {
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.nav-item.active .nav-ico-wrap,
+.nav-item[aria-current="page"] .nav-ico-wrap {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: none;
+}
+.nav-item.active::before,
+.nav-item[aria-current="page"]::before {
+  display: none;
+}
+.nav-item .pulse,
+.bottom-nav .pulse {
+  animation: none;
+  box-shadow: none;
+}
+.nav-item .pulse::after,
+.bottom-nav .pulse::after { display: none; }
+.nav-more { padding-left: 8px; }
+.nav-more-toggle.active { color: var(--ink); }
+.nav-more-chevron { width: 12px !important; height: 12px !important; }
+
+.today-cat-grid > .card {
+  padding: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.empty-details {
+  width: 100%;
+  color: var(--ink-mute);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.empty-unlocks {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+.review-hub-tabs { margin-bottom: 24px; }
+.review-pane { min-width: 0; }
+.review-pane > :first-child { margin-top: 0; }
+.sidebar { overflow: hidden; }
+.sidebar > .nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.sidebar .foot { flex-shrink: 0; }
+.cp-hero-kicker { font-family: var(--sans); }
+.cp-model-dot { animation: none; }
+.copilot-finsight-chat .copilot-composer { box-shadow: none; }

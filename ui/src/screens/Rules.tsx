@@ -202,7 +202,7 @@ export default function Rules() {
   return (
     <div className="screen screen-rules">
       <PageHeader
-        eyebrow="Workshop · Rules & agents"
+        eyebrow="Rules & automation"
         title="Automate the mundane."
         actions={<Button variant="default" onClick={() => setShowNewRule(true)}>
           + New rule

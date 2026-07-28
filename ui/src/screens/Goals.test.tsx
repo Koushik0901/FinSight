@@ -86,12 +86,14 @@ describe("Goals — explain a goal's completion (#71)", () => {
 });
 
 describe("Goals — empty state", () => {
-  it("renders an intentional empty state with a New goal CTA when there are no goals", async () => {
+  it("renders one clear CTA and hides analytical controls when there are no goals", async () => {
     const budget = await import("../api/hooks/budget");
     (budget.useGoals as ReturnType<typeof vi.fn>).mockReturnValueOnce({ data: [], isLoading: false, error: null });
     render(<Goals />, { wrapper: createWrapper() });
     expect(screen.getByText("No goals yet")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /New goal/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /New goal/i })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "All 0" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Contribution scenario")).not.toBeInTheDocument();
   });
 });
 
@@ -272,7 +274,7 @@ describe("Goals — what-if scenario", () => {
 
   it("defaults to the first eligible goal and shows its base ETA with no extra", () => {
     render(<Goals />, { wrapper: createWrapper() });
-    expect(screen.getByText("What if · scenario")).toBeInTheDocument();
+    expect(screen.getByText("Contribution scenario")).toBeInTheDocument();
     expect(screen.getByText(/on track for the original plan/i)).toBeInTheDocument();
   });
 

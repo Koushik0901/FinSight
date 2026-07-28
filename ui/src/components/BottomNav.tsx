@@ -15,14 +15,12 @@ interface TabEntry {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
 }
 
-// The 5 highest-value destinations, mirroring Sidebar's "Overview"/"Money"/"Plan"
-// groups. Everything else lives behind the "More" sheet below.
 const TABS: TabEntry[] = [
   { id: "today", path: "/", label: "Today", Icon: I.Today },
-  { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
   { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
   { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
   { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
+  { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
 ];
 
 interface MoreEntry {
@@ -32,15 +30,15 @@ interface MoreEntry {
 }
 
 const MORE_ITEMS: MoreEntry[] = [
+  { path: "/inbox", label: "Review", Icon: I.Check },
   { path: "/categories", label: "Categories", Icon: I.Grid },
   { path: "/recurring", label: "Recurring", Icon: I.Repeat },
+  { path: "/cashflow", label: "Cash flow", Icon: I.Horizon },
   { path: "/reports", label: "Reports", Icon: I.Spark },
   { path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
-  { path: "/path-back", label: "Path back", Icon: I.Flow },
+  { path: "/path-back", label: "Recovery plan", Icon: I.Flow },
   { path: "/journey", label: "Journey", Icon: I.Journey },
-  { path: "/copilot", label: "Copilot", Icon: I.Brain },
-  { path: "/review", label: "Review queue", Icon: I.Check },
-  { path: "/rules", label: "Rules & agents", Icon: I.Bolt },
+  { path: "/rules", label: "Rules & automation", Icon: I.Bolt },
   { path: "/recipes", label: "Recipes", Icon: I.Recipe },
   { path: "/settings", label: "Settings", Icon: I.Gear },
 ];
@@ -65,7 +63,7 @@ export function BottomNav() {
   });
 
   const hasAgentActivity = Boolean(agentStatus?.lastScanAt || pendingBundles.length > 0);
-  const inboxPulse = needsReview > 0 || hasAgentActivity;
+  const reviewPulse = needsReview > 0 || hasAgentActivity;
 
   return (
     <>
@@ -82,7 +80,6 @@ export function BottomNav() {
           >
             <span className="bottom-nav-ico-wrap" aria-hidden="true">
               <t.Icon className="ico" />
-              {t.id === "inbox" && inboxPulse && <span className="pulse" data-testid="bottom-nav-inbox-pulse" />}
             </span>
             <span className="bottom-nav-label">{t.label}</span>
           </NavLink>
@@ -97,6 +94,7 @@ export function BottomNav() {
         >
           <span className="bottom-nav-ico-wrap" aria-hidden="true">
             <I.More className="ico" />
+            {reviewPulse && <span className="pulse" data-testid="bottom-nav-review-pulse" />}
           </span>
           <span className="bottom-nav-label">More</span>
         </button>

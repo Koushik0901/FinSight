@@ -118,6 +118,19 @@ describe("Reports screen", () => {
     expect(screen.queryByText("Where it concentrates, this period")).not.toBeInTheDocument();
   });
 
+  it("replaces empty analytics with an honest setup state", async () => {
+    vi.mocked(commands.getReportData).mockResolvedValueOnce({
+      status: "ok",
+      data: { monthly: [], monthlyLastYear: [], topCategories: [], topMerchants: [] },
+    });
+    render(<Reports />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText(/No financial history in year/i)).toBeInTheDocument();
+    expect(screen.getByText(/will not turn missing activity into zero-valued results/i)).toBeInTheDocument();
+    expect(screen.queryByText("Savings rate")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export" })).not.toBeInTheDocument();
+  });
+
   describe("Export button", () => {
     let createObjectURLSpy: ReturnType<typeof vi.fn>;
     let revokeObjectURLSpy: ReturnType<typeof vi.fn>;

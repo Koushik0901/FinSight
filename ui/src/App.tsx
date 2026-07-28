@@ -26,7 +26,7 @@ import { startNativeNotifications } from "./pwa/nativeNotify";
 import * as I from "./components/Icons";
 
 const Today = lazy(() => import("./screens/Today"));
-const Inbox = lazy(() => import("./screens/Inbox"));
+const Review = lazy(() => import("./screens/Review"));
 const ImportReview = lazy(() => import("./screens/ImportReview"));
 const Accounts = lazy(() => import("./screens/Accounts"));
 const AccountTransactions = lazy(() => import("./screens/AccountTransactions"));
@@ -41,7 +41,6 @@ const Reports = lazy(() => import("./screens/Reports"));
 const MonthClose = lazy(() => import("./screens/MonthClose"));
 const PathBack = lazy(() => import("./screens/PathBack"));
 const Rules = lazy(() => import("./screens/Rules"));
-const CategoryReview = lazy(() => import("./screens/CategoryReview"));
 const Settings = lazy(() => import("./screens/Settings"));
 // Server-mode-only admin surface; the route resolves for everyone but the
 // screen itself renders nothing outside server mode / for non-admins.
@@ -299,9 +298,9 @@ export function App() {
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/" element={<Today />} />
-                    <Route path="/inbox" element={<Inbox />} />
+                    <Route path="/inbox" element={<Review />} />
                     <Route path="/import-review" element={<ImportReview />} />
-                    {/* Insights retired — its action items live in Inbox, its agent memory in Settings. */}
+                    {/* Insights retired — its action items live in Review, its agent memory in Settings. */}
                     <Route path="/insights" element={<Navigate to="/inbox" replace />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/accounts/:id/transactions" element={<AccountTransactions />} />
@@ -318,8 +317,7 @@ export function App() {
                     <Route path="/close" element={<MonthClose />} />
                     <Route path="/path-back" element={<PathBack />} />
                     <Route path="/rules" element={<Rules />} />
-                    {/* The categorization review queue (category_proposals). */}
-                    <Route path="/review" element={<CategoryReview />} />
+                    <Route path="/review" element={<Navigate to="/inbox?view=categories" replace />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/settings/users" element={<UsersAdmin />} />
                     <Route path="/copilot" element={<Copilot />} />

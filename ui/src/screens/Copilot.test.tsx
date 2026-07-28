@@ -249,21 +249,20 @@ describe("Copilot screen — rendering", () => {
     expect(screen.queryByRole("button", { name: /GitHub/i })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /^Copilot$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /New thread/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /good (morning|afternoon|evening)/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: /Start with data FinSight can verify/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^History$/i })).toBeInTheDocument();
   });
 
-  it("shows suggested prompts when no conversation is active", () => {
+  it("hides account-specific prompts when no financial data is attached", () => {
     render(<Copilot />, { wrapper: createWrapper() });
-    expect(screen.getByText(/Plan next month's budget/i)).toBeInTheDocument();
-    expect(screen.getByText(/Improve my savings rate/i)).toBeInTheDocument();
-    expect(screen.getByText(/Clean up uncategorized transactions/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Suggested questions")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add financial data" })).toBeInTheDocument();
   });
 
   it("is honest about an empty workspace (no fabricated data)", async () => {
     render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() =>
-      expect(screen.getByText(/No financial data imported yet/i)).toBeInTheDocument()
+      expect(screen.getByText(/No financial data attached yet/i)).toBeInTheDocument()
     );
   });
 
@@ -273,7 +272,7 @@ describe("Copilot screen — rendering", () => {
     render(<Copilot />, { wrapper: createWrapper() });
     await waitFor(() => expect(screen.getByText(/1,247 transactions/i)).toBeInTheDocument());
     expect(screen.getByText(/2 accounts/i)).toBeInTheDocument();
-    expect(screen.getByText(/100% local/i)).toBeInTheDocument();
+    expect(screen.getByText(/FinSight data attached/i)).toBeInTheDocument();
   });
 
   it("renders the base composer and scroll control", () => {
@@ -290,6 +289,8 @@ describe("Copilot screen — rendering", () => {
 
 describe("Copilot screen — new conversation", () => {
   it("prefills the composer when a prompt card is clicked", async () => {
+    accountsMock.list = [{ id: "a" }];
+    txnCountMock.count = 12;
     render(<Copilot />, { wrapper: createWrapper() });
     const promptCard = screen.getByText(/Plan next month's budget/i);
     fireEvent.click(promptCard);

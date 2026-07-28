@@ -11,7 +11,20 @@ vi.mock("react-router-dom", async () => {
 });
 
 vi.mock("../api/hooks/budget", () => ({
-  useBudgetEnvelopes: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useBudgetEnvelopes: vi.fn(() => ({
+    data: [{
+      categoryId: "c1",
+      categoryLabel: "Groceries",
+      categoryColor: "#27ae60",
+      groupLabel: "Everyday",
+      budgetCents: 50000,
+      spentCents: 45000,
+      carryoverCents: 0,
+      txnCount: 12,
+    }],
+    isLoading: false,
+    error: null,
+  })),
   useBudgetHistory: vi.fn(() => ({
     data: [
       {
@@ -41,6 +54,10 @@ vi.mock("../api/hooks/budget", () => ({
 vi.mock("../api/hooks/household", () => ({
   useHouseholdMembers: vi.fn(() => ({ data: [] })),
 }));
+vi.mock("../api/hooks/reports", () => ({
+  useMonthTotals: vi.fn(() => ({ data: { incomeCents: 100000, expenseCents: 45000 } })),
+}));
+
 
 vi.mock("../api/client", () => ({
   commands: {
@@ -69,7 +86,7 @@ describe("Budget history section", () => {
 
   it("shows category labels in the history table", () => {
     render(<Budget />, { wrapper: createWrapper() });
-    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.getAllByText("Groceries").length).toBeGreaterThan(0);
   });
 
   it("shows formatted amounts in the history table", () => {

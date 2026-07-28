@@ -300,8 +300,8 @@ function WhatIfScenario({ goals }: { goals: GoalDto[] }) {
     <section className="section">
       <div className="day-hdr" style={{ marginBottom: 14 }}>
         <div>
-          <div className="eyebrow"><span className="dot" />What if · scenario</div>
-          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Move a slider, see the future shift.</h2>
+          <div className="eyebrow"><span className="dot" />Contribution scenario</div>
+          <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>See how an extra contribution changes the date.</h2>
         </div>
       </div>
 
@@ -544,7 +544,7 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
 }
 
 export default function Goals() {
-  const { data: goals = [], isLoading, error } = useGoals();
+  const { data: goals = [], isLoading, error, refetch } = useGoals();
   const { data: accounts = [] } = useAccounts();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<GoalFilter>("all");
@@ -600,26 +600,26 @@ export default function Goals() {
   }, [editingGoal, focusedGoal, searchParams, setSearchParams]);
 
   if (isLoading) return <div className="stub">Loading goals…</div>;
-  if (error) return <div className="stub" role="alert">Error loading goals.</div>;
+  if (error) return <div className="stub" role="alert"><p>Goals could not load.</p><button className="btn outline sm" type="button" onClick={() => void refetch()}>Try again</button></div>;
 
   return (
     <div className="screen screen-goals">
       <PageHeader
         eyebrow={<>Goals · {goals.length} active</>}
-        title="Things you're moving toward."
+        title={goals.length === 0 ? "Build toward what matters." : "Things you're moving toward."}
         actions={<button className="btn primary" type="button" onClick={() => setCreating((open) => !open)}>+ New goal</button>}
       />
 
-      <p className="muted" style={{ maxWidth: 720, marginTop: 0 }}>A goal is a horizon line on your future runway. The agent keeps it visible so everyday choices still point toward something larger.</p>
+      {goals.length > 0 && <p className="muted" style={{ maxWidth: 720, marginTop: 0 }}>Track a target, contribution, and expected finish date. FinSight will keep progress visible as your plan changes.</p>}
 
-      <div className="toolbar" style={{ marginTop: 8 }}>
+      {goals.length > 0 && <div className="toolbar" style={{ marginTop: 8 }}>
         <button className={filter === "all" ? "on" : ""} type="button" onClick={() => setFilter("all")}>All {goals.length}</button>
         <button className={filter === "save-by-date" ? "on" : ""} type="button" onClick={() => setFilter("save-by-date")}>Save by date {counts["save-by-date"] ?? 0}</button>
         <button className={filter === "build-balance" ? "on" : ""} type="button" onClick={() => setFilter("build-balance")}>Build balance {counts["build-balance"] ?? 0}</button>
         <button className={filter === "debt-payoff" ? "on" : ""} type="button" onClick={() => setFilter("debt-payoff")}>Debt payoff {counts["debt-payoff"] ?? 0}</button>
         <button className={filter === "spending-cap" ? "on" : ""} type="button" onClick={() => setFilter("spending-cap")}>Spending cap {counts["spending-cap"] ?? 0}</button>
         <button className={filter === "sinking-fund" ? "on" : ""} type="button" onClick={() => setFilter("sinking-fund")}>Sinking fund {counts["sinking-fund"] ?? 0}</button>
-      </div>
+      </div>}
 
       {creating && <NewGoalForm onClose={() => setCreating(false)} />}
       <GoalDrawer open={activeEditingGoal !== null} onClose={() => setEditingGoal(null)} goal={activeEditingGoal} />
@@ -631,10 +631,10 @@ export default function Goals() {
             title={goals.length === 0 ? "No goals yet" : "No goals in this filter"}
             description={
               goals.length === 0
-                ? "Create a goal — an emergency fund, a trip, a debt payoff — and the agent keeps it on your radar as you spend."
+                ? "Start with an emergency fund, debt payoff, planned purchase, or another target you want to fund over time."
                 : "Nothing matches this filter yet. Try another, or create a new goal."
             }
-            actions={<button className="btn primary" type="button" onClick={() => setCreating(true)}>+ New goal</button>}
+            actions={goals.length > 0 ? <button className="btn primary" type="button" onClick={() => setCreating(true)}>+ New goal</button> : undefined}
           />
         ) : (
           visible.map((goal) => (
@@ -659,7 +659,7 @@ export default function Goals() {
         onClose={() => setExplainKey(null)}
       />
 
-      <GoalsHorizon goals={goals} />
+      {goals.length > 0 && <GoalsHorizon goals={goals} />}
 
       {goals.length > 0 && <WhatIfScenario goals={goals} />}
 

@@ -249,7 +249,7 @@ export function ProposalRow({ proposal, txn, currency, proposedCategory }: RowPr
   );
 }
 
-export default function CategoryReview() {
+export default function CategoryReview({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const [visible, setVisible] = useState(PAGE_SIZE);
   const { data: proposals = [], isLoading, error } = useCategoryProposals();
@@ -298,9 +298,10 @@ export default function CategoryReview() {
   }
 
   return (
-    <div className="screen screen-category-review">
+    <div className={embedded ? "review-pane screen-category-review" : "screen screen-category-review"}>
+      {!embedded && <>
       <PageHeader
-        eyebrow="Workshop · Review queue"
+        eyebrow="Review · Category decisions"
         title={
           <>
             {proposals.length === 0
@@ -318,6 +319,7 @@ export default function CategoryReview() {
         here. Confirming turns its guess into your decision — the agent learns
         from it and stops second-guessing similar merchants.
       </p>
+      </>}
 
       {proposals.length === 0 ? (
         <EmptyState

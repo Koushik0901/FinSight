@@ -1,4 +1,5 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { prefetchRoute } from "../api/prefetch";
@@ -17,52 +18,25 @@ interface NavEntry {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
 }
 
-interface NavSection {
-  /** null → the top "overview" group, rendered without a header. */
-  label: string | null;
-  items: NavEntry[];
-}
+const CORE_NAV: NavEntry[] = [
+  { id: "today", path: "/", label: "Today", Icon: I.Today },
+  { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
+  { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
+  { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
+  { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
+  { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
+];
 
-// Grouped IA: a flat 13-item scroll became four scannable sections that read
-// as a financial story — where you stand, where money lives, where you're
-// headed, and the tools that run underneath. Every route/badge/pulse is
-// preserved; only the grouping and visual hierarchy changed.
-const NAV: NavSection[] = [
-  {
-    label: null,
-    items: [
-      { id: "today", path: "/", label: "Today", Icon: I.Today },
-      { id: "inbox", path: "/inbox", label: "Inbox", Icon: I.Bell },
-    ],
-  },
-  {
-    label: "Money",
-    items: [
-      { id: "accounts", path: "/accounts", label: "Accounts", Icon: I.Wallet },
-      { id: "budget", path: "/budget", label: "Budget", Icon: I.Lego },
-      { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
-      { id: "recurring", path: "/recurring", label: "Recurring", Icon: I.Repeat },
-    ],
-  },
-  {
-    label: "Plan",
-    items: [
-      { id: "goals", path: "/goals", label: "Goals", Icon: I.Goal },
-      { id: "cashflow", path: "/cashflow", label: "Cash flow", Icon: I.Horizon },
-      { id: "reports", path: "/reports", label: "Reports", Icon: I.Spark },
-      { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
-      { id: "path-back", path: "/path-back", label: "Path back", Icon: I.Flow },
-    ],
-  },
-  {
-    label: "Workshop",
-    items: [
-      { id: "copilot", path: "/copilot", label: "Copilot", Icon: I.Brain },
-      { id: "review", path: "/review", label: "Review queue", Icon: I.Check },
-      { id: "rules", path: "/rules", label: "Rules & agents", Icon: I.Bolt },
-      { id: "settings", path: "/settings", label: "Settings", Icon: I.Gear },
-    ],
-  },
+const MORE_NAV: NavEntry[] = [
+  { id: "review", path: "/inbox", label: "Review", Icon: I.Check },
+  { id: "categories", path: "/categories", label: "Categories", Icon: I.Grid },
+  { id: "recurring", path: "/recurring", label: "Recurring", Icon: I.Repeat },
+  { id: "cashflow", path: "/cashflow", label: "Cash flow", Icon: I.Horizon },
+  { id: "scenarios", path: "/scenarios", label: "Scenarios", Icon: I.Bolt },
+  { id: "path-back", path: "/path-back", label: "Recovery plan", Icon: I.Flow },
+  { id: "journey", path: "/journey", label: "Journey", Icon: I.Journey },
+  { id: "rules", path: "/rules", label: "Rules & automation", Icon: I.Bolt },
+  { id: "recipes", path: "/recipes", label: "Recipes", Icon: I.Recipe },
 ];
 
 interface Props {
@@ -75,6 +49,10 @@ export function Sidebar({ onOpenCmd }: Props) {
   const { data: accounts = [] } = useAccounts();
   const { data: goals = [] } = useGoals();
   const navigate = useNavigate();
+  const location = useLocation();
+  const moreActive = MORE_NAV.some((item) => location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
+  const [moreOpen, setMoreOpen] = useState(moreActive);
+  useEffect(() => { if (moreActive) setMoreOpen(true); }, [moreActive]);
   const resetOnboarding = useResetOnboarding();
   const hasBackend = isBackendAvailable();
   const qc = useQueryClient();
@@ -120,10 +98,7 @@ export function Sidebar({ onOpenCmd }: Props) {
   };
 
   const renderPulse = (id: string) => {
-    if (id === "inbox" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
-    // Was on "rules", which has no accept/reject affordance — the count now
-    // pulses on the queue it can actually be cleared from.
-    if (id === "review" && needsReview > 0) return <span className="pulse" />;
+    if (id === "review" && (needsReview > 0 || hasAgentActivity)) return <span className="pulse" />;
     return null;
   };
 
@@ -145,7 +120,6 @@ export function Sidebar({ onOpenCmd }: Props) {
             {profileLabel} · {accounts.length} account{accounts.length === 1 ? "" : "s"}
           </div>
         </div>
-        <I.Down className="ico" style={{ color: "var(--ink-faint)" }} aria-hidden="true" />
       </div>
 
       <button
@@ -155,39 +129,46 @@ export function Sidebar({ onOpenCmd }: Props) {
         type="button"
       >
         <I.Search width="14" height="14" style={{ color: "var(--ink-faint)" }} aria-hidden="true" />
-        <span className="ph">Search or ask…</span>
+        <span className="ph">Find or ask…</span>
         <span className="kbd">⌘K</span>
       </button>
 
       <nav className="nav" aria-label="Main">
-        {NAV.map((section) => (
-          <div key={section.label ?? "overview"} className="nav-group" role="group" aria-label={section.label ?? "Overview"}>
-            {section.label && <div className="nav-section">{section.label}</div>}
-            {section.items.map((n) => (
-              <NavLink
-                key={n.id}
-                to={n.path}
-                end={n.path === "/"}
-                onMouseEnter={() => warm(n.path)}
-                onFocus={() => warm(n.path)}
-                className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-              >
+        <div className="nav-group" role="group" aria-label="Core destinations">
+          {CORE_NAV.map((n) => (
+            <NavLink key={n.id} to={n.path} end={n.path === "/"} onMouseEnter={() => warm(n.path)} onFocus={() => warm(n.path)} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}>
+              <span className="nav-ico-wrap" aria-hidden="true"><n.Icon className="ico" /></span>
+              <span className="nav-label">{n.label}</span>
+              <span className="nav-meta">{renderBadge(n.id)}</span>
+            </NavLink>
+          ))}
+        </div>
+        <button type="button" className={`nav-item nav-more-toggle${moreActive ? " active" : ""}`} aria-expanded={moreOpen} aria-controls="sidebar-more" onClick={() => setMoreOpen((open) => !open)}>
+          <span className="nav-ico-wrap" aria-hidden="true"><I.More className="ico" /></span>
+          <span className="nav-label">More</span>
+          <span className="nav-meta">{renderPulse("review")}{renderBadge("review")}<I.Down className="ico nav-more-chevron" aria-hidden="true" /></span>
+        </button>
+        {moreOpen && (
+          <div id="sidebar-more" className="nav-group nav-more" role="group" aria-label="More destinations">
+            {MORE_NAV.map((n) => (
+              <NavLink key={n.id} to={n.path} onMouseEnter={() => warm(n.path)} onFocus={() => warm(n.path)} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}>
                 <span className="nav-ico-wrap" aria-hidden="true"><n.Icon className="ico" /></span>
                 <span className="nav-label">{n.label}</span>
-                <span className="nav-meta">
-                  {renderPulse(n.id)}
-                  {renderBadge(n.id)}
-                </span>
+                <span className="nav-meta">{renderPulse(n.id)}{renderBadge(n.id)}</span>
               </NavLink>
             ))}
           </div>
-        ))}
+        )}
       </nav>
 
       <div className="foot">
+        <NavLink to="/settings" className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}>
+          <I.Gear className="ico" aria-hidden="true" />
+          <span>Settings</span>
+        </NavLink>
         <button type="button" className="nav-item ghost" onClick={() => void handleRunSetup()}>
           <I.Sparkle className="ico" aria-hidden="true" />
-          <span>Run setup again</span>
+          <span>{accounts.length === 0 ? "Finish setup" : "Setup & import"}</span>
         </button>
         <div className="nav-item trust" aria-hidden="false">
           <I.Lock className="ico" aria-hidden="true" />
