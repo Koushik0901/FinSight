@@ -1,5 +1,3 @@
-use finsight_core::db::run_migrations;
-use finsight_core::keychain;
 use finsight_core::models::{AccountType, NewAccount, NewTransaction, TransactionStatus};
 use finsight_core::repos::{accounts, transactions};
 use finsight_core::Db;

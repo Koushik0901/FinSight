@@ -1065,8 +1065,6 @@ pub fn counterparty_position(
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::accounts,
         Db,

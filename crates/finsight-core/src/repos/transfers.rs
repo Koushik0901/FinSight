@@ -127,8 +127,6 @@ pub fn reject(conn: &mut Connection, id: &str) -> CoreResult<()> {
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, transactions},
         Db,

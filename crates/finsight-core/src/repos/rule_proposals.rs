@@ -152,7 +152,7 @@ pub fn emit_from_corrections(conn: &mut Connection, threshold: i64) -> CoreResul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

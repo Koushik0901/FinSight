@@ -483,7 +483,7 @@ fn build_user_prompt(txns: &[(String, String, i64)]) -> String {
 mod tests {
     use super::*;
     use crate::providers::mock::MockCompletionProvider;
-    use finsight_core::{db::run_migrations, keychain, models::NewRule};
+    use finsight_core::models::NewRule;
     use std::sync::Mutex;
     use tempfile::TempDir;
 

@@ -50,7 +50,7 @@ pub fn get_by_external_id(
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations, keychain, models::NewSimpleFinConnection, repos::connections, Db,
+        models::NewSimpleFinConnection, repos::connections, Db,
     };
     use tempfile::TempDir;
 

@@ -6,7 +6,7 @@
 //! this replicates the exact SQL + row-collection pattern reports.rs now
 //! uses and proves it distinguishes "no data" from "failed to load data".
 
-use finsight_core::{db::run_migrations, keychain, Db};
+use finsight_core::Db;
 use rusqlite::params;
 use tempfile::TempDir;
 use uuid::Uuid;

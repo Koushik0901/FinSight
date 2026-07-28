@@ -389,8 +389,8 @@ mod format_tests {
 mod execution_smoke_tests {
     use super::*;
     use crate::reasoning::messages::{AgentChange, AgentDraftAction};
-    use finsight_core::{db::run_migrations, keychain};
-    use tempfile::TempDir;
+    
+    
 
     /// Tools whose required argument names a real entity (a goal, a merchant).
     /// On an empty ledger there is nothing valid to name, so exercising them
@@ -418,7 +418,7 @@ mod execution_smoke_tests {
 
     #[test]
     fn every_read_tool_executes_against_an_empty_ledger() {
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let tools = standard_toolset();
@@ -459,7 +459,7 @@ mod execution_smoke_tests {
     /// Rust doc comment explaining it never reaches the model.
     #[test]
     fn net_worth_payload_warns_against_double_subtracting_debt() {
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let tools = standard_toolset();

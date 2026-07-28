@@ -417,7 +417,7 @@ pub fn create_debt_payoff_plan() -> Arc<dyn Tool> {
 mod tests {
     use super::*;
     use crate::reasoning::messages::{AgentChange, AgentDraftAction};
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use rusqlite::Connection;
     use tempfile::TempDir;
 

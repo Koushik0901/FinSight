@@ -262,7 +262,7 @@ fn sync_owner_display(conn: &Connection, account_id: &str) -> CoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

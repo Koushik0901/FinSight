@@ -465,7 +465,7 @@ pub async fn get_savings_rate_history(state: &ApiState) -> AppResult<Vec<Savings
 #[cfg(test)]
 mod tests {
     use super::{category_totals_for_window, normalize_month, scope_month_list};
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

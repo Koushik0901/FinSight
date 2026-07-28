@@ -177,7 +177,7 @@ pub fn plan_spending_reduction() -> std::sync::Arc<dyn Tool> {
 mod tests {
     use super::*;
     use crate::reasoning::messages::{AgentChange, AgentDraftAction};
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use rusqlite::Connection;
     use tempfile::TempDir;
 

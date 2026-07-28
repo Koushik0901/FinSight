@@ -520,8 +520,6 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, copilot_actions, goals, transactions},
         Db,

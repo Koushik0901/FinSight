@@ -4,14 +4,9 @@ use finsight_core::models::{
 };
 use finsight_core::repos::{accounts, transactions};
 use finsight_core::Db;
-use tempfile::tempdir;
 
 fn open() -> (Db, tempfile::TempDir) {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("t.sqlcipher");
-    let key = "cd".repeat(32);
-    let db = Db::open(&path, &key).unwrap();
-    finsight_core::db::run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     (db, dir)
 }
 

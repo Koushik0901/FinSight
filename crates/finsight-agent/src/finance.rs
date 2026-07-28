@@ -3036,7 +3036,7 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, Db) {

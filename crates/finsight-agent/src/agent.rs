@@ -141,14 +141,14 @@ async fn run_loop(
 mod tests {
     use super::*;
     use crate::providers::mock::MockCompletionProvider;
-    use finsight_core::{db::run_migrations, keychain};
+    
     use serde_json::json;
     use std::sync::Mutex;
-    use tempfile::TempDir;
+    
 
     #[tokio::test]
     async fn handle_sends_job_and_receives_error_when_no_provider() {
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         let events: Arc<Mutex<Vec<AgentEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let events_clone = Arc::clone(&events);
         let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
@@ -185,7 +185,7 @@ mod tests {
     async fn set_provider_replaces_atomically() {
         let provider: Arc<RwLock<Option<Arc<dyn CompletionProvider>>>> =
             Arc::new(RwLock::new(None));
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         let handle = AgentHandle::spawn(db, Arc::clone(&provider), Arc::new(|_| {}));
         let mock = Arc::new(MockCompletionProvider {
             provider_id: "mock".into(),

@@ -151,7 +151,7 @@ mod tests {
     use super::*;
     use finsight_core::models::NewCategoryProposal;
     use finsight_core::repos::rule_proposals;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    
     use std::sync::Arc;
     use tempfile::TempDir;
 

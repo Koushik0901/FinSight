@@ -197,7 +197,7 @@ fn passes(d: &Driver, filter: Filter, min_ratio: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use crate::merchant::canonical_merchant_key;
     use tempfile::TempDir;
 

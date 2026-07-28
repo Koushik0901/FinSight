@@ -229,7 +229,7 @@ pub fn look_back_facts(conn: &mut Connection, month: &str) -> CoreResult<Vec<Loo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

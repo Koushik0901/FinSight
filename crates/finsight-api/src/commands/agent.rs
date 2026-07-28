@@ -2812,7 +2812,7 @@ pub async fn ask_agent(
 #[cfg(test)]
 mod clarification_grounding_tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn db_with_accounts(names: &[&str]) -> (TempDir, Db) {
@@ -2988,7 +2988,7 @@ mod clarification_grounding_tests {
     fn a_goal_with_no_target_still_gets_a_usable_hint() {
         // An open-ended goal has no target to measure against; the hint must
         // still say something true rather than "of $0.00".
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         {
             let conn = db.get().unwrap();
             conn.execute(
@@ -3113,7 +3113,7 @@ mod clarification_grounding_tests {
 #[cfg(test)]
 mod hydrate_missing_data_tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     /// A debt with no APR and no minimum payment — the case the Copilot
@@ -3216,7 +3216,7 @@ mod hydrate_missing_data_tests {
     #[test]
     fn a_user_with_no_debts_gets_no_prompts() {
         // A brand-new user, or anyone debt-free, must not be nagged.
-        let (dir, db) = finsight_core::testing::migrated_db();
+        let (_dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let mut items: Vec<MissingDataItem> = Vec::new();
@@ -3276,7 +3276,7 @@ mod hydrate_missing_data_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

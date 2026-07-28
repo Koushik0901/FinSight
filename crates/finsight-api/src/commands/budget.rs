@@ -861,7 +861,7 @@ pub async fn list_budget_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

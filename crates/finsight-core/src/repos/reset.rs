@@ -82,7 +82,7 @@ pub fn delete_all_data(conn: &mut Connection) -> CoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, models::NewAccount, repos::accounts, Db};
+    use crate::{models::NewAccount, repos::accounts, Db};
     use rusqlite::params;
     use tempfile::TempDir;
     use uuid::Uuid;

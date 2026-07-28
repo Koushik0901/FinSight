@@ -1,6 +1,4 @@
 use finsight_core::{
-    db::run_migrations,
-    keychain,
     models::{AccountType, NewAccount},
     repos::{accounts, run},
     Db,

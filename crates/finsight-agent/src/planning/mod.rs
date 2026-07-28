@@ -1742,7 +1742,7 @@ fn format_cents(cents: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, Db) {

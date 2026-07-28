@@ -124,8 +124,6 @@ fn transfer_exists(conn: &Connection, from_id: &str, to_id: &str) -> CoreResult<
 mod tests {
     use super::*;
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, transactions},
         Db,

@@ -1159,8 +1159,6 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
 mod tests {
     use super::*;
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, transactions},
         Db,

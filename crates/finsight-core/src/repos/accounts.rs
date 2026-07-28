@@ -1223,7 +1223,7 @@ fn day_before(date: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, models::AccountType, models::NewAccount, Db};
+    use crate::{models::AccountType, models::NewAccount, Db};
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

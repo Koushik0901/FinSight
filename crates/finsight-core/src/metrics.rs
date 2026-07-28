@@ -885,7 +885,7 @@ pub fn balance_breakdown_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, models::NewAccount, repos::accounts, Db};
+    use crate::{models::NewAccount, repos::accounts, Db};
     use chrono::{Duration, Utc};
     use tempfile::TempDir;
 
@@ -2321,7 +2321,7 @@ mod philosophy_tests {
 
     #[test]
     fn philosophy_round_trips_through_settings() {
-        let (dir, db) = crate::testing::migrated_db();
+        let (_dir, db) = crate::testing::migrated_db();
         let conn = db.get().unwrap();
 
         // Nothing stored yet — defaults.
@@ -2341,7 +2341,7 @@ mod philosophy_tests {
     fn a_corrupt_settings_row_degrades_to_the_default() {
         // Settings values are JSON; a hand-edited or partially-written row
         // must not fail a request.
-        let (dir, db) = crate::testing::migrated_db();
+        let (_dir, db) = crate::testing::migrated_db();
         let conn = db.get().unwrap();
 
         conn.execute(

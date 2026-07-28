@@ -94,8 +94,6 @@ pub fn check_drift(
 mod tests {
     use super::*;
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::{accounts, transactions},
         Db,

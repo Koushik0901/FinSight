@@ -56,8 +56,6 @@ pub fn list_by_account(conn: &mut Connection, account_id: &str) -> CoreResult<Ve
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewSimpleFinConnection, Security},
         repos::{accounts, connections, securities},
         Db,

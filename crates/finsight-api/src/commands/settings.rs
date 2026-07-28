@@ -173,7 +173,7 @@ pub async fn export_all_data_csv(state: &ApiState) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, repos::run, Db};
+    use finsight_core::{repos::run, Db};
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

@@ -99,8 +99,6 @@ fn parse_amount_cents(amount: &str) -> Option<i64> {
 mod tests {
     use super::*;
     use finsight_core::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount},
         repos::accounts,
         Db,

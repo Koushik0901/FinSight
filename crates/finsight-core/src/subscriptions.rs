@@ -537,7 +537,7 @@ fn midnight_rfc3339(d: NaiveDate) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, Db) {

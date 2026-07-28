@@ -83,8 +83,6 @@ pub fn set(conn: &mut Connection, txn_id: &str, splits: &[SplitInput]) -> CoreRe
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},
         repos::accounts,
         repos::transactions,

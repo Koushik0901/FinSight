@@ -90,7 +90,7 @@ pub fn save(conn: &Connection, account_id: &str, mapping: &CsvImportMapping) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
     use tempfile::TempDir;
 
     fn fresh_db_with_account() -> (TempDir, Db, String) {

@@ -257,7 +257,7 @@ fn truncate_title(input: &str, limit: usize) -> String {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use finsight_core::{db::run_migrations, keychain, repos::copilot_actions, Db};
+    use finsight_core::{repos::copilot_actions, Db};
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

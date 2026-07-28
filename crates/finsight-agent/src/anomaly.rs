@@ -179,7 +179,7 @@ fn find_statistical_candidates(conn: &rusqlite::Connection) -> Result<Vec<Candid
 mod tests {
     use super::*;
     use crate::providers::mock::MockCompletionProvider;
-    use finsight_core::{db::run_migrations, keychain};
+    
     use serde_json::json;
     use std::sync::Mutex;
     use tempfile::TempDir;

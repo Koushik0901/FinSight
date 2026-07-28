@@ -266,7 +266,7 @@ pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorth
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

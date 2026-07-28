@@ -4,7 +4,7 @@ use crate::reasoning::messages::{AssistantTurn, ChatMessage, ToolCall, ToolDefin
 use crate::reasoning::tools::{act, read, ToolSet};
 use crate::CompletionProvider;
 use async_trait::async_trait;
-use finsight_core::{db::run_migrations, keychain, Db};
+use finsight_core::Db;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;

@@ -214,7 +214,7 @@ pub fn seed(conn: &mut Connection) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::{db::run_migrations, keychain, Db};
+    use finsight_core::Db;
 
     fn seeded() -> (tempfile::TempDir, Db) {
         let (dir, db) = finsight_core::testing::migrated_db();

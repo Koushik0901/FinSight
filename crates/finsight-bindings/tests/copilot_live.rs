@@ -14,9 +14,7 @@ use finsight_agent::providers::openai_compat::OpenAiCompatProvider;
 use finsight_agent::reasoning::engine::ReasoningEngine;
 use finsight_agent::reasoning::tools::{act, read, ToolSet};
 use finsight_agent::CompletionProvider;
-use finsight_core::{db::run_migrations, keychain, Db};
 use rusqlite::Connection;
-use tempfile::TempDir;
 
 fn toolset() -> ToolSet {
     let mut t = ToolSet::new();
@@ -135,7 +133,7 @@ async fn six_required_questions_answer_grounded() {
         "openrouter",
     ));
 
-    let (dir, db) = finsight_core::testing::migrated_db();
+    let (_dir, db) = finsight_core::testing::migrated_db();
     let mut conn = db.get().unwrap();
     seed(&mut conn);
 
@@ -222,7 +220,7 @@ async fn generic_beyond_the_six_required_questions() {
         "google/gemma-4-31b-it",
         "openrouter",
     ));
-    let (dir, db) = finsight_core::testing::migrated_db();
+    let (_dir, db) = finsight_core::testing::migrated_db();
     let mut conn = db.get().unwrap();
     seed(&mut conn);
     // Flag one transaction as anomalous so the anomaly intent has data.

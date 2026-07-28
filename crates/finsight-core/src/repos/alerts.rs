@@ -85,8 +85,6 @@ pub fn has_recent_unacknowledged(
 mod tests {
     use super::*;
     use crate::{
-        db::run_migrations,
-        keychain,
         models::{AccountType, NewAccount},
         repos::accounts,
         Db,

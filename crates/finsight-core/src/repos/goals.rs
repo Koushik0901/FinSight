@@ -421,7 +421,7 @@ pub fn set_purpose(conn: &mut Connection, id: &str, purpose: Option<&str>) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::run_migrations, keychain, Db};
+    use crate::Db;
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
