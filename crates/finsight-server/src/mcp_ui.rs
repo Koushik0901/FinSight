@@ -200,6 +200,10 @@ function paint(sc){
   }catch(e){$.innerHTML='<div class="wrap empty">Could not render this result.</div>'}
 }
 window.addEventListener('message',e=>{
+  // Only the embedding host may drive this frame. Inert today (every value is
+  // escaped and nothing calls back into tools/call), but it costs one line and
+  // it means a future sink can't be reached by any other window.
+  if(e.source!==window.parent)return;
   const m=e&&e.data;if(!m||typeof m!=='object')return;
   if(m.method==='ui/notifications/tool-result'||m.method==='ui/initialize'){
     const p=m.params||{};

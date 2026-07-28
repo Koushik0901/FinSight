@@ -520,9 +520,14 @@ fn refresh_grant(st: Arc<ServerState>, body: TokenRequest) -> Response {
 
     // A public client is identified only by the token it presents, so the
     // client_id must match the one the grant was issued to; otherwise any
-    // registered client could redeem another's stolen refresh token.
-    if !body.client_id.is_empty() && body.client_id != rec.client_id {
-        tracing::warn!(client_id = %body.client_id, "refresh token presented by a different client");
+    // registered client could redeem another's stolen refresh token. Required,
+    // not merely checked-when-supplied: a binding you can skip by omitting the
+    // field is not a binding (OAuth 2.1 §4.3.1 requires it for public clients).
+    if body.client_id.is_empty() || body.client_id != rec.client_id {
+        tracing::warn!(
+            client_id = %body.client_id,
+            "refresh token presented without, or with a mismatched, client_id"
+        );
         return invalid_grant();
     }
 

@@ -29,6 +29,25 @@ export default function OAuthAuthorize() {
   const [scope, setScope] = useState<TokenScope>(requestedScope === "full" ? "full" : "read");
   const [submitting, setSubmitting] = useState(false);
 
+  // Where the authorization code would actually be delivered. Registration is
+  // open by design (RFC 7591), so `client_name` is attacker-chosen free text —
+  // anyone can register "Claude Desktop" pointing at their own callback. The
+  // destination host is the only field a spoofer cannot fake, so it has to be
+  // on screen; a card that shows only the name is a phishing page with our
+  // styling. Parsed rather than string-matched so userinfo tricks
+  // ("https://claude.ai@evil.example") resolve to the real host.
+  const destination = (() => {
+    if (!redirectUri) return null;
+    try {
+      const u = new URL(redirectUri);
+      const loopback = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(u.hostname);
+      if (u.protocol !== "https:" && !(u.protocol === "http:" && loopback)) return null;
+      return { host: u.host, loopback };
+    } catch {
+      return null;
+    }
+  })();
+
   // Validated before any network call: a request missing these can never be
   // completed, and — critically — must NOT be redirected anywhere, since an
   // unvalidated redirect_uri is exactly what an attacker would supply.
@@ -36,7 +55,8 @@ export default function OAuthAuthorize() {
     Boolean(clientId) &&
     Boolean(redirectUri) &&
     Boolean(codeChallenge) &&
-    codeChallengeMethod === "S256";
+    codeChallengeMethod === "S256" &&
+    destination !== null;
 
   useEffect(() => {
     if (!paramsValid || !clientId) {
@@ -80,8 +100,11 @@ export default function OAuthAuthorize() {
   };
 
   const handleDeny = () => {
-    if (!redirectUri) return;
-    // Only reachable once redirect_uri passed validation above.
+    // Reachable only once `destination` parsed, which is what bounds this to an
+    // https (or loopback) URL rather than any string the caller supplied —
+    // `javascript:` and friends never get here. No code or token rides a denial,
+    // only the echoed state.
+    if (!redirectUri || !destination) return;
     const sep = redirectUri.includes("?") ? "&" : "?";
     const stateParam = state ? `&state=${encodeURIComponent(state)}` : "";
     window.location.assign(`${redirectUri}${sep}error=access_denied${stateParam}`);
@@ -137,6 +160,23 @@ export default function OAuthAuthorize() {
           <strong>{clientName}</strong> is asking to read your financial data through this server. It will be
           able to see your accounts, transactions, budgets, and goals.
         </p>
+
+        {/*
+          The destination, stated plainly. The app's name is whatever it told us
+          when it registered; this is where your data would actually go, so it
+          is the field to check before allowing anything.
+        */}
+        <div className="card" style={{ marginTop: 16, padding: "12px 14px" }} data-testid="oauth-destination">
+          <div className="label">Access would be sent to</div>
+          <p className="mono" style={{ margin: "4px 0 0", fontSize: 15, fontWeight: 600, wordBreak: "break-all" }}>
+            {destination?.host}
+          </p>
+          <p className="desc" style={{ marginTop: 6 }}>
+            {destination?.loopback
+              ? "An app running on this machine."
+              : `Only continue if you recognise this as ${clientName}. Anyone can register an app under any name.`}
+          </p>
+        </div>
 
         <div style={{ marginTop: 20 }}>
           <div className="label" id="oauth-scope-label">

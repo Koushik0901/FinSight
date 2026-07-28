@@ -826,3 +826,31 @@ async fn revoking_the_access_token_also_kills_its_refresh_token() {
         "a revoked connector must not be able to refresh its way back in"
     );
 }
+
+#[tokio::test]
+async fn a_refresh_grant_requires_the_client_id() {
+    let (app, cookie) = setup().await;
+    let (_client_id, first) = grant_token_pair(&app, &cookie).await;
+    let refresh = first["refresh_token"].as_str().unwrap().to_string();
+
+    // Omitting client_id must not skip the binding. A check you can bypass by
+    // leaving out the field is not a check.
+    let res = app
+        .clone()
+        .oneshot(
+            Request::post("/api/oauth/token")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "grant_type=refresh_token&refresh_token={refresh}"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::BAD_REQUEST,
+        "a refresh grant with no client_id must be refused, not silently accepted"
+    );
+    assert_eq!(json_body(res).await["error"], "invalid_grant");
+}

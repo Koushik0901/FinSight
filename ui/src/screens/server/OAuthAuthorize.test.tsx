@@ -130,6 +130,51 @@ describe("OAuthAuthorize", () => {
     expect(approveOAuth).not.toHaveBeenCalled();
   });
 
+
+  // Registration is open (RFC 7591), so `client_name` is whatever the app typed
+  // when it registered — anyone can call themselves "Claude Desktop". The
+  // callback host is the one field a spoofer cannot fake, so the card is only
+  // safe if it is on screen.
+  it("shows where the code would actually be sent, not just the app's name", async () => {
+    renderAt(query());
+    const dest = await screen.findByTestId("oauth-destination");
+    expect(dest).toHaveTextContent("claude.ai");
+  });
+
+  it("warns that a non-loopback destination should be recognised", async () => {
+    vi.mocked(fetchOAuthClientName).mockResolvedValue("Claude Desktop");
+    renderAt(query({ redirect_uri: "https://totally-not-anthropic.example/cb" }));
+    const dest = await screen.findByTestId("oauth-destination");
+    // The spoof is only detectable if the real host is shown next to the claim.
+    expect(dest).toHaveTextContent("totally-not-anthropic.example");
+    expect(dest).toHaveTextContent(/anyone can register an app under any name/i);
+  });
+
+  it("resolves the true host when userinfo is used to disguise it", async () => {
+    // "https://claude.ai@evil.example/cb" reads as claude.ai but resolves to
+    // evil.example. Parsing rather than string-matching is what catches it.
+    renderAt(query({ redirect_uri: "https://claude.ai@evil.example/cb" }));
+    const dest = await screen.findByTestId("oauth-destination");
+    expect(dest).toHaveTextContent("evil.example");
+    expect(dest).not.toHaveTextContent(/^claude\.ai$/);
+  });
+
+  it("refuses a redirect_uri that is not https or loopback", async () => {
+    for (const bad of ["javascript:alert(1)", "http://evil.example/cb", "not-a-url"]) {
+      const { unmount } = renderAt(query({ redirect_uri: bad }));
+      expect(await screen.findByText(/isn't valid/i)).toBeInTheDocument();
+      expect(assign).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
+  it("treats a loopback callback as a local app rather than warning", async () => {
+    renderAt(query({ redirect_uri: "http://127.0.0.1:33418/oauth/callback" }));
+    const dest = await screen.findByTestId("oauth-destination");
+    expect(dest).toHaveTextContent("127.0.0.1:33418");
+    expect(dest).toHaveTextContent(/app running on this machine/i);
+  });
+
   it("reports an unregistered client without offering to continue", async () => {
     vi.mocked(fetchOAuthClientName).mockRejectedValue({
       error: "invalid_client",
