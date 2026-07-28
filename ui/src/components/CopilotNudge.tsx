@@ -36,7 +36,7 @@ export function CopilotNudge({
     },
     warning: {
       bg: "var(--warning-2)",
-      border: "rgba(251,191,36,0.30)",
+      border: "color-mix(in oklab, var(--warning) 30%, transparent)",
       icon: "var(--warning)",
     },
     info: {

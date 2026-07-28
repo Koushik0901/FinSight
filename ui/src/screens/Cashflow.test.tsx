@@ -53,7 +53,7 @@ describe("Cashflow screen", () => {
 
   it("renders safe-to-spend, upcoming events, and warnings", () => {
     useCashflowForecast.mockReturnValue({ data: forecast(), isLoading: false, isError: false });
-    render(<Cashflow />);
+    const { container } = render(<Cashflow />);
 
     // Safe-to-spend figure ($50, whole dollars) and the section.
     expect(screen.getByText("Safe to spend now")).toBeInTheDocument();
@@ -63,6 +63,11 @@ describe("Cashflow screen", () => {
     expect(screen.getByText("Employer payroll")).toBeInTheDocument();
     // Data-quality warnings surface.
     expect(screen.getByText(/Car insurance/)).toBeInTheDocument();
+
+    const gradientStops = [...container.querySelectorAll("#cf-fill stop")];
+    expect(gradientStops.map((stop) => stop.getAttribute("stop-color"))).toEqual([
+      "var(--accent)", "var(--accent)",
+    ]);
     expect(screen.getByText(/Everyday spending is projected/)).toBeInTheDocument();
   });
 

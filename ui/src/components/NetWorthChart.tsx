@@ -74,7 +74,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
       {!embed && (
         <div className="bigchart-head">
           <div>
-            <h3 className="h3">Net worth · last {rangeLabel}</h3>
+            <h2 className="h3">Net worth · last {rangeLabel}</h2>
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Assets minus liabilities, marked monthly.</div>
           </div>
           {controls}
@@ -96,7 +96,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
           <path d={areaD} fill={`url(#${gradId})`} stroke="none" />
           <path d={lineD} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
           {showDots && linePts.slice(0, -1).map((pt, i) => (
-            <circle key={points[i]!.date} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3.5" fill="var(--elevated)" stroke={lineColor} strokeWidth="1.8" />
+            <circle key={`${points[i]!.date}-${i}`} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3.5" fill="var(--elevated)" stroke={lineColor} strokeWidth="1.8" />
           ))}
           <circle cx={last.x.toFixed(1)} cy={last.y.toFixed(1)} r="6.5" fill={lineColor} stroke="var(--elevated)" strokeWidth="2.5" />
           <text
@@ -118,7 +118,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
           const isFirst = i === 0;
           return (
             <span
-              key={p.date}
+              key={`${p.date}-${i}`}
               style={{
                 position: "absolute",
                 left: `${(xOf(i) / w) * 100}%`,

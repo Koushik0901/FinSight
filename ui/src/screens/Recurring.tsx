@@ -155,6 +155,7 @@ export default function Recurring() {
     return (
       <div className="screen screen-recurring">
         <EmptyState
+          headingLevel={1}
           title="No recurring items yet"
           description="Import a few months of statements and FinSight detects your subscriptions, bills, and recurring income automatically."
           actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Import transactions</button>}

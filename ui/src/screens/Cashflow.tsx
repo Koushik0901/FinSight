@@ -60,8 +60,8 @@ function ProjectedBalanceChart({ forecast, currency }: { forecast: CashflowForec
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{ display: "block", marginTop: 8, overflow: "visible" }} role="img" aria-label={`Projected balance over ${forecast.horizonDays} days, lowest ${money(forecast.lowestBalanceCents, currency ? { currency } : undefined)} on ${shortDate(forecast.lowestDate)}`}>
         <defs>
           <linearGradient id="cf-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="rgba(201,249,80,0.20)" />
-            <stop offset="1" stopColor="rgba(201,249,80,0.00)" />
+            <stop offset="0" stopColor="var(--accent)" stopOpacity="0.20" />
+            <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
         {/* Zero line, if the range crosses it — a negative balance is an overdraft. */}

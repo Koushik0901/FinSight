@@ -13,6 +13,8 @@ import { sweepStaleSharedFiles } from "./pwa/shareTarget";
 import { isServerMode } from "./api/auth";
 import { selectBackend } from "./api/selectBackend";
 import { instrumentQueryCache } from "./utils/perf";
+import "@fontsource-variable/geist/wght.css";
+import "@fontsource-variable/geist-mono/wght.css";
 import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/app.css";

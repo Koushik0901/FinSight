@@ -19,16 +19,6 @@ function vendorChunk(id: string) {
     return "vendor-data";
   }
 
-  if ([
-    "/node_modules/recharts/",
-    "/node_modules/recharts-scale/",
-    "/node_modules/victory-vendor/",
-    "/node_modules/react-smooth/",
-    "/node_modules/d3-",
-    "/node_modules/lodash/",
-    "/node_modules/eventemitter3/",
-  ].some((segment) => path.includes(segment))) return "vendor-charts";
-
   if (["/node_modules/react-markdown/", "/node_modules/remark-", "/node_modules/rehype-", "/node_modules/unified/", "/node_modules/micromark"].some((segment) => path.includes(segment))) {
     return "vendor-markdown";
   }

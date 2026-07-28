@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import NetWorthChart from "./NetWorthChart";
 
@@ -68,5 +68,18 @@ describe("NetWorthChart", () => {
     }));
     const { container } = render(<NetWorthChart points={dense} />);
     expect(container.querySelectorAll("circle")).toHaveLength(1);
+  });
+
+  it("renders duplicate snapshot dates without duplicate React keys", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    render(<NetWorthChart points={[
+      { date: "2026-01-15", totalCents: 100000 },
+      { date: "2026-01-15", totalCents: 110000 },
+      { date: "2026-02-15", totalCents: 120000 },
+    ]} />);
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/i);
+    consoleError.mockRestore();
   });
 });
