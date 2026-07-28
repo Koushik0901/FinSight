@@ -386,11 +386,31 @@ fn load_uncategorized(
 /// Load transactions that were categorized by the LLM but with low confidence,
 /// so they can be re-sent to the LLM after the user has added rules or corrections.
 fn load_low_confidence(conn: &mut rusqlite::Connection) -> Result<Vec<(String, String, i64)>> {
+    // The `NOT EXISTS` clause is an EFFICIENCY filter, not a correctness one.
+    //
+    // `category_proposals::upsert` already refuses to resurrect a resolved
+    // proposal (accepted/corrected/rejected) back into `pending` — that guard
+    // is what makes "reject" durable and it stays exactly as it is. But
+    // `reject_category_proposal` deliberately does not clear
+    // `transactions.ai_confidence` (a canonical-column mutation, explicitly
+    // deferred), so a rejected transaction kept matching this query forever.
+    //
+    // Every re-check therefore re-sent it to the LLM, the model produced a
+    // proposal, and `upsert` discarded it by design. The outcome was already
+    // correct; what it cost was a round trip and real tokens on every re-check,
+    // for every rejection, forever — scaling with how diligently the user
+    // reviews, and billed directly to self-hosters on their own API key.
+    //
+    // Only `pending` is excluded from the exclusion: a transaction with no
+    // proposal, or one still awaiting review, is genuinely re-checkable.
     let mut stmt = conn.prepare(
         "SELECT id, merchant_raw, amount_cents FROM transactions \
          WHERE ai_confidence IS NOT NULL AND ai_confidence < ?1 \
            AND (SELECT source FROM categorizations c \
                 WHERE c.txn_id = transactions.id ORDER BY c.at DESC LIMIT 1) = 'llm' \
+           AND NOT EXISTS ( \
+                SELECT 1 FROM category_proposals p \
+                WHERE p.txn_id = transactions.id AND p.status <> 'pending') \
          ORDER BY ai_confidence ASC, posted_at DESC",
     )?;
     let rows = stmt.query_map(rusqlite::params![LOW_CONFIDENCE_THRESHOLD], |r| {
@@ -505,6 +525,123 @@ mod tests {
              VALUES('t1','a1','2024-01-15T00:00:00Z',1500,'CHIPOTLE','cleared',0,'2024-01-15T00:00:00Z')", [],
         ).unwrap();
         ("a1".to_string(), "t1".to_string())
+    }
+
+    /// Issue #102: a rejected proposal must not be re-sent to the LLM.
+    ///
+    /// `reject_category_proposal` deliberately leaves `ai_confidence` alone, so
+    /// a rejected transaction kept matching this loader forever. Every re-check
+    /// re-sent it, the model answered, and `upsert`'s resurrection guard threw
+    /// the answer away — correct, and paid for in tokens on every run.
+    ///
+    /// This asserts on `load_low_confidence`'s output rather than on the DB
+    /// afterwards, exactly as the issue requires: the loader's return value IS
+    /// the batch handed to the provider, and the end state was already correct
+    /// before this fix, so a state assertion would pass either way and prove
+    /// nothing.
+    #[test]
+    fn recheck_skips_resolved_proposals_but_keeps_pending_and_unproposed() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_db(&mut conn); // t1 CHIPOTLE, cat1, a1
+
+        // Three low-confidence transactions whose latest categorization is the
+        // LLM's — identical as far as the old query was concerned.
+        for id in ["t_rejected", "t_pending", "t_none"] {
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at,ai_confidence) \
+                 VALUES(?1,'a1','2024-02-01T00:00:00Z',-2200,'MYSTERY','cleared',0,'2024-02-01T00:00:00Z',0.30)",
+                rusqlite::params![id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES(?1,?2,'cat1','llm',0.30,'2024-02-01T00:00:00Z')",
+                rusqlite::params![format!("c-{id}"), id],
+            )
+            .unwrap();
+        }
+
+        let mut propose = |txn: &str, status: &str| {
+            finsight_core::repos::category_proposals::upsert(
+                &mut conn,
+                finsight_core::models::NewCategoryProposal {
+                    txn_id: txn.to_string(),
+                    proposed_category_id: "cat1".to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.30,
+                    rationale: None,
+                    candidates_json: None,
+                    status: status.to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+        };
+        propose("t_rejected", "rejected");
+        propose("t_pending", "pending");
+        // t_none deliberately has no proposal row at all.
+
+        let batch = load_low_confidence(&mut conn).unwrap();
+        let mut ids: Vec<String> = batch.into_iter().map(|(id, _, _)| id).collect();
+        ids.sort();
+
+        assert_eq!(
+            ids,
+            vec!["t_none".to_string(), "t_pending".to_string()],
+            "a rejected proposal must not cost another LLM round trip, while a \
+             pending one and an unproposed transaction are still genuinely re-checkable"
+        );
+    }
+
+    /// The exclusion must key on "resolved", not on "has a proposal" — an
+    /// accepted or corrected transaction is equally pointless to re-send, and
+    /// over-filtering to `pending`-only would be the same bug in reverse.
+    #[test]
+    fn recheck_skips_accepted_and_corrected_proposals_too() {
+        for status in ["accepted", "corrected"] {
+            let (_d, db) = fresh_db();
+            let mut conn = db.get().unwrap();
+            seed_db(&mut conn);
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at,ai_confidence) \
+                 VALUES('t2','a1','2024-02-01T00:00:00Z',-900,'MYSTERY','cleared',0,'2024-02-01T00:00:00Z',0.20)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
+                 VALUES('c2','t2','cat1','llm',0.20,'2024-02-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+            finsight_core::repos::category_proposals::upsert(
+                &mut conn,
+                finsight_core::models::NewCategoryProposal {
+                    txn_id: "t2".to_string(),
+                    proposed_category_id: "cat1".to_string(),
+                    source: "llm".to_string(),
+                    confidence: 0.20,
+                    rationale: None,
+                    candidates_json: None,
+                    status: status.to_string(),
+                    applied: true,
+                    model: None,
+                },
+            )
+            .unwrap();
+
+            let ids: Vec<String> = load_low_confidence(&mut conn)
+                .unwrap()
+                .into_iter()
+                .map(|(id, _, _)| id)
+                .collect();
+            assert!(
+                !ids.contains(&"t2".to_string()),
+                "a '{status}' proposal is resolved — re-sending it buys nothing"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1110,12 +1247,24 @@ mod tests {
     /// stay rejected.
     ///
     /// `reject_category_proposal` deliberately does not touch
-    /// `transactions.ai_confidence`, and `load_low_confidence` (unlike
-    /// `load_uncategorized`) has no `category_id IS NULL` filter — so a
-    /// rejected row is genuinely re-selected and re-proposed by every
-    /// `RecategorizeLowConfidence` run, which the Inbox action item's own
-    /// copy invites the user to trigger. The `upsert` guard is the only thing
-    /// standing between that and a silently-erased rejection.
+    /// `transactions.ai_confidence`, so a rejected row used to be re-selected
+    /// and re-proposed by every `RecategorizeLowConfidence` run — which the
+    /// Inbox action item's own copy invites the user to trigger — with the
+    /// `upsert` guard the only thing standing between that and a silently
+    /// erased rejection.
+    ///
+    /// Issue #102 added the `NOT EXISTS` filter in `load_low_confidence`, so
+    /// the rejected row is no longer selected in the first place. The end
+    /// result this test protects is unchanged, but it now holds for a stronger
+    /// reason — the LLM is never asked — and the assertion below flipped
+    /// accordingly: `ai_confidence` must stay at the ORIGINAL 0.4, because the
+    /// re-check no longer re-processes t1 at all.
+    ///
+    /// The `upsert` resurrection guard remains the correctness backstop and is
+    /// still regression-tested directly, independently of this pipeline, by
+    /// `finsight_core::repos::category_proposals::tests::
+    /// upsert_does_not_resurrect_a_resolved_proposal`. This filter is an
+    /// efficiency layer in front of it, never a replacement.
     #[tokio::test]
     async fn a_rejected_proposal_survives_a_recheck_that_reproposes_it() {
         let (_d, db) = fresh_db();
@@ -1168,15 +1317,18 @@ mod tests {
         .unwrap();
 
         let mut conn = db.get().unwrap();
-        // Proof the re-check really did re-select and re-process t1 (this is
-        // the churn described in the `upsert` policy doc): the additive
-        // canonical write landed with the new confidence.
+        // Issue #102: t1 must NOT have been re-processed. The mock provider
+        // would have written 0.45; seeing the original 0.4 is the proof that
+        // the rejected row never entered the batch, so no tokens were spent
+        // producing a proposal that `upsert` would only have discarded.
         let conf: Option<f64> = conn
             .query_row("SELECT ai_confidence FROM transactions WHERE id='t1'", [], |r| r.get(0))
             .unwrap();
         assert!(
-            (conf.unwrap() - 0.45).abs() < 1e-9,
-            "sanity: the re-check did re-process t1, so the guard is what protects the rejection"
+            (conf.unwrap() - 0.4).abs() < 1e-9,
+            "a rejected row must not be re-sent to the LLM on re-check (got {:?}; \
+             0.45 would mean it was re-processed and the answer thrown away)",
+            conf
         );
 
         // …and yet the rejection is fully intact.
