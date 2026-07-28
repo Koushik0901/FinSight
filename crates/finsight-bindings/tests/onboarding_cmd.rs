@@ -4,11 +4,7 @@ use tempfile::TempDir;
 
 #[test]
 fn fresh_db_reports_zero_then_sample_increments() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("ob.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (dir, db) = finsight_core::testing::migrated_db();
     {
         let conn = db.get().unwrap();
         let zero: i64 = conn

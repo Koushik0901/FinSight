@@ -26,5 +26,6 @@ web-push.workspace = true
 p256.workspace = true
 
 [dev-dependencies]
+finsight-core = { path = "../finsight-core", features = ["testing"] }
 tempfile.workspace = true
 rstest.workspace = true

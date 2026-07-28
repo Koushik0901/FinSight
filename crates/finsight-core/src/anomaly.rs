@@ -230,10 +230,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("anom.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         conn_seed(&db);
         (dir, db)
     }

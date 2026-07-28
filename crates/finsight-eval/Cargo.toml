@@ -34,3 +34,6 @@ tempfile.workspace = true
 chrono = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 reqwest = { workspace = true, features = ["json"] }
+
+[dev-dependencies]
+finsight-core = { path = "../finsight-core", features = ["testing"] }

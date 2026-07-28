@@ -156,10 +156,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_state() -> (TempDir, ApiState) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("cp_cmd.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let state = ApiState::new(db, dir.path().to_path_buf(), Arc::new(|_| {}));
         (dir, state)
     }

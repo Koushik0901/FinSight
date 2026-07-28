@@ -135,10 +135,7 @@ async fn six_required_questions_answer_grounded() {
         "openrouter",
     ));
 
-    let dir = TempDir::new().unwrap();
-    let dbkey = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("live.sqlcipher"), &dbkey).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     let mut conn = db.get().unwrap();
     seed(&mut conn);
 
@@ -225,10 +222,7 @@ async fn generic_beyond_the_six_required_questions() {
         "google/gemma-4-31b-it",
         "openrouter",
     ));
-    let dir = TempDir::new().unwrap();
-    let dbkey = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("live2.sqlcipher"), &dbkey).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     let mut conn = db.get().unwrap();
     seed(&mut conn);
     // Flag one transaction as anomalous so the anomaly intent has data.

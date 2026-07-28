@@ -544,10 +544,7 @@ mod tests {
     // ── DB assembly: the burn decomposition, exclusions, and disclosures ─────
 
     fn fresh_db() -> (tempfile::TempDir, crate::Db) {
-        let dir = tempfile::TempDir::new().unwrap();
-        let key = crate::keychain::generate_random_key();
-        let db = crate::Db::open(&dir.path().join("cashflow.sqlcipher"), &key).unwrap();
-        crate::db::run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         (dir, db)
     }
 

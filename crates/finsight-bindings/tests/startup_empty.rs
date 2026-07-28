@@ -7,10 +7,7 @@ use tempfile::TempDir;
 
 #[test]
 fn fresh_db_after_startup_has_no_accounts() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("startup.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
+    let (dir, db) = finsight_core::testing::migrated_db();
     // NOTE: We deliberately do NOT call seed::walking_skeleton here; this mirrors
     // what configure_app() does in production after Task 5.
 

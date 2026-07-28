@@ -187,11 +187,7 @@ fn specs() -> Vec<Spec> {
 #[test]
 #[ignore]
 fn audit_import_samples_and_dump_everything() {
-    let dir = TempDir::new().unwrap();
-    let key = keychain::generate_random_key();
-    let db = Db::open(&dir.path().join("audit.sqlcipher"), &key).unwrap();
-    run_migrations(&db).unwrap();
-
+    let (dir, db) = finsight_core::testing::migrated_db();
     let samples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples");
 
     // 1. Create accounts + import each CSV through the REAL pipeline.

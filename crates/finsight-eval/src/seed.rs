@@ -217,10 +217,7 @@ mod tests {
     use finsight_core::{db::run_migrations, keychain, Db};
 
     fn seeded() -> (tempfile::TempDir, Db) {
-        let dir = tempfile::TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("seed.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         {
             let mut conn = db.get().unwrap();
             seed(&mut conn);

@@ -144,11 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn recipe_run_uses_tool_loop_and_persists_a_grounded_bundle() {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("recipe.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
-
+        let (dir, db) = finsight_core::testing::migrated_db();
         let recipe = run(&db, |conn| {
             recipes::insert(
                 conn,

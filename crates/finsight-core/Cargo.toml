@@ -22,7 +22,18 @@ chrono.workspace = true
 uuid.workspace = true
 specta = { workspace = true, features = ["derive", "chrono", "uuid"] }
 zeroize.workspace = true
+# Only pulled in by the `testing` feature (see below), never by a release build.
+tempfile = { workspace = true, optional = true }
+
+[features]
+# Fast database fixtures for tests (`finsight_core::testing`). Other crates
+# enable this from their dev-dependencies, so `tempfile` stays out of the
+# shipped binaries: dev-dependencies do not contribute features to a normal
+# `cargo build`.
+testing = ["dep:tempfile"]
 
 [dev-dependencies]
 rstest.workspace = true
 tempfile.workspace = true
+# finsight-core's own tests use the fixtures too.
+finsight-core = { path = ".", features = ["testing"] }

@@ -418,10 +418,7 @@ mod execution_smoke_tests {
 
     #[test]
     fn every_read_tool_executes_against_an_empty_ledger() {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = finsight_core::Db::open(&dir.path().join("smoke.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let tools = standard_toolset();
@@ -462,10 +459,7 @@ mod execution_smoke_tests {
     /// Rust doc comment explaining it never reaches the model.
     #[test]
     fn net_worth_payload_warns_against_double_subtracting_debt() {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = finsight_core::Db::open(&dir.path().join("nw.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let tools = standard_toolset();

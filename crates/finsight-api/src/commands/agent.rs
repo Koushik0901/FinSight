@@ -2816,10 +2816,7 @@ mod clarification_grounding_tests {
     use tempfile::TempDir;
 
     fn db_with_accounts(names: &[&str]) -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("clarify.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         {
             let conn = db.get().unwrap();
             for (i, name) in names.iter().enumerate() {
@@ -2894,10 +2891,7 @@ mod clarification_grounding_tests {
 
     /// A goal and two categories, one of them archived.
     fn db_with_goals_and_categories() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("clarify2.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         {
             let conn = db.get().unwrap();
             conn.execute(
@@ -2994,10 +2988,7 @@ mod clarification_grounding_tests {
     fn a_goal_with_no_target_still_gets_a_usable_hint() {
         // An open-ended goal has no target to measure against; the hint must
         // still say something true rather than "of $0.00".
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("clarify3.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         {
             let conn = db.get().unwrap();
             conn.execute(
@@ -3128,10 +3119,7 @@ mod hydrate_missing_data_tests {
     /// A debt with no APR and no minimum payment — the case the Copilot
     /// blocks confident advice on.
     fn db_with_incomplete_debt() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("hydrate.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         {
             let conn = db.get().unwrap();
             conn.execute(
@@ -3228,10 +3216,7 @@ mod hydrate_missing_data_tests {
     #[test]
     fn a_user_with_no_debts_gets_no_prompts() {
         // A brand-new user, or anyone debt-free, must not be nagged.
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("empty.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let mut items: Vec<MissingDataItem> = Vec::new();
@@ -3295,10 +3280,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("agent.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         (dir, db)
     }
 

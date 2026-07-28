@@ -460,10 +460,7 @@ mod tests {
 
     #[test]
     fn simplefin_enriches_existing_csv_match_without_duplicate() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let key = finsight_core::keychain::generate_random_key();
-        let db = finsight_core::Db::open(&dir.path().join("sync.sqlcipher"), &key).unwrap();
-        finsight_core::db::run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         let mut conn = db.get().unwrap();
 
         let account = finsight_core::repos::accounts::insert(

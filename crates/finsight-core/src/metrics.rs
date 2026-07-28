@@ -890,10 +890,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("metrics.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         (dir, db)
     }
 
@@ -2324,10 +2321,7 @@ mod philosophy_tests {
 
     #[test]
     fn philosophy_round_trips_through_settings() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let key = crate::keychain::generate_random_key();
-        let db = crate::Db::open(&dir.path().join("phil.sqlcipher"), &key).unwrap();
-        crate::db::run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         let conn = db.get().unwrap();
 
         // Nothing stored yet — defaults.
@@ -2347,10 +2341,7 @@ mod philosophy_tests {
     fn a_corrupt_settings_row_degrades_to_the_default() {
         // Settings values are JSON; a hand-edited or partially-written row
         // must not fail a request.
-        let dir = tempfile::TempDir::new().unwrap();
-        let key = crate::keychain::generate_random_key();
-        let db = crate::Db::open(&dir.path().join("phil2.sqlcipher"), &key).unwrap();
-        crate::db::run_migrations(&db).unwrap();
+        let (dir, db) = crate::testing::migrated_db();
         let conn = db.get().unwrap();
 
         conn.execute(

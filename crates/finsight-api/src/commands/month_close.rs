@@ -530,10 +530,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn fresh() -> (TempDir, Db) {
-        let dir = TempDir::new().unwrap();
-        let key = keychain::generate_random_key();
-        let db = Db::open(&dir.path().join("mc.sqlcipher"), &key).unwrap();
-        run_migrations(&db).unwrap();
+        let (dir, db) = finsight_core::testing::migrated_db();
         (dir, db)
     }
 
