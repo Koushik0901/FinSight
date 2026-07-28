@@ -56,12 +56,18 @@ impl Db {
                 .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
                     r.get::<_, i64>(0)
                 })
-                .map_err(|_| {
-                    CoreError::InvalidState(
-                        "could not open the database: the key is wrong or the file is not a \
-                         SQLCipher database"
-                            .into(),
-                    )
+                .map_err(|e| {
+                    // Keep the underlying error. A wrong key is the LIKELY
+                    // cause, not the only one — SQLITE_CORRUPT, a permissions
+                    // failure, and I/O errors all land here too, and they call
+                    // for restoring a backup rather than hunting for the right
+                    // password. Collapsing them all into "wrong key" would send
+                    // someone down the recovery flow while the real problem is
+                    // a damaged file.
+                    CoreError::InvalidState(format!(
+                        "could not open the database: the key is wrong, or the file is not a \
+                         SQLCipher database, or it is damaged ({e})"
+                    ))
                 })?;
         }
 
