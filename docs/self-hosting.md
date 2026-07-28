@@ -195,6 +195,18 @@ touch certbot or manage renewal cron jobs.
 
    Replace `finsight.example.com` with your real domain.
 
+   You do **not** need to add a `encode gzip zstd` directive: FinSight already
+   serves brotli-precompressed assets and compresses its JSON responses
+   itself, and Caddy passes an upstream `Content-Encoding` through untouched.
+   Adding compression here would only make Caddy try to re-compress bytes that
+   are already compressed.
+
+   What Caddy *does* add for free is **HTTP/2**. That matters here because the
+   app is ~90 separate JavaScript chunks: over HTTP/1.1 a browser opens at most
+   6 connections per origin and the rest queue, while HTTP/2 multiplexes them
+   all down one. This is the main reason to front the server with a proxy even
+   on a LAN.
+
 3. Add a `caddy` service to `docker-compose.yml` on the same Docker network
    as `finsight`, and drop the host port mapping on `finsight` itself (Caddy
    is now the only thing facing outward):

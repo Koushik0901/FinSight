@@ -17,7 +17,19 @@ axum-extra = { version = "0.10", features = ["cookie"] }
 tokio.workspace = true
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
-tower-http = { version = "0.6", features = ["fs", "cors"] }
+tower-http = { version = "0.6", features = [
+  "fs",
+  "cors",
+  # Response compression for the static app shell and the JSON RPC surface.
+  # Deliberately NOT applied to /api/events — see router.rs. br is what every
+  # current browser prefers; gzip is the universal floor; zstd is negotiated
+  # only if the client asks for it.
+  "compression-br",
+  "compression-gzip",
+  "compression-zstd",
+  # Cache-Control on the static asset routes.
+  "set-header",
+] }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true

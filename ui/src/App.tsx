@@ -20,7 +20,11 @@ import { useOnboardingState } from "./api/hooks/onboarding";
 import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
-import ShareTargetImport from "./components/ShareTargetImport";
+// Lazy for the same reason as Onboarding: it reaches ImportMappingDialog →
+// AccountDrawer, i.e. react-hook-form + zod again. It renders null unless this
+// launch came from the OS share sheet, which is rare and always user-initiated,
+// so fetching its chunk at that moment is free.
+const ShareTargetImport = lazy(() => import("./components/ShareTargetImport"));
 import { useAppBadge } from "./pwa/useAppBadge";
 import { startNativeNotifications } from "./pwa/nativeNotify";
 import * as I from "./components/Icons";
@@ -59,7 +63,13 @@ const GenUiPreview = lazy(() => import("./dev/GenUiPreview"));
 const CommandPalette = lazy(() =>
   import("./components/CommandPalette").then((m) => ({ default: m.CommandPalette }))
 );
-import Onboarding from "./screens/Onboarding";
+// Lazy like every other screen. It was the one static screen import, and it
+// was expensive out of all proportion to how often it renders: Onboarding →
+// StepAccounts → AccountDrawer pulls in react-hook-form AND zod, so the whole
+// form-validation stack was landing in the entry bundle — downloaded and
+// parsed on every page load, by every existing user, to render a screen they
+// see exactly once. It already renders inside a <Suspense> boundary below.
+const Onboarding = lazy(() => import("./screens/Onboarding"));
 
 function recoverRoute() {
   window.location.reload();
@@ -304,8 +314,12 @@ export function App() {
             <div className="main-inner">
               <UnfinishedImportBanner />
               <ImportProgress />
-              {/* Renders nothing unless this launch came from the OS share sheet. */}
-              <ShareTargetImport />
+              {/* Renders nothing unless this launch came from the OS share sheet.
+                  No fallback: there is nothing to show while a component that
+                  usually renders null is being fetched. */}
+              <Suspense fallback={null}>
+                <ShareTargetImport />
+              </Suspense>
               <RouteErrorBoundary resetKey={location.key}>
                 <Suspense fallback={<PageLoader />}>
                   <Routes>

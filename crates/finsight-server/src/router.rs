@@ -5,10 +5,46 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use axum::http::header::{HeaderValue, CACHE_CONTROL};
 use std::path::Path;
 use std::sync::Arc;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
+
+/// Vite writes every file under `dist/assets/` with a content hash in its name,
+/// so a given URL's bytes can never change. That is exactly the contract
+/// `immutable` describes: the browser may reuse it for a year without even
+/// sending a revalidation request. A new build produces new filenames, so
+/// there is no staleness window to worry about.
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
+/// Everything OUTSIDE `dist/assets/` — `index.html`, `sw.js`, the web manifest,
+/// PWA icons — keeps its filename across builds, so it must be revalidated or a
+/// user would be pinned to a stale app shell forever (and the service worker
+/// could never hand out an update). `no-cache` still allows the cache to store
+/// the bytes; it only requires a conditional request, which `ServeDir`'s ETag
+/// answers with a 304.
+const REVALIDATE: &str = "no-cache";
+
+/// Compression for a response body we generate per request (RPC/MCP JSON).
+///
+/// CRITICAL: this layer is applied per-route and is deliberately never attached
+/// to `/api/events`. tower-http's compressor buffers inside the encoder, which
+/// holds SSE frames back until the buffer fills — Copilot token streaming and
+/// import progress would arrive in lumps, or not until the stream ended. A
+/// whole-router `.layer()` here would be a latency regression disguised as an
+/// optimization.
+fn dynamic_compression() -> CompressionLayer {
+    CompressionLayer::new()
+}
+
+/// One `Cache-Control` layer, so the hashed-asset route and the SPA fallback
+/// each declare their policy in a single readable place.
+fn cache_header(cache_control: &'static str) -> SetResponseHeaderLayer<HeaderValue> {
+    SetResponseHeaderLayer::overriding(CACHE_CONTROL, HeaderValue::from_static(cache_control))
+}
 
 /// `ui_dir` is the built frontend (`ui/dist` in production). The fallback
 /// service serves any real static file it finds there; anything else (an SPA
@@ -60,7 +96,17 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             post(crate::uploads::upload_csv)
                 .layer(DefaultBodyLimit::max(crate::uploads::MAX_CSV_UPLOAD_BYTES)),
         )
-        .route("/api/rpc/{cmd}", post(crate::dispatch::rpc))
+        // Compressed: RPC responses are JSON and some are large (a full
+        // transaction page, a category tree, a forecast series). This is the
+        // single biggest lever on perceived screen-load time over a LAN or
+        // Tailscale link.
+        .route(
+            "/api/rpc/{cmd}",
+            post(crate::dispatch::rpc).layer(dynamic_compression()),
+        )
+        // NOT compressed, on purpose — see `dynamic_compression`'s doc comment.
+        // Compressing this stream would delay Copilot tokens and import
+        // progress frames until the encoder's buffer filled.
         .route("/api/events", get(crate::events::events))
         // Model Context Protocol endpoint: bearer-authenticated (never the
         // session cookie), plain-JSON Streamable HTTP. GET/DELETE answer 405
@@ -78,7 +124,15 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             post(crate::mcp::post)
                 .get(crate::mcp::method_not_allowed)
                 .delete(crate::mcp::method_not_allowed)
-                .layer(CorsLayer::permissive()),
+                // Turbofish because two chained `.layer()` calls leave the
+                // INTERMEDIATE error type unconstrained — only the final one is
+                // pinned to `Infallible` by `route()`. Naming it here is what
+                // the single-layer routes above get for free.
+                .layer::<_, std::convert::Infallible>(CorsLayer::permissive())
+                // Tool results are JSON and `tools/list` alone is 48 schemas —
+                // worth compressing, and safe: `/mcp` answers with plain JSON,
+                // never SSE (see the module doc on mcp.rs).
+                .layer(dynamic_compression()),
         )
         // OAuth discovery. Unauthenticated and CORS-open by design: a client
         // must be able to read these BEFORE it holds any credential, and the
@@ -133,7 +187,45 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         // toast the user can act on. 303 so the follow-up is a GET.
         .route("/share-target", post(share_target_fallback))
         .with_state(state)
-        .fallback_service(ServeDir::new(ui_dir).fallback(ServeFile::new(index)))
+        // Content-hashed bundles: cache for a year without revalidating.
+        // Both static services below use `precompressed_br`/`precompressed_gzip`,
+        // which make `ServeDir` prefer a sibling `.br`/`.gz` file when the
+        // client advertises that encoding. `ui/scripts/precompress.mjs` writes
+        // those at build time at brotli's maximum quality — ~15% smaller than
+        // what the live encoder produces — so the server ships the smallest
+        // bytes without compressing the same unchanging asset per request.
+        // `CompressionLayer` stays attached as the fallback for anything not
+        // precompressed; it no-ops when `Content-Encoding` is already set.
+        //
+        // Wrapped in a `Router` rather than layered onto `any_service(..)`
+        // directly: `MethodRouter::layer` is generic over a new error type,
+        // and with `ServeDir`'s `Infallible` there are several `From<Infallible>`
+        // impls in scope, so inference has no way to pick one. `Router::layer`
+        // fixes the error type at `Infallible` and sidesteps it.
+        .nest_service(
+            "/assets",
+            Router::new()
+                .fallback_service(
+                    ServeDir::new(ui_dir.join("assets"))
+                        .precompressed_br()
+                        .precompressed_gzip(),
+                )
+                .layer(CompressionLayer::new())
+                .layer(cache_header(IMMUTABLE)),
+        )
+        // Everything else: the app shell and the unhashed PWA files. Must
+        // revalidate so a deploy actually reaches an already-installed client.
+        .fallback_service(
+            Router::new()
+                .fallback_service(
+                    ServeDir::new(ui_dir)
+                        .precompressed_br()
+                        .precompressed_gzip()
+                        .fallback(ServeFile::new(index)),
+                )
+                .layer(CompressionLayer::new())
+                .layer(cache_header(REVALIDATE)),
+        )
 }
 
 /// See the `/share-target` route comment. Deliberately does NOT read the body:
@@ -208,6 +300,142 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    /// A `dist`-shaped directory: one content-hashed asset under `assets/`
+    /// and an `index.html` shell, which is all the caching/compression tests
+    /// need to tell the two policies apart.
+    fn test_dist_dir() -> std::path::PathBuf {
+        let dir = tempfile::tempdir().unwrap().keep();
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        // Comfortably over CompressionLayer's 32-byte floor, and repetitive so
+        // it definitely compresses smaller than the original.
+        std::fs::write(dir.join("assets/app-abc123.js").as_path(), "console.log('x');".repeat(200))
+            .unwrap();
+        std::fs::write(dir.join("index.html").as_path(), "<!doctype html><title>t</title>").unwrap();
+        dir
+    }
+
+    fn header<'a>(res: &'a axum::response::Response, name: &str) -> Option<&'a str> {
+        res.headers().get(name).and_then(|v| v.to_str().ok())
+    }
+
+    #[tokio::test]
+    async fn hashed_assets_are_compressed_and_cached_immutably() {
+        let dist = test_dist_dir();
+        let app = build_router(test_state(), &dist);
+        let res = app
+            .oneshot(
+                Request::get("/assets/app-abc123.js")
+                    .header("accept-encoding", "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(header(&res, "content-encoding"), Some("br"));
+        // Vite puts a content hash in the filename, so these bytes can never
+        // change under this URL — the browser should not even revalidate.
+        assert_eq!(header(&res, "cache-control"), Some(IMMUTABLE));
+    }
+
+    /// `ui/scripts/precompress.mjs` writes `.br` siblings at brotli's maximum
+    /// quality, which measured ~15% smaller than what `CompressionLayer`
+    /// produces on the fly (39,624 vs 46,491 bytes for the entry chunk). That
+    /// only pays off if `ServeDir` actually prefers the file — and the
+    /// `content-encoding: br` header alone cannot tell the two apart, since the
+    /// live layer sets it too.
+    ///
+    /// So this asserts on the BYTES: the `.br` payload here is deliberately not
+    /// valid brotli, which no encoder would ever emit. Getting it back verbatim
+    /// proves the file was served rather than regenerated.
+    #[tokio::test]
+    async fn precompressed_br_sibling_is_served_verbatim() {
+        let dist = test_dist_dir();
+        let marker = b"not-really-brotli-but-served-as-is";
+        std::fs::write(dist.join("assets/app-abc123.js.br").as_path(), marker).unwrap();
+
+        let app = build_router(test_state(), &dist);
+        let res = app
+            .oneshot(
+                Request::get("/assets/app-abc123.js")
+                    .header("accept-encoding", "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(header(&res, "content-encoding"), Some("br"));
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            body.as_ref(),
+            marker,
+            "the .br file on disk must go on the wire untouched; if this fails, \
+             ServeDir ignored it and CompressionLayer re-compressed the original"
+        );
+    }
+
+    #[tokio::test]
+    async fn app_shell_is_compressed_but_must_revalidate() {
+        let dist = test_dist_dir();
+        let app = build_router(test_state(), &dist);
+        let res = app
+            .oneshot(
+                Request::get("/index.html")
+                    .header("accept-encoding", "br")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        // `index.html` keeps its name across deploys. Caching it immutably
+        // would pin every already-installed client to the old app forever.
+        assert_eq!(header(&res, "cache-control"), Some(REVALIDATE));
+    }
+
+    /// The regression this whole change is most likely to cause.
+    ///
+    /// tower-http's compressor buffers inside the encoder, so an SSE stream
+    /// routed through it delivers nothing until that buffer fills — Copilot
+    /// tokens and import-progress frames would arrive in lumps, or only when
+    /// the stream ended. The compression layers are therefore attached per
+    /// route and `/api/events` deliberately never gets one. If someone later
+    /// "simplifies" this into a single `.layer()` on the whole Router, this
+    /// test is what catches it.
+    #[tokio::test]
+    async fn sse_event_stream_is_never_compressed() {
+        let app = build_router(test_state(), &test_ui_dir());
+        let cookie = setup_and_login(&app).await;
+        let res = app
+            .clone()
+            .oneshot(
+                Request::get("/api/events")
+                    .header("cookie", &cookie)
+                    // Ask for everything — the point is that we still get none.
+                    .header("accept-encoding", "br, gzip, zstd, deflate")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            header(&res, "content-type"),
+            Some("text/event-stream"),
+            "sanity: this test is only meaningful against the real SSE handler"
+        );
+        assert_eq!(
+            header(&res, "content-encoding"),
+            None,
+            "SSE must not be compressed — the encoder buffers and would delay every frame"
+        );
     }
 
     #[tokio::test]
