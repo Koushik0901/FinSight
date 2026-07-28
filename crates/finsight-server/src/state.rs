@@ -1,6 +1,16 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// How long an OAuth client registration that no one ever consented to is kept
+/// before the startup sweep drops it.
+///
+/// A month, because the two failure directions are not symmetric. Too short and
+/// a real connector registered but not yet approved (a user who starts linking
+/// Claude, gets distracted, and comes back next week) silently loses its
+/// registration and has to start over. Too long only means junk lingers behind
+/// a cap that already bounds it. So err long.
+const UNUSED_CLIENT_TTL_DAYS: i64 = 30;
+
 /// One event as the UI's Tauri-event shim expects it: `{ event, payload }`.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct OutboundEvent {
@@ -70,6 +80,25 @@ impl ServerState {
             Ok(n) if n > 0 => tracing::info!(count = n, "purged expired access tokens"),
             Ok(_) => {}
             Err(e) => tracing::warn!(error = %e, "could not purge expired access tokens"),
+        }
+        // `POST /api/oauth/register` is unauthenticated by spec, so on an
+        // internet-reachable instance anyone can fill `oauth_clients` to its
+        // MAX_REGISTERED_CLIENTS ceiling and block every NEW connector. Without
+        // this sweep the only recovery was to open users.db in a SQLite client
+        // and delete rows by hand.
+        //
+        // Only registrations no one ever consented to are dropped, and only
+        // after they have sat unused for a month — long enough that a client
+        // registered legitimately and approved later is never caught, while
+        // junk still cannot accumulate indefinitely.
+        let stale_before = (chrono::Utc::now() - chrono::Duration::days(UNUSED_CLIENT_TTL_DAYS))
+            .to_rfc3339();
+        match users.prune_unused_oauth_clients(&stale_before) {
+            Ok(n) if n > 0 => {
+                tracing::info!(count = n, "pruned OAuth client registrations that were never used")
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "could not prune unused OAuth clients"),
         }
         Ok(Arc::new(Self {
             users,

@@ -42,9 +42,17 @@ fn challenge_for(verifier: &str) -> String {
 }
 
 async fn setup() -> (App, String) {
+    let (app, cookie, _state) = setup_with_state().await;
+    (app, cookie)
+}
+
+/// Same as [`setup`], but keeps the `ServerState` so a test can look at
+/// `users.db` directly — needed for state that has no read endpoint, such as
+/// an OAuth client's `first_authorized_at` consent stamp.
+async fn setup_with_state() -> (App, String, std::sync::Arc<ServerState>) {
     let dir = tempfile::tempdir().unwrap().keep();
     let state = ServerState::bootstrap(&dir).unwrap();
-    let app = build_router(state, &test_ui_dir());
+    let app = build_router(std::sync::Arc::clone(&state), &test_ui_dir());
     let res = app
         .clone()
         .oneshot(
@@ -59,7 +67,7 @@ async fn setup() -> (App, String) {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let cookie = cookie_from(&res);
-    (app, cookie)
+    (app, cookie, state)
 }
 
 async fn register_client(app: &App, redirect_uris: serde_json::Value) -> serde_json::Value {
@@ -853,4 +861,53 @@ async fn a_refresh_grant_requires_the_client_id() {
         "a refresh grant with no client_id must be refused, not silently accepted"
     );
     assert_eq!(json_body(res).await["error"], "invalid_grant");
+}
+
+// ------------------------------------------- unused-registration pruning ---
+
+/// Issue #109: `POST /api/oauth/register` is unauthenticated by spec, so anyone
+/// who can reach a public instance could fill `oauth_clients` to its
+/// `MAX_REGISTERED_CLIENTS` ceiling and block every NEW connector — with no
+/// recovery short of opening users.db in a SQLite client.
+///
+/// The startup sweep now prunes registrations nobody ever consented to. This
+/// asserts the hinge the whole design hangs on: that granting consent actually
+/// stamps the client. A unit test of the prune predicate cannot see this — it
+/// would happily pass while `approve` never called `mark_oauth_client_authorized`
+/// at all, and the sweep would then delete working connectors a month later.
+#[tokio::test]
+async fn consent_exempts_a_client_from_the_unused_registration_prune() {
+    let (app, cookie, state) = setup_with_state().await;
+
+    let squatter = register_client(&app, serde_json::json!([REDIRECT_URI])).await["client_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let legit = register_client(&app, serde_json::json!([REDIRECT_URI])).await["client_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // A human approves exactly one of them.
+    let res = app
+        .clone()
+        .oneshot(approve_req(&cookie, &legit, "full", &challenge_for(VERIFIER), None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Prune with a cutoff in the future so the age floor cannot be what saves
+    // either row — consent, and only consent, is under test here.
+    let cutoff = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+    assert_eq!(state.users.prune_unused_oauth_clients(&cutoff).unwrap(), 1);
+
+    assert!(
+        state.users.get_oauth_client(&legit).unwrap().is_some(),
+        "a client a user consented to must survive the sweep — pruning it would \
+         break a working connector and force it to re-register"
+    );
+    assert!(
+        state.users.get_oauth_client(&squatter).unwrap().is_none(),
+        "a registration nobody ever approved is exactly what the sweep exists to reclaim"
+    );
 }
