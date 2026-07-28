@@ -33,6 +33,38 @@ impl Db {
         }
         let key_hex = Zeroizing::new(key_hex.to_owned());
 
+        // Verify the key on ONE direct connection before the pool exists.
+        //
+        // r2d2 treats "cannot connect" as something to keep retrying until
+        // `connection_timeout` (30s by default) expires, because normally a
+        // failed checkout means the pool is busy. A wrong key is not busy — it
+        // is never going to succeed — so discovering it through the pool means
+        // waiting the full 30 seconds to be told the password is wrong. That
+        // cost was real in both directions: the user sat through it, and the
+        // suite spent exactly 30s on the one test asserting a bad key is
+        // rejected.
+        //
+        // Checking here fails in milliseconds and leaves the pool's timeout for
+        // what it is actually for: genuine contention.
+        {
+            let probe = Connection::open(path)?;
+            let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", &*key_hex));
+            probe.execute_batch(&pragma)?;
+            // Any read forces SQLCipher to decrypt the header, so a wrong key
+            // surfaces here rather than at some later, more confusing point.
+            probe
+                .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .map_err(|_| {
+                    CoreError::InvalidState(
+                        "could not open the database: the key is wrong or the file is not a \
+                         SQLCipher database"
+                            .into(),
+                    )
+                })?;
+        }
+
         let manager =
             SqliteConnectionManager::file(path).with_init(move |conn: &mut Connection| {
                 // Raw 256-bit key. MUST come first, before any other PRAGMA touches the DB.
@@ -74,7 +106,7 @@ impl Db {
                 CoreError::InvalidState(format!("failed to build connection pool: {e}"))
             })?;
 
-        // Touch a connection once now to surface key/file errors immediately.
+        // Touch a connection once now to surface any remaining file errors.
         let _ = pool.get()?;
         Ok(Self {
             pool,
