@@ -207,44 +207,65 @@ fn prune_backups(dir: &Path, keep: usize) {
 pub fn run_migrations(db: &Db) -> CoreResult<()> {
     let mut conn = db.get()?;
     migrations::runner().run(&mut *conn)?;
-    // Refresh the query planner's table statistics.
-    //
-    // Nothing in this codebase has ever run ANALYZE, so with 55 indexes across
-    // 60-odd migrations SQLite has been choosing between them on built-in
-    // heuristics alone — which is how a query ends up scanning `transactions`
-    // when a perfectly good index was sitting right there. `PRAGMA optimize`
-    // is SQLite's own recommended form: it analyses only the tables whose
-    // contents have actually shifted enough to matter, so on an unchanged
-    // database it costs nothing.
-    //
-    // `analysis_limit` caps the rows examined per index, which is what makes
-    // this safe to run on every startup — without it, ANALYZE on a large
-    // transaction history is an unbounded full scan. 400 is the value SQLite's
-    // own documentation suggests; the resulting estimates are approximate,
-    // which is all the planner needs.
-    //
-    // Best-effort: a failure here means "we ran with the stats we had", never
-    // a failed startup, so migrations are not rolled back over it.
-    let _ = conn.pragma_update(None, "analysis_limit", 400_i64);
-    if let Err(e) = conn.execute_batch("PRAGMA optimize;") {
-        tracing::debug!("PRAGMA optimize skipped: {e}");
-    }
+    analyze_with_bounded_cost(&conn);
     Ok(())
+}
+
+/// Give the query planner table statistics to work from.
+///
+/// Nothing in this codebase had ever run ANALYZE, so with 55 indexes across
+/// 60-odd migrations SQLite was choosing between them on built-in heuristics
+/// alone — which is how a query ends up scanning `transactions` when a
+/// perfectly good index was sitting right there.
+///
+/// **Why not `PRAGMA optimize`**, which is the usual advice: it picks what to
+/// analyse from *the current connection's* in-memory record of which tables
+/// that connection has modified. Every DB handle here comes out of an r2d2
+/// pool, so the connection running this has modified nothing, and `optimize`
+/// correctly concludes there is nothing to do — on every startup, forever. It
+/// is a silent no-op behind a pool. That is what
+/// `migrations_populate_query_planner_statistics` caught, and it is the whole
+/// reason this is a plain ANALYZE.
+///
+/// **Why unconditionally**, rather than only when `sqlite_stat1` is absent:
+/// the first run happens on an empty database, where ANALYZE creates the table
+/// but has nothing to record. Gating on "no stats yet" would therefore mark
+/// the job done at exactly the moment it accomplished nothing, and the user
+/// who later imports five years of transactions would never get statistics.
+///
+/// **Why that is affordable**: `analysis_limit` caps the rows examined per
+/// index, so this is bounded work — a few hundred row visits per index rather
+/// than a full scan — which is precisely the knob SQLite added to make ANALYZE
+/// cheap enough to run routinely. The estimates come out approximate, which is
+/// all the planner needs.
+///
+/// Best-effort: failing to gather statistics means "run with the heuristics we
+/// had", never a failed startup, so migrations are never rolled back over it.
+fn analyze_with_bounded_cost(conn: &Connection) {
+    if let Err(e) = conn.execute_batch("PRAGMA analysis_limit=400; ANALYZE;") {
+        tracing::debug!("ANALYZE skipped, query planner keeps its previous stats: {e}");
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// `run_migrations` ends with `PRAGMA optimize`, and that call is the kind
-    /// that fails silently: its error goes to `tracing::debug!`, and on an
-    /// empty database it legitimately does nothing at all. So a test that only
-    /// ran migrations on a fresh DB would pass whether the line worked or was
-    /// deleted.
+    /// `run_migrations` ends by gathering query-planner statistics, and that is
+    /// the kind of call that fails silently: errors go to `tracing::debug!`,
+    /// and on an empty database it legitimately has nothing to record. A test
+    /// that merely ran migrations on a fresh DB would pass whether the code
+    /// worked or was deleted outright.
     ///
-    /// Give it real rows first, then re-run and look for the artifact ANALYZE
-    /// actually produces — `sqlite_stat1`. Populated means the query planner
-    /// now has statistics instead of guessing between 55 indexes.
+    /// So this models the shape that actually matters — a database that was
+    /// created empty and only later filled with data, which is every real user
+    /// — and asserts on the artifact ANALYZE produces. Rows in `sqlite_stat1`
+    /// mean the planner has statistics instead of guessing between 55 indexes.
+    ///
+    /// This is also the regression test for two specific wrong implementations:
+    /// `PRAGMA optimize` (a no-op behind a connection pool) and "ANALYZE only
+    /// when `sqlite_stat1` is missing" (marks itself done during the empty
+    /// first run, so real data never gets analysed).
     #[test]
     fn migrations_populate_query_planner_statistics() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -277,14 +298,19 @@ mod tests {
             .unwrap();
         assert_eq!(
             stats, 1,
-            "PRAGMA optimize should have run ANALYZE and created sqlite_stat1; \
-             if this is 0 the optimize call is a silent no-op"
+            "run_migrations should have run ANALYZE and created sqlite_stat1; \
+             0 means the statistics step is a silent no-op"
         );
 
         let rows: i64 = conn
             .query_row("SELECT count(*) FROM sqlite_stat1", [], |r| r.get(0))
             .unwrap();
-        assert!(rows > 0, "sqlite_stat1 exists but holds no statistics");
+        assert!(
+            rows > 0,
+            "sqlite_stat1 exists but holds no statistics — ANALYZE ran on the empty \
+             database and then never again, so the planner still has nothing for the \
+             500 rows inserted since"
+        );
     }
 
     #[test]
