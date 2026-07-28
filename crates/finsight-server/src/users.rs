@@ -265,6 +265,30 @@ impl UsersDb {
         // whole upgrade: a no-op on a fresh database, and an error meaning
         // "column already present" on one that has been through here before.
         let _ = conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_unix INTEGER", []);
+        // Same one-line-upgrade trick. NULL means "registered, but no human has
+        // ever consented to it" — the only state `prune_unused_oauth_clients`
+        // is willing to delete.
+        //
+        // `ADD COLUMN` succeeds only when the column was genuinely missing, so
+        // an Ok here means "this database predates consent tracking". In that
+        // one case every existing row is grandfathered: those clients may well
+        // have been consented to before we started recording it, and there is
+        // no way left to tell. Backfilling only on the upgrade is what keeps
+        // this from also whitewashing junk registered after it — an
+        // unconditional UPDATE on every startup would re-mark yesterday's
+        // squatters as authorized and quietly defeat the prune entirely.
+        if conn
+            .execute(
+                "ALTER TABLE oauth_clients ADD COLUMN first_authorized_at TEXT",
+                [],
+            )
+            .is_ok()
+        {
+            let _ = conn.execute(
+                "UPDATE oauth_clients SET first_authorized_at = created_at",
+                [],
+            );
+        }
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -780,6 +804,44 @@ impl UsersDb {
         conn.query_row("SELECT COUNT(*) FROM oauth_clients", [], |r| r.get(0))
     }
 
+    /// Stamp a client the first time a human actually consents to it. Idempotent
+    /// via `IS NULL`, so the value stays the FIRST consent rather than drifting
+    /// to the most recent one — this is a "has ever been used" marker, not a
+    /// last-seen timestamp, and only the former is safe to base a delete on.
+    pub fn mark_oauth_client_authorized(&self, client_id: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE oauth_clients SET first_authorized_at = ?2
+             WHERE client_id = ?1 AND first_authorized_at IS NULL",
+            params![client_id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    /// Delete registrations that no one ever consented to and that are older
+    /// than `created_before` (an RFC 3339 timestamp).
+    ///
+    /// This is the recovery path for the availability hole behind
+    /// `MAX_REGISTERED_CLIENTS`: registration is unauthenticated by spec, so on
+    /// an internet-reachable instance anyone can fill the table with junk and
+    /// block *new* connectors until an operator hand-edits users.db.
+    ///
+    /// The predicate is deliberately "never authorized", not "has no live
+    /// token". A connector whose refresh token expired or was revoked has still
+    /// proven itself, and deleting its `client_id` would silently break its
+    /// stored registration and force a re-register. Only a client that never
+    /// became anything is safe to drop — and the age floor means a client
+    /// registered mid-flow, moments before its user finishes clicking Approve,
+    /// is never caught.
+    pub fn prune_unused_oauth_clients(&self, created_before: &str) -> rusqlite::Result<usize> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "DELETE FROM oauth_clients
+             WHERE first_authorized_at IS NULL AND created_at < ?1",
+            params![created_before],
+        )
+    }
+
     // ------------------------------------------------ OAuth auth codes ---
 
     #[allow(clippy::too_many_arguments)]
@@ -998,6 +1060,87 @@ mod tests {
 
         assert!(db.get_api_token_by_hash(&[1; 32]).unwrap().is_none());
         assert!(db.consume_oauth_code(&[3; 32], 0).unwrap().is_none());
+    }
+
+    /// Issue #109. Registration is unauthenticated by spec, so `oauth_clients`
+    /// can be filled to its cap by anyone who can reach the instance — and
+    /// until now the only way back was hand-editing users.db.
+    ///
+    /// The prune has to cut exactly one way: junk that never became anything.
+    #[test]
+    fn prune_drops_only_never_consented_clients_past_the_age_floor() {
+        let (_d, db) = open_temp();
+        let old = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+
+        for id in ["junk_old", "consented_old", "junk_recent"] {
+            db.insert_oauth_client(id, "C", r#"["https://x/cb"]"#).unwrap();
+        }
+        // Backdate two of them past the age floor.
+        {
+            let conn = db.0.lock().unwrap();
+            for id in ["junk_old", "consented_old"] {
+                conn.execute(
+                    "UPDATE oauth_clients SET created_at = ?2 WHERE client_id = ?1",
+                    params![id, old],
+                )
+                .unwrap();
+            }
+        }
+        // One of the old ones was actually approved by a human.
+        db.mark_oauth_client_authorized("consented_old").unwrap();
+
+        assert_eq!(db.prune_unused_oauth_clients(&cutoff).unwrap(), 1);
+
+        assert!(
+            db.get_oauth_client("junk_old").unwrap().is_none(),
+            "an old registration nobody ever consented to is the whole target"
+        );
+        assert!(
+            db.get_oauth_client("consented_old").unwrap().is_some(),
+            "a consented client must survive forever — deleting it would break a \
+             working connector's stored registration and force a re-register, \
+             which is why the predicate is 'never authorized' and not 'has no live token'"
+        );
+        assert!(
+            db.get_oauth_client("junk_recent").unwrap().is_some(),
+            "the age floor protects a client registered mid-flow, moments before \
+             its user finishes clicking Approve"
+        );
+    }
+
+    /// `mark_oauth_client_authorized` records the FIRST consent, not the most
+    /// recent one. A last-seen timestamp that kept moving would be a much more
+    /// tempting thing to base a delete on, and a much worse one.
+    #[test]
+    fn marking_authorized_is_idempotent_and_keeps_the_first_stamp() {
+        let (_d, db) = open_temp();
+        db.insert_oauth_client("cid", "C", r#"["https://x/cb"]"#).unwrap();
+
+        db.mark_oauth_client_authorized("cid").unwrap();
+        let first: String = {
+            let conn = db.0.lock().unwrap();
+            conn.query_row(
+                "SELECT first_authorized_at FROM oauth_clients WHERE client_id='cid'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        db.mark_oauth_client_authorized("cid").unwrap();
+
+        let second: String = {
+            let conn = db.0.lock().unwrap();
+            conn.query_row(
+                "SELECT first_authorized_at FROM oauth_clients WHERE client_id='cid'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(first, second, "the stamp must not drift to the latest consent");
     }
 
     #[test]

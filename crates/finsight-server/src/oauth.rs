@@ -336,6 +336,17 @@ pub(crate) async fn approve(
         return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string());
     }
 
+    // This is the one place a human actually approves a client, so it is where
+    // "someone consented to this registration" becomes true. The stamp is what
+    // exempts the client from `prune_unused_oauth_clients` forever after.
+    // Best-effort: failing to record it must not fail a consent the user just
+    // granted — the cost of a miss is a client that could be pruned while idle,
+    // which re-registration recovers from, whereas erroring here would break
+    // the flow outright.
+    if let Err(e) = st.users.mark_oauth_client_authorized(&body.client_id) {
+        tracing::warn!(error = %e, client_id = %body.client_id, "could not stamp OAuth client as authorized");
+    }
+
     let sep = if body.redirect_uri.contains('?') { '&' } else { '?' };
     let mut redirect_to = format!("{}{sep}code={code}", body.redirect_uri);
     if let Some(state) = body.state.as_deref() {
