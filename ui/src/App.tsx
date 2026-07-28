@@ -45,6 +45,9 @@ const Settings = lazy(() => import("./screens/Settings"));
 // Server-mode-only admin surface; the route resolves for everyone but the
 // screen itself renders nothing outside server mode / for non-admins.
 const UsersAdmin = lazy(() => import("./screens/server/UsersAdmin"));
+// OAuth consent for external MCP clients. Rendered chrome-less (like
+// onboarding) — an app-linking prompt shouldn't sit inside the app's own nav.
+const OAuthAuthorize = lazy(() => import("./screens/server/OAuthAuthorize"));
 const Copilot = lazy(() => import("./screens/Copilot"));
 const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
@@ -213,6 +216,9 @@ export function App() {
   const [hasOpenedCmd, setHasOpenedCmd] = useState(false);
   const { privacy, setPrivacy } = useTweaks();
   const isOnboarding = location.pathname === "/onboarding";
+  // Consent for an external app is a decision ABOUT the app, not a place
+  // inside it — so it renders without the sidebar/nav, same as onboarding.
+  const isOAuthConsent = location.pathname === "/oauth/authorize";
 
   // Installed-PWA icon badge. App-level on purpose: the badge's job is to be
   // right while the user is on some other screen entirely.
@@ -278,6 +284,12 @@ export function App() {
         <RouteErrorBoundary resetKey={location.key}>
           <Suspense fallback={<PageLoader />}>
             <Onboarding />
+          </Suspense>
+        </RouteErrorBoundary>
+      ) : isOAuthConsent ? (
+        <RouteErrorBoundary resetKey={location.key}>
+          <Suspense fallback={<PageLoader />}>
+            <OAuthAuthorize />
           </Suspense>
         </RouteErrorBoundary>
       ) : (

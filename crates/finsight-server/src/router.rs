@@ -43,6 +43,13 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
             get(crate::auth::list_users).post(crate::auth::create_user),
         )
         .route("/api/auth/users/{id}", delete(crate::auth::delete_user))
+        // MCP / API access tokens. Session-authed (you manage tokens from the
+        // logged-in app), unlike `/mcp` itself which is bearer-only.
+        .route(
+            "/api/auth/tokens",
+            get(crate::tokens::list).post(crate::tokens::create),
+        )
+        .route("/api/auth/tokens/{id}", delete(crate::tokens::revoke))
         // Debug-only diagnostic, not a shared command: measures THIS admin's
         // own real categorization corrections locally. See
         // `admin_eval`'s module doc for why it deliberately bypasses
@@ -55,6 +62,64 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         )
         .route("/api/rpc/{cmd}", post(crate::dispatch::rpc))
         .route("/api/events", get(crate::events::events))
+        // Model Context Protocol endpoint: bearer-authenticated (never the
+        // session cookie), plain-JSON Streamable HTTP. GET/DELETE answer 405
+        // rather than falling through to the SPA.
+        //
+        // CORS is permissive so that a browser-based caller can READ our
+        // responses — most usefully the 401's `WWW-Authenticate` challenge,
+        // which is how a client discovers where to authorize. It is not the
+        // security boundary and is not doing any work for the cloud connectors,
+        // which call server-side with no Origin at all. Browser callers are
+        // gated separately by `mcp::origin_is_allowed`, and permissive() forbids
+        // credentialed requests, so ambient cookies can never ride along.
+        .route(
+            "/mcp",
+            post(crate::mcp::post)
+                .get(crate::mcp::method_not_allowed)
+                .delete(crate::mcp::method_not_allowed)
+                .layer(CorsLayer::permissive()),
+        )
+        // OAuth discovery. Unauthenticated and CORS-open by design: a client
+        // must be able to read these BEFORE it holds any credential, and the
+        // 401 on /mcp points here. The `{*rest}` variants exist because clients
+        // probe the path-inserted form (RFC 8414 §3.1) when the resource lives
+        // under a path.
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(crate::oauth::as_metadata).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server/{*rest}",
+            get(crate::oauth::as_metadata).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(crate::oauth::prm_metadata).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/{*rest}",
+            get(crate::oauth::prm_metadata).layer(CorsLayer::permissive()),
+        )
+        // OAuth 2.1 authorization-code flow for cloud connectors. `register`
+        // and `token` are unauthenticated by spec (public clients, PKCE instead
+        // of a secret); `approve` is the one interactive step and is session-
+        // authed, since consent is an act by a logged-in human. There is no
+        // `/oauth/authorize` route here on purpose — that is an SPA screen,
+        // served by the static fallback.
+        .route(
+            "/api/oauth/register",
+            post(crate::oauth::register).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/api/oauth/client",
+            get(crate::oauth::client_info).layer(CorsLayer::permissive()),
+        )
+        .route("/api/oauth/approve", post(crate::oauth::approve))
+        .route(
+            "/api/oauth/token",
+            post(crate::oauth::token).layer(CorsLayer::permissive()),
+        )
         // Fallback for the PWA share target. A share-sheet POST normally never
         // reaches the server at all — the service worker intercepts it (see
         // ui/public/share-target-sw.js; the session cookie is SameSite=Lax and

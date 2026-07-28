@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "finsight",
+  "displayName": "FinSight",
+  "version": "0.1.0",
+  "description": "Analyse and plan your personal finances with your self-hosted FinSight server.",
+  "author": {
+    "name": "Koushik",
+    "url": "https://github.com/Koushik0901"
+  },
+  "homepage": "https://github.com/Koushik0901/FinSight/blob/main/docs/self-hosting.md",
+  "repository": "https://github.com/Koushik0901/FinSight",
+  "license": "MIT",
+  "keywords": ["finance", "budgeting", "self-hosted", "personal-finance"],
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "FinSight server URL",
+      "description": "Origin of your FinSight server, with no trailing path — for example https://finsight.example.com or http://localhost:8674. Shown in Settings → Connections.",
+      "required": true
+    }
+  }
+}

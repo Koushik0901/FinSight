@@ -373,6 +373,123 @@ mod format_tests {
 /// Unit tests prove each engine computes correctly; a live eval proves the
 /// model chooses to call it. This is the layer in between, and it is the one
 /// that can be checked deterministically without a model.
+/// Every read tool must actually RUN, not merely advertise a valid schema.
+///
+/// The argument-shape tests below check what the model is told to send; they
+/// cannot catch a tool whose body is broken. `run_cashflow_projection` shipped
+/// querying `SUM(accounts.balance_cents)` — a column that has never existed,
+/// since balances live in `account_balances` — so the tool failed with a raw
+/// SQL error every single time it was called, by the in-app Copilot as much as
+/// over MCP. Nothing failed, because nothing executed it.
+///
+/// An empty ledger is the right fixture: it is the state a brand-new user is
+/// in, every tool must degrade honestly rather than error there, and it makes
+/// the test independent of any particular data shape.
+#[cfg(test)]
+mod execution_smoke_tests {
+    use super::*;
+    use crate::reasoning::messages::{AgentChange, AgentDraftAction};
+    use finsight_core::{db::run_migrations, keychain};
+    use tempfile::TempDir;
+
+    /// Tools whose required argument names a real entity (a goal, a merchant).
+    /// On an empty ledger there is nothing valid to name, so exercising them
+    /// belongs in the server's MCP tests, which run against seeded data.
+    const NEEDS_REAL_ENTITY: &[&str] = &[
+        "calculate_goal_eta",
+        "compare_debt_vs_goal",
+        "run_goal_conflict_scenario",
+        "annotate_spending_driver",
+    ];
+
+    /// Minimal valid arguments for tools with a `required` field that is just a
+    /// scalar — no entity lookup involved, so they can and should be executed.
+    fn required_args(tool: &str) -> Value {
+        match tool {
+            "analyze_cash_inflow" => json!({"amount_cents": 250_000}),
+            "run_purchase_affordability" => json!({"purchase_amount_cents": 300_000}),
+            "run_goal_allocation_scenarios" => json!({"monthly_available_cents": 120_000}),
+            "classify_spending_period" | "explain_spending_change" => {
+                json!({"period": chrono::Utc::now().format("%Y-%m").to_string()})
+            }
+            _ => json!({}),
+        }
+    }
+
+    #[test]
+    fn every_read_tool_executes_against_an_empty_ledger() {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = finsight_core::Db::open(&dir.path().join("smoke.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        let mut conn = db.get().unwrap();
+
+        let tools = standard_toolset();
+        let mut broken: Vec<String> = Vec::new();
+
+        for def in tools.definitions() {
+            // Draft tools stage proposals rather than read; they need real ids
+            // to be meaningful and are covered by the server's MCP tests.
+            if def.name.starts_with("draft_") || NEEDS_REAL_ENTITY.contains(&def.name.as_str()) {
+                continue;
+            }
+            let mut changes: Vec<AgentChange> = Vec::new();
+            let mut drafts: Vec<AgentDraftAction> = Vec::new();
+            let mut ctx = ToolContext {
+                conn: &mut conn,
+                changes: &mut changes,
+                draft_actions: &mut drafts,
+            };
+            let result = tools.execute_recoverable(&def.name, &mut ctx, required_args(&def.name));
+            if result.had_error {
+                let msg = result.value["error"]["message"].as_str().unwrap_or("?").to_string();
+                broken.push(format!("{}: {msg}", def.name));
+            }
+        }
+
+        assert!(
+            broken.is_empty(),
+            "these tools error out instead of returning an honest empty result:\n  {}",
+            broken.join("\n  ")
+        );
+    }
+
+    /// `get_net_worth` returns `total_assets_cents` and `liability_cents` side
+    /// by side, but the debt is ALREADY folded into the assets figure as
+    /// negative account balances. A model that subtracts one from the other —
+    /// the obvious reading of those two field names — understates net worth by
+    /// the whole debt. The payload must carry that warning itself, because the
+    /// Rust doc comment explaining it never reaches the model.
+    #[test]
+    fn net_worth_payload_warns_against_double_subtracting_debt() {
+        let dir = TempDir::new().unwrap();
+        let key = keychain::generate_random_key();
+        let db = finsight_core::Db::open(&dir.path().join("nw.sqlcipher"), &key).unwrap();
+        run_migrations(&db).unwrap();
+        let mut conn = db.get().unwrap();
+
+        let tools = standard_toolset();
+        let (mut changes, mut drafts) = (Vec::new(), Vec::new());
+        let mut ctx = ToolContext {
+            conn: &mut conn,
+            changes: &mut changes,
+            draft_actions: &mut drafts,
+        };
+        let out = tools.execute_recoverable("get_net_worth", &mut ctx, json!({}));
+        assert!(!out.had_error, "get_net_worth failed: {}", out.value);
+
+        let note = out.value["data"]["note"].as_str().unwrap_or_default();
+        assert!(
+            note.contains("do not add or subtract"),
+            "the payload must tell the model not to combine these fields, got: {note}"
+        );
+        assert!(
+            note.contains("liability_cents"),
+            "the warning must name the field that invites the mistake, got: {note}"
+        );
+    }
+}
+
 #[cfg(test)]
 mod prompt_contract_tests {
     use super::*;

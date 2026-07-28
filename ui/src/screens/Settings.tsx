@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { fetchAuthStatus, isServerMode, logout, signOutOtherSessions } from "../api/auth";
+import McpConnectionsSection from "../components/McpConnectionsSection";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
 import {
   useCompletionProvider,
@@ -794,7 +795,7 @@ export default function Settings() {
             <div className="s-row"><div><div className="label" id="settings-currency-label">Currency</div><div className="desc">Used for all money formatting in the app.</div></div><div><select className="control" aria-labelledby="settings-currency-label" value={currentCurrency} onChange={(e) => setCurrencyMutation.mutate(e.target.value)} style={{ maxWidth: 140 }}>{CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><div /></div>
           </Section>
 
-          <Section id="connections" title="Connections" description="Bank feeds and background sync via SimpleFin.">
+          <Section id="connections" title="Connections" description="Bank feeds, background sync, and external AI assistants.">
             <div className="s-row"><div><div className="label">SimpleFin</div><div className="desc">Connect or add institutions and import synced transactions.</div></div><div className="muted">{sfStatus?.configured ? "Connected" : "Not connected"}</div><button className="btn sm" type="button" onClick={() => setSfDialogOpen(true)}>{sfStatus?.configured ? "Add connection" : "Set up SimpleFin"}</button></div>
             {sfStatus?.configured && <div className="s-row"><div><div className="label">Background sync</div><div className="desc">Choose how often the desktop app checks for updates.</div></div><div className="toolbar">{[0, 60, 180, 360, 720].map((minutes) => <button key={minutes} className={(sfSyncSettings?.backgroundSyncIntervalMinutes ?? 360) === minutes ? "on" : ""} type="button" onClick={() => setSfSyncSettings.mutate({ backgroundSyncEnabled: minutes > 0, backgroundSyncIntervalMinutes: minutes })}>{minutes === 0 ? "Off" : minutes === 60 ? "1 hour" : minutes === 180 ? "3 hours" : minutes === 360 ? "6 hours" : "12 hours"}</button>)}</div><div /></div>}
             {sfConnections.map((connection) => <div key={connection.id} className="s-row"><div><div className="label">{connection.label || connection.orgName || "SimpleFin connection"}</div><div className="desc">{connection.status}{connection.lastSyncedAt ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : ""}</div></div><div className="muted">Connected</div><button className="btn ghost sm" type="button" onClick={() => deleteConnection.mutate(connection.id, { onSuccess: () => toast.success("Connection removed"), onError: () => toast.error("Failed to remove connection") })}>Remove</button></div>)}
@@ -807,6 +808,9 @@ export default function Settings() {
               });
             }}>{purgeSf.isPending ? "Removing..." : "Remove imported data"}</button></div>}
             <SimpleFinDialog open={sfDialogOpen} onClose={() => setSfDialogOpen(false)} />
+            {/* Server mode only: MCP is served by finsight-server, so the
+                desktop shell has no endpoint to hand out. */}
+            {serverMode && <McpConnectionsSection />}
           </Section>
 
           <Section id="notifications" title="Notifications" description="Choose what you're notified about, when it stays quiet, and how much detail shows.">
