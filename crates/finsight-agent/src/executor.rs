@@ -1,12 +1,15 @@
 use finsight_core::{
     error::{CoreError, CoreResult},
-    models::{AgentActionItem, AgentNavigationTarget, NewPlannedTransaction, NewRule},
+    models::{
+        AgentActionItem, AgentNavigationTarget, NewCategorization, NewPlannedTransaction, NewRule,
+        TxnPatch,
+    },
     repos::{
-        agent_memory, budgets, category_proposals, copilot_actions, planned_transactions, rules,
-        scenarios,
+        agent_memory, budgets, categorizations, category_proposals, copilot_actions,
+        planned_transactions, rules, scenarios, transactions,
     },
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 
 pub struct ExecutionResult {
@@ -275,37 +278,67 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
         }
         "set_transaction_category" => {
             let payload: SetTransactionCategoryPayload = parse_payload(&item.payload_json)?;
-            let changed = conn.execute(
-                "UPDATE transactions
-                 SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL
-                 WHERE id = ?2",
-                params![payload.category_id, payload.transaction_id],
-            )?;
-            ensure_changed(changed, "transaction")?;
-            // Issue #87: a canonical write through a path that is NOT
-            // accept/correct/reject must resolve any live proposal, or the
-            // transaction stays in the review queue and a later Accept
-            // reverts this deliberate categorization back to the stale LLM
-            // guess. Same contract as `repos::transactions::update`.
-            category_proposals::resolve_for_txn(
+
+            // Existence check up front, purely to keep the "validation:
+            // transaction not found" error this branch has always produced.
+            // Delegating to `update` for a missing id would still fail, but as
+            // a foreign-key violation from inside the audit insert — a worse
+            // message for the same condition.
+            let exists = conn
+                .query_row(
+                    "SELECT 1 FROM transactions WHERE id = ?1",
+                    params![payload.transaction_id],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            ensure_changed(usize::from(exists), "transaction")?;
+
+            // Issue #101: this branch used to hand-roll the UPDATE, and so
+            // silently skipped everything ELSE that categorizing a transaction
+            // is supposed to do. `repos::transactions::update` is the canonical
+            // path, and delegating to it picks all of that up:
+            //
+            //  - the `categorizations` audit row (`source = "user"`). Without
+            //    it the Copilot never learned from its own corrections:
+            //    `categorizer::load_recent_examples` builds the LLM's few-shot
+            //    examples from exactly that table, so correcting a merchant
+            //    through chat taught the categorizer nothing, while the same
+            //    correction made in the transaction drawer did.
+            //  - `rule_proposals::emit_from_corrections` is gated on
+            //    accumulating >= 3 of those rows, so "you keep recategorizing
+            //    X — want a rule?" never fired for Copilot corrections either.
+            //  - provenance: "who set this category, and when" had no record of
+            //    the Copilot's action at all.
+            //
+            // It also subsumes the issue #87 `resolve_for_txn` call that used
+            // to live here (a canonical write outside accept/correct/reject
+            // must clear any live proposal, or a later Accept reverts this
+            // deliberate categorization back to the stale LLM guess) — `update`
+            // makes that same call, which is why it is no longer duplicated.
+            //
+            // The returned `ProposedRule` is intentionally dropped: surfacing a
+            // rule suggestion is a UI affordance for an interactive edit, and
+            // this executor's contract is to return a summary string. The
+            // durable half — the audit rows `emit_from_corrections` reads — is
+            // what actually needed fixing.
+            transactions::update(
                 conn,
                 &payload.transaction_id,
-                Some(&payload.category_id),
+                TxnPatch {
+                    category_id: Some(Some(payload.category_id.clone())),
+                    ..Default::default()
+                },
             )?;
-            let (merchant_raw, category_label): (String, String) = conn.query_row(
-                "SELECT t.merchant_raw, COALESCE(c.label, ?3)
-                 FROM transactions t
-                 LEFT JOIN categories c ON c.id = ?1
-                 WHERE t.id = ?2",
-                params![
-                    payload.category_id,
-                    payload.transaction_id,
-                    payload.category_id
-                ],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
-            let memo = format!("{merchant_raw} → {category_label} (agent correction)");
-            agent_memory::upsert_correction(conn, &merchant_raw.to_lowercase(), &memo)?;
+
+            let category_label: String = conn
+                .query_row(
+                    "SELECT label FROM categories WHERE id = ?1",
+                    params![payload.category_id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or_else(|| payload.category_id.clone());
             Ok(format!(
                 "Transaction {} categorized as {}",
                 payload.transaction_id, category_label
@@ -460,6 +493,44 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                     skipped += 1;
                     continue;
                 }
+
+                // Issue #101, same defect as `set_transaction_category` above:
+                // the canonical column was written without the provenance row,
+                // so bulk recategorizations were invisible to
+                // `categorizer::load_recent_examples` and to
+                // `rule_proposals::emit_from_corrections`.
+                //
+                // This branch deliberately does NOT delegate to
+                // `repos::transactions::update` the way `set_transaction_category`
+                // now does. The guarded UPDATE above is an atomic claim — it
+                // applies only while the transaction is STILL uncategorized, so
+                // a category the user (or the background categorizer, which
+                // runs on its own connection) set between preview and execute is
+                // never clobbered. `update` writes unconditionally, and there is
+                // no transaction wrapping bundle execution, so switching to
+                // check-then-update would turn that claim into a real race.
+                // Keeping the guard and adding the missing side effects is the
+                // narrower change.
+                categorizations::insert(
+                    conn,
+                    NewCategorization {
+                        txn_id: a.transaction_id.clone(),
+                        category_id: Some(a.category_id.clone()),
+                        source: "user".to_string(),
+                        confidence: 1.0,
+                        model: None,
+                    },
+                )?;
+                // Issue #87's contract: a canonical write outside
+                // accept/correct/reject must resolve any live proposal, or the
+                // row lingers in the review queue and a later Accept reverts
+                // this categorization to the stale LLM guess.
+                category_proposals::resolve_for_txn(
+                    conn,
+                    &a.transaction_id,
+                    Some(&a.category_id),
+                )?;
+
                 // Record the categorization + a correction memory so the built-in
                 // categorizer learns this merchant mapping going forward.
                 if let Ok((merchant_raw, category_label)) = conn.query_row(
@@ -817,6 +888,23 @@ mod tests {
             Some("cat2"),
             "manual category preserved"
         );
+
+        // Issue #101: the applied assignment must leave a provenance row, or
+        // bulk recategorizations stay invisible to the few-shot example query
+        // and the rule-proposal threshold.
+        let audited: Vec<(String, String)> = conn
+            .prepare("SELECT txn_id, source FROM categorizations ORDER BY txn_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            audited,
+            vec![(t_uncat.clone(), "user".to_string())],
+            "exactly the applied assignment is audited — a skipped one must NOT \
+             be, or the audit log would claim writes that never happened"
+        );
     }
 
     fn base_account() -> NewAccount {
@@ -978,5 +1066,83 @@ mod tests {
             .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cat.as_deref(), Some("cat2"));
+    }
+
+    /// Issue #101: `set_transaction_category` updated the canonical column but
+    /// never appended to `categorizations`, the append-only provenance table.
+    ///
+    /// The consequence was not cosmetic. `categorizer::load_recent_examples`
+    /// selects `source = 'user'` rows from this table to build the few-shot
+    /// examples injected into the LLM's system prompt, and
+    /// `rule_proposals::emit_from_corrections` counts them to decide when to
+    /// offer a rule. So correcting a merchant *through the Copilot* fed
+    /// neither, while the identical correction made in the transaction drawer
+    /// fed both — the assistant could not learn from its own corrections.
+    ///
+    /// This asserts on the audit row rather than on `transactions.category_id`,
+    /// which was already correct before the fix and would prove nothing.
+    #[test]
+    fn set_transaction_category_appends_a_user_categorization_audit_row() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        seed_category(&mut conn); // cat1 Groceries
+        conn.execute(
+            "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+             VALUES('t1','a1','2024-01-15T00:00:00Z',-1500,'CORNER STORE','cleared',0,'2024-01-15T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let bundle = copilot_actions::insert_bundle(
+            &mut conn, None, "Recat", "Summary", "Rationale", 0.9, None, None,
+        )
+        .unwrap();
+        let item = copilot_actions::insert_item(
+            &mut conn,
+            &bundle.id,
+            "set_transaction_category",
+            &serde_json::json!({"transactionId":"t1","categoryId":"cat1"}).to_string(),
+            "Rationale",
+            0.8,
+            0,
+        )
+        .unwrap();
+        copilot_actions::set_item_status(&mut conn, &item.id, "approved").unwrap();
+
+        let result = execute_bundle(&mut conn, &bundle.id).unwrap();
+        assert_eq!(result.succeeded, 1, "{:?}", result.executed[0].error);
+
+        let (source, category_id): (String, String) = conn
+            .query_row(
+                "SELECT source, category_id FROM categorizations WHERE txn_id = 't1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("a Copilot categorization must leave a provenance row");
+        assert_eq!(
+            source, "user",
+            "must be recorded as a user correction — that is the source \
+             load_recent_examples and emit_from_corrections both select on"
+        );
+        assert_eq!(category_id, "cat1");
+
+        // The whole point of the audit row: it has to be visible to the query
+        // that turns corrections into few-shot examples for the LLM.
+        let learnable: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM categorizations ca \
+                 JOIN transactions t ON t.id = ca.txn_id \
+                 WHERE ca.source = 'user' AND lower(t.merchant_raw) = 'corner store'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(learnable, 1, "the correction must be learnable from");
     }
 }
