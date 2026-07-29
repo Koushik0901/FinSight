@@ -359,6 +359,20 @@ pub async fn run_job(
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+/// The same population [`load_uncategorized`] selects, exposed for the centroid
+/// proposal pass (issue #92).
+///
+/// Shared rather than reimplemented on purpose: the exclusions here are
+/// invariants from epic #74 (never categorize a transfer, never an investment
+/// row), and a second copy of that predicate is a second place for them to
+/// drift out of sync. The semantic pass must be bound by exactly the same rules
+/// as the LLM pass.
+pub(crate) fn load_uncategorized_for_proposals(
+    conn: &mut rusqlite::Connection,
+) -> Result<Vec<(String, String, i64)>> {
+    load_uncategorized(conn, None)
+}
+
 fn load_uncategorized(
     conn: &mut rusqlite::Connection,
     _import_id: Option<&str>,

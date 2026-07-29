@@ -214,6 +214,125 @@ pub async fn rebuild_all(db: &Db, encoder: &dyn SentenceEncoder) -> Result<usize
     Ok(written)
 }
 
+/// Cosine floor below which a match is not worth proposing at all.
+///
+/// This is a NOISE FLOOR, not a calibrated decision boundary. Issue #93 is the
+/// slice that derives a real threshold from #88's measured precision/coverage
+/// curve; until that exists any constant here is a guess, so this one is set
+/// only to stop obviously-unrelated matches from filling the review queue —
+/// deliberately low enough that it is not doing hidden precision work that
+/// #93's calibration would then be measuring around.
+pub const MIN_PROPOSAL_SCORE: f32 = 0.35;
+
+/// How many alternatives to record alongside the top match, for the review UI
+/// and for anyone later asking "what else did it consider?".
+const CANDIDATES_KEPT: usize = 3;
+
+/// Propose categories for uncategorized transactions by cosine similarity to
+/// each category's prototype.
+///
+/// # This never writes `transactions.category_id`
+///
+/// Every match lands in `category_proposals` with `applied = 0` — the
+/// "held-back" half of the axis V061 was built to carry. Per epic #74's
+/// conclusion, an ML pass may not touch the canonical column that budgets,
+/// spending, reports and metrics all read until the ≥98% merchant-disjoint
+/// precision gate is actually falsifiable, which needs issue #89's real
+/// labeled corpus. `proposals_never_touch_canonical` is the regression test.
+///
+/// Returns the number of proposals written.
+pub async fn propose_for_uncategorized(db: &Db, encoder: &dyn SentenceEncoder) -> Result<usize> {
+    // 1. Read (blocking). `load_uncategorized_for_proposals` reuses the SAME
+    //    predicate the LLM pass uses, so the deterministic invariants (never
+    //    transfers, never investment rows, never an already-categorized row)
+    //    cannot drift between the two passes.
+    let (rows, centroids) = {
+        let db = db.clone();
+        let model_id = encoder.model_id().to_string();
+        let dims = encoder.dims();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = db.get()?;
+            let rows = crate::categorizer::load_uncategorized_for_proposals(&mut conn)?;
+            let centroids =
+                category_centroids::load_active_for_model(&mut conn, &model_id, dims)?;
+            Ok::<_, anyhow::Error>((rows, centroids))
+        })
+        .await??
+    };
+    // No prototypes (no examples curated yet, or every stored vector is from a
+    // different encoder) means nothing to compare against — not "propose
+    // whatever is least dissimilar".
+    if rows.is_empty() || centroids.is_empty() {
+        return Ok(0);
+    }
+
+    // 2. Embed (async), one batch.
+    let texts: Vec<String> = rows.iter().map(|(_, merchant, _)| merchant.clone()).collect();
+    let query_vectors = encoder.embed(&texts).await?;
+
+    let mut proposals: Vec<(String, String, f32, String)> = Vec::new();
+    for ((txn_id, merchant, _), mut qv) in rows.into_iter().zip(query_vectors) {
+        // The stored centroids are unit vectors, so the query must be one too
+        // or `cosine`'s dot product is not a cosine at all.
+        if !normalize(&mut qv) {
+            continue;
+        }
+        let ranked = rank(&qv, &centroids);
+        let Some(best) = ranked.first() else { continue };
+        if best.score < MIN_PROPOSAL_SCORE {
+            continue;
+        }
+        let candidates = serde_json::to_string(
+            &ranked
+                .iter()
+                .take(CANDIDATES_KEPT)
+                .map(|m| serde_json::json!({ "categoryId": m.category_id, "score": m.score }))
+                .collect::<Vec<_>>(),
+        )?;
+        proposals.push((txn_id, best.category_id.clone(), best.score, candidates));
+        let _ = merchant;
+    }
+
+    // 3. Write (blocking).
+    let model_id = encoder.model_id().to_string();
+    let written = {
+        let db = db.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = db.get()?;
+            let mut n = 0usize;
+            for (txn_id, category_id, score, candidates_json) in &proposals {
+                finsight_core::repos::category_proposals::upsert(
+                    &mut conn,
+                    finsight_core::models::NewCategoryProposal {
+                        txn_id: txn_id.clone(),
+                        proposed_category_id: category_id.clone(),
+                        // V061 reserves 'ml' for exactly this pass. The encoder
+                        // id goes in `model`, which is what distinguishes
+                        // centroid matching from a future reranker/SetFit pass
+                        // (#95) without inventing an unreviewed enum value.
+                        source: "ml".to_string(),
+                        // Raw cosine, NOT rescaled into a 0-1 "confidence".
+                        // Mapping it would invent a calibration #93 has not
+                        // measured, and the review UI would then be showing a
+                        // number nobody derived.
+                        confidence: f64::from(*score),
+                        rationale: None,
+                        candidates_json: Some(candidates_json.clone()),
+                        status: "pending".to_string(),
+                        // THE line that keeps this out of the canonical column.
+                        applied: false,
+                        model: Some(model_id.clone()),
+                    },
+                )?;
+                n += 1;
+            }
+            Ok::<_, anyhow::Error>(n)
+        })
+        .await??
+    };
+    Ok(written)
+}
+
 #[cfg(test)]
 pub(crate) mod testing {
     use super::*;
@@ -434,5 +553,139 @@ mod tests {
         let (_d, db) = fresh_db();
         let encoder = StubEncoder::new("stub-v1", 8);
         assert_eq!(rebuild_all(&db, &encoder).await.unwrap(), 0);
+    }
+
+    fn seed_account(conn: &mut rusqlite::Connection) {
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) \
+             VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+    }
+
+    fn insert_txn(conn: &mut rusqlite::Connection, id: &str, merchant: &str, is_transfer: bool) {
+        conn.execute(
+            "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,is_transfer,created_at) \
+             VALUES(?1,'a1','2024-02-01T00:00:00Z',-2500,?2,'cleared',0,?3,'2024-02-01T00:00:00Z')",
+            rusqlite::params![id, merchant, is_transfer as i64],
+        )
+        .unwrap();
+    }
+
+    /// THE regression test for this slice.
+    ///
+    /// Epic #74's whole reason for existing is that an unvalidated ML guess must
+    /// never reach `transactions.category_id` — the column budgets, spending,
+    /// reports and metrics all read. A semantic match is a proposal and nothing
+    /// more until issue #89's real corpus makes the precision gate falsifiable.
+    #[tokio::test]
+    async fn proposals_never_touch_canonical() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed(&mut conn, "groceries", &["WHOLE FOODS MARKET"]);
+            seed_account(&mut conn);
+            insert_txn(&mut conn, "t1", "WHOLE FOODS MARKET 123", false);
+        }
+        let encoder = StubEncoder::new("stub-v1", 8);
+        rebuild_all(&db, &encoder).await.unwrap();
+
+        let written = propose_for_uncategorized(&db, &encoder).await.unwrap();
+        assert_eq!(written, 1, "the transaction should have drawn a proposal");
+
+        let conn = db.get().unwrap();
+        let canonical: Option<String> = conn
+            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            canonical.is_none(),
+            "a semantic match must leave category_id NULL — writing it would put an \
+             unvalidated ML guess into the column every money number reads"
+        );
+
+        let (source, applied, model): (String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT source, applied, model FROM category_proposals WHERE txn_id='t1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(source, "ml", "V061 reserves 'ml' for this pass");
+        assert_eq!(applied, 0, "applied=0 is the held-back half of V061's axis");
+        assert_eq!(model.as_deref(), Some("stub-v1"), "the encoder must be recorded");
+    }
+
+    /// The semantic pass is bound by the same deterministic invariants as the
+    /// LLM pass — it shares `load_uncategorized`'s predicate precisely so these
+    /// cannot drift apart.
+    #[tokio::test]
+    async fn transfers_and_already_categorized_rows_are_never_proposed_for() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed(&mut conn, "groceries", &["WHOLE FOODS MARKET"]);
+            seed_account(&mut conn);
+            insert_txn(&mut conn, "t_transfer", "TRANSFER TO SAVINGS", true);
+            insert_txn(&mut conn, "t_done", "WHOLE FOODS MARKET", false);
+            conn.execute(
+                "UPDATE transactions SET category_id='groceries' WHERE id='t_done'",
+                [],
+            )
+            .unwrap();
+        }
+        let encoder = StubEncoder::new("stub-v1", 8);
+        rebuild_all(&db, &encoder).await.unwrap();
+
+        assert_eq!(
+            propose_for_uncategorized(&db, &encoder).await.unwrap(),
+            0,
+            "a transfer is not spending, and an already-categorized row is not up for grabs"
+        );
+        let conn = db.get().unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_proposals", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    /// With no prototypes to compare against, the answer is "no opinion" — not
+    /// "whichever category is least dissimilar".
+    #[tokio::test]
+    async fn no_centroids_means_no_proposals() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed(&mut conn, "groceries", &[]); // category exists, no examples
+            seed_account(&mut conn);
+            insert_txn(&mut conn, "t1", "MYSTERY MERCHANT", false);
+        }
+        let encoder = StubEncoder::new("stub-v1", 8);
+        rebuild_all(&db, &encoder).await.unwrap();
+        assert_eq!(propose_for_uncategorized(&db, &encoder).await.unwrap(), 0);
+    }
+
+    /// Centroids written by a previous encoder must not be scored against a new
+    /// encoder's query vectors — the comparison would return a plausible number
+    /// from two unrelated spaces.
+    #[tokio::test]
+    async fn a_stale_encoder_yields_no_proposals_rather_than_wrong_ones() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed(&mut conn, "groceries", &["WHOLE FOODS MARKET"]);
+            seed_account(&mut conn);
+            insert_txn(&mut conn, "t1", "WHOLE FOODS MARKET 123", false);
+        }
+        // Build prototypes with one encoder...
+        rebuild_all(&db, &StubEncoder::new("stub-v1", 8)).await.unwrap();
+        // ...then score with a different one, WITHOUT rebuilding.
+        let written = propose_for_uncategorized(&db, &StubEncoder::new("stub-v2", 8))
+            .await
+            .unwrap();
+        assert_eq!(
+            written, 0,
+            "stale vectors must be skipped, not compared across embedding spaces"
+        );
     }
 }
