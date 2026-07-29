@@ -212,7 +212,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     // not test-case tuning: these are the coverable heads of the long tail.
     ("amzn", "shopping"), // "AMZN MKTP CA" — Amazon marketplace variant
     ("samsung", "shopping"),
-    ("sobeys", "groceries"),
     ("presto", "transport"),
     ("linkedin", "subscriptions"),
     ("air india", "travel"),
@@ -254,7 +253,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("swiss chalet", "dining"),
     ("st-hubert", "dining"),
     ("st hubert", "dining"),
-    ("boston pizza", "dining"),
     ("earls kitchen", "dining"),
     ("cactus club", "dining"),
     ("montana's", "dining"),
@@ -262,7 +260,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("milestones", "dining"),
     ("second cup", "dining"),
     ("mary brown", "dining"),
-    ("pizza pizza", "dining"),
     ("nando", "dining"),
     ("freshii", "dining"),
     ("booster juice", "dining"),
@@ -276,13 +273,10 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("the works", "dining"),
     ("bubble tea", "dining"),
     ("chatime", "dining"),
-    ("presse cafe", "dining"),
     ("van houtte", "dining"),
     ("dairy queen", "dining"),
-    ("harveys", "dining"),
 
     // ── Groceries ─────────────────────────────────────────────────────────
-    ("real canadian superstore", "groceries"),
     ("your independent grocer", "groceries"),
     ("independent grocer", "groceries"),
     ("provigo", "groceries"),
@@ -307,7 +301,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
 
     // ── Transport ─────────────────────────────────────────────────────────
     ("oc transpo", "transport"),
-    ("go transit", "transport"),
     ("via rail", "transport"),
     ("impark", "transport"),
     ("green p", "transport"),
@@ -355,7 +348,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("wayfair", "shopping"),
     ("etsy", "shopping"),
     ("value village", "shopping"),
-    ("winners/homesense", "shopping"),
     ("homesense", "shopping"),
 
     // ── Utilities ─────────────────────────────────────────────────────────
@@ -398,7 +390,8 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("playstation plus", "subscriptions"),
     ("xbox game pass", "subscriptions"),
     ("nintendo online", "subscriptions"),
-    ("gym", "subscriptions"),
+    ("gym membership", "subscriptions"),
+    ("fitness", "subscriptions"),
 
     // ── Health ────────────────────────────────────────────────────────────
     ("london drugs", "health"),
@@ -415,7 +408,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("dentist", "health"),
     ("medical", "health"),
     ("hospital", "health"),
-    ("physiotherapy", "health"),
 
     // ── Housing ───────────────────────────────────────────────────────────
     ("realstar", "housing"),
@@ -479,7 +471,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
 
     // ── Shopping ──────────────────────────────────────────────────────────
     ("target", "shopping"),
-    ("costco wholesale", "groceries"),
     ("sam's club", "groceries"),
     ("sams club", "groceries"),
     ("kohl's", "shopping"),
@@ -583,7 +574,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
 
     // ── Travel ────────────────────────────────────────────────────────────
     ("tsa pre", "travel"),
-    ("tsa precheck", "travel"),
     ("global entry", "travel"),
     ("alaska airlines", "travel"),
     ("southwest airlines", "travel"),
@@ -609,7 +599,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("valero", "transport"),
     ("sp plus", "transport"),
     ("spplus", "transport"),
-    ("laz parking", "transport"),
     ("advance auto", "transport"),
     ("autozone", "transport"),
     ("o'reilly auto", "transport"),
@@ -626,7 +615,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("five guys", "dining"),
     ("shake shack", "dining"),
     ("in-n-out", "dining"),
-    ("whataburger", "dining"),
     ("jack in the box", "dining"),
     ("cook out", "dining"),
     ("checkers", "dining"),
