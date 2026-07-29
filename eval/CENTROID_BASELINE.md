@@ -178,3 +178,76 @@ abstain floor moves, or when the corpus grows. If a **real** corpus ever lands
 (issue #89), run it against that instead and record both — the synthetic figure
 stays useful as a harness regression check, but only the real one speaks to the
 epic's gate.
+
+## Learning curve: how much use before this earns its keep?
+
+`cargo run -p finsight-eval --bin learning_curve`
+
+The product objection that prompted this: if semantic categorization only works
+after someone has logged thousands of transactions, it is useless exactly when
+a new user is deciding whether to keep the app.
+
+Sweeping accumulated corrections against the SAME fixed merchant-disjoint
+holdout:
+
+| corrections | uniform cov / prec | realistic cov / prec |
+|------------:|-------------------:|---------------------:|
+| 10          | 69.7% / 74.1%      | 75.1% / 82.0%        |
+| 25          | 94.5% / 80.0%      | 82.8% / 84.7%        |
+| **50**      | **95.7% / 92.2%**  | **88.7% / 92.0%**    |
+| 100         | 97.0% / 97.2%      | 91.2% / 91.2%        |
+| 200         | 97.4% / 97.7%      | 93.1% / 91.3%        |
+| 800         | 97.8% / 98.3%      | 93.4% / 93.8%        |
+| 1600        | 97.8% / 98.3%      | 93.4% / 93.7%        |
+
+**The knee is ~50 corrections and it has plateaued by ~100** — about five per
+category, i.e. days of use, not months. 200 → 1600 corrections buys 0.6 of a
+precision point. The "order-thousands of labels" figure elsewhere in this repo
+is about **statistical confidence in the measurement**, never about the feature
+working; conflating the two is what makes this look like a cold-start problem.
+
+### The two accumulation orders, and why the realistic one is lower
+
+`CATEGORIZATION_CORPUS.md` warns that corrections are not a random sample — a
+user only corrects what the deterministic passes got wrong or left
+uncategorized. Both orders are reported because the realistic one is not the
+flattering one:
+
+- **uniform** — shuffled corpus order. Models users helpfully labelling a
+  representative cross-section. They do not.
+- **realistic** — only rows `builtin` abstained on or got wrong are eligible to
+  become corrections. This is the population a review queue actually surfaces.
+
+The realistic curve sits ~4 points lower and plateaus lower (93.7% vs 98.3%).
+That gap **is** the accumulation skew the corpus doc says must be accounted for
+rather than ignored — now quantified.
+
+### The better cold-start answer: examples, not history
+
+The centroid does not need user *transactions* at all. It needs per-category
+**examples** (#91), and nothing requires those to be user-authored. Shipping a
+default example set per starter category gives a brand-new user semantic
+categorization on their first import, with zero history — the curve above then
+describes how it *improves* with use rather than when it *starts*.
+
+## On public fraud datasets as a corpus (evaluated, mostly rejected)
+
+Worth recording so nobody re-litigates it:
+
+- **ULB `creditcardfraud`** (284k rows) — features are PCA components
+  `V1…V28`. No merchant strings at all. Unusable here.
+- **Sparkov `fraud-detection`** (1.3M rows) — has `merchant` and `category`
+  columns, but merchants are `faker`-generated from a fixed list
+  (`fraud_Rippin, Kub and Mann`). Those names carry **no semantic category
+  signal**, so a merchant-disjoint split reduces an embedding model to chance.
+
+It therefore cannot validate categorization quality. It IS useful as:
+
+1. **A negative control.** Scoring well on merchant-disjoint Sparkov would
+   prove a leak in our split, not a good model. That is a genuinely valuable
+   thing to be able to assert.
+2. **A scale test.** 1.3M rows exercises batching and memory in a way a
+   2,751-row corpus never will.
+
+Neither requires adopting it as a precision benchmark, and neither should be
+reported as one.

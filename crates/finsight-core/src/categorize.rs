@@ -935,6 +935,85 @@ const DEFAULT_CATEGORIES: &[(&str, &str, &str, &str)] = &[
     ("health", "wellbeing", "Health", "fixed"),
 ];
 
+/// Seed exemplars for the semantic categorizer (#92), one small set per
+/// starter category.
+///
+/// # Why these exist: the cold start
+///
+/// A category's centroid is the mean of its `category_examples` (#91). With no
+/// examples there is no centroid, so a brand-new user got NO semantic
+/// categorization at all until they had curated examples by hand — precisely
+/// when they are deciding whether the app is any good.
+///
+/// Nothing requires those examples to be user-authored. Measured on the
+/// synthetic corpus (`eval/CENTROID_BASELINE.md`), five examples per category
+/// is already worth ~89% precision at ~93% coverage, and the learning curve's
+/// knee sits at roughly that point rather than at thousands of transactions.
+/// So seeding a handful per category converts the curve from "when does this
+/// start working" into "how does this improve with use".
+///
+/// # What belongs here
+///
+/// GENERIC descriptors, not brand names. `ELECTRIC UTILITY BILL PAYMENT`
+/// generalizes; `SAFEWAY #1234` teaches one chain and skews the prototype
+/// toward one user's geography. The standing project guidance against baking
+/// any one household's spending into a design target applies directly.
+///
+/// A few are chosen to counter *known* embedding traps rather than to describe
+/// the obvious case — `BC HYDRO` is here because a general-English encoder
+/// places "hydro" near water and produce, and real utilities are named that way
+/// across Canada (Hydro One, Hydro-Québec). See CENTROID_BASELINE's error
+/// analysis: that single trap accounted for 11 of 17 measured misclassifications.
+///
+/// These are ordinary rows in `category_examples` — a user can delete or
+/// replace any of them, and doing so re-derives the centroid through the same
+/// embed-on-write path their own examples use. They are a starting point, not
+/// a fixture.
+const DEFAULT_CATEGORY_EXAMPLES: &[(&str, &str)] = &[
+    ("dining", "RESTAURANT DINNER"),
+    ("dining", "COFFEE SHOP"),
+    ("dining", "TAKEOUT DELIVERY ORDER"),
+    ("dining", "CAFE BREAKFAST"),
+    ("groceries", "SUPERMARKET GROCERIES"),
+    ("groceries", "GROCERY STORE FOOD SHOPPING"),
+    ("groceries", "FARMERS MARKET PRODUCE"),
+    ("transport", "GAS STATION FUEL"),
+    ("transport", "TRANSIT AUTHORITY FARE"),
+    ("transport", "MONTHLY BUS PASS"),
+    ("transport", "RIDESHARE TRIP"),
+    ("transport", "PARKING GARAGE"),
+    ("shopping", "DEPARTMENT STORE PURCHASE"),
+    ("shopping", "ONLINE RETAIL ORDER"),
+    ("shopping", "CLOTHING STORE"),
+    ("travel", "AIRLINE TICKET"),
+    ("travel", "HOTEL ACCOMMODATION"),
+    ("travel", "CAR RENTAL"),
+    ("gifts", "GIFT SHOP PURCHASE"),
+    ("gifts", "CHARITABLE DONATION"),
+    ("housing", "MONTHLY RENT PAYMENT"),
+    ("housing", "MORTGAGE PAYMENT"),
+    ("housing", "PROPERTY MANAGEMENT FEE"),
+    // The "hydro" trap: 11 of 17 measured errors. Real Canadian electricity
+    // utilities are named this way, and a general-English encoder reads
+    // "hydro" as water/produce without a counter-example.
+    ("utilities", "BC HYDRO"),
+    ("utilities", "HYDRO ONE ELECTRICITY BILL"),
+    ("utilities", "ELECTRIC UTILITY BILL PAYMENT"),
+    ("utilities", "NATURAL GAS BILL"),
+    ("utilities", "WATER AND SEWER SERVICE"),
+    ("utilities", "INTERNET SERVICE PROVIDER"),
+    ("utilities", "MOBILE PHONE BILL"),
+    // "membership fee" reads as a housing/club charge without context —
+    // 5 of the 17 measured errors.
+    ("subscriptions", "ANNUAL MEMBERSHIP FEE"),
+    ("subscriptions", "STREAMING SERVICE SUBSCRIPTION"),
+    ("subscriptions", "GYM MEMBERSHIP MONTHLY"),
+    ("subscriptions", "SOFTWARE SUBSCRIPTION RENEWAL"),
+    ("health", "PHARMACY PRESCRIPTION"),
+    ("health", "DENTAL CLINIC VISIT"),
+    ("health", "DOCTOR OFFICE COPAY"),
+];
+
 /// The canonical conscious-spending bucket for a starter category id, or
 /// `None` for unknown/custom categories (those stay untagged until the user
 /// decides — a wrong guess is worse than an honest blank).
@@ -1024,6 +1103,20 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
             params![id, group_id, label, crate::palette::color_for(id), spending_type, i as i64],
         )?;
     }
+    // Seed exemplars in the same transaction as the categories they belong to,
+    // so the semantic categorizer (#92) has prototypes to build from on a
+    // brand-new instance instead of nothing. See DEFAULT_CATEGORY_EXAMPLES.
+    //
+    // `INSERT OR IGNORE` against the (category_id, example_text) unique index:
+    // re-seeding can never double-weight a point in the centroid mean.
+    let now = chrono::Utc::now().to_rfc3339();
+    for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+        tx.execute(
+            "INSERT OR IGNORE INTO category_examples(id, category_id, example_text, source_txn_id, created_at) \
+             VALUES(?1, ?2, ?3, NULL, ?4)",
+            params![uuid::Uuid::new_v4().to_string(), category_id, text, now],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -1032,6 +1125,103 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
 /// transaction. Only assigns categories that exist in the `categories` table.
 /// Returns the number of transactions categorized. Idempotent: a second run
 /// touches nothing, because matched rows are no longer `category_id IS NULL`.
+#[cfg(test)]
+mod default_example_tests {
+    use super::*;
+
+    fn db() -> (tempfile::TempDir, crate::Db) {
+        crate::testing::migrated_db()
+    }
+
+    /// The cold-start fix: a brand-new instance must have prototypes to build
+    /// from, or semantic categorization does nothing until the user has
+    /// hand-curated examples — exactly when they are judging the app.
+    #[test]
+    fn a_fresh_instance_gets_seed_examples_for_every_starter_category() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+
+        for (id, _, _, _) in DEFAULT_CATEGORIES {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM category_examples WHERE category_id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(
+                n >= 2,
+                "starter category {id} needs seed exemplars or it can never form a centroid"
+            );
+        }
+    }
+
+    /// Re-seeding must not double-weight a point in the centroid mean. The
+    /// unique index enforces it; this proves the write path relies on that
+    /// rather than fighting it.
+    #[test]
+    fn reseeding_never_duplicates_an_exemplar() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        let first: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_examples", [], |r| r.get(0))
+            .unwrap();
+
+        // Second call is a no-op today (categories exist), but call the seed
+        // path directly to prove the INSERT OR IGNORE, not just the early return.
+        let now = chrono::Utc::now().to_rfc3339();
+        for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+            conn.execute(
+                "INSERT OR IGNORE INTO category_examples(id, category_id, example_text, source_txn_id, created_at)                  VALUES(?1, ?2, ?3, NULL, ?4)",
+                params![uuid::Uuid::new_v4().to_string(), category_id, text, now],
+            )
+            .unwrap();
+        }
+        let second: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_examples", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(first, second, "a duplicated exemplar would skew the prototype");
+    }
+
+    /// Seeds are ordinary rows, not fixtures: deleting one must stick, so a
+    /// user can replace guidance that does not suit their ledger.
+    #[test]
+    fn a_user_can_delete_a_seeded_example() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        conn.execute("DELETE FROM category_examples WHERE category_id = 'dining'", [])
+            .unwrap();
+        // Re-running the idempotent seeder must not resurrect it: categories
+        // already exist, so it returns early and respects the deletion.
+        ensure_default_categories(&mut conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM category_examples WHERE category_id = 'dining'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "seed examples are a starting point, not an enforced fixture");
+    }
+
+    /// Every seeded exemplar must point at a category that actually exists, or
+    /// the centroid builder silently skips it and the seeding is theatre.
+    #[test]
+    fn every_seed_example_targets_a_real_starter_category() {
+        let ids: std::collections::BTreeSet<&str> =
+            DEFAULT_CATEGORIES.iter().map(|(id, _, _, _)| *id).collect();
+        for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+            assert!(
+                ids.contains(category_id),
+                "seed example {text:?} targets unknown category {category_id:?}"
+            );
+        }
+    }
+}
+
 pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // Ensure the categorizer has categories to assign, even when the user
     // imported before completing onboarding's category step.
