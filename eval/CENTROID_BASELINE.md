@@ -63,6 +63,59 @@ prediction rather than a guess), and the harness can now compare a semantic
 source against the deterministic baseline on identical rows. That is what
 Slice 4b was scoped to deliver.
 
+## Error analysis — where the 2% actually goes
+
+`centroid_eval` prints this; it is the evidence for choosing among Slice 7's
+(#95) experiments rather than picking one by taste.
+
+**Every one of the 17 misclassifications comes from three merchant families,
+and 16 from two:**
+
+| actual → predicted | n | example |
+|---|--:|---|
+| `utilities` → `groceries` | 11 | `BLUESAIL HYDRO PAYMENT #3561` |
+| `subscriptions` → `housing` | 5 | `Norwood Membership Fee #1977` |
+| `transport` → `groceries` | 1 | `YONDERHILL TRANSIT AUTHORITY` |
+
+**All 15 abstains are the same two families**, scoring 0.29–0.34 — just under
+the 0.35 floor (`POS PURCHASE BLUESAIL HYDRO PAYMENT` at 0.332,
+`QUILLMARK MEMBERSHIP FEE` at 0.305).
+
+So the failures are **not** diffuse noise at the decision boundary. They are a
+small number of *systematic lexical traps*, each hitting every transaction of
+an affected merchant.
+
+### The "hydro" trap is real, not a synthetic artifact
+
+`BLUESAIL HYDRO` is invented, but the confusion it triggers is not: **BC Hydro,
+Hydro One and Hydro-Québec are real electricity utilities**, and a
+general-English sentence encoder reasonably places "hydro" near water and
+produce rather than near power bills. Any Canadian user's real ledger would hit
+exactly this. The same shape applies to other regionalisms a general encoder
+has no reason to know (`Eskom`, `Hydro Ottawa`, `SaskPower`).
+
+### What this implies for #95's menu
+
+- **A reranker is the wrong tool here.** Reranking reorders candidates within
+  the same embedding space; it does not fix a prototype that genuinely sits
+  closer to the wrong category. These errors are not near-ties being ordered
+  badly — `utilities` is losing to `groceries` outright, 11 times.
+- **Per-category examples are the cheap, already-built lever.** One `BC HYDRO`
+  example on `utilities` moves that centroid directly, and #91 already ships
+  the mechanism plus a UI path to add one. This is not an #95 experiment at
+  all — it is the existing feature doing its job, and it is worth measuring
+  before anything heavier is considered.
+- **A constrained LLM fallback targets the abstains specifically.** All 15 sit
+  in a narrow band below the floor on two merchant families; an LLM knows what
+  "BC Hydro" is. That is a well-shaped, bounded fallback (2% of rows), not a
+  general second pass.
+- **Multilingual is not implicated** by this corpus — every row is English. It
+  needs its own corpus before it can be evaluated at all.
+
+The honest ordering, then, is: measure the examples lever first (free, shipped),
+then scope the LLM fallback against the abstain band, and treat reranker and
+SetFit as unmotivated by the current evidence.
+
 ## Method notes
 
 - Prototypes are built from the **reference half only**. Building them from the
