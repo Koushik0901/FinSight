@@ -129,6 +129,70 @@ async fn main() -> Result<()> {
         );
     }
 
+    // --- error analysis ----------------------------------------------------
+    // Aggregate precision says how often the pass is wrong; it says nothing
+    // about WHERE. Slice 7 (#95) is a menu of experiments — reranker,
+    // multilingual, SetFit, constrained LLM fallback — and picking one without
+    // knowing the shape of the failures would be choosing by taste. This is the
+    // evidence for that choice.
+    let mut confusions: std::collections::BTreeMap<(String, String), Vec<&str>> =
+        std::collections::BTreeMap::new();
+    let mut abstains: Vec<(&str, String, f32)> = Vec::new();
+
+    for ex in &holdout {
+        let Some(v) = vector_by_id.get(ex.id.as_str()) else { continue };
+        let pred = predict_centroid(v, &prototypes, MIN_SCORE);
+        match pred.category {
+            Some(got) if got != ex.category => {
+                confusions
+                    .entry((ex.category.clone(), got))
+                    .or_default()
+                    .push(ex.merchant_text.as_str());
+            }
+            None => {
+                // What the top match WOULD have been, had the floor allowed it —
+                // an abstain just short of the floor is a different problem from
+                // one with no signal at all.
+                let unfloored = predict_centroid(v, &prototypes, -1.0);
+                abstains.push((
+                    ex.merchant_text.as_str(),
+                    unfloored.category.unwrap_or_else(|| "<none>".into()),
+                    unfloored.confidence as f32,
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    let n_wrong: usize = confusions.values().map(Vec::len).sum();
+    println!("\nerror analysis — {n_wrong} misclassified, {} abstained", abstains.len());
+    if !confusions.is_empty() {
+        println!("\n  actual -> predicted (count)  examples");
+        for ((actual, predicted), texts) in
+            // Biggest confusion pairs first: that is where a reranker or an
+            // extra example would buy the most.
+            {
+                let mut v: Vec<_> = confusions.iter().collect();
+                v.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(b.0)));
+                v
+            }
+        {
+            println!(
+                "  {actual} -> {predicted} ({})  e.g. {}",
+                texts.len(),
+                texts.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")
+            );
+        }
+    }
+    if !abstains.is_empty() {
+        println!("\n  abstained (top match below the {MIN_SCORE} floor)");
+        let mut sorted = abstains.clone();
+        sorted.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        for (text, would_be, score) in sorted.iter().take(10) {
+            println!("  {score:.3}  {text}  (would have said: {would_be})");
+        }
+    }
+
     println!("\n{}", loaded.provenance.caveat());
     Ok(())
 }
