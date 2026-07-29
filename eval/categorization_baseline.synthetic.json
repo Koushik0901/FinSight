@@ -55,17 +55,17 @@
       "source": "builtin",
       "full_corpus": {
         "n_total": 33,
-        "n_predicted": 16,
-        "n_correct": 15,
-        "precision": 0.9375,
-        "coverage": 0.48484848484848486,
+        "n_predicted": 19,
+        "n_correct": 18,
+        "precision": 0.9473684210526315,
+        "coverage": 0.5757575757575758,
         "matrix": {
           "source": "builtin",
           "counts": {
             "<abstain>": {
-              "dining": 2,
+              "dining": 1,
               "gifts": 1,
-              "groceries": 4,
+              "groceries": 2,
               "shopping": 3,
               "subscriptions": 2,
               "transport": 1,
@@ -73,10 +73,10 @@
               "utilities": 2
             },
             "dining": {
-              "dining": 4
+              "dining": 5
             },
             "groceries": {
-              "groceries": 1
+              "groceries": 3
             },
             "health": {
               "health": 3
@@ -103,24 +103,24 @@
       },
       "holdout_only": {
         "n_total": 11,
-        "n_predicted": 4,
-        "n_correct": 4,
+        "n_predicted": 6,
+        "n_correct": 6,
         "precision": 1.0,
-        "coverage": 0.36363636363636365,
+        "coverage": 0.5454545454545454,
         "matrix": {
           "source": "builtin",
           "counts": {
             "<abstain>": {
               "dining": 1,
               "gifts": 1,
-              "groceries": 3,
+              "groceries": 1,
               "subscriptions": 2
             },
             "dining": {
               "dining": 1
             },
             "groceries": {
-              "groceries": 1
+              "groceries": 3
             },
             "housing": {
               "housing": 1
@@ -136,148 +136,148 @@
         {
           "threshold": 0.0,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.3,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.5,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.6,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.7,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.8,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.9,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 0.95,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         },
         {
           "threshold": 1.0,
           "n_total": 33,
-          "n_predicted": 16,
-          "n_correct": 15,
-          "precision": 0.9375,
-          "coverage": 0.48484848484848486
+          "n_predicted": 19,
+          "n_correct": 18,
+          "precision": 0.9473684210526315,
+          "coverage": 0.5757575757575758
         }
       ],
       "threshold_sweep_holdout": [
         {
           "threshold": 0.0,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.3,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.5,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.6,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.7,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.8,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.9,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 0.95,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         },
         {
           "threshold": 1.0,
           "n_total": 11,
-          "n_predicted": 4,
-          "n_correct": 4,
+          "n_predicted": 6,
+          "n_correct": 6,
           "precision": 1.0,
-          "coverage": 0.36363636363636365
+          "coverage": 0.5454545454545454
         }
       ]
     },

@@ -139,21 +139,31 @@ DNS record, no open port on your router.
 
 1. Install Tailscale on the host running FinSight, and on every device
    you'll use to access it (phone, laptop, etc.), then sign them into the
-   same tailnet: <https://tailscale.com/download>.
+   same tailnet: <https://tailscale.com/download>. Your own devices just
+   sign in with your account; for another household member's phone,
+   [invite them to your tailnet](https://tailscale.com/docs/features/sharing/how-to/invite-any-user)
+   from the admin console's Users page — the free Personal plan currently
+   includes six users, plenty for a household.
 2. Enable [MagicDNS](https://tailscale.com/kb/1081/magicdns) and HTTPS
    certificates for your tailnet in the Tailscale admin console (Settings →
-   enable "HTTPS Certificates").
+   enable "HTTPS Certificates"). If you forget, recent Tailscale versions
+   notice during the next step and walk you through enabling both.
 3. On the FinSight host, point Tailscale's built-in reverse proxy at the
    container:
 
    ```bash
-   tailscale serve https / http://localhost:8674
+   tailscale serve --bg 8674
    ```
 
    This terminates TLS with a certificate Tailscale manages and issues for
    you, and forwards to the FinSight container over plain HTTP on the
    loopback interface — Docker's own port publish (`8674:8674`) is what
-   makes `localhost:8674` reachable here.
+   makes port `8674` reachable here. The `--bg` flag makes the mapping
+   persistent: it survives closing the terminal and resumes after a reboot,
+   until you remove it with `tailscale serve reset`. Without `--bg`, serve
+   runs in the foreground and stops on Ctrl-C. (Guides written before
+   Tailscale 1.52 show `tailscale serve https / <target>` — that older
+   syntax no longer exists; use the form above.)
 
 4. Reach the server from any device on the tailnet at
    `https://<device-name>.<tailnet-name>.ts.net`. Keep
@@ -434,8 +444,8 @@ Endpoint: **`https://<your-server>/mcp`** (shown in Settings → Connections).
 | **Claude Code**, `mcp-remote`, other local bridges | Any reachable URL — LAN, Tailscale, or `http://localhost:8674`. Uses an access token. |
 | **claude.ai**, **Claude Desktop** custom connectors, **ChatGPT** | A **publicly reachable HTTPS origin**. These connect *from Anthropic's/OpenAI's servers*, not from your laptop, so `localhost` and a plain Tailscale tailnet are invisible to them. Use Recipe B (public domain + Caddy) or `tailscale funnel`. They run the OAuth flow automatically. |
 
-Recipe A's `tailscale serve` is tailnet-only. `tailscale funnel 8674` exposes the
-same server publicly if you'd rather not run your own domain.
+Recipe A's `tailscale serve` is tailnet-only. `tailscale funnel --bg 8674`
+exposes the same server publicly if you'd rather not run your own domain.
 
 ### Two ways to authenticate
 

@@ -44,10 +44,15 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("subway", "dining"),
     ("burger", "dining"),
     ("sushi", "dining"),
-    ("ramen", "dining"),
+    // LEADING SPACE IS LOAD-BEARING: bare "ramen" matches inside the
+    // truncated city string "SACRAMEN(TO)", which US bank descriptors emit
+    // constantly. That single needle was mis-filing Uber trips, LegalZoom,
+    // CLEAR and Booking.com as dining.
+    (" ramen", "dining"),
     ("bakery", "dining"),
     ("cafe", "dining"),
     ("café", "dining"),
+    ("coffee meets bagel", "subscriptions"),
     ("coffee", "dining"),
     ("donut", "dining"),
     ("restaurant", "dining"),
@@ -64,12 +69,14 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("cilantro", "dining"),
     ("madras", "dining"),
     // ── Groceries ─────────────────────────────────────────────────────────
+    ("walmart pharmacy", "health"),
     ("walmart", "groceries"),
     ("wal-mart", "groceries"),
     ("save on foods", "groceries"),
     ("save-on-foods", "groceries"),
     ("saveonfoods", "groceries"),
     ("safeway", "groceries"),
+    ("costco gas", "transport"),
     ("costco", "groceries"),
     ("superstore", "groceries"),
     ("no frills", "groceries"),
@@ -94,6 +101,7 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("arc transit", "transport"),
     ("translink", "transport"),
     ("transit", "transport"),
+    ("airport parking", "travel"),
     ("parking", "transport"),
     ("chevron", "transport"),
     ("imperial chev", "transport"),
@@ -128,7 +136,14 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("freedom mobile", "utilities"),
     ("telus", "utilities"),
     ("rogers", "utilities"),
-    ("shaw", "utilities"),
+    // "shaw" alone was eating "Shaw's" (a US grocery chain) and "shawarma king"
+    // — 81 false matches in the US corpus. A four-letter needle against a
+    // substring scan is not a brand, it is a collision waiting to happen.
+    ("shaw cable", "utilities"),
+    ("shaw direct", "utilities"),
+    ("shaw internet", "utilities"),
+    ("shaw mobile", "utilities"),
+    ("shaw communications", "utilities"),
     ("bell canada", "utilities"),
     ("bell mobility", "utilities"),
     ("fido", "utilities"),
@@ -156,6 +171,7 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("hilton", "travel"),
     ("porter airlines", "travel"),
     // ── Shopping ──────────────────────────────────────────────────────────
+    ("amazon web services", "subscriptions"),
     ("amazon", "shopping"),
     ("temu", "shopping"),
     ("dollarama", "shopping"),
@@ -178,13 +194,17 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("pharmaprix", "health"),
     ("rexall", "health"),
     ("dental", "health"),
-    ("clinic", "health"),
+    ("clinic ", "health"),
+    ("medical clinic", "health"),
+    ("walk-in clinic", "health"),
     ("physio", "health"),
     ("progressivehealt", "health"),
     // ── Housing ───────────────────────────────────────────────────────────
     ("property mgmt", "housing"),
     ("property management", "housing"),
     ("mortgage", "housing"),
+    ("rent a car", "travel"),
+    ("rental car", "travel"),
     (" rent ", "housing"),
     // ── P2-1: real merchant families seen uncategorized in the sample data ──
     // (airlines / car rental → travel; marketplace + electronics → shopping;
@@ -192,7 +212,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     // not test-case tuning: these are the coverable heads of the long tail.
     ("amzn", "shopping"), // "AMZN MKTP CA" — Amazon marketplace variant
     ("samsung", "shopping"),
-    ("sobeys", "groceries"),
     ("presto", "transport"),
     ("linkedin", "subscriptions"),
     ("air india", "travel"),
@@ -201,6 +220,434 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("flair air", "travel"),
     ("makemytrip", "travel"),
     ("hertz", "travel"),
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Shipped Canadian coverage.
+    //
+    // WHY THIS BLOCK EXISTS. Measured on a real-merchant Canadian corpus
+    // (`eval/CENTROID_BASELINE.md`), the keyword pass scores 100.0% precision
+    // while the semantic/centroid pass scores 51.5%. Keywords win because a
+    // human can encode "ESSO is a fuel brand" and a general-English sentence
+    // encoder cannot — it has read far more US brand text than Canadian. Until
+    // that gap closes, the deterministic pass is what actually serves a
+    // Canadian user, so it is worth investing in directly.
+    //
+    // WHAT BELONGS HERE. National chains and unambiguous category words only.
+    // Nothing regional, nothing derived from any individual's statements. The
+    // test is: would a Canadian who has never used this app recognise it?
+    //
+    // KEYWORD SAFETY. `builtin_category` does a plain lowercase `contains`, so
+    // a short needle matches inside unrelated words. Deliberately EXCLUDED for
+    // that reason, despite being real chains: `iga` (matches "origami"),
+    // `metro` (matches "metropolitan", and is a transit operator elsewhere),
+    // `maxi` ("maximum"), `stm` ("system"), `exo` ("exotic"), `sail`
+    // ("sailing"). Prefer a multi-word form or leave the merchant to the
+    // review queue — a miss costs coverage, a false match costs precision, and
+    // only one of those is recoverable by the user noticing.
+    //
+    // ORDERING. First match wins, so this block sits AFTER the entries above
+    // and must not contain anything broader than what precedes it.
+
+    // ── Dining ────────────────────────────────────────────────────────────
+    ("harvey", "dining"),
+    ("swiss chalet", "dining"),
+    ("st-hubert", "dining"),
+    ("st hubert", "dining"),
+    ("earls kitchen", "dining"),
+    ("cactus club", "dining"),
+    ("montana's", "dining"),
+    ("montanas", "dining"),
+    ("milestones", "dining"),
+    ("second cup", "dining"),
+    ("mary brown", "dining"),
+    ("nando", "dining"),
+    ("freshii", "dining"),
+    ("booster juice", "dining"),
+    ("country style", "dining"),
+    ("timothy's", "dining"),
+    ("jugo juice", "dining"),
+    ("tim horton", "dining"),
+    ("triple o", "dining"),
+    ("white spot", "dining"),
+    ("moxie", "dining"),
+    ("the works", "dining"),
+    ("bubble tea", "dining"),
+    ("chatime", "dining"),
+    ("van houtte", "dining"),
+    ("dairy queen", "dining"),
+
+    // ── Groceries ─────────────────────────────────────────────────────────
+    ("your independent grocer", "groceries"),
+    ("independent grocer", "groceries"),
+    ("provigo", "groceries"),
+    ("zehrs", "groceries"),
+    ("fortinos", "groceries"),
+    ("longo", "groceries"),
+    ("farm boy", "groceries"),
+    ("thrifty foods", "groceries"),
+    ("choices market", "groceries"),
+    ("bulk barn", "groceries"),
+    ("marche richelieu", "groceries"),
+    ("super c", "groceries"),
+    ("nofrills", "groceries"),
+    ("valu-mart", "groceries"),
+    ("valumart", "groceries"),
+    ("food land", "groceries"),
+    ("foodland", "groceries"),
+    ("h mart", "groceries"),
+    ("hmart", "groceries"),
+    ("grocer", "groceries"),
+    ("supermarket", "groceries"),
+
+    // ── Transport ─────────────────────────────────────────────────────────
+    ("oc transpo", "transport"),
+    ("via rail", "transport"),
+    ("impark", "transport"),
+    ("green p", "transport"),
+    ("park plus", "transport"),
+    ("precise parklink", "transport"),
+    ("ultramar", "transport"),
+    ("irving oil", "transport"),
+    ("mobil ", "transport"),
+    ("pioneer energy", "transport"),
+    ("co-op gas", "transport"),
+    ("petro points", "transport"),
+    ("communauto", "transport"),
+    ("bixi", "transport"),
+    ("turo", "travel"),
+    ("zipcar", "transport"),
+    ("car2go", "transport"),
+    ("gas bar", "transport"),
+    ("fuel", "transport"),
+    ("toll", "transport"),
+    ("407 etr", "transport"),
+
+    // ── Shopping ──────────────────────────────────────────────────────────
+    ("sport chek", "shopping"),
+    ("sportchek", "shopping"),
+    ("mark's work", "shopping"),
+    ("marks work", "shopping"),
+    ("roots canada", "shopping"),
+    ("lululemon", "shopping"),
+    ("indigo books", "shopping"),
+    ("chapters", "shopping"),
+    ("coles books", "shopping"),
+    ("princess auto", "shopping"),
+    ("rona", "shopping"),
+    ("home hardware", "shopping"),
+    ("lowe's", "shopping"),
+    ("lowes", "shopping"),
+    ("giant tiger", "shopping"),
+    ("la senza", "shopping"),
+    ("structube", "shopping"),
+    ("jysk", "shopping"),
+    ("simons", "shopping"),
+    ("sail outdoors", "shopping"),
+    ("mec ", "shopping"),
+    ("shein", "shopping"),
+    ("wayfair", "shopping"),
+    ("etsy", "shopping"),
+    ("value village", "shopping"),
+    ("homesense", "shopping"),
+
+    // ── Utilities ─────────────────────────────────────────────────────────
+    ("saskpower", "utilities"),
+    ("sasktel", "utilities"),
+    ("nova scotia power", "utilities"),
+    ("newfoundland power", "utilities"),
+    ("enbridge", "utilities"),
+    ("atco gas", "utilities"),
+    ("union gas", "utilities"),
+    ("videotron", "utilities"),
+    ("eastlink", "utilities"),
+    ("xplornet", "utilities"),
+    ("teksavvy", "utilities"),
+    ("distributel", "utilities"),
+    ("public mobile", "utilities"),
+    ("chatr", "utilities"),
+    ("lucky mobile", "utilities"),
+    ("starlink", "utilities"),
+    ("city of", "utilities"),
+    ("water utility", "utilities"),
+    ("waste management", "utilities"),
+    ("recycling", "utilities"),
+    ("electricity", "utilities"),
+    ("natural gas", "utilities"),
+
+    // ── Subscriptions ─────────────────────────────────────────────────────
+    ("crave", "subscriptions"),
+    ("goodlife fitness", "subscriptions"),
+    ("fit4less", "subscriptions"),
+    ("anytime fitness", "subscriptions"),
+    ("planet fitness", "subscriptions"),
+    ("orangetheory", "subscriptions"),
+    ("cbc gem", "subscriptions"),
+    ("sportsnet", "subscriptions"),
+    ("tsn direct", "subscriptions"),
+    ("apple music", "subscriptions"),
+    ("google one", "subscriptions"),
+    ("microsoft 365", "subscriptions"),
+    ("playstation plus", "subscriptions"),
+    ("xbox game pass", "subscriptions"),
+    ("nintendo online", "subscriptions"),
+    ("gym membership", "subscriptions"),
+    ("fitness", "subscriptions"),
+
+    // ── Health ────────────────────────────────────────────────────────────
+    ("london drugs", "health"),
+    ("jean coutu", "health"),
+    ("uniprix", "health"),
+    ("guardian pharm", "health"),
+    ("lifelabs", "health"),
+    ("dynacare", "health"),
+    ("medisys", "health"),
+    ("optometr", "health"),
+    ("chiropract", "health"),
+    ("massage therapy", "health"),
+    ("well.ca", "health"),
+    ("dentist", "health"),
+    ("medical", "health"),
+    ("hospital", "health"),
+
+    // ── Housing ───────────────────────────────────────────────────────────
+    ("realstar", "housing"),
+    ("minto apartments", "housing"),
+    ("landlord", "housing"),
+    ("strata fee", "housing"),
+    ("condo fee", "housing"),
+    ("property tax", "housing"),
+    ("tenant", "housing"),
+
+    // ── Travel ────────────────────────────────────────────────────────────
+    ("sunwing", "travel"),
+    ("air transat", "travel"),
+    ("fairmont", "travel"),
+    ("sandman hotel", "travel"),
+    ("best western", "travel"),
+    ("travelodge", "travel"),
+    ("holiday inn", "travel"),
+    ("via preference", "travel"),
+
+    // ── Gifts ─────────────────────────────────────────────────────────────
+    // This category shipped with ZERO keyword coverage until now, despite
+    // being one of the ten defaults offered at onboarding.
+    ("canadian red cross", "gifts"),
+    ("red cross", "gifts"),
+    ("united way", "gifts"),
+    ("sickkids", "gifts"),
+    ("canadian cancer", "gifts"),
+    ("heart and stroke", "gifts"),
+    ("heart & stroke", "gifts"),
+    ("unicef", "gifts"),
+    ("doctors without borders", "gifts"),
+    ("msf canada", "gifts"),
+    ("habitat for humanity", "gifts"),
+    ("food bank", "gifts"),
+    ("gofundme", "gifts"),
+    ("hallmark", "gifts"),
+    ("carlton cards", "gifts"),
+    ("charity", "gifts"),
+    ("donation", "gifts"),
+    ("florist", "gifts"),
+    ("flower", "gifts"),
+
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Shipped US coverage.
+    //
+    // Chosen from measured misses, not from memory: `keyword_eval` reports the
+    // unmatched merchants by row count, and these are the ones that were
+    // actually costing coverage on a 33k-row real-merchant corpus.
+    //
+    // SAME SAFETY RULE as the Canadian block. Deliberately EXCLUDED despite
+    // being frequent, because a substring scan would misfire: `at` (two
+    // characters), `dr` ("drive", "drugstore"), `ranch` ("branch"), `market`
+    // ("marketplace", and already covered by "supermarket"), `metro`,
+    // `principal`/`equity`/`related` (ordinary words that happen to be REIT
+    // names), and city-named landlords like `irvine`/`camden`. For apartment
+    // operators the RELIABLE signal is the payment wording ("rent pmt",
+    // "apartments", "leasing"), not the company name — so that is what this
+    // matches on.
+
+    // ── Shopping ──────────────────────────────────────────────────────────
+    ("target", "shopping"),
+    ("sam's club", "groceries"),
+    ("sams club", "groceries"),
+    ("kohl's", "shopping"),
+    ("kohls", "shopping"),
+    ("nordstrom", "shopping"),
+    ("macy's", "shopping"),
+    ("macys", "shopping"),
+    ("tj maxx", "shopping"),
+    ("tjmaxx", "shopping"),
+    ("ross stores", "shopping"),
+    ("dollar general", "shopping"),
+    ("dollar tree", "shopping"),
+    ("five below", "shopping"),
+    ("office depot", "shopping"),
+    ("petsmart", "shopping"),
+    ("petco", "shopping"),
+    ("michaels stores", "shopping"),
+    ("hobby lobby", "shopping"),
+    ("ace hardware", "shopping"),
+    ("menards", "shopping"),
+    ("legalzoom", "shopping"),
+
+    // ── Groceries ─────────────────────────────────────────────────────────
+    ("wholefds", "groceries"),
+    ("whole fds", "groceries"),
+    ("savemart", "groceries"),
+    ("save mart", "groceries"),
+    ("foodmaxx", "groceries"),
+    ("99 ranch", "groceries"),
+    ("traderjoes", "groceries"),
+    ("kroger", "groceries"),
+    ("publix", "groceries"),
+    ("albertsons", "groceries"),
+    ("wegmans", "groceries"),
+    ("aldi", "groceries"),
+    ("h-e-b", "groceries"),
+    ("heb ", "groceries"),
+    ("giant eagle", "groceries"),
+    ("stop & shop", "groceries"),
+    ("shoprite", "groceries"),
+    ("winco foods", "groceries"),
+    ("sprouts farmers", "groceries"),
+    ("harris teeter", "groceries"),
+    ("food lion", "groceries"),
+    ("piggly wiggly", "groceries"),
+
+    // ── Utilities ─────────────────────────────────────────────────────────
+    ("spectrum", "utilities"),
+    ("t-mobile", "utilities"),
+    ("tmobile", "utilities"),
+    ("at&t", "utilities"),
+    ("verizon", "utilities"),
+    ("cricket wireless", "utilities"),
+    ("mint mobile", "utilities"),
+    ("boost mobile", "utilities"),
+    ("eversource", "utilities"),
+    ("dominion energy", "utilities"),
+    ("duke energy", "utilities"),
+    ("national grid", "utilities"),
+    ("coned", "utilities"),
+    ("con edison", "utilities"),
+    ("xcel energy", "utilities"),
+    ("ameren", "utilities"),
+    ("aqua america", "utilities"),
+    ("republic services", "utilities"),
+    ("waste connections", "utilities"),
+    ("municipal water", "utilities"),
+    ("sewer", "utilities"),
+    ("centurylink", "utilities"),
+    ("frontier communications", "utilities"),
+
+    // ── Health ────────────────────────────────────────────────────────────
+    ("betterhelp", "health"),
+    ("talkspace", "health"),
+    ("cvs", "health"),
+    ("walgreens", "health"),
+    ("rite aid", "health"),
+    ("quest diagnostics", "health"),
+    ("labcorp", "health"),
+    ("psychiatry", "health"),
+    ("dermatology", "health"),
+    ("orthodont", "health"),
+    ("pediatric", "health"),
+    ("urgent care", "health"),
+    ("family practice", "health"),
+    ("vision center", "health"),
+
+    // ── Housing ───────────────────────────────────────────────────────────
+    // Payment wording, not landlord company names — see the safety note above.
+    ("rent pmt", "housing"),
+    ("rent payment", "housing"),
+    ("apartments", "housing"),
+    ("apartment homes", "housing"),
+    ("leasing office", "housing"),
+    ("residential", "housing"),
+    ("hoa dues", "housing"),
+    ("homeowners assoc", "housing"),
+    ("mtg pmt", "housing"),
+    ("home loan", "housing"),
+    ("escrow", "housing"),
+
+    // ── Travel ────────────────────────────────────────────────────────────
+    ("tsa pre", "travel"),
+    ("global entry", "travel"),
+    ("alaska airlines", "travel"),
+    ("southwest airlines", "travel"),
+    ("jetblue", "travel"),
+    ("spirit airlines", "travel"),
+    ("frontier airlines", "travel"),
+    ("hyatt", "travel"),
+    ("hampton inn", "travel"),
+    ("vrbo", "travel"),
+    ("priceline", "travel"),
+    ("kayak", "travel"),
+    ("centurion lounge", "travel"),
+
+    // ── Transport ─────────────────────────────────────────────────────────
+    ("quiktrip", "transport"),
+    ("wawa", "transport"),
+    ("sheetz", "transport"),
+    ("circle k", "transport"),
+    ("speedway", "transport"),
+    ("sunoco", "transport"),
+    ("marathon petro", "transport"),
+    ("exxon", "transport"),
+    ("valero", "transport"),
+    ("sp plus", "transport"),
+    ("spplus", "transport"),
+    ("advance auto", "transport"),
+    ("autozone", "transport"),
+    ("o'reilly auto", "transport"),
+    ("jiffy lube", "transport"),
+    ("car wash", "transport"),
+    ("dmv", "transport"),
+
+    // ── Dining ────────────────────────────────────────────────────────────
+    ("chick-fil-a", "dining"),
+    ("chickfila", "dining"),
+    ("panera", "dining"),
+    ("dunkin", "dining"),
+    ("taco bell", "dining"),
+    ("five guys", "dining"),
+    ("shake shack", "dining"),
+    ("in-n-out", "dining"),
+    ("jack in the box", "dining"),
+    ("cook out", "dining"),
+    ("checkers", "dining"),
+    ("panda express", "dining"),
+    ("applebee", "dining"),
+    ("chili's", "dining"),
+    ("outback steak", "dining"),
+    ("cheesecake factory", "dining"),
+    ("buffalo wild wings", "dining"),
+    ("dim sum", "dining"),
+    ("shawarma", "dining"),
+    ("taqueria", "dining"),
+    ("steakhouse", "dining"),
+    ("grill", "dining"),
+    ("diner", "dining"),
+
+    // ── Subscriptions ─────────────────────────────────────────────────────
+    ("hulu", "subscriptions"),
+    ("max.com", "subscriptions"),
+    ("hbo max", "subscriptions"),
+    ("paramount+", "subscriptions"),
+    ("peacock", "subscriptions"),
+    ("sirius", "subscriptions"),
+    ("crunchyroll", "subscriptions"),
+    ("godaddy", "subscriptions"),
+    ("squarespace", "subscriptions"),
+    ("wix.com", "subscriptions"),
+    ("mailchimp", "subscriptions"),
+    ("1password", "subscriptions"),
+    ("nordvpn", "subscriptions"),
+    ("coursera", "subscriptions"),
+    ("duolingo", "subscriptions"),
+
 ];
 
 /// Best-effort deterministic category for a merchant string. Returns the
@@ -935,6 +1382,85 @@ const DEFAULT_CATEGORIES: &[(&str, &str, &str, &str)] = &[
     ("health", "wellbeing", "Health", "fixed"),
 ];
 
+/// Seed exemplars for the semantic categorizer (#92), one small set per
+/// starter category.
+///
+/// # Why these exist: the cold start
+///
+/// A category's centroid is the mean of its `category_examples` (#91). With no
+/// examples there is no centroid, so a brand-new user got NO semantic
+/// categorization at all until they had curated examples by hand — precisely
+/// when they are deciding whether the app is any good.
+///
+/// Nothing requires those examples to be user-authored. Measured on the
+/// synthetic corpus (`eval/CENTROID_BASELINE.md`), five examples per category
+/// is already worth ~89% precision at ~93% coverage, and the learning curve's
+/// knee sits at roughly that point rather than at thousands of transactions.
+/// So seeding a handful per category converts the curve from "when does this
+/// start working" into "how does this improve with use".
+///
+/// # What belongs here
+///
+/// GENERIC descriptors, not brand names. `ELECTRIC UTILITY BILL PAYMENT`
+/// generalizes; `SAFEWAY #1234` teaches one chain and skews the prototype
+/// toward one user's geography. The standing project guidance against baking
+/// any one household's spending into a design target applies directly.
+///
+/// A few are chosen to counter *known* embedding traps rather than to describe
+/// the obvious case — `BC HYDRO` is here because a general-English encoder
+/// places "hydro" near water and produce, and real utilities are named that way
+/// across Canada (Hydro One, Hydro-Québec). See CENTROID_BASELINE's error
+/// analysis: that single trap accounted for 11 of 17 measured misclassifications.
+///
+/// These are ordinary rows in `category_examples` — a user can delete or
+/// replace any of them, and doing so re-derives the centroid through the same
+/// embed-on-write path their own examples use. They are a starting point, not
+/// a fixture.
+const DEFAULT_CATEGORY_EXAMPLES: &[(&str, &str)] = &[
+    ("dining", "RESTAURANT DINNER"),
+    ("dining", "COFFEE SHOP"),
+    ("dining", "TAKEOUT DELIVERY ORDER"),
+    ("dining", "CAFE BREAKFAST"),
+    ("groceries", "SUPERMARKET GROCERIES"),
+    ("groceries", "GROCERY STORE FOOD SHOPPING"),
+    ("groceries", "FARMERS MARKET PRODUCE"),
+    ("transport", "GAS STATION FUEL"),
+    ("transport", "TRANSIT AUTHORITY FARE"),
+    ("transport", "MONTHLY BUS PASS"),
+    ("transport", "RIDESHARE TRIP"),
+    ("transport", "PARKING GARAGE"),
+    ("shopping", "DEPARTMENT STORE PURCHASE"),
+    ("shopping", "ONLINE RETAIL ORDER"),
+    ("shopping", "CLOTHING STORE"),
+    ("travel", "AIRLINE TICKET"),
+    ("travel", "HOTEL ACCOMMODATION"),
+    ("travel", "CAR RENTAL"),
+    ("gifts", "GIFT SHOP PURCHASE"),
+    ("gifts", "CHARITABLE DONATION"),
+    ("housing", "MONTHLY RENT PAYMENT"),
+    ("housing", "MORTGAGE PAYMENT"),
+    ("housing", "PROPERTY MANAGEMENT FEE"),
+    // The "hydro" trap: 11 of 17 measured errors. Real Canadian electricity
+    // utilities are named this way, and a general-English encoder reads
+    // "hydro" as water/produce without a counter-example.
+    ("utilities", "BC HYDRO"),
+    ("utilities", "HYDRO ONE ELECTRICITY BILL"),
+    ("utilities", "ELECTRIC UTILITY BILL PAYMENT"),
+    ("utilities", "NATURAL GAS BILL"),
+    ("utilities", "WATER AND SEWER SERVICE"),
+    ("utilities", "INTERNET SERVICE PROVIDER"),
+    ("utilities", "MOBILE PHONE BILL"),
+    // "membership fee" reads as a housing/club charge without context —
+    // 5 of the 17 measured errors.
+    ("subscriptions", "ANNUAL MEMBERSHIP FEE"),
+    ("subscriptions", "STREAMING SERVICE SUBSCRIPTION"),
+    ("subscriptions", "GYM MEMBERSHIP MONTHLY"),
+    ("subscriptions", "SOFTWARE SUBSCRIPTION RENEWAL"),
+    ("health", "PHARMACY PRESCRIPTION"),
+    ("health", "DENTAL CLINIC VISIT"),
+    ("health", "DOCTOR OFFICE COPAY"),
+];
+
 /// The canonical conscious-spending bucket for a starter category id, or
 /// `None` for unknown/custom categories (those stay untagged until the user
 /// decides — a wrong guess is worse than an honest blank).
@@ -1024,6 +1550,20 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
             params![id, group_id, label, crate::palette::color_for(id), spending_type, i as i64],
         )?;
     }
+    // Seed exemplars in the same transaction as the categories they belong to,
+    // so the semantic categorizer (#92) has prototypes to build from on a
+    // brand-new instance instead of nothing. See DEFAULT_CATEGORY_EXAMPLES.
+    //
+    // `INSERT OR IGNORE` against the (category_id, example_text) unique index:
+    // re-seeding can never double-weight a point in the centroid mean.
+    let now = chrono::Utc::now().to_rfc3339();
+    for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+        tx.execute(
+            "INSERT OR IGNORE INTO category_examples(id, category_id, example_text, source_txn_id, created_at) \
+             VALUES(?1, ?2, ?3, NULL, ?4)",
+            params![uuid::Uuid::new_v4().to_string(), category_id, text, now],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -1032,6 +1572,103 @@ pub fn ensure_default_categories(conn: &mut Connection) -> CoreResult<()> {
 /// transaction. Only assigns categories that exist in the `categories` table.
 /// Returns the number of transactions categorized. Idempotent: a second run
 /// touches nothing, because matched rows are no longer `category_id IS NULL`.
+#[cfg(test)]
+mod default_example_tests {
+    use super::*;
+
+    fn db() -> (tempfile::TempDir, crate::Db) {
+        crate::testing::migrated_db()
+    }
+
+    /// The cold-start fix: a brand-new instance must have prototypes to build
+    /// from, or semantic categorization does nothing until the user has
+    /// hand-curated examples — exactly when they are judging the app.
+    #[test]
+    fn a_fresh_instance_gets_seed_examples_for_every_starter_category() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+
+        for (id, _, _, _) in DEFAULT_CATEGORIES {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM category_examples WHERE category_id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(
+                n >= 2,
+                "starter category {id} needs seed exemplars or it can never form a centroid"
+            );
+        }
+    }
+
+    /// Re-seeding must not double-weight a point in the centroid mean. The
+    /// unique index enforces it; this proves the write path relies on that
+    /// rather than fighting it.
+    #[test]
+    fn reseeding_never_duplicates_an_exemplar() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        let first: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_examples", [], |r| r.get(0))
+            .unwrap();
+
+        // Second call is a no-op today (categories exist), but call the seed
+        // path directly to prove the INSERT OR IGNORE, not just the early return.
+        let now = chrono::Utc::now().to_rfc3339();
+        for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+            conn.execute(
+                "INSERT OR IGNORE INTO category_examples(id, category_id, example_text, source_txn_id, created_at)                  VALUES(?1, ?2, ?3, NULL, ?4)",
+                params![uuid::Uuid::new_v4().to_string(), category_id, text, now],
+            )
+            .unwrap();
+        }
+        let second: i64 = conn
+            .query_row("SELECT COUNT(*) FROM category_examples", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(first, second, "a duplicated exemplar would skew the prototype");
+    }
+
+    /// Seeds are ordinary rows, not fixtures: deleting one must stick, so a
+    /// user can replace guidance that does not suit their ledger.
+    #[test]
+    fn a_user_can_delete_a_seeded_example() {
+        let (_d, db) = db();
+        let mut conn = db.get().unwrap();
+        ensure_default_categories(&mut conn).unwrap();
+        conn.execute("DELETE FROM category_examples WHERE category_id = 'dining'", [])
+            .unwrap();
+        // Re-running the idempotent seeder must not resurrect it: categories
+        // already exist, so it returns early and respects the deletion.
+        ensure_default_categories(&mut conn).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM category_examples WHERE category_id = 'dining'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "seed examples are a starting point, not an enforced fixture");
+    }
+
+    /// Every seeded exemplar must point at a category that actually exists, or
+    /// the centroid builder silently skips it and the seeding is theatre.
+    #[test]
+    fn every_seed_example_targets_a_real_starter_category() {
+        let ids: std::collections::BTreeSet<&str> =
+            DEFAULT_CATEGORIES.iter().map(|(id, _, _, _)| *id).collect();
+        for (category_id, text) in DEFAULT_CATEGORY_EXAMPLES {
+            assert!(
+                ids.contains(category_id),
+                "seed example {text:?} targets unknown category {category_id:?}"
+            );
+        }
+    }
+}
+
 pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // Ensure the categorizer has categories to assign, even when the user
     // imported before completing onboarding's category step.

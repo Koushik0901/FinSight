@@ -178,3 +178,176 @@ abstain floor moves, or when the corpus grows. If a **real** corpus ever lands
 (issue #89), run it against that instead and record both — the synthetic figure
 stays useful as a harness regression check, but only the real one speaks to the
 epic's gate.
+
+## Learning curve: how much use before this earns its keep?
+
+`cargo run -p finsight-eval --bin learning_curve`
+
+The product objection that prompted this: if semantic categorization only works
+after someone has logged thousands of transactions, it is useless exactly when
+a new user is deciding whether to keep the app.
+
+Sweeping accumulated corrections against the SAME fixed merchant-disjoint
+holdout:
+
+| corrections | uniform cov / prec | realistic cov / prec |
+|------------:|-------------------:|---------------------:|
+| 10          | 69.7% / 74.1%      | 75.1% / 82.0%        |
+| 25          | 94.5% / 80.0%      | 82.8% / 84.7%        |
+| **50**      | **95.7% / 92.2%**  | **88.7% / 92.0%**    |
+| 100         | 97.0% / 97.2%      | 91.2% / 91.2%        |
+| 200         | 97.4% / 97.7%      | 93.1% / 91.3%        |
+| 800         | 97.8% / 98.3%      | 93.4% / 93.8%        |
+| 1600        | 97.8% / 98.3%      | 93.4% / 93.7%        |
+
+**The knee is ~50 corrections and it has plateaued by ~100** — about five per
+category, i.e. days of use, not months. 200 → 1600 corrections buys 0.6 of a
+precision point. The "order-thousands of labels" figure elsewhere in this repo
+is about **statistical confidence in the measurement**, never about the feature
+working; conflating the two is what makes this look like a cold-start problem.
+
+### The two accumulation orders, and why the realistic one is lower
+
+`CATEGORIZATION_CORPUS.md` warns that corrections are not a random sample — a
+user only corrects what the deterministic passes got wrong or left
+uncategorized. Both orders are reported because the realistic one is not the
+flattering one:
+
+- **uniform** — shuffled corpus order. Models users helpfully labelling a
+  representative cross-section. They do not.
+- **realistic** — only rows `builtin` abstained on or got wrong are eligible to
+  become corrections. This is the population a review queue actually surfaces.
+
+The realistic curve sits ~4 points lower and plateaus lower (93.7% vs 98.3%).
+That gap **is** the accumulation skew the corpus doc says must be accounted for
+rather than ignored — now quantified.
+
+### The better cold-start answer: examples, not history
+
+The centroid does not need user *transactions* at all. It needs per-category
+**examples** (#91), and nothing requires those to be user-authored. Shipping a
+default example set per starter category gives a brand-new user semantic
+categorization on their first import, with zero history — the curve above then
+describes how it *improves* with use rather than when it *starts*.
+
+## On public fraud datasets as a corpus (evaluated, mostly rejected)
+
+Worth recording so nobody re-litigates it:
+
+- **ULB `creditcardfraud`** (284k rows) — features are PCA components
+  `V1…V28`. No merchant strings at all. Unusable here.
+- **Sparkov `fraud-detection`** (1.3M rows) — has `merchant` and `category`
+  columns, but merchants are `faker`-generated from a fixed list
+  (`fraud_Rippin, Kub and Mann`). Those names carry **no semantic category
+  signal**, so a merchant-disjoint split reduces an embedding model to chance.
+
+It therefore cannot validate categorization quality. It IS useful as:
+
+1. **A negative control.** Scoring well on merchant-disjoint Sparkov would
+   prove a leak in our split, not a good model. That is a genuinely valuable
+   thing to be able to assert.
+2. **A scale test.** 1.3M rows exercises batching and memory in a way a
+   2,751-row corpus never will.
+
+Neither requires adopting it as a precision benchmark, and neither should be
+reported as one.
+
+## Real merchant names collapse the number (2026-07-29)
+
+Everything above was measured on an INVENTED corpus. Two corpora built from
+REAL merchant names now exist, and they change the conclusion completely.
+
+| corpus | merchants | holdout | builtin cov/prec | centroid cov/prec | few5 cov/prec |
+|---|--:|--:|---|---|---|
+| invented (`synthetic_multi_archetype`) | 330 | 763 | 16.6% / 100.0% | 98.0% / **97.7%** | 93.1% / 88.9% |
+| **US real** (`semi_synthetic`) | 2,386 | 11,758 | 23.2% / 89.6% | 87.4% / **71.4%** | 67.1% / 57.8% |
+| **CA real** (`semi_synthetic_ca`) | 134 | 574 | 55.2% / 100.0% | 91.6% / **53.2%** | 81.5% / 24.4% |
+
+**The invented corpus overstated precision by 26 points (US) and 44 points
+(CA).** It was not a slightly optimistic proxy — it measured almost nothing
+about the real task. Read every figure above as a harness self-test.
+
+### Why real merchants are harder
+
+Invented descriptors were descriptive (`BLUESAIL HYDRO PAYMENT`). Real ones are
+frequently opaque abbreviations carrying no semantic signal at all:
+
+    coned 07435             -> utilities, predicted groceries
+    BP 6976                 -> transport, predicted shopping
+    WHOLEFDS #31 MIAMI      -> groceries, predicted dining
+    SP PLUS #7651 SAN JOSE  -> transport (parking), predicted groceries
+
+A general-English encoder cannot know `coned` is Con Edison. No prototype
+tuning fixes a string with no signal in it.
+
+Some apparent errors are **label disagreements, not model errors** — `WAL-MART`
+is `shopping` in the source taxonomy, predicted `groceries`; defensible either
+way. That is a cost of adopting another project's categories.
+
+### The categorizer is measurably worse for Canadians
+
+US 71.4% vs CA 53.2%, same model and method. The failures are brand knowledge:
+
+    TIM HORTONS -> groceries (actual dining)
+    HUDSONS BAY -> groceries (actual shopping)
+    ESSO        -> groceries (actual transport)
+
+MiniLM has read far more US brand text than Canadian. This is a real equity
+problem, invisible to any US-only benchmark, and the strongest argument for
+keeping the deterministic keyword pass FIRST: on Canadian data `builtin` beats
+the semantic pass on both axes (100.0% precision at 55.2% coverage), because a
+human wrote Canadian keywords into it.
+
+### What it means for the epic
+
+- **Proposals-only is emphatically vindicated.** At 53-71% precision an
+  auto-apply path would write a wrong category into the canonical column for
+  roughly one transaction in three. Epic #74's 98% gate is not close, and there
+  is now a measurement saying so rather than an absence of one.
+- **`few5`, the production-faithful regime, is 24-58%.** A handful of curated
+  examples is not enough against real merchants.
+- **The next lever is KNOWLEDGE, not geometry.** A reranker reorders the same
+  signal-free vectors. `coned` and `BP` need a merchant lookup or a model that
+  has read the web — which favours #95's constrained-LLM fallback over its
+  other experiments.
+
+### Two corpus-construction traps worth not repeating
+
+1. **`normalize_merchant` is the wrong split key.** It keeps location tokens
+   and produced **34 distinct ids for Publix** — the same brand on both sides
+   of a "merchant-disjoint" split, inflating precision while looking rigorous.
+   The importer derives a brand key instead, and drops any key carrying two
+   categories rather than contributing a coin-flip label.
+2. **A corpus must be realistic in its COMBINATIONS, not only its vocabulary.**
+   The first Canadian generator drew from one flat template list and emitted
+   `MONTHLY BILL PAYMENT TIM HORTONS`. The billing wording dominated the
+   embedding and dragged restaurants toward utilities, scoring 38.7% — a
+   generator artifact, not a model failure. Splitting point-of-sale from
+   recurring-billing templates moved it to 53.2%.
+
+## Regenerating the corpora (they are not checked in)
+
+The two real-merchant corpora are **gitignored**. The tools that build them
+ship; the data does not — the US file alone is ~3.8MB and would sit in every
+clone forever, and it is reproducible in one command each.
+
+```bash
+# US — 33,481 rows / 2,386 merchants, from the MIT-licensed HuggingFace set
+curl -sL https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2/resolve/main/transactions-synthetic.csv -o /tmp/txns.csv
+cargo run -p finsight-eval --bin import_hf_corpus -- /tmp/txns.csv eval/categorization_corpus.semi_synthetic.jsonl
+
+# Canada — 1,890 rows / 135 merchants, generated
+cargo run -p finsight-eval --bin generate_ca_corpus -- eval/categorization_corpus.semi_synthetic_ca.jsonl
+```
+
+Then measure. Use `keyword_eval` for the keyword pass — it needs no model and
+answers in milliseconds, where `centroid_eval` must load MiniLM and embed the
+whole corpus twice:
+
+```bash
+cargo run -p finsight-eval --bin keyword_eval  -- eval/categorization_corpus.semi_synthetic.jsonl
+cargo run -p finsight-eval --bin centroid_eval -- eval/categorization_corpus.semi_synthetic.jsonl
+```
+
+Both generators are deterministic, so a regenerated file is byte-identical to
+the one these numbers came from.
