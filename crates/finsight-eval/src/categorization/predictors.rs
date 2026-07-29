@@ -158,7 +158,10 @@ mod tests {
 
     #[test]
     fn builtin_abstains_on_no_overlap() {
-        let pred = predict_builtin("Riverbend Diner");
+        // NOT "Riverbend Diner": the shipped table now matches "diner", which
+        // is correct behaviour and made this fixture stop testing abstention.
+        // The string below is deliberately free of any real merchant token.
+        let pred = predict_builtin("Zzyzx Holdings Ltd");
         assert_eq!(pred, Prediction::abstain());
     }
 

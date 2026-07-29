@@ -131,8 +131,6 @@ const POS_TEMPLATES: &[&str] = &[
     "RETAIL PURCHASE {m} {c} {p}",
     "{m} #{n}",
     "{m} #{n} {c}",
-    "PC PURCHASE - {n} {m}",
-    "WWW PURCHASE - {n} {m}",
     "{m}",
 ];
 
@@ -156,14 +154,109 @@ const BILL_TEMPLATES: &[&str] = &[
     "{m}",
 ];
 
-/// Which template family a category's merchants can plausibly appear under.
-/// `subscriptions` gets both: a streaming service bills monthly, a gym
-/// membership can also be tapped at the door.
-fn templates_for(category: &str) -> &'static [&'static str] {
+/// Online/card-not-present shapes. Separate from in-person because a fuel pump
+/// or a parking meter cannot produce a `WWW PURCHASE` line, and emitting one
+/// teaches the corpus a descriptor that does not exist.
+const ONLINE_TEMPLATES: &[&str] = &[
+    "WWW PURCHASE - {n} {m}",
+    "PC PURCHASE - {n} {m}",
+    "{m} {c}, {p}",
+    "VISA DEBIT PURCHASE - {m}",
+    "{m}",
+];
+
+/// How a merchant is actually paid. This is a property of the MERCHANT, not of
+/// its category — which is the mistake the first version of this generator
+/// made, applying one flat template list to everything and emitting
+/// `MONTHLY BILL PAYMENT TIM HORTONS`. Tim Hortons does not bill anyone
+/// monthly. Categories are internally mixed on this axis:
+///
+/// - `gifts` — Hallmark is a shop you walk into; the Red Cross and United Way
+///   are overwhelmingly monthly preauthorized donations.
+/// - `transport` — Esso is a pump tap; CAA is an annual membership; a PRESTO
+///   card both auto-reloads and gets tapped.
+/// - `subscriptions` — Netflix bills; GoodLife bills AND is tapped at the door.
+#[derive(Clone, Copy, PartialEq)]
+enum Modality {
+    /// Card present. Pumps, tills, transit gates.
+    InPerson,
+    /// Card not present. Bookings, web orders.
+    Online,
+    /// Preauthorized debit / bill payment.
+    Recurring,
+    /// Genuinely both — a gym, a transit card, a retailer with a web store.
+    InPersonAndRecurring,
+    InPersonAndOnline,
+}
+
+/// The default for a category, before per-merchant overrides.
+fn default_modality(category: &str) -> Modality {
     match category {
-        "utilities" | "housing" => BILL_TEMPLATES,
-        "subscriptions" => BILL_TEMPLATES,
-        _ => POS_TEMPLATES,
+        "utilities" | "housing" | "subscriptions" => Modality::Recurring,
+        "travel" => Modality::Online,
+        _ => Modality::InPerson,
+    }
+}
+
+/// Merchants whose payment shape differs from their category's default.
+/// Every entry here is a fact about how that business actually charges people.
+const MODALITY_OVERRIDES: &[(&str, Modality)] = &[
+    // Charities solicit monthly preauthorized giving; the card shops do not.
+    ("CANADIAN RED CROSS", Modality::Recurring),
+    ("UNITED WAY", Modality::Recurring),
+    ("SICKKIDS FOUNDATION", Modality::Recurring),
+    ("CANADIAN CANCER SOCIETY", Modality::Recurring),
+    // An annual roadside-assistance membership, not a purchase.
+    ("CAA", Modality::Recurring),
+    // Transit cards auto-reload on file AND get tapped at the gate.
+    ("PRESTO FARE", Modality::InPersonAndRecurring),
+    ("TRANSLINK COMPASS", Modality::InPersonAndRecurring),
+    ("GO TRANSIT", Modality::InPersonAndRecurring),
+    // Gyms bill monthly and are also tapped at the door.
+    ("GOODLIFE FITNESS", Modality::InPersonAndRecurring),
+    ("FIT4LESS", Modality::InPersonAndRecurring),
+    ("ANYTIME FITNESS", Modality::InPersonAndRecurring),
+    // Big-box retailers with real web stores.
+    ("BEST BUY", Modality::InPersonAndOnline),
+    ("INDIGO BOOKS", Modality::InPersonAndOnline),
+    ("STAPLES", Modality::InPersonAndOnline),
+    ("HOME DEPOT", Modality::InPersonAndOnline),
+    // Online travel agency — never a card-present tap.
+    ("EXPEDIA CA", Modality::Online),
+    // Airlines sell online but also at an airport counter.
+    ("AIR CANADA", Modality::InPersonAndOnline),
+    ("WESTJET", Modality::InPersonAndOnline),
+];
+
+fn modality_for(category: &str, merchant: &str) -> Modality {
+    MODALITY_OVERRIDES
+        .iter()
+        .find(|(m, _)| *m == merchant)
+        .map(|(_, mo)| *mo)
+        .unwrap_or_else(|| default_modality(category))
+}
+
+/// Templates a given modality can plausibly produce. `rng` picks the family
+/// first for the mixed modalities so both shapes actually appear.
+fn templates_for(modality: Modality, rng: &mut Rng) -> &'static [&'static str] {
+    match modality {
+        Modality::InPerson => POS_TEMPLATES,
+        Modality::Online => ONLINE_TEMPLATES,
+        Modality::Recurring => BILL_TEMPLATES,
+        Modality::InPersonAndRecurring => {
+            if rng.next() % 2 == 0 {
+                POS_TEMPLATES
+            } else {
+                BILL_TEMPLATES
+            }
+        }
+        Modality::InPersonAndOnline => {
+            if rng.next() % 2 == 0 {
+                POS_TEMPLATES
+            } else {
+                ONLINE_TEMPLATES
+            }
+        }
     }
 }
 
@@ -220,7 +313,9 @@ fn main() -> Result<()> {
             merchants += 1;
             for _ in 0..per_merchant {
                 let (city, prov) = rng.pick(CITIES);
-                let template = rng.pick(templates_for(category));
+                let modality = modality_for(category, name);
+                let family = templates_for(modality, &mut rng);
+                let template = rng.pick(family);
                 let store = 1000 + (rng.next() % 9000);
                 let text = template
                     .replace("{m}", name)

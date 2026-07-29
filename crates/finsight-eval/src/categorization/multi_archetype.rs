@@ -69,9 +69,15 @@ const DECLARED_HIT_RATIO: &[(&str, f64)] = &[
     ("travel", 0.10),
     ("gifts", 0.0),
     ("housing", 0.55),
-    ("utilities", 0.25),
+    // 0.25 -> 1.00 and 0.40 -> 1.00 when the shipped keyword table was
+    // expanded for Canadian and US national chains (see KEYWORD_MAP's two
+    // regional blocks). These figures describe the SHIPPED TABLE's reach, not
+    // a property of the corpus, so improving the table is expected to move
+    // them — the test still catches unintended drift, it just now expects the
+    // table to actually cover utilities and health.
+    ("utilities", 1.00),
     ("subscriptions", 0.15),
-    ("health", 0.40),
+    ("health", 1.00),
 ];
 
 /// Generous but meaningful tolerance for the keyword-hit-ratio check.
