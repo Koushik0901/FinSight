@@ -251,3 +251,76 @@ It therefore cannot validate categorization quality. It IS useful as:
 
 Neither requires adopting it as a precision benchmark, and neither should be
 reported as one.
+
+## Real merchant names collapse the number (2026-07-29)
+
+Everything above was measured on an INVENTED corpus. Two corpora built from
+REAL merchant names now exist, and they change the conclusion completely.
+
+| corpus | merchants | holdout | builtin cov/prec | centroid cov/prec | few5 cov/prec |
+|---|--:|--:|---|---|---|
+| invented (`synthetic_multi_archetype`) | 330 | 763 | 16.6% / 100.0% | 98.0% / **97.7%** | 93.1% / 88.9% |
+| **US real** (`semi_synthetic`) | 2,386 | 11,758 | 23.2% / 89.6% | 87.4% / **71.4%** | 67.1% / 57.8% |
+| **CA real** (`semi_synthetic_ca`) | 134 | 574 | 55.2% / 100.0% | 91.6% / **53.2%** | 81.5% / 24.4% |
+
+**The invented corpus overstated precision by 26 points (US) and 44 points
+(CA).** It was not a slightly optimistic proxy — it measured almost nothing
+about the real task. Read every figure above as a harness self-test.
+
+### Why real merchants are harder
+
+Invented descriptors were descriptive (`BLUESAIL HYDRO PAYMENT`). Real ones are
+frequently opaque abbreviations carrying no semantic signal at all:
+
+    coned 07435             -> utilities, predicted groceries
+    BP 6976                 -> transport, predicted shopping
+    WHOLEFDS #31 MIAMI      -> groceries, predicted dining
+    SP PLUS #7651 SAN JOSE  -> transport (parking), predicted groceries
+
+A general-English encoder cannot know `coned` is Con Edison. No prototype
+tuning fixes a string with no signal in it.
+
+Some apparent errors are **label disagreements, not model errors** — `WAL-MART`
+is `shopping` in the source taxonomy, predicted `groceries`; defensible either
+way. That is a cost of adopting another project's categories.
+
+### The categorizer is measurably worse for Canadians
+
+US 71.4% vs CA 53.2%, same model and method. The failures are brand knowledge:
+
+    TIM HORTONS -> groceries (actual dining)
+    HUDSONS BAY -> groceries (actual shopping)
+    ESSO        -> groceries (actual transport)
+
+MiniLM has read far more US brand text than Canadian. This is a real equity
+problem, invisible to any US-only benchmark, and the strongest argument for
+keeping the deterministic keyword pass FIRST: on Canadian data `builtin` beats
+the semantic pass on both axes (100.0% precision at 55.2% coverage), because a
+human wrote Canadian keywords into it.
+
+### What it means for the epic
+
+- **Proposals-only is emphatically vindicated.** At 53-71% precision an
+  auto-apply path would write a wrong category into the canonical column for
+  roughly one transaction in three. Epic #74's 98% gate is not close, and there
+  is now a measurement saying so rather than an absence of one.
+- **`few5`, the production-faithful regime, is 24-58%.** A handful of curated
+  examples is not enough against real merchants.
+- **The next lever is KNOWLEDGE, not geometry.** A reranker reorders the same
+  signal-free vectors. `coned` and `BP` need a merchant lookup or a model that
+  has read the web — which favours #95's constrained-LLM fallback over its
+  other experiments.
+
+### Two corpus-construction traps worth not repeating
+
+1. **`normalize_merchant` is the wrong split key.** It keeps location tokens
+   and produced **34 distinct ids for Publix** — the same brand on both sides
+   of a "merchant-disjoint" split, inflating precision while looking rigorous.
+   The importer derives a brand key instead, and drops any key carrying two
+   categories rather than contributing a coin-flip label.
+2. **A corpus must be realistic in its COMBINATIONS, not only its vocabulary.**
+   The first Canadian generator drew from one flat template list and emitted
+   `MONTHLY BILL PAYMENT TIM HORTONS`. The billing wording dominated the
+   embedding and dragged restaurants toward utilities, scoring 38.7% — a
+   generator artifact, not a model failure. Splitting point-of-sale from
+   recurring-billing templates moved it to 53.2%.

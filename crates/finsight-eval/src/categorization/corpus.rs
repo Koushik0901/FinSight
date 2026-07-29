@@ -32,6 +32,30 @@ pub enum CorpusProvenance {
     /// Human-labeled real transactions. Still only as trustworthy as the
     /// labeling methodology, but not fabricated.
     Real,
+    /// Generated transaction rows built from a REAL merchant vocabulary and
+    /// real bank descriptor grammar — e.g. the MIT-licensed
+    /// `DoDataThings/us-bank-transaction-categories-v2`, whose 68k rows compose
+    /// 500+ actual merchant names (`PUBLIX`, `WAL-MART #0006`, `PYPL*365
+    /// MARKET`) into eight real US statement formats.
+    ///
+    /// This exists because forcing such a corpus into one of the two values
+    /// above would misreport it in whichever direction was chosen:
+    ///
+    /// - Calling it [`Self::Synthetic`] would attach a caveat reading "invented,
+    ///   clearly-fictional transactions", which is false about the part that
+    ///   carries the signal. The merchant→category relationship is REAL, and
+    ///   that relationship is the entire thing a semantic categorizer learns.
+    /// - Calling it [`Self::Real`] would claim human-assigned ground truth over
+    ///   actual spending. No human labeled these, and no real ledger produced
+    ///   them.
+    ///
+    /// What it genuinely buys over [`Self::Synthetic`]: real merchant strings
+    /// have real semantic content an encoder can succeed or fail on, and real
+    /// descriptor noise (store numbers, ACH trace ids, processor prefixes,
+    /// inconsistent casing) is exactly the formatting-sensitivity an invented
+    /// corpus cannot test. What it still cannot support: a claim about how the
+    /// categorizer performs on a specific user's real ledger.
+    SemiSynthetic,
 }
 
 impl CorpusProvenance {
@@ -39,6 +63,7 @@ impl CorpusProvenance {
         match self {
             Self::Synthetic => "synthetic",
             Self::Real => "real",
+            Self::SemiSynthetic => "semi-synthetic",
         }
     }
 
@@ -46,6 +71,7 @@ impl CorpusProvenance {
         match value.trim().to_ascii_lowercase().as_str() {
             "synthetic" => Some(Self::Synthetic),
             "real" => Some(Self::Real),
+            "semi-synthetic" | "semi_synthetic" => Some(Self::SemiSynthetic),
             _ => None,
         }
     }
@@ -69,6 +95,13 @@ impl CorpusProvenance {
                  truth. They are still only as trustworthy as the labeling methodology and the \
                  size of the merchant-disjoint holdout; see eval/CATEGORIZATION_CORPUS.md before \
                  quoting any figure as a validated precision claim."
+                .to_string(),
+            Self::SemiSynthetic => "SEMI-SYNTHETIC baseline — the corpus file declares \
+                 `provenance: semi-synthetic`: generated rows built from a REAL merchant \
+                 vocabulary and real bank descriptor formats. The merchant-to-category \
+                 signal is real, so these numbers say something an invented corpus cannot \
+                 — but no human labeled them and no real ledger produced them, so this is \
+                 NOT a measured claim about performance on anyone's actual transactions."
                 .to_string(),
         }
     }
