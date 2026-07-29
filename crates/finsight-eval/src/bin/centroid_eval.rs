@@ -45,6 +45,72 @@ const MIN_SCORE: f32 = 0.35;
 const HOLDOUT_FRACTION: f64 = 0.3;
 const SPLIT_SEED: u64 = 42;
 
+/// Generic, real-world category exemplars — the kind of thing a shipped default
+/// seed or a user curating `category_examples` (#91) would plausibly write.
+///
+/// # Read the caveat before quoting any number this produces
+///
+/// These were chosen AFTER looking at the holdout's failures. That is the
+/// definition of tuning on the test set, and it means the "with exemplars"
+/// column is **not an unbiased estimate** of what curating examples buys in
+/// general — it is an upper bound, and a demonstration that the lever moves the
+/// prototype at all.
+///
+/// What makes it still worth measuring: the product question is precisely
+/// "when a user sees a category being confused, can they fix it by adding an
+/// example?" — and that is a question you can only ask having seen the
+/// confusion. The honest claim is about the MECHANISM, never about the delta
+/// generalizing to unseen traps.
+///
+/// None of these is a holdout merchant name. They are domain vocabulary
+/// (`BC HYDRO` is a real utility; `BLUESAIL HYDRO` is the invented holdout
+/// merchant), so this is not merchant-identity leakage across the split — but
+/// it is unquestionably informed by it.
+const DOMAIN_EXEMPLARS: &[(&str, &str)] = &[
+    // The utilities -> groceries trap: a general-English encoder places "hydro"
+    // near water and produce. Real utilities named this way are common in
+    // Canada (BC Hydro, Hydro One, Hydro-Quebec).
+    ("utilities", "BC HYDRO"),
+    ("utilities", "HYDRO ONE ELECTRICITY BILL"),
+    ("utilities", "ELECTRIC UTILITY PAYMENT"),
+    ("utilities", "NATURAL GAS BILL"),
+    ("utilities", "WATER AND SEWER SERVICE"),
+    // The subscriptions -> housing trap: "membership fee" reads as a club or
+    // building fee without context.
+    ("subscriptions", "ANNUAL MEMBERSHIP FEE"),
+    ("subscriptions", "GYM MEMBERSHIP MONTHLY"),
+    ("subscriptions", "STREAMING SERVICE SUBSCRIPTION"),
+    // The single transport -> groceries miss.
+    ("transport", "TRANSIT AUTHORITY FARE"),
+    ("transport", "MONTHLY BUS PASS"),
+];
+
+/// Examples per category in the production-faithful regime — the order of
+/// magnitude a user actually curates in `category_examples` (#91), not the
+/// hundreds a corpus half contains.
+const FEW_SHOT_K: usize = 5;
+
+/// First `k` examples of each category, in corpus order.
+///
+/// Deterministic rather than random: a random subsample would make the
+/// few-shot number wobble run to run, and the point of this column is to be
+/// comparable across runs and against the full-reference column.
+fn take_per_category(
+    examples: &[finsight_eval::categorization::corpus::LabeledExample],
+    k: usize,
+) -> Vec<finsight_eval::categorization::corpus::LabeledExample> {
+    let mut seen: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut out = Vec::new();
+    for ex in examples {
+        let n = seen.entry(ex.category.as_str()).or_insert(0);
+        if *n < k {
+            out.push(ex.clone());
+            *n += 1;
+        }
+    }
+    out
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let corpus_path = std::env::args().nth(1).unwrap_or_else(|| {
@@ -94,6 +160,63 @@ async fn main() -> Result<()> {
     let prototypes: Vec<Prototype> = build_prototypes(&reference, &reference_vectors);
     println!("prototypes:  {} categories with a usable centroid", prototypes.len());
 
+    // Second prototype set: the same reference half PLUS a handful of generic
+    // domain exemplars, standing in for what #91's per-category examples give a
+    // user. See DOMAIN_EXEMPLARS for why this is a mechanism demonstration and
+    // not an unbiased improvement estimate.
+    let exemplar_texts: Vec<String> =
+        DOMAIN_EXEMPLARS.iter().map(|(_, text)| (*text).to_string()).collect();
+    let exemplar_vectors = encoder.embed(&exemplar_texts).await?;
+    let mut seeded: Vec<_> = reference.clone();
+    let mut seeded_vectors = reference_vectors.clone();
+    for ((category, text), v) in DOMAIN_EXEMPLARS.iter().zip(exemplar_vectors) {
+        seeded.push(finsight_eval::categorization::corpus::LabeledExample {
+            id: format!("exemplar:{text}"),
+            merchant_text: (*text).to_string(),
+            // A synthetic merchant id that cannot collide with a corpus
+            // merchant, so the disjointness story stays legible.
+            merchant_id: format!("exemplar:{text}"),
+            category: (*category).to_string(),
+            notes: Some("hand-added domain exemplar".into()),
+        });
+        seeded_vectors.push(v);
+    }
+    let seeded_prototypes: Vec<Prototype> = build_prototypes(&seeded, &seeded_vectors);
+
+    // --- production-faithful regime ---------------------------------------
+    //
+    // The two prototype sets above are built from the WHOLE reference half —
+    // ~200 examples per category. Production never looks like that:
+    // `centroid::rebuild_all` builds each centroid from `category_examples`
+    // (#91), which is a handful of exemplars a user curated by hand.
+    //
+    // That difference is not cosmetic, it changes what the numbers mean. In a
+    // 200-example mean, five added exemplars are diluted 40:1 and cannot move
+    // the prototype; in a 5-example mean they dominate it. Measuring only the
+    // corpus-scale regime would report the shipped feature's behaviour wrongly
+    // in BOTH directions — overstating baseline precision (more examples is a
+    // better mean) and understating the curation lever.
+    let few_shot: Vec<_> = take_per_category(&reference, FEW_SHOT_K);
+    let few_shot_texts: Vec<String> = few_shot.iter().map(|e| e.merchant_text.clone()).collect();
+    let few_shot_vectors = encoder.embed(&few_shot_texts).await?;
+    let few_shot_prototypes: Vec<Prototype> = build_prototypes(&few_shot, &few_shot_vectors);
+
+    let mut few_shot_seeded = few_shot.clone();
+    let mut few_shot_seeded_vectors = few_shot_vectors.clone();
+    let exemplar_vectors_2 = encoder.embed(&exemplar_texts).await?;
+    for ((category, text), v) in DOMAIN_EXEMPLARS.iter().zip(exemplar_vectors_2) {
+        few_shot_seeded.push(finsight_eval::categorization::corpus::LabeledExample {
+            id: format!("exemplar:{text}"),
+            merchant_text: (*text).to_string(),
+            merchant_id: format!("exemplar:{text}"),
+            category: (*category).to_string(),
+            notes: None,
+        });
+        few_shot_seeded_vectors.push(v);
+    }
+    let few_shot_seeded_prototypes: Vec<Prototype> =
+        build_prototypes(&few_shot_seeded, &few_shot_seeded_vectors);
+
     // --- score -------------------------------------------------------------
     // Index by example id so the predictor closure can find each holdout row's
     // precomputed vector; `ConfusionMatrix::build` is sync and takes the
@@ -114,12 +237,37 @@ async fn main() -> Result<()> {
     // #92 actually asks for. Comparing against a different population would
     // make the two columns incomparable.
     let builtin_matrix = ConfusionMatrix::build("builtin", &holdout, predict_builtin_for);
+    let seeded_matrix = ConfusionMatrix::build("centroid+ex", &holdout, |ex| {
+        match vector_by_id.get(ex.id.as_str()) {
+            Some(v) => predict_centroid(v, &seeded_prototypes, MIN_SCORE),
+            None => Prediction::abstain(),
+        }
+    });
 
     println!("\nmerchant-disjoint holdout ({} rows)", holdout.len());
-    println!("{:<10} {:>10} {:>10} {:>10}", "source", "coverage", "precision", "correct");
-    for m in [&builtin_matrix, &centroid_matrix] {
+    println!("{:<12} {:>10} {:>10} {:>10}", "source", "coverage", "precision", "correct");
+    let few_shot_matrix = ConfusionMatrix::build("few5", &holdout, |ex| {
+        match vector_by_id.get(ex.id.as_str()) {
+            Some(v) => predict_centroid(v, &few_shot_prototypes, MIN_SCORE),
+            None => Prediction::abstain(),
+        }
+    });
+    let few_shot_seeded_matrix = ConfusionMatrix::build("few5+ex", &holdout, |ex| {
+        match vector_by_id.get(ex.id.as_str()) {
+            Some(v) => predict_centroid(v, &few_shot_seeded_prototypes, MIN_SCORE),
+            None => Prediction::abstain(),
+        }
+    });
+
+    for m in [
+        &builtin_matrix,
+        &centroid_matrix,
+        &seeded_matrix,
+        &few_shot_matrix,
+        &few_shot_seeded_matrix,
+    ] {
         println!(
-            "{:<10} {:>9.1}% {:>10} {:>10}",
+            "{:<12} {:>9.1}% {:>10} {:>10}",
             m.source,
             m.coverage() * 100.0,
             m.precision()
@@ -192,6 +340,15 @@ async fn main() -> Result<()> {
             println!("  {score:.3}  {text}  (would have said: {would_be})");
         }
     }
+
+    println!(
+        "\n`centroid+ex` adds {} hand-written domain exemplars to the reference half,\n\
+         standing in for #91's per-category examples. They were chosen AFTER seeing the\n\
+         failures above, so this column is an UPPER BOUND on that lever and a demonstration\n\
+         that it moves the prototype — not an unbiased estimate of what curating examples\n\
+         buys against traps nobody has looked at yet.",
+        DOMAIN_EXEMPLARS.len()
+    );
 
     println!("\n{}", loaded.provenance.caveat());
     Ok(())

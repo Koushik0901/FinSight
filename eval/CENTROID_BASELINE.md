@@ -20,10 +20,48 @@ Abstain floor: cosine ≥ 0.35 (`MIN_PROPOSAL_SCORE`, same constant the shipped 
 Scored on the **merchant-disjoint holdout only** — 763 rows whose merchants
 appear nowhere in the reference half the prototypes were built from.
 
-| source     | coverage | precision | correct |
-|------------|---------:|----------:|--------:|
-| `builtin`  |   16.6%  |   100.0%  | 127/127 |
-| `centroid` |   98.0%  |    97.7%  | 731/748 |
+| source        | prototypes built from | coverage | precision | correct |
+|---------------|----------------------|---------:|----------:|--------:|
+| `builtin`     | keyword table        |   16.6%  |   100.0%  | 127/127 |
+| `centroid`    | ~200 examples/category |  98.0%  |    97.7%  | 731/748 |
+| `centroid+ex` | ~200 + 10 exemplars  |   98.0%  |    97.7%  | 731/748 |
+| **`few5`**    | **5 examples/category** | **93.1%** | **88.9%** | 631/710 |
+| **`few5+ex`** | **5 + 10 exemplars** | **93.7%** | **91.3%** | 653/715 |
+
+> **⚠️ Read `few5`, not `centroid`, as the shipped feature's number.**
+> See "Which row describes production" immediately below. An earlier version of
+> this document led with 97.7%; that figure measures a configuration the app
+> never runs.
+
+## Which row describes production (correcting the earlier headline)
+
+`centroid` builds each prototype from the entire reference half — roughly **200
+examples per category**. Production never looks like that.
+`centroid::rebuild_all` builds each centroid from `category_examples` (#91),
+which is a **handful of exemplars a user curated by hand**. `few5` models that.
+
+The gap is not cosmetic — it is **8.8 precision points** (97.7% → 88.9%) and
+~5 points of coverage. Reporting only the corpus-scale row overstates the
+shipped feature, and the first version of this file did exactly that.
+
+It also inverted the conclusion about the curation lever, in a way worth
+recording because the first measurement looked like a clean negative result:
+
+- At ~200 examples/category, adding 10 targeted exemplars changed **nothing**
+  (97.7% → 97.7%, byte-identical 731/748). Five new vectors averaged into a
+  200-vector mean are diluted 40:1 and cannot move the prototype.
+- At 5 examples/category — the regime that actually ships — the same 10
+  exemplars are worth **+2.4 precision points and +0.6 coverage**
+  (88.9% → 91.3%).
+
+So "curated examples are the cheap lever" was right, but only visible once
+measured in the configuration the feature actually runs in. Measured in the
+wrong regime it looks like the lever does nothing at all.
+
+**`few5` is likely a lower bound on the shipped feature.** It takes the first
+five examples per category in corpus order — arbitrary ones. A user curating
+examples picks *representative* ones, and the whole point of the affordance is
+that they pick them after seeing what gets miscategorized.
 
 ## Reading this honestly
 
@@ -100,11 +138,12 @@ has no reason to know (`Eskom`, `Hydro Ottawa`, `SaskPower`).
   the same embedding space; it does not fix a prototype that genuinely sits
   closer to the wrong category. These errors are not near-ties being ordered
   badly — `utilities` is losing to `groceries` outright, 11 times.
-- **Per-category examples are the cheap, already-built lever.** One `BC HYDRO`
-  example on `utilities` moves that centroid directly, and #91 already ships
-  the mechanism plus a UI path to add one. This is not an #95 experiment at
-  all — it is the existing feature doing its job, and it is worth measuring
-  before anything heavier is considered.
+- **Per-category examples are the cheap, already-built lever — measured, and
+  it works, but only in the regime that ships.** Ten targeted exemplars are
+  worth +2.4 precision points at 5 examples/category and *exactly zero* at
+  ~200 (see "Which row describes production"). #91 already ships the mechanism
+  and a UI path to add one, so this is not an #95 experiment at all — it is the
+  existing feature doing its job.
 - **A constrained LLM fallback targets the abstains specifically.** All 15 sit
   in a narrow band below the floor on two merchant families; an LLM knows what
   "BC Hydro" is. That is a well-shaped, bounded fallback (2% of rows), not a
