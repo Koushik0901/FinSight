@@ -71,6 +71,7 @@
 
 pub mod confusion;
 pub mod corpus;
+pub mod centroid_predictor;
 #[cfg(test)]
 mod multi_archetype;
 pub mod predictors;

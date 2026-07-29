@@ -4,6 +4,7 @@ pub mod alerts;
 pub mod budgets;
 pub mod categories;
 pub mod categorizations;
+pub mod category_centroids;
 pub mod category_examples;
 pub mod category_proposals;
 pub mod connections;
