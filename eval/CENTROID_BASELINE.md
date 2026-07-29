@@ -324,3 +324,30 @@ human wrote Canadian keywords into it.
    embedding and dragged restaurants toward utilities, scoring 38.7% — a
    generator artifact, not a model failure. Splitting point-of-sale from
    recurring-billing templates moved it to 53.2%.
+
+## Regenerating the corpora (they are not checked in)
+
+The two real-merchant corpora are **gitignored**. The tools that build them
+ship; the data does not — the US file alone is ~3.8MB and would sit in every
+clone forever, and it is reproducible in one command each.
+
+```bash
+# US — 33,481 rows / 2,386 merchants, from the MIT-licensed HuggingFace set
+curl -sL https://huggingface.co/datasets/DoDataThings/us-bank-transaction-categories-v2/resolve/main/transactions-synthetic.csv -o /tmp/txns.csv
+cargo run -p finsight-eval --bin import_hf_corpus -- /tmp/txns.csv eval/categorization_corpus.semi_synthetic.jsonl
+
+# Canada — 1,890 rows / 135 merchants, generated
+cargo run -p finsight-eval --bin generate_ca_corpus -- eval/categorization_corpus.semi_synthetic_ca.jsonl
+```
+
+Then measure. Use `keyword_eval` for the keyword pass — it needs no model and
+answers in milliseconds, where `centroid_eval` must load MiniLM and embed the
+whole corpus twice:
+
+```bash
+cargo run -p finsight-eval --bin keyword_eval  -- eval/categorization_corpus.semi_synthetic.jsonl
+cargo run -p finsight-eval --bin centroid_eval -- eval/categorization_corpus.semi_synthetic.jsonl
+```
+
+Both generators are deterministic, so a regenerated file is byte-identical to
+the one these numbers came from.
