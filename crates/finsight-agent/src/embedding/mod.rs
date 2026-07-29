@@ -111,6 +111,9 @@
 //! forgotten.
 
 pub mod candle_encoder;
+/// Prototype (centroid) category matching over this module's encoder — the
+/// consumer side of issue #92. Proposals only; never writes canonical.
+pub mod centroid;
 
 use anyhow::Result;
 use async_trait::async_trait;
