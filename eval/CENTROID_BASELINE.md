@@ -351,3 +351,53 @@ cargo run -p finsight-eval --bin centroid_eval -- eval/categorization_corpus.sem
 
 Both generators are deterministic, so a regenerated file is byte-identical to
 the one these numbers came from.
+
+## Should the semantic pass be wired into the categorizer? Measured: not yet
+
+`centroid::rebuild_all` and `rank` exist and are tested, but **nothing in
+production calls them** — the pass is a library plus an eval harness. That was
+left open deliberately; this is the measurement that decides it.
+
+At its headline precision a blanket semantic pass would put a wrong proposal in
+the review queue on roughly a third of the rows it touched. The question is
+whether a high-score BAND is reliable even when the aggregate is not, because a
+band could be surfaced while the tail stays off.
+
+Threshold sweep, Canadian real-merchant holdout (574 rows), above the shipped
+0.35 abstain floor:
+
+| threshold | coverage | precision | n |
+|---:|---:|---:|---:|
+| 0.35 | 90.9% | 51.5% | 522 |
+| 0.45 | 82.8% | 54.1% | 475 |
+| 0.50 | 69.7% | 54.5% | 400 |
+| 0.55 | 48.1% | 57.6% | 276 |
+| 0.60 | 31.7% | 63.7% | 182 |
+| 0.65 | 14.6% | 64.3% | 84 |
+| 0.70 | 4.4% | 88.0% | 25 |
+| 0.75 | 1.2% | 100.0% | 7 |
+
+**There is no usable band.** Precision climbs far too slowly with score: buying
+51.5% -> 63.7% costs two thirds of the coverage, and the first genuinely good
+figure (88.0% at 0.70) covers 25 of 574 rows. The 100% at 0.75 is seven rows —
+a number with no statistical content at all.
+
+### Conclusion
+
+Leave the semantic pass out of the production pipeline for now. This is a
+measured conclusion, not caution:
+
+- **The keyword pass already does this job better**, on both axes, for the same
+  population — 89.2% coverage at 100.0% precision on the same holdout. Adding a
+  51% source underneath it would add noise, not coverage.
+- **#93's calibration has its answer for Canadian data**: no confidence band
+  qualifies for auto-apply, and none qualifies for proposal-surfacing either.
+- **The blocker is knowledge, not calibration.** Scores do not separate right
+  from wrong answers because the encoder has no opinion about `ESSO` or `TIM
+  HORTONS` to be confident *about*. A threshold cannot recover information that
+  was never in the vector, which is why #95's constrained-LLM fallback is the
+  experiment worth running and reranking is not.
+
+What #92 delivered stands: the storage, invalidation, embed-on-write and
+scoring machinery is real, tested, and measurable. What this section adds is
+the evidence that switching it on would currently make categorization worse.
