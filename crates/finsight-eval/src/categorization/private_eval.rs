@@ -27,10 +27,12 @@
 //! - [`super::split::merchant_disjoint_split`] for the merchant-disjoint
 //!   holdout.
 //! - [`super::confusion::ConfusionMatrix`] for precision/coverage.
-//! - [`super::predictors::predict_builtin_for`] for the categorizer under
-//!   measurement — the only real candidate today (see `super` module docs on
-//!   why no `llm` baseline exists yet; a local sentence-encoder baseline is
-//!   separate, out-of-scope work happening on another branch).
+//! - [`super::predictors::predict_builtin_for`] for the deterministic
+//!   categorizer, and [`evaluate_centroid_precision`] for the semantic one
+//!   (issue #92, landed since this module was written — the "separate branch"
+//!   its earlier docs referred to). Both run over the SAME corrections and the
+//!   SAME merchant-disjoint split, so the two numbers are directly comparable.
+//!   Still no `llm` baseline; see `super` module docs for why.
 //! - `finsight_core::merchant::normalize_merchant` for merchant identity —
 //!   the SAME grouping key categorization/recurring/insights already use
 //!   throughout this codebase, not a bespoke normalization invented here.
@@ -285,6 +287,78 @@ pub fn evaluate_builtin_precision(
 pub fn run_private_eval(conn: &Connection) -> rusqlite::Result<PrivateEvalResult> {
     let examples = fetch_user_corrections(conn)?;
     Ok(evaluate_builtin_precision(&examples, DEFAULT_HOLDOUT_FRACTION, DEFAULT_SPLIT_SEED))
+}
+
+/// The centroid (semantic) categorizer measured against the SAME real
+/// corrections, on the SAME merchant-disjoint split, as
+/// [`evaluate_builtin_precision`].
+///
+/// # Why this matters more than the synthetic number
+///
+/// `eval/CENTROID_BASELINE.md` reports the centroid pass against an invented
+/// corpus, and says plainly that a synthetic figure is not a real-world
+/// precision claim. This function is how a real one gets produced without
+/// anybody fabricating data or publishing a private ledger: every label here
+/// was written when a human corrected a category in their own instance, and
+/// the result never leaves that instance.
+///
+/// It is also the only honest route to epic #74's ≥98% merchant-disjoint gate.
+/// That gate was declared unfalsifiable because no labeled corpus existed;
+/// accumulated `source = 'user'` corrections are that corpus, per-instance.
+///
+/// # Contract
+///
+/// `vectors_by_id` must contain an embedding for every example the caller
+/// wants scored, keyed by [`LabeledExample::id`], all from ONE encoder. The
+/// caller owns embedding because it is async and this module is deliberately
+/// sync and DB-shaped. Examples with no entry are scored as abstains — which
+/// costs coverage, never precision, so a partial embedding cannot inflate the
+/// headline number.
+///
+/// Prototypes are built from the REFERENCE half only. Building them from all
+/// corrections and then scoring the holdout would leak merchant identity
+/// across the split and quietly inflate precision.
+pub fn evaluate_centroid_precision(
+    examples: &[LabeledExample],
+    vectors_by_id: &std::collections::BTreeMap<String, Vec<f32>>,
+    min_score: f32,
+    holdout_fraction: f64,
+    seed: u64,
+) -> PrivateEvalResult {
+    let n_total_corrections = examples.len();
+    let n_total_merchants = distinct_merchants(examples);
+    // Same seed and fraction as the builtin path, so the two results describe
+    // the same holdout and can be read side by side.
+    let (reference, holdout) = merchant_disjoint_split(examples, holdout_fraction, seed);
+    let n_holdout_corrections = holdout.len();
+    let n_holdout_merchants = distinct_merchants(&holdout);
+
+    let reference_vectors: Vec<Vec<f32>> = reference
+        .iter()
+        .map(|ex| vectors_by_id.get(&ex.id).cloned().unwrap_or_default())
+        .collect();
+    let prototypes = super::centroid_predictor::build_prototypes(&reference, &reference_vectors);
+
+    let matrix = ConfusionMatrix::build("centroid", &holdout, |ex| {
+        match vectors_by_id.get(&ex.id) {
+            Some(v) => super::centroid_predictor::predict_centroid(v, &prototypes, min_score),
+            None => super::predictors::Prediction::abstain(),
+        }
+    });
+
+    PrivateEvalResult {
+        source: "centroid",
+        precision: matrix.precision(),
+        coverage: matrix.coverage(),
+        n_holdout_predicted: matrix.n_predicted(),
+        n_holdout_correct: matrix.n_correct(),
+        n_total_corrections,
+        n_total_merchants,
+        n_holdout_corrections,
+        n_holdout_merchants,
+        holdout_fraction,
+        seed,
+    }
 }
 
 #[cfg(test)]
@@ -593,5 +667,99 @@ mod tests {
                 "a rendered report containing a percentage must also carry N, got: {rendered}"
             );
         }
+    }
+
+    /// Deterministic offline embeddings. The real encoder downloads ~90MB from
+    /// HuggingFace, which a unit test must never depend on; what is under test
+    /// here is the WIRING (does the split hold, does an unembedded row abstain
+    /// rather than score, do prototypes come from the reference half), not
+    /// whether any particular model is good at merchants.
+    fn stub_vectors(examples: &[LabeledExample]) -> std::collections::BTreeMap<String, Vec<f32>> {
+        examples
+            .iter()
+            .map(|ex| {
+                // One axis per category, so same-category rows are identical
+                // unit vectors and cross-category rows are orthogonal. That
+                // makes the expected outcome hand-checkable.
+                let axis = match ex.category.as_str() {
+                    "groceries" => 0,
+                    "dining" => 1,
+                    _ => 2,
+                };
+                let mut v = vec![0.0f32; 3];
+                v[axis] = 1.0;
+                (ex.id.clone(), v)
+            })
+            .collect()
+    }
+
+    /// The centroid path must describe the SAME holdout as the builtin path —
+    /// same fraction, same seed — or the two numbers an admin sees side by side
+    /// would silently be about different populations.
+    #[test]
+    fn centroid_and_builtin_describe_the_same_holdout() {
+        let examples: Vec<_> = (0..12)
+            .map(|i| {
+                let cat = if i % 2 == 0 { "groceries" } else { "dining" };
+                ex(&format!("id{i}"), &format!("m-{i}"), "Some Merchant", cat)
+            })
+            .collect();
+        let vectors = stub_vectors(&examples);
+
+        let b = evaluate_builtin_precision(&examples, DEFAULT_HOLDOUT_FRACTION, DEFAULT_SPLIT_SEED);
+        let c = evaluate_centroid_precision(
+            &examples,
+            &vectors,
+            0.35,
+            DEFAULT_HOLDOUT_FRACTION,
+            DEFAULT_SPLIT_SEED,
+        );
+
+        assert_eq!(b.n_holdout_corrections, c.n_holdout_corrections);
+        assert_eq!(b.n_holdout_merchants, c.n_holdout_merchants);
+        assert_eq!(b.n_total_corrections, c.n_total_corrections);
+        assert_eq!(c.source, "centroid");
+    }
+
+    /// With category-orthogonal embeddings the centroid pass is perfect, which
+    /// is the point: it proves the split/prototype/scoring wiring is sound
+    /// before any real model is involved.
+    #[test]
+    fn centroid_scores_perfectly_on_separable_embeddings() {
+        let examples: Vec<_> = (0..12)
+            .map(|i| {
+                let cat = if i % 2 == 0 { "groceries" } else { "dining" };
+                ex(&format!("id{i}"), &format!("m-{i}"), "Some Merchant", cat)
+            })
+            .collect();
+        let vectors = stub_vectors(&examples);
+        let r = evaluate_centroid_precision(&examples, &vectors, 0.35, 0.5, 7);
+        assert_eq!(r.precision, Some(1.0), "orthogonal-by-category vectors must separate cleanly");
+    }
+
+    /// A row the caller failed to embed must abstain, not score. An abstain
+    /// costs coverage; a fabricated zero vector would cost PRECISION, and
+    /// would do it invisibly.
+    #[test]
+    fn an_unembedded_row_abstains_rather_than_scoring() {
+        let examples: Vec<_> = (0..12)
+            .map(|i| {
+                let cat = if i % 2 == 0 { "groceries" } else { "dining" };
+                ex(&format!("id{i}"), &format!("m-{i}"), "Some Merchant", cat)
+            })
+            .collect();
+        let full = stub_vectors(&examples);
+        let complete = evaluate_centroid_precision(&examples, &full, 0.35, 0.5, 7);
+
+        // Drop every embedding: nothing can be scored at all.
+        let empty = std::collections::BTreeMap::new();
+        let none = evaluate_centroid_precision(&examples, &empty, 0.35, 0.5, 7);
+
+        assert!(complete.coverage > 0.0);
+        assert_eq!(none.coverage, 0.0, "no embeddings must mean no coverage");
+        assert_eq!(
+            none.precision, None,
+            "precision over zero predictions is undefined, never 0% or 100%"
+        );
     }
 }
