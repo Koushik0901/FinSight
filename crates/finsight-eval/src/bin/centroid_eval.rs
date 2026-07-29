@@ -31,6 +31,7 @@
 //! centroid pass stays proposal-only regardless of what this prints.
 
 use anyhow::{Context, Result};
+use finsight_eval::categorization::threshold::threshold_sweep;
 use finsight_eval::categorization::{
     centroid_predictor::{build_prototypes, predict_centroid, Prototype},
     confusion::ConfusionMatrix,
@@ -274,6 +275,43 @@ async fn main() -> Result<()> {
                 .map(|p| format!("{:.1}%", p * 100.0))
                 .unwrap_or_else(|| "n/a".into()),
             format!("{}/{}", m.n_correct(), m.n_predicted()),
+        );
+    }
+
+    // --- threshold sweep ---------------------------------------------------
+    //
+    // THE DECISION THIS EXISTS TO INFORM. The centroid pass is not wired into
+    // the production categorizer, and at its headline precision it should not
+    // be: on real merchants it is right about 2 times in 3, so a blanket
+    // semantic pass would put a wrong proposal in the review queue on a third
+    // of the rows it touched.
+    //
+    // But precision is not uniform across the score range. If a HIGH-score band
+    // is reliable, that band is worth surfacing even while the tail is not —
+    // and if no such band exists, that is a much stronger argument for leaving
+    // the pass switched off than the aggregate number alone.
+    //
+    // Note the floor already in force: `predict_centroid` abstains below
+    // MIN_SCORE, so every row below it is excluded before this sweep sees it.
+    // The sweep therefore describes bands ABOVE the shipped floor.
+    let sweep = threshold_sweep(
+        &holdout,
+        |ex| match vector_by_id.get(ex.id.as_str()) {
+            Some(v) => predict_centroid(v, &prototypes, MIN_SCORE),
+            None => Prediction::abstain(),
+        },
+        &[0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
+    );
+    println!("
+centroid precision by score threshold (holdout)");
+    println!("{:>10} {:>10} {:>11} {:>10}", "threshold", "coverage", "precision", "n");
+    for p in &sweep {
+        println!(
+            "{:>10.2} {:>9.1}% {:>11} {:>10}",
+            p.threshold,
+            p.coverage * 100.0,
+            p.precision.map(|v| format!("{:.1}%", v * 100.0)).unwrap_or_else(|| "n/a".into()),
+            p.n_predicted,
         );
     }
 
