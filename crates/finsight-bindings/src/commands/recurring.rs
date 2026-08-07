@@ -16,7 +16,8 @@ pub async fn set_subscription_verdict(
     merchant_key: String,
     verdict: Option<String>,
 ) -> AppResult<()> {
-    finsight_api::commands::recurring::set_subscription_verdict(&state.api, merchant_key, verdict).await
+    finsight_api::commands::recurring::set_subscription_verdict(&state.api, merchant_key, verdict)
+        .await
 }
 
 /// Mark a detected subscription as a free trial converting on `trial_ends_at`
@@ -29,7 +30,13 @@ pub async fn set_subscription_trial(
     label: String,
     trial_ends_at: Option<String>,
 ) -> AppResult<()> {
-    finsight_api::commands::recurring::set_subscription_trial(&state.api, merchant_key, label, trial_ends_at).await
+    finsight_api::commands::recurring::set_subscription_trial(
+        &state.api,
+        merchant_key,
+        label,
+        trial_ends_at,
+    )
+    .await
 }
 
 /// Mark a detected subscription cancelled as of `cancelled_at`; a charge after
@@ -42,5 +49,11 @@ pub async fn mark_subscription_cancelled(
     label: String,
     cancelled_at: String,
 ) -> AppResult<()> {
-    finsight_api::commands::recurring::mark_subscription_cancelled(&state.api, merchant_key, label, cancelled_at).await
+    finsight_api::commands::recurring::mark_subscription_cancelled(
+        &state.api,
+        merchant_key,
+        label,
+        cancelled_at,
+    )
+    .await
 }

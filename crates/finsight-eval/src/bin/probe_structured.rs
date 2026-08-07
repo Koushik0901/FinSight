@@ -26,7 +26,9 @@ fn resolve_key() -> Result<String> {
             return Ok(k);
         }
     }
-    Err(anyhow!("No OpenRouter key (env OPENROUTER_API_KEY or keychain)."))
+    Err(anyhow!(
+        "No OpenRouter key (env OPENROUTER_API_KEY or keychain)."
+    ))
 }
 
 fn schema() -> Value {
@@ -81,18 +83,29 @@ async fn probe(client: &reqwest::Client, key: &str, model: &str) -> (bool, Strin
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        return (false, format!("HTTP {status}: {}", text.chars().take(300).collect::<String>()));
+        return (
+            false,
+            format!(
+                "HTTP {status}: {}",
+                text.chars().take(300).collect::<String>()
+            ),
+        );
     }
     // Accepted. Did the content conform to the schema shape?
     let parsed: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-    let content = parsed["choices"][0]["message"]["content"].as_str().unwrap_or("");
+    let content = parsed["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("");
     let conforms = serde_json::from_str::<Value>(content)
         .ok()
         .map(|v| v.get("answer").is_some() && v.get("response_blocks").is_some())
         .unwrap_or(false);
     (
         true,
-        format!("HTTP {status} · content conforms to schema: {conforms} · content head: {}", content.chars().take(160).collect::<String>()),
+        format!(
+            "HTTP {status} · content conforms to schema: {conforms} · content head: {}",
+            content.chars().take(160).collect::<String>()
+        ),
     )
 }
 

@@ -62,9 +62,11 @@ pub fn add(
     }
 
     let category_exists: bool = conn
-        .query_row("SELECT 1 FROM categories WHERE id = ?1", [category_id], |_| {
-            Ok(true)
-        })
+        .query_row(
+            "SELECT 1 FROM categories WHERE id = ?1",
+            [category_id],
+            |_| Ok(true),
+        )
         .optional()?
         .unwrap_or(false);
     if !category_exists {
@@ -189,7 +191,9 @@ mod tests {
 
         let listed = list_for_category(&mut conn, &cat.id).unwrap();
         assert_eq!(listed.len(), 2);
-        assert!(listed.iter().any(|e| e.example_text == "SQ *BLUE BOTTLE COFFEE"));
+        assert!(listed
+            .iter()
+            .any(|e| e.example_text == "SQ *BLUE BOTTLE COFFEE"));
 
         remove(&mut conn, &a.id).unwrap();
         let listed = list_for_category(&mut conn, &cat.id).unwrap();
@@ -309,7 +313,10 @@ mod tests {
             .find(|c| c.id == cat.id)
             .unwrap();
         assert!(archived.archived_at.is_some());
-        assert_eq!(archived.guidance.as_deref(), Some("Any coffee shop or café."));
+        assert_eq!(
+            archived.guidance.as_deref(),
+            Some("Any coffee shop or café.")
+        );
         // ...and the examples still resolve by category id. Nothing is orphaned.
         let listed = list_for_category(&mut conn, &cat.id).unwrap();
         assert_eq!(listed.len(), 1);
@@ -341,13 +348,7 @@ mod tests {
         )
         .unwrap();
 
-        let e = add(
-            &mut conn,
-            &cat.id,
-            "SQ *BLUE BOTTLE COFFEE",
-            Some("txn-1"),
-        )
-        .unwrap();
+        let e = add(&mut conn, &cat.id, "SQ *BLUE BOTTLE COFFEE", Some("txn-1")).unwrap();
         assert_eq!(e.source_txn_id.as_deref(), Some("txn-1"));
 
         conn.pragma_update(None, "foreign_keys", true).unwrap();

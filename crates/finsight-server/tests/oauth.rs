@@ -21,7 +21,9 @@ fn test_ui_dir() -> PathBuf {
 }
 
 async fn json_body(res: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
 }
 
@@ -38,7 +40,8 @@ fn cookie_from(res: &axum::response::Response) -> String {
 }
 
 fn challenge_for(verifier: &str) -> String {
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()))
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(sha2::Sha256::digest(verifier.as_bytes()))
 }
 
 async fn setup() -> (App, String) {
@@ -175,7 +178,10 @@ async fn register_consent_exchange_yields_a_working_mcp_token() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let redirect_to = json_body(res).await["redirectTo"].as_str().unwrap().to_string();
+    let redirect_to = json_body(res).await["redirectTo"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(redirect_to.starts_with(REDIRECT_URI));
     // Opaque client state must not be able to inject its own parameters.
     assert!(
@@ -216,7 +222,13 @@ async fn register_consent_exchange_yields_a_working_mcp_token() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert!(json_body(res).await["result"]["tools"].as_array().unwrap().len() > 40);
+    assert!(
+        json_body(res).await["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .len()
+            > 40
+    );
 
     // And it shows up in Settings under the client's name, so the user can
     // revoke the connector later.
@@ -244,7 +256,13 @@ async fn a_read_scoped_consent_issues_a_read_token() {
 
     let redirect_to = json_body(
         app.clone()
-            .oneshot(approve_req(&cookie, &client_id, "read", &challenge_for(VERIFIER), None))
+            .oneshot(approve_req(
+                &cookie,
+                &client_id,
+                "read",
+                &challenge_for(VERIFIER),
+                None,
+            ))
             .await
             .unwrap(),
     )
@@ -254,9 +272,14 @@ async fn a_read_scoped_consent_issues_a_read_token() {
         .to_string();
 
     let body = json_body(
-        app.oneshot(token_req(&code_from(&redirect_to), &client_id, VERIFIER, REDIRECT_URI))
-            .await
-            .unwrap(),
+        app.oneshot(token_req(
+            &code_from(&redirect_to),
+            &client_id,
+            VERIFIER,
+            REDIRECT_URI,
+        ))
+        .await
+        .unwrap(),
     )
     .await;
     assert_eq!(body["scope"], "read");
@@ -271,7 +294,13 @@ async fn pkce_mismatch_is_rejected_and_burns_the_code() {
     let client_id = client["client_id"].as_str().unwrap().to_string();
     let redirect_to = json_body(
         app.clone()
-            .oneshot(approve_req(&cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+            .oneshot(approve_req(
+                &cookie,
+                &client_id,
+                "full",
+                &challenge_for(VERIFIER),
+                None,
+            ))
             .await
             .unwrap(),
     )
@@ -283,7 +312,12 @@ async fn pkce_mismatch_is_rejected_and_burns_the_code() {
 
     let res = app
         .clone()
-        .oneshot(token_req(&code, &client_id, "the-wrong-verifier-entirely", REDIRECT_URI))
+        .oneshot(token_req(
+            &code,
+            &client_id,
+            "the-wrong-verifier-entirely",
+            REDIRECT_URI,
+        ))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
@@ -306,7 +340,13 @@ async fn an_authorization_code_is_single_use() {
     let client_id = client["client_id"].as_str().unwrap().to_string();
     let redirect_to = json_body(
         app.clone()
-            .oneshot(approve_req(&cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+            .oneshot(approve_req(
+                &cookie,
+                &client_id,
+                "full",
+                &challenge_for(VERIFIER),
+                None,
+            ))
             .await
             .unwrap(),
     )
@@ -343,7 +383,13 @@ async fn the_exchange_binds_to_the_client_and_redirect_it_was_issued_for() {
     let code = code_from(
         json_body(
             app.clone()
-                .oneshot(approve_req(&cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+                .oneshot(approve_req(
+                    &cookie,
+                    &client_id,
+                    "full",
+                    &challenge_for(VERIFIER),
+                    None,
+                ))
                 .await
                 .unwrap(),
         )
@@ -362,7 +408,13 @@ async fn the_exchange_binds_to_the_client_and_redirect_it_was_issued_for() {
     let code = code_from(
         json_body(
             app.clone()
-                .oneshot(approve_req(&cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+                .oneshot(approve_req(
+                    &cookie,
+                    &client_id,
+                    "full",
+                    &challenge_for(VERIFIER),
+                    None,
+                ))
                 .await
                 .unwrap(),
         )
@@ -371,7 +423,12 @@ async fn the_exchange_binds_to_the_client_and_redirect_it_was_issued_for() {
             .unwrap(),
     );
     let res = app
-        .oneshot(token_req(&code, &client_id, VERIFIER, "https://other.example/cb"))
+        .oneshot(token_req(
+            &code,
+            &client_id,
+            VERIFIER,
+            "https://other.example/cb",
+        ))
         .await
         .unwrap();
     assert_eq!(json_body(res).await["error"], "invalid_grant");
@@ -456,7 +513,13 @@ async fn consent_rejects_plain_pkce_and_bad_scopes() {
     assert_eq!(json_body(res).await["error"], "invalid_request");
 
     let res = app
-        .oneshot(approve_req(&cookie, &client_id, "admin", &challenge_for(VERIFIER), None))
+        .oneshot(approve_req(
+            &cookie,
+            &client_id,
+            "admin",
+            &challenge_for(VERIFIER),
+            None,
+        ))
         .await
         .unwrap();
     assert_eq!(json_body(res).await["error"], "invalid_scope");
@@ -514,7 +577,11 @@ async fn registration_enforces_the_redirect_uri_policy() {
     }
 
     // Loopback HTTP is allowed — local bridges can't get a certificate.
-    register_client(&app, serde_json::json!(["http://127.0.0.1:33418/oauth/callback"])).await;
+    register_client(
+        &app,
+        serde_json::json!(["http://127.0.0.1:33418/oauth/callback"]),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -523,7 +590,12 @@ async fn unsupported_grant_types_are_refused() {
     // `authorization_code` and `refresh_token` are the two we implement.
     // Anything else — notably the ones that skip user consent entirely — must be
     // refused as a grant type rather than falling through to a token lookup.
-    for grant in ["client_credentials", "password", "implicit", "urn:ietf:params:oauth:grant-type:device_code"] {
+    for grant in [
+        "client_credentials",
+        "password",
+        "implicit",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ] {
         let res = app
             .clone()
             .oneshot(
@@ -534,7 +606,11 @@ async fn unsupported_grant_types_are_refused() {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{grant} must be refused");
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "{grant} must be refused"
+        );
         assert_eq!(
             json_body(res).await["error"],
             "unsupported_grant_type",
@@ -578,13 +654,22 @@ async fn recovery_revokes_oauth_issued_tokens() {
         .await
         .unwrap();
     let cookie = cookie_from(&res);
-    let recovery_key = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+    let recovery_key = json_body(res).await["recoveryKey"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let client = register_client(&app, serde_json::json!([REDIRECT_URI])).await;
     let client_id = client["client_id"].as_str().unwrap().to_string();
     let redirect_to = json_body(
         app.clone()
-            .oneshot(approve_req(&cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+            .oneshot(approve_req(
+                &cookie,
+                &client_id,
+                "full",
+                &challenge_for(VERIFIER),
+                None,
+            ))
             .await
             .unwrap(),
     )
@@ -594,7 +679,12 @@ async fn recovery_revokes_oauth_issued_tokens() {
         .to_string();
     let access_token = json_body(
         app.clone()
-            .oneshot(token_req(&code_from(&redirect_to), &client_id, VERIFIER, REDIRECT_URI))
+            .oneshot(token_req(
+                &code_from(&redirect_to),
+                &client_id,
+                VERIFIER,
+                REDIRECT_URI,
+            ))
             .await
             .unwrap(),
     )
@@ -650,7 +740,13 @@ async fn grant_token_pair(app: &App, cookie: &str) -> (String, serde_json::Value
     let client_id = client["client_id"].as_str().unwrap().to_string();
     let approved = json_body(
         app.clone()
-            .oneshot(approve_req(cookie, &client_id, "full", &challenge_for(VERIFIER), None))
+            .oneshot(approve_req(
+                cookie,
+                &client_id,
+                "full",
+                &challenge_for(VERIFIER),
+                None,
+            ))
             .await
             .unwrap(),
     )
@@ -697,16 +793,24 @@ async fn code_exchange_issues_a_short_lived_token_with_a_refresh_token() {
     let (_client_id, body) = grant_token_pair(&app, &cookie).await;
 
     assert!(
-        body["access_token"].as_str().unwrap().starts_with("finsight_pat_"),
+        body["access_token"]
+            .as_str()
+            .unwrap()
+            .starts_with("finsight_pat_"),
         "access token keeps the PAT shape: {body}"
     );
     assert!(
-        body["refresh_token"].as_str().unwrap().starts_with("finsight_rt_"),
+        body["refresh_token"]
+            .as_str()
+            .unwrap()
+            .starts_with("finsight_rt_"),
         "a refresh token must be issued so expiry is recoverable: {body}"
     );
     // Short-lived access tokens are only acceptable because renewal is silent;
     // a missing or absurd expiry would mean one of those two halves is broken.
-    let expires_in = body["expires_in"].as_i64().expect("expires_in must be present");
+    let expires_in = body["expires_in"]
+        .as_i64()
+        .expect("expires_in must be present");
     assert!(
         (60..=86_400).contains(&expires_in),
         "expires_in should be short-lived but usable, got {expires_in}"
@@ -723,13 +827,19 @@ async fn refreshing_returns_a_new_working_pair_and_retires_the_old_one() {
     assert_eq!(mcp_ping(&app, &old_access).await, StatusCode::OK);
 
     let second = json_body(
-        app.clone().oneshot(refresh_req(&old_refresh, &client_id)).await.unwrap(),
+        app.clone()
+            .oneshot(refresh_req(&old_refresh, &client_id))
+            .await
+            .unwrap(),
     )
     .await;
     let new_access = second["access_token"].as_str().unwrap().to_string();
     let new_refresh = second["refresh_token"].as_str().unwrap().to_string();
 
-    assert_ne!(new_access, old_access, "refresh must mint a NEW access token");
+    assert_ne!(
+        new_access, old_access,
+        "refresh must mint a NEW access token"
+    );
     assert_ne!(new_refresh, old_refresh, "refresh tokens must rotate");
     assert_eq!(second["scope"], "full", "scope carries across a refresh");
 
@@ -753,12 +863,20 @@ async fn a_refresh_token_is_single_use() {
     let (client_id, first) = grant_token_pair(&app, &cookie).await;
     let refresh = first["refresh_token"].as_str().unwrap().to_string();
 
-    let ok = app.clone().oneshot(refresh_req(&refresh, &client_id)).await.unwrap();
+    let ok = app
+        .clone()
+        .oneshot(refresh_req(&refresh, &client_id))
+        .await
+        .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
 
     // Rotation (OAuth 2.1 §4.3.1 for public clients): replaying a refresh token
     // is the signature of a stolen one, so it must never work twice.
-    let replay = app.clone().oneshot(refresh_req(&refresh, &client_id)).await.unwrap();
+    let replay = app
+        .clone()
+        .oneshot(refresh_req(&refresh, &client_id))
+        .await
+        .unwrap();
     assert_eq!(replay.status(), StatusCode::BAD_REQUEST);
     assert_eq!(json_body(replay).await["error"], "invalid_grant");
 }
@@ -772,7 +890,11 @@ async fn a_refresh_token_is_bound_to_its_client() {
     let other = register_client(&app, serde_json::json!([REDIRECT_URI])).await;
     let other_id = other["client_id"].as_str().unwrap();
 
-    let res = app.clone().oneshot(refresh_req(&refresh, other_id)).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(refresh_req(&refresh, other_id))
+        .await
+        .unwrap();
     assert_eq!(
         res.status(),
         StatusCode::BAD_REQUEST,
@@ -787,8 +909,16 @@ async fn garbage_refresh_tokens_are_rejected() {
     let (client_id, _) = grant_token_pair(&app, &cookie).await;
 
     for bogus in ["finsight_rt_not-real", "not-even-prefixed", ""] {
-        let res = app.clone().oneshot(refresh_req(bogus, &client_id)).await.unwrap();
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{bogus} must be refused");
+        let res = app
+            .clone()
+            .oneshot(refresh_req(bogus, &client_id))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "{bogus} must be refused"
+        );
     }
 }
 
@@ -812,7 +942,10 @@ async fn revoking_the_access_token_also_kills_its_refresh_token() {
             .unwrap(),
     )
     .await;
-    let id = list.as_array().unwrap()[0]["id"].as_str().unwrap().to_string();
+    let id = list.as_array().unwrap()[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let res = app
         .clone()
         .oneshot(
@@ -827,7 +960,11 @@ async fn revoking_the_access_token_also_kills_its_refresh_token() {
 
     // Revocation that leaves a usable refresh token behind is not revocation:
     // the connector would mint itself a fresh access token minutes later.
-    let res = app.clone().oneshot(refresh_req(&refresh, &client_id)).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(refresh_req(&refresh, &client_id))
+        .await
+        .unwrap();
     assert_eq!(
         res.status(),
         StatusCode::BAD_REQUEST,
@@ -891,7 +1028,13 @@ async fn consent_exempts_a_client_from_the_unused_registration_prune() {
     // A human approves exactly one of them.
     let res = app
         .clone()
-        .oneshot(approve_req(&cookie, &legit, "full", &challenge_for(VERIFIER), None))
+        .oneshot(approve_req(
+            &cookie,
+            &legit,
+            "full",
+            &challenge_for(VERIFIER),
+            None,
+        ))
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);

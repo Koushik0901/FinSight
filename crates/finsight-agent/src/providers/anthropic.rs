@@ -219,7 +219,7 @@ fn parse_json_response(content: &str) -> Result<Value> {
         return Ok(value);
     }
 
-    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+    let Some(start) = trimmed.find(['{', '[']) else {
         return Err(anyhow!("Anthropic response did not contain JSON"));
     };
     let end_obj = trimmed.rfind('}');

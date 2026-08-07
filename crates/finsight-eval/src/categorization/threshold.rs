@@ -32,8 +32,10 @@ pub fn threshold_sweep(
     predict: impl Fn(&LabeledExample) -> Prediction,
     thresholds: &[f64],
 ) -> Vec<ThresholdPoint> {
-    let predicted: Vec<(Prediction, &str)> =
-        examples.iter().map(|ex| (predict(ex), ex.category.as_str())).collect();
+    let predicted: Vec<(Prediction, &str)> = examples
+        .iter()
+        .map(|ex| (predict(ex), ex.category.as_str()))
+        .collect();
     let n_total = examples.len() as u64;
 
     thresholds
@@ -56,8 +58,16 @@ pub fn threshold_sweep(
                 n_total,
                 n_predicted,
                 n_correct,
-                precision: if n_predicted == 0 { None } else { Some(n_correct as f64 / n_predicted as f64) },
-                coverage: if n_total == 0 { 0.0 } else { n_predicted as f64 / n_total as f64 },
+                precision: if n_predicted == 0 {
+                    None
+                } else {
+                    Some(n_correct as f64 / n_predicted as f64)
+                },
+                coverage: if n_total == 0 {
+                    0.0
+                } else {
+                    n_predicted as f64 / n_total as f64
+                },
             }
         })
         .collect()
@@ -80,7 +90,11 @@ mod tests {
     #[test]
     fn higher_threshold_never_increases_coverage() {
         // Three examples with confidences 0.9 (correct), 0.6 (correct), 0.3 (wrong).
-        let examples = vec![ex("a", "dining"), ex("b", "groceries"), ex("c", "transport")];
+        let examples = vec![
+            ex("a", "dining"),
+            ex("b", "groceries"),
+            ex("c", "transport"),
+        ];
         let predict = |e: &LabeledExample| match e.id.as_str() {
             "a" => Prediction::of("dining", 0.9),
             "b" => Prediction::of("groceries", 0.6),
@@ -112,12 +126,20 @@ mod tests {
     fn raising_threshold_can_increase_precision_by_dropping_a_wrong_low_confidence_call() {
         let examples = vec![ex("a", "dining"), ex("b", "groceries")];
         let predict = |e: &LabeledExample| match e.id.as_str() {
-            "a" => Prediction::of("dining", 0.95),   // correct, high confidence
-            _ => Prediction::of("shopping", 0.4),     // wrong, low confidence
+            "a" => Prediction::of("dining", 0.95), // correct, high confidence
+            _ => Prediction::of("shopping", 0.4),  // wrong, low confidence
         };
         let points = threshold_sweep(&examples, predict, &[0.0, 0.5]);
-        assert_eq!(points[0].precision, Some(0.5), "both counted at threshold 0.0");
-        assert_eq!(points[1].precision, Some(1.0), "only the correct high-confidence call survives at 0.5");
+        assert_eq!(
+            points[0].precision,
+            Some(0.5),
+            "both counted at threshold 0.0"
+        );
+        assert_eq!(
+            points[1].precision,
+            Some(1.0),
+            "only the correct high-confidence call survives at 0.5"
+        );
         assert_eq!(points[1].coverage, 0.5);
     }
 }

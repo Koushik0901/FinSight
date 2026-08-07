@@ -167,9 +167,11 @@ pub async fn explain_goals(
     state: &ApiState,
 ) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
     let db = (*state.db).clone();
-    run(&db, |conn| Ok(finsight_agent::finance::explain_goals(conn)?))
-        .await
-        .map_err(AppError::from)
+    run(&db, |conn| {
+        Ok(finsight_agent::finance::explain_goals(conn)?)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 /// One row of the "who owns what" household net-worth split. `member_id` None is
@@ -306,9 +308,11 @@ fn parse_risk_tolerance(raw: &str) -> metrics::RiskTolerance {
 
 pub async fn get_financial_philosophy(state: &ApiState) -> AppResult<FinancialPhilosophyDto> {
     let db = (*state.db).clone();
-    run(&db, move |conn| Ok(philosophy_to_dto(metrics::philosophy(conn))))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        Ok(philosophy_to_dto(metrics::philosophy(conn)))
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn set_financial_philosophy(

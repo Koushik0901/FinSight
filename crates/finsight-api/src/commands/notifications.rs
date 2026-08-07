@@ -81,7 +81,7 @@ fn dto_to_prefs(dto: NotificationPrefsDto) -> Prefs {
             // a content toggle, so a crafted client can't disable it this way.
             .filter(|c| {
                 !c.enabled
-                    && NotificationCategory::from_str(&c.key)
+                    && NotificationCategory::parse(&c.key)
                         .is_some_and(|cat| cat != NotificationCategory::Digest)
             })
             .map(|c| c.key.clone())
@@ -106,7 +106,10 @@ pub async fn get_notification_prefs(state: &ApiState) -> AppResult<NotificationP
         .map_err(AppError::from)
 }
 
-pub async fn set_notification_prefs(state: &ApiState, prefs: NotificationPrefsDto) -> AppResult<()> {
+pub async fn set_notification_prefs(
+    state: &ApiState,
+    prefs: NotificationPrefsDto,
+) -> AppResult<()> {
     let db = (*state.db).clone();
     let p = dto_to_prefs(prefs);
     run(&db, move |conn| notify::save_prefs(conn, &p))
@@ -117,7 +120,10 @@ pub async fn set_notification_prefs(state: &ApiState, prefs: NotificationPrefsDt
 /// The notification history. `includeResolved=false` (default view) shows only
 /// still-active items; held (quiet-hours) items appear here too so they're never
 /// lost, just not pushed.
-pub async fn list_notifications(state: &ApiState, include_resolved: Option<bool>) -> AppResult<Vec<Notification>> {
+pub async fn list_notifications(
+    state: &ApiState,
+    include_resolved: Option<bool>,
+) -> AppResult<Vec<Notification>> {
     let db = (*state.db).clone();
     let include = include_resolved.unwrap_or(false);
     run(&db, move |conn| notify::list(conn, include, 200))

@@ -158,8 +158,7 @@ pub fn backfill_history_from_transactions(conn: &mut Connection) -> CoreResult<(
         return Ok(());
     }
     let current_nw = breakdown(conn)?.net_worth_cents;
-    let placeholders = std::iter::repeat("?")
-        .take(known_ids.len())
+    let placeholders = std::iter::repeat_n("?", known_ids.len())
         .collect::<Vec<_>>()
         .join(",");
 
@@ -185,7 +184,11 @@ pub fn backfill_history_from_transactions(conn: &mut Connection) -> CoreResult<(
         if first_of_month > today {
             break;
         }
-        let (ny, nm) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+        let (ny, nm) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
         let month_end = NaiveDate::from_ymd_opt(ny, nm, 1)
             .and_then(|d| d.pred_opt())
             .unwrap_or(first_of_month)
@@ -265,6 +268,8 @@ pub fn list_history(conn: &mut Connection, days: u32) -> CoreResult<Vec<NetWorth
 
 #[cfg(test)]
 mod tests {
+    // Cents fixtures deliberately group dollars and cents (for example, 100_00).
+    #![allow(clippy::inconsistent_digit_grouping)]
     use super::*;
     use crate::Db;
     use tempfile::TempDir;
@@ -441,7 +446,10 @@ mod tests {
             live,
             "snapshot and live headline must agree"
         );
-        assert_eq!(live, 1_500_000, "CAD only — no USD account or asset folded in");
+        assert_eq!(
+            live, 1_500_000,
+            "CAD only — no USD account or asset folded in"
+        );
     }
 
     #[test]
@@ -480,7 +488,11 @@ mod tests {
         backfill_history_from_transactions(&mut conn).unwrap();
 
         let hist = list_history(&mut conn, 36500).unwrap();
-        assert!(hist.len() >= 2, "expected a monthly trend, got {}", hist.len());
+        assert!(
+            hist.len() >= 2,
+            "expected a monthly trend, got {}",
+            hist.len()
+        );
         // Latest snapshot equals the current net worth (all activity folded in).
         assert_eq!(hist.last().unwrap().total_cents, -150_00);
         // The Jan-end snapshot only reflects the −100 charge (the −50 is later).
@@ -498,12 +510,14 @@ mod tests {
         let mut conn = db.get().unwrap();
 
         // Known-balance account (manual, no unaccounted history).
-        let known = accounts::insert(&mut conn, base_account("Checking", 500_000, "manual")).unwrap();
+        let known =
+            accounts::insert(&mut conn, base_account("Checking", 500_000, "manual")).unwrap();
         let _ = known;
 
         // Imported account: seed opening ($0) + activity now DERIVES a balance
         // (YNAB/Actual model), so it counts toward net worth (0 + −4,200).
-        let imported = accounts::insert(&mut conn, base_account("Imported Card", 0, "seed")).unwrap();
+        let imported =
+            accounts::insert(&mut conn, base_account("Imported Card", 0, "seed")).unwrap();
         transactions::insert(
             &mut conn,
             NewTransaction {
@@ -552,7 +566,10 @@ mod tests {
         assert_eq!(b.accounts_with_known_balance, 3);
         assert_eq!(b.accounts_with_unknown_balance, 0);
         assert!(b.unknown_balance_accounts.is_empty());
-        assert_eq!(b.liability_cents, 120_000, "informational debt total, not subtracted again");
+        assert_eq!(
+            b.liability_cents, 120_000,
+            "informational debt total, not subtracted again"
+        );
         // 375,800 — the debt is already folded into known_account_balance_cents.
         assert_eq!(b.net_worth_cents, 375_800);
     }

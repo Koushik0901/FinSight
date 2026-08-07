@@ -520,8 +520,7 @@ mod tests {
         )
         .unwrap();
 
-        let totals =
-            category_totals_for_window(&conn, None, "2026-05-01", "2026-06-01").unwrap();
+        let totals = category_totals_for_window(&conn, None, "2026-05-01", "2026-06-01").unwrap();
         let food = totals
             .iter()
             .find(|c| c.category_id == "food")

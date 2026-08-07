@@ -166,7 +166,11 @@ impl SyncScheduler {
                 // the send happens here, mirroring notify_new_activity.
                 let (sub_pushable, digest_pushable) = finsight_core::repos::run(&db, |conn| {
                     let now = chrono::Utc::now();
-                    finsight_core::notify::refresh_stale_accounts(conn, STALE_ACCOUNT_THRESHOLD_DAYS, now)?;
+                    finsight_core::notify::refresh_stale_accounts(
+                        conn,
+                        STALE_ACCOUNT_THRESHOLD_DAYS,
+                        now,
+                    )?;
                     finsight_core::notify::expire_due(conn, now)?;
                     // Month-end close reminder (#59): raise once for the month that
                     // just ended until it's closed; in-app/badge only.
@@ -269,7 +273,11 @@ async fn notify_new_activity(db: &Db, added: usize, queued: usize) {
     } else {
         txns
     };
-    let route = if queued > 0 { "/inbox" } else { "/transactions" };
+    let route = if queued > 0 {
+        "/inbox"
+    } else {
+        "/transactions"
+    };
 
     // Route through the unified notification policy (finsight-core::notify) so
     // category preferences, quiet hours, privacy, and dedup are decided in ONE
@@ -399,7 +407,7 @@ async fn sync_all_accounts_with_guard(
 }
 
 async fn sync_all_accounts_inner(db: &Db, sync_run_id: Option<&str>) -> Vec<AccountSyncResult> {
-    let conn_rows = match run(db, |conn| connections::list(conn)).await {
+    let conn_rows = match run(db, connections::list).await {
         Ok(rows) => rows,
         Err(e) => {
             tracing::error!("failed to list connections: {e}");
@@ -582,7 +590,6 @@ async fn sync_one_account(
     }
 
     let summary = match run(db, {
-        let pending = pending;
         let acc_id = acc_id.clone();
         let sync_run_id = sync_run_id_owned.clone();
         move |conn| {

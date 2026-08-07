@@ -27,19 +27,27 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
                 "SELECT a.name, (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1) AS balance \
                  FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name"
             )?;
-            let rows: Vec<Value> = stmt.query_map([], |r| {
-                let name: String = r.get(0)?;
-                let balance: Option<i64> = r.get(1)?;
-                Ok(match balance {
-                    Some(b) => json!({"name": name, "balance_cents": b, "balance_known": true}),
-                    None => json!({"name": name, "balance_cents": null, "balance_known": false}),
-                })
-            })?.filter_map(|r| r.ok()).collect();
+            let rows: Vec<Value> = stmt
+                .query_map([], |r| {
+                    let name: String = r.get(0)?;
+                    let balance: Option<i64> = r.get(1)?;
+                    Ok(match balance {
+                        Some(b) => json!({"name": name, "balance_cents": b, "balance_known": true}),
+                        None => {
+                            json!({"name": name, "balance_cents": null, "balance_known": false})
+                        }
+                    })
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
             let total: i64 = rows
                 .iter()
                 .filter_map(|r| r["balance_cents"].as_i64())
                 .sum();
-            let unknown_count = rows.iter().filter(|r| r["balance_known"] == json!(false)).count();
+            let unknown_count = rows
+                .iter()
+                .filter(|r| r["balance_known"] == json!(false))
+                .count();
             Ok(json!({
                 "accounts": rows,
                 "total_cents": total,
@@ -108,9 +116,9 @@ pub fn get_account_balance_history() -> Arc<dyn Tool> {
                 let mut stmt = ctx.conn.prepare(&sql)?;
                 let row = |r: &rusqlite::Row| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?));
                 let rows = match &pattern {
-                    Some(p) => stmt.query_map(rusqlite::params![p], row)?.collect::<
-                        std::result::Result<Vec<_>, _>,
-                    >(),
+                    Some(p) => stmt
+                        .query_map(rusqlite::params![p], row)?
+                        .collect::<std::result::Result<Vec<_>, _>>(),
                     None => stmt
                         .query_map([], row)?
                         .collect::<std::result::Result<Vec<_>, _>>(),
@@ -234,11 +242,24 @@ pub fn get_net_worth() -> Arc<dyn Tool> {
 fn parse_scenario_params(s: &str) -> Option<finsight_core::forecast::ScenarioParams> {
     let v: serde_json::Value = serde_json::from_str(s).ok()?;
     Some(finsight_core::forecast::ScenarioParams {
-        income_delta_pct: v.get("incomeDeltaPct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
-        monthly_expense_delta_cents: v.get("monthlyExpenseDeltaCents").and_then(|x| x.as_i64()).unwrap_or(0),
+        income_delta_pct: v
+            .get("incomeDeltaPct")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0) as i32,
+        monthly_expense_delta_cents: v
+            .get("monthlyExpenseDeltaCents")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
         one_time_cents: v.get("oneTimeCents").and_then(|x| x.as_i64()).unwrap_or(0),
-        start_month_offset: v.get("startMonthOffset").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
-        label: v.get("label").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        start_month_offset: v
+            .get("startMonthOffset")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as u32,
+        label: v
+            .get("label")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
     })
 }
 
@@ -360,7 +381,9 @@ pub fn get_safe_to_spend() -> Arc<dyn Tool> {
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
             use finsight_core::cashflow::{self, WhatIf};
-            let horizon = args["horizon_days"].as_i64().unwrap_or(cashflow::DEFAULT_HORIZON_DAYS);
+            let horizon = args["horizon_days"]
+                .as_i64()
+                .unwrap_or(cashflow::DEFAULT_HORIZON_DAYS);
             let whatif = WhatIf {
                 buffer_cents: args["buffer_cents"].as_i64().unwrap_or(0).max(0),
                 extra_expense_cents: args["extra_expense_cents"].as_i64().unwrap_or(0).max(0),
@@ -433,7 +456,10 @@ pub fn explain_metric() -> Arc<dyn Tool> {
             })
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let focus = args["metric"].as_str().map(str::trim).filter(|s| !s.is_empty());
+            let focus = args["metric"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             // Planning-recommendation explanations are produced above finsight-core
             // (the payoff engine, the goal loader), so they're assembled in this
             // crate. They share the MetricExplanation shape, so the model reads them
@@ -463,7 +489,7 @@ pub fn explain_metric() -> Arc<dyn Tool> {
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let metrics: Vec<Value> = all
                 .into_iter()
-                .filter(|e| focus.map_or(true, |k| e.key == k))
+                .filter(|e| focus.is_none_or(|k| e.key == k))
                 .map(|e| serde_json::to_value(e).unwrap_or(Value::Null))
                 .collect();
             let unknown = focus.is_some() && metrics.is_empty();
@@ -498,11 +524,9 @@ pub fn get_month_totals() -> Arc<dyn Tool> {
             // Routed through the shared metrics layer (single-sourced, already
             // nets a settle_up inflow against expense and never counts it as
             // income) so the Copilot's month totals agree with Today.
-            let (income, expense) = finsight_core::metrics::income_expense_since(
-                ctx.conn,
-                &month_start,
-            )
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let (income, expense) =
+                finsight_core::metrics::income_expense_since(ctx.conn, &month_start)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let savings_rate = if income > 0 {
                 ((income - expense) * 100 / income).max(0)
             } else {
@@ -1145,11 +1169,9 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
             // Routed through the shared metrics layer (single-sourced, already
             // nets a settle_up inflow against expense and never counts it as
             // income) so the projection agrees with Today and get_month_totals.
-            let (income, expense) = finsight_core::metrics::income_expense_since(
-                ctx.conn,
-                &month_start,
-            )
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let (income, expense) =
+                finsight_core::metrics::income_expense_since(ctx.conn, &month_start)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             // Balances live in `account_balances`, never on `accounts` — this
             // used to hand-roll `SUM(accounts.balance_cents)`, a column that
             // does not exist, so the tool failed outright with a SQL error.
@@ -1168,10 +1190,8 @@ pub fn run_cashflow_projection() -> Arc<dyn Tool> {
             };
             let averages = finsight_core::metrics::rolling_averages(ctx.conn, 90)
                 .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            let runway_days = finsight_core::metrics::runway_days(
-                balance,
-                averages.avg_monthly_expense_cents,
-            );
+            let runway_days =
+                finsight_core::metrics::runway_days(balance, averages.avg_monthly_expense_cents);
             let projected_monthly_net = (income + extra_income) - (expense + extra_expense);
             let projections: Vec<Value> = (1..=months).map(|m| {
                 json!({"month": m, "projected_net_cents": projected_monthly_net * m, "projected_balance_cents": balance + projected_monthly_net * m})
@@ -1319,7 +1339,9 @@ pub fn plan_sinking_funds() -> Arc<dyn Tool> {
             json!({"type": "object", "properties": {}})
         }
         fn execute(&self, ctx: &mut ToolContext, _args: Value) -> Result<Value> {
-            Ok(serde_json::to_value(finance::plan_sinking_funds(ctx.conn)?)?)
+            Ok(serde_json::to_value(finance::plan_sinking_funds(
+                ctx.conn,
+            )?)?)
         }
     }
     Arc::new(T)
@@ -1341,7 +1363,10 @@ pub fn get_counterparty_position() -> Arc<dyn Tool> {
             json!({"type":"object","properties":{"name":{"type":"string"}}})
         }
         fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
-            let name = args["name"].as_str().map(str::trim).filter(|s| !s.is_empty());
+            let name = args["name"]
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             let positions = match name {
                 Some(n) => finsight_core::repos::transactions::counterparty_position(ctx.conn, n)?
                     .into_iter()
@@ -1637,7 +1662,6 @@ mod tests {
         tool.execute(&mut ctx, args).unwrap()
     }
 
-
     /// The Copilot proposing a category for a transfer would write a category
     /// onto a row the whole app treats as an internal move — the invariant the
     /// categorizer, the metrics layer and the importer all hold. This tool is
@@ -1669,7 +1693,10 @@ mod tests {
             .map(|r| r["id"].as_str().unwrap_or_default().to_string())
             .collect();
 
-        assert!(ids.contains(&"t-real".to_string()), "the real expense should be listed");
+        assert!(
+            ids.contains(&"t-real".to_string()),
+            "the real expense should be listed"
+        );
         assert!(
             !ids.contains(&"t-xfer".to_string()),
             "a transfer must never be offered for categorization"
@@ -1916,7 +1943,7 @@ mod tests {
         let bob = household::create_member(conn, "Bob", None).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('a_sole','Alice','Bank','Checking','A','USD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('joint','Alice & Bob','Bank','Savings','J','USD','#fff',datetime('now'))", []).unwrap();
-        household::set_account_owners(conn, "a_sole", &[alice.id.clone()]).unwrap();
+        household::set_account_owners(conn, "a_sole", std::slice::from_ref(&alice.id)).unwrap();
         household::set_account_owners(conn, "joint", &[alice.id.clone(), bob.id.clone()]).unwrap();
         // Alice sole: -$100. Joint: -$40 (split → -$20 each). Dates well in the past
         // so any months-window that reaches back far enough includes them.
@@ -1952,12 +1979,20 @@ mod tests {
 
         // Alice: sole $100 + half of joint $40 = $120. (months=60 so the window
         // reaches the seeded dates regardless of the wall clock.)
-        let alice = call(&mut conn, get_member_spending(), json!({"member": "alice", "months": 60}));
+        let alice = call(
+            &mut conn,
+            get_member_spending(),
+            json!({"member": "alice", "months": 60}),
+        );
         assert_eq!(alice["member"], "Alice");
         assert_eq!(alice["spent_cents"], 12_000, "sole 100 + half-joint 20");
 
         // Bob: only half of the joint account = $20.
-        let bob = call(&mut conn, get_member_spending(), json!({"member": "Bob", "months": 60}));
+        let bob = call(
+            &mut conn,
+            get_member_spending(),
+            json!({"member": "Bob", "months": 60}),
+        );
         assert_eq!(bob["spent_cents"], 2_000);
 
         // Unknown member → explicit error, never a guessed number.

@@ -181,11 +181,8 @@ pub async fn create_import_candidate_transaction(
     state: tauri::State<'_, AppState>,
     candidate_id: String,
 ) -> AppResult<String> {
-    finsight_api::commands::simplefin::create_import_candidate_transaction(
-        &state.api,
-        candidate_id,
-    )
-    .await
+    finsight_api::commands::simplefin::create_import_candidate_transaction(&state.api, candidate_id)
+        .await
 }
 
 #[tauri::command]

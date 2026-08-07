@@ -55,6 +55,7 @@ export function CopilotNudge({
   return (
     <button
       onClick={handleClick}
+      className="copilot-nudge"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -66,7 +67,7 @@ export function CopilotNudge({
         cursor: "pointer",
         fontSize: 12.5,
         color: "var(--ink-mute)",
-        transition: "background .12s, border-color .12s",
+        transition: "background .12s, border-color .12s, transform .16s cubic-bezier(.25, 1, .5, 1)",
         textAlign: "left",
       }}
       title={`Ask Copilot: ${prompt}`}

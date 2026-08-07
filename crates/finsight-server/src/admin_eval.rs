@@ -35,7 +35,10 @@ use finsight_api::error::AppError;
 use finsight_core::repos::run;
 use std::sync::Arc;
 
-pub async fn private_category_eval(State(st): State<Arc<ServerState>>, admin: AdminUser) -> Response {
+pub async fn private_category_eval(
+    State(st): State<Arc<ServerState>>,
+    admin: AdminUser,
+) -> Response {
     let user = admin.0;
     let rt = match st
         .registry
@@ -103,10 +106,15 @@ mod tests {
             res.headers().get(axum::http::header::CONTENT_TYPE).unwrap(),
             "text/plain; charset=utf-8"
         );
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(body.contains("N=0"), "got: {body}");
-        assert!(!body.contains('%'), "a zero-N report must not render a percentage, got: {body}");
+        assert!(
+            !body.contains('%'),
+            "a zero-N report must not render a percentage, got: {body}"
+        );
     }
 
     #[tokio::test]
@@ -137,7 +145,9 @@ mod tests {
                 Request::post("/api/auth/users")
                     .header("content-type", "application/json")
                     .header("cookie", admin_cookie)
-                    .body(Body::from(r#"{"username":"bob","password":"bobs-password-1"}"#))
+                    .body(Body::from(
+                        r#"{"username":"bob","password":"bobs-password-1"}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -150,7 +160,9 @@ mod tests {
             .oneshot(
                 Request::post("/api/auth/login")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"username":"bob","password":"bobs-password-1"}"#))
+                    .body(Body::from(
+                        r#"{"username":"bob","password":"bobs-password-1"}"#,
+                    ))
                     .unwrap(),
             )
             .await

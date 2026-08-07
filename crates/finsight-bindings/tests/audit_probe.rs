@@ -5,8 +5,8 @@
 //!
 //! Run: cargo test -p finsight-bindings --release --test audit_probe -- --ignored --nocapture
 
-use finsight_core::models::{AccountType, NewAccount};
 use finsight_core::metrics;
+use finsight_core::models::{AccountType, NewAccount};
 use finsight_providers::csv::mapping::{AmountConvention, ColumnRole, CsvImportMapping};
 use finsight_providers::CsvProvider;
 use std::path::PathBuf;
@@ -193,9 +193,11 @@ fn audit_import_samples_and_dump_everything() {
     let mut ids: Vec<(String, &'static str)> = Vec::new();
     for spec in specs() {
         let mut conn = db.get().unwrap();
-        let acct =
-            finsight_core::repos::accounts::insert(&mut conn, new_account("", spec.name, spec.ty, spec.ef))
-                .unwrap();
+        let acct = finsight_core::repos::accounts::insert(
+            &mut conn,
+            new_account("", spec.name, spec.ty, spec.ef),
+        )
+        .unwrap();
         drop(conn);
         let import_id = uuid::Uuid::new_v4().to_string();
         let summary = CsvProvider::import(
@@ -209,7 +211,11 @@ fn audit_import_samples_and_dump_everything() {
         match summary {
             Ok(s) => println!(
                 "IMPORT {} -> imported={} skipped_dup={} queued={} errors={:?}",
-                spec.name, s.rows_imported, s.rows_skipped_duplicates, s.rows_queued_for_review, s.errors
+                spec.name,
+                s.rows_imported,
+                s.rows_skipped_duplicates,
+                s.rows_queued_for_review,
+                s.errors
             ),
             Err(e) => println!("IMPORT {} -> ERROR {e}", spec.name),
         }
@@ -353,13 +359,24 @@ fn audit_import_samples_and_dump_everything() {
         .unwrap();
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
         })
         .unwrap();
     let mut leak_in = 0i64;
     let mut leak_out = 0i64;
     for row in rows.flatten() {
-        println!("n={:<4} in={:>9} out={:>9}  {}", row.1, row.2, row.3, &row.0[..row.0.len().min(60)]);
+        println!(
+            "n={:<4} in={:>9} out={:>9}  {}",
+            row.1,
+            row.2,
+            row.3,
+            &row.0[..row.0.len().min(60)]
+        );
         leak_in += row.2;
         leak_out += row.3;
     }
@@ -383,9 +400,7 @@ fn audit_import_samples_and_dump_everything() {
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap_or((-1, 0, 0));
-    println!(
-        "TRANSFER-REVIEW surface: n={review_n} inflow={review_in} outflow={review_out}"
-    );
+    println!("TRANSFER-REVIEW surface: n={review_n} inflow={review_in} outflow={review_out}");
     assert!(
         review_n > 0,
         "samples/ contain undecided transfer-like rows; the review surface must list them"
@@ -401,12 +416,21 @@ fn audit_import_samples_and_dump_everything() {
             .unwrap();
         let rows = stmt
             .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
             })
             .unwrap();
         println!("-- review surface top merchants --");
         for row in rows.flatten() {
-            println!("  n={:<4} sum={:>10}  {}", row.1, row.2, &row.0[..row.0.len().min(60)]);
+            println!(
+                "  n={:<4} sum={:>10}  {}",
+                row.1,
+                row.2,
+                &row.0[..row.0.len().min(60)]
+            );
         }
     }
 
@@ -421,7 +445,11 @@ fn audit_import_samples_and_dump_everything() {
         .unwrap();
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })
         .unwrap();
     for row in rows.flatten() {
@@ -438,7 +466,11 @@ fn audit_import_samples_and_dump_everything() {
         .unwrap();
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })
         .unwrap();
     for row in rows.flatten() {
@@ -457,7 +489,11 @@ fn audit_import_samples_and_dump_everything() {
         .unwrap();
     let rows = stmt
         .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })
         .unwrap();
     for row in rows.flatten() {
@@ -492,7 +528,10 @@ fn audit_import_samples_and_dump_everything() {
             )
             .unwrap();
         println!("TFSA activity: n={tfsa_n} inflow={tfsa_in} outflow={tfsa_out}");
-        assert!(tfsa_n > 0, "the brokerage CSV imports through the generic mapping");
+        assert!(
+            tfsa_n > 0,
+            "the brokerage CSV imports through the generic mapping"
+        );
         assert!(
             tfsa_in > 0 && tfsa_out > 0,
             "TFSA has real two-sided activity, so the exclusion below is exercised"
@@ -512,8 +551,14 @@ fn audit_import_samples_and_dump_everything() {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(m_inc, raw_inc, "income metric excludes investment-account activity");
-        assert_eq!(m_exp, raw_exp, "expense metric excludes investment-account activity");
+        assert_eq!(
+            m_inc, raw_inc,
+            "income metric excludes investment-account activity"
+        );
+        assert_eq!(
+            m_exp, raw_exp,
+            "expense metric excludes investment-account activity"
+        );
 
         // Balances: the entered market value lands in `invested`, never in
         // liquid or the emergency fund, and net worth includes it.
@@ -527,7 +572,10 @@ fn audit_import_samples_and_dump_everything() {
             before.invested_cents + 1_234_500,
             "market value entered verbatim into the invested bucket"
         );
-        assert_eq!(after.liquid_cents, before.liquid_cents, "TFSA is not liquid");
+        assert_eq!(
+            after.liquid_cents, before.liquid_cents,
+            "TFSA is not liquid"
+        );
         assert_eq!(
             after.emergency_fund_cents, before.emergency_fund_cents,
             "TFSA is not emergency-fund-eligible"
@@ -674,7 +722,13 @@ fn audit_import_samples_and_dump_everything() {
             for it in items {
                 println!(
                     "kind={:<13?} conf={:.2} cadence={:<10} gap={:>5.1} last={:>9}c n={:<3} {}",
-                    it.kind, it.confidence, it.cadence, it.avg_gap_days, it.last_amount_cents, it.occurrences, it.merchant_key
+                    it.kind,
+                    it.confidence,
+                    it.cadence,
+                    it.avg_gap_days,
+                    it.last_amount_cents,
+                    it.occurrences,
+                    it.merchant_key
                 );
             }
         }
@@ -702,8 +756,10 @@ fn audit_import_samples_and_dump_everything() {
         }
         let start = "2000-01-01T00:00:00Z";
         let (h_inc, h_exp) = metrics::income_expense_since_for(&c, start, None).unwrap();
-        let (a_inc, a_exp) = metrics::income_expense_since_for(&c, start, Some(a.id.as_str())).unwrap();
-        let (b_inc, b_exp) = metrics::income_expense_since_for(&c, start, Some(b.id.as_str())).unwrap();
+        let (a_inc, a_exp) =
+            metrics::income_expense_since_for(&c, start, Some(a.id.as_str())).unwrap();
+        let (b_inc, b_exp) =
+            metrics::income_expense_since_for(&c, start, Some(b.id.as_str())).unwrap();
         println!("household inc={h_inc} exp={h_exp}");
         println!("A inc={a_inc} exp={a_exp} | B inc={b_inc} exp={b_exp}");
         println!(
@@ -713,8 +769,14 @@ fn audit_import_samples_and_dump_everything() {
         );
         let inc_drift = (a_inc + b_inc - h_inc).abs();
         let exp_drift = (a_exp + b_exp - h_exp).abs();
-        assert!(inc_drift <= 2, "per-member income reconciles (drift={inc_drift})");
-        assert!(exp_drift <= 2, "per-member expense reconciles (drift={exp_drift})");
+        assert!(
+            inc_drift <= 2,
+            "per-member income reconciles (drift={inc_drift})"
+        );
+        assert!(
+            exp_drift <= 2,
+            "per-member expense reconciles (drift={exp_drift})"
+        );
         println!("reconciles: income drift={inc_drift}c, expense drift={exp_drift}c");
     }
 
@@ -778,8 +840,16 @@ fn audit_import_samples_and_dump_everything() {
                 shown += 1;
             }
         }
-        assert_eq!(prepared.rows_imported, 0, "{}: re-import must insert nothing", spec.name);
-        assert_eq!(prepared.rows_queued_for_review, 0, "{}: re-import must queue nothing", spec.name);
+        assert_eq!(
+            prepared.rows_imported, 0,
+            "{}: re-import must insert nothing",
+            spec.name
+        );
+        assert_eq!(
+            prepared.rows_queued_for_review, 0,
+            "{}: re-import must queue nothing",
+            spec.name
+        );
     }
 
     // 9. Reset (Delete All) then verify empty.

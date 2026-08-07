@@ -4,10 +4,7 @@ use finsight_agent::{context, planner};
 use finsight_core::models::{AgentRecipe, AgentRecipeRun};
 use finsight_core::repos::{recipes, run};
 
-pub async fn list_recipes(
-    state: &ApiState,
-    include_paused: bool,
-) -> AppResult<Vec<AgentRecipe>> {
+pub async fn list_recipes(state: &ApiState, include_paused: bool) -> AppResult<Vec<AgentRecipe>> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::list(conn, include_paused))
         .await

@@ -47,7 +47,8 @@ pub fn explain_spending_change() -> Arc<dyn Tool> {
                     } else {
                         format!("{ry:04}-{:02}", rmn + 1)
                     };
-                    baseline::compute(ctx.conn, rm, &end).map_err(|e| anyhow::anyhow!(e.to_string()))?
+                    baseline::compute(ctx.conn, rm, &end)
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?
                 }
                 _ => finsight_core::spending::baseline::trailing(ctx.conn, &period, 12)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?,
@@ -120,12 +121,16 @@ pub fn annotate_spending_driver() -> std::sync::Arc<dyn Tool> {
                 let known = finsight_core::spending::annotate::known_driver_keys(ctx.conn)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
                 if !known.contains(key) {
-                    return Ok(json!({"saved": false, "error": "unknown_merchant_key", "note": "No spending driver matches that merchant_key. Pass the exact merchant_key from explain_spending_change output."}));
+                    return Ok(
+                        json!({"saved": false, "error": "unknown_merchant_key", "note": "No spending driver matches that merchant_key. Pass the exact merchant_key from explain_spending_change output."}),
+                    );
                 }
                 finsight_core::spending::annotate::set_annotation(ctx.conn, key, verdict, note)
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             } else {
-                return Ok(json!({"error":"bad_verdict","note":"verdict must be one_off, expected, investment, or reset"}));
+                return Ok(
+                    json!({"error":"bad_verdict","note":"verdict must be one_off, expected, investment, or reset"}),
+                );
             }
             ctx.changes.push(AgentChange {
                 kind: "spending_annotation".to_string(),
@@ -159,12 +164,17 @@ pub fn plan_spending_reduction() -> std::sync::Arc<dyn Tool> {
                     .map_err(|e| anyhow::anyhow!(e.to_string()))?
                 {
                     Some(ym) => ym,
-                    None => return Ok(json!({"error":"no_data","note":"No spending activity to plan from."})),
+                    None => {
+                        return Ok(
+                            json!({"error":"no_data","note":"No spending activity to plan from."}),
+                        )
+                    }
                 },
             };
             let target = args["target_monthly_cents"].as_i64();
-            let plan = finsight_core::spending::plan::plan_spending_reduction(ctx.conn, &period, target)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            let plan =
+                finsight_core::spending::plan::plan_spending_reduction(ctx.conn, &period, target)
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
             let mut v = serde_json::to_value(plan)?;
             v["period"] = json!(period);
             Ok(v)
@@ -203,14 +213,25 @@ mod tests {
         let (_d, db) = fresh();
         let mut conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -20_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(&conn, "2026-05", -60_000, "FLAIR AIRLINES  BURNABY, BC");
 
         let mut changes: Vec<AgentChange> = Vec::new();
         let mut drafts: Vec<AgentDraftAction> = Vec::new();
-        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
-        let out = explain_spending_change().execute(&mut ctx, json!({"period":"2026-05"})).unwrap();
+        let mut ctx = ToolContext {
+            conn: &mut conn,
+            changes: &mut changes,
+            draft_actions: &mut drafts,
+        };
+        let out = explain_spending_change()
+            .execute(&mut ctx, json!({"period":"2026-05"}))
+            .unwrap();
 
         let drivers = out["drivers"].as_array().unwrap();
         assert_eq!(drivers[0]["display"], "FLAIR AIRLINES");
@@ -222,13 +243,24 @@ mod tests {
         let (_d, db) = fresh();
         let mut conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -20_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(&conn, "2026-01", -900_000, "FLAIR AIRLINES  BURNABY, BC");
         let mut changes = Vec::new();
         let mut drafts = Vec::new();
-        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
-        let out = classify_spending_period().execute(&mut ctx, json!({"period":"2026-01"})).unwrap();
+        let mut ctx = ToolContext {
+            conn: &mut conn,
+            changes: &mut changes,
+            draft_actions: &mut drafts,
+        };
+        let out = classify_spending_period()
+            .execute(&mut ctx, json!({"period":"2026-01"}))
+            .unwrap();
         assert_eq!(out["class"], "episodic_spike");
     }
 
@@ -241,14 +273,21 @@ mod tests {
         let mut changes = Vec::new();
         let mut drafts = Vec::new();
         {
-            let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+            let mut ctx = ToolContext {
+                conn: &mut conn,
+                changes: &mut changes,
+                draft_actions: &mut drafts,
+            };
             let out = annotate_spending_driver()
                 .execute(&mut ctx, json!({"merchant_key": key, "verdict": "one_off"}))
                 .unwrap();
             assert_eq!(out["saved"], true);
         }
         assert_eq!(
-            finsight_core::spending::annotate::annotations(&conn).unwrap().get(&key).unwrap(),
+            finsight_core::spending::annotate::annotations(&conn)
+                .unwrap()
+                .get(&key)
+                .unwrap(),
             "one_off"
         );
         assert_eq!(changes.len(), 1);
@@ -260,9 +299,16 @@ mod tests {
         let mut conn = db.get().unwrap();
         let mut changes = Vec::new();
         let mut drafts = Vec::new();
-        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+        let mut ctx = ToolContext {
+            conn: &mut conn,
+            changes: &mut changes,
+            draft_actions: &mut drafts,
+        };
         let out = annotate_spending_driver()
-            .execute(&mut ctx, json!({"merchant_key": "nonexistent vendor", "verdict": "one_off"}))
+            .execute(
+                &mut ctx,
+                json!({"merchant_key": "nonexistent vendor", "verdict": "one_off"}),
+            )
             .unwrap();
         assert_eq!(out["saved"], false);
         assert_eq!(out["error"], "unknown_merchant_key");
@@ -273,15 +319,27 @@ mod tests {
         let (_d, db) = fresh();
         let mut conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -200_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -200_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(&conn, "2026-01", -250_000, "SAVE ON FOODS  EDMONTON, AB");
         ins(&conn, "2026-01", -90_000, "FLAIR AIRLINES  BURNABY, BC");
         let mut changes = Vec::new();
         let mut drafts = Vec::new();
-        let mut ctx = ToolContext { conn: &mut conn, changes: &mut changes, draft_actions: &mut drafts };
+        let mut ctx = ToolContext {
+            conn: &mut conn,
+            changes: &mut changes,
+            draft_actions: &mut drafts,
+        };
         let out = plan_spending_reduction()
-            .execute(&mut ctx, json!({"period":"2026-01","target_monthly_cents":150_000}))
+            .execute(
+                &mut ctx,
+                json!({"period":"2026-01","target_monthly_cents":150_000}),
+            )
             .unwrap();
         assert_eq!(out["structural_gap_cents"], 50_000);
         assert_eq!(out["self_correcting_cents"], 90_000);

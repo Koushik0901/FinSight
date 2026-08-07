@@ -539,24 +539,46 @@ mod tests {
         // Unparseable date — say nothing rather than guess.
         assert!(warn_on("2026-08-25", Some("whenever"), Some(22.99)).is_none());
         // Nothing owed: no interest is at stake either way.
-        assert!(
-            promo_expiry_warning(Some(0.0), Some("2026-09-01"), Some(22.99), 0, d("2026-08-25"), LEAD)
-                .is_none()
-        );
+        assert!(promo_expiry_warning(
+            Some(0.0),
+            Some("2026-09-01"),
+            Some(22.99),
+            0,
+            d("2026-08-25"),
+            LEAD
+        )
+        .is_none());
         // A paid-off card in credit.
-        assert!(
-            promo_expiry_warning(Some(0.0), Some("2026-09-01"), Some(22.99), 5_000, d("2026-08-25"), LEAD)
-                .is_none()
-        );
+        assert!(promo_expiry_warning(
+            Some(0.0),
+            Some("2026-09-01"),
+            Some(22.99),
+            5_000,
+            d("2026-08-25"),
+            LEAD
+        )
+        .is_none());
         // The rate is not getting worse — firing here would train the user to
         // dismiss these.
+        assert!(promo_expiry_warning(
+            Some(15.0),
+            Some("2026-09-01"),
+            Some(9.0),
+            OWED,
+            d("2026-08-25"),
+            LEAD
+        )
+        .is_none());
         assert!(
-            promo_expiry_warning(Some(15.0), Some("2026-09-01"), Some(9.0), OWED, d("2026-08-25"), LEAD)
-                .is_none()
-        );
-        assert!(
-            promo_expiry_warning(Some(15.0), Some("2026-09-01"), Some(15.0), OWED, d("2026-08-25"), LEAD)
-                .is_none(),
+            promo_expiry_warning(
+                Some(15.0),
+                Some("2026-09-01"),
+                Some(15.0),
+                OWED,
+                d("2026-08-25"),
+                LEAD
+            )
+            .is_none(),
             "an unchanged rate is not news"
         );
     }

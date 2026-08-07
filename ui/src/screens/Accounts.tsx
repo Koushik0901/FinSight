@@ -78,8 +78,8 @@ export default function Accounts() {
     accounts.filter((account) => inScope(account.currency)).length - knownAccounts.length;
   // Debt (Credit/Loan accounts) is just an Account with a negative balance —
   // no separate liabilities table anymore.
-  const connectedAssets = knownAccounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
-  const connectedLiabilities = knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
+  const accountAssets = knownAccounts.filter((account) => account.balance_cents >= 0).reduce((sum, account) => sum + account.balance_cents, 0);
+  const accountLiabilities = knownAccounts.filter((account) => account.balance_cents < 0).reduce((sum, account) => sum + Math.abs(account.balance_cents), 0);
   const manualAssetsTotal = assets.filter((asset) => inScope(asset.currency)).reduce((sum, asset) => sum + asset.valueCents, 0);
   const lastSyncLabel = accounts.map((account) => account.last_synced_at).filter(Boolean).sort().slice(-1)[0] ?? null;
   const hasSimpleFin = accounts.some((account) => account.simplefin_account_id);
@@ -109,33 +109,36 @@ export default function Accounts() {
   return (
     <div className="screen screen-accounts">
       <PageHeader
-        eyebrow={<>Accounts · {accounts.length} connected</>}
-        title="Everything in one place."
+        eyebrow={<>Accounts · {accounts.length} tracked</>}
+        title={`${accounts.length} account${accounts.length === 1 ? "" : "s"}. One balance sheet.`}
         actions={<div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}>
           <button className="btn primary sm" type="button" aria-label="Add account, asset, or liability" onClick={() => setChooserOpen(true)}>+ Add</button>
           {hasSimpleFin && (
             <button
-              className="btn outline sm"
+              className={`btn outline sm account-sync-button${syncAll.isPending ? " is-syncing" : ""}`}
               type="button"
+              disabled={syncAll.isPending}
+              aria-busy={syncAll.isPending}
+              aria-label={syncAll.isPending ? "Refreshing bank balances" : "Sync bank balances"}
               onClick={async () => {
                 try {
                   await syncAll.mutateAsync();
-                  toast.success("Synced all SimpleFin accounts");
+                  toast.success("Accounts are up to date", { description: "The latest connected balances are ready." });
                 } catch (syncError) {
                   toast.error("Sync failed", { description: userErrorMessage(syncError, "Check your bank connection and try again.") });
                 }
               }}
             >
-              Sync banks
+              <span aria-live="polite">{syncAll.isPending ? "Refreshing balances…" : "Sync banks"}</span>
             </button>
           )}
         </div>}
       />
 
-      <div className="stat-row">
-        <div className="stat"><div className="label">Assets · connected</div><div className="value money">{money(connectedAssets, { currency: scopeCurrency })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} connected</div></div>
+      <div className="stat-row account-summary">
+        <div className="stat"><div className="label">Assets · accounts</div><div className="value money">{money(accountAssets, { currency: scopeCurrency })}</div><div className="sub">{knownAccounts.filter((account) => account.balance_cents >= 0).length} account balance{knownAccounts.filter((account) => account.balance_cents >= 0).length === 1 ? "" : "s"}</div></div>
         <div className="stat"><div className="label">Assets · manual</div><div className="value money">{money(manualAssetsTotal, { currency: scopeCurrency })}</div><div className="sub">{assets.filter((asset) => inScope(asset.currency)).length} tracked manually</div></div>
-        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(connectedLiabilities, { currency: scopeCurrency })}</div><div className="sub">Debt and payoff accounts</div></div>
+        <div className="stat"><div className="label">Liability total</div><div className="value money">{money(accountLiabilities, { currency: scopeCurrency })}</div><div className="sub">Debt and payoff accounts</div></div>
         <div className="stat accent"><div className="label">Net worth total</div><div className="value money">{money(netWorth, { currency: scopeCurrency })}</div><div className="sub">Across every balance</div></div>
       </div>
       <UnconvertedCurrencies holdings={unconverted} primary={scopeCurrency} />
@@ -163,12 +166,12 @@ export default function Accounts() {
       <div className="section">
         <div>
           <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-            <div className="eyebrow"><span className="dot" />CONNECTED</div>
-            <span className="muted" style={{ fontSize: 12, fontFamily: "var(--mono)" }}>Synced {formatStamp(lastSyncLabel)}</span>
+            <div className="eyebrow"><span className="dot" />ACCOUNTS</div>
+            <span className="muted account-sync-status">{hasSimpleFin ? `Last bank sync · ${formatStamp(lastSyncLabel)}` : "Manual and imported accounts"}</span>
           </div>
           <div className="card flush">
             {accounts.length === 0 ? (
-              <div className="muted" style={{ padding: 18 }}>No connected accounts yet.</div>
+              <div className="muted" style={{ padding: 18 }}>No accounts yet.</div>
             ) : (
               accounts.map((account) => (
                 <div
@@ -239,7 +242,17 @@ export default function Accounts() {
             <button className="btn ghost sm" type="button" onClick={() => setAssetAddOpen(true)}>+ Add</button>
           </div>
           <div className="card flush">
-            {assets.length === 0 ? <div className="muted" style={{ padding: 18 }}>No manual assets yet.</div> : assets.map((asset) => (
+            {assets.length === 0 ? (
+              <div className="manual-asset-empty">
+                <div>
+                  <strong>No manual assets tracked</strong>
+                  <p>Include property, vehicles, cash, or anything else that is not connected to a bank.</p>
+                </div>
+                <button className="btn outline sm" type="button" onClick={() => setAssetAddOpen(true)}>
+                  Add a manual asset
+                </button>
+              </div>
+            ) : assets.map((asset) => (
               <button key={asset.id} type="button" onClick={() => setEditAsset(asset)} style={{ width: "100%", textAlign: "left", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--hairline)" }}>
                 <div><div>{asset.name}</div><div className="muted" style={{ fontSize: 12 }}>{asset.assetType}</div></div>
                 <span className="money">{money(asset.valueCents, { currency: asset.currency || "USD", decimals: 2 })}</span>

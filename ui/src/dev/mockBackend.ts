@@ -685,8 +685,8 @@ function buildDataset(kind: Kind): Dataset {
 
   // ── rich (default) & multi share the core; multi adds household members ─────
   const accountsRich = [
-    acct({ id: "r-chk", type: "Checking", bank: "Tangerine", name: "Everyday Chequing", balance_cents: 482000, owner: "You" }),
-    acct({ id: "r-sav", type: "Savings", bank: "CIBC", name: "High-Interest Savings", balance_cents: 1840000, owner: "You" }),
+    acct({ id: "r-chk", type: "Checking", bank: "Tangerine", name: "Everyday Chequing", balance_cents: 482000, owner: "You", simplefin_account_id: "sf-chk", last_synced_at: isoDaysAgo(0.02) }),
+    acct({ id: "r-sav", type: "Savings", bank: "CIBC", name: "High-Interest Savings", balance_cents: 1840000, owner: "You", simplefin_account_id: "sf-sav", last_synced_at: isoDaysAgo(0.02) }),
     acct({ id: "r-cc", type: "Credit", bank: "Amex", name: "Cobalt Card", balance_cents: -124000, owner: kind === "multi" ? "Sam" : "You" }),
     acct({ id: "r-inv", type: "Investment", bank: "Wealthsimple", name: "TFSA", balance_cents: 5230000, owner: kind === "multi" ? "Sam" : "You" }),
   ];
@@ -780,7 +780,7 @@ function buildDataset(kind: Kind): Dataset {
     ],
     manualAssets: [],
     members,
-    milestones: [],
+    milestones: [5000000],
     needsReview: 3,
     agentStatus: agentStatus({ uncategorizedCount: 3, anomalyCount: 1, upcomingBillsCount: 2, lastScanAt: isoDaysAgo(0.008), lastScanCategorized: 18 }),
     monthTotals: { incomeCents: 700000, expenseCents: 364000, netCents: 336000, savingsRatePct: 48, txnCount: 84 },
@@ -950,6 +950,12 @@ const mockNotifications: AnyRec[] = [
 function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown> {
   return {
     list_accounts: () => ds.accounts,
+    // Keep Copilot's grounding rail consistent with the populated budget and
+    // spending fixtures. Envelope activity is the fixture's source of truth.
+    get_transaction_count: () => ds.budgetEnvelopes.reduce(
+      (sum, envelope) => sum + Number(envelope.txnCount ?? 0),
+      0,
+    ),
     get_agent_status: () => ds.agentStatus,
     get_needs_review_count: () => ds.needsReview,
     get_financial_metrics: (a) => {

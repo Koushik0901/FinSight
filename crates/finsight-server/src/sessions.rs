@@ -126,7 +126,10 @@ impl SessionStore {
         let persist = self.persist.as_ref()?;
         let token_hash = crate::crypto::hash_session_token(token);
         let now_unix = chrono::Utc::now().timestamp();
-        let row = persist.users.recover_session(&token_hash, now_unix).ok()??;
+        let row = persist
+            .users
+            .recover_session(&token_hash, now_unix)
+            .ok()??;
         let dbkey =
             crate::crypto::unwrap_key_with_server_key(&persist.server_key, &row.wrapped_db_key)
                 .ok()?;
@@ -151,7 +154,14 @@ impl SessionStore {
     /// Write the on-disk mirror of a session. No-op without persistence. Wrap
     /// failures are logged, never fatal — a session that can't be persisted
     /// simply won't survive the next restart.
-    fn persist_row(&self, token: &str, user_id: &str, db_key_hex: &str, is_admin: bool, ttl: Duration) {
+    fn persist_row(
+        &self,
+        token: &str,
+        user_id: &str,
+        db_key_hex: &str,
+        is_admin: bool,
+        ttl: Duration,
+    ) {
         let Some(persist) = self.persist.as_ref() else {
             return;
         };
@@ -162,7 +172,8 @@ impl SessionStore {
             tracing::warn!("session db key was not 32 bytes of hex; not persisting");
             return;
         };
-        let Ok(wrapped) = crate::crypto::wrap_key_with_server_key(&persist.server_key, &dbkey) else {
+        let Ok(wrapped) = crate::crypto::wrap_key_with_server_key(&persist.server_key, &dbkey)
+        else {
             tracing::warn!("failed to wrap session key; session won't survive restart");
             return;
         };
@@ -236,7 +247,11 @@ impl SessionStore {
     /// outlive the last session that holds it, but a sign-out on ONE device
     /// must not evict a runtime another device is still using.
     pub fn has_user_sessions(&self, user_id: &str) -> bool {
-        self.map.lock().unwrap().values().any(|e| e.user_id == user_id)
+        self.map
+            .lock()
+            .unwrap()
+            .values()
+            .any(|e| e.user_id == user_id)
     }
 }
 
@@ -346,7 +361,10 @@ mod tests {
         assert!(t.is_locked("alice"), "the Nth failure locks");
 
         std::thread::sleep(Duration::from_millis(200));
-        assert!(!t.is_locked("alice"), "the lock lifts once the window elapses");
+        assert!(
+            !t.is_locked("alice"),
+            "the lock lifts once the window elapses"
+        );
         // ...and the budget reset, so one more failure doesn't re-lock instantly.
         t.record_failure("alice");
         assert!(!t.is_locked("alice"));
@@ -439,7 +457,11 @@ mod tests {
     fn persistent_store(dir: &std::path::Path) -> (SessionStore, Arc<UsersDb>, [u8; 32]) {
         let users = Arc::new(UsersDb::open(&dir.join("users.db")).unwrap());
         let smk = crate::crypto::generate_db_key();
-        (SessionStore::with_persistence(Arc::clone(&users), smk), users, smk)
+        (
+            SessionStore::with_persistence(Arc::clone(&users), smk),
+            users,
+            smk,
+        )
     }
 
     /// A fresh `SessionStore` over the SAME users.db + server key simulates a
@@ -457,9 +479,14 @@ mod tests {
         let token = store.create("user-1", key.clone(), true);
 
         let after = restart(&users, smk);
-        let (uid, recovered_key, is_admin) = after.get(&token).expect("session must survive restart");
+        let (uid, recovered_key, is_admin) =
+            after.get(&token).expect("session must survive restart");
         assert_eq!(uid, "user-1");
-        assert_eq!(recovered_key.as_str(), key, "the exact DB key must round-trip through the server-key wrap");
+        assert_eq!(
+            recovered_key.as_str(),
+            key,
+            "the exact DB key must round-trip through the server-key wrap"
+        );
         assert!(is_admin);
     }
 
@@ -473,7 +500,10 @@ mod tests {
         store.remove(&token);
 
         let after = restart(&users, smk);
-        assert!(after.get(&token).is_none(), "a removed session must NOT resurrect");
+        assert!(
+            after.get(&token).is_none(),
+            "a removed session must NOT resurrect"
+        );
     }
 
     #[test]
@@ -485,8 +515,14 @@ mod tests {
         store.remove_user("user-1");
 
         let after = restart(&users, smk);
-        assert!(after.get(&t1).is_none(), "deleted user's session must not survive");
-        assert!(after.get(&t2).is_some(), "other users' sessions are untouched");
+        assert!(
+            after.get(&t1).is_none(),
+            "deleted user's session must not survive"
+        );
+        assert!(
+            after.get(&t2).is_some(),
+            "other users' sessions are untouched"
+        );
     }
 
     #[test]
@@ -499,7 +535,10 @@ mod tests {
 
         let wrong_key = crate::crypto::generate_db_key();
         let after = SessionStore::with_persistence(Arc::clone(&users), wrong_key);
-        assert!(after.get(&token).is_none(), "wrong server key must fail closed");
+        assert!(
+            after.get(&token).is_none(),
+            "wrong server key must fail closed"
+        );
     }
 
     #[test]
@@ -517,10 +556,16 @@ mod tests {
         // The kept session survives a restart; the others don't; another user
         // is untouched.
         let after = restart(&users, smk);
-        assert!(after.get(&keep).is_some(), "current device must stay signed in");
+        assert!(
+            after.get(&keep).is_some(),
+            "current device must stay signed in"
+        );
         assert!(after.get(&other1).is_none());
         assert!(after.get(&other2).is_none());
-        assert!(after.get(&elsewhere).is_some(), "a different user is unaffected");
+        assert!(
+            after.get(&elsewhere).is_some(),
+            "a different user is unaffected"
+        );
     }
 
     #[test]
@@ -531,7 +576,10 @@ mod tests {
         let token = store.create_with_ttl("user-1", "ab".repeat(32), false, Duration::ZERO);
 
         let after = restart(&users, smk);
-        assert!(after.get(&token).is_none(), "an expired row must never re-authenticate");
+        assert!(
+            after.get(&token).is_none(),
+            "an expired row must never re-authenticate"
+        );
         after.purge_expired_persisted(); // must not panic; clears the dead row
     }
 

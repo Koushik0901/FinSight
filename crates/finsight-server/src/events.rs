@@ -38,7 +38,9 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
         Ok(ev) => Some(Ok::<_, Infallible>(Event::default().data(sse_data(&ev)))),
         Err(_lagged) => None, // dropped frames are acceptable; see spec reconnect rule
     });
-    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 #[cfg(test)]

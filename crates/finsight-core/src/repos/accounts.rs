@@ -637,7 +637,14 @@ pub fn set_current_balance(
     )?;
     if is_investment {
         let today = Utc::now().date_naive().to_string();
-        upsert_balance_snapshot(conn, account_id, &today, current_cents, None, Some("manual"))?;
+        upsert_balance_snapshot(
+            conn,
+            account_id,
+            &today,
+            current_cents,
+            None,
+            Some("manual"),
+        )?;
         return Ok(());
     }
 
@@ -1150,7 +1157,7 @@ pub fn balance_timeline(
             // otherwise emit that date twice — once pre-activity, once post —
             // and the stale first copy could win peak/trough.
             if let Some(balance_cents) = carried {
-                if kept.first().map_or(true, |p| p.date != since) {
+                if kept.first().is_none_or(|p| p.date != since) {
                     kept.insert(
                         0,
                         AccountBalancePoint {
@@ -1168,10 +1175,10 @@ pub fn balance_timeline(
     let mut peak: Option<&AccountBalancePoint> = None;
     let mut trough: Option<&AccountBalancePoint> = None;
     for p in &points {
-        if peak.map_or(true, |c| p.balance_cents > c.balance_cents) {
+        if peak.is_none_or(|c| p.balance_cents > c.balance_cents) {
             peak = Some(p);
         }
-        if trough.map_or(true, |c| p.balance_cents < c.balance_cents) {
+        if trough.is_none_or(|c| p.balance_cents < c.balance_cents) {
             trough = Some(p);
         }
     }
@@ -1222,6 +1229,8 @@ fn day_before(date: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    // Cents fixtures deliberately group dollars and cents (for example, 5_000_00).
+    #![allow(clippy::inconsistent_digit_grouping)]
     use super::*;
     use crate::{models::AccountType, models::NewAccount, Db};
     use tempfile::TempDir;
@@ -1391,7 +1400,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cleared.payoff_date, None);
-        assert_eq!(cleared.apr_pct, Some(24.9), "unrelated debt fields untouched");
+        assert_eq!(
+            cleared.apr_pct,
+            Some(24.9),
+            "unrelated debt fields untouched"
+        );
     }
 
     #[test]
@@ -1569,8 +1582,15 @@ mod tests {
         let acc = sample_account_typed(&mut conn, AccountType::Savings, "Savings");
         insert_txn(&conn, &acc.id, 100_000, "2024-01-01");
         // A bank-reported balance is a confirmed anchor.
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-06-01", 250_000, None, Some("simplefin"))
-            .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-06-01",
+            250_000,
+            None,
+            Some("simplefin"),
+        )
+        .unwrap();
 
         let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
 
@@ -1641,8 +1661,15 @@ mod tests {
         .unwrap();
         insert_txn(&conn, &acc.id, 900_000, "2024-01-01");
         // A confirmed balance the user reconciled to, AFTER the seed.
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-06-01", 250_000, None, Some("manual"))
-            .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-06-01",
+            250_000,
+            None,
+            Some("manual"),
+        )
+        .unwrap();
 
         let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
 
@@ -1670,17 +1697,34 @@ mod tests {
         )
         .unwrap();
         // Two bank readings that don't reconcile with local activity alone.
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-01-01", 100_000, None, Some("simplefin"))
-            .unwrap();
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-02-01", 150_000, None, Some("simplefin"))
-            .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-01-01",
+            100_000,
+            None,
+            Some("simplefin"),
+        )
+        .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-02-01",
+            150_000,
+            None,
+            Some("simplefin"),
+        )
+        .unwrap();
         insert_txn(&conn, &acc.id, -20_000, "2024-01-15");
 
         let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
 
         assert!(!tl.reconstructable);
         assert!(tl.skip_reason.unwrap().contains("bank-reported"));
-        assert!(tl.peak.is_none(), "must not report a peak it cannot stand behind");
+        assert!(
+            tl.peak.is_none(),
+            "must not report a peak it cannot stand behind"
+        );
     }
 
     /// Activity BEFORE the confirmed anchor is walked backward rather than
@@ -1698,8 +1742,15 @@ mod tests {
         )
         .unwrap();
         insert_txn(&conn, &acc.id, 100_000, "2023-01-01"); // BEFORE the anchor
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-03-01", 500_000, None, Some("manual"))
-            .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-03-01",
+            500_000,
+            None,
+            Some("manual"),
+        )
+        .unwrap();
         insert_txn(&conn, &acc.id, 50_000, "2024-06-01"); // after the anchor
 
         let tl = balance_timeline(&mut conn, &acc.id, None).unwrap();
@@ -1710,7 +1761,11 @@ mod tests {
         assert_eq!(tl.points[0].balance_cents, 400_000);
         // The curve passes through the pin, then tracks activity after it.
         assert_eq!(
-            tl.points.iter().find(|p| p.date == "2023-01-01").unwrap().balance_cents,
+            tl.points
+                .iter()
+                .find(|p| p.date == "2023-01-01")
+                .unwrap()
+                .balance_cents,
             500_000
         );
         assert_eq!(tl.current_cents, 550_000);
@@ -1791,8 +1846,15 @@ mod tests {
         .unwrap();
         insert_txn(&conn, &acc.id, 100_000, "2024-01-01");
         // Left behind by an earlier recompute, frozen at a total that no longer holds.
-        upsert_balance_snapshot(&mut conn, &acc.id, "2024-02-01", 999_999, None, Some("derived"))
-            .unwrap();
+        upsert_balance_snapshot(
+            &mut conn,
+            &acc.id,
+            "2024-02-01",
+            999_999,
+            None,
+            Some("derived"),
+        )
+        .unwrap();
 
         recompute_balance_if_linked(&mut conn, &acc.id).unwrap();
 
@@ -1804,7 +1866,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(stale, 0, "stale derived rows must not survive as fake history");
+        assert_eq!(
+            stale, 0,
+            "stale derived rows must not survive as fake history"
+        );
     }
 
     #[test]
@@ -1877,13 +1942,19 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(derived_count, 0, "an investment balance is never derived from transactions");
+        assert_eq!(
+            derived_count, 0,
+            "an investment balance is never derived from transactions"
+        );
         let summary = list_summaries(&mut conn)
             .unwrap()
             .into_iter()
             .find(|a| a.id == "tfsa")
             .unwrap();
-        assert_eq!(summary.balance_cents, 1_000_000, "market value stands; cash flows ignored");
+        assert_eq!(
+            summary.balance_cents, 1_000_000,
+            "market value stands; cash flows ignored"
+        );
     }
 
     #[test]
@@ -1975,7 +2046,8 @@ mod tests {
 
         // User confirms a real balance (this is what set_account_balance does).
         let today = Utc::now().date_naive().to_string();
-        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_234_56, None, Some("manual")).unwrap();
+        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_234_56, None, Some("manual"))
+            .unwrap();
 
         let summary = list_summaries(&mut conn)
             .unwrap()
@@ -2032,7 +2104,10 @@ mod tests {
             .into_iter()
             .find(|a| a.id == acc.id)
             .unwrap();
-        assert_eq!(after.balance_cents, 4_800_00, "current balance equals the value the user set");
+        assert_eq!(
+            after.balance_cents, 4_800_00,
+            "current balance equals the value the user set"
+        );
         assert!(after.balance_known, "a set balance reads as known");
 
         // (b) A later forward transaction MOVES the balance (a frozen snapshot
@@ -2058,7 +2133,10 @@ mod tests {
             .into_iter()
             .find(|a| a.id == acc.id)
             .unwrap();
-        assert_eq!(reconfirmed.balance_cents, 5_000_00, "re-setting lands exactly");
+        assert_eq!(
+            reconfirmed.balance_cents, 5_000_00,
+            "re-setting lands exactly"
+        );
     }
 
     #[test]
@@ -2072,7 +2150,8 @@ mod tests {
         insert_txn(&conn, &acc.id, -30_000, "2026-04-10");
         let today = Utc::now().date_naive().to_string();
         // Simulate the old freeze: a user-stamped manual balance.
-        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_000_00, None, Some("manual")).unwrap();
+        upsert_balance_snapshot(&mut conn, &acc.id, &today, 1_000_00, None, Some("manual"))
+            .unwrap();
 
         set_current_balance(&mut conn, &acc.id, 2_500_00).unwrap();
 
@@ -2089,7 +2168,10 @@ mod tests {
             .into_iter()
             .find(|a| a.id == acc.id)
             .unwrap();
-        assert_eq!(summary.balance_cents, 2_500_00, "re-derives to the new value, not the old freeze");
+        assert_eq!(
+            summary.balance_cents, 2_500_00,
+            "re-derives to the new value, not the old freeze"
+        );
 
         // And it now tracks forward (the freeze would have stayed at 2_500_00).
         insert_txn(&conn, &acc.id, -5_000, "2026-07-02");
@@ -2099,7 +2181,11 @@ mod tests {
             .into_iter()
             .find(|a| a.id == acc.id)
             .unwrap();
-        assert_eq!(tracked.balance_cents, 2_500_00 - 5_000, "tracks forward after clearing the freeze");
+        assert_eq!(
+            tracked.balance_cents,
+            2_500_00 - 5_000,
+            "tracks forward after clearing the freeze"
+        );
     }
 
     #[test]

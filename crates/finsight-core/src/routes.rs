@@ -190,7 +190,11 @@ mod tests {
         let mut seen = APP_ROUTES.to_vec();
         seen.sort_unstable();
         seen.dedup();
-        assert_eq!(seen.len(), APP_ROUTES.len(), "duplicate route in APP_ROUTES");
+        assert_eq!(
+            seen.len(),
+            APP_ROUTES.len(),
+            "duplicate route in APP_ROUTES"
+        );
     }
 
     /// Pins this registry against its TypeScript mirror.
@@ -266,10 +270,19 @@ mod tests {
 
     #[test]
     fn focused_links_use_each_screens_own_param() {
-        assert_eq!(AppRoute::Budget.focused("cat-1"), "/budget?focusCategory=cat-1");
+        assert_eq!(
+            AppRoute::Budget.focused("cat-1"),
+            "/budget?focusCategory=cat-1"
+        );
         assert_eq!(AppRoute::Goals.focused("g-1"), "/goals?focusGoal=g-1");
-        assert_eq!(AppRoute::Accounts.focused("a-1"), "/accounts?focusAccount=a-1");
-        assert_eq!(AppRoute::Recurring.focused("p-1"), "/recurring?focusPlanned=p-1");
+        assert_eq!(
+            AppRoute::Accounts.focused("a-1"),
+            "/accounts?focusAccount=a-1"
+        );
+        assert_eq!(
+            AppRoute::Recurring.focused("p-1"),
+            "/recurring?focusPlanned=p-1"
+        );
     }
 
     #[test]

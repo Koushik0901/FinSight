@@ -15,7 +15,7 @@ use finsight_providers::error::ProviderError;
 use finsight_providers::{AmountConvention, ColumnRole, CsvImportMapping};
 
 /// 1. Staleness changes the signature, and a stale-then-refreshed prepare
-/// re-reconciles against current DB state rather than reusing anything.
+///    re-reconciles against current DB state rather than reusing anything.
 #[test]
 fn stale_signature_changes_after_ledger_mutation() {
     let path = common::sample("amex-all-time-statement.csv");
@@ -32,7 +32,10 @@ fn stale_signature_changes_after_ledger_mutation() {
     // Mutate the ledger: import the file once (0 -> 1988 rows).
     let import_id = uuid::Uuid::new_v4().to_string();
     let summary = CsvProvider::import(&path, &acct, &import_id, &mapping, &db, |_| {}).unwrap();
-    assert_eq!(summary.rows_imported, 1988, "ground truth: empty-ledger import count");
+    assert_eq!(
+        summary.rows_imported, 1988,
+        "ground truth: empty-ledger import count"
+    );
 
     let prepared_b = {
         let conn = db.get().unwrap();
@@ -43,7 +46,10 @@ fn stale_signature_changes_after_ledger_mutation() {
         sig_a, prepared_b.signature,
         "ledger fingerprint moved from 0 to 1988 rows; signature must change"
     );
-    assert_eq!(prepared_b.rows_imported, 0, "re-import shape: no new inserts");
+    assert_eq!(
+        prepared_b.rows_imported, 0,
+        "re-import shape: no new inserts"
+    );
     assert_eq!(
         prepared_b.rows_skipped_duplicates, 1988,
         "re-import shape: every row is an exact twin → all skip as duplicates"
@@ -72,7 +78,7 @@ fn empty_file_returns_empty_file_error() {
 }
 
 /// 3. Re-preparing the identical file against a ledger that already imported
-/// it inserts nothing new (focused, standalone assertion).
+///    it inserts nothing new (focused, standalone assertion).
 #[test]
 fn reimport_inserts_nothing_new() {
     let path = common::sample("amex-all-time-statement.csv");
@@ -94,7 +100,7 @@ fn reimport_inserts_nothing_new() {
 }
 
 /// 4. Malformed rows are captured as errors, not fatal; well-formed rows in
-/// the same file still import.
+///    the same file still import.
 #[test]
 fn malformed_rows_captured_good_rows_still_import() {
     let (db, dir, acct) = common::open_with_account();
@@ -118,12 +124,19 @@ fn malformed_rows_captured_good_rows_still_import() {
     let conn = db.get().unwrap();
     let prepared = CsvProvider::prepare(&csv_path, &acct, &mapping, &conn).unwrap();
 
-    assert_eq!(prepared.errors.len(), 1, "the unparseable-date row must be captured as an error");
-    assert_eq!(prepared.rows_imported, 2, "the two well-formed rows still import");
+    assert_eq!(
+        prepared.errors.len(),
+        1,
+        "the unparseable-date row must be captured as an error"
+    );
+    assert_eq!(
+        prepared.rows_imported, 2,
+        "the two well-formed rows still import"
+    );
 }
 
 /// 5. Flipping the amount convention changes the signature (the mapping is
-/// part of the signature, not just the file).
+///    part of the signature, not just the file).
 #[test]
 fn flipped_amount_convention_changes_signature() {
     let path = common::sample("amex-all-time-statement.csv");

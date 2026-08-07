@@ -261,7 +261,15 @@ fn overlapping_import_lands_only_genuinely_new_rows() {
          2026-03-20,HYDRO ONE,-120.00\n",
     )
     .unwrap();
-    let s1 = CsvProvider::import(&a, &acct, &uuid::Uuid::new_v4().to_string(), &mapping, &db, |_| {}).unwrap();
+    let s1 = CsvProvider::import(
+        &a,
+        &acct,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(s1.rows_imported, 5, "base statement lands in full");
 
     // Second statement: three exact repeats of A (overlap) + two genuinely new
@@ -279,18 +287,39 @@ fn overlapping_import_lands_only_genuinely_new_rows() {
          2026-03-04,COSTCO WHOLESALE,-75.00\n",
     )
     .unwrap();
-    let s2 = CsvProvider::import(&b, &acct, &uuid::Uuid::new_v4().to_string(), &mapping, &db, |_| {}).unwrap();
+    let s2 = CsvProvider::import(
+        &b,
+        &acct,
+        &uuid::Uuid::new_v4().to_string(),
+        &mapping,
+        &db,
+        |_| {},
+    )
+    .unwrap();
 
-    assert_eq!(s2.rows_imported, 2, "only the two genuinely-new charges land");
-    assert_eq!(s2.rows_skipped_duplicates, 3, "the three overlapping rows auto-skip");
-    assert_eq!(s2.rows_queued_for_review, 0, "overlap must not queue for review");
+    assert_eq!(
+        s2.rows_imported, 2,
+        "only the two genuinely-new charges land"
+    );
+    assert_eq!(
+        s2.rows_skipped_duplicates, 3,
+        "the three overlapping rows auto-skip"
+    );
+    assert_eq!(
+        s2.rows_queued_for_review, 0,
+        "overlap must not queue for review"
+    );
 
     // Ledger holds the original 5 plus the 2 new rows = 7 (no charge lost, none
     // double-counted).
     let count: i64 = db
         .get()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM transactions WHERE account_id = ?1", [&acct], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = ?1",
+            [&acct],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, 7, "5 original + 2 new, overlap deduped");
 }

@@ -207,15 +207,11 @@
 .fs-auth .field.valid .valid-check { opacity: 1; transform: scale(1); }
 
 .fs-auth .field-err {
-  overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height .25s, opacity .2s, margin .25s;
+  display: none;
   font-size: 12px; color: var(--negative);
   padding-left: 4px;
-  display: flex; align-items: center; gap: 6px;
 }
-.fs-auth .field.invalid .field-err { max-height: 30px; opacity: 1; margin-top: 7px; }
+.fs-auth .field.invalid .field-err { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
 
 /* Collapsible mode-only fields (confirm password, strength) */
 .fs-auth .collapse {

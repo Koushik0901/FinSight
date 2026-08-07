@@ -315,15 +315,9 @@ pub async fn list_simplefin_connections(
     Ok(infos)
 }
 
-pub async fn list_simplefin_accounts(
-    state: &ApiState,
-) -> AppResult<Vec<SimpleFinAccountInfo>> {
+pub async fn list_simplefin_accounts(state: &ApiState) -> AppResult<Vec<SimpleFinAccountInfo>> {
     let db = state.db.clone();
-    let connection_rows = run(&db, |conn| {
-        Ok::<_, finsight_core::CoreError>(connections::list(conn)?)
-    })
-    .await
-    .map_err(AppError::from)?;
+    let connection_rows = run(&db, connections::list).await.map_err(AppError::from)?;
 
     // Group local connection rows by the bridge access URL they share.
     let mut by_bridge: std::collections::HashMap<String, Vec<DbConnection>> =
@@ -754,9 +748,7 @@ pub async fn disconnect_simplefin(state: &ApiState) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn purge_simplefin_data(
-    state: &ApiState,
-) -> AppResult<SimpleFinPurgeSummary> {
+pub async fn purge_simplefin_data(state: &ApiState) -> AppResult<SimpleFinPurgeSummary> {
     let db = state.db.clone();
     let bridge_ids = run(&db, |conn| {
         let mut stmt = conn.prepare("SELECT DISTINCT access_url_ref FROM simplefin_connections")?;
@@ -867,10 +859,7 @@ pub async fn purge_simplefin_data(
     .map_err(AppError::from)
 }
 
-pub async fn delete_simplefin_connection(
-    state: &ApiState,
-    connection_id: String,
-) -> AppResult<()> {
+pub async fn delete_simplefin_connection(state: &ApiState, connection_id: String) -> AppResult<()> {
     let db = state.db.clone();
     let bridge_id = run(&db, {
         let connection_id = connection_id.clone();
@@ -971,20 +960,15 @@ pub async fn set_simplefin_sync_settings(
     Ok(())
 }
 
-pub async fn list_simplefin_alerts(
-    state: &ApiState,
-) -> AppResult<Vec<SimpleFinAlert>> {
+pub async fn list_simplefin_alerts(state: &ApiState) -> AppResult<Vec<SimpleFinAlert>> {
     let db = state.db.clone();
-    let rows = run(&db, |conn| alerts::list_unacknowledged(conn))
+    let rows = run(&db, alerts::list_unacknowledged)
         .await
         .map_err(AppError::from)?;
     Ok(rows)
 }
 
-pub async fn acknowledge_simplefin_alert(
-    state: &ApiState,
-    alert_id: String,
-) -> AppResult<()> {
+pub async fn acknowledge_simplefin_alert(state: &ApiState, alert_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
         let alert_id = alert_id.clone();
@@ -999,16 +983,13 @@ pub async fn list_simplefin_transfer_suggestions(
     state: &ApiState,
 ) -> AppResult<Vec<TransferSuggestionInfo>> {
     let db = state.db.clone();
-    let rows = run(&db, |conn| transfers::list_suggestions(conn))
+    let rows = run(&db, transfers::list_suggestions)
         .await
         .map_err(AppError::from)?;
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-pub async fn confirm_simplefin_transfer(
-    state: &ApiState,
-    transfer_id: String,
-) -> AppResult<()> {
+pub async fn confirm_simplefin_transfer(state: &ApiState, transfer_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
         let transfer_id = transfer_id.clone();
@@ -1019,10 +1000,7 @@ pub async fn confirm_simplefin_transfer(
     Ok(())
 }
 
-pub async fn reject_simplefin_transfer(
-    state: &ApiState,
-    transfer_id: String,
-) -> AppResult<()> {
+pub async fn reject_simplefin_transfer(state: &ApiState, transfer_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, {
         let transfer_id = transfer_id.clone();
@@ -1037,7 +1015,7 @@ pub async fn list_import_review_candidates(
     state: &ApiState,
 ) -> AppResult<Vec<ImportCandidateWithMatches>> {
     let db = state.db.clone();
-    run(&db, |conn| import_candidates::list_pending(conn))
+    run(&db, import_candidates::list_pending)
         .await
         .map_err(AppError::from)
 }
@@ -1068,10 +1046,7 @@ pub async fn create_import_candidate_transaction(
     .map_err(AppError::from)
 }
 
-pub async fn dismiss_import_candidate(
-    state: &ApiState,
-    candidate_id: String,
-) -> AppResult<()> {
+pub async fn dismiss_import_candidate(state: &ApiState, candidate_id: String) -> AppResult<()> {
     let db = state.db.clone();
     run(&db, move |conn| {
         import_candidates::dismiss(conn, &candidate_id)
@@ -1091,13 +1066,13 @@ fn upsert_institution_from_connection(
         NewInstitution {
             id,
             name: pc.name.clone(),
-            domain: pc.org_url.as_ref().and_then(extract_domain),
+            domain: pc.org_url.as_deref().and_then(extract_domain),
             sfin_url: Some(pc.sfin_url.clone()),
         },
     )
 }
 
-fn extract_domain(url: &String) -> Option<String> {
+fn extract_domain(url: &str) -> Option<String> {
     // Very light extraction: strip scheme and path, keep host.
     let without_scheme = url
         .trim_start_matches("http://")

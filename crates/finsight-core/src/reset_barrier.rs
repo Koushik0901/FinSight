@@ -137,8 +137,15 @@ mod tests {
         // Give the reset task a chance to run: epoch is already bumped, but it
         // cannot have finished because our lease is still held.
         tokio::time::sleep(Duration::from_millis(30)).await;
-        assert!(!reset.is_finished(), "reset must block until the lease drains");
-        assert_ne!(b.epoch(), start, "epoch is advanced the instant a reset begins");
+        assert!(
+            !reset.is_finished(),
+            "reset must block until the lease drains"
+        );
+        assert_ne!(
+            b.epoch(),
+            start,
+            "epoch is advanced the instant a reset begins"
+        );
         // The in-flight writer notices it was superseded and would skip its commit.
         assert!(lease.superseded());
 
@@ -170,6 +177,9 @@ mod tests {
     async fn a_current_epoch_lease_is_not_superseded() {
         let b = ResetBarrier::new();
         let lease = b.writer_lease(b.epoch()).await;
-        assert!(!lease.superseded(), "no reset happened → commit may proceed");
+        assert!(
+            !lease.superseded(),
+            "no reset happened → commit may proceed"
+        );
     }
 }

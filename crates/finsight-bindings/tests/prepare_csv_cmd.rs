@@ -81,8 +81,9 @@ async fn build_preview_reports_bounded_outcome_for_amex_sample() {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/amex-all-time-statement.csv");
 
-    let preview = finsight_bindings::commands::import::build_preview(&db, &path, &account_id, &mapping)
-        .expect("build_preview should succeed");
+    let preview =
+        finsight_bindings::commands::import::build_preview(&db, &path, &account_id, &mapping)
+            .expect("build_preview should succeed");
 
     assert_eq!(preview.rows_imported, 1988);
     assert_eq!(preview.rows_skipped_duplicates, 0);

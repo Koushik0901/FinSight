@@ -44,7 +44,14 @@ fn day_in(month_start: NaiveDate, day: u32) -> NaiveDate {
     }
 }
 
-fn insert_txn(conn: &Connection, acct: &str, date: NaiveDate, cents: i64, merchant: &str, cat: Option<&str>) {
+fn insert_txn(
+    conn: &Connection,
+    acct: &str,
+    date: NaiveDate,
+    cents: i64,
+    merchant: &str,
+    cat: Option<&str>,
+) {
     conn.execute(
         "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, category_id, status, created_at) \
          VALUES(hex(randomblob(16)), ?1, ?2, ?3, ?4, ?5, 'cleared', datetime('now'))",
@@ -75,7 +82,11 @@ pub fn seed(conn: &mut Connection) {
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('inv','You','Broker','Investment','Brokerage','USD','#8B5CF6','manual','invested',0,'investments',datetime('now'))", []).unwrap();
 
     // ── Categories ───────────────────────────────────────────────────────────
-    conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('core','Core',0)", []).unwrap();
+    conn.execute(
+        "INSERT INTO category_groups(id,label,sort_order) VALUES('core','Core',0)",
+        [],
+    )
+    .unwrap();
     for (id, label) in [
         ("groceries", "Groceries"),
         ("dining", "Dining"),
@@ -122,17 +133,45 @@ pub fn seed(conn: &mut Connection) {
             _ => 80000,
         };
         insert_txn(conn, "chk", day_in(m, 1), income, "Infoblox", None);
-        insert_txn(conn, "chk", day_in(m, 2), -rent, "Metrotown Rentals", Some("housing"));
+        insert_txn(
+            conn,
+            "chk",
+            day_in(m, 2),
+            -rent,
+            "Metrotown Rentals",
+            Some("housing"),
+        );
 
         // Subscriptions started at different points in the timeline.
         if months_ago <= 84 {
-            insert_txn(conn, "chk", day_in(m, 5), -1600, "Netflix", Some("entertainment"));
+            insert_txn(
+                conn,
+                "chk",
+                day_in(m, 5),
+                -1600,
+                "Netflix",
+                Some("entertainment"),
+            );
         }
         if months_ago <= 60 {
-            insert_txn(conn, "chk", day_in(m, 8), -1100, "Spotify", Some("entertainment"));
+            insert_txn(
+                conn,
+                "chk",
+                day_in(m, 8),
+                -1100,
+                "Spotify",
+                Some("entertainment"),
+            );
         }
         if months_ago <= 36 {
-            insert_txn(conn, "chk", day_in(m, 6), -4000, "Anytime Fitness", Some("health"));
+            insert_txn(
+                conn,
+                "chk",
+                day_in(m, 6),
+                -4000,
+                "Anytime Fitness",
+                Some("health"),
+            );
         }
 
         // Groceries + transport scale gently with income over the years.
@@ -143,13 +182,48 @@ pub fn seed(conn: &mut Connection) {
         } else {
             (-16000, -9000, -8000)
         };
-        insert_txn(conn, "chk", day_in(m, 12), costco, "Walmart Supercentre", Some("groceries"));
-        insert_txn(conn, "chk", day_in(m, 22), tj, "T&T Supermarket", Some("groceries"));
-        insert_txn(conn, "chk", day_in(m, 15), -5000, "McDonald's", Some("dining"));
-        insert_txn(conn, "chk", day_in(m, 18), shell, "EVO Car Share", Some("transport"));
+        insert_txn(
+            conn,
+            "chk",
+            day_in(m, 12),
+            costco,
+            "Walmart Supercentre",
+            Some("groceries"),
+        );
+        insert_txn(
+            conn,
+            "chk",
+            day_in(m, 22),
+            tj,
+            "T&T Supermarket",
+            Some("groceries"),
+        );
+        insert_txn(
+            conn,
+            "chk",
+            day_in(m, 15),
+            -5000,
+            "McDonald's",
+            Some("dining"),
+        );
+        insert_txn(
+            conn,
+            "chk",
+            day_in(m, 18),
+            shell,
+            "EVO Car Share",
+            Some("transport"),
+        );
         // Food delivery only became a habit in the last ~2 years.
         if months_ago <= 24 {
-            insert_txn(conn, "chk", day_in(m, 19), -6000, "Uber Eats", Some("dining"));
+            insert_txn(
+                conn,
+                "chk",
+                day_in(m, 19),
+                -6000,
+                "Uber Eats",
+                Some("dining"),
+            );
         }
     }
 
@@ -160,9 +234,23 @@ pub fn seed(conn: &mut Connection) {
     // charge is the one flagged anomaly.
     let midpast = first_of_month_back(newest, 5);
     insert_txn(conn, "cc", day_in(midpast, 10), -30000, "Best Buy", None);
-    insert_txn(conn, "cc", day_in(midpast, 14), -45000, "Flair Airlines", None);
+    insert_txn(
+        conn,
+        "cc",
+        day_in(midpast, 14),
+        -45000,
+        "Flair Airlines",
+        None,
+    );
     insert_txn(conn, "chk", day_in(midpast, 24), -1800, "Tim Hortons", None);
-    insert_txn(conn, "cc", day_in(midpast, 20), -250000, "Apple Store", None);
+    insert_txn(
+        conn,
+        "cc",
+        day_in(midpast, 20),
+        -250000,
+        "Apple Store",
+        None,
+    );
     conn.execute(
         "UPDATE transactions SET is_anomaly = 1, ai_explanation = 'Much larger than this account''s typical charge' WHERE merchant_raw = 'Apple Store'",
         [],
@@ -238,7 +326,10 @@ mod tests {
         eprintln!("income_12m/mo   = {}", s.avg_monthly_income_12m_cents);
         eprintln!("expense_90d/mo  = {}", s.avg_monthly_expense_90d_cents);
         eprintln!("expense_12m/mo  = {}", s.avg_monthly_expense_12m_cents);
-        eprintln!("surplus(90d)    = {}", s.avg_monthly_income_90d_cents - s.avg_monthly_expense_90d_cents);
+        eprintln!(
+            "surplus(90d)    = {}",
+            s.avg_monthly_income_90d_cents - s.avg_monthly_expense_90d_cents
+        );
         eprintln!("liquid          = {}", s.liquid_balance_cents);
         eprintln!("ef_months       = {}", s.emergency_fund_months);
     }
@@ -257,12 +348,28 @@ mod tests {
                 [], |r| r.get(0)).unwrap();
             d as f64 / 365.0
         };
-        for (lbl, lo, hi) in [("~now (0-12mo)",0,365),("~5yr ago (60-72mo)",1825,2190),("~9yr ago (108-120mo)",3285,3650)] {
+        for (lbl, lo, hi) in [
+            ("~now (0-12mo)", 0, 365),
+            ("~5yr ago (60-72mo)", 1825, 2190),
+            ("~9yr ago (108-120mo)", 3285, 3650),
+        ] {
             let inc = q(&format!("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE amount_cents>0 AND posted_at < date('now','-{lo} days') AND posted_at >= date('now','-{hi} days')"));
             let exp = q(&format!("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE amount_cents<0 AND posted_at < date('now','-{lo} days') AND posted_at >= date('now','-{hi} days')"));
-            eprintln!("{lbl}: 12mo income={} expense={} (/12 = {}/{} per mo)", inc, exp, inc/12, exp/12);
+            eprintln!(
+                "{lbl}: 12mo income={} expense={} (/12 = {}/{} per mo)",
+                inc,
+                exp,
+                inc / 12,
+                exp / 12
+            );
         }
-        eprintln!("Netflix age = {:.1} yr, Spotify = {:.1}, Gym = {:.1}, Uber Eats = {:.1}", yr("Netflix"), yr("Spotify"), yr("Anytime Fitness"), yr("Uber Eats"));
+        eprintln!(
+            "Netflix age = {:.1} yr, Spotify = {:.1}, Gym = {:.1}, Uber Eats = {:.1}",
+            yr("Netflix"),
+            yr("Spotify"),
+            yr("Anytime Fitness"),
+            yr("Uber Eats")
+        );
     }
 
     /// Locks the benchmark's ground-truth reference facts to the actual seed so
@@ -286,42 +393,71 @@ mod tests {
             "the unknown account is the Brokerage"
         );
 
-        let accounts: i64 = conn.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
+        let accounts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(accounts, 5);
 
         // Deep history: ~10 years of monthly transactions.
         let tx_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
             .unwrap();
-        assert!(tx_count > 900, "10 years of monthly data → 900+ transactions, got {tx_count}");
+        assert!(
+            tx_count > 900,
+            "10 years of monthly data → 900+ transactions, got {tx_count}"
+        );
         let oldest_days: i64 = conn
             .query_row("SELECT CAST(julianday('now') - julianday(MIN(posted_at)) AS INTEGER) FROM transactions", [], |r| r.get(0))
             .unwrap();
-        assert!(oldest_days > 3200, "oldest transaction ~10 years old, got {oldest_days} days");
+        assert!(
+            oldest_days > 3200,
+            "oldest transaction ~10 years old, got {oldest_days} days"
+        );
 
         // Current-state facts live in the trailing 12-month window: payroll at
         // the current $4,000/mo tier, rent at the $1,200 tier.
         let income_12m: i64 = conn
             .query_row("SELECT COALESCE(SUM(amount_cents),0) FROM transactions WHERE merchant_raw='Infoblox' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
             .unwrap();
-        assert!((4_600_000..=5_000_000).contains(&income_12m), "recent-year income ≈ 12×$4,000, got {income_12m}");
+        assert!(
+            (4_600_000..=5_000_000).contains(&income_12m),
+            "recent-year income ≈ 12×$4,000, got {income_12m}"
+        );
         let housing_12m: i64 = conn
             .query_row("SELECT COALESCE(SUM(-amount_cents),0) FROM transactions WHERE category_id='housing' AND posted_at >= date('now','-365 days')", [], |r| r.get(0))
             .unwrap();
-        assert!((1_300_000..=1_560_000).contains(&housing_12m), "recent-year rent ≈ 12×$1,200, got {housing_12m}");
+        assert!(
+            (1_300_000..=1_560_000).contains(&housing_12m),
+            "recent-year rent ≈ 12×$1,200, got {housing_12m}"
+        );
 
         let uncategorized: i64 = conn
-            .query_row("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE category_id IS NULL AND amount_cents < 0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(uncategorized, 4, "Best Buy, Flair Airlines, Tim Hortons, Apple Store");
+        assert_eq!(
+            uncategorized, 4,
+            "Best Buy, Flair Airlines, Tim Hortons, Apple Store"
+        );
 
         let anomalies: i64 = conn
-            .query_row("SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(anomalies, 1, "the $2,500 Apple Store charge");
 
         let debts: i64 = conn
-            .query_row("SELECT COUNT(*) FROM accounts WHERE account_group='debt'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE account_group='debt'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(debts, 2, "Visa + Auto Loan");
     }

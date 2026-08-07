@@ -116,7 +116,10 @@ pub struct CentroidMatch {
 }
 
 /// Rank `centroids` against a query embedding, best first.
-pub fn rank(query: &[f32], centroids: &[category_centroids::CategoryCentroid]) -> Vec<CentroidMatch> {
+pub fn rank(
+    query: &[f32],
+    centroids: &[category_centroids::CategoryCentroid],
+) -> Vec<CentroidMatch> {
     let mut out: Vec<CentroidMatch> = centroids
         .iter()
         .map(|c| CentroidMatch {
@@ -253,8 +256,7 @@ pub async fn propose_for_uncategorized(db: &Db, encoder: &dyn SentenceEncoder) -
         tokio::task::spawn_blocking(move || {
             let mut conn = db.get()?;
             let rows = crate::categorizer::load_uncategorized_for_proposals(&mut conn)?;
-            let centroids =
-                category_centroids::load_active_for_model(&mut conn, &model_id, dims)?;
+            let centroids = category_centroids::load_active_for_model(&mut conn, &model_id, dims)?;
             Ok::<_, anyhow::Error>((rows, centroids))
         })
         .await??
@@ -267,7 +269,10 @@ pub async fn propose_for_uncategorized(db: &Db, encoder: &dyn SentenceEncoder) -
     }
 
     // 2. Embed (async), one batch.
-    let texts: Vec<String> = rows.iter().map(|(_, merchant, _)| merchant.clone()).collect();
+    let texts: Vec<String> = rows
+        .iter()
+        .map(|(_, merchant, _)| merchant.clone())
+        .collect();
     let query_vectors = encoder.embed(&texts).await?;
 
     let mut proposals: Vec<(String, String, f32, String)> = Vec::new();
@@ -358,7 +363,10 @@ pub(crate) mod testing {
 
     impl StubEncoder {
         pub fn new(model_id: &str, dims: usize) -> Self {
-            Self { model_id: model_id.to_string(), dims }
+            Self {
+                model_id: model_id.to_string(),
+                dims,
+            }
         }
     }
 
@@ -397,8 +405,15 @@ mod tests {
     #[test]
     fn normalize_refuses_a_zero_vector() {
         let mut v = vec![0.0, 0.0, 0.0];
-        assert!(!normalize(&mut v), "a zero vector has no direction to preserve");
-        assert_eq!(v, vec![0.0, 0.0, 0.0], "a refused normalize must not mutate");
+        assert!(
+            !normalize(&mut v),
+            "a zero vector has no direction to preserve"
+        );
+        assert_eq!(
+            v,
+            vec![0.0, 0.0, 0.0],
+            "a refused normalize must not mutate"
+        );
     }
 
     #[test]
@@ -423,7 +438,10 @@ mod tests {
 
     #[test]
     fn no_examples_means_no_centroid() {
-        assert!(centroid_of(&[]).is_none(), "a zero vector would match everything");
+        assert!(
+            centroid_of(&[]).is_none(),
+            "a zero vector would match everything"
+        );
     }
 
     #[test]
@@ -450,8 +468,16 @@ mod tests {
     fn ranking_is_deterministic_on_ties() {
         use finsight_core::repos::category_centroids::CategoryCentroid;
         let cs = vec![
-            CategoryCentroid { category_id: "zeta".into(), vector: vec![1.0, 0.0], example_count: 1 },
-            CategoryCentroid { category_id: "alpha".into(), vector: vec![1.0, 0.0], example_count: 1 },
+            CategoryCentroid {
+                category_id: "zeta".into(),
+                vector: vec![1.0, 0.0],
+                example_count: 1,
+            },
+            CategoryCentroid {
+                category_id: "alpha".into(),
+                vector: vec![1.0, 0.0],
+                example_count: 1,
+            },
         ];
         let ranked = rank(&[1.0, 0.0], &cs);
         assert_eq!(
@@ -506,13 +532,20 @@ mod tests {
             "a category with no examples must get NO centroid rather than a catch-all vector"
         );
         assert_eq!(
-            stored.iter().find(|c| c.category_id == "groceries").unwrap().example_count,
+            stored
+                .iter()
+                .find(|c| c.category_id == "groceries")
+                .unwrap()
+                .example_count,
             2
         );
         // Stored normalized, so the read path's dot-product-as-cosine holds.
         for c in &stored {
             let norm = c.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
-            assert!((norm - 1.0).abs() < 1e-5, "stored centroids must be unit length");
+            assert!(
+                (norm - 1.0).abs() < 1e-5,
+                "stored centroids must be unit length"
+            );
         }
     }
 
@@ -526,24 +559,34 @@ mod tests {
             seed(&mut conn, "groceries", &["WHOLE FOODS"]);
         }
 
-        rebuild_all(&db, &StubEncoder::new("stub-v1", 8)).await.unwrap();
+        rebuild_all(&db, &StubEncoder::new("stub-v1", 8))
+            .await
+            .unwrap();
         {
             let mut conn = db.get().unwrap();
             assert_eq!(
-                category_centroids::load_active_for_model(&mut conn, "stub-v1", 8).unwrap().len(),
+                category_centroids::load_active_for_model(&mut conn, "stub-v1", 8)
+                    .unwrap()
+                    .len(),
                 1
             );
         }
 
         // A different model, and a different width.
-        rebuild_all(&db, &StubEncoder::new("stub-v2", 16)).await.unwrap();
+        rebuild_all(&db, &StubEncoder::new("stub-v2", 16))
+            .await
+            .unwrap();
         let mut conn = db.get().unwrap();
         assert!(
-            category_centroids::load_active_for_model(&mut conn, "stub-v1", 8).unwrap().is_empty(),
+            category_centroids::load_active_for_model(&mut conn, "stub-v1", 8)
+                .unwrap()
+                .is_empty(),
             "vectors from the previous encoder must not survive as scorable rows"
         );
         assert_eq!(
-            category_centroids::load_active_for_model(&mut conn, "stub-v2", 16).unwrap().len(),
+            category_centroids::load_active_for_model(&mut conn, "stub-v2", 16)
+                .unwrap()
+                .len(),
             1
         );
     }
@@ -596,7 +639,11 @@ mod tests {
 
         let conn = db.get().unwrap();
         let canonical: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(
             canonical.is_none(),
@@ -613,7 +660,11 @@ mod tests {
             .unwrap();
         assert_eq!(source, "ml", "V061 reserves 'ml' for this pass");
         assert_eq!(applied, 0, "applied=0 is the held-back half of V061's axis");
-        assert_eq!(model.as_deref(), Some("stub-v1"), "the encoder must be recorded");
+        assert_eq!(
+            model.as_deref(),
+            Some("stub-v1"),
+            "the encoder must be recorded"
+        );
     }
 
     /// The semantic pass is bound by the same deterministic invariants as the
@@ -678,7 +729,9 @@ mod tests {
             insert_txn(&mut conn, "t1", "WHOLE FOODS MARKET 123", false);
         }
         // Build prototypes with one encoder...
-        rebuild_all(&db, &StubEncoder::new("stub-v1", 8)).await.unwrap();
+        rebuild_all(&db, &StubEncoder::new("stub-v1", 8))
+            .await
+            .unwrap();
         // ...then score with a different one, WITHOUT rebuilding.
         let written = propose_for_uncategorized(&db, &StubEncoder::new("stub-v2", 8))
             .await

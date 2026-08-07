@@ -420,6 +420,8 @@ pub fn set_purpose(conn: &mut Connection, id: &str, purpose: Option<&str>) -> Co
 
 #[cfg(test)]
 mod tests {
+    // Cents fixtures deliberately group dollars and cents (for example, 5_000_00).
+    #![allow(clippy::inconsistent_digit_grouping)]
     use super::*;
     use crate::Db;
     use tempfile::TempDir;
@@ -630,11 +632,15 @@ mod tests {
 
         sync_linked_accounts(&mut conn, &account_id).unwrap();
         let synced = get_by_id(&mut conn, &goal.id).unwrap();
-        assert_eq!(synced.current_cents, 5_000_00, "amount owed is the positive magnitude of the negative balance");
+        assert_eq!(
+            synced.current_cents, 5_000_00,
+            "amount owed is the positive magnitude of the negative balance"
+        );
 
         // Paying the debt down to $0 must sync the goal to 0, not go negative.
         let today = chrono::Utc::now().date_naive().to_string();
-        accounts::upsert_balance_snapshot(&mut conn, &account_id, &today, 0, None, Some("manual")).unwrap();
+        accounts::upsert_balance_snapshot(&mut conn, &account_id, &today, 0, None, Some("manual"))
+            .unwrap();
         sync_linked_accounts(&mut conn, &account_id).unwrap();
         let paid_off = get_by_id(&mut conn, &goal.id).unwrap();
         assert_eq!(paid_off.current_cents, 0);

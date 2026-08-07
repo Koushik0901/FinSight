@@ -148,7 +148,7 @@ async fn single_turn_final_answer() {
         }]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "What is my savings rate?", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "What is my savings rate?", &tools, provider, 5)
         .await
         .unwrap();
     assert!(result.content.contains("20%"));
@@ -187,7 +187,7 @@ async fn hitting_the_time_budget_synthesizes_a_best_effort_answer() {
     let tools = build_toolset();
     // Deadline already reached → synthesize on iteration 1.
     let result = ReasoningEngine::run_with_events(
-        &mut *conn,
+        &mut conn,
         "Give me a full financial plan",
         &tools,
         provider,
@@ -255,7 +255,7 @@ async fn strong_synthesizer_rewrites_the_final_answer_after_tool_gathering() {
     });
     let tools = build_toolset();
     let result = ReasoningEngine::run_with_events(
-        &mut *conn,
+        &mut conn,
         "What are my balances?",
         &tools,
         router,
@@ -307,7 +307,7 @@ async fn structured_final_answer_populates_answer_metadata() {
     });
 
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "Should I pay debt?", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Should I pay debt?", &tools, provider, 5)
         .await
         .unwrap();
 
@@ -347,7 +347,7 @@ async fn multi_turn_with_tool_calls() {
     });
     let tools = build_toolset();
     let result = ReasoningEngine::run(
-        &mut *conn,
+        &mut conn,
         "What are my account balances?",
         &tools,
         provider,
@@ -388,7 +388,7 @@ async fn max_iterations_returns_partial() {
         ]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "Complex question", &tools, provider, 2)
+    let result = ReasoningEngine::run(&mut conn, "Complex question", &tools, provider, 2)
         .await
         .unwrap();
     assert!(result.trace.len() <= 2);
@@ -424,7 +424,7 @@ async fn action_tool_records_change() {
         ]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "Increase my invest goal", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Increase my invest goal", &tools, provider, 5)
         .await
         .unwrap();
     assert_eq!(result.changes.len(), 1);
@@ -467,7 +467,7 @@ async fn budget_action_tool_drafts_without_mutating_budget() {
         ]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "Draft a grocery budget", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Draft a grocery budget", &tools, provider, 5)
         .await
         .unwrap();
 
@@ -516,7 +516,7 @@ async fn invalid_tool_call_returns_recoverable_error_then_recovers() {
     let mut tools = build_toolset();
     tools.register(read::get_top_spending_categories());
 
-    let result = ReasoningEngine::run(&mut *conn, "Top categories", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Top categories", &tools, provider, 5)
         .await
         .unwrap();
 
@@ -556,7 +556,7 @@ async fn unknown_tool_call_returns_recoverable_error() {
     });
     let tools = build_toolset();
 
-    let result = ReasoningEngine::run(&mut *conn, "Use a bad tool", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Use a bad tool", &tools, provider, 5)
         .await
         .unwrap();
 
@@ -728,7 +728,7 @@ async fn plan_only_turn_is_not_accepted_as_final_answer() {
         ]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "What is my net worth?", &tools, provider, 5)
         .await
         .unwrap();
     assert!(
@@ -741,7 +741,10 @@ async fn plan_only_turn_is_not_accepted_as_final_answer() {
         "the raw plan preamble must not leak into the answer"
     );
     // The plan itself is still captured for the UI.
-    assert_eq!(result.plan, vec!["Fetch net worth".to_string(), "Report it".to_string()]);
+    assert_eq!(
+        result.plan,
+        vec!["Fetch net worth".to_string(), "Report it".to_string()]
+    );
 }
 
 #[test]
@@ -753,7 +756,10 @@ fn content_after_plan_detects_plan_only_vs_real_answer() {
         content_after_plan("PLAN:\n1. a\n2. b\n\nThe answer is 42."),
         "The answer is 42."
     );
-    assert_eq!(content_after_plan("Just a plain answer."), "Just a plain answer.");
+    assert_eq!(
+        content_after_plan("Just a plain answer."),
+        "Just a plain answer."
+    );
 }
 
 /// A clarifying question and a missing-data decline are CORRECT no-tool answers,
@@ -767,15 +773,27 @@ fn clarifying_questions_and_declines_are_not_intent_filler() {
     use super::is_intent_filler;
 
     // Asking the USER for something — not announcing work.
-    assert!(!is_intent_filler("Let me know which account you mean — chequing or savings?"));
-    assert!(!is_intent_filler("I'll need your mortgage balance before I can answer that."));
-    assert!(!is_intent_filler("I will need to know your target retirement age first."));
-    assert!(!is_intent_filler("Let me know if you meant last month or last year?"));
+    assert!(!is_intent_filler(
+        "Let me know which account you mean — chequing or savings?"
+    ));
+    assert!(!is_intent_filler(
+        "I'll need your mortgage balance before I can answer that."
+    ));
+    assert!(!is_intent_filler(
+        "I will need to know your target retirement age first."
+    ));
+    assert!(!is_intent_filler(
+        "Let me know if you meant last month or last year?"
+    ));
 
     // "I'll need to <verb>" splits on the VERB, not on the infinitive: asking
     // the user for something they alone know is still a real answer...
-    assert!(!is_intent_filler("I will need to know your target retirement age first."));
-    assert!(!is_intent_filler("I'll need to have your APR before I can rank those."));
+    assert!(!is_intent_filler(
+        "I will need to know your target retirement age first."
+    ));
+    assert!(!is_intent_filler(
+        "I'll need to have your APR before I can rank those."
+    ));
     // ...while a data-gathering verb is the model narrating its own work.
     assert!(is_intent_filler("I'll need to fetch your accounts first."));
     assert!(is_intent_filler("I'll need to pull your transactions."));
@@ -783,20 +801,30 @@ fn clarifying_questions_and_declines_are_not_intent_filler() {
     // A tag question must not launder filler into an answer: the announcement
     // is decided before the question mark is consulted.
     assert!(is_intent_filler("Let me pull that up for you, okay?"));
-    assert!(is_intent_filler("Let me check that real quick, sound good?"));
+    assert!(is_intent_filler(
+        "Let me check that real quick, sound good?"
+    ));
     // But a clarifying question that merely OPENS like filler still survives,
     // because it names no data-gathering action.
-    assert!(!is_intent_filler("Let me confirm — did you mean May or June?"));
+    assert!(!is_intent_filler(
+        "Let me confirm — did you mean May or June?"
+    ));
 
     // The gathering verb may sit behind an adverb or an intervening noun.
     assert!(is_intent_filler("I'll need a moment to pull the numbers."));
-    assert!(is_intent_filler("I'll need to quickly pull your latest statement."));
+    assert!(is_intent_filler(
+        "I'll need to quickly pull your latest statement."
+    ));
     // ...yet an object the user owns still marks a genuine ask, even when a
     // gathering verb appears later in the sentence.
-    assert!(!is_intent_filler("I'll need your income figure to calculate this."));
+    assert!(!is_intent_filler(
+        "I'll need your income figure to calculate this."
+    ));
 
     // Whole-word matching: "runway" is a noun, not the verb "run".
-    assert!(!is_intent_filler("I'll need your expenses to know your runway."));
+    assert!(!is_intent_filler(
+        "I'll need your expenses to know your runway."
+    ));
 
     // Still filler: the model announcing it is about to go do the work.
     assert!(is_intent_filler("Let me pull that data now."));
@@ -846,37 +874,73 @@ fn finance_snapshot_block_matches_the_shared_metrics_layer() {
     let bal = finsight_core::metrics::balance_breakdown(&mut conn).unwrap();
     let roll = finsight_core::metrics::rolling_averages(&conn, 90).unwrap();
     let m = |c: i64| format!("${:.2}", c as f64 / 100.0);
-    assert!(block.contains("CURRENT SNAPSHOT (authoritative"), "block: {block}");
-    assert!(block.contains(&format!("Liquid cash: {}", m(bal.liquid_cents))), "block: {block}");
+    assert!(
+        block.contains("CURRENT SNAPSHOT (authoritative"),
+        "block: {block}"
+    );
+    assert!(
+        block.contains(&format!("Liquid cash: {}", m(bal.liquid_cents))),
+        "block: {block}"
+    );
     assert!(
         block.contains(&format!("Invested balance: {}", m(bal.invested_cents))),
         "block: {block}"
     );
     assert!(
-        block.contains(&format!("Avg monthly income (rolling 90d): {}", m(roll.avg_monthly_income_cents))),
+        block.contains(&format!(
+            "Avg monthly income (rolling 90d): {}",
+            m(roll.avg_monthly_income_cents)
+        )),
         "block: {block}"
     );
     assert!(
-        block.contains(&format!("Avg monthly expenses (rolling 90d): {}", m(roll.avg_monthly_expense_cents))),
+        block.contains(&format!(
+            "Avg monthly expenses (rolling 90d): {}",
+            m(roll.avg_monthly_expense_cents)
+        )),
         "block: {block}"
     );
     assert!(
-        block.contains(&format!("Monthly net (income − expenses): {}", m(roll.net_monthly_cents))),
+        block.contains(&format!(
+            "Monthly net (income − expenses): {}",
+            m(roll.net_monthly_cents)
+        )),
         "block: {block}"
     );
-    assert!(block.contains(&format!("Savings rate: {}%", roll.savings_rate_pct)), "block: {block}");
-    assert!(block.contains(&format!("Total debt owed: {}", m(bal.debt_cents))), "block: {block}");
+    assert!(
+        block.contains(&format!("Savings rate: {}%", roll.savings_rate_pct)),
+        "block: {block}"
+    );
+    assert!(
+        block.contains(&format!("Total debt owed: {}", m(bal.debt_cents))),
+        "block: {block}"
+    );
 
     // And the concrete, deterministic values so a basis regression is caught even
     // if the metrics layer itself changed: $3k income, $2k expense, $1k net, 33%,
     // $5k liquid/EF (2.5 months), $20,500 debt.
-    assert!(block.contains("Avg monthly income (rolling 90d): $3000.00"), "block: {block}");
-    assert!(block.contains("Avg monthly expenses (rolling 90d): $2000.00"), "block: {block}");
-    assert!(block.contains("Monthly net (income − expenses): $1000.00"), "block: {block}");
+    assert!(
+        block.contains("Avg monthly income (rolling 90d): $3000.00"),
+        "block: {block}"
+    );
+    assert!(
+        block.contains("Avg monthly expenses (rolling 90d): $2000.00"),
+        "block: {block}"
+    );
+    assert!(
+        block.contains("Monthly net (income − expenses): $1000.00"),
+        "block: {block}"
+    );
     assert!(block.contains("Savings rate: 33%"), "block: {block}");
     assert!(block.contains("Liquid cash: $5000.00"), "block: {block}");
-    assert!(block.contains("Emergency fund: $5000.00 (2.5 months of expenses)"), "block: {block}");
-    assert!(block.contains("Total debt owed: $20500.00"), "block: {block}");
+    assert!(
+        block.contains("Emergency fund: $5000.00 (2.5 months of expenses)"),
+        "block: {block}"
+    );
+    assert!(
+        block.contains("Total debt owed: $20500.00"),
+        "block: {block}"
+    );
 }
 
 #[test]
@@ -907,17 +971,19 @@ async fn plain_prose_clarification_with_no_tool_call_is_a_real_answer() {
         model_id: "test".into(),
         response: json!({}),
         tool_turns: Mutex::new(vec![AssistantTurn::FinalAnswer {
-            content: "I'd love to help! What's the purchase and how much does it cost?"
-                .to_string(),
+            content: "I'd love to help! What's the purchase and how much does it cost?".to_string(),
             reasoning: String::new(),
         }]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "Can I afford it?", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "Can I afford it?", &tools, provider, 5)
         .await
         .unwrap();
     assert!(result.content.contains("What's the purchase"));
-    assert!(result.trace.is_empty(), "no tool call expected for a clarifying question");
+    assert!(
+        result.trace.is_empty(),
+        "no tool call expected for a clarifying question"
+    );
     assert!(
         result.is_real_answer,
         "plain-prose clarification must be marked a real answer, not a stall"
@@ -965,7 +1031,8 @@ impl crate::CompletionProvider for ForceTrackingProvider {
         messages: &[crate::reasoning::messages::ChatMessage],
         tools: &[crate::reasoning::messages::ToolDefinition],
     ) -> anyhow::Result<AssistantTurn> {
-        self.forced_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.forced_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.complete_tool_turn(messages, tools).await
     }
 }
@@ -996,12 +1063,20 @@ async fn stall_recovery_forces_a_tool_call_on_the_retry_turn() {
         forced_calls: std::sync::atomic::AtomicUsize::new(0),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider.clone(), 5)
-        .await
-        .unwrap();
+    let result = ReasoningEngine::run(
+        &mut conn,
+        "What is my net worth?",
+        &tools,
+        provider.clone(),
+        5,
+    )
+    .await
+    .unwrap();
     assert!(result.content.contains("-$2,200"));
     assert_eq!(
-        provider.forced_calls.load(std::sync::atomic::Ordering::SeqCst),
+        provider
+            .forced_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
         1,
         "expected exactly one forced tool-call turn, right after the stall"
     );
@@ -1031,8 +1106,13 @@ impl crate::CompletionProvider for FlakyProvider {
         _messages: &[crate::reasoning::messages::ChatMessage],
         _tools: &[crate::reasoning::messages::ToolDefinition],
     ) -> anyhow::Result<AssistantTurn> {
-        if self.fails_remaining.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-            self.fails_remaining.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        if self
+            .fails_remaining
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+        {
+            self.fails_remaining
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
             return Err(anyhow::anyhow!("simulated transient decode error"));
         }
         let mut turns = self.tool_turns.lock().unwrap();
@@ -1059,7 +1139,7 @@ async fn transient_provider_error_is_retried_and_recovers() {
         }]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5)
+    let result = ReasoningEngine::run(&mut conn, "What is my net worth?", &tools, provider, 5)
         .await
         .expect("2 transient failures should be retried within the 3-attempt budget");
     assert!(result.content.contains("-$2,200"));
@@ -1076,8 +1156,12 @@ async fn provider_error_still_propagates_once_retries_are_exhausted() {
         tool_turns: Mutex::new(vec![]),
     });
     let tools = build_toolset();
-    let result = ReasoningEngine::run(&mut *conn, "What is my net worth?", &tools, provider, 5).await;
-    assert!(result.is_err(), "a persistently failing provider must still surface an error");
+    let result =
+        ReasoningEngine::run(&mut conn, "What is my net worth?", &tools, provider, 5).await;
+    assert!(
+        result.is_err(),
+        "a persistently failing provider must still surface an error"
+    );
 }
 
 /// The trap this guards against: a preference that reaches `planner.rs`'s

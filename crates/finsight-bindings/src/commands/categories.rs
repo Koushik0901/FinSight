@@ -74,6 +74,5 @@ pub async fn set_category_group(
     category_id: String,
     group_id: String,
 ) -> AppResult<()> {
-    finsight_api::commands::categories::set_category_group(&state.api, category_id, group_id)
-        .await
+    finsight_api::commands::categories::set_category_group(&state.api, category_id, group_id).await
 }

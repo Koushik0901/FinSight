@@ -82,7 +82,10 @@ fn run_v030_sql(conn: &Connection) {
 }
 
 fn run_v036_sql(conn: &Connection) {
-    run_migration_sql(conn, &read_migration("V036__category_palette_regrey_backfill.sql"));
+    run_migration_sql(
+        conn,
+        &read_migration("V036__category_palette_regrey_backfill.sql"),
+    );
 }
 
 #[test]
@@ -162,10 +165,7 @@ fn v037_migration_backfills_spending_types_but_keeps_user_tags() {
     )
     .unwrap();
 
-    run_migration_sql(
-        &conn,
-        &read_migration("V037__default_spending_types.sql"),
-    );
+    run_migration_sql(&conn, &read_migration("V037__default_spending_types.sql"));
 
     let read = |id: &str| -> Option<String> {
         conn.query_row(

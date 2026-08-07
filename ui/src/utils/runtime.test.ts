@@ -23,6 +23,7 @@ afterEach(() => {
   Object.defineProperty(window, "location", { value: realLocation, configurable: true });
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   delete (window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__;
+  delete (window as unknown as { __FINSIGHT_MOCK__?: unknown }).__FINSIGHT_MOCK__;
 });
 
 function setLocation(origin: string) {
@@ -97,5 +98,11 @@ describe("isBackendAvailable — RPC transport availability", () => {
     setLocation("https://myhost.ts.net");
     expect(isTauriRuntime()).toBe(false);
     expect(isBackendAvailable()).toBe(false);
+  });
+  it("true when the mock harness is installed on a non-localhost Vite origin", () => {
+    setLocation("http://127.0.0.1:5173");
+    (window as unknown as { __FINSIGHT_MOCK__?: unknown }).__FINSIGHT_MOCK__ = true;
+    expect(isTauriRuntime()).toBe(false);
+    expect(isBackendAvailable()).toBe(true);
   });
 });

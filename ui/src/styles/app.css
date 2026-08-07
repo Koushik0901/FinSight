@@ -1207,7 +1207,7 @@
   background: var(--accent);
   border-radius: var(--radius-pill);
   box-shadow: 0 0 12px var(--accent-3);
-  transition: width var(--transition-slow);
+  transition: background var(--transition-base);
 }
 .progress-bar.sm, .goal-bar.sm { height: 4px; }
 .progress-bar.lg, .goal-bar.lg { height: 12px; }
@@ -5204,3 +5204,430 @@ body::-webkit-scrollbar-track,
 .cp-hero-kicker { font-family: var(--sans); }
 .cp-model-dot { animation: none; }
 .copilot-finsight-chat .copilot-composer { box-shadow: none; }
+
+/* ── Decision-first finance pass ───────────────────────────────────────────
+   Routine metrics read as one instrument panel rather than a collection of
+   interchangeable cards. Secondary detail remains available on demand. */
+body {
+  font-kerning: normal;
+  font-feature-settings: "kern" 1;
+}
+
+.eyebrow,
+.page-header-eyebrow,
+.screen-eyebrow {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.045em;
+}
+
+.screen p,
+.empty-panel p {
+  max-width: 68ch;
+}
+
+.today-hero::after { display: none; }
+
+.today-balance-summary,
+.account-summary {
+  gap: 0;
+  border-block: 1px solid var(--line);
+}
+
+.today-balance-summary .stat,
+.account-summary .stat,
+.today-balance-summary .stat.accent,
+.account-summary .stat.accent {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 0;
+  border-inline-end: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.today-balance-summary .stat:last-child,
+.account-summary .stat:last-child {
+  border-inline-end: 0;
+}
+
+.today-balance-summary .stat .value,
+.account-summary .stat .value {
+  font-size: 1.25rem;
+}
+
+.today-focus {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.today-next-action {
+  padding: var(--space-6);
+}
+
+.today-progress,
+.today-more,
+.budget-secondary {
+  border-block: 1px solid var(--line);
+}
+
+.today-progress > summary,
+.today-more > summary,
+.budget-secondary > summary {
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.today-progress > summary::-webkit-details-marker,
+.today-more > summary::-webkit-details-marker,
+.budget-secondary > summary::-webkit-details-marker {
+  display: none;
+}
+
+.today-progress > summary::after,
+.today-more > summary::after,
+.budget-secondary > summary::after {
+  content: "+";
+  color: var(--ink-faint);
+  font-size: 1.125rem;
+  font-weight: 400;
+}
+
+.today-progress[open] > summary::after,
+.today-more[open] > summary::after,
+.budget-secondary[open] > summary::after {
+  content: "−";
+}
+
+.today-progress-panel,
+.today-more-content {
+  padding-block: var(--space-3) var(--space-6);
+}
+
+.today-more-content > .section:first-of-type {
+  margin-top: var(--space-6);
+}
+
+.account-sync-status {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+}
+
+.manual-asset-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.manual-asset-empty p {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-mute);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.budget-overview {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.budget-overview .budget-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: var(--space-6);
+}
+
+.budget-overview .stat,
+.budget-overview .stat.accent {
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.budget-overview .stat:last-child {
+  border-bottom: 0;
+}
+
+.budget-forecast .value {
+  font-size: 1.375rem;
+  color: var(--ink);
+}
+
+.budget-forecast .sub {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ── Adaptive finishing layer ──────────────────────────────────────────────
+   Kept after component rules so touch sizing cannot be undone by later,
+   more specific desktop declarations. */
+.main-inner > .screen {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+@media (max-width: 900px) and (orientation: portrait) and (min-width: 401px) {
+  .today-balance-summary,
+  .account-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .today-balance-summary .stat,
+  .account-summary .stat {
+    border-inline-end: 0;
+    border-bottom: 0;
+  }
+
+  .today-balance-summary .stat:nth-child(odd),
+  .account-summary .stat:nth-child(odd) {
+    border-inline-end: 1px solid var(--line);
+  }
+
+  .today-balance-summary .stat:nth-child(-n + 2),
+  .account-summary .stat:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 640px) {
+  .budget-overview {
+    padding: var(--space-5) !important;
+  }
+
+  .budget-overview .budget-grid {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
+    padding-top: var(--space-3);
+  }
+
+  .budget-allocation-card {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .budget-allocation-action,
+  .budget-allocation-action .row {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .budget-allocation-action .btn {
+    white-space: normal;
+  }
+
+  .manual-asset-empty {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 400px) {
+  .today-balance-summary .stat,
+  .account-summary .stat {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .today-balance-summary .stat:last-child,
+  .account-summary .stat:last-child {
+    border-bottom: 0;
+  }
+}
+
+@media (pointer: coarse), (max-width: 900px) {
+  .btn,
+  .btn.sm,
+  button.chip,
+  .toolbar button,
+  .budget-scope-btn,
+  .budget-estimate-details > summary,
+  .today-progress > summary,
+  .today-more > summary,
+  .budget-secondary > summary,
+  .copilot-nudge,
+  .copilot-top-button,
+  .copilot-context-btn,
+  .copilot-send-btn,
+  .copilot-history-delete,
+  .copilot-action-btn,
+  .copilot-prompt-card,
+  select {
+    min-height: var(--touch-target);
+  }
+
+  .settings-nav .nav-item,
+  .screen-transactions input[type="date"],
+  .screen-account-transactions input[type="date"],
+  .goal-range,
+  .transaction-search-shell input {
+    min-height: var(--touch-target);
+  }
+
+  .transaction-search-shell {
+    padding-block: 0 !important;
+    min-height: var(--touch-target);
+  }
+
+  .toolbar button,
+  .explain-btn,
+  .copilot-context-btn,
+  .copilot-send-btn,
+  .copilot-history-delete {
+    min-width: var(--touch-target);
+  }
+
+  .explain-btn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin: -11px;
+  }
+
+  .copilot-finsight-chat .copilot-composer {
+    grid-template-columns: var(--touch-target) minmax(0, 1fr) var(--touch-target);
+  }
+}
+
+@media (hover: none) {
+  .btn:hover,
+  .budget-grid > *:hover > .card {
+    transform: none;
+  }
+}
+
+/* ── Quiet delight ────────────────────────────────────────────────────────
+   Recognition and state feedback stay brief, task-relevant, and calm. */
+@keyframes budget-progress-reveal {
+  from { transform: scaleX(0); }
+}
+
+.budget-progress-time,
+.budget-progress-spend {
+  transform-origin: left center;
+  animation: budget-progress-reveal 0.68s cubic-bezier(.25, 1, .5, 1) both;
+}
+
+.budget-progress-time { animation-duration: 0.52s; }
+.budget-progress-spend { animation-delay: 0.08s; }
+
+@keyframes milestone-arrive {
+  from { opacity: 0; transform: translateY(6px) scale(.99); }
+}
+
+@keyframes milestone-signal-arrive {
+  0% { opacity: .35; transform: scale(.6); box-shadow: 0 0 0 0 var(--accent-3); }
+  55% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 6px transparent; }
+  100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+
+.today-milestone-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.today-milestone-signal::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: milestone-signal-arrive .72s cubic-bezier(.25, 1, .5, 1) both;
+}
+
+.today-progress[open] .today-milestone-card {
+  animation: milestone-arrive .46s cubic-bezier(.25, 1, .5, 1) both;
+}
+
+@keyframes sync-breathe {
+  to { opacity: .35; transform: scale(.65); }
+}
+
+.account-sync-button.is-syncing::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: sync-breathe .72s ease-in-out infinite alternate;
+}
+
+.btn:active:not(:disabled),
+.copilot-nudge:active {
+  transform: translateY(1px) scale(.985);
+}
+
+.copilot-nudge:hover {
+  transform: translateY(-1px);
+}
+
+.bottom-nav-ico-wrap {
+  transition: transform .18s cubic-bezier(.25, 1, .5, 1), background .14s ease;
+}
+
+.bottom-nav-item.active .bottom-nav-ico-wrap,
+.bottom-nav-item[aria-current="page"] .bottom-nav-ico-wrap {
+  transform: translateY(-1px);
+}
+
+.bottom-nav-item:active .bottom-nav-ico-wrap {
+  transform: scale(.88);
+}
+
+.copilot-finsight-chat .copilot-prompt-card {
+  transition: background 140ms ease, border-color 140ms ease, transform .18s cubic-bezier(.25, 1, .5, 1);
+}
+
+.copilot-finsight-chat .copilot-prompt-mark {
+  transition: transform .18s cubic-bezier(.25, 1, .5, 1);
+}
+
+.copilot-finsight-chat .copilot-prompt-card:hover {
+  transform: translateY(-2px);
+}
+
+.copilot-finsight-chat .copilot-prompt-card:hover .copilot-prompt-mark {
+  transform: scale(1.65);
+}
+
+.copilot-finsight-chat .copilot-prompt-card:active {
+  transform: translateY(0) scale(.985);
+}
+
+@media (hover: none) {
+  .copilot-nudge:hover,
+  .copilot-finsight-chat .copilot-prompt-card:hover {
+    transform: none;
+  }
+
+  .copilot-finsight-chat .copilot-prompt-card:hover .copilot-prompt-mark {
+    transform: none;
+  }
+
+  .copilot-nudge:active,
+  .copilot-finsight-chat .copilot-prompt-card:active {
+    transform: scale(.985);
+  }
+}

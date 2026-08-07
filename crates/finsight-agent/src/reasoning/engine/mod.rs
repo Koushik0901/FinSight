@@ -53,8 +53,8 @@ async fn call_provider_with_retry(
             // the entire budget before the top-of-loop check ever fires.)
             Err(_)
                 if attempt < MAX_ATTEMPTS
-                    && !deadline
-                        .is_some_and(|d| std::time::Instant::now() + SYNTHESIS_HEADROOM >= d) =>
+                    && deadline
+                        .is_none_or(|d| std::time::Instant::now() + SYNTHESIS_HEADROOM < d) =>
             {
                 tokio::time::sleep(Duration::from_millis(500 * attempt as u64)).await;
             }
@@ -223,9 +223,14 @@ impl ReasoningEngine {
 
             let forced = force_next_tool_call;
             force_next_tool_call = false;
-            let (turn, turn_usage) =
-                call_provider_with_retry(&provider, &messages, &tools.definitions(), forced, deadline)
-                    .await?;
+            let (turn, turn_usage) = call_provider_with_retry(
+                &provider,
+                &messages,
+                &tools.definitions(),
+                forced,
+                deadline,
+            )
+            .await?;
             usage_acc = usage_acc.saturating_add(turn_usage);
 
             match turn {
@@ -610,7 +615,8 @@ result or the snapshot.";
 
 /// Sent to the strong synthesizer when the fast router is done gathering, so it
 /// writes the final answer from the tool results already in the conversation.
-const FINAL_SYNTHESIS: &str = "You now have the data you need. Write your complete final answer in \
+const FINAL_SYNTHESIS: &str =
+    "You now have the data you need. Write your complete final answer in \
 the required format, using ONLY the tool results above (and any CURRENT SNAPSHOT shown above). Do \
 not call any tools, and do not state any number that is not in a tool result or the snapshot.";
 
@@ -811,7 +817,15 @@ fn is_intent_filler(text: &str) -> bool {
 /// noun like "runway" is not read as the verb "run".
 fn mentions_self_directed(text: &str) -> bool {
     const SELF_DIRECTED: [&str; 10] = [
-        "fetch", "pull", "check", "look", "run", "gather", "retrieve", "query", "calculate",
+        "fetch",
+        "pull",
+        "check",
+        "look",
+        "run",
+        "gather",
+        "retrieve",
+        "query",
+        "calculate",
         "compute",
     ];
     text.split_whitespace().any(|raw| {

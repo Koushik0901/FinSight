@@ -45,9 +45,8 @@ fn encode(vector: &[f32]) -> Vec<u8> {
 }
 
 fn decode(blob: &[u8], dims: i64) -> CoreResult<Vec<f32>> {
-    let dims = usize::try_from(dims).map_err(|_| {
-        CoreError::InvalidState("category_centroids.dims is negative".into())
-    })?;
+    let dims = usize::try_from(dims)
+        .map_err(|_| CoreError::InvalidState("category_centroids.dims is negative".into()))?;
     // The stored `dims` and the actual blob length must agree. They can only
     // disagree through corruption or a partial write, and the safe response is
     // to refuse the row rather than reinterpret a truncated blob as a shorter
@@ -205,7 +204,10 @@ mod tests {
 
         let got = load_active_for_model(&mut conn, "model-a", 4).unwrap();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].vector, v, "f32 bytes must survive the round trip exactly");
+        assert_eq!(
+            got[0].vector, v,
+            "f32 bytes must survive the round trip exactly"
+        );
         assert_eq!(got[0].example_count, 3);
     }
 
@@ -220,12 +222,16 @@ mod tests {
         upsert(&mut conn, "groceries", "old-model", &[1.0, 0.0], 2).unwrap();
 
         assert!(
-            load_active_for_model(&mut conn, "new-model", 2).unwrap().is_empty(),
+            load_active_for_model(&mut conn, "new-model", 2)
+                .unwrap()
+                .is_empty(),
             "a centroid from a different encoder must never reach the scorer"
         );
         // Same model, wrong dimensionality — equally incomparable.
         assert!(
-            load_active_for_model(&mut conn, "old-model", 384).unwrap().is_empty(),
+            load_active_for_model(&mut conn, "old-model", 384)
+                .unwrap()
+                .is_empty(),
             "dims must be checked too; a same-named model can change width"
         );
     }
@@ -272,12 +278,16 @@ mod tests {
         seed_category(&mut conn, "groceries");
         upsert(&mut conn, "groceries", "m", &[1.0, 0.0], 1).unwrap();
 
-        conn.execute("DELETE FROM categories WHERE id='groceries'", []).unwrap();
+        conn.execute("DELETE FROM categories WHERE id='groceries'", [])
+            .unwrap();
 
         let orphans: i64 = conn
             .query_row("SELECT COUNT(*) FROM category_centroids", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(orphans, 0, "ON DELETE CASCADE must not leave a matching orphan");
+        assert_eq!(
+            orphans, 0,
+            "ON DELETE CASCADE must not leave a matching orphan"
+        );
     }
 
     #[test]

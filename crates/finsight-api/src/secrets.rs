@@ -130,7 +130,10 @@ mod tests {
         let conn = db.get().unwrap();
         let k = llm_key("openrouter");
         set_secret(&conn, &k, "sk-or-abc123").unwrap();
-        assert_eq!(get_secret(&conn, &k).unwrap().as_deref(), Some("sk-or-abc123"));
+        assert_eq!(
+            get_secret(&conn, &k).unwrap().as_deref(),
+            Some("sk-or-abc123")
+        );
     }
 
     #[test]
@@ -180,7 +183,8 @@ mod tests {
         set_secret(&conn, &k, "db-value").unwrap();
         // A bogus legacy address: if the DB hit short-circuits (as it must),
         // the keychain is never consulted and this still returns the DB value.
-        let got = get_secret_migrating(&conn, &k, "com.finsight.test.nonexistent", "nobody").unwrap();
+        let got =
+            get_secret_migrating(&conn, &k, "com.finsight.test.nonexistent", "nobody").unwrap();
         assert_eq!(got.as_deref(), Some("db-value"));
     }
 
@@ -214,13 +218,18 @@ mod tests {
         let got = get_secret_migrating(&conn, &k, svc, &usr).unwrap();
         assert_eq!(got.as_deref(), Some("legacy-value"));
         // Now in the DB...
-        assert_eq!(get_secret(&conn, &k).unwrap().as_deref(), Some("legacy-value"));
+        assert_eq!(
+            get_secret(&conn, &k).unwrap().as_deref(),
+            Some("legacy-value")
+        );
         // ...and gone from the keychain, so the fallback runs only once.
         assert_eq!(keychain::get_key(svc, &usr).unwrap(), None);
 
         // A second read is served purely from the DB.
         assert_eq!(
-            get_secret_migrating(&conn, &k, svc, &usr).unwrap().as_deref(),
+            get_secret_migrating(&conn, &k, svc, &usr)
+                .unwrap()
+                .as_deref(),
             Some("legacy-value")
         );
         let _ = keychain::delete_key(svc, &usr);

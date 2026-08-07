@@ -172,8 +172,8 @@ pub struct LoadedCorpus {
 ///    failures instead of silent merchant-disjoint-split violations.
 pub fn load_corpus_jsonl(path: impl AsRef<Path>) -> anyhow::Result<LoadedCorpus> {
     let path = path.as_ref();
-    let file = std::fs::File::open(path)
-        .with_context(|| format!("opening corpus {}", path.display()))?;
+    let file =
+        std::fs::File::open(path).with_context(|| format!("opening corpus {}", path.display()))?;
     let mut provenance: Option<CorpusProvenance> = None;
     let mut out = Vec::new();
     for (i, line) in std::io::BufReader::new(file).lines().enumerate() {
@@ -303,8 +303,12 @@ pub fn corpus_stats(examples: &[LabeledExample]) -> CorpusStats {
     let mut examples_per_merchant: BTreeMap<String, usize> = BTreeMap::new();
     let mut category_distribution: BTreeMap<String, usize> = BTreeMap::new();
     for ex in examples {
-        *examples_per_merchant.entry(ex.merchant_id.clone()).or_insert(0) += 1;
-        *category_distribution.entry(ex.category.clone()).or_insert(0) += 1;
+        *examples_per_merchant
+            .entry(ex.merchant_id.clone())
+            .or_insert(0) += 1;
+        *category_distribution
+            .entry(ex.category.clone())
+            .or_insert(0) += 1;
     }
     CorpusStats {
         total_examples: examples.len(),
@@ -449,7 +453,10 @@ mod tests {
             "// provenance: mostly-real\n{\"id\":\"1\",\"merchant_text\":\"X\",\"merchant_id\":\"m-x\",\"category\":\"dining\"}\n",
         );
         let err = load_corpus_jsonl(&path).expect_err("an unknown provenance value must not load");
-        assert!(format!("{err:#}").contains("unknown provenance value"), "got: {err:#}");
+        assert!(
+            format!("{err:#}").contains("unknown provenance value"),
+            "got: {err:#}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -492,10 +499,17 @@ mod tests {
             ex("1", "m-brightloaf", "Brightloaf Grocers #12", "groceries"),
             ex("2", "M-Brightloaf ", "Brightloaf Grocers #45", "groceries"),
         ];
-        let err = validate_corpus(&examples).expect_err("near-duplicate spellings must be rejected");
+        let err =
+            validate_corpus(&examples).expect_err("near-duplicate spellings must be rejected");
         let msg = format!("{err:#}");
-        assert!(msg.contains("m-brightloaf"), "error must name the spellings, got: {msg}");
-        assert!(msg.contains("M-Brightloaf"), "error must name the spellings, got: {msg}");
+        assert!(
+            msg.contains("m-brightloaf"),
+            "error must name the spellings, got: {msg}"
+        );
+        assert!(
+            msg.contains("M-Brightloaf"),
+            "error must name the spellings, got: {msg}"
+        );
     }
 
     #[test]
@@ -530,7 +544,10 @@ mod tests {
             "// provenance: synthetic\n{\"id\":\"1\",\"merchant_text\":\"X\",\"merchant_id\":\"  \",\"category\":\"dining\"}\n",
         );
         let err = load_corpus_jsonl(&path).expect_err("a blank merchant_id must fail the load");
-        assert!(format!("{err:#}").contains("blank merchant_id"), "got: {err:#}");
+        assert!(
+            format!("{err:#}").contains("blank merchant_id"),
+            "got: {err:#}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

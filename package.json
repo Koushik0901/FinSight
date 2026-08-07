@@ -1,7 +1,7 @@
 {
   "name": "finsight",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "scripts": {
     "dev": "pnpm --filter ui dev",
     "build": "pnpm --filter ui build",
@@ -11,7 +11,7 @@
     "test": "pnpm --filter ui test && cargo test --workspace",
     "typecheck": "pnpm --filter ui typecheck",
     "lint": "pnpm --filter ui lint && cargo clippy --workspace --all-targets -- -D warnings",
-    "bindings": "cargo run -p finsight-tauri --bin export_bindings --features codegen"
+    "bindings": "cargo run -p finsight-bindings --bin export_bindings"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

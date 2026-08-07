@@ -37,15 +37,27 @@ pub fn create_group(
     }
     let base: String = label
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string();
-    let base = if base.is_empty() { "group".to_string() } else { base };
+    let base = if base.is_empty() {
+        "group".to_string()
+    } else {
+        base
+    };
     let mut id = base.clone();
     let mut n = 1;
     while conn
-        .query_row("SELECT 1 FROM category_groups WHERE id = ?1", [&id], |_| Ok(()))
+        .query_row("SELECT 1 FROM category_groups WHERE id = ?1", [&id], |_| {
+            Ok(())
+        })
         .is_ok()
     {
         n += 1;
@@ -53,7 +65,11 @@ pub fn create_group(
     }
 
     let next_sort: i32 = conn
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM category_groups", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM category_groups",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
     let hint = hint.map(str::trim).filter(|s| !s.is_empty());
     conn.execute(
@@ -155,25 +171,34 @@ pub fn create(
     // Resolve group: given group, else first existing group.
     let group_id: String = match group_id {
         Some(g) if !g.is_empty() => g.to_string(),
-        _ => conn
-            .query_row(
+        _ => {
+            conn.query_row(
                 "SELECT id FROM category_groups ORDER BY sort_order, label LIMIT 1",
                 [],
                 |r| r.get(0),
             )
-            .map_err(|_| {
-                crate::error::CoreError::InvalidState("no category group exists".into())
-            })?,
+            .map_err(|_| crate::error::CoreError::InvalidState("no category group exists".into()))?
+        }
     };
 
     // Slug id from the label, de-duplicated against existing ids.
     let base: String = label
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string();
-    let base = if base.is_empty() { "category".to_string() } else { base };
+    let base = if base.is_empty() {
+        "category".to_string()
+    } else {
+        base
+    };
     let mut id = base.clone();
     let mut n = 1;
     while conn
@@ -185,7 +210,11 @@ pub fn create(
     }
 
     let next_sort: i32 = conn
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
     conn.execute(
         "INSERT INTO categories(id, group_id, label, color, sort_order) VALUES(?1, ?2, ?3, ?4, ?5)",
@@ -326,7 +355,12 @@ mod tests {
         // Rename.
         rename(&mut conn, &cat.id, "Cafés").unwrap();
         // Guidance set + surfaced via guidance_hints.
-        set_guidance(&mut conn, &cat.id, Some("Use for any coffee shop or café; exclude grocery stores.")).unwrap();
+        set_guidance(
+            &mut conn,
+            &cat.id,
+            Some("Use for any coffee shop or café; exclude grocery stores."),
+        )
+        .unwrap();
         let hints = guidance_hints(&mut conn).unwrap();
         assert_eq!(hints.len(), 1);
         assert_eq!(hints[0].0, "Cafés");
@@ -388,7 +422,11 @@ mod tests {
         let cat = create(&mut conn, "Coffee", Some("daily"), "#111").unwrap();
         let new_group = create_group(&mut conn, "Lifestyle", None).unwrap();
         set_group(&mut conn, &cat.id, &new_group.id).unwrap();
-        let moved = list(&mut conn).unwrap().into_iter().find(|c| c.id == cat.id).unwrap();
+        let moved = list(&mut conn)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == cat.id)
+            .unwrap();
         assert_eq!(moved.group_id, new_group.id);
     }
 

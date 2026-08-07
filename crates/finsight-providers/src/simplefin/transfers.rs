@@ -51,8 +51,7 @@ pub fn detect_transfers(
     let now = Utc::now();
     for i in 0..all_candidates.len() {
         let (acc_a, id_a, amt_a, posted_a, merchant_a) = &all_candidates[i];
-        for j in (i + 1)..all_candidates.len() {
-            let (acc_b, id_b, amt_b, posted_b, merchant_b) = &all_candidates[j];
+        for (acc_b, id_b, amt_b, posted_b, merchant_b) in all_candidates.iter().skip(i + 1) {
             // Must be different accounts, same |amount|, opposite sign.
             if acc_a == acc_b {
                 continue;

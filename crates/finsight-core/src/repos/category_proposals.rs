@@ -315,7 +315,10 @@ mod tests {
         .unwrap();
 
         assert_ne!(first.id, second.id, "a fresh suggestion gets a fresh id");
-        assert!(get(&mut conn, &first.id).unwrap().is_none(), "superseded row is gone, not orphaned");
+        assert!(
+            get(&mut conn, &first.id).unwrap().is_none(),
+            "superseded row is gone, not orphaned"
+        );
         let live = get_for_txn(&mut conn, "t1").unwrap().unwrap();
         assert_eq!(live.proposed_category_id, "cat2");
         assert_eq!(live.status, "accepted");
@@ -388,8 +391,14 @@ mod tests {
             // Row is untouched — including `reviewed_at`, which is what proves
             // the human decision itself was not re-stamped or cleared.
             let after = get_for_txn(&mut conn, "t1").unwrap().unwrap();
-            assert_eq!(after.id, p.id, "{resolved_status}: no fresh row replaced it");
-            assert_eq!(after.status, resolved_status, "{resolved_status}: status preserved");
+            assert_eq!(
+                after.id, p.id,
+                "{resolved_status}: no fresh row replaced it"
+            );
+            assert_eq!(
+                after.status, resolved_status,
+                "{resolved_status}: status preserved"
+            );
             assert_eq!(
                 after.proposed_category_id, "cat1",
                 "{resolved_status}: the resolved row's category is not overwritten"
@@ -418,16 +427,36 @@ mod tests {
         seed_txn(&mut conn, "t1", "cat1");
         seed_txn(&mut conn, "t2", "cat1");
 
-        upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
-        upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t2".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.95, rationale: None,
-            candidates_json: None, status: "accepted".to_string(), applied: true, model: None,
-        }).unwrap();
+        upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
+        upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t2".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.95,
+                rationale: None,
+                candidates_json: None,
+                status: "accepted".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
 
         let pending = list(&mut conn, Some("pending")).unwrap();
         assert_eq!(pending.len(), 1);
@@ -442,11 +471,21 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_base(&mut conn);
         seed_txn(&mut conn, "t1", "cat1");
-        let p = upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
+        let p = upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
         assert!(p.reviewed_at.is_none());
 
         set_status(&mut conn, &p.id, "rejected").unwrap();
@@ -461,11 +500,21 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_base(&mut conn);
         seed_txn(&mut conn, "t1", "cat1");
-        let p = upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
+        let p = upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
 
         resolve_for_txn(&mut conn, "t1", Some("cat1")).unwrap();
         let after = get(&mut conn, &p.id).unwrap().unwrap();
@@ -479,11 +528,21 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_base(&mut conn);
         seed_txn(&mut conn, "t1", "cat1");
-        let p = upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
+        let p = upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
 
         resolve_for_txn(&mut conn, "t1", Some("cat2")).unwrap();
         let after = get(&mut conn, &p.id).unwrap().unwrap();
@@ -496,11 +555,21 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_base(&mut conn);
         seed_txn(&mut conn, "t1", "cat1");
-        let p = upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
+        let p = upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
 
         resolve_for_txn(&mut conn, "t1", None).unwrap();
         let after = get(&mut conn, &p.id).unwrap().unwrap();
@@ -524,11 +593,21 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_base(&mut conn);
         seed_txn(&mut conn, "t1", "cat1");
-        let p = upsert(&mut conn, NewCategoryProposal {
-            txn_id: "t1".to_string(), proposed_category_id: "cat1".to_string(),
-            source: "llm".to_string(), confidence: 0.3, rationale: None,
-            candidates_json: None, status: "pending".to_string(), applied: true, model: None,
-        }).unwrap();
+        let p = upsert(
+            &mut conn,
+            NewCategoryProposal {
+                txn_id: "t1".to_string(),
+                proposed_category_id: "cat1".to_string(),
+                source: "llm".to_string(),
+                confidence: 0.3,
+                rationale: None,
+                candidates_json: None,
+                status: "pending".to_string(),
+                applied: true,
+                model: None,
+            },
+        )
+        .unwrap();
         set_status(&mut conn, &p.id, "rejected").unwrap();
         let rejected_at = get(&mut conn, &p.id).unwrap().unwrap().reviewed_at;
 

@@ -71,7 +71,7 @@ impl SubscriptionVerdict {
             Self::Cancelled => "cancelled",
         }
     }
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "confirmed" => Some(Self::Confirmed),
             "dismissed" => Some(Self::Dismissed),
@@ -135,8 +135,16 @@ pub fn load_overrides(conn: &Connection) -> CoreResult<HashMap<String, Subscript
     let mut out = HashMap::new();
     for row in rows {
         let (k, v, label, trial_ends_at, cancelled_at) = row?;
-        if let Some(verdict) = SubscriptionVerdict::from_str(&v) {
-            out.insert(k, SubscriptionOverride { verdict, label, trial_ends_at, cancelled_at });
+        if let Some(verdict) = SubscriptionVerdict::parse(&v) {
+            out.insert(
+                k,
+                SubscriptionOverride {
+                    verdict,
+                    label,
+                    trial_ends_at,
+                    cancelled_at,
+                },
+            );
         }
     }
     Ok(out)
@@ -144,7 +152,10 @@ pub fn load_overrides(conn: &Connection) -> CoreResult<HashMap<String, Subscript
 
 /// All stored verdicts, keyed by merchant_key (a projection of [`load_overrides`]).
 pub fn load_verdicts(conn: &Connection) -> CoreResult<HashMap<String, SubscriptionVerdict>> {
-    Ok(load_overrides(conn)?.into_iter().map(|(k, o)| (k, o.verdict)).collect())
+    Ok(load_overrides(conn)?
+        .into_iter()
+        .map(|(k, o)| (k, o.verdict))
+        .collect())
 }
 
 /// Mark a detected subscription as a free TRIAL that converts on `trial_ends_at`
@@ -302,7 +313,9 @@ fn price_change_alert(item: &RecurringItem, today: NaiveDate) -> Option<NewNotif
             pc.pct,
         )),
         route: Some("/recurring".into()),
-        expires_at: Some(midnight_rfc3339(effective + Duration::days(PRICE_CHANGE_TTL_DAYS))),
+        expires_at: Some(midnight_rfc3339(
+            effective + Duration::days(PRICE_CHANGE_TTL_DAYS),
+        )),
     })
 }
 
@@ -324,7 +337,11 @@ fn renewal_alert(item: &RecurringItem, today: NaiveDate) -> Option<NewNotificati
     Some(NewNotification {
         category: NotificationCategory::SubscriptionChange,
         urgency: Urgency::Normal,
-        dedup_key: format!("sub.renewal.{}.{}", item.merchant_key, next.format("%Y-%m-%d")),
+        dedup_key: format!(
+            "sub.renewal.{}.{}",
+            item.merchant_key,
+            next.format("%Y-%m-%d")
+        ),
         title: "A subscription renews soon".into(),
         body: format!("An annual subscription renews within {RENEWAL_LEAD_DAYS} days."),
         sensitive: Some(format!(
@@ -360,7 +377,9 @@ fn trial_conversion_alert(
         urgency: Urgency::Normal,
         dedup_key: format!("sub.trial.{}.{}", merchant_key, ends.format("%Y-%m-%d")),
         title: "A free trial is about to convert".into(),
-        body: format!("A free trial ends within {TRIAL_LEAD_DAYS} days and will start charging you."),
+        body: format!(
+            "A free trial ends within {TRIAL_LEAD_DAYS} days and will start charging you."
+        ),
         sensitive: Some(match label {
             Some(l) => format!("{l}: free trial ends {}", ends.format("%Y-%m-%d")),
             None => format!("A free trial ends {}", ends.format("%Y-%m-%d")),
@@ -399,7 +418,11 @@ fn post_cancellation_alert(
     Some(NewNotification {
         category: NotificationCategory::SubscriptionChange,
         urgency: Urgency::Normal,
-        dedup_key: format!("sub.postcancel.{}.{}", item.merchant_key, last.format("%Y-%m-%d")),
+        dedup_key: format!(
+            "sub.postcancel.{}.{}",
+            item.merchant_key,
+            last.format("%Y-%m-%d")
+        ),
         title: "A cancelled subscription charged again".into(),
         body: "A subscription you marked cancelled has a new charge.".into(),
         sensitive: Some(format!(
@@ -409,7 +432,9 @@ fn post_cancellation_alert(
             cancelled.format("%Y-%m-%d"),
         )),
         route: Some("/recurring".into()),
-        expires_at: Some(midnight_rfc3339(last + Duration::days(PRICE_CHANGE_TTL_DAYS))),
+        expires_at: Some(midnight_rfc3339(
+            last + Duration::days(PRICE_CHANGE_TTL_DAYS),
+        )),
     })
 }
 
@@ -468,7 +493,7 @@ fn duplicate_alerts(
         }
         // Both must be currently active — an old lapsed series isn't a live double-charge.
         let active = parse_date(&it.last_seen)
-            .map_or(false, |d| d <= today && (today - d).num_days() <= DUPLICATE_RECENT_DAYS);
+            .is_some_and(|d| d <= today && (today - d).num_days() <= DUPLICATE_RECENT_DAYS);
         if !active {
             continue;
         }
@@ -572,10 +597,16 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         set_verdict(&conn, "spotify", Some(SubscriptionVerdict::Dismissed)).unwrap();
-        assert_eq!(load_verdicts(&conn).unwrap().get("spotify"), Some(&SubscriptionVerdict::Dismissed));
+        assert_eq!(
+            load_verdicts(&conn).unwrap().get("spotify"),
+            Some(&SubscriptionVerdict::Dismissed)
+        );
         // Upsert to a different verdict.
         set_verdict(&conn, "spotify", Some(SubscriptionVerdict::Confirmed)).unwrap();
-        assert_eq!(load_verdicts(&conn).unwrap().get("spotify"), Some(&SubscriptionVerdict::Confirmed));
+        assert_eq!(
+            load_verdicts(&conn).unwrap().get("spotify"),
+            Some(&SubscriptionVerdict::Confirmed)
+        );
         // Clear.
         set_verdict(&conn, "spotify", None).unwrap();
         assert!(load_verdicts(&conn).unwrap().is_empty());
@@ -590,7 +621,8 @@ mod tests {
         seed(&conn);
         monthly(&conn, "SPOTIFY", "2025-01-05", 6, -999);
         for i in 0..3 {
-            let d = NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap() + Duration::days(30 * i);
+            let d = NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap()
+                + Duration::days(30 * i);
             charge(&conn, "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1299);
         }
         let now = "2025-09-20T12:00:00Z".parse().unwrap();
@@ -605,7 +637,10 @@ mod tests {
         // The figures ride in `sensitive`, not the always-visible body.
         assert!(all[0].sensitive.as_deref().unwrap().contains("9.99"));
         assert!(all[0].sensitive.as_deref().unwrap().contains("12.99"));
-        assert!(!all[0].body.contains("12.99"), "amounts must not be in the push-visible body");
+        assert!(
+            !all[0].body.contains("12.99"),
+            "amounts must not be in the push-visible body"
+        );
 
         // Second scan: same condition, no duplicate.
         let n2 = refresh_subscription_alerts(&mut conn, now).unwrap();
@@ -620,12 +655,17 @@ mod tests {
         seed(&conn);
         monthly(&conn, "SPOTIFY", "2025-01-05", 6, -999);
         for i in 0..3 {
-            let d = NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap() + Duration::days(30 * i);
+            let d = NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap()
+                + Duration::days(30 * i);
             charge(&conn, "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1299);
         }
         set_verdict(&conn, "spotify", Some(SubscriptionVerdict::Dismissed)).unwrap();
         let now = "2025-09-20T12:00:00Z".parse().unwrap();
-        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 0, "dismissed series is silent");
+        assert_eq!(
+            refresh_subscription_alerts(&mut conn, now).unwrap(),
+            0,
+            "dismissed series is silent"
+        );
         assert_eq!(notify::list(&mut conn, false, 50).unwrap().len(), 0);
     }
 
@@ -637,8 +677,14 @@ mod tests {
         // A yearly renewal (~365-day gaps) whose next charge is ~10 days out.
         // Last charge dated so next_expected lands inside the 14-day lead window.
         for i in 0..3 {
-            let d = NaiveDate::parse_from_str("2023-11-20", "%Y-%m-%d").unwrap() + Duration::days(365 * i);
-            charge(&conn, "AMAZON PRIME MEMBERSHIP", &d.format("%Y-%m-%d").to_string(), -13900);
+            let d = NaiveDate::parse_from_str("2023-11-20", "%Y-%m-%d").unwrap()
+                + Duration::days(365 * i);
+            charge(
+                &conn,
+                "AMAZON PRIME MEMBERSHIP",
+                &d.format("%Y-%m-%d").to_string(),
+                -13900,
+            );
         }
         // now is ~10 days before the 4th-year renewal (2026-11-18 ≈ last 2025-11-19 + 365).
         let now: DateTime<Utc> = "2026-11-09T12:00:00Z".parse().unwrap();
@@ -654,11 +700,21 @@ mod tests {
         let mut conn2 = db2.get().unwrap();
         seed(&conn2);
         for i in 0..3 {
-            let d = NaiveDate::parse_from_str("2023-11-20", "%Y-%m-%d").unwrap() + Duration::days(365 * i);
-            charge(&conn2, "AMAZON PRIME MEMBERSHIP", &d.format("%Y-%m-%d").to_string(), -13900);
+            let d = NaiveDate::parse_from_str("2023-11-20", "%Y-%m-%d").unwrap()
+                + Duration::days(365 * i);
+            charge(
+                &conn2,
+                "AMAZON PRIME MEMBERSHIP",
+                &d.format("%Y-%m-%d").to_string(),
+                -13900,
+            );
         }
         let far: DateTime<Utc> = "2026-06-01T12:00:00Z".parse().unwrap();
-        assert_eq!(refresh_subscription_alerts(&mut conn2, far).unwrap(), 0, "renewal months away is not surfaced");
+        assert_eq!(
+            refresh_subscription_alerts(&mut conn2, far).unwrap(),
+            0,
+            "renewal months away is not surfaced"
+        );
     }
 
     #[test]
@@ -676,7 +732,13 @@ mod tests {
 
     /// A minimal RecurringItem for the pure duplicate/token tests, so they don't
     /// depend on the detector's classification of synthetic descriptors.
-    fn ri(key: &str, display: &str, kind: RecurringKind, amount: i64, last_seen: &str) -> RecurringItem {
+    fn ri(
+        key: &str,
+        display: &str,
+        kind: RecurringKind,
+        amount: i64,
+        last_seen: &str,
+    ) -> RecurringItem {
         RecurringItem {
             merchant_key: key.into(),
             display_merchant: display.into(),
@@ -718,9 +780,27 @@ mod tests {
         // Same brand, identical price, genuinely distinct services — the classic
         // false-positive the full-token-set key defeats.
         let items = vec![
-            ri("applemusic", "APPLE MUSIC", RecurringKind::Subscription, -1099, "2025-07-01"),
-            ri("appletv", "APPLE TV", RecurringKind::Subscription, -1099, "2025-06-28"),
-            ri("applearcade", "APPLE ARCADE", RecurringKind::Subscription, -1099, "2025-06-30"),
+            ri(
+                "applemusic",
+                "APPLE MUSIC",
+                RecurringKind::Subscription,
+                -1099,
+                "2025-07-01",
+            ),
+            ri(
+                "appletv",
+                "APPLE TV",
+                RecurringKind::Subscription,
+                -1099,
+                "2025-06-28",
+            ),
+            ri(
+                "applearcade",
+                "APPLE ARCADE",
+                RecurringKind::Subscription,
+                -1099,
+                "2025-06-30",
+            ),
         ];
         assert!(duplicate_alerts(&items, &HashMap::new(), today).is_empty());
     }
@@ -733,7 +813,14 @@ mod tests {
         set_subscription_trial(&conn, "acme-vpn", "Acme VPN", Some("2025-07-12")).unwrap();
         // Marking a trial re-affirms it as a subscription, so the badge and the
         // reminder stay consistent.
-        assert_eq!(load_overrides(&conn).unwrap().get("acme-vpn").unwrap().verdict, SubscriptionVerdict::Confirmed);
+        assert_eq!(
+            load_overrides(&conn)
+                .unwrap()
+                .get("acme-vpn")
+                .unwrap()
+                .verdict,
+            SubscriptionVerdict::Confirmed
+        );
         let now = "2025-07-10T12:00:00Z".parse().unwrap();
         assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 1);
 
@@ -741,19 +828,44 @@ mod tests {
         set_subscription_trial(&conn, "acme-vpn", "Acme VPN", None).unwrap();
         let ov = load_overrides(&conn).unwrap();
         assert!(ov.get("acme-vpn").unwrap().trial_ends_at.is_none());
-        assert_eq!(ov.get("acme-vpn").unwrap().verdict, SubscriptionVerdict::Confirmed);
+        assert_eq!(
+            ov.get("acme-vpn").unwrap().verdict,
+            SubscriptionVerdict::Confirmed
+        );
     }
 
     #[test]
     fn duplicate_subscriptions_flag_same_service_similar_price() {
         let today = NaiveDate::parse_from_str("2025-07-10", "%Y-%m-%d").unwrap();
         let items = vec![
-            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
-            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-06-28"),
-            ri("spotify", "SPOTIFY", RecurringKind::Subscription, -999, "2025-07-02"),
+            ri(
+                "netflix",
+                "NETFLIX",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-07-01",
+            ),
+            ri(
+                "netflixcom",
+                "NETFLIX.COM",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-06-28",
+            ),
+            ri(
+                "spotify",
+                "SPOTIFY",
+                RecurringKind::Subscription,
+                -999,
+                "2025-07-02",
+            ),
         ];
         let alerts = duplicate_alerts(&items, &HashMap::new(), today);
-        assert_eq!(alerts.len(), 1, "the two Netflix series flag; Spotify is alone");
+        assert_eq!(
+            alerts.len(),
+            1,
+            "the two Netflix series flag; Spotify is alone"
+        );
         assert!(alerts[0].sensitive.as_deref().unwrap().contains("NETFLIX"));
     }
 
@@ -762,15 +874,39 @@ mod tests {
         let today = NaiveDate::parse_from_str("2025-07-10", "%Y-%m-%d").unwrap();
         // Same token, very different prices → likely different services, no flag.
         let diff_price = vec![
-            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
-            ri("netflixann", "NETFLIX ANNUAL", RecurringKind::Subscription, -19999, "2025-06-28"),
+            ri(
+                "netflix",
+                "NETFLIX",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-07-01",
+            ),
+            ri(
+                "netflixann",
+                "NETFLIX ANNUAL",
+                RecurringKind::Subscription,
+                -19999,
+                "2025-06-28",
+            ),
         ];
         assert!(duplicate_alerts(&diff_price, &HashMap::new(), today).is_empty());
 
         // One series lapsed months ago → not an active double-charge.
         let lapsed = vec![
-            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
-            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-01-01"),
+            ri(
+                "netflix",
+                "NETFLIX",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-07-01",
+            ),
+            ri(
+                "netflixcom",
+                "NETFLIX.COM",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-01-01",
+            ),
         ];
         assert!(duplicate_alerts(&lapsed, &HashMap::new(), today).is_empty());
 
@@ -778,18 +914,47 @@ mod tests {
         let mut ov = HashMap::new();
         ov.insert(
             "netflixcom".to_string(),
-            SubscriptionOverride { verdict: SubscriptionVerdict::Dismissed, label: None, trial_ends_at: None, cancelled_at: None },
+            SubscriptionOverride {
+                verdict: SubscriptionVerdict::Dismissed,
+                label: None,
+                trial_ends_at: None,
+                cancelled_at: None,
+            },
         );
         let dismissed = vec![
-            ri("netflix", "NETFLIX", RecurringKind::Subscription, -1599, "2025-07-01"),
-            ri("netflixcom", "NETFLIX.COM", RecurringKind::Subscription, -1599, "2025-06-28"),
+            ri(
+                "netflix",
+                "NETFLIX",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-07-01",
+            ),
+            ri(
+                "netflixcom",
+                "NETFLIX.COM",
+                RecurringKind::Subscription,
+                -1599,
+                "2025-06-28",
+            ),
         ];
         assert!(duplicate_alerts(&dismissed, &ov, today).is_empty());
 
         // Non-subscription recurring items (a variable bill) are never dupes.
         let bills = vec![
-            ri("hydro", "HYDRO ONE", RecurringKind::Bill, -8000, "2025-07-01"),
-            ri("hydrox", "HYDRO ONE EAST", RecurringKind::Bill, -8000, "2025-06-28"),
+            ri(
+                "hydro",
+                "HYDRO ONE",
+                RecurringKind::Bill,
+                -8000,
+                "2025-07-01",
+            ),
+            ri(
+                "hydrox",
+                "HYDRO ONE EAST",
+                RecurringKind::Bill,
+                -8000,
+                "2025-06-28",
+            ),
         ];
         assert!(duplicate_alerts(&bills, &HashMap::new(), today).is_empty());
     }
@@ -801,9 +966,15 @@ mod tests {
         // No detected series needed — a trial is user-recorded, keyed directly.
         set_subscription_trial(&conn, "acme-vpn", "Acme VPN", Some("2025-07-12")).unwrap();
         let now = "2025-07-10T12:00:00Z".parse().unwrap();
-        assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 1, "warns 2 days before conversion");
+        assert_eq!(
+            refresh_subscription_alerts(&mut conn, now).unwrap(),
+            1,
+            "warns 2 days before conversion"
+        );
         let all = notify::list(&mut conn, true, 50).unwrap();
-        assert!(all.iter().any(|n| n.sensitive.as_deref().unwrap_or("").contains("Acme VPN")));
+        assert!(all
+            .iter()
+            .any(|n| n.sensitive.as_deref().unwrap_or("").contains("Acme VPN")));
         // Idempotent for the same trial end date.
         assert_eq!(refresh_subscription_alerts(&mut conn, now).unwrap(), 0);
 

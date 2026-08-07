@@ -153,7 +153,7 @@ pub fn format_dollars(cents: i64) -> String {
     let n = digits.len();
     let mut grouped = String::with_capacity(n + n / 3);
     for (i, ch) in digits.chars().enumerate() {
-        if i > 0 && (n - i) % 3 == 0 {
+        if i > 0 && (n - i).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(ch);
@@ -389,8 +389,6 @@ mod format_tests {
 mod execution_smoke_tests {
     use super::*;
     use crate::reasoning::messages::{AgentChange, AgentDraftAction};
-    
-    
 
     /// Tools whose required argument names a real entity (a goal, a merchant).
     /// On an empty ledger there is nothing valid to name, so exercising them
@@ -439,7 +437,10 @@ mod execution_smoke_tests {
             };
             let result = tools.execute_recoverable(&def.name, &mut ctx, required_args(&def.name));
             if result.had_error {
-                let msg = result.value["error"]["message"].as_str().unwrap_or("?").to_string();
+                let msg = result.value["error"]["message"]
+                    .as_str()
+                    .unwrap_or("?")
+                    .to_string();
                 broken.push(format!("{}: {msg}", def.name));
             }
         }
@@ -606,8 +607,9 @@ mod prompt_contract_tests {
         // in the rule text, and the full shape in the supported-blocks list.
         // Target the latter — the shorthand carries no fields to check.
         let raw = extract_json_object(&prompt, "{\"kind\":\"clarification\",\"clarificationId\"");
-        let parsed: serde_json::Value = serde_json::from_str(&raw)
-            .unwrap_or_else(|e| panic!("the prompt's clarification example is not valid JSON: {e}\n{raw}"));
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|e| {
+            panic!("the prompt's clarification example is not valid JSON: {e}\n{raw}")
+        });
 
         // The fields the server depends on must be present in the example.
         assert_eq!(parsed["kind"], "clarification");
@@ -617,7 +619,10 @@ mod prompt_contract_tests {
              example with options invites the model to invent its own"
         );
         assert!(
-            parsed.get("referenceType").and_then(|v| v.as_str()).is_some(),
+            parsed
+                .get("referenceType")
+                .and_then(|v| v.as_str())
+                .is_some(),
             "the example must set referenceType or the server has nothing to ground against"
         );
     }

@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "FinSight",
-  "version": "0.0.0",
-  "identifier": "com.finsight.app",
+  "mainBinaryName": "finsight",
+  "version": "0.1.0",
+  "identifier": "com.finsight.desktop",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",

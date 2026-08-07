@@ -278,7 +278,10 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_category(&mut conn, "food");
-        assert_eq!(carryover_into_month(&mut conn, "food", "2026-05").unwrap(), 0);
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -288,7 +291,10 @@ mod tests {
         seed_category(&mut conn, "food");
         set(&mut conn, "food", "2026-05", 10_000).unwrap();
         // First budgeted month is May itself — nothing to carry *into* May.
-        assert_eq!(carryover_into_month(&mut conn, "food", "2026-05").unwrap(), 0);
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -299,7 +305,10 @@ mod tests {
         set(&mut conn, "food", "2026-04", 10_000).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 8_000);
         // April: budgeted $100, spent $80 → +$20 carries into May.
-        assert_eq!(carryover_into_month(&mut conn, "food", "2026-05").unwrap(), 2_000);
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
+            2_000
+        );
     }
 
     #[test]
@@ -310,7 +319,10 @@ mod tests {
         set(&mut conn, "food", "2026-04", 10_000).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 15_000);
         // April: budgeted $100, spent $150 → -$50 carries into May.
-        assert_eq!(carryover_into_month(&mut conn, "food", "2026-05").unwrap(), -5_000);
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
+            -5_000
+        );
     }
 
     #[test]
@@ -322,8 +334,11 @@ mod tests {
         spend(&mut conn, "food", "2026-03-10T00:00:00Z", 8_000); // +$20
         set(&mut conn, "food", "2026-04", 10_000).unwrap();
         spend(&mut conn, "food", "2026-04-10T00:00:00Z", 11_000); // -$10
-        // Net into May: +$20 - $10 = +$10.
-        assert_eq!(carryover_into_month(&mut conn, "food", "2026-05").unwrap(), 1_000);
+                                                                  // Net into May: +$20 - $10 = +$10.
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2026-05").unwrap(),
+            1_000
+        );
     }
 
     #[test]
@@ -339,7 +354,10 @@ mod tests {
             spend(&mut conn, "food", &format!("{m}-10T00:00:00Z"), 9_000);
         }
         // Only the trailing 24 months count: 24 * $10 = $240, not 30 * $10 = $300.
-        assert_eq!(carryover_into_month(&mut conn, "food", "2028-07").unwrap(), 24_000);
+        assert_eq!(
+            carryover_into_month(&mut conn, "food", "2028-07").unwrap(),
+            24_000
+        );
     }
 
     #[test]
@@ -357,8 +375,12 @@ mod tests {
         set(&mut conn, "travel", "2026-05", 50_000).unwrap(); // no spend at all: $500 under
 
         let facts = look_back_facts(&mut conn, "2026-05").unwrap();
-        assert!(facts.iter().any(|f| f.category_id == "dining" && f.kind == "over" && f.amount_cents == 1_200));
-        assert!(facts.iter().any(|f| f.category_id == "travel" && f.kind == "under" && f.amount_cents == 50_000));
+        assert!(facts
+            .iter()
+            .any(|f| f.category_id == "dining" && f.kind == "over" && f.amount_cents == 1_200));
+        assert!(facts
+            .iter()
+            .any(|f| f.category_id == "travel" && f.kind == "under" && f.amount_cents == 50_000));
     }
 
     #[test]
@@ -371,7 +393,10 @@ mod tests {
         }
         // No spend at all across 4 budgeted months.
         let facts = look_back_facts(&mut conn, "2026-05").unwrap();
-        let streak = facts.iter().find(|f| f.category_id == "travel" && f.kind == "streak").unwrap();
+        let streak = facts
+            .iter()
+            .find(|f| f.category_id == "travel" && f.kind == "streak")
+            .unwrap();
         assert_eq!(streak.streak_months, 4);
     }
 

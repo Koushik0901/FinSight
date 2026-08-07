@@ -375,7 +375,10 @@ impl OpenAiCompatProvider {
             .filter(|c| *c > 0)
         {
             let prompt = resp.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0);
-            eprintln!("copilot cache: {cached}/{prompt} prompt tokens cached ({})", self.model);
+            eprintln!(
+                "copilot cache: {cached}/{prompt} prompt tokens cached ({})",
+                self.model
+            );
         }
 
         // Token usage for this turn (cache hits included). Threaded back to the
@@ -441,7 +444,7 @@ fn parse_json_response(content: &str) -> Result<Value> {
     if let Ok(value) = serde_json::from_str(trimmed) {
         return Ok(value);
     }
-    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+    let Some(start) = trimmed.find(['{', '[']) else {
         return Err(anyhow!("OpenAI response did not contain JSON"));
     };
     let end_obj = trimmed.rfind('}');

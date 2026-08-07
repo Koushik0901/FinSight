@@ -5,7 +5,9 @@
 
 use crate::error::CoreResult;
 use crate::spending::baseline::{self, Baseline};
-use crate::spending::{DecomposeResult, Driver, Mechanism, Persistence, PersistenceSubtotals, Window};
+use crate::spending::{
+    DecomposeResult, Driver, Mechanism, Persistence, PersistenceSubtotals, Window,
+};
 use rusqlite::Connection;
 use std::collections::HashSet;
 
@@ -36,10 +38,26 @@ pub(crate) fn classify_mechanism(
     if recent_monthly == 0 && base_monthly > 0 {
         return Mechanism::Stopped;
     }
-    let recent_ticket = if recent_txns_pm > 0.0 { recent_monthly as f64 / recent_txns_pm } else { 0.0 };
-    let base_ticket = if base_txns_pm > 0.0 { base_monthly as f64 / base_txns_pm } else { 0.0 };
-    let freq = if base_txns_pm > 0.0 { recent_txns_pm / base_txns_pm } else { f64::INFINITY };
-    let price = if base_ticket > 0.0 { recent_ticket / base_ticket } else { f64::INFINITY };
+    let recent_ticket = if recent_txns_pm > 0.0 {
+        recent_monthly as f64 / recent_txns_pm
+    } else {
+        0.0
+    };
+    let base_ticket = if base_txns_pm > 0.0 {
+        base_monthly as f64 / base_txns_pm
+    } else {
+        0.0
+    };
+    let freq = if base_txns_pm > 0.0 {
+        recent_txns_pm / base_txns_pm
+    } else {
+        f64::INFINITY
+    };
+    let price = if base_ticket > 0.0 {
+        recent_ticket / base_ticket
+    } else {
+        f64::INFINITY
+    };
     let freq_up = freq >= CHANGE_RATIO;
     let price_up = price >= CHANGE_RATIO;
     let freq_dn = freq <= 1.0 / CHANGE_RATIO;
@@ -120,7 +138,10 @@ pub fn decompose(
 
         let driver = Driver {
             merchant_key: key.clone(),
-            display: t.or(b).map(|m| m.display.clone()).unwrap_or_else(|| key.clone()),
+            display: t
+                .or(b)
+                .map(|m| m.display.clone())
+                .unwrap_or_else(|| key.clone()),
             category: t
                 .and_then(|m| m.category.clone())
                 .or_else(|| b.and_then(|m| m.category.clone())),
@@ -167,7 +188,10 @@ pub fn decompose(
             reference.months
         )
     } else if reference.mixed_currency || target_bl.mixed_currency {
-        format!("Multiple currencies present; analyzing {} only.", reference.currency)
+        format!(
+            "Multiple currencies present; analyzing {} only.",
+            reference.currency
+        )
     } else {
         String::new()
     };
@@ -197,24 +221,39 @@ fn passes(d: &Driver, filter: Filter, min_ratio: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Db;
     use crate::merchant::canonical_merchant_key;
+    use crate::Db;
     use tempfile::TempDir;
 
     #[test]
     fn mechanism_distinguishes_new_price_frequency() {
         assert_eq!(classify_mechanism(5000, 0, 1.0, 0.0), Mechanism::New);
         assert_eq!(classify_mechanism(0, 5000, 0.0, 1.0), Mechanism::Stopped);
-        assert_eq!(classify_mechanism(20000, 10000, 1.0, 1.0), Mechanism::PriceUp);
-        assert_eq!(classify_mechanism(11000, 7000, 11.0, 7.0), Mechanism::FrequencyUp);
+        assert_eq!(
+            classify_mechanism(20000, 10000, 1.0, 1.0),
+            Mechanism::PriceUp
+        );
+        assert_eq!(
+            classify_mechanism(11000, 7000, 11.0, 7.0),
+            Mechanism::FrequencyUp
+        );
         assert_eq!(classify_mechanism(10000, 9800, 2.0, 2.0), Mechanism::Flat);
     }
 
     #[test]
     fn persistence_reads_structure() {
-        assert_eq!(classify_persistence(Mechanism::PriceUp, 8, 20, 3), Persistence::Recurring);
-        assert_eq!(classify_persistence(Mechanism::New, 1, 3, 3), Persistence::Emerging);
-        assert_eq!(classify_persistence(Mechanism::New, 1, 1, 1), Persistence::OneOff);
+        assert_eq!(
+            classify_persistence(Mechanism::PriceUp, 8, 20, 3),
+            Persistence::Recurring
+        );
+        assert_eq!(
+            classify_persistence(Mechanism::New, 1, 3, 3),
+            Persistence::Emerging
+        );
+        assert_eq!(
+            classify_persistence(Mechanism::New, 1, 1, 1),
+            Persistence::OneOff
+        );
     }
 
     fn fresh() -> (TempDir, Db) {
@@ -239,7 +278,12 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -20_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(&conn, "2026-05", -40_000, "SAVE ON FOODS  EDMONTON, AB");
         ins(&conn, "2026-05", -60_000, "FLAIR AIRLINES  BURNABY, BC");
@@ -250,16 +294,29 @@ mod tests {
 
         assert_eq!(out.drivers[0].display, "FLAIR AIRLINES");
         assert_eq!(out.drivers[0].mechanism, Mechanism::New);
-        let groc = out.drivers.iter().find(|d| d.display == "SAVE ON FOODS").unwrap();
+        let groc = out
+            .drivers
+            .iter()
+            .find(|d| d.display == "SAVE ON FOODS")
+            .unwrap();
         assert_eq!(groc.recent_monthly_cents, 40_000);
         assert_eq!(groc.base_monthly_cents, 20_000);
 
         let only_new = decompose(&conn, &may, &base, Filter::New, 2.0, 20).unwrap();
-        assert!(only_new.drivers.iter().all(|d| d.mechanism == Mechanism::New));
-        assert!(only_new.drivers.iter().any(|d| d.display == "FLAIR AIRLINES"));
+        assert!(only_new
+            .drivers
+            .iter()
+            .all(|d| d.mechanism == Mechanism::New));
+        assert!(only_new
+            .drivers
+            .iter()
+            .any(|d| d.display == "FLAIR AIRLINES"));
 
         let elevated = decompose(&conn, &may, &base, Filter::Elevated, 2.0, 20).unwrap();
-        assert!(elevated.drivers.iter().any(|d| d.display == "SAVE ON FOODS"));
+        assert!(elevated
+            .drivers
+            .iter()
+            .any(|d| d.display == "SAVE ON FOODS"));
     }
 
     #[test]
@@ -271,7 +328,11 @@ mod tests {
         let base = baseline::compute(&conn, "2025-05", "2026-05").unwrap();
         let may = Window::for_month("2026-05");
         let out = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
-        assert!(out.note.to_lowercase().contains("month"), "cold-start note should fire, got: {:?}", out.note);
+        assert!(
+            out.note.to_lowercase().contains("month"),
+            "cold-start note should fire, got: {:?}",
+            out.note
+        );
     }
 
     #[test]
@@ -279,21 +340,49 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -10_000, "AMAZON  ONLINE, ON");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -10_000,
+                "AMAZON  ONLINE, ON",
+            );
         }
         ins(&conn, "2026-05", -40_000, "AMAZON  ONLINE, ON");
         let base = baseline::compute(&conn, "2025-01", "2026-01").unwrap();
         let may = Window::for_month("2026-05");
 
         let before = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
-        assert!(before.persistence_subtotals.recurring_cents > 0, "amazon is a lever before annotation");
+        assert!(
+            before.persistence_subtotals.recurring_cents > 0,
+            "amazon is a lever before annotation"
+        );
 
-        crate::spending::annotate::set_annotation(&conn, &canonical_merchant_key("AMAZON  ONLINE, ON"), "expected", None).unwrap();
+        crate::spending::annotate::set_annotation(
+            &conn,
+            &canonical_merchant_key("AMAZON  ONLINE, ON"),
+            "expected",
+            None,
+        )
+        .unwrap();
         let after = decompose(&conn, &may, &base, Filter::All, 2.0, 20).unwrap();
-        let amz = after.drivers.iter().find(|d| d.display == "AMAZON").unwrap();
+        let amz = after
+            .drivers
+            .iter()
+            .find(|d| d.display == "AMAZON")
+            .unwrap();
         assert_eq!(amz.user_verdict.as_deref(), Some("expected"));
-        assert_eq!(amz.persistence, Persistence::Recurring, "persistence stays the computed nature; the verdict is the override");
-        assert_eq!(after.persistence_subtotals.recurring_cents, 0, "annotated driver leaves the levers");
-        assert!(after.persistence_subtotals.accepted_cents > 0, "an accepted cost lands in the accepted bucket, not recurring or one-off");
+        assert_eq!(
+            amz.persistence,
+            Persistence::Recurring,
+            "persistence stays the computed nature; the verdict is the override"
+        );
+        assert_eq!(
+            after.persistence_subtotals.recurring_cents, 0,
+            "annotated driver leaves the levers"
+        );
+        assert!(
+            after.persistence_subtotals.accepted_cents > 0,
+            "an accepted cost lands in the accepted bucket, not recurring or one-off"
+        );
     }
 }

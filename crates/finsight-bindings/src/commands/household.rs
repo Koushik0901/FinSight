@@ -27,7 +27,10 @@ pub async fn create_household_member(
 /// Passing a non-existent id clears self.
 #[tauri::command]
 #[specta::specta]
-pub async fn set_self_member(state: tauri::State<'_, AppState>, member_id: String) -> AppResult<()> {
+pub async fn set_self_member(
+    state: tauri::State<'_, AppState>,
+    member_id: String,
+) -> AppResult<()> {
     finsight_api::commands::household::set_self_member(&state.api, member_id).await
 }
 

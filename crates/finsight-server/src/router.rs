@@ -1,11 +1,11 @@
 use crate::state::ServerState;
+use axum::http::header::{HeaderValue, CACHE_CONTROL};
 use axum::{
     extract::DefaultBodyLimit,
     response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
-use axum::http::header::{HeaderValue, CACHE_CONTROL};
 use std::path::Path;
 use std::sync::Arc;
 use tower_http::compression::CompressionLayer;
@@ -280,7 +280,11 @@ pub(crate) mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::OK, "setup must succeed for the test helper");
+        assert_eq!(
+            res.status(),
+            StatusCode::OK,
+            "setup must succeed for the test helper"
+        );
         let cookie = res
             .headers()
             .get(axum::http::header::SET_COOKIE)
@@ -310,9 +314,16 @@ pub(crate) mod tests {
         std::fs::create_dir_all(dir.join("assets")).unwrap();
         // Comfortably over CompressionLayer's 32-byte floor, and repetitive so
         // it definitely compresses smaller than the original.
-        std::fs::write(dir.join("assets/app-abc123.js").as_path(), "console.log('x');".repeat(200))
-            .unwrap();
-        std::fs::write(dir.join("index.html").as_path(), "<!doctype html><title>t</title>").unwrap();
+        std::fs::write(
+            dir.join("assets/app-abc123.js").as_path(),
+            "console.log('x');".repeat(200),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("index.html").as_path(),
+            "<!doctype html><title>t</title>",
+        )
+        .unwrap();
         dir
     }
 
@@ -370,7 +381,9 @@ pub(crate) mod tests {
 
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(header(&res, "content-encoding"), Some("br"));
-        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         assert_eq!(
             body.as_ref(),
             marker,
@@ -468,11 +481,7 @@ pub(crate) mod tests {
         std::fs::write(ui_dir.join("index.html"), "SENTINEL_INDEX_HTML").unwrap();
         let app = build_router(test_state(), &ui_dir);
         let res = app
-            .oneshot(
-                Request::get("/some/spa/route")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::get("/some/spa/route").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);

@@ -66,7 +66,10 @@ pub fn plan_spending_reduction(
         .filter(|dr| {
             dr.delta_cents > 0
                 && dr.user_verdict.is_none()
-                && matches!(dr.persistence, Persistence::Recurring | Persistence::Emerging)
+                && matches!(
+                    dr.persistence,
+                    Persistence::Recurring | Persistence::Emerging
+                )
         })
         .cloned()
         .collect();
@@ -85,7 +88,10 @@ pub fn plan_spending_reduction(
         .iter()
         .filter(|dr| {
             dr.delta_cents > 0
-                && matches!(dr.user_verdict.as_deref(), Some("expected") | Some("investment"))
+                && matches!(
+                    dr.user_verdict.as_deref(),
+                    Some("expected") | Some("investment")
+                )
         })
         .cloned()
         .collect();
@@ -146,7 +152,12 @@ mod tests {
 
     fn seed_scenario(conn: &Connection) {
         for i in 0..12 {
-            ins(conn, &format!("2025-{:02}", i + 1), -200_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                conn,
+                &format!("2025-{:02}", i + 1),
+                -200_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(conn, "2026-01", -250_000, "SAVE ON FOODS  EDMONTON, AB");
         ins(conn, "2026-01", -90_000, "FLAIR AIRLINES  BURNABY, BC");
@@ -161,13 +172,29 @@ mod tests {
         assert_eq!(p.recent_monthly_cents, 340_000);
         assert_eq!(p.baseline_monthly_cents, 200_000);
         assert_eq!(p.self_correcting_cents, 90_000, "the flight is one-off");
-        assert_eq!(p.recoverable_recurring_cents, 50_000, "groceries +$500 is recurring");
+        assert_eq!(
+            p.recoverable_recurring_cents, 50_000,
+            "groceries +$500 is recurring"
+        );
         assert_eq!(p.projected_after_levers_cents, 200_000);
         assert!(p.levers.iter().any(|d| d.display == "SAVE ON FOODS"));
-        assert!(!p.levers.iter().any(|d| d.display == "FLAIR AIRLINES"), "one-offs are not levers");
+        assert!(
+            !p.levers.iter().any(|d| d.display == "FLAIR AIRLINES"),
+            "one-offs are not levers"
+        );
         assert_eq!(p.structural_gap_cents, Some(50_000));
-        assert!(p.self_correcting.iter().any(|d| d.display == "FLAIR AIRLINES"), "the one-off flight shows in self_correcting");
-        assert!(!p.self_correcting.iter().any(|d| d.display == "SAVE ON FOODS"), "the recurring grocery is not self-correcting");
+        assert!(
+            p.self_correcting
+                .iter()
+                .any(|d| d.display == "FLAIR AIRLINES"),
+            "the one-off flight shows in self_correcting"
+        );
+        assert!(
+            !p.self_correcting
+                .iter()
+                .any(|d| d.display == "SAVE ON FOODS"),
+            "the recurring grocery is not self-correcting"
+        );
     }
 
     #[test]
@@ -176,7 +203,10 @@ mod tests {
         let conn = db.get().unwrap();
         seed_scenario(&conn);
         let p = plan_spending_reduction(&conn, "2026-01", Some(220_000)).unwrap();
-        assert_eq!(p.structural_gap_cents, None, "$2,200 >= the $2,000 trimming floor");
+        assert_eq!(
+            p.structural_gap_cents, None,
+            "$2,200 >= the $2,000 trimming floor"
+        );
     }
 
     #[test]
@@ -184,8 +214,18 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -100_000, "SAVE ON FOODS  EDMONTON, AB");
-            ins(&conn, &format!("2025-{:02}", i + 1), -10_000, "AMAZON  ONLINE, ON");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -100_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -10_000,
+                "AMAZON  ONLINE, ON",
+            );
         }
         ins(&conn, "2026-01", -100_000, "SAVE ON FOODS  EDMONTON, AB");
         ins(&conn, "2026-01", -60_000, "AMAZON  ONLINE, ON"); // recurring, elevated +$500
@@ -200,13 +240,22 @@ mod tests {
         .unwrap();
 
         let p = plan_spending_reduction(&conn, "2026-01", Some(90_000)).unwrap();
-        assert_eq!(p.self_correcting_cents, 0, "a kept cost is NOT self-correcting");
+        assert_eq!(
+            p.self_correcting_cents, 0,
+            "a kept cost is NOT self-correcting"
+        );
         assert!(p.levers.is_empty(), "a kept cost is not a lever");
-        assert!(p.accepted.iter().any(|d| d.display == "AMAZON"), "the kept driver is surfaced for review/undo");
+        assert!(
+            p.accepted.iter().any(|d| d.display == "AMAZON"),
+            "the kept driver is surfaced for review/undo"
+        );
         // The $500 Amazon rise stays in the floor (not subtracted as if it lapses),
         // so the projection is the full recent spend, not an understated floor.
         assert_eq!(p.projected_after_levers_cents, 160_000);
-        assert!(p.structural_gap_cents.is_some(), "target below the real floor stays structural");
+        assert!(
+            p.structural_gap_cents.is_some(),
+            "target below the real floor stays structural"
+        );
     }
 
     #[test]
@@ -215,8 +264,18 @@ mod tests {
         let conn = db.get().unwrap();
         // Baseline: $1,000 groceries + a $500 sub every month → normal $1,500/mo.
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -100_000, "SAVE ON FOODS  EDMONTON, AB");
-            ins(&conn, &format!("2025-{:02}", i + 1), -50_000, "OLD SUB  ONLINE, ON");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -100_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -50_000,
+                "OLD SUB  ONLINE, ON",
+            );
         }
         // Target month: groceries flat, the sub STOPPED (a tailwind), plus one
         // $800 one-off. The positive delta ($800) exceeds the gap because the
@@ -232,6 +291,9 @@ mod tests {
             p.baseline_monthly_cents
         );
         // $1,200 target sits below the $1,500 floor → structural, not "reachable".
-        assert_eq!(p.structural_gap_cents, Some(p.baseline_monthly_cents - 120_000));
+        assert_eq!(
+            p.structural_gap_cents,
+            Some(p.baseline_monthly_cents - 120_000)
+        );
     }
 }

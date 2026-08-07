@@ -995,7 +995,7 @@ function CopilotHeader({ threadControls = true }: { threadControls?: boolean }) 
   return (
     <header className="copilot-header">
       <div className="copilot-title-block">
-        <p className="copilot-kicker">Copilot</p>
+        <p className="copilot-kicker">Private financial workspace</p>
         <h1>Copilot</h1>
         <span>Plan, explain, and act on your FinSight data.</span>
       </div>
@@ -1028,6 +1028,12 @@ function CopilotHeader({ threadControls = true }: { threadControls?: boolean }) 
                         <ThreadListItemPrimitive.Delete
                           className="copilot-history-delete"
                           aria-label="Delete thread"
+                          onClick={(event) => {
+                            if (!window.confirm("Delete this Copilot thread? This cannot be undone.")) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }
+                          }}
                         >
                           <I.Trash width={13} height={13} />
                         </ThreadListItemPrimitive.Delete>
@@ -1064,7 +1070,7 @@ function CopilotAgUiHeader({
   return (
     <header className="copilot-header">
       <div className="copilot-title-block">
-        <p className="copilot-kicker">Copilot</p>
+        <p className="copilot-kicker">Private financial workspace</p>
         <h1>Copilot</h1>
         <span>Plan, explain, and act on your FinSight data.</span>
       </div>
@@ -1110,6 +1116,8 @@ function CopilotAgUiHeader({
                         disabled={deleteConversation.isPending}
                         onClick={async () => {
                           try {
+                          if (!window.confirm(`Delete “${conversation.title || "New conversation"}”? This cannot be undone.`)) return;
+
                             await deleteConversation.mutateAsync(conversation.id);
                             if (conversation.id === activeConversationId) onNewThread();
                           } catch {

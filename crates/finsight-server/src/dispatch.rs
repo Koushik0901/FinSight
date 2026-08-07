@@ -29,7 +29,8 @@ impl FrameSink for BroadcastSink {
 /// them to snake_case for us before; here we read them by their camelCase name).
 fn arg<T: serde::de::DeserializeOwned>(p: &serde_json::Value, name: &str) -> Result<T, AppError> {
     let v = p.get(name).cloned().unwrap_or(serde_json::Value::Null);
-    serde_json::from_value(v).map_err(|e| AppError::new("rpc.bad_arg", format!("argument `{name}`: {e}")))
+    serde_json::from_value(v)
+        .map_err(|e| AppError::new("rpc.bad_arg", format!("argument `{name}`: {e}")))
 }
 
 fn ok<T: serde::Serialize>(v: T) -> Result<serde_json::Value, AppError> {
@@ -57,12 +58,10 @@ async fn uploaded_csv_path(api: &ApiState, token: String) -> Result<String, AppE
 
     let imports_dir = api.data_dir.join("imports");
     tokio::task::spawn_blocking(move || {
-        let root = std::fs::canonicalize(&imports_dir).map_err(|_| {
-            AppError::new("rpc.invalid_import_upload", "CSV upload was not found")
-        })?;
-        let path = std::fs::canonicalize(imports_dir.join(candidate)).map_err(|_| {
-            AppError::new("rpc.invalid_import_upload", "CSV upload was not found")
-        })?;
+        let root = std::fs::canonicalize(&imports_dir)
+            .map_err(|_| AppError::new("rpc.invalid_import_upload", "CSV upload was not found"))?;
+        let path = std::fs::canonicalize(imports_dir.join(candidate))
+            .map_err(|_| AppError::new("rpc.invalid_import_upload", "CSV upload was not found"))?;
         if !path.starts_with(&root) || !path.is_file() {
             return Err(AppError::new(
                 "rpc.invalid_import_upload",
@@ -108,7 +107,9 @@ pub async fn rpc(
     st.registry.touch(&user.user_id);
     match dispatch(&rt.api, &rt.events, &cmd, p).await {
         Ok(v) => (StatusCode::OK, Json(v)).into_response(),
-        Err(e) if e.code == "rpc.unknown_command" => (StatusCode::NOT_FOUND, Json(e)).into_response(),
+        Err(e) if e.code == "rpc.unknown_command" => {
+            (StatusCode::NOT_FOUND, Json(e)).into_response()
+        }
         Err(e) if e.code == "rpc.bad_arg" || e.code == "rpc.invalid_import_upload" => {
             (StatusCode::BAD_REQUEST, Json(e)).into_response()
         }
@@ -131,12 +132,12 @@ async fn dispatch(
             ok(c::accounts::update_account(api, arg(&p, "id")?, arg(&p, "patch")?).await?)
         }
         "archive_account" => ok(c::accounts::archive_account(api, arg(&p, "id")?).await?),
-        "set_account_balance" => ok(c::accounts::set_account_balance(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "balanceCents")?,
-        )
-        .await?),
+        "set_account_balance" => {
+            ok(
+                c::accounts::set_account_balance(api, arg(&p, "id")?, arg(&p, "balanceCents")?)
+                    .await?,
+            )
+        }
         "list_account_balance_history" => ok(c::accounts::list_account_balance_history(
             api,
             arg(&p, "accountId")?,
@@ -161,70 +162,58 @@ async fn dispatch(
             ok(c::agent::set_completion_provider(api, arg(&p, "config")?).await?)
         }
         "get_completion_provider" => ok(c::agent::get_completion_provider(api).await?),
-        "save_provider_api_key" => ok(c::agent::save_provider_api_key(
-            api,
-            arg(&p, "providerId")?,
-            arg(&p, "key")?,
-        )
-        .await?),
+        "save_provider_api_key" => {
+            ok(
+                c::agent::save_provider_api_key(api, arg(&p, "providerId")?, arg(&p, "key")?)
+                    .await?,
+            )
+        }
         "list_provider_models" => {
             ok(c::agent::list_provider_models(api, arg(&p, "config")?).await?)
         }
-        "test_completion_provider" => ok(c::agent::test_completion_provider(
-            api,
-            arg(&p, "config")?,
-            arg(&p, "apiKey")?,
-        )
-        .await?),
+        "test_completion_provider" => {
+            ok(
+                c::agent::test_completion_provider(api, arg(&p, "config")?, arg(&p, "apiKey")?)
+                    .await?,
+            )
+        }
         "get_needs_review_count" => ok(c::agent::get_needs_review_count(api).await?),
         "trigger_categorize" => ok(c::agent::trigger_categorize(api).await?),
         "recompute_anomalies" => ok(c::agent::recompute_anomalies(api).await?),
-        "set_anomaly_dismissed" => ok(c::agent::set_anomaly_dismissed(
-            api,
-            arg(&p, "txnId")?,
-            arg(&p, "dismissed")?,
-        )
-        .await?),
+        "set_anomaly_dismissed" => {
+            ok(
+                c::agent::set_anomaly_dismissed(api, arg(&p, "txnId")?, arg(&p, "dismissed")?)
+                    .await?,
+            )
+        }
         "trigger_recategorize_low_confidence" => {
             ok(c::agent::trigger_recategorize_low_confidence(api).await?)
         }
         "get_agent_status" => ok(c::agent::get_agent_status(api).await?),
-        "ask_agent" => {
-            ok(c::agent::ask_agent(api, arg(&p, "question")?, arg(&p, "mode")?).await?)
-        }
+        "ask_agent" => ok(c::agent::ask_agent(api, arg(&p, "question")?, arg(&p, "mode")?).await?),
         "list_rule_proposals" => ok(c::agent::list_rule_proposals(api).await?),
         "accept_rule_proposal" => ok(c::agent::accept_rule_proposal(api, arg(&p, "id")?).await?),
-        "decline_rule_proposal" => {
-            ok(c::agent::decline_rule_proposal(api, arg(&p, "id")?).await?)
-        }
+        "decline_rule_proposal" => ok(c::agent::decline_rule_proposal(api, arg(&p, "id")?).await?),
         "list_recent_agent_activity" => {
             ok(c::agent::list_recent_agent_activity(api, arg(&p, "limit")?).await?)
         }
-        "list_category_proposals" => {
-            ok(c::category_proposals::list_category_proposals(api).await?)
+        "list_category_proposals" => ok(c::category_proposals::list_category_proposals(api).await?),
+        "accept_category_proposal" => {
+            ok(c::category_proposals::accept_category_proposal(api, arg(&p, "id")?).await?)
         }
-        "accept_category_proposal" => ok(c::category_proposals::accept_category_proposal(
-            api,
-            arg(&p, "id")?,
-        )
-        .await?),
         "correct_category_proposal" => ok(c::category_proposals::correct_category_proposal(
             api,
             arg(&p, "id")?,
             arg(&p, "categoryId")?,
         )
         .await?),
-        "reject_category_proposal" => ok(c::category_proposals::reject_category_proposal(
-            api,
-            arg(&p, "id")?,
-        )
-        .await?),
+        "reject_category_proposal" => {
+            ok(c::category_proposals::reject_category_proposal(api, arg(&p, "id")?).await?)
+        }
 
         // ── assets ──
         "list_manual_assets" => ok(c::assets::list_manual_assets(api).await?),
-        "create_manual_asset" => {
-            ok(c::assets::create_manual_asset(api, arg(&p, "input")?).await?)
-        }
+        "create_manual_asset" => ok(c::assets::create_manual_asset(api, arg(&p, "input")?).await?),
         "update_manual_asset" => {
             ok(c::assets::update_manual_asset(api, arg(&p, "id")?, arg(&p, "patch")?).await?)
         }
@@ -243,20 +232,17 @@ async fn dispatch(
         "list_member_budget_envelopes" => {
             ok(c::budget::list_member_budget_envelopes(api, arg(&p, "memberId")?).await?)
         }
-        "set_budget" => ok(c::budget::set_budget(
-            api,
-            arg(&p, "categoryId")?,
-            arg(&p, "amountCents")?,
-        )
-        .await?),
+        "set_budget" => {
+            ok(c::budget::set_budget(api, arg(&p, "categoryId")?, arg(&p, "amountCents")?).await?)
+        }
         "list_goals" => ok(c::budget::list_goals(api).await?),
         "create_goal" => ok(c::budget::create_goal(api, arg(&p, "input")?).await?),
-        "update_goal_balance" => ok(c::budget::update_goal_balance(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "currentCents")?,
-        )
-        .await?),
+        "update_goal_balance" => {
+            ok(
+                c::budget::update_goal_balance(api, arg(&p, "id")?, arg(&p, "currentCents")?)
+                    .await?,
+            )
+        }
         "contribute_to_goal" => ok(c::budget::contribute_to_goal(
             api,
             arg(&p, "id")?,
@@ -269,18 +255,15 @@ async fn dispatch(
             ok(c::budget::list_goal_contributions(api, arg(&p, "goalId")?).await?)
         }
         "archive_goal" => ok(c::budget::archive_goal(api, arg(&p, "id")?).await?),
-        "project_goal_growth" => ok(c::budget::project_goal_growth(
-            api,
-            arg(&p, "goalId")?,
-            arg(&p, "years")?,
-        )
-        .await?),
-        "update_goal_monthly" => ok(c::budget::update_goal_monthly(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "monthlyCents")?,
-        )
-        .await?),
+        "project_goal_growth" => {
+            ok(c::budget::project_goal_growth(api, arg(&p, "goalId")?, arg(&p, "years")?).await?)
+        }
+        "update_goal_monthly" => {
+            ok(
+                c::budget::update_goal_monthly(api, arg(&p, "id")?, arg(&p, "monthlyCents")?)
+                    .await?,
+            )
+        }
         "update_goal_priority" => ok(c::budget::update_goal_priority(
             api,
             arg(&p, "id")?,
@@ -288,27 +271,22 @@ async fn dispatch(
             arg(&p, "deadlineStrictness")?,
         )
         .await?),
-        "update_goal_purpose" => ok(c::budget::update_goal_purpose(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "purpose")?,
-        )
-        .await?),
+        "update_goal_purpose" => {
+            ok(c::budget::update_goal_purpose(api, arg(&p, "id")?, arg(&p, "purpose")?).await?)
+        }
         "get_plan_next_month_data" => ok(c::budget::get_plan_next_month_data(api).await?),
         "apply_next_month_plan" => {
             ok(c::budget::apply_next_month_plan(api, arg(&p, "assignments")?).await?)
         }
-        "list_budget_history" => {
-            ok(c::budget::list_budget_history(api, arg(&p, "months")?).await?)
-        }
+        "list_budget_history" => ok(c::budget::list_budget_history(api, arg(&p, "months")?).await?),
 
         // ── categories ──
-        "update_category_color" => ok(c::categories::update_category_color(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "color")?,
-        )
-        .await?),
+        "update_category_color" => {
+            ok(
+                c::categories::update_category_color(api, arg(&p, "id")?, arg(&p, "color")?)
+                    .await?,
+            )
+        }
         "create_category" => ok(c::categories::create_category(
             api,
             arg(&p, "label")?,
@@ -316,32 +294,29 @@ async fn dispatch(
             arg(&p, "color")?,
         )
         .await?),
-        "rename_category" => ok(c::categories::rename_category(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "label")?,
-        )
-        .await?),
+        "rename_category" => {
+            ok(c::categories::rename_category(api, arg(&p, "id")?, arg(&p, "label")?).await?)
+        }
         "archive_category" => ok(c::categories::archive_category(api, arg(&p, "id")?).await?),
-        "set_category_guidance" => ok(c::categories::set_category_guidance(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "guidance")?,
-        )
-        .await?),
+        "set_category_guidance" => {
+            ok(
+                c::categories::set_category_guidance(api, arg(&p, "id")?, arg(&p, "guidance")?)
+                    .await?,
+            )
+        }
         "list_category_groups" => ok(c::categories::list_category_groups(api).await?),
-        "create_category_group" => ok(c::categories::create_category_group(
-            api,
-            arg(&p, "label")?,
-            arg(&p, "hint")?,
-        )
-        .await?),
-        "set_category_group" => ok(c::categories::set_category_group(
-            api,
-            arg(&p, "categoryId")?,
-            arg(&p, "groupId")?,
-        )
-        .await?),
+        "create_category_group" => {
+            ok(
+                c::categories::create_category_group(api, arg(&p, "label")?, arg(&p, "hint")?)
+                    .await?,
+            )
+        }
+        "set_category_group" => {
+            ok(
+                c::categories::set_category_group(api, arg(&p, "categoryId")?, arg(&p, "groupId")?)
+                    .await?,
+            )
+        }
 
         // ── category examples (#91) ──
         "add_category_example" => ok(c::category_examples::add_category_example(
@@ -360,12 +335,12 @@ async fn dispatch(
 
         // ── copilot (action bundles / sessions) ──
         "list_agent_sessions" => ok(c::copilot::list_agent_sessions(api).await?),
-        "create_agent_session" => ok(c::copilot::create_agent_session(
-            api,
-            arg(&p, "title")?,
-            arg(&p, "taskType")?,
-        )
-        .await?),
+        "create_agent_session" => {
+            ok(
+                c::copilot::create_agent_session(api, arg(&p, "title")?, arg(&p, "taskType")?)
+                    .await?,
+            )
+        }
         "close_agent_session" => ok(c::copilot::close_agent_session(api, arg(&p, "id")?).await?),
         "list_action_bundles" => ok(c::copilot::list_action_bundles(
             api,
@@ -378,9 +353,7 @@ async fn dispatch(
         "approve_action_item" => {
             ok(c::copilot::approve_action_item(api, arg(&p, "itemId")?).await?)
         }
-        "reject_action_item" => {
-            ok(c::copilot::reject_action_item(api, arg(&p, "itemId")?).await?)
-        }
+        "reject_action_item" => ok(c::copilot::reject_action_item(api, arg(&p, "itemId")?).await?),
         "list_execution_log" => {
             ok(c::copilot::list_execution_log(api, arg(&p, "bundleId")?).await?)
         }
@@ -412,17 +385,17 @@ async fn dispatch(
             ok(c::copilot_chat::delete_conversation(api, arg(&p, "id")?).await?)
         }
         "create_conversation" => ok(c::copilot_chat::create_conversation(api).await?),
-        "edit_conversation_user_message" => ok(c::copilot_chat::edit_conversation_user_message(
-            api,
-            arg(&p, "input")?,
-        )
-        .await?),
-        "delete_conversation_messages_after" => ok(c::copilot_chat::delete_conversation_messages_after(
-            api,
-            arg(&p, "conversationId")?,
-            arg(&p, "messageId")?,
-        )
-        .await?),
+        "edit_conversation_user_message" => {
+            ok(c::copilot_chat::edit_conversation_user_message(api, arg(&p, "input")?).await?)
+        }
+        "delete_conversation_messages_after" => {
+            ok(c::copilot_chat::delete_conversation_messages_after(
+                api,
+                arg(&p, "conversationId")?,
+                arg(&p, "messageId")?,
+            )
+            .await?)
+        }
 
         // ── data_health ──
         "get_data_health" => ok(c::data_health::get_data_health(api).await?),
@@ -434,25 +407,23 @@ async fn dispatch(
 
         // ── household ──
         "list_household_members" => ok(c::household::list_household_members(api).await?),
-        "create_household_member" => ok(c::household::create_household_member(
-            api,
-            arg(&p, "name")?,
-            arg(&p, "color")?,
-        )
-        .await?),
-        "set_self_member" => {
-            ok(c::household::set_self_member(api, arg(&p, "memberId")?).await?)
+        "create_household_member" => {
+            ok(
+                c::household::create_household_member(api, arg(&p, "name")?, arg(&p, "color")?)
+                    .await?,
+            )
         }
+        "set_self_member" => ok(c::household::set_self_member(api, arg(&p, "memberId")?).await?),
         "delete_household_member" => {
             ok(c::household::delete_household_member(api, arg(&p, "id")?).await?)
         }
         "list_account_owners" => ok(c::household::list_account_owners(api).await?),
-        "set_account_owners" => ok(c::household::set_account_owners(
-            api,
-            arg(&p, "accountId")?,
-            arg(&p, "memberIds")?,
-        )
-        .await?),
+        "set_account_owners" => {
+            ok(
+                c::household::set_account_owners(api, arg(&p, "accountId")?, arg(&p, "memberIds")?)
+                    .await?,
+            )
+        }
         "set_account_owner_shares" => ok(c::household::set_account_owner_shares(
             api,
             arg(&p, "accountId")?,
@@ -460,12 +431,12 @@ async fn dispatch(
         )
         .await?),
         "list_asset_owners" => ok(c::household::list_asset_owners(api).await?),
-        "set_asset_owners" => ok(c::household::set_asset_owners(
-            api,
-            arg(&p, "assetId")?,
-            arg(&p, "owners")?,
-        )
-        .await?),
+        "set_asset_owners" => {
+            ok(
+                c::household::set_asset_owners(api, arg(&p, "assetId")?, arg(&p, "owners")?)
+                    .await?,
+            )
+        }
 
         // ── import (import_csv is the other emit-path command) ──
         "preview_csv_columns" => ok(c::import::preview_csv_columns(
@@ -526,9 +497,7 @@ async fn dispatch(
 
         // ── insights ──
         "list_agent_memory" => ok(c::insights::list_agent_memory(api).await?),
-        "forget_agent_memory" => {
-            ok(c::insights::forget_agent_memory(api, arg(&p, "id")?).await?)
-        }
+        "forget_agent_memory" => ok(c::insights::forget_agent_memory(api, arg(&p, "id")?).await?),
         "get_financial_health_score" => ok(c::insights::get_financial_health_score(api).await?),
 
         // ── investments ──
@@ -563,7 +532,9 @@ async fn dispatch(
         "mark_notification_read" => {
             ok(c::notifications::mark_notification_read(api, arg(&p, "id")?).await?)
         }
-        "mark_all_notifications_read" => ok(c::notifications::mark_all_notifications_read(api).await?),
+        "mark_all_notifications_read" => {
+            ok(c::notifications::mark_all_notifications_read(api).await?)
+        }
         "notification_unread_count" => ok(c::notifications::notification_unread_count(api).await?),
         "get_cashflow_forecast" => ok(c::cashflow::get_cashflow_forecast(
             api,
@@ -611,31 +582,23 @@ async fn dispatch(
         // ── onboarding (probe_ollama takes no state — plain HTTP probe) ──
         "get_onboarding_state" => ok(c::onboarding::get_onboarding_state(api).await?),
         "mark_onboarding_complete" => ok(c::onboarding::mark_onboarding_complete(api).await?),
-        "reset_onboarding_completion" => {
-            ok(c::onboarding::reset_onboarding_completion(api).await?)
-        }
+        "reset_onboarding_completion" => ok(c::onboarding::reset_onboarding_completion(api).await?),
         "commit_starter_categories" => {
             ok(c::onboarding::commit_starter_categories(api, arg(&p, "categories")?).await?)
         }
         "probe_ollama" => ok(c::onboarding::probe_ollama(arg(&p, "baseUrl")?).await?),
-        "save_llm_provider" => {
-            ok(c::onboarding::save_llm_provider(api, arg(&p, "config")?).await?)
-        }
+        "save_llm_provider" => ok(c::onboarding::save_llm_provider(api, arg(&p, "config")?).await?),
 
         // ── planned_transactions ──
-        "list_planned_transactions" => ok(c::planned_transactions::list_planned_transactions(
-            api,
-            arg(&p, "filter")?,
-        )
-        .await?),
+        "list_planned_transactions" => {
+            ok(c::planned_transactions::list_planned_transactions(api, arg(&p, "filter")?).await?)
+        }
         "get_planned_transaction" => {
             ok(c::planned_transactions::get_planned_transaction(api, arg(&p, "id")?).await?)
         }
-        "create_planned_transaction" => ok(c::planned_transactions::create_planned_transaction(
-            api,
-            arg(&p, "input")?,
-        )
-        .await?),
+        "create_planned_transaction" => {
+            ok(c::planned_transactions::create_planned_transaction(api, arg(&p, "input")?).await?)
+        }
         "update_planned_transaction" => ok(c::planned_transactions::update_planned_transaction(
             api,
             arg(&p, "id")?,
@@ -647,9 +610,7 @@ async fn dispatch(
         }
 
         // ── recipes ──
-        "list_recipes" => {
-            ok(c::recipes::list_recipes(api, arg(&p, "includePaused")?).await?)
-        }
+        "list_recipes" => ok(c::recipes::list_recipes(api, arg(&p, "includePaused")?).await?),
         "create_recipe" => ok(c::recipes::create_recipe(
             api,
             arg(&p, "title")?,
@@ -676,12 +637,9 @@ async fn dispatch(
         "resume_recipe" => ok(c::recipes::resume_recipe(api, arg(&p, "id")?).await?),
         "delete_recipe" => ok(c::recipes::delete_recipe(api, arg(&p, "id")?).await?),
         "trigger_recipe" => ok(c::recipes::trigger_recipe(api, arg(&p, "id")?).await?),
-        "list_recipe_runs" => ok(c::recipes::list_recipe_runs(
-            api,
-            arg(&p, "recipeId")?,
-            arg(&p, "limit")?,
-        )
-        .await?),
+        "list_recipe_runs" => {
+            ok(c::recipes::list_recipe_runs(api, arg(&p, "recipeId")?, arg(&p, "limit")?).await?)
+        }
 
         // ── recurring ──
         "list_recurring" => ok(c::recurring::list_recurring(api).await?),
@@ -707,12 +665,9 @@ async fn dispatch(
         .await?),
 
         // ── reports ──
-        "get_report_data" => ok(c::reports::get_report_data(
-            api,
-            arg(&p, "scope")?,
-            arg(&p, "memberId")?,
-        )
-        .await?),
+        "get_report_data" => {
+            ok(c::reports::get_report_data(api, arg(&p, "scope")?, arg(&p, "memberId")?).await?)
+        }
         "get_month_totals" => ok(c::reports::get_month_totals(api).await?),
         "get_savings_rate_history" => ok(c::reports::get_savings_rate_history(api).await?),
         // ── month-end close (#59) ──
@@ -743,12 +698,12 @@ async fn dispatch(
             ok(c::scenarios::archive_scenario(api, arg(&p, "id")?, arg(&p, "archived")?).await?)
         }
         "promote_scenario" => ok(c::scenarios::promote_scenario(api, arg(&p, "id")?).await?),
-        "apply_scenario" => ok(c::scenarios::apply_scenario(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "approvedChangeIds")?,
-        )
-        .await?),
+        "apply_scenario" => {
+            ok(
+                c::scenarios::apply_scenario(api, arg(&p, "id")?, arg(&p, "approvedChangeIds")?)
+                    .await?,
+            )
+        }
         "revise_scenario" => {
             ok(c::scenarios::revise_scenario(api, arg(&p, "id")?, arg(&p, "params")?).await?)
         }
@@ -791,12 +746,8 @@ async fn dispatch(
         "delete_simplefin_connection" => {
             ok(c::simplefin::delete_simplefin_connection(api, arg(&p, "connectionId")?).await?)
         }
-        "sync_all_simplefin_accounts" => {
-            ok(c::simplefin::sync_all_simplefin_accounts(api).await?)
-        }
-        "get_simplefin_sync_settings" => {
-            ok(c::simplefin::get_simplefin_sync_settings(api).await?)
-        }
+        "sync_all_simplefin_accounts" => ok(c::simplefin::sync_all_simplefin_accounts(api).await?),
+        "get_simplefin_sync_settings" => ok(c::simplefin::get_simplefin_sync_settings(api).await?),
         "set_simplefin_sync_settings" => {
             ok(c::simplefin::set_simplefin_sync_settings(api, arg(&p, "settings")?).await?)
         }
@@ -822,10 +773,9 @@ async fn dispatch(
             arg(&p, "transactionId")?,
         )
         .await?),
-        "create_import_candidate_transaction" => {
-            ok(c::simplefin::create_import_candidate_transaction(api, arg(&p, "candidateId")?)
-                .await?)
-        }
+        "create_import_candidate_transaction" => ok(
+            c::simplefin::create_import_candidate_transaction(api, arg(&p, "candidateId")?).await?,
+        ),
         "dismiss_import_candidate" => {
             ok(c::simplefin::dismiss_import_candidate(api, arg(&p, "candidateId")?).await?)
         }
@@ -851,21 +801,16 @@ async fn dispatch(
         "create_transaction" => {
             ok(c::transactions::create_transaction(api, arg(&p, "input")?).await?)
         }
-        "update_transaction" => ok(c::transactions::update_transaction(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "patch")?,
-        )
-        .await?),
-        "delete_transaction" => {
-            ok(c::transactions::delete_transaction(api, arg(&p, "id")?).await?)
+        "update_transaction" => {
+            ok(c::transactions::update_transaction(api, arg(&p, "id")?, arg(&p, "patch")?).await?)
         }
-        "create_rule" => ok(c::transactions::create_rule(
-            api,
-            arg(&p, "pattern")?,
-            arg(&p, "categoryId")?,
-        )
-        .await?),
+        "delete_transaction" => ok(c::transactions::delete_transaction(api, arg(&p, "id")?).await?),
+        "create_rule" => {
+            ok(
+                c::transactions::create_rule(api, arg(&p, "pattern")?, arg(&p, "categoryId")?)
+                    .await?,
+            )
+        }
         "set_transaction_owner" => ok(c::transactions::set_transaction_owner(
             api,
             arg(&p, "transactionId")?,
@@ -883,15 +828,10 @@ async fn dispatch(
         "list_categories_with_spending" => {
             ok(c::transactions::list_categories_with_spending(api).await?)
         }
-        "list_rules_with_categories" => {
-            ok(c::transactions::list_rules_with_categories(api).await?)
+        "list_rules_with_categories" => ok(c::transactions::list_rules_with_categories(api).await?),
+        "toggle_rule" => {
+            ok(c::transactions::toggle_rule(api, arg(&p, "id")?, arg(&p, "enabled")?).await?)
         }
-        "toggle_rule" => ok(c::transactions::toggle_rule(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "enabled")?,
-        )
-        .await?),
         "get_transaction_count" => ok(c::transactions::get_transaction_count(api).await?),
         "set_transaction_flags" => ok(c::transactions::set_transaction_flags(
             api,
@@ -914,12 +854,12 @@ async fn dispatch(
             )
             .await?)
         }
-        "set_counterparty_verdict" => ok(c::transactions::set_counterparty_verdict(
-            api,
-            arg(&p, "id")?,
-            arg(&p, "verdict")?,
-        )
-        .await?),
+        "set_counterparty_verdict" => {
+            ok(
+                c::transactions::set_counterparty_verdict(api, arg(&p, "id")?, arg(&p, "verdict")?)
+                    .await?,
+            )
+        }
         "apply_counterparty_verdict_to_similar" => {
             ok(c::transactions::apply_counterparty_verdict_to_similar(
                 api,
@@ -1356,7 +1296,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["code"], "rpc.invalid_import_upload");
     }
@@ -1374,7 +1316,10 @@ mod tests {
             .clone()
             .oneshot(
                 Request::post("/api/import/csv")
-                    .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
                     .header("cookie", cookie.clone())
                     .body(Body::from(multipart))
                     .unwrap(),
@@ -1382,7 +1327,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let uploaded: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let token = uploaded["path"].as_str().unwrap();
         assert!(!token.contains('/') && !token.contains('\\'));
@@ -1399,7 +1346,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let preview: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(preview["rows"][0][0], "date");
     }

@@ -11,7 +11,12 @@ use std::collections::{HashMap, HashSet};
 pub const VERDICTS: [&str; 3] = ["one_off", "expected", "investment"];
 
 /// Upsert a verdict for a merchant key. `verdict` must be one of [`VERDICTS`].
-pub fn set_annotation(conn: &Connection, merchant_key: &str, verdict: &str, note: Option<&str>) -> CoreResult<()> {
+pub fn set_annotation(
+    conn: &Connection,
+    merchant_key: &str,
+    verdict: &str,
+    note: Option<&str>,
+) -> CoreResult<()> {
     conn.execute(
         "INSERT INTO spending_driver_annotations(merchant_key, verdict, note, created_at, updated_at) \
          VALUES(?1, ?2, ?3, datetime('now'), datetime('now')) \
@@ -74,7 +79,10 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         set_annotation(&conn, "flair airlines", "one_off", Some("a trip")).unwrap();
-        assert_eq!(annotations(&conn).unwrap().get("flair airlines").unwrap(), "one_off");
+        assert_eq!(
+            annotations(&conn).unwrap().get("flair airlines").unwrap(),
+            "one_off"
+        );
         set_annotation(&conn, "flair airlines", "expected", None).unwrap();
         let m = annotations(&conn).unwrap();
         assert_eq!(m.len(), 1);

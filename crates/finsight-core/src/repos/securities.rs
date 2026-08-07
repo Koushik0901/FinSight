@@ -49,9 +49,7 @@ pub fn get_by_external_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        models::NewSimpleFinConnection, repos::connections, Db,
-    };
+    use crate::{models::NewSimpleFinConnection, repos::connections, Db};
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

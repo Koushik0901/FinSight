@@ -23,13 +23,13 @@ pub mod planned_transactions;
 pub mod push;
 pub mod recipes;
 pub mod reset;
+pub mod restoration;
 pub mod rule_proposals;
 pub mod rules;
 pub mod scenarios;
 pub mod securities;
 pub mod splits;
 pub mod sync_runs;
-pub mod restoration;
 pub mod transactions;
 pub mod transfers;
 

@@ -124,9 +124,11 @@ pub enum LlmProviderConfig {
 
 pub async fn save_llm_provider(state: &ApiState, config: LlmProviderConfig) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| settings::set(conn, "llm_provider", &config))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        settings::set(conn, "llm_provider", &config)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]

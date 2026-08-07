@@ -30,9 +30,7 @@ pub struct ExecutionItemResult {
     pub error: Option<String>,
 }
 
-pub async fn list_agent_sessions(
-    state: &ApiState,
-) -> AppResult<Vec<AgentSession>> {
+pub async fn list_agent_sessions(state: &ApiState) -> AppResult<Vec<AgentSession>> {
     let db = (*state.db).clone();
     run(&db, |conn| copilot_sessions::list(conn, 50))
         .await
@@ -86,10 +84,7 @@ pub async fn get_action_bundle(
         .map_err(AppError::from)
 }
 
-pub async fn approve_action_item(
-    state: &ApiState,
-    item_id: String,
-) -> AppResult<()> {
+pub async fn approve_action_item(state: &ApiState, item_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         copilot_actions::set_item_status(conn, &item_id, "approved")
@@ -98,10 +93,7 @@ pub async fn approve_action_item(
     .map_err(AppError::from)
 }
 
-pub async fn reject_action_item(
-    state: &ApiState,
-    item_id: String,
-) -> AppResult<()> {
+pub async fn reject_action_item(state: &ApiState, item_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         copilot_actions::set_item_status(conn, &item_id, "rejected")

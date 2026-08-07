@@ -68,10 +68,18 @@ pub struct MetricAssumption {
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum MetricValue {
-    Money { cents: i64 },
-    Percent { pct: i64 },
-    Months { months: f64 },
-    Days { days: i64 },
+    Money {
+        cents: i64,
+    },
+    Percent {
+        pct: i64,
+    },
+    Months {
+        months: f64,
+    },
+    Days {
+        days: i64,
+    },
     /// The app declines to state a figure; see `warnings` for why.
     Withheld,
 }
@@ -152,7 +160,11 @@ fn assemble(
 
 /// Exclusion + warning for accounts whose balance isn't confirmed. Balances
 /// metrics exclude these rather than invent a $0, and say so.
-fn unknown_balance_caveats(balances: &BalanceBreakdown, into_ex: &mut Vec<String>, into_warn: &mut Vec<MetricWarning>) {
+fn unknown_balance_caveats(
+    balances: &BalanceBreakdown,
+    into_ex: &mut Vec<String>,
+    into_warn: &mut Vec<MetricWarning>,
+) {
     let n = balances.accounts_with_unknown_balance;
     if n > 0 {
         into_ex.push(format!(
@@ -174,11 +186,19 @@ fn unknown_balance_caveats(balances: &BalanceBreakdown, into_ex: &mut Vec<String
 /// Exclusion + warning for money held in currencies the aggregate isn't
 /// denominated in. Never converted, never folded in — so every total is a
 /// partial view and must be labelled as such.
-fn unconverted_currency_caveats(balances: &BalanceBreakdown, into_ex: &mut Vec<String>, into_warn: &mut Vec<MetricWarning>) {
+fn unconverted_currency_caveats(
+    balances: &BalanceBreakdown,
+    into_ex: &mut Vec<String>,
+    into_warn: &mut Vec<MetricWarning>,
+) {
     if balances.unconverted.is_empty() {
         return;
     }
-    let codes: Vec<&str> = balances.unconverted.iter().map(|h| h.code.as_str()).collect();
+    let codes: Vec<&str> = balances
+        .unconverted
+        .iter()
+        .map(|h| h.code.as_str())
+        .collect();
     into_ex.push(format!(
         "Money held in {} is not converted and not included (no exchange rate is invented).",
         codes.join(", ")
@@ -199,7 +219,11 @@ fn cashflow_exclusions(balances: &BalanceBreakdown) -> Vec<String> {
         "Activity inside investment accounts (buys/sells aren't cashflow).".to_string(),
     ];
     if !balances.unconverted.is_empty() {
-        let codes: Vec<&str> = balances.unconverted.iter().map(|h| h.code.as_str()).collect();
+        let codes: Vec<&str> = balances
+            .unconverted
+            .iter()
+            .map(|h| h.code.as_str())
+            .collect();
         ex.push(format!(
             "Transactions in other currencies ({}) — only your primary currency is totalled.",
             codes.join(", ")
@@ -246,15 +270,32 @@ fn averaging_input(rolling: &RollingAverages) -> MetricInput {
 
 fn net_worth(balances: &BalanceBreakdown) -> MetricExplanation {
     let mut inputs = vec![
-        MetricInput { label: "Cash & liquid accounts".into(), amount_cents: Some(balances.liquid_cents), detail: None },
-        MetricInput { label: "Investments".into(), amount_cents: Some(balances.invested_cents), detail: None },
-        MetricInput { label: "Debts".into(), amount_cents: Some(-balances.debt_cents), detail: Some("credit cards & loans, counted as negative".into()) },
+        MetricInput {
+            label: "Cash & liquid accounts".into(),
+            amount_cents: Some(balances.liquid_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Investments".into(),
+            amount_cents: Some(balances.invested_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Debts".into(),
+            amount_cents: Some(-balances.debt_cents),
+            detail: Some("credit cards & loans, counted as negative".into()),
+        },
     ];
     // Whatever net worth includes beyond these three (manual assets, etc.),
     // surfaced as a residual so the inputs always sum to the value shown.
-    let residual = balances.net_worth_cents - (balances.liquid_cents + balances.invested_cents - balances.debt_cents);
+    let residual = balances.net_worth_cents
+        - (balances.liquid_cents + balances.invested_cents - balances.debt_cents);
     if residual != 0 {
-        inputs.push(MetricInput { label: "Manual assets & other holdings".into(), amount_cents: Some(residual), detail: None });
+        inputs.push(MetricInput {
+            label: "Manual assets & other holdings".into(),
+            amount_cents: Some(residual),
+            detail: None,
+        });
     }
     let mut exclusions = Vec::new();
     let mut warnings = Vec::new();
@@ -276,7 +317,9 @@ fn net_worth(balances: &BalanceBreakdown) -> MetricExplanation {
 
 fn avg_monthly_income(balances: &BalanceBreakdown, rolling: &RollingAverages) -> MetricExplanation {
     let mut warnings = Vec::new();
-    if let Some(w) = thin_history_warning(rolling) { warnings.push(w); }
+    if let Some(w) = thin_history_warning(rolling) {
+        warnings.push(w);
+    }
     MetricExplanation {
         key: "avg_monthly_income".into(),
         label: "Average monthly income".into(),
@@ -295,9 +338,14 @@ fn avg_monthly_income(balances: &BalanceBreakdown, rolling: &RollingAverages) ->
     }
 }
 
-fn avg_monthly_expense(balances: &BalanceBreakdown, rolling: &RollingAverages) -> MetricExplanation {
+fn avg_monthly_expense(
+    balances: &BalanceBreakdown,
+    rolling: &RollingAverages,
+) -> MetricExplanation {
     let mut warnings = Vec::new();
-    if let Some(w) = thin_history_warning(rolling) { warnings.push(w); }
+    if let Some(w) = thin_history_warning(rolling) {
+        warnings.push(w);
+    }
     MetricExplanation {
         key: "avg_monthly_expense".into(),
         label: "Average monthly spending".into(),
@@ -314,17 +362,32 @@ fn avg_monthly_expense(balances: &BalanceBreakdown, rolling: &RollingAverages) -
 
 fn monthly_surplus(rolling: &RollingAverages) -> MetricExplanation {
     let mut warnings = Vec::new();
-    if let Some(w) = thin_history_warning(rolling) { warnings.push(w); }
+    if let Some(w) = thin_history_warning(rolling) {
+        warnings.push(w);
+    }
     MetricExplanation {
         key: "monthly_surplus".into(),
         label: "Monthly surplus".into(),
-        value: MetricValue::Money { cents: rolling.net_monthly_cents },
-        definition: "What's left over in a typical month: average income minus average spending.".into(),
+        value: MetricValue::Money {
+            cents: rolling.net_monthly_cents,
+        },
+        definition: "What's left over in a typical month: average income minus average spending."
+            .into(),
         inputs: vec![
-            MetricInput { label: "Average monthly income".into(), amount_cents: Some(rolling.avg_monthly_income_cents), detail: None },
-            MetricInput { label: "Average monthly spending".into(), amount_cents: Some(-rolling.avg_monthly_expense_cents), detail: None },
+            MetricInput {
+                label: "Average monthly income".into(),
+                amount_cents: Some(rolling.avg_monthly_income_cents),
+                detail: None,
+            },
+            MetricInput {
+                label: "Average monthly spending".into(),
+                amount_cents: Some(-rolling.avg_monthly_expense_cents),
+                detail: None,
+            },
         ],
-        exclusions: vec!["Transfers and investment-account activity (see income and spending).".into()],
+        exclusions: vec![
+            "Transfers and investment-account activity (see income and spending).".into(),
+        ],
         assumptions: Vec::new(),
         tradeoffs: Vec::new(),
         period: format!("Trailing {} days", rolling.window_days),
@@ -334,7 +397,9 @@ fn monthly_surplus(rolling: &RollingAverages) -> MetricExplanation {
 
 fn savings_rate(rolling: &RollingAverages, assumptions: &Assumptions) -> MetricExplanation {
     let mut warnings = Vec::new();
-    if let Some(w) = thin_history_warning(rolling) { warnings.push(w); }
+    if let Some(w) = thin_history_warning(rolling) {
+        warnings.push(w);
+    }
     if rolling.avg_monthly_income_cents <= 0 {
         warnings.push(MetricWarning {
             level: MetricWarningLevel::Caution,
@@ -344,11 +409,23 @@ fn savings_rate(rolling: &RollingAverages, assumptions: &Assumptions) -> MetricE
     MetricExplanation {
         key: "savings_rate".into(),
         label: "Savings rate".into(),
-        value: MetricValue::Percent { pct: rolling.savings_rate_pct },
-        definition: "The share of your income you keep: (income − spending) ÷ income, over the window.".into(),
+        value: MetricValue::Percent {
+            pct: rolling.savings_rate_pct,
+        },
+        definition:
+            "The share of your income you keep: (income − spending) ÷ income, over the window."
+                .into(),
         inputs: vec![
-            MetricInput { label: "Average monthly income".into(), amount_cents: Some(rolling.avg_monthly_income_cents), detail: None },
-            MetricInput { label: "Average monthly spending".into(), amount_cents: Some(rolling.avg_monthly_expense_cents), detail: None },
+            MetricInput {
+                label: "Average monthly income".into(),
+                amount_cents: Some(rolling.avg_monthly_income_cents),
+                detail: None,
+            },
+            MetricInput {
+                label: "Average monthly spending".into(),
+                amount_cents: Some(rolling.avg_monthly_expense_cents),
+                detail: None,
+            },
         ],
         exclusions: vec!["Transfers and investment-account activity.".into()],
         assumptions: vec![MetricAssumption {
@@ -368,15 +445,31 @@ fn emergency_fund_months(
     member: Option<&str>,
 ) -> MetricExplanation {
     let inputs = vec![
-        MetricInput { label: "Emergency-fund savings".into(), amount_cents: Some(balances.emergency_fund_cents), detail: None },
-        MetricInput { label: "Conservative monthly spending".into(), amount_cents: Some(safety.monthly_expense_cents), detail: Some("the larger of your 12-month and 90-day average, so annual bills are counted".into()) },
+        MetricInput {
+            label: "Emergency-fund savings".into(),
+            amount_cents: Some(balances.emergency_fund_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Conservative monthly spending".into(),
+            amount_cents: Some(safety.monthly_expense_cents),
+            detail: Some(
+                "the larger of your 12-month and 90-day average, so annual bills are counted"
+                    .into(),
+            ),
+        },
     ];
     let assumption = MetricAssumption {
         label: "Your target".into(),
-        value: format!("{} months of expenses", assumptions.emergency_fund_target_months),
+        value: format!(
+            "{} months of expenses",
+            assumptions.emergency_fund_target_months
+        ),
     };
     let period = "As of today, at your conservative monthly spending".to_string();
-    let definition = "How many months your emergency-fund savings would cover at your typical spending.".to_string();
+    let definition =
+        "How many months your emergency-fund savings would cover at your typical spending."
+            .to_string();
 
     // Mirror get_financial_metrics EXACTLY: withhold for a member scope (a
     // personal share of household survival time isn't meaningful) and when
@@ -418,10 +511,14 @@ fn emergency_fund_months(
             }],
         };
     }
-    let months = metrics::emergency_fund_months(balances.emergency_fund_cents, safety.monthly_expense_cents);
+    let months =
+        metrics::emergency_fund_months(balances.emergency_fund_cents, safety.monthly_expense_cents);
     let mut warnings = vec![MetricWarning {
         level: MetricWarningLevel::Info,
-        message: format!("Based on {} complete month(s) of spending history.", safety.months_observed),
+        message: format!(
+            "Based on {} complete month(s) of spending history.",
+            safety.months_observed
+        ),
     }];
     if safety.monthly_expense_cents <= 0 {
         warnings.push(MetricWarning {
@@ -443,13 +540,27 @@ fn emergency_fund_months(
     }
 }
 
-fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member: Option<&str>) -> MetricExplanation {
+fn runway_days(
+    balances: &BalanceBreakdown,
+    safety: &SafetyExpenseBasis,
+    member: Option<&str>,
+) -> MetricExplanation {
     let inputs = vec![
-        MetricInput { label: "Liquid cash".into(), amount_cents: Some(balances.liquid_cents), detail: None },
-        MetricInput { label: "Conservative monthly spending".into(), amount_cents: Some(safety.monthly_expense_cents), detail: None },
+        MetricInput {
+            label: "Liquid cash".into(),
+            amount_cents: Some(balances.liquid_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Conservative monthly spending".into(),
+            amount_cents: Some(safety.monthly_expense_cents),
+            detail: None,
+        },
     ];
     let period = "As of today, at your conservative monthly spending".to_string();
-    let definition = "How long your liquid cash would last with no new income, at your typical spending.".to_string();
+    let definition =
+        "How long your liquid cash would last with no new income, at your typical spending."
+            .to_string();
 
     if member.is_some() {
         return MetricExplanation {
@@ -483,7 +594,8 @@ fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member:
                 level: MetricWarningLevel::Withheld,
                 message: format!(
                     "Withheld until there's about {} days of history — currently {}.",
-                    metrics::SAFETY_BASIS_MIN_SPAN_DAYS, safety.data_span_days
+                    metrics::SAFETY_BASIS_MIN_SPAN_DAYS,
+                    safety.data_span_days
                 ),
             }],
         };
@@ -501,7 +613,10 @@ fn runway_days(balances: &BalanceBreakdown, safety: &SafetyExpenseBasis, member:
         period,
         warnings: vec![MetricWarning {
             level: MetricWarningLevel::Info,
-            message: format!("Based on {} complete month(s) of spending history.", safety.months_observed),
+            message: format!(
+                "Based on {} complete month(s) of spending history.",
+                safety.months_observed
+            ),
         }],
     }
 }
@@ -531,9 +646,21 @@ pub fn scenario_explanation(
     horizon_months: u32,
 ) -> MetricExplanation {
     let mut inputs = vec![
-        MetricInput { label: "Starting balance".into(), amount_cents: Some(baseline.balance_cents), detail: None },
-        MetricInput { label: "Baseline monthly income".into(), amount_cents: Some(baseline.avg_monthly_income_cents), detail: None },
-        MetricInput { label: "Baseline monthly spending".into(), amount_cents: Some(baseline.avg_monthly_expense_cents), detail: None },
+        MetricInput {
+            label: "Starting balance".into(),
+            amount_cents: Some(baseline.balance_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Baseline monthly income".into(),
+            amount_cents: Some(baseline.avg_monthly_income_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Baseline monthly spending".into(),
+            amount_cents: Some(baseline.avg_monthly_expense_cents),
+            detail: None,
+        },
     ];
     // The scenario's own levers — only those actually set, so the explanation
     // lists what THIS scenario changes, not every possible knob.
@@ -566,9 +693,18 @@ pub fn scenario_explanation(
         format!("in {} month(s)", params.start_month_offset)
     };
     let assumptions = vec![
-        MetricAssumption { label: "Projection horizon".into(), value: format!("{} months", horizon_months.max(1)) },
-        MetricAssumption { label: "Change starts".into(), value: starts },
-        MetricAssumption { label: "Basis".into(), value: "Your trailing 90-day averages, projected flat".into() },
+        MetricAssumption {
+            label: "Projection horizon".into(),
+            value: format!("{} months", horizon_months.max(1)),
+        },
+        MetricAssumption {
+            label: "Change starts".into(),
+            value: starts,
+        },
+        MetricAssumption {
+            label: "Basis".into(),
+            value: "Your trailing 90-day averages, projected flat".into(),
+        },
     ];
 
     let mut warnings = Vec::new();
@@ -649,7 +785,10 @@ mod tests {
         let out = explain_financial_metrics(&mut conn, None).unwrap();
         assert_eq!(out.len(), 7);
         assert_eq!(find(&out, "runway_days").value, MetricValue::Withheld);
-        assert_eq!(find(&out, "emergency_fund_months").value, MetricValue::Withheld);
+        assert_eq!(
+            find(&out, "emergency_fund_months").value,
+            MetricValue::Withheld
+        );
     }
 
     /// The fetch path must read the SAME shared-metrics functions the dashboard
@@ -668,11 +807,36 @@ mod tests {
 
         let out = explain_financial_metrics(&mut conn, None).unwrap();
         assert_eq!(out.len(), 7);
-        assert_eq!(find(&out, "net_worth").value, MetricValue::Money { cents: balances.net_worth_cents });
-        assert_eq!(find(&out, "avg_monthly_income").value, MetricValue::Money { cents: rolling.avg_monthly_income_cents });
-        assert_eq!(find(&out, "avg_monthly_expense").value, MetricValue::Money { cents: rolling.avg_monthly_expense_cents });
-        assert_eq!(find(&out, "monthly_surplus").value, MetricValue::Money { cents: rolling.net_monthly_cents });
-        assert_eq!(find(&out, "savings_rate").value, MetricValue::Percent { pct: rolling.savings_rate_pct });
+        assert_eq!(
+            find(&out, "net_worth").value,
+            MetricValue::Money {
+                cents: balances.net_worth_cents
+            }
+        );
+        assert_eq!(
+            find(&out, "avg_monthly_income").value,
+            MetricValue::Money {
+                cents: rolling.avg_monthly_income_cents
+            }
+        );
+        assert_eq!(
+            find(&out, "avg_monthly_expense").value,
+            MetricValue::Money {
+                cents: rolling.avg_monthly_expense_cents
+            }
+        );
+        assert_eq!(
+            find(&out, "monthly_surplus").value,
+            MetricValue::Money {
+                cents: rolling.net_monthly_cents
+            }
+        );
+        assert_eq!(
+            find(&out, "savings_rate").value,
+            MetricValue::Percent {
+                pct: rolling.savings_rate_pct
+            }
+        );
 
         // The safety metrics must match get_financial_metrics' EXACT rule
         // (household scope: withhold iff the basis is insufficient; otherwise the
@@ -684,7 +848,10 @@ mod tests {
         } else {
             (
                 MetricValue::Months {
-                    months: metrics::emergency_fund_months(balances.emergency_fund_cents, safety.monthly_expense_cents),
+                    months: metrics::emergency_fund_months(
+                        balances.emergency_fund_cents,
+                        safety.monthly_expense_cents,
+                    ),
                 },
                 MetricValue::Days {
                     days: metrics::runway_days(balances.liquid_cents, safety.monthly_expense_cents),
@@ -695,7 +862,12 @@ mod tests {
         assert_eq!(find(&out, "runway_days").value, expected_runway);
     }
 
-    fn full_history() -> (BalanceBreakdown, RollingAverages, SafetyExpenseBasis, Assumptions) {
+    fn full_history() -> (
+        BalanceBreakdown,
+        RollingAverages,
+        SafetyExpenseBasis,
+        Assumptions,
+    ) {
         let balances = BalanceBreakdown {
             liquid_cents: 800_000,
             invested_cents: 1_500_000,
@@ -725,7 +897,9 @@ mod tests {
     }
 
     fn find<'a>(v: &'a [MetricExplanation], key: &str) -> &'a MetricExplanation {
-        v.iter().find(|e| e.key == key).unwrap_or_else(|| panic!("missing metric {key}"))
+        v.iter()
+            .find(|e| e.key == key)
+            .unwrap_or_else(|| panic!("missing metric {key}"))
     }
 
     /// Every explained value must equal what the intermediates carry — the
@@ -734,18 +908,37 @@ mod tests {
     fn values_come_straight_from_the_intermediates() {
         let (b, r, s, a) = full_history();
         let out = assemble(&b, &r, &s, &a, None);
-        assert_eq!(find(&out, "net_worth").value, MetricValue::Money { cents: 2_000_000 });
-        assert_eq!(find(&out, "avg_monthly_income").value, MetricValue::Money { cents: 500_000 });
-        assert_eq!(find(&out, "avg_monthly_expense").value, MetricValue::Money { cents: 350_000 });
-        assert_eq!(find(&out, "monthly_surplus").value, MetricValue::Money { cents: 150_000 });
-        assert_eq!(find(&out, "savings_rate").value, MetricValue::Percent { pct: 30 });
+        assert_eq!(
+            find(&out, "net_worth").value,
+            MetricValue::Money { cents: 2_000_000 }
+        );
+        assert_eq!(
+            find(&out, "avg_monthly_income").value,
+            MetricValue::Money { cents: 500_000 }
+        );
+        assert_eq!(
+            find(&out, "avg_monthly_expense").value,
+            MetricValue::Money { cents: 350_000 }
+        );
+        assert_eq!(
+            find(&out, "monthly_surplus").value,
+            MetricValue::Money { cents: 150_000 }
+        );
+        assert_eq!(
+            find(&out, "savings_rate").value,
+            MetricValue::Percent { pct: 30 }
+        );
         assert_eq!(
             find(&out, "emergency_fund_months").value,
-            MetricValue::Months { months: metrics::emergency_fund_months(600_000, 380_000) }
+            MetricValue::Months {
+                months: metrics::emergency_fund_months(600_000, 380_000)
+            }
         );
         assert_eq!(
             find(&out, "runway_days").value,
-            MetricValue::Days { days: metrics::runway_days(800_000, 380_000) }
+            MetricValue::Days {
+                days: metrics::runway_days(800_000, 380_000)
+            }
         );
     }
 
@@ -758,7 +951,10 @@ mod tests {
         let out = assemble(&b, &r, &s, &a, None);
         let nw = find(&out, "net_worth");
         let sum: i64 = nw.inputs.iter().filter_map(|i| i.amount_cents).sum();
-        assert_eq!(sum, 2_250_000, "inputs must reconcile to the displayed net worth");
+        assert_eq!(
+            sum, 2_250_000,
+            "inputs must reconcile to the displayed net worth"
+        );
         assert!(nw.inputs.iter().any(|i| i.label.contains("Manual assets")));
     }
 
@@ -767,16 +963,38 @@ mod tests {
     #[test]
     fn fresh_user_withholds_safety_and_warns() {
         let balances = BalanceBreakdown::default();
-        let rolling = RollingAverages { window_days: 90, months: 1, data_span_days: 0, ..Default::default() };
-        let safety = SafetyExpenseBasis { monthly_expense_cents: 0, sufficient: false, months_observed: 0, data_span_days: 0 };
+        let rolling = RollingAverages {
+            window_days: 90,
+            months: 1,
+            data_span_days: 0,
+            ..Default::default()
+        };
+        let safety = SafetyExpenseBasis {
+            monthly_expense_cents: 0,
+            sufficient: false,
+            months_observed: 0,
+            data_span_days: 0,
+        };
         let out = assemble(&balances, &rolling, &safety, &Assumptions::default(), None);
 
-        assert_eq!(find(&out, "emergency_fund_months").value, MetricValue::Withheld);
+        assert_eq!(
+            find(&out, "emergency_fund_months").value,
+            MetricValue::Withheld
+        );
         assert_eq!(find(&out, "runway_days").value, MetricValue::Withheld);
-        assert!(find(&out, "emergency_fund_months").warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(find(&out, "emergency_fund_months")
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Withheld));
         // Descriptive figures are honest zeros, flagged as no-data, not silent.
-        assert_eq!(find(&out, "avg_monthly_income").value, MetricValue::Money { cents: 0 });
-        assert!(find(&out, "avg_monthly_income").warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+        assert_eq!(
+            find(&out, "avg_monthly_income").value,
+            MetricValue::Money { cents: 0 }
+        );
+        assert!(find(&out, "avg_monthly_income")
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Caution));
     }
 
     /// (b) Unknown-balance accounts must be disclosed as an exclusion on every
@@ -787,8 +1005,14 @@ mod tests {
         b.accounts_with_unknown_balance = 2;
         let out = assemble(&b, &r, &s, &a, None);
         let nw = find(&out, "net_worth");
-        assert!(nw.exclusions.iter().any(|e| e.contains("2 accounts") && e.contains("confirmed balance")));
-        assert!(nw.warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+        assert!(nw
+            .exclusions
+            .iter()
+            .any(|e| e.contains("2 accounts") && e.contains("confirmed balance")));
+        assert!(nw
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Caution));
     }
 
     /// (c) Money in other currencies must be disclosed, never converted or hidden.
@@ -796,14 +1020,28 @@ mod tests {
     fn mixed_currency_is_disclosed() {
         let (mut b, r, s, a) = full_history();
         b.unconverted = vec![
-            CurrencyHolding { code: "EUR".into(), account_count: 1, balance_cents: 120_000 },
-            CurrencyHolding { code: "GBP".into(), account_count: 1, balance_cents: 90_000 },
+            CurrencyHolding {
+                code: "EUR".into(),
+                account_count: 1,
+                balance_cents: 120_000,
+            },
+            CurrencyHolding {
+                code: "GBP".into(),
+                account_count: 1,
+                balance_cents: 90_000,
+            },
         ];
         let out = assemble(&b, &r, &s, &a, None);
         let nw = find(&out, "net_worth");
-        assert!(nw.warnings.iter().any(|w| w.message.contains("EUR") && w.message.contains("GBP")));
+        assert!(nw
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("EUR") && w.message.contains("GBP")));
         // Cashflow figures scope to the primary currency and say so.
-        assert!(find(&out, "avg_monthly_expense").exclusions.iter().any(|e| e.contains("other currencies")));
+        assert!(find(&out, "avg_monthly_expense")
+            .exclusions
+            .iter()
+            .any(|e| e.contains("other currencies")));
     }
 
     /// (d) A full clean single-currency history produces stated figures with no
@@ -814,10 +1052,20 @@ mod tests {
         let out = assemble(&b, &r, &s, &a, None);
         for e in &out {
             assert!(
-                !e.warnings.iter().any(|w| matches!(w.level, MetricWarningLevel::Withheld | MetricWarningLevel::Caution)),
-                "metric {} raised an unexpected warning: {:?}", e.key, e.warnings
+                !e.warnings.iter().any(|w| matches!(
+                    w.level,
+                    MetricWarningLevel::Withheld | MetricWarningLevel::Caution
+                )),
+                "metric {} raised an unexpected warning: {:?}",
+                e.key,
+                e.warnings
             );
-            assert_ne!(e.value, MetricValue::Withheld, "metric {} should have a value", e.key);
+            assert_ne!(
+                e.value,
+                MetricValue::Withheld,
+                "metric {} should have a value",
+                e.key
+            );
         }
     }
 
@@ -827,10 +1075,19 @@ mod tests {
     fn member_scope_withholds_only_safety_metrics() {
         let (b, r, s, a) = full_history();
         let out = assemble(&b, &r, &s, &a, Some("member-1"));
-        assert_eq!(find(&out, "emergency_fund_months").value, MetricValue::Withheld);
+        assert_eq!(
+            find(&out, "emergency_fund_months").value,
+            MetricValue::Withheld
+        );
         assert_eq!(find(&out, "runway_days").value, MetricValue::Withheld);
-        assert_eq!(find(&out, "savings_rate").value, MetricValue::Percent { pct: 30 });
-        assert_eq!(find(&out, "net_worth").value, MetricValue::Money { cents: 2_000_000 });
+        assert_eq!(
+            find(&out, "savings_rate").value,
+            MetricValue::Percent { pct: 30 }
+        );
+        assert_eq!(
+            find(&out, "net_worth").value,
+            MetricValue::Money { cents: 2_000_000 }
+        );
     }
 
     // ── Scenario explanation (issue #71) ────────────────────────────────────
@@ -864,17 +1121,34 @@ mod tests {
         let proj = crate::forecast::project(&snap, &params, 12);
         let ex = scenario_explanation("Adopt a dog", &params, &snap, &proj, false, 12);
 
-        assert_eq!(ex.value, MetricValue::Money { cents: proj.monthly_impact_cents });
-        assert!(ex.inputs.iter().any(|i| i.label == "Starting balance" && i.amount_cents == Some(2_000_000)));
-        assert!(ex.inputs.iter().any(|i| i.label == "Monthly spending change"));
+        assert_eq!(
+            ex.value,
+            MetricValue::Money {
+                cents: proj.monthly_impact_cents
+            }
+        );
+        assert!(ex
+            .inputs
+            .iter()
+            .any(|i| i.label == "Starting balance" && i.amount_cents == Some(2_000_000)));
+        assert!(ex
+            .inputs
+            .iter()
+            .any(|i| i.label == "Monthly spending change"));
         assert!(ex.inputs.iter().any(|i| i.label == "One-time amount"));
         // A lever this scenario leaves untouched is not listed.
         assert!(!ex.inputs.iter().any(|i| i.label == "Income change"));
         // Consistency: the tradeoffs ARE the engine's considerations.
         assert_eq!(ex.tradeoffs, proj.considerations);
-        assert!(ex.assumptions.iter().any(|a| a.label == "Projection horizon"));
+        assert!(ex
+            .assumptions
+            .iter()
+            .any(|a| a.label == "Projection horizon"));
         // A clean, non-stale, positive scenario raises no caution.
-        assert!(!ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+        assert!(!ex
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Caution));
     }
 
     /// Staleness and a balance-goes-negative verdict each surface as a caution,
@@ -883,12 +1157,25 @@ mod tests {
     fn scenario_explanation_flags_stale_and_negative_verdict() {
         let mut snap = scen_snap();
         snap.balance_cents = 100_000; // a one-time far larger than the balance
-        let params = crate::forecast::ScenarioParams { one_time_cents: 3_500_000, ..Default::default() };
+        let params = crate::forecast::ScenarioParams {
+            one_time_cents: 3_500_000,
+            ..Default::default()
+        };
         let proj = crate::forecast::project(&snap, &params, 12);
-        assert!(!proj.verdict, "this scenario should drive the balance negative");
+        assert!(
+            !proj.verdict,
+            "this scenario should drive the balance negative"
+        );
         let ex = scenario_explanation("Buy a car", &params, &snap, &proj, true, 12);
-        let cautions = ex.warnings.iter().filter(|w| w.level == MetricWarningLevel::Caution).count();
-        assert!(cautions >= 2, "expected stale + negative-verdict cautions, got {cautions}");
+        let cautions = ex
+            .warnings
+            .iter()
+            .filter(|w| w.level == MetricWarningLevel::Caution)
+            .count();
+        assert!(
+            cautions >= 2,
+            "expected stale + negative-verdict cautions, got {cautions}"
+        );
     }
 
     /// A legacy row (no saved assumptions) withholds its value and says why,
@@ -897,7 +1184,10 @@ mod tests {
     fn legacy_scenario_is_withheld_with_reason() {
         let ex = legacy_scenario_explanation("Old scenario");
         assert_eq!(ex.value, MetricValue::Withheld);
-        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(ex
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Withheld));
         assert!(ex.tradeoffs.is_empty() && ex.inputs.is_empty());
     }
 }

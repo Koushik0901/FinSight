@@ -47,7 +47,10 @@ pub struct Prototype {
 pub fn build_prototypes(reference: &[LabeledExample], vectors: &[Vec<f32>]) -> Vec<Prototype> {
     let mut by_category: BTreeMap<&str, Vec<Vec<f32>>> = BTreeMap::new();
     for (ex, v) in reference.iter().zip(vectors.iter()) {
-        by_category.entry(ex.category.as_str()).or_default().push(v.clone());
+        by_category
+            .entry(ex.category.as_str())
+            .or_default()
+            .push(v.clone());
     }
     by_category
         .into_iter()
@@ -81,9 +84,7 @@ pub fn predict_centroid(query: &[f32], prototypes: &[Prototype], min_score: f32)
         }
     }
     match best {
-        Some((category, score)) if score >= min_score => {
-            Prediction::of(category, f64::from(score))
-        }
+        Some((category, score)) if score >= min_score => Prediction::of(category, f64::from(score)),
         _ => Prediction::abstain(),
     }
 }
@@ -125,8 +126,16 @@ mod tests {
     #[test]
     fn picks_the_nearest_prototype() {
         let protos = vec![
-            Prototype { category: "groceries".into(), vector: vec![1.0, 0.0], example_count: 1 },
-            Prototype { category: "dining".into(), vector: vec![0.0, 1.0], example_count: 1 },
+            Prototype {
+                category: "groceries".into(),
+                vector: vec![1.0, 0.0],
+                example_count: 1,
+            },
+            Prototype {
+                category: "dining".into(),
+                vector: vec![0.0, 1.0],
+                example_count: 1,
+            },
         ];
         let p = predict_centroid(&[0.95, 0.31], &protos, 0.0);
         assert_eq!(p.category.as_deref(), Some("groceries"));

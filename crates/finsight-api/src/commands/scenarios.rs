@@ -222,11 +222,27 @@ label is a short title for the scenario.";
     }
 
     Ok(ScenarioParams {
-        income_delta_pct: v.get("income_delta_pct").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
-        monthly_expense_delta_cents: v.get("monthly_expense_delta_cents").and_then(|x| x.as_i64()).unwrap_or(0),
-        one_time_cents: v.get("one_time_cents").and_then(|x| x.as_i64()).unwrap_or(0),
-        start_month_offset: v.get("start_month_offset").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
-        label: v.get("label").and_then(|x| x.as_str()).unwrap_or(description).to_string(),
+        income_delta_pct: v
+            .get("income_delta_pct")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0) as i32,
+        monthly_expense_delta_cents: v
+            .get("monthly_expense_delta_cents")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        one_time_cents: v
+            .get("one_time_cents")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        start_month_offset: v
+            .get("start_month_offset")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as u32,
+        label: v
+            .get("label")
+            .and_then(|x| x.as_str())
+            .unwrap_or(description)
+            .to_string(),
     })
 }
 
@@ -262,13 +278,23 @@ pub async fn save_scenario(
     let core_params = to_core_params(&params);
     let result = projection_to_result(forecast::project(&baseline, &core_params, months));
 
-    let result_json = serde_json::to_string(&result).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
-    let params_json = serde_json::to_string(&params).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
-    let baseline_json = serde_json::to_string(&baseline).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let result_json = serde_json::to_string(&result)
+        .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let params_json = serde_json::to_string(&params)
+        .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let baseline_json = serde_json::to_string(&baseline)
+        .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
 
     let db = (*state.db).clone();
     let row = run(&db, move |conn| {
-        scenarios_repo::insert(conn, &description, &result_json, Some(&params_json), Some(&baseline_json), Some(months as i64))
+        scenarios_repo::insert(
+            conn,
+            &description,
+            &result_json,
+            Some(&params_json),
+            Some(&baseline_json),
+            Some(months as i64),
+        )
     })
     .await
     .map_err(AppError::from)?;
@@ -287,8 +313,8 @@ pub async fn revise_scenario(
     params: ScenarioParamsInput,
 ) -> AppResult<SavedScenarioDetail> {
     let current = build_snapshot(state).await?;
-    let revised_json =
-        serde_json::to_string(&params).map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
+    let revised_json = serde_json::to_string(&params)
+        .map_err(|e| AppError::new("scenario.serialize", e.to_string()))?;
     let db = (*state.db).clone();
 
     let id_load = id.clone();
@@ -317,7 +343,10 @@ pub async fn revise_scenario(
 }
 
 /// Discard a scenario's revision, reverting to the original assumptions only.
-pub async fn clear_scenario_revision(state: &ApiState, id: String) -> AppResult<SavedScenarioDetail> {
+pub async fn clear_scenario_revision(
+    state: &ApiState,
+    id: String,
+) -> AppResult<SavedScenarioDetail> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
     let id2 = id.clone();
@@ -335,23 +364,33 @@ pub async fn clear_scenario_revision(state: &ApiState, id: String) -> AppResult<
 /// flag staleness. Pure and infallible — malformed legacy JSON degrades to a
 /// non-recomputable row rather than failing the whole list.
 fn detail_from_row(row: scenarios_repo::ScenarioRow, current: &Snapshot) -> SavedScenarioDetail {
-    let original_result: ScenarioResult = serde_json::from_str(&row.result_json).unwrap_or(ScenarioResult {
-        verdict: false,
-        runway_change_days: 0,
-        monthly_impact_cents: 0,
-        considerations: vec!["This saved result could not be read.".to_string()],
-        baseline_monthly: Vec::new(),
-        scenario_monthly: Vec::new(),
-        goals_affected: Vec::new(),
-    });
-    let params: Option<ScenarioParamsInput> = row.params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
-    let baseline: Option<Snapshot> = row.baseline_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let original_result: ScenarioResult =
+        serde_json::from_str(&row.result_json).unwrap_or(ScenarioResult {
+            verdict: false,
+            runway_change_days: 0,
+            monthly_impact_cents: 0,
+            considerations: vec!["This saved result could not be read.".to_string()],
+            baseline_monthly: Vec::new(),
+            scenario_monthly: Vec::new(),
+            goals_affected: Vec::new(),
+        });
+    let params: Option<ScenarioParamsInput> = row
+        .params_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    let baseline: Option<Snapshot> = row
+        .baseline_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
     let months = row.months.unwrap_or(12).clamp(1, 120) as u32;
 
     let (current_result, is_stale) = match (&params, &baseline) {
         (Some(p), Some(b)) => {
             let cur = projection_to_result(forecast::project(current, &to_core_params(p), months));
-            (Some(cur), Some(forecast::baseline_materially_changed(b, current)))
+            (
+                Some(cur),
+                Some(forecast::baseline_materially_changed(b, current)),
+            )
         }
         _ => (None, None),
     };
@@ -359,10 +398,16 @@ fn detail_from_row(row: scenarios_repo::ScenarioRow, current: &Snapshot) -> Save
     // A revision (issue #73): the revised params run against the SAME current
     // baseline, so `current_result` vs `revised_result` isolates the assumption
     // edit. Only meaningful when the row is recomputable.
-    let revised_params: Option<ScenarioParamsInput> =
-        row.revised_params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let revised_params: Option<ScenarioParamsInput> = row
+        .revised_params_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
     let revised_result = match (&revised_params, current_result.is_some()) {
-        (Some(rp), true) => Some(projection_to_result(forecast::project(current, &to_core_params(rp), months))),
+        (Some(rp), true) => Some(projection_to_result(forecast::project(
+            current,
+            &to_core_params(rp),
+            months,
+        ))),
         _ => None,
     };
 
@@ -387,8 +432,13 @@ fn detail_from_row(row: scenarios_repo::ScenarioRow, current: &Snapshot) -> Save
 pub async fn list_saved_scenarios(state: &ApiState) -> AppResult<Vec<SavedScenarioDetail>> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
-    let rows = run(&db, scenarios_repo::list).await.map_err(AppError::from)?;
-    Ok(rows.into_iter().map(|row| detail_from_row(row, &current)).collect())
+    let rows = run(&db, scenarios_repo::list)
+        .await
+        .map_err(AppError::from)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| detail_from_row(row, &current))
+        .collect())
 }
 
 /// Structured "explain this scenario" — the same recomputed projection the
@@ -408,10 +458,14 @@ pub async fn explain_scenario(
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
 
-    let params: Option<ScenarioParamsInput> =
-        row.params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
-    let saved_baseline: Option<Snapshot> =
-        row.baseline_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let params: Option<ScenarioParamsInput> = row
+        .params_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    let saved_baseline: Option<Snapshot> = row
+        .baseline_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
     let months = row.months.unwrap_or(12).clamp(1, 120) as u32;
 
     // Recompute only when BOTH params and the saved baseline exist — exactly the
@@ -431,22 +485,31 @@ pub async fn explain_scenario(
                 months,
             ))
         }
-        _ => Ok(finsight_core::provenance::legacy_scenario_explanation(&row.description)),
+        _ => Ok(finsight_core::provenance::legacy_scenario_explanation(
+            &row.description,
+        )),
     }
 }
 
-pub async fn duplicate_scenario(state: &ApiState, id: String) -> AppResult<Option<SavedScenarioDetail>> {
+pub async fn duplicate_scenario(
+    state: &ApiState,
+    id: String,
+) -> AppResult<Option<SavedScenarioDetail>> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
-    let row = run(&db, move |conn| scenarios_repo::duplicate(conn, &id)).await.map_err(AppError::from)?;
+    let row = run(&db, move |conn| scenarios_repo::duplicate(conn, &id))
+        .await
+        .map_err(AppError::from)?;
     Ok(row.map(|r| detail_from_row(r, &current)))
 }
 
 pub async fn archive_scenario(state: &ApiState, id: String, archived: bool) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| scenarios_repo::set_archived(conn, &id, archived))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        scenarios_repo::set_archived(conn, &id, archived)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 /// Promote a scenario into a REVIEWABLE set of proposed plan changes. This
@@ -472,15 +535,16 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
             )
         })?;
 
-    let original_result: ScenarioResult = serde_json::from_str(&row.result_json).unwrap_or(ScenarioResult {
-        verdict: false,
-        runway_change_days: 0,
-        monthly_impact_cents: 0,
-        considerations: Vec::new(),
-        baseline_monthly: Vec::new(),
-        scenario_monthly: Vec::new(),
-        goals_affected: Vec::new(),
-    });
+    let original_result: ScenarioResult =
+        serde_json::from_str(&row.result_json).unwrap_or(ScenarioResult {
+            verdict: false,
+            runway_change_days: 0,
+            monthly_impact_cents: 0,
+            considerations: Vec::new(),
+            baseline_monthly: Vec::new(),
+            scenario_monthly: Vec::new(),
+            goals_affected: Vec::new(),
+        });
 
     let mut changes = Vec::new();
 
@@ -495,16 +559,27 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
         } else {
             (
                 "Commit more each month".to_string(),
-                format!("Set aside or spend about {} more each month, matching this scenario.", fmt_money(params.monthly_expense_delta_cents)),
+                format!(
+                    "Set aside or spend about {} more each month, matching this scenario.",
+                    fmt_money(params.monthly_expense_delta_cents)
+                ),
             )
         };
         // Aggregate spending delta — no single budget to write it to.
-        changes.push(PlanChange { id: "expense".into(), title, detail, current_cents: Some(cur), proposed_cents: Some(proposed), applyable: false });
+        changes.push(PlanChange {
+            id: "expense".into(),
+            title,
+            detail,
+            current_cents: Some(cur),
+            proposed_cents: Some(proposed),
+            applyable: false,
+        });
     }
 
     if params.income_delta_pct != 0 {
         let cur = current.avg_monthly_income_cents;
-        let proposed = ((cur as f64) * (1.0 + params.income_delta_pct as f64 / 100.0)).round() as i64;
+        let proposed =
+            ((cur as f64) * (1.0 + params.income_delta_pct as f64 / 100.0)).round() as i64;
         changes.push(PlanChange {
             id: "income".into(),
             title: "Plan around an income change".to_string(),
@@ -523,7 +598,11 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
             detail: format!(
                 "Plan for a one-off of about {}{}. Applying adds it as a planned transaction.",
                 fmt_money(params.one_time_cents),
-                if params.start_month_offset > 0 { format!(" in ~{} month(s)", params.start_month_offset) } else { String::new() }
+                if params.start_month_offset > 0 {
+                    format!(" in ~{} month(s)", params.start_month_offset)
+                } else {
+                    String::new()
+                }
             ),
             current_cents: None,
             proposed_cents: Some(params.one_time_cents),
@@ -546,7 +625,8 @@ pub async fn promote_scenario(state: &ApiState, id: String) -> AppResult<Scenari
         changes.push(PlanChange {
             id: "none".into(),
             title: "No changes to your plan".to_string(),
-            detail: "This scenario doesn't imply any change to your monthly commitments.".to_string(),
+            detail: "This scenario doesn't imply any change to your monthly commitments."
+                .to_string(),
             current_cents: None,
             proposed_cents: None,
             applyable: false,
@@ -604,7 +684,10 @@ pub async fn apply_scenario(
         .await
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::new("scenario.not_found", "That scenario no longer exists."))?;
-    let params: Option<ScenarioParamsInput> = row.params_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+    let params: Option<ScenarioParamsInput> = row
+        .params_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
 
     let mut applied = Vec::new();
     let mut skipped = Vec::new();
@@ -614,43 +697,66 @@ pub async fn apply_scenario(
             continue; // not approved → left as a recommendation, silently
         }
         if !change.applyable {
-            skipped.push(SkippedChange { id: change.id.clone(), reason: "This change is a recommendation only — apply it yourself on the linked screen.".into() });
+            skipped.push(SkippedChange {
+                id: change.id.clone(),
+                reason:
+                    "This change is a recommendation only — apply it yourself on the linked screen."
+                        .into(),
+            });
             continue;
         }
         if change.id == "one_time" {
             let Some(p) = &params else {
-                skipped.push(SkippedChange { id: change.id.clone(), reason: "The scenario's assumptions could not be read.".into() });
+                skipped.push(SkippedChange {
+                    id: change.id.clone(),
+                    reason: "The scenario's assumptions could not be read.".into(),
+                });
                 continue;
             };
             let source = format!("scenario:{id}");
             // Idempotency: if this scenario's planned transaction already exists, skip.
             let src_check = source.clone();
             let already = run(&db, move |conn| {
-                finsight_core::repos::planned_transactions::list(conn, finsight_core::models::PlannedTxnFilter::default())
-                    .map(|txns| txns.into_iter().any(|t| t.source == src_check))
+                finsight_core::repos::planned_transactions::list(
+                    conn,
+                    finsight_core::models::PlannedTxnFilter::default(),
+                )
+                .map(|txns| txns.into_iter().any(|t| t.source == src_check))
             })
             .await
             .map_err(AppError::from)?;
             if already {
-                skipped.push(SkippedChange { id: change.id.clone(), reason: "Already applied — its planned transaction exists.".into() });
+                skipped.push(SkippedChange {
+                    id: change.id.clone(),
+                    reason: "Already applied — its planned transaction exists.".into(),
+                });
                 continue;
             }
             // A one-off is an outflow; date it by the scenario's start offset.
             let due = month_offset_date(chrono::Utc::now().date_naive(), p.start_month_offset);
             let new_txn = finsight_core::models::NewPlannedTransaction {
-                description: if p.label.is_empty() { proposal.description.clone() } else { p.label.clone() },
+                description: if p.label.is_empty() {
+                    proposal.description.clone()
+                } else {
+                    p.label.clone()
+                },
                 amount_cents: -p.one_time_cents.abs(),
                 account_id: None,
                 category_id: None,
                 due_date: due,
                 source,
             };
-            run(&db, move |conn| finsight_core::repos::planned_transactions::insert(conn, new_txn))
-                .await
-                .map_err(AppError::from)?;
+            run(&db, move |conn| {
+                finsight_core::repos::planned_transactions::insert(conn, new_txn)
+            })
+            .await
+            .map_err(AppError::from)?;
             applied.push(change.id.clone());
         } else {
-            skipped.push(SkippedChange { id: change.id.clone(), reason: "This change can't be applied automatically.".into() });
+            skipped.push(SkippedChange {
+                id: change.id.clone(),
+                reason: "This change can't be applied automatically.".into(),
+            });
         }
     }
 
@@ -659,10 +765,17 @@ pub async fn apply_scenario(
     } else if applied.is_empty() {
         "Nothing was written to your plan. The changes you approved are recommendations to act on yourself.".to_string()
     } else {
-        format!("Applied {} change(s) to your plan as planned transactions. The scenario is unchanged.", applied.len())
+        format!(
+            "Applied {} change(s) to your plan as planned transactions. The scenario is unchanged.",
+            applied.len()
+        )
     };
 
-    Ok(ApplyScenarioResult { applied, skipped, note })
+    Ok(ApplyScenarioResult {
+        applied,
+        skipped,
+        note,
+    })
 }
 
 /// Add whole months to a date, clamping the day to the target month's length.
@@ -724,7 +837,8 @@ mod tests {
         baseline: &Snapshot,
         revised: Option<&ScenarioParamsInput>,
     ) -> scenarios_repo::ScenarioRow {
-        let orig_result = projection_to_result(forecast::project(baseline, &to_core_params(original), 24));
+        let orig_result =
+            projection_to_result(forecast::project(baseline, &to_core_params(original), 24));
         scenarios_repo::ScenarioRow {
             id: "s".into(),
             description: "d".into(),
@@ -745,12 +859,17 @@ mod tests {
         // Revised: income cut 50% — a materially different outcome.
         let revised = params(-50, 0);
         let row = row_with(&original, &baseline, Some(&revised));
-        let orig_impact = projection_to_result(forecast::project(&baseline, &to_core_params(&original), 24)).monthly_impact_cents;
+        let orig_impact =
+            projection_to_result(forecast::project(&baseline, &to_core_params(&original), 24))
+                .monthly_impact_cents;
 
         // Recompute against the SAME baseline so any difference is the assumption edit alone.
         let detail = detail_from_row(row, &baseline);
 
-        assert_eq!(detail.original_result.monthly_impact_cents, orig_impact, "original preserved");
+        assert_eq!(
+            detail.original_result.monthly_impact_cents, orig_impact,
+            "original preserved"
+        );
         assert!(detail.revised_params.is_some());
         let current = detail.current_result.as_ref().expect("recomputable");
         let revised_res = detail.revised_result.as_ref().expect("revision recomputed");
@@ -778,7 +897,10 @@ mod tests {
         row.params_json = None;
         let detail = detail_from_row(row, &baseline);
         assert!(detail.current_result.is_none());
-        assert!(detail.revised_result.is_none(), "not recomputable → no revised result");
+        assert!(
+            detail.revised_result.is_none(),
+            "not recomputable → no revised result"
+        );
     }
 
     #[test]
@@ -789,10 +911,19 @@ mod tests {
         // Jan 31 + 1 month → Feb 28 (2026 is not a leap year) — day clamped.
         assert_eq!(month_offset_date(jan31, 1), "2026-02-28");
         // Leap year clamps to 29.
-        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2028, 1, 31).unwrap(), 1), "2028-02-29");
+        assert_eq!(
+            month_offset_date(NaiveDate::from_ymd_opt(2028, 1, 31).unwrap(), 1),
+            "2028-02-29"
+        );
         // Crossing the year boundary.
-        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2026, 12, 15).unwrap(), 2), "2027-02-15");
+        assert_eq!(
+            month_offset_date(NaiveDate::from_ymd_opt(2026, 12, 15).unwrap(), 2),
+            "2027-02-15"
+        );
         // A full year forward.
-        assert_eq!(month_offset_date(NaiveDate::from_ymd_opt(2026, 6, 10).unwrap(), 12), "2027-06-10");
+        assert_eq!(
+            month_offset_date(NaiveDate::from_ymd_opt(2026, 6, 10).unwrap(), 12),
+            "2027-06-10"
+        );
     }
 }

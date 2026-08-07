@@ -115,12 +115,15 @@ fn take_per_category(
 #[tokio::main]
 async fn main() -> Result<()> {
     let corpus_path = std::env::args().nth(1).unwrap_or_else(|| {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../eval/categorization_corpus.synthetic_multi_archetype.jsonl")
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../eval/categorization_corpus.synthetic_multi_archetype.jsonl"
+        )
+        .to_string()
     });
 
-    let loaded = load_corpus_jsonl(&corpus_path)
-        .with_context(|| format!("loading corpus {corpus_path}"))?;
+    let loaded =
+        load_corpus_jsonl(&corpus_path).with_context(|| format!("loading corpus {corpus_path}"))?;
     let stats = corpus_stats(&loaded.examples);
 
     let (reference, holdout) =
@@ -141,7 +144,11 @@ async fn main() -> Result<()> {
         stats.unique_merchants,
         stats.category_distribution.len()
     );
-    println!("split:       {} reference / {} holdout (seed {SPLIT_SEED})", reference.len(), holdout.len());
+    println!(
+        "split:       {} reference / {} holdout (seed {SPLIT_SEED})",
+        reference.len(),
+        holdout.len()
+    );
 
     // --- embed -------------------------------------------------------------
     let data_dir = std::env::var("FINSIGHT_DATA_DIR").unwrap_or_else(|_| "./data".into());
@@ -149,24 +156,32 @@ async fn main() -> Result<()> {
     let encoder = finsight_agent::embedding::get_encoder(std::path::Path::new(&data_dir))
         .await
         .context("loading the sentence encoder")?;
-    println!("encoder:     {} ({} dims)", encoder.model_id(), encoder.dims());
+    println!(
+        "encoder:     {} ({} dims)",
+        encoder.model_id(),
+        encoder.dims()
+    );
 
-    let reference_texts: Vec<String> =
-        reference.iter().map(|e| e.merchant_text.clone()).collect();
+    let reference_texts: Vec<String> = reference.iter().map(|e| e.merchant_text.clone()).collect();
     let holdout_texts: Vec<String> = holdout.iter().map(|e| e.merchant_text.clone()).collect();
 
     let reference_vectors = encoder.embed(&reference_texts).await?;
     let holdout_vectors = encoder.embed(&holdout_texts).await?;
 
     let prototypes: Vec<Prototype> = build_prototypes(&reference, &reference_vectors);
-    println!("prototypes:  {} categories with a usable centroid", prototypes.len());
+    println!(
+        "prototypes:  {} categories with a usable centroid",
+        prototypes.len()
+    );
 
     // Second prototype set: the same reference half PLUS a handful of generic
     // domain exemplars, standing in for what #91's per-category examples give a
     // user. See DOMAIN_EXEMPLARS for why this is a mechanism demonstration and
     // not an unbiased improvement estimate.
-    let exemplar_texts: Vec<String> =
-        DOMAIN_EXEMPLARS.iter().map(|(_, text)| (*text).to_string()).collect();
+    let exemplar_texts: Vec<String> = DOMAIN_EXEMPLARS
+        .iter()
+        .map(|(_, text)| (*text).to_string())
+        .collect();
     let exemplar_vectors = encoder.embed(&exemplar_texts).await?;
     let mut seeded: Vec<_> = reference.clone();
     let mut seeded_vectors = reference_vectors.clone();
@@ -246,19 +261,23 @@ async fn main() -> Result<()> {
     });
 
     println!("\nmerchant-disjoint holdout ({} rows)", holdout.len());
-    println!("{:<12} {:>10} {:>10} {:>10}", "source", "coverage", "precision", "correct");
+    println!(
+        "{:<12} {:>10} {:>10} {:>10}",
+        "source", "coverage", "precision", "correct"
+    );
     let few_shot_matrix = ConfusionMatrix::build("few5", &holdout, |ex| {
         match vector_by_id.get(ex.id.as_str()) {
             Some(v) => predict_centroid(v, &few_shot_prototypes, MIN_SCORE),
             None => Prediction::abstain(),
         }
     });
-    let few_shot_seeded_matrix = ConfusionMatrix::build("few5+ex", &holdout, |ex| {
-        match vector_by_id.get(ex.id.as_str()) {
-            Some(v) => predict_centroid(v, &few_shot_seeded_prototypes, MIN_SCORE),
-            None => Prediction::abstain(),
-        }
-    });
+    let few_shot_seeded_matrix =
+        ConfusionMatrix::build("few5+ex", &holdout, |ex| {
+            match vector_by_id.get(ex.id.as_str()) {
+                Some(v) => predict_centroid(v, &few_shot_seeded_prototypes, MIN_SCORE),
+                None => Prediction::abstain(),
+            }
+        });
 
     for m in [
         &builtin_matrix,
@@ -302,15 +321,22 @@ async fn main() -> Result<()> {
         },
         &[0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
     );
-    println!("
-centroid precision by score threshold (holdout)");
-    println!("{:>10} {:>10} {:>11} {:>10}", "threshold", "coverage", "precision", "n");
+    println!(
+        "
+centroid precision by score threshold (holdout)"
+    );
+    println!(
+        "{:>10} {:>10} {:>11} {:>10}",
+        "threshold", "coverage", "precision", "n"
+    );
     for p in &sweep {
         println!(
             "{:>10.2} {:>9.1}% {:>11} {:>10}",
             p.threshold,
             p.coverage * 100.0,
-            p.precision.map(|v| format!("{:.1}%", v * 100.0)).unwrap_or_else(|| "n/a".into()),
+            p.precision
+                .map(|v| format!("{:.1}%", v * 100.0))
+                .unwrap_or_else(|| "n/a".into()),
             p.n_predicted,
         );
     }
@@ -326,7 +352,9 @@ centroid precision by score threshold (holdout)");
     let mut abstains: Vec<(&str, String, f32)> = Vec::new();
 
     for ex in &holdout {
-        let Some(v) = vector_by_id.get(ex.id.as_str()) else { continue };
+        let Some(v) = vector_by_id.get(ex.id.as_str()) else {
+            continue;
+        };
         let pred = predict_centroid(v, &prototypes, MIN_SCORE);
         match pred.category {
             Some(got) if got != ex.category => {
@@ -351,7 +379,10 @@ centroid precision by score threshold (holdout)");
     }
 
     let n_wrong: usize = confusions.values().map(Vec::len).sum();
-    println!("\nerror analysis — {n_wrong} misclassified, {} abstained", abstains.len());
+    println!(
+        "\nerror analysis — {n_wrong} misclassified, {} abstained",
+        abstains.len()
+    );
     if !confusions.is_empty() {
         println!("\n  actual -> predicted (count)  examples");
         for ((actual, predicted), texts) in
@@ -366,7 +397,12 @@ centroid precision by score threshold (holdout)");
             println!(
                 "  {actual} -> {predicted} ({})  e.g. {}",
                 texts.len(),
-                texts.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")
+                texts
+                    .iter()
+                    .take(3)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             );
         }
     }

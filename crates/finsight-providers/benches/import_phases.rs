@@ -5,15 +5,15 @@
 //!   1. read_decode      — file read + layered decode (BOM sniff/UTF-8/1252)
 //!   2. parse_only       — parse every data row into a ParsedRow (pure, no I/O)
 //!   3. prepare_amex     — read + decode + parse + reconcile via the public,
-//!                         read-only `CsvProvider::prepare()`, NO writes, over
-//!                         a freshly seeded (empty-ledger) account per
-//!                         iteration. This is the work the anticipatory
-//!                         pipeline moves OFF the Import click. The gap
-//!                         between this and import_amex_full is insert/commit
-//!                         cost.
+//!      read-only `CsvProvider::prepare()`, NO writes, over
+//!      a freshly seeded (empty-ledger) account per
+//!      iteration. This is the work the anticipatory
+//!      pipeline moves OFF the Import click. The gap
+//!      between this and import_amex_full is insert/commit
+//!      cost.
 //!   4. import_amex_full — end-to-end `CsvProvider::import` (read, decode,
-//!                         parse, reconcile, insert, commit) against a fresh
-//!                         seeded DB per iteration.
+//!      parse, reconcile, insert, commit) against a fresh
+//!      seeded DB per iteration.
 //!   5. Five post-commit cascade steps, each benched individually against a
 //!      DB that has already imported the amex file once:
 //!         - categorize_builtin
@@ -128,7 +128,8 @@ fn db_with_amex_imported() -> (Db, tempfile::TempDir, String) {
     let path = repo_sample("amex-all-time-statement.csv");
     let mapping = amex_mapping();
     let import_id = uuid::Uuid::new_v4().to_string();
-    let summary = CsvProvider::import(&path, &account_id, &import_id, &mapping, &db, |_| {}).unwrap();
+    let summary =
+        CsvProvider::import(&path, &account_id, &import_id, &mapping, &db, |_| {}).unwrap();
     assert!(
         summary.rows_imported > 1000,
         "sanity: expected a healthy majority of ~1988 amex rows to import, got {}",
@@ -274,11 +275,9 @@ fn bench_recompute_anomalies_scoped(c: &mut Criterion) {
             db_with_amex_imported,
             |(db, _dir, account_id)| {
                 let mut conn = db.get().unwrap();
-                let n = finsight_core::anomaly::recompute_anomalies_for_account(
-                    &mut conn,
-                    &account_id,
-                )
-                .unwrap();
+                let n =
+                    finsight_core::anomaly::recompute_anomalies_for_account(&mut conn, &account_id)
+                        .unwrap();
                 criterion::black_box(n);
             },
             BatchSize::LargeInput,

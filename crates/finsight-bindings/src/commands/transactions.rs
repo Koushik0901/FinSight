@@ -84,12 +84,8 @@ pub async fn set_category_spending_type(
     id: String,
     spending_type: Option<String>,
 ) -> AppResult<()> {
-    finsight_api::commands::transactions::set_category_spending_type(
-        &state.api,
-        id,
-        spending_type,
-    )
-    .await
+    finsight_api::commands::transactions::set_category_spending_type(&state.api, id, spending_type)
+        .await
 }
 
 #[tauri::command]
@@ -236,12 +232,8 @@ pub async fn set_transaction_splits(
     transaction_id: String,
     splits: Vec<SplitInputDto>,
 ) -> AppResult<()> {
-    finsight_api::commands::transactions::set_transaction_splits(
-        &state.api,
-        transaction_id,
-        splits,
-    )
-    .await
+    finsight_api::commands::transactions::set_transaction_splits(&state.api, transaction_id, splits)
+        .await
 }
 
 /// Returns CSV content for transactions matching a filter; the caller

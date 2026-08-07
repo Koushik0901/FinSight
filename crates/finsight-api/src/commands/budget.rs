@@ -57,7 +57,15 @@ fn budget_envelopes_for_month(
     )?;
     let rows = stmt.query_map(rusqlite::params![month_start], |r| {
         let cat_id: String = r.get(0)?;
-        Ok((cat_id.clone(), r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, i64>(4)?, r.get::<_, i64>(5)?, budget_map.get(&cat_id).copied().unwrap_or(0)))
+        Ok((
+            cat_id.clone(),
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, i64>(4)?,
+            r.get::<_, i64>(5)?,
+            budget_map.get(&cat_id).copied().unwrap_or(0),
+        ))
     })?;
     // Collect + drop the statement before the loop: carryover_into_month needs
     // the connection, which `stmt` borrows.
@@ -166,11 +174,7 @@ pub async fn list_member_budget_envelopes(
     .map_err(AppError::from)
 }
 
-pub async fn set_budget(
-    state: &ApiState,
-    category_id: String,
-    amount_cents: i64,
-) -> AppResult<()> {
+pub async fn set_budget(state: &ApiState, category_id: String, amount_cents: i64) -> AppResult<()> {
     let db = (*state.db).clone();
     let month = Utc::now().format("%Y-%m").to_string();
     run(&db, move |conn| {
@@ -371,7 +375,7 @@ pub async fn project_goal_growth(
             goal.current_cents.max(0)
         } else {
             let r = annual_rate / 12.0;
-            let n = (years * 12) as i32;
+            let n = years * 12;
             let growth = f64::powi(1.0 + r, n);
             // The current balance compounds too — the old formula projected only
             // the contribution stream and dropped the starting principal.
@@ -719,10 +723,7 @@ pub async fn apply_next_month_plan(
     .map_err(AppError::from)
 }
 
-pub async fn list_budget_history(
-    state: &ApiState,
-    months: u32,
-) -> AppResult<Vec<CategoryHistory>> {
+pub async fn list_budget_history(state: &ApiState, months: u32) -> AppResult<Vec<CategoryHistory>> {
     let db = (*state.db).clone();
     let months = months.clamp(1, 24);
     run(&db, move |conn| {
@@ -774,14 +775,17 @@ pub async fn list_budget_history(
         drop(stmt);
 
         // Same shape, for budgeted amounts.
-        let mut budget_stmt = conn.prepare(
-            "SELECT category_id, month, amount_cents FROM budgets WHERE month >= ?1",
-        )?;
+        let mut budget_stmt =
+            conn.prepare("SELECT category_id, month, amount_cents FROM budgets WHERE month >= ?1")?;
         let cutoff_month = month_list.first().unwrap().clone();
         let mut budget_map: std::collections::HashMap<(String, String), i64> =
             std::collections::HashMap::new();
         let budget_rows = budget_stmt.query_map(rusqlite::params![cutoff_month], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         })?;
         for row in budget_rows.flatten() {
             budget_map.insert((row.0, row.1), row.2);
@@ -1006,8 +1010,12 @@ mod tests {
         let alice =
             finsight_core::repos::household::create_member(&mut conn, "Alice", None).unwrap();
         seed_account(&conn);
-        finsight_core::repos::household::set_account_owners(&mut conn, "a1", &[alice.id.clone()])
-            .unwrap();
+        finsight_core::repos::household::set_account_owners(
+            &mut conn,
+            "a1",
+            std::slice::from_ref(&alice.id),
+        )
+        .unwrap();
         seed_category(&conn, "untouched", "Untouched");
 
         let month = "2026-05";

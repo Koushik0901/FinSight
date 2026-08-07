@@ -2,9 +2,7 @@ use crate::error::AppResult;
 use crate::AppState;
 use finsight_core::models::{ManualAsset, ManualAssetPatch, NetWorthPoint, NewManualAsset};
 
-pub use finsight_api::commands::assets::{
-    DebtPayoffMonth, DebtPayoffResult, DebtPayoffSummary,
-};
+pub use finsight_api::commands::assets::{DebtPayoffMonth, DebtPayoffResult, DebtPayoffSummary};
 
 #[tauri::command]
 #[specta::specta]

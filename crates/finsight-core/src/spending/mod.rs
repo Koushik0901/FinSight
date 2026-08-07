@@ -1,6 +1,6 @@
 //! Spending Analysis Engine — deterministic "what changed vs your normal".
-pub mod stats;
 pub mod baseline;
+pub mod stats;
 
 /// A half-open date window `[start, end)` in `YYYY-MM-DD`, plus the number of
 /// whole calendar months it spans (used to convert a window total into a
@@ -18,7 +18,11 @@ impl Window {
         let (y, m) = parse_ym(ym);
         let start = format!("{y:04}-{m:02}-01");
         let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
-        Window { start, end: format!("{ny:04}-{nm:02}-01"), months: 1.0 }
+        Window {
+            start,
+            end: format!("{ny:04}-{nm:02}-01"),
+            months: 1.0,
+        }
     }
 }
 
@@ -69,11 +73,25 @@ use specta::Type;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum Mechanism { New, Stopped, PriceUp, PriceDown, FrequencyUp, FrequencyDown, Mixed, Flat }
+pub enum Mechanism {
+    New,
+    Stopped,
+    PriceUp,
+    PriceDown,
+    FrequencyUp,
+    FrequencyDown,
+    Mixed,
+    Flat,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum Persistence { OneOff, Recurring, Emerging, Uncertain }
+pub enum Persistence {
+    OneOff,
+    Recurring,
+    Emerging,
+    Uncertain,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct Driver {

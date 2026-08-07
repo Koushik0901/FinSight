@@ -53,7 +53,7 @@ pub async fn set_category_guidance(
 
 pub async fn list_category_groups(state: &ApiState) -> AppResult<Vec<CategoryGroup>> {
     let db = (*state.db).clone();
-    run(&db, |conn| categories::list_groups(conn))
+    run(&db, categories::list_groups)
         .await
         .map_err(AppError::from)
 }

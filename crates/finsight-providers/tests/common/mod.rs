@@ -1,4 +1,5 @@
 //! Shared test helpers for provider integration tests.
+#![allow(dead_code)] // Each integration-test crate uses a different helper subset.
 use finsight_core::models::{AccountType, NewAccount};
 use finsight_core::repos::accounts;
 use finsight_core::Db;
@@ -40,6 +41,7 @@ pub fn amex_mapping() -> CsvImportMapping {
 /// (fixture `wealthsimple-tfsa.csv`): transaction_date, settlement_date,
 /// account_id, account_type, activity_type, activity_sub_type, direction,
 /// symbol, name, currency, quantity, unit_price, commission, net_cash_amount.
+#[allow(dead_code)]
 pub fn wealthsimple_mapping() -> CsvImportMapping {
     CsvImportMapping {
         skip_header_rows: 1,
@@ -74,7 +76,12 @@ pub fn open_with_account() -> (Db, tempfile::TempDir, String) {
 /// Fresh migrated DB + one Investment account (Wealthsimple TFSA shape).
 #[allow(dead_code)]
 pub fn open_with_investment_account() -> (Db, tempfile::TempDir, String) {
-    open_with_typed_account(AccountType::Investment, "Wealthsimple", "TFSA", "investments")
+    open_with_typed_account(
+        AccountType::Investment,
+        "Wealthsimple",
+        "TFSA",
+        "investments",
+    )
 }
 
 fn open_with_typed_account(

@@ -91,11 +91,14 @@ impl ServerState {
         // after they have sat unused for a month — long enough that a client
         // registered legitimately and approved later is never caught, while
         // junk still cannot accumulate indefinitely.
-        let stale_before = (chrono::Utc::now() - chrono::Duration::days(UNUSED_CLIENT_TTL_DAYS))
-            .to_rfc3339();
+        let stale_before =
+            (chrono::Utc::now() - chrono::Duration::days(UNUSED_CLIENT_TTL_DAYS)).to_rfc3339();
         match users.prune_unused_oauth_clients(&stale_before) {
             Ok(n) if n > 0 => {
-                tracing::info!(count = n, "pruned OAuth client registrations that were never used")
+                tracing::info!(
+                    count = n,
+                    "pruned OAuth client registrations that were never used"
+                )
             }
             Ok(_) => {}
             Err(e) => tracing::warn!(error = %e, "could not prune unused OAuth clients"),

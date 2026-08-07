@@ -76,10 +76,7 @@ pub fn upsert(
         .ok_or_else(|| crate::error::CoreError::InvalidState("push subscription vanished".into()))
 }
 
-pub fn get_by_endpoint(
-    conn: &Connection,
-    endpoint: &str,
-) -> CoreResult<Option<PushSubscription>> {
+pub fn get_by_endpoint(conn: &Connection, endpoint: &str) -> CoreResult<Option<PushSubscription>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM push_subscriptions WHERE endpoint = ?1"
     ))?;
@@ -141,7 +138,14 @@ mod tests {
     fn upsert_then_list_round_trips() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let sub = upsert(&mut conn, "https://push.example/abc", "key1", "auth1", Some("Pixel")).unwrap();
+        let sub = upsert(
+            &mut conn,
+            "https://push.example/abc",
+            "key1",
+            "auth1",
+            Some("Pixel"),
+        )
+        .unwrap();
         assert_eq!(sub.endpoint, "https://push.example/abc");
         assert_eq!(sub.label.as_deref(), Some("Pixel"));
         assert_eq!(list(&mut conn).unwrap().len(), 1);
@@ -154,8 +158,22 @@ mod tests {
     fn resubscribing_same_endpoint_updates_keys_without_duplicating() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        upsert(&mut conn, "https://push.example/abc", "old", "oldauth", Some("Pixel")).unwrap();
-        upsert(&mut conn, "https://push.example/abc", "new", "newauth", None).unwrap();
+        upsert(
+            &mut conn,
+            "https://push.example/abc",
+            "old",
+            "oldauth",
+            Some("Pixel"),
+        )
+        .unwrap();
+        upsert(
+            &mut conn,
+            "https://push.example/abc",
+            "new",
+            "newauth",
+            None,
+        )
+        .unwrap();
 
         let all = list(&mut conn).unwrap();
         assert_eq!(all.len(), 1, "same endpoint must not create a second row");

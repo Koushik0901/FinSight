@@ -270,9 +270,21 @@ pub fn assumptions(conn: &Connection) -> Assumptions {
 
 /// Persist the user's assumptions.
 pub fn set_assumptions(conn: &Connection, a: &Assumptions) -> CoreResult<()> {
-    crate::settings::set(conn, KEY_TARGET_SAVINGS_RATE_PCT, &a.target_savings_rate_pct)?;
-    crate::settings::set(conn, KEY_EMERGENCY_FUND_TARGET_MONTHS, &a.emergency_fund_target_months)?;
-    crate::settings::set(conn, KEY_EXPECTED_ANNUAL_RETURN_PCT, &a.expected_annual_return_pct)?;
+    crate::settings::set(
+        conn,
+        KEY_TARGET_SAVINGS_RATE_PCT,
+        &a.target_savings_rate_pct,
+    )?;
+    crate::settings::set(
+        conn,
+        KEY_EMERGENCY_FUND_TARGET_MONTHS,
+        &a.emergency_fund_target_months,
+    )?;
+    crate::settings::set(
+        conn,
+        KEY_EXPECTED_ANNUAL_RETURN_PCT,
+        &a.expected_annual_return_pct,
+    )?;
     Ok(())
 }
 
@@ -769,7 +781,8 @@ pub fn cashflow_between_for(
     end_exclusive: &str,
     member_id: Option<&str>,
 ) -> CoreResult<Cashflow> {
-    let (income, expense) = income_expense_between_for(conn, start_inclusive, end_exclusive, member_id)?;
+    let (income, expense) =
+        income_expense_between_for(conn, start_inclusive, end_exclusive, member_id)?;
     Ok(Cashflow::from_income_expense(income, expense))
 }
 
@@ -968,7 +981,6 @@ mod tests {
         .unwrap();
     }
 
-
     fn insert_categorized_txn(
         conn: &mut Connection,
         acct: &str,
@@ -1010,10 +1022,18 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
-        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
-        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        let acct = accounts::insert(
+            &mut conn,
+            account("Alice Chk", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &acct,
+            std::slice::from_ref(&alice.id),
+        )
+        .unwrap();
         seed_category(&conn, "groceries", "Groceries");
         insert_categorized_txn(&mut conn, &acct, "groceries", -40_000, false);
 
@@ -1032,17 +1052,27 @@ mod tests {
         let joint = accounts::insert(&mut conn, account("Joint", AccountType::Checking, 0, true))
             .unwrap()
             .id;
-        crate::repos::household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
-            .unwrap();
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &joint,
+            &[alice.id.clone(), bob.id.clone()],
+        )
+        .unwrap();
         seed_category(&conn, "dining", "Dining");
         insert_categorized_txn(&mut conn, &joint, "dining", -30_000, false);
 
         assert_eq!(
-            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            member_category_spend(&conn, &alice.id, "1970-01-01")
+                .unwrap()
+                .get("dining")
+                .copied(),
             Some(15_000)
         );
         assert_eq!(
-            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("dining").copied(),
+            member_category_spend(&conn, &bob.id, "1970-01-01")
+                .unwrap()
+                .get("dining")
+                .copied(),
             Some(15_000)
         );
     }
@@ -1061,8 +1091,14 @@ mod tests {
             &mut conn,
             &joint,
             &[
-                crate::models::OwnerShare { member_id: alice.id.clone(), share_bps: Some(7000) },
-                crate::models::OwnerShare { member_id: bob.id.clone(), share_bps: Some(3000) },
+                crate::models::OwnerShare {
+                    member_id: alice.id.clone(),
+                    share_bps: Some(7000),
+                },
+                crate::models::OwnerShare {
+                    member_id: bob.id.clone(),
+                    share_bps: Some(3000),
+                },
             ],
         )
         .unwrap();
@@ -1070,11 +1106,17 @@ mod tests {
         insert_categorized_txn(&mut conn, &joint, "dining", -100_000, false);
 
         assert_eq!(
-            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            member_category_spend(&conn, &alice.id, "1970-01-01")
+                .unwrap()
+                .get("dining")
+                .copied(),
             Some(70_000)
         );
         assert_eq!(
-            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("dining").copied(),
+            member_category_spend(&conn, &bob.id, "1970-01-01")
+                .unwrap()
+                .get("dining")
+                .copied(),
             Some(30_000)
         );
     }
@@ -1085,16 +1127,29 @@ mod tests {
         let mut conn = db.get().unwrap();
         let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = crate::repos::household::create_member(&mut conn, "Bob", None).unwrap();
-        let bobs = accounts::insert(&mut conn, account("Bob Chk", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
-        crate::repos::household::set_account_owners(&mut conn, &bobs, &[bob.id.clone()]).unwrap();
+        let bobs = accounts::insert(
+            &mut conn,
+            account("Bob Chk", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &bobs,
+            std::slice::from_ref(&bob.id),
+        )
+        .unwrap();
         seed_category(&conn, "hobbies", "Hobbies");
         insert_categorized_txn(&mut conn, &bobs, "hobbies", -50_000, false);
 
-        assert!(member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().is_empty());
+        assert!(member_category_spend(&conn, &alice.id, "1970-01-01")
+            .unwrap()
+            .is_empty());
         assert_eq!(
-            member_category_spend(&conn, &bob.id, "1970-01-01").unwrap().get("hobbies").copied(),
+            member_category_spend(&conn, &bob.id, "1970-01-01")
+                .unwrap()
+                .get("hobbies")
+                .copied(),
             Some(50_000)
         );
     }
@@ -1106,16 +1161,27 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
-        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
-        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        let acct = accounts::insert(
+            &mut conn,
+            account("Alice Chk", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &acct,
+            std::slice::from_ref(&alice.id),
+        )
+        .unwrap();
         seed_category(&conn, "dining", "Dining");
         insert_categorized_txn(&mut conn, &acct, "dining", -60_000, false); // spent
         insert_categorized_txn(&mut conn, &acct, "dining", 20_000, true); // reimbursed
 
         assert_eq!(
-            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().get("dining").copied(),
+            member_category_spend(&conn, &alice.id, "1970-01-01")
+                .unwrap()
+                .get("dining")
+                .copied(),
             Some(40_000)
         );
     }
@@ -1125,16 +1191,26 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
-        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
-        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        let acct = accounts::insert(
+            &mut conn,
+            account("Alice Chk", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &acct,
+            std::slice::from_ref(&alice.id),
+        )
+        .unwrap();
         seed_category(&conn, "salary", "Salary");
         // A positive (income) row, not settle_up, contributes nothing to spend.
         insert_categorized_txn(&mut conn, &acct, "salary", 300_000, false);
 
         assert!(
-            member_category_spend(&conn, &alice.id, "1970-01-01").unwrap().is_empty(),
+            member_category_spend(&conn, &alice.id, "1970-01-01")
+                .unwrap()
+                .is_empty(),
             "income is not spend"
         );
     }
@@ -1144,30 +1220,53 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         let alice = crate::repos::household::create_member(&mut conn, "Alice", None).unwrap();
-        let acct = accounts::insert(&mut conn, account("Alice Chk", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
-        crate::repos::household::set_account_owners(&mut conn, &acct, &[alice.id.clone()]).unwrap();
+        let acct = accounts::insert(
+            &mut conn,
+            account("Alice Chk", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &acct,
+            std::slice::from_ref(&alice.id),
+        )
+        .unwrap();
         seed_category(&conn, "dining", "Dining");
         // insert_categorized_txn dates rows 2 days ago; a window starting
         // tomorrow must exclude them.
         insert_categorized_txn(&mut conn, &acct, "dining", -10_000, false);
-        let tomorrow = (Utc::now() + Duration::days(1)).format("%Y-%m-%d").to_string();
+        let tomorrow = (Utc::now() + Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
 
-        assert!(member_category_spend(&conn, &alice.id, &tomorrow).unwrap().is_empty());
+        assert!(member_category_spend(&conn, &alice.id, &tomorrow)
+            .unwrap()
+            .is_empty());
     }
     #[test]
     fn savings_rate_is_signed_and_guards_zero_income() {
-        assert_eq!(savings_rate_pct(0, 500), 0, "no income → 0, not a divide by zero");
+        assert_eq!(
+            savings_rate_pct(0, 500),
+            0,
+            "no income → 0, not a divide by zero"
+        );
         assert_eq!(savings_rate_pct(1000, 200), 80);
-        assert_eq!(savings_rate_pct(1000, 1500), -50, "deficit is negative, not clamped");
+        assert_eq!(
+            savings_rate_pct(1000, 1500),
+            -50,
+            "deficit is negative, not clamped"
+        );
     }
 
     #[test]
     fn emergency_fund_months_caps_and_guards() {
         assert_eq!(emergency_fund_months(100_000, 0), 0.0);
         assert_eq!(emergency_fund_months(300_000, 100_000), 3.0);
-        assert_eq!(emergency_fund_months(100_000_000, 100_000), EMERGENCY_FUND_MONTHS_CAP);
+        assert_eq!(
+            emergency_fund_months(100_000_000, 100_000),
+            EMERGENCY_FUND_MONTHS_CAP
+        );
     }
 
     #[test]
@@ -1184,9 +1283,12 @@ mod tests {
     fn income_expense_excludes_transfers() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         insert_txn(&mut conn, &acct, 300_000, 5, false); // income
         insert_txn(&mut conn, &acct, -100_000, 5, false); // expense
         insert_txn(&mut conn, &acct, -500_000, 5, true); // transfer out — must be ignored
@@ -1205,9 +1307,12 @@ mod tests {
         // on his behalf, he paid back $3,000 — net expense $8,475, income $0.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let chk = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let chk = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         let insert_settle_up = |conn: &Connection, amount: i64| {
             conn.execute(
                 "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
@@ -1236,9 +1341,12 @@ mod tests {
         let chk = accounts::insert(&mut conn, account("Chq", AccountType::Checking, 0, true))
             .unwrap()
             .id;
-        let tfsa = accounts::insert(&mut conn, account("TFSA", AccountType::Investment, 0, false))
-            .unwrap()
-            .id;
+        let tfsa = accounts::insert(
+            &mut conn,
+            account("TFSA", AccountType::Investment, 0, false),
+        )
+        .unwrap()
+        .id;
         insert_txn(&mut conn, &chk, 300_000, 5, false); // real income
         insert_txn(&mut conn, &chk, -100_000, 5, false); // real expense
         insert_txn(&mut conn, &tfsa, 20_000, 5, false); // contribution arriving
@@ -1251,8 +1359,8 @@ mod tests {
         // The per-member weighted path applies the same exclusion.
         use crate::repos::household;
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
-        household::set_account_owners(&mut conn, &chk, &[alice.id.clone()]).unwrap();
-        household::set_account_owners(&mut conn, &tfsa, &[alice.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &chk, std::slice::from_ref(&alice.id)).unwrap();
+        household::set_account_owners(&mut conn, &tfsa, std::slice::from_ref(&alice.id)).unwrap();
         let (m_inc, m_exp) =
             income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&alice.id)).unwrap();
         assert_eq!(m_inc, 300_000);
@@ -1268,9 +1376,12 @@ mod tests {
         // entry) stays excluded, matching the account-level rule.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let tfsa = accounts::insert(&mut conn, account("TFSA", AccountType::Investment, 0, false))
-            .unwrap()
-            .id;
+        let tfsa = accounts::insert(
+            &mut conn,
+            account("TFSA", AccountType::Investment, 0, false),
+        )
+        .unwrap()
+        .id;
         let insert_activity = |conn: &Connection, amount: i64, activity_type: &str| {
             conn.execute(
                 "INSERT INTO transactions(id, account_id, posted_at, amount_cents, merchant_raw, \
@@ -1328,14 +1439,23 @@ mod tests {
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = household::create_member(&mut conn, "Bob", None).unwrap();
 
-        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 0, true)).unwrap().id;
-        let b_sole = accounts::insert(&mut conn, account("B", AccountType::Checking, 0, true)).unwrap().id;
-        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 0, true)).unwrap().id;
-        let shared = accounts::insert(&mut conn, account("U", AccountType::Checking, 0, true)).unwrap().id;
+        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        let b_sole = accounts::insert(&mut conn, account("B", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 0, true))
+            .unwrap()
+            .id;
+        let shared = accounts::insert(&mut conn, account("U", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
 
-        household::set_account_owners(&mut conn, &a_sole, &[alice.id.clone()]).unwrap();
-        household::set_account_owners(&mut conn, &b_sole, &[bob.id.clone()]).unwrap();
-        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        household::set_account_owners(&mut conn, &a_sole, std::slice::from_ref(&alice.id)).unwrap();
+        household::set_account_owners(&mut conn, &b_sole, std::slice::from_ref(&bob.id)).unwrap();
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
         // `shared` is left unassigned (0 owners) → the household residual.
 
         insert_txn(&mut conn, &a_sole, 300_000, 5, false);
@@ -1370,15 +1490,26 @@ mod tests {
 
         // Reconciliation contract: members + unassigned residual == household.
         let (u_inc, u_exp) = (70_000, 30_000); // ownerless `shared` account
-        assert_eq!(a_inc + b_inc + u_inc, h_inc, "income reconciles with residual");
-        assert_eq!(a_exp + b_exp + u_exp, h_exp, "expense reconciles with residual");
+        assert_eq!(
+            a_inc + b_inc + u_inc,
+            h_inc,
+            "income reconciles with residual"
+        );
+        assert_eq!(
+            a_exp + b_exp + u_exp,
+            h_exp,
+            "expense reconciles with residual"
+        );
 
         // rolling_averages_for threads the same filter. This fixture's activity
         // sits in ONE calendar month, so Alice's $3,500 is $3,500/month — the
         // old `/ 3` here was the fixed-divisor bug baked into an assertion,
         // which is how it survived: it reported her month as a third of itself.
         let r_alice = rolling_averages_for(&conn, 90, Some(&alice.id)).unwrap();
-        assert_eq!(r_alice.months, 1, "the fixture spans a single calendar month");
+        assert_eq!(
+            r_alice.months, 1,
+            "the fixture spans a single calendar month"
+        );
         assert_eq!(r_alice.avg_monthly_income_cents, 350_000);
     }
 
@@ -1391,12 +1522,17 @@ mod tests {
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = household::create_member(&mut conn, "Bob", None).unwrap();
 
-        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 40_000, true)).unwrap().id;
+        let a_sole = accounts::insert(&mut conn, account("A", AccountType::Checking, 40_000, true))
+            .unwrap()
+            .id;
         // Odd-cent joint balance: halves are 50_000.5 → round away from zero → 50_001
         // each, so the two slices exceed the whole by 1 cent (per joint account).
-        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 100_001, true)).unwrap().id;
-        household::set_account_owners(&mut conn, &a_sole, &[alice.id.clone()]).unwrap();
-        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Savings, 100_001, true))
+            .unwrap()
+            .id;
+        household::set_account_owners(&mut conn, &a_sole, std::slice::from_ref(&alice.id)).unwrap();
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
 
         // None path == existing household breakdown verbatim.
         let household_bd = balance_breakdown_for(&mut conn, None).unwrap();
@@ -1424,9 +1560,14 @@ mod tests {
         let mut conn = db.get().unwrap();
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = household::create_member(&mut conn, "Bob", None).unwrap();
-        let joint =
-            accounts::insert(&mut conn, account("J", AccountType::Checking, 100_000, true)).unwrap().id;
-        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        let joint = accounts::insert(
+            &mut conn,
+            account("J", AccountType::Checking, 100_000, true),
+        )
+        .unwrap()
+        .id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
         let share = |conn: &Connection, m: &str, bps: i64| {
             conn.execute(
                 "UPDATE account_owners SET share_bps = ?3 WHERE account_id = ?1 AND member_id = ?2",
@@ -1437,7 +1578,9 @@ mod tests {
 
         // NULL share_bps ⇒ equal split, exactly as before this feature existed.
         assert_eq!(
-            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().liquid_cents,
+            balance_breakdown_for(&mut conn, Some(&alice.id))
+                .unwrap()
+                .liquid_cents,
             50_000,
             "NULL share_bps ⇒ equal split (backward compatible)"
         );
@@ -1450,7 +1593,11 @@ mod tests {
         let h = balance_breakdown_for(&mut conn, None).unwrap();
         assert_eq!(a.liquid_cents, 70_000, "alice owns 70%");
         assert_eq!(b.liquid_cents, 30_000, "bob owns 30%");
-        assert_eq!(a.liquid_cents + b.liquid_cents, h.liquid_cents, "70 + 30 == household");
+        assert_eq!(
+            a.liquid_cents + b.liquid_cents,
+            h.liquid_cents,
+            "70 + 30 == household"
+        );
 
         // Cross-app: an operator can own <100% recorded here — the rest is the
         // residual (owned by people who run their own separate app). Drop bob and
@@ -1476,9 +1623,11 @@ mod tests {
         let mut conn = db.get().unwrap();
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = household::create_member(&mut conn, "Bob", None).unwrap();
-        let joint =
-            accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true)).unwrap().id;
-        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
         conn.execute(
             "UPDATE account_owners SET share_bps = 7000 WHERE account_id = ?1 AND member_id = ?2",
             rusqlite::params![joint, alice.id],
@@ -1497,7 +1646,11 @@ mod tests {
             income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&alice.id)).unwrap();
         let (b_inc, b_exp) =
             income_expense_since_for(&conn, "1970-01-01T00:00:00Z", Some(&bob.id)).unwrap();
-        assert_eq!((a_inc, a_exp), (70_000, 35_000), "alice: 70% of joint flows");
+        assert_eq!(
+            (a_inc, a_exp),
+            (70_000, 35_000),
+            "alice: 70% of joint flows"
+        );
         assert_eq!((b_inc, b_exp), (30_000, 15_000), "bob: 30% of joint flows");
         // Reconciles to the household total.
         let (h_inc, h_exp) = income_expense_since(&conn, "1970-01-01T00:00:00Z").unwrap();
@@ -1543,15 +1696,20 @@ mod tests {
         );
 
         // NULL share ⇒ equal split, and an ownerless asset stays in the residual.
-        conn.execute("UPDATE asset_owners SET share_bps = NULL", []).unwrap();
+        conn.execute("UPDATE asset_owners SET share_bps = NULL", [])
+            .unwrap();
         assert_eq!(
-            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().net_worth_cents,
+            balance_breakdown_for(&mut conn, Some(&alice.id))
+                .unwrap()
+                .net_worth_cents,
             25_000_000,
             "NULL share ⇒ 50/50"
         );
         conn.execute("DELETE FROM asset_owners", []).unwrap();
         assert_eq!(
-            balance_breakdown_for(&mut conn, Some(&alice.id)).unwrap().net_worth_cents,
+            balance_breakdown_for(&mut conn, Some(&alice.id))
+                .unwrap()
+                .net_worth_cents,
             0,
             "ownerless asset attributes to no member (household residual)"
         );
@@ -1564,9 +1722,11 @@ mod tests {
         let mut conn = db.get().unwrap();
         let alice = household::create_member(&mut conn, "Alice", None).unwrap();
         let bob = household::create_member(&mut conn, "Bob", None).unwrap();
-        let joint =
-            accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true)).unwrap().id;
-        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()]).unwrap();
+        let joint = accounts::insert(&mut conn, account("J", AccountType::Checking, 0, true))
+            .unwrap()
+            .id;
+        household::set_account_owners(&mut conn, &joint, &[alice.id.clone(), bob.id.clone()])
+            .unwrap();
 
         // A shared $1,000 expense (no override) splits 50/50 by account share.
         insert_txn(&mut conn, &joint, -100_000, 5, false);
@@ -1582,11 +1742,21 @@ mod tests {
         let start = "1970-01-01T00:00:00Z";
         let (_a_inc, a_exp) = income_expense_since_for(&conn, start, Some(&alice.id)).unwrap();
         let (_b_inc, b_exp) = income_expense_since_for(&conn, start, Some(&bob.id)).unwrap();
-        assert_eq!(a_exp, 90_000, "alice: half the shared $1,000 + all of her own $400");
-        assert_eq!(b_exp, 50_000, "bob: only half the shared (0 of alice's override)");
+        assert_eq!(
+            a_exp, 90_000,
+            "alice: half the shared $1,000 + all of her own $400"
+        );
+        assert_eq!(
+            b_exp, 50_000,
+            "bob: only half the shared (0 of alice's override)"
+        );
         // Still reconciles to the household total ($1,400).
         let (_h_inc, h_exp) = income_expense_since(&conn, start).unwrap();
-        assert_eq!(a_exp + b_exp, h_exp, "member expenses reconcile to the household");
+        assert_eq!(
+            a_exp + b_exp,
+            h_exp,
+            "member expenses reconcile to the household"
+        );
     }
 
     #[test]
@@ -1594,14 +1764,33 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         // Overdrawn checking (negative but still liquid).
-        accounts::insert(&mut conn, account("Checking", AccountType::Checking, -5_000, true)).unwrap();
-        accounts::insert(&mut conn, account("HISA", AccountType::Savings, 500_000, true)).unwrap();
-        accounts::insert(&mut conn, account("Brokerage", AccountType::Investment, 1_000_000, false)).unwrap();
+        accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, -5_000, true),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account("HISA", AccountType::Savings, 500_000, true),
+        )
+        .unwrap();
+        accounts::insert(
+            &mut conn,
+            account("Brokerage", AccountType::Investment, 1_000_000, false),
+        )
+        .unwrap();
         // Credit-card debt (negative) — debt, not "liquid negative".
-        accounts::insert(&mut conn, account("Card", AccountType::Credit, -120_000, false)).unwrap();
+        accounts::insert(
+            &mut conn,
+            account("Card", AccountType::Credit, -120_000, false),
+        )
+        .unwrap();
 
         let b = balance_breakdown(&mut conn).unwrap();
-        assert_eq!(b.liquid_cents, 495_000, "overdrawn checking reduces liquid, HISA adds");
+        assert_eq!(
+            b.liquid_cents, 495_000,
+            "overdrawn checking reduces liquid, HISA adds"
+        );
         assert_eq!(b.invested_cents, 1_000_000);
         assert_eq!(b.debt_cents, 120_000, "credit-card magnitude owed");
         assert_eq!(
@@ -1616,9 +1805,12 @@ mod tests {
     fn rolling_averages_divide_window_into_months() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         // Three months of $3,000 income and $1,000 expense.
         for m in 0..3 {
             insert_txn(&mut conn, &acct, 300_000, 10 + m * 30, false);
@@ -1642,9 +1834,12 @@ mod tests {
     fn rolling_averages_do_not_dilute_a_short_history() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         // ONE month of history: $3,000 in, $2,000 out. The user's real monthly
         // burn is $2,000 — not $666.
         insert_txn(&mut conn, &acct, 300_000, 10, false);
@@ -1671,9 +1866,12 @@ mod tests {
     fn rolling_averages_count_calendar_months_not_elapsed_days() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         // Three monthly paychecks: ~72 days from first to last, but three
         // calendar months of activity.
         for m in 0..3 {
@@ -1697,9 +1895,12 @@ mod tests {
     fn rolling_averages_report_a_thin_span_rather_than_extrapolating() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         insert_txn(&mut conn, &acct, -50_000, 5, false);
 
         let avg = rolling_averages(&conn, 90).unwrap();
@@ -1735,9 +1936,12 @@ mod tests {
     fn safety_basis_includes_a_once_a_year_obligation() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         // Eleven quiet months at $1,000, plus one $12,000 insurance bill.
         for m in 1..=11 {
             insert_txn(&mut conn, &acct, -100_000, 30 * m + 5, false);
@@ -1762,9 +1966,12 @@ mod tests {
     fn safety_basis_reacts_to_a_recent_step_up_in_costs() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         // Cheap for most of the year...
         for m in 4..=12 {
             insert_txn(&mut conn, &acct, -50_000, 30 * m + 5, false);
@@ -1789,9 +1996,12 @@ mod tests {
     fn safety_basis_reports_insufficient_history_instead_of_guessing() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let acct = accounts::insert(&mut conn, account("Checking", AccountType::Checking, 0, true))
-            .unwrap()
-            .id;
+        let acct = accounts::insert(
+            &mut conn,
+            account("Checking", AccountType::Checking, 0, true),
+        )
+        .unwrap()
+        .id;
         insert_txn(&mut conn, &acct, -50_000, 5, false);
 
         let basis = safety_expense_basis(&conn).unwrap();
@@ -1925,7 +2135,10 @@ mod tests {
         let start = (Utc::now() - Duration::days(30)).to_rfc3339();
         let (income, expense) = income_expense_since(&conn, &start).unwrap();
         assert_eq!(income, 500_000, "USD income is not folded into CAD income");
-        assert_eq!(expense, 200_000, "USD expense is not folded into CAD expense");
+        assert_eq!(
+            expense, 200_000,
+            "USD expense is not folded into CAD expense"
+        );
 
         // The savings rate must be computable from the scoped figures alone —
         // a rate built from CAD income over USD expense is meaningless.
@@ -2140,9 +2353,7 @@ impl DebtStrategy {
             DebtStrategy::Avalanche => {
                 "highest APR first, because it pays the least interest overall"
             }
-            DebtStrategy::Snowball => {
-                "smallest balance first, because early wins keep them going"
-            }
+            DebtStrategy::Snowball => "smallest balance first, because early wins keep them going",
         }
     }
 }
@@ -2290,9 +2501,18 @@ mod philosophy_tests {
 
     #[test]
     fn strategy_names_round_trip_case_insensitively() {
-        assert_eq!(DebtStrategy::from_method("snowball"), DebtStrategy::Snowball);
-        assert_eq!(DebtStrategy::from_method("SnowBall"), DebtStrategy::Snowball);
-        assert_eq!(DebtStrategy::from_method(" snowball "), DebtStrategy::Snowball);
+        assert_eq!(
+            DebtStrategy::from_method("snowball"),
+            DebtStrategy::Snowball
+        );
+        assert_eq!(
+            DebtStrategy::from_method("SnowBall"),
+            DebtStrategy::Snowball
+        );
+        assert_eq!(
+            DebtStrategy::from_method(" snowball "),
+            DebtStrategy::Snowball
+        );
         assert_eq!(
             DebtStrategy::from_method(DebtStrategy::Snowball.as_method()),
             DebtStrategy::Snowball

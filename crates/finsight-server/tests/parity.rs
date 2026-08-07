@@ -52,7 +52,11 @@ fn parse_dispatch_arg_keys() -> BTreeMap<String, BTreeSet<String>> {
 #[test]
 fn every_binding_command_is_routed_or_explicitly_unsupported() {
     let wanted: BTreeSet<String> = parse_bindings().keys().cloned().collect();
-    assert!(wanted.len() > 100, "bindings parse looks broken: {}", wanted.len());
+    assert!(
+        wanted.len() > 100,
+        "bindings parse looks broken: {}",
+        wanted.len()
+    );
     let routed: BTreeSet<String> = finsight_server::dispatch::SUPPORTED
         .iter()
         .chain(finsight_server::dispatch::UNSUPPORTED)
@@ -60,8 +64,14 @@ fn every_binding_command_is_routed_or_explicitly_unsupported() {
         .collect();
     let missing: Vec<_> = wanted.difference(&routed).collect();
     let stale: Vec<_> = routed.difference(&wanted).collect();
-    assert!(missing.is_empty(), "bindings.ts commands with no server route: {missing:?}");
-    assert!(stale.is_empty(), "server routes for commands not in bindings.ts: {stale:?}");
+    assert!(
+        missing.is_empty(),
+        "bindings.ts commands with no server route: {missing:?}"
+    );
+    assert!(
+        stale.is_empty(),
+        "server routes for commands not in bindings.ts: {stale:?}"
+    );
 }
 
 /// THE arg-key guard: for every SUPPORTED command (minus exemptions), the keys the

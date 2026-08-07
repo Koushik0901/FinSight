@@ -244,7 +244,12 @@ fn categories_with_spending(
          ORDER BY 7 DESC, g.sort_order, c.sort_order",
     )?;
     let rows = stmt.query_map(
-        rusqlite::params![this_month_start, last_month_start, year_start, current_month],
+        rusqlite::params![
+            this_month_start,
+            last_month_start,
+            year_start,
+            current_month
+        ],
         |r| {
             Ok(CategoryWithSpending {
                 id: r.get(0)?,
@@ -769,7 +774,9 @@ pub async fn export_search_transactions_csv(
             let category = crate::csv::csv_escape(&r.category);
             let amount = format!("{:.2}", r.amount_cents as f64 / 100.0);
             let account = crate::csv::csv_escape(&r.account);
-            out.push_str(&format!("{date},{merchant},{category},{amount},{account}\n"));
+            out.push_str(&format!(
+                "{date},{merchant},{category},{amount},{account}\n"
+            ));
         }
         Ok(out)
     })

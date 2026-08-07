@@ -66,8 +66,12 @@ impl NotificationCategory {
             Self::Digest => "digest",
         }
     }
-    pub fn from_str(s: &str) -> Option<Self> {
-        [Self::Digest].iter().copied().chain(Self::ALL).find(|c| c.as_str() == s)
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Digest]
+            .iter()
+            .copied()
+            .chain(Self::ALL)
+            .find(|c| c.as_str() == s)
     }
     /// Every USER-FACING category, for building the preferences UI. `Digest` is
     /// deliberately excluded — it's a delivery mode, not a content toggle.
@@ -189,7 +193,7 @@ impl DigestFrequency {
             Self::Weekly => "weekly",
         }
     }
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "daily" => Self::Daily,
             "weekly" => Self::Weekly,
@@ -296,14 +300,21 @@ const MAX_OFFSET_MINUTES: i32 = 14 * 60;
 
 /// Clamp an offset to the real-world range; anything outside collapses to UTC.
 pub fn sanitize_offset_minutes(m: i32) -> i32 {
-    if (MIN_OFFSET_MINUTES..=MAX_OFFSET_MINUTES).contains(&m) { m } else { 0 }
+    if (MIN_OFFSET_MINUTES..=MAX_OFFSET_MINUTES).contains(&m) {
+        m
+    } else {
+        0
+    }
 }
 
 /// Load preferences from settings. `master_enabled` reuses the pre-existing
 /// `notifications.enabled` toggle so an upgrading user is neither silently
 /// opted in nor out; unset categories default to ON.
 pub fn load_prefs(conn: &Connection) -> Prefs {
-    let master_enabled = settings::get::<bool>(conn, KEY_ENABLED).ok().flatten().unwrap_or(true);
+    let master_enabled = settings::get::<bool>(conn, KEY_ENABLED)
+        .ok()
+        .flatten()
+        .unwrap_or(true);
     let disabled_categories = settings::get::<Vec<String>>(conn, KEY_DISABLED_CATEGORIES)
         .ok()
         .flatten()
@@ -324,11 +335,14 @@ pub fn load_prefs(conn: &Connection) -> Prefs {
         .flatten()
         .map(|s| PrivacyLevel::from_str(&s))
         .unwrap_or(PrivacyLevel::Full);
-    let snooze_until = settings::get::<String>(conn, KEY_SNOOZE_UNTIL).ok().flatten().filter(|s| !s.is_empty());
+    let snooze_until = settings::get::<String>(conn, KEY_SNOOZE_UNTIL)
+        .ok()
+        .flatten()
+        .filter(|s| !s.is_empty());
     let digest_frequency = settings::get::<String>(conn, KEY_DIGEST_FREQUENCY)
         .ok()
         .flatten()
-        .map(|s| DigestFrequency::from_str(&s))
+        .map(|s| DigestFrequency::parse(&s))
         .unwrap_or(DigestFrequency::Off);
     Prefs {
         master_enabled,
@@ -344,15 +358,27 @@ pub fn load_prefs(conn: &Connection) -> Prefs {
 /// Persist preferences.
 pub fn save_prefs(conn: &Connection, prefs: &Prefs) -> CoreResult<()> {
     settings::set(conn, KEY_ENABLED, &prefs.master_enabled)?;
-    let disabled: Vec<&str> = prefs.disabled_categories.iter().map(String::as_str).collect();
+    let disabled: Vec<&str> = prefs
+        .disabled_categories
+        .iter()
+        .map(String::as_str)
+        .collect();
     settings::set(conn, KEY_DISABLED_CATEGORIES, &disabled)?;
     match prefs.quiet_hours {
         Some((a, b)) => settings::set(conn, KEY_QUIET_HOURS, &[a, b])?,
         None => settings::set(conn, KEY_QUIET_HOURS, &Option::<[u8; 2]>::None)?,
     }
-    settings::set(conn, KEY_UTC_OFFSET, &sanitize_offset_minutes(prefs.utc_offset_minutes))?;
+    settings::set(
+        conn,
+        KEY_UTC_OFFSET,
+        &sanitize_offset_minutes(prefs.utc_offset_minutes),
+    )?;
     settings::set(conn, KEY_PRIVACY, &prefs.privacy.as_str())?;
-    settings::set(conn, KEY_SNOOZE_UNTIL, &prefs.snooze_until.clone().unwrap_or_default())?;
+    settings::set(
+        conn,
+        KEY_SNOOZE_UNTIL,
+        &prefs.snooze_until.clone().unwrap_or_default(),
+    )?;
     settings::set(conn, KEY_DIGEST_FREQUENCY, &prefs.digest_frequency.as_str())?;
     Ok(())
 }
@@ -361,7 +387,9 @@ pub fn save_prefs(conn: &Connection, prefs: &Prefs) -> CoreResult<()> {
 /// the user's LOCAL time, so `now` is shifted by their captured UTC offset before
 /// the hour is read. Handles windows that wrap past midnight (e.g. 22→7).
 fn in_quiet_hours(quiet: Option<(u8, u8)>, offset_minutes: i32, now: DateTime<Utc>) -> bool {
-    let Some((start, end)) = quiet else { return false };
+    let Some((start, end)) = quiet else {
+        return false;
+    };
     let local = now + chrono::Duration::minutes(offset_minutes as i64);
     let h = local.hour() as u8;
     if start < end {
@@ -377,7 +405,7 @@ fn in_quiet_hours(quiet: Option<(u8, u8)>, offset_minutes: i32, now: DateTime<Ut
 fn in_snooze(snooze_until: Option<&str>, now: DateTime<Utc>) -> bool {
     snooze_until
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map_or(false, |until| now < until.with_timezone(&Utc))
+        .is_some_and(|until| now < until.with_timezone(&Utc))
 }
 
 /// Compose the outbound text for a channel that can't blur amounts itself
@@ -399,7 +427,11 @@ pub fn enqueue(
     now: DateTime<Utc>,
 ) -> CoreResult<EnqueueOutcome> {
     if !prefs.category_enabled(new.category) {
-        return Ok(EnqueueOutcome { id: None, disposition: Disposition::SuppressedDisabled, push: false });
+        return Ok(EnqueueOutcome {
+            id: None,
+            disposition: Disposition::SuppressedDisabled,
+            push: false,
+        });
     }
 
     // Dedup only over UNRESOLVED rows: a standing condition stays deduped until
@@ -412,7 +444,11 @@ pub fn enqueue(
         )
         .optional()?;
     if let Some(id) = existing {
-        return Ok(EnqueueOutcome { id: Some(id), disposition: Disposition::SuppressedDuplicate, push: false });
+        return Ok(EnqueueOutcome {
+            id: Some(id),
+            disposition: Disposition::SuppressedDuplicate,
+            push: false,
+        });
     }
 
     let non_critical = !matches!(new.urgency, Urgency::Critical);
@@ -427,9 +463,13 @@ pub fn enqueue(
     // that would EXPIRE before the next digest fires must NOT be batched, or its
     // only push is lost to the expiry sweep — a time-sensitive trial/renewal
     // alert (short TTL) keeps its individual push even under a slow digest.
-    let outlives_next_digest = match (prefs.digest_frequency.interval_days(), new.expires_at.as_deref()) {
-        (Some(interval), Some(exp)) => DateTime::parse_from_rfc3339(exp)
-            .map_or(true, |e| e.with_timezone(&Utc) > now + chrono::Duration::days(interval)),
+    let outlives_next_digest = match (
+        prefs.digest_frequency.interval_days(),
+        new.expires_at.as_deref(),
+    ) {
+        (Some(interval), Some(exp)) => DateTime::parse_from_rfc3339(exp).map_or(true, |e| {
+            e.with_timezone(&Utc) > now + chrono::Duration::days(interval)
+        }),
         _ => true, // no expiry (standing/routine) always outlives
     };
     let batched = !held
@@ -498,7 +538,11 @@ pub fn expire_due(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usize
 /// the canonical two-site standing-condition lifecycle: the condition is raised
 /// and cleared from one place, driven by the account's own last-sync age.
 /// In-app only (no push) — stale data isn't lock-screen-urgent.
-pub fn refresh_stale_accounts(conn: &mut Connection, threshold_days: i64, now: DateTime<Utc>) -> CoreResult<()> {
+pub fn refresh_stale_accounts(
+    conn: &mut Connection,
+    threshold_days: i64,
+    now: DateTime<Utc>,
+) -> CoreResult<()> {
     let prefs = load_prefs(conn);
     let threshold = threshold_days.max(1);
     let cutoff = now - chrono::Duration::days(threshold);
@@ -627,7 +671,8 @@ pub fn build_digest(conn: &mut Connection, now: DateTime<Utc>) -> CoreResult<usi
 fn row_to_notification(r: &rusqlite::Row) -> rusqlite::Result<Notification> {
     Ok(Notification {
         id: r.get(0)?,
-        category: NotificationCategory::from_str(&r.get::<_, String>(1)?).unwrap_or(NotificationCategory::AccountActivity),
+        category: NotificationCategory::parse(&r.get::<_, String>(1)?)
+            .unwrap_or(NotificationCategory::AccountActivity),
         urgency: Urgency::from_str(&r.get::<_, String>(2)?),
         title: r.get(3)?,
         body: r.get(4)?,
@@ -647,11 +692,16 @@ const SELECT_COLS: &str =
 /// still-active items (the default center view) — which excludes anything past
 /// its `expires_at` even if [`expire_due`] hasn't swept it yet, so the active
 /// view is correct without depending on the sweep's timing.
-pub fn list(conn: &mut Connection, include_resolved: bool, limit: i64) -> CoreResult<Vec<Notification>> {
+pub fn list(
+    conn: &mut Connection,
+    include_resolved: bool,
+    limit: i64,
+) -> CoreResult<Vec<Notification>> {
     let now = Utc::now().to_rfc3339();
     let mut stmt;
     let rows = if include_resolved {
-        let sql = format!("SELECT {SELECT_COLS} FROM notifications ORDER BY created_at DESC LIMIT ?1");
+        let sql =
+            format!("SELECT {SELECT_COLS} FROM notifications ORDER BY created_at DESC LIMIT ?1");
         stmt = conn.prepare(&sql)?;
         stmt.query_map(params![limit.clamp(1, 500)], row_to_notification)?
     } else {
@@ -742,16 +792,38 @@ mod tests {
         let mut c = db.get().unwrap();
         let mut p = prefs();
         p.snooze_until = Some("2026-08-01T15:00:00Z".into()); // snoozed until 3pm; now is 2pm
-        let out = enqueue(&mut c, note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal), &p, now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::Held);
         assert!(!out.push);
-        assert_eq!(unread_count(&mut c).unwrap(), 1, "held, but still visible in-app");
+        assert_eq!(
+            unread_count(&mut c).unwrap(),
+            1,
+            "held, but still visible in-app"
+        );
         // Critical bypasses the snooze.
-        let crit = enqueue(&mut c, note(NotificationCategory::Security, "sec.1", Urgency::Critical), &p, now()).unwrap();
+        let crit = enqueue(
+            &mut c,
+            note(NotificationCategory::Security, "sec.1", Urgency::Critical),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert!(crit.push);
         // A snooze already in the past doesn't hold.
         p.snooze_until = Some("2026-08-01T13:00:00Z".into());
-        let out2 = enqueue(&mut c, note(NotificationCategory::CashflowRisk, "cf.2", Urgency::Normal), &p, now()).unwrap();
+        let out2 = enqueue(
+            &mut c,
+            note(NotificationCategory::CashflowRisk, "cf.2", Urgency::Normal),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert!(out2.push);
     }
 
@@ -761,12 +833,28 @@ mod tests {
         let mut c = db.get().unwrap();
         let mut p = prefs();
         p.digest_frequency = DigestFrequency::Daily;
-        let out = enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::Batched);
         assert!(!out.push);
-        assert_eq!(unread_count(&mut c).unwrap(), 1, "batched, but still visible/unread in-app");
+        assert_eq!(
+            unread_count(&mut c).unwrap(),
+            1,
+            "batched, but still visible/unread in-app"
+        );
         // Critical still pushes individually even with a digest on.
-        let crit = enqueue(&mut c, note(NotificationCategory::Security, "sec.1", Urgency::Critical), &p, now()).unwrap();
+        let crit = enqueue(
+            &mut c,
+            note(NotificationCategory::Security, "sec.1", Urgency::Critical),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert!(crit.push);
     }
 
@@ -782,13 +870,32 @@ mod tests {
         assert_eq!(build_digest(&mut c, t0).unwrap(), 0);
         // Two routine items arrive AFTER the baseline, batched (no individual push).
         let t1 = t0 + chrono::Duration::hours(1);
-        enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, t1).unwrap();
-        enqueue(&mut c, note(NotificationCategory::Categorization, "cat.1", Urgency::Normal), &p, t1).unwrap();
+        enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &p,
+            t1,
+        )
+        .unwrap();
+        enqueue(
+            &mut c,
+            note(
+                NotificationCategory::Categorization,
+                "cat.1",
+                Urgency::Normal,
+            ),
+            &p,
+            t1,
+        )
+        .unwrap();
         // A day later the digest is due and summarizes both, with a push.
         let t2 = t0 + chrono::Duration::days(2);
         assert_eq!(build_digest(&mut c, t2).unwrap(), 1);
         let all = list(&mut c, true, 50).unwrap();
-        let digest = all.iter().find(|x| x.category == NotificationCategory::Digest).expect("digest created");
+        let digest = all
+            .iter()
+            .find(|x| x.category == NotificationCategory::Digest)
+            .expect("digest created");
         assert!(digest.body.contains('2'));
         // Running again immediately is not due → no second digest.
         assert_eq!(build_digest(&mut c, t2).unwrap(), 0);
@@ -802,11 +909,24 @@ mod tests {
         let mut c = db.get().unwrap();
         let mut p = prefs();
         p.digest_frequency = DigestFrequency::Weekly;
-        let mut soon = note(NotificationCategory::SubscriptionChange, "sub.1", Urgency::Normal);
+        let mut soon = note(
+            NotificationCategory::SubscriptionChange,
+            "sub.1",
+            Urgency::Normal,
+        );
         soon.expires_at = Some((now() + chrono::Duration::days(2)).to_rfc3339());
-        assert!(enqueue(&mut c, soon, &p, now()).unwrap().push, "expires before the weekly digest → push now");
+        assert!(
+            enqueue(&mut c, soon, &p, now()).unwrap().push,
+            "expires before the weekly digest → push now"
+        );
         // A standing (no-expiry) routine item still batches as usual.
-        let out = enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::Batched);
         assert!(!out.push);
     }
@@ -824,15 +944,27 @@ mod tests {
         save_prefs(&c, &p).unwrap();
         let t0 = now(); // 2pm, outside quiet
         assert_eq!(build_digest(&mut c, t0).unwrap(), 0); // baseline
-        enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, t0 + chrono::Duration::hours(1)).unwrap();
+        enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &p,
+            t0 + chrono::Duration::hours(1),
+        )
+        .unwrap();
         // Due the next day, but at 11pm (quiet) → not produced, marker untouched.
         let quiet: DateTime<Utc> = "2026-08-02T23:00:00Z".parse().unwrap();
         assert_eq!(build_digest(&mut c, quiet).unwrap(), 0);
-        assert!(!list(&mut c, true, 50).unwrap().iter().any(|x| x.category == NotificationCategory::Digest));
+        assert!(!list(&mut c, true, 50)
+            .unwrap()
+            .iter()
+            .any(|x| x.category == NotificationCategory::Digest));
         // Later, outside quiet hours, it fires and includes the item.
         let morning: DateTime<Utc> = "2026-08-03T09:00:00Z".parse().unwrap();
         assert_eq!(build_digest(&mut c, morning).unwrap(), 1);
-        assert!(list(&mut c, true, 50).unwrap().iter().any(|x| x.category == NotificationCategory::Digest));
+        assert!(list(&mut c, true, 50)
+            .unwrap()
+            .iter()
+            .any(|x| x.category == NotificationCategory::Digest));
     }
 
     #[test]
@@ -840,17 +972,33 @@ mod tests {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
         let p = prefs(); // digest Off by default
-        let out = enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &p, now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::Delivered);
         assert!(out.push);
-        assert_eq!(build_digest(&mut c, now()).unwrap(), 0, "no digest when off");
+        assert_eq!(
+            build_digest(&mut c, now()).unwrap(),
+            0,
+            "no digest when off"
+        );
     }
 
     #[test]
     fn delivered_when_enabled_and_not_quiet() {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
-        let out = enqueue(&mut c, note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal), &prefs(), now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal),
+            &prefs(),
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::Delivered);
         assert!(out.push && out.id.is_some());
         assert_eq!(unread_count(&mut c).unwrap(), 1);
@@ -862,7 +1010,13 @@ mod tests {
         let mut c = db.get().unwrap();
         let mut p = prefs();
         p.disabled_categories.insert("cashflow_risk".into());
-        let out = enqueue(&mut c, note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal), &p, now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::CashflowRisk, "cf.1", Urgency::Normal),
+            &p,
+            now(),
+        )
+        .unwrap();
         assert_eq!(out.disposition, Disposition::SuppressedDisabled);
         assert!(out.id.is_none());
         assert_eq!(unread_count(&mut c).unwrap(), 0);
@@ -870,7 +1024,14 @@ mod tests {
         p.disabled_categories.clear();
         p.master_enabled = false;
         assert_eq!(
-            enqueue(&mut c, note(NotificationCategory::StaleData, "s.1", Urgency::Normal), &p, now()).unwrap().disposition,
+            enqueue(
+                &mut c,
+                note(NotificationCategory::StaleData, "s.1", Urgency::Normal),
+                &p,
+                now()
+            )
+            .unwrap()
+            .disposition,
             Disposition::SuppressedDisabled
         );
     }
@@ -882,15 +1043,45 @@ mod tests {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
         let key = "stale.acct-1";
-        assert_eq!(enqueue(&mut c, note(NotificationCategory::StaleData, key, Urgency::Normal), &prefs(), now()).unwrap().disposition, Disposition::Delivered);
+        assert_eq!(
+            enqueue(
+                &mut c,
+                note(NotificationCategory::StaleData, key, Urgency::Normal),
+                &prefs(),
+                now()
+            )
+            .unwrap()
+            .disposition,
+            Disposition::Delivered
+        );
         // Same condition again → suppressed, no second row.
-        assert_eq!(enqueue(&mut c, note(NotificationCategory::StaleData, key, Urgency::Normal), &prefs(), now()).unwrap().disposition, Disposition::SuppressedDuplicate);
+        assert_eq!(
+            enqueue(
+                &mut c,
+                note(NotificationCategory::StaleData, key, Urgency::Normal),
+                &prefs(),
+                now()
+            )
+            .unwrap()
+            .disposition,
+            Disposition::SuppressedDuplicate
+        );
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 1);
 
         // Condition clears, then recurs → delivered again.
         assert_eq!(resolve(&mut c, key).unwrap(), 1);
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 0); // active list empty
-        assert_eq!(enqueue(&mut c, note(NotificationCategory::StaleData, key, Urgency::Normal), &prefs(), now()).unwrap().disposition, Disposition::Delivered);
+        assert_eq!(
+            enqueue(
+                &mut c,
+                note(NotificationCategory::StaleData, key, Urgency::Normal),
+                &prefs(),
+                now()
+            )
+            .unwrap()
+            .disposition,
+            Disposition::Delivered
+        );
     }
 
     /// DISCRETE events: two different price changes must BOTH notify — a stable
@@ -899,8 +1090,28 @@ mod tests {
     fn discrete_events_with_distinct_keys_both_deliver() {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
-        let first = enqueue(&mut c, note(NotificationCategory::SubscriptionChange, "sub.price.spotify.2026-07-01", Urgency::Normal), &prefs(), now()).unwrap();
-        let second = enqueue(&mut c, note(NotificationCategory::SubscriptionChange, "sub.price.spotify.2026-09-01", Urgency::Normal), &prefs(), now()).unwrap();
+        let first = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::SubscriptionChange,
+                "sub.price.spotify.2026-07-01",
+                Urgency::Normal,
+            ),
+            &prefs(),
+            now(),
+        )
+        .unwrap();
+        let second = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::SubscriptionChange,
+                "sub.price.spotify.2026-09-01",
+                Urgency::Normal,
+            ),
+            &prefs(),
+            now(),
+        )
+        .unwrap();
         assert_eq!(first.disposition, Disposition::Delivered);
         assert_eq!(second.disposition, Disposition::Delivered);
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 2);
@@ -914,13 +1125,29 @@ mod tests {
         p.quiet_hours = Some((22, 7)); // wraps midnight
         let night: DateTime<Utc> = "2026-08-01T23:30:00Z".parse().unwrap();
 
-        let normal = enqueue(&mut c, note(NotificationCategory::AccountActivity, "a.1", Urgency::Normal), &p, night).unwrap();
+        let normal = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::AccountActivity,
+                "a.1",
+                Urgency::Normal,
+            ),
+            &p,
+            night,
+        )
+        .unwrap();
         assert_eq!(normal.disposition, Disposition::Held);
         assert!(!normal.push);
         // Held items still show in history (so they're not lost).
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 1);
 
-        let critical = enqueue(&mut c, note(NotificationCategory::Security, "sec.1", Urgency::Critical), &p, night).unwrap();
+        let critical = enqueue(
+            &mut c,
+            note(NotificationCategory::Security, "sec.1", Urgency::Critical),
+            &p,
+            night,
+        )
+        .unwrap();
         assert_eq!(critical.disposition, Disposition::Delivered);
         assert!(critical.push);
     }
@@ -939,21 +1166,63 @@ mod tests {
 
         // 06:00 UTC → 22:00 local (previous day) → inside the window → held.
         let at_local_10pm: DateTime<Utc> = "2026-08-02T06:00:00Z".parse().unwrap();
-        let held = enqueue(&mut c, note(NotificationCategory::AccountActivity, "night", Urgency::Normal), &p, at_local_10pm).unwrap();
-        assert_eq!(held.disposition, Disposition::Held, "10pm local must be quiet");
+        let held = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::AccountActivity,
+                "night",
+                Urgency::Normal,
+            ),
+            &p,
+            at_local_10pm,
+        )
+        .unwrap();
+        assert_eq!(
+            held.disposition,
+            Disposition::Held,
+            "10pm local must be quiet"
+        );
 
         // 22:00 UTC → 14:00 local → OUTSIDE the window → delivered. A UTC-only
         // check would wrongly hold this (UTC hour 22 is inside 22–7).
         let at_local_2pm: DateTime<Utc> = "2026-08-02T22:00:00Z".parse().unwrap();
-        let delivered = enqueue(&mut c, note(NotificationCategory::AccountActivity, "afternoon", Urgency::Normal), &p, at_local_2pm).unwrap();
-        assert_eq!(delivered.disposition, Disposition::Delivered, "2pm local must NOT be quiet");
+        let delivered = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::AccountActivity,
+                "afternoon",
+                Urgency::Normal,
+            ),
+            &p,
+            at_local_2pm,
+        )
+        .unwrap();
+        assert_eq!(
+            delivered.disposition,
+            Disposition::Delivered,
+            "2pm local must NOT be quiet"
+        );
 
         // Half-hour offset (UTC+5:30) resolves to the right hour too.
         p.utc_offset_minutes = 5 * 60 + 30;
         // 17:00 UTC → 22:30 local → inside → held.
         let india_night: DateTime<Utc> = "2026-08-02T17:00:00Z".parse().unwrap();
-        let held_in = enqueue(&mut c, note(NotificationCategory::AccountActivity, "india", Urgency::Normal), &p, india_night).unwrap();
-        assert_eq!(held_in.disposition, Disposition::Held, "10:30pm IST must be quiet");
+        let held_in = enqueue(
+            &mut c,
+            note(
+                NotificationCategory::AccountActivity,
+                "india",
+                Urgency::Normal,
+            ),
+            &p,
+            india_night,
+        )
+        .unwrap();
+        assert_eq!(
+            held_in.disposition,
+            Disposition::Held,
+            "10:30pm IST must be quiet"
+        );
     }
 
     #[test]
@@ -968,22 +1237,41 @@ mod tests {
 
     #[test]
     fn redaction_honors_privacy() {
-        assert_eq!(redact("Balance low", Some("$50"), PrivacyLevel::Full), "Balance low $50");
-        assert_eq!(redact("Balance low", Some("$50"), PrivacyLevel::HideAmounts), "Balance low");
-        assert_eq!(redact("Balance low", None, PrivacyLevel::Full), "Balance low");
+        assert_eq!(
+            redact("Balance low", Some("$50"), PrivacyLevel::Full),
+            "Balance low $50"
+        );
+        assert_eq!(
+            redact("Balance low", Some("$50"), PrivacyLevel::HideAmounts),
+            "Balance low"
+        );
+        assert_eq!(
+            redact("Balance low", None, PrivacyLevel::Full),
+            "Balance low"
+        );
     }
 
     #[test]
     fn expiry_backstop_resolves_past_due() {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
-        let mut n = note(NotificationCategory::SubscriptionChange, "sub.renewal.x.2026-08", Urgency::Low);
+        let mut n = note(
+            NotificationCategory::SubscriptionChange,
+            "sub.renewal.x.2026-08",
+            Urgency::Low,
+        );
         n.expires_at = Some("2026-08-05T00:00:00Z".to_string());
         enqueue(&mut c, n, &prefs(), now()).unwrap();
         // Before expiry: still active.
-        assert_eq!(expire_due(&mut c, "2026-08-04T00:00:00Z".parse().unwrap()).unwrap(), 0);
+        assert_eq!(
+            expire_due(&mut c, "2026-08-04T00:00:00Z".parse().unwrap()).unwrap(),
+            0
+        );
         // After expiry: auto-resolved.
-        assert_eq!(expire_due(&mut c, "2026-08-06T00:00:00Z".parse().unwrap()).unwrap(), 1);
+        assert_eq!(
+            expire_due(&mut c, "2026-08-06T00:00:00Z".parse().unwrap()).unwrap(),
+            1
+        );
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 0);
     }
 
@@ -995,7 +1283,11 @@ mod tests {
         use chrono::Duration;
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
-        let ins = |c: &Connection, id: &str, name: &str, sfin: Option<&str>, synced: Option<String>| {
+        let ins = |c: &Connection,
+                   id: &str,
+                   name: &str,
+                   sfin: Option<&str>,
+                   synced: Option<String>| {
             c.execute(
                 "INSERT INTO accounts(id,owner,bank,type,name,color,created_at,simplefin_account_id,last_synced_at) \
                  VALUES(?1,'me','B','Checking',?2,'#fff',datetime('now'),?3,?4)",
@@ -1003,8 +1295,20 @@ mod tests {
             )
             .unwrap();
         };
-        ins(&c, "a-stale", "Old Checking", Some("sf1"), Some((Utc::now() - Duration::days(10)).to_rfc3339()));
-        ins(&c, "a-fresh", "New Checking", Some("sf2"), Some(Utc::now().to_rfc3339()));
+        ins(
+            &c,
+            "a-stale",
+            "Old Checking",
+            Some("sf1"),
+            Some((Utc::now() - Duration::days(10)).to_rfc3339()),
+        );
+        ins(
+            &c,
+            "a-fresh",
+            "New Checking",
+            Some("sf2"),
+            Some(Utc::now().to_rfc3339()),
+        );
         // A non-connected (manual) account must be ignored entirely.
         ins(&c, "a-manual", "Manual", None, None);
 
@@ -1019,16 +1323,30 @@ mod tests {
         assert_eq!(list(&mut c, false, 50).unwrap().len(), 1);
 
         // The account syncs → the same call RESOLVES it (the clearing site).
-        c.execute("UPDATE accounts SET last_synced_at = ?1 WHERE id = 'a-stale'", params![Utc::now().to_rfc3339()]).unwrap();
+        c.execute(
+            "UPDATE accounts SET last_synced_at = ?1 WHERE id = 'a-stale'",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
         refresh_stale_accounts(&mut c, 3, Utc::now()).unwrap();
-        assert_eq!(list(&mut c, false, 50).unwrap().len(), 0, "resolved once the account is fresh again");
+        assert_eq!(
+            list(&mut c, false, 50).unwrap().len(),
+            0,
+            "resolved once the account is fresh again"
+        );
     }
 
     #[test]
     fn read_state_and_prefs_round_trip() {
         let (_d, db) = fresh();
         let mut c = db.get().unwrap();
-        let out = enqueue(&mut c, note(NotificationCategory::GoalProgress, "g.1", Urgency::Low), &prefs(), now()).unwrap();
+        let out = enqueue(
+            &mut c,
+            note(NotificationCategory::GoalProgress, "g.1", Urgency::Low),
+            &prefs(),
+            now(),
+        )
+        .unwrap();
         assert_eq!(unread_count(&mut c).unwrap(), 1);
         mark_read(&mut c, out.id.as_deref().unwrap()).unwrap();
         assert_eq!(unread_count(&mut c).unwrap(), 0);

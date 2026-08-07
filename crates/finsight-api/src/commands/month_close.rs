@@ -32,12 +32,27 @@ const DRIFT_THRESHOLD_PCT: f64 = 10.0;
 const RECURRING_WINDOW_DAYS: i64 = 395;
 
 const MONTH_NAMES: [&str; 13] = [
-    "", "January", "February", "March", "April", "May", "June", "July", "August",
-    "September", "October", "November", "December",
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 
 fn month_label(year: i32, month: i32) -> String {
-    format!("{} {}", MONTH_NAMES.get(month as usize).copied().unwrap_or(""), year)
+    format!(
+        "{} {}",
+        MONTH_NAMES.get(month as usize).copied().unwrap_or(""),
+        year
+    )
 }
 
 /// The month's key figures. Enriched over the old review snapshot with net
@@ -141,7 +156,9 @@ fn validate_month(month: i32) -> Result<(), finsight_core::CoreError> {
     if (1..=12).contains(&month) {
         Ok(())
     } else {
-        Err(finsight_core::CoreError::InvalidState("month must be between 1 and 12".into()))
+        Err(finsight_core::CoreError::InvalidState(
+            "month must be between 1 and 12".into(),
+        ))
     }
 }
 
@@ -183,7 +200,10 @@ fn compute_snapshot(
              WHERE b.month = ?3 AND a.spent > b.amount_cents",
         )?;
         let rows = stmt
-            .query_map(rusqlite::params![&month_start, &month_end, &month_str], |r| r.get::<_, String>(0))?
+            .query_map(
+                rusqlite::params![&month_start, &month_end, &month_str],
+                |r| r.get::<_, String>(0),
+            )?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
         rows
     };
@@ -205,11 +225,16 @@ fn compute_snapshot(
         .collect();
 
     // Subscription price changes whose new price took effect this month (#58).
-    let subscription_change_count = finsight_core::recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)
-        .unwrap_or_default()
-        .iter()
-        .filter(|i| i.price_change.as_ref().is_some_and(|pc| pc.effective_date.starts_with(&month_str)))
-        .count() as i64;
+    let subscription_change_count =
+        finsight_core::recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)
+            .unwrap_or_default()
+            .iter()
+            .filter(|i| {
+                i.price_change
+                    .as_ref()
+                    .is_some_and(|pc| pc.effective_date.starts_with(&month_str))
+            })
+            .count() as i64;
 
     let snapshot = MonthCloseSnapshot {
         income_cents,
@@ -267,8 +292,14 @@ fn build_flags(action_items: &[ActionItem], subscription_change_count: i64) -> V
 
 fn drift_line(label: &str, recorded: i64, current: i64) -> DriftLine {
     let changed = recorded != 0
-        && ((current - recorded).abs() as f64 / recorded.unsigned_abs() as f64) * 100.0 >= DRIFT_THRESHOLD_PCT;
-    DriftLine { label: label.into(), recorded_cents: recorded, current_cents: current, changed_materially: changed }
+        && ((current - recorded).abs() as f64 / recorded.unsigned_abs() as f64) * 100.0
+            >= DRIFT_THRESHOLD_PCT;
+    DriftLine {
+        label: label.into(),
+        recorded_cents: recorded,
+        current_cents: current,
+        changed_materially: changed,
+    }
 }
 
 struct CloseRow {
@@ -318,12 +349,19 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
 
         let view = match row {
             None => MonthCloseView {
-                year, month, month_label: month_label(year, month),
-                status: "not_started".into(), notes: None, completed_at: None,
-                snapshot: live_snapshot, flags: live_flags, drift: Vec::new(),
+                year,
+                month,
+                month_label: month_label(year, month),
+                status: "not_started".into(),
+                notes: None,
+                completed_at: None,
+                snapshot: live_snapshot,
+                flags: live_flags,
+                drift: Vec::new(),
             },
             Some(r) if r.status == "completed" => {
-                let frozen: MonthCloseSnapshot = serde_json::from_str(&r.snapshot_json).unwrap_or_default();
+                let frozen: MonthCloseSnapshot =
+                    serde_json::from_str(&r.snapshot_json).unwrap_or_default();
                 let frozen_flags: Vec<CloseFlag> = r
                     .close_json
                     .as_deref()
@@ -337,7 +375,11 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
                 // that drifts every day regardless of any edit to this month, so
                 // it stays a recorded checkpoint in the snapshot but is never a
                 // drift line — else the view would cry wolf on every closed month.
-                let drift = match r.baseline_json.as_deref().and_then(|s| serde_json::from_str::<CloseBaseline>(s).ok()) {
+                let drift = match r
+                    .baseline_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<CloseBaseline>(s).ok())
+                {
                     Some(base) => vec![
                         drift_line("Income", base.income_cents, live_baseline.income_cents),
                         drift_line("Spending", base.expense_cents, live_baseline.expense_cents),
@@ -348,16 +390,28 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
                     None => Vec::new(), // legacy row: viewable, not drift-comparable
                 };
                 MonthCloseView {
-                    year, month, month_label: month_label(year, month),
-                    status: r.status, notes: r.notes, completed_at: r.completed_at,
-                    snapshot: frozen, flags: frozen_flags, drift,
+                    year,
+                    month,
+                    month_label: month_label(year, month),
+                    status: r.status,
+                    notes: r.notes,
+                    completed_at: r.completed_at,
+                    snapshot: frozen,
+                    flags: frozen_flags,
+                    drift,
                 }
             }
             Some(r) => MonthCloseView {
                 // in_progress or skipped — review must reflect reality, so live.
-                year, month, month_label: month_label(year, month),
-                status: r.status, notes: r.notes, completed_at: r.completed_at,
-                snapshot: live_snapshot, flags: live_flags, drift: Vec::new(),
+                year,
+                month,
+                month_label: month_label(year, month),
+                status: r.status,
+                notes: r.notes,
+                completed_at: r.completed_at,
+                snapshot: live_snapshot,
+                flags: live_flags,
+                drift: Vec::new(),
             },
         };
         Ok(view)
@@ -370,8 +424,17 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
 /// acknowledged flags; `in_progress`/`skipped` only move status + notes and
 /// leave any prior frozen record intact (reopen keeps history; re-completing
 /// re-freezes explicitly).
-pub async fn save_month_close(state: &ApiState, input: SaveMonthCloseInput) -> AppResult<MonthCloseView> {
-    let SaveMonthCloseInput { year, month, status, notes, acknowledged_flag_ids } = input;
+pub async fn save_month_close(
+    state: &ApiState,
+    input: SaveMonthCloseInput,
+) -> AppResult<MonthCloseView> {
+    let SaveMonthCloseInput {
+        year,
+        month,
+        status,
+        notes,
+        acknowledged_flag_ids,
+    } = input;
     if !matches!(status.as_str(), "in_progress" | "completed" | "skipped") {
         return Err(AppError::from(finsight_core::CoreError::InvalidState(
             "status must be in_progress, completed, or skipped".into(),
@@ -385,7 +448,13 @@ pub async fn save_month_close(state: &ApiState, input: SaveMonthCloseInput) -> A
     };
 
     let db = (*state.db).clone();
-    let (y, m, st, nt, ack) = (year, month, status.clone(), notes.clone(), acknowledged_flag_ids);
+    let (y, m, st, nt, ack) = (
+        year,
+        month,
+        status.clone(),
+        notes.clone(),
+        acknowledged_flag_ids,
+    );
     run(&db, move |conn| {
         validate_month(m)?;
         let (snapshot, baseline) = compute_snapshot(conn, y, m)?;
@@ -431,7 +500,11 @@ pub async fn save_month_close(state: &ApiState, input: SaveMonthCloseInput) -> A
 
 /// The calendar month immediately before `(year, month)`, wrapping the year.
 fn previous_month(year: i32, month: i32) -> (i32, i32) {
-    if month <= 1 { (year - 1, 12) } else { (year, month - 1) }
+    if month <= 1 {
+        (year - 1, 12)
+    } else {
+        (year, month - 1)
+    }
 }
 
 /// Standing-condition producer (#57): remind the user to close the month that
@@ -468,7 +541,11 @@ pub fn refresh_month_end_reminder(
 
     let prefs = finsight_core::notify::load_prefs(conn);
     // Lapse at the start of next month relative to today.
-    let (ny, nm) = if today.month() >= 12 { (today.year() + 1, 1) } else { (today.year(), today.month() as i32 + 1) };
+    let (ny, nm) = if today.month() >= 12 {
+        (today.year() + 1, 1)
+    } else {
+        (today.year(), today.month() as i32 + 1)
+    };
     let expires_at = Some(format!("{ny}-{nm:02}-01T00:00:00+00:00"));
     finsight_core::notify::enqueue(
         conn,
@@ -477,7 +554,10 @@ pub fn refresh_month_end_reminder(
             urgency: finsight_core::notify::Urgency::Low,
             dedup_key: key,
             title: "Close out last month".into(),
-            body: format!("{} is ready to review — verify the month's data and record its snapshot.", month_label(y, m)),
+            body: format!(
+                "{} is ready to review — verify the month's data and record its snapshot.",
+                month_label(y, m)
+            ),
             sensitive: None,
             route: Some("/close".into()),
             expires_at,
@@ -511,7 +591,11 @@ pub async fn list_month_closes(state: &ApiState) -> AppResult<Vec<MonthCloseList
             let (year, month, status, completed_at, snapshot_json) = row;
             let snap: MonthCloseSnapshot = serde_json::from_str(&snapshot_json).unwrap_or_default();
             out.push(MonthCloseListItem {
-                year, month, month_label: month_label(year, month), status, completed_at,
+                year,
+                month,
+                month_label: month_label(year, month),
+                status,
+                completed_at,
                 savings_rate_pct: snap.savings_rate_pct,
                 net_worth_cents: snap.net_worth_cents,
             });
@@ -565,9 +649,18 @@ mod tests {
 
     #[test]
     fn drift_line_flags_only_material_moves() {
-        assert!(!drift_line("x", 100_000, 105_000).changed_materially, "5% is not material");
-        assert!(drift_line("x", 100_000, 120_000).changed_materially, "20% is material");
-        assert!(!drift_line("x", 0, 5_000).changed_materially, "no baseline → never material");
+        assert!(
+            !drift_line("x", 100_000, 105_000).changed_materially,
+            "5% is not material"
+        );
+        assert!(
+            drift_line("x", 100_000, 120_000).changed_materially,
+            "20% is material"
+        );
+        assert!(
+            !drift_line("x", 0, 5_000).changed_materially,
+            "no baseline → never material"
+        );
     }
 
     /// Brand-new user, one empty month: the close-bundle must degrade to zeros
@@ -614,7 +707,11 @@ mod tests {
         let now = chrono::Utc.with_ymd_and_hms(2026, 4, 10, 12, 0, 0).unwrap();
 
         refresh_month_end_reminder(&mut conn, now).unwrap();
-        assert_eq!(unresolved_month_end(&conn), 1, "raised for the unclosed month");
+        assert_eq!(
+            unresolved_month_end(&conn),
+            1,
+            "raised for the unclosed month"
+        );
 
         // Idempotent — a second sweep does not duplicate.
         refresh_month_end_reminder(&mut conn, now).unwrap();
@@ -628,6 +725,10 @@ mod tests {
         )
         .unwrap();
         refresh_month_end_reminder(&mut conn, now).unwrap();
-        assert_eq!(unresolved_month_end(&conn), 0, "resolved once March is closed");
+        assert_eq!(
+            unresolved_month_end(&conn),
+            0,
+            "resolved once March is closed"
+        );
     }
 }

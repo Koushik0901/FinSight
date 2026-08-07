@@ -56,60 +56,194 @@ use finsight_eval::categorization::corpus::LabeledExample;
 /// the trap the US corpus cannot express, and the one that produced the largest
 /// measured error cluster.
 const MERCHANTS: &[(&str, &[&str])] = &[
-    ("groceries", &[
-        "LOBLAWS", "NO FRILLS", "REAL CANADIAN SUPERSTORE", "SOBEYS", "SAVE ON FOODS",
-        "METRO", "FRESHCO", "FOOD BASICS", "IGA", "T&T SUPERMARKET", "FARM BOY",
-        "LONGOS", "YOUR INDEPENDENT GROCER", "MAXI", "PROVIGO", "ZEHRS", "FORTINOS",
-    ]),
-    ("dining", &[
-        "TIM HORTONS", "A&W", "HARVEYS", "SWISS CHALET", "ST-HUBERT", "BOSTON PIZZA",
-        "EARLS KITCHEN", "CACTUS CLUB CAFE", "THE KEG STEAKHOUSE", "MONTANAS",
-        "MILESTONES GRILL", "SECOND CUP", "TIM HORTONS", "MARY BROWNS", "PIZZA PIZZA",
-        "NANDOS", "FRESHII", "BOOSTER JUICE",
-    ]),
-    ("transport", &[
-        "PETRO-CANADA", "ESSO", "SHELL", "HUSKY", "CHEVRON", "PIONEER ENERGY",
-        "PRESTO FARE", "TTC", "TRANSLINK COMPASS", "OC TRANSPO", "GO TRANSIT",
-        "VIA RAIL CANADA", "IMPARK", "GREEN P PARKING", "PARK PLUS", "CAA",
-    ]),
-    ("shopping", &[
-        "CANADIAN TIRE", "HUDSONS BAY", "WINNERS", "MARSHALLS", "HOMESENSE",
-        "SPORT CHEK", "MARKS", "ROOTS CANADA", "LULULEMON", "INDIGO BOOKS",
-        "DOLLARAMA", "BEST BUY", "STAPLES", "RONA", "HOME DEPOT", "PRINCESS AUTO",
-        "GIANT TIGER", "LA SENZA",
-    ]),
-    ("travel", &[
-        "AIR CANADA", "WESTJET", "PORTER AIRLINES", "FLAIR AIRLINES",
-        "FAIRMONT HOTELS", "DELTA HOTELS", "SANDMAN HOTEL", "EXPEDIA CA",
-    ]),
-    ("utilities", &[
-        // The hydro cluster — real Canadian electricity utilities whose names a
-        // general-English encoder reads as water/produce.
-        "BC HYDRO", "HYDRO ONE", "HYDRO-QUEBEC", "HYDRO OTTAWA", "TORONTO HYDRO",
-        "MANITOBA HYDRO", "SASKPOWER", "ENMAX", "EPCOR", "NOVA SCOTIA POWER",
-        "FORTISBC", "ENBRIDGE GAS", "ATCO GAS",
-        // Telecom
-        "ROGERS", "BELL CANADA", "TELUS", "SHAW", "VIDEOTRON", "KOODO MOBILE",
-        "FIDO", "VIRGIN PLUS", "FREEDOM MOBILE", "EASTLINK",
-    ]),
-    ("subscriptions", &[
-        "CRAVE", "NETFLIX", "SPOTIFY", "DISNEY PLUS", "AMAZON PRIME",
-        "GOODLIFE FITNESS", "FIT4LESS", "ANYTIME FITNESS", "APPLE MUSIC",
-        "CBC GEM PREMIUM", "SPORTSNET NOW",
-    ]),
-    ("health", &[
-        "SHOPPERS DRUG MART", "REXALL", "PHARMASAVE", "LONDON DRUGS", "JEAN COUTU",
-        "UNIPRIX", "GUARDIAN PHARMACY", "LIFELABS", "DYNACARE", "PHARMAPRIX",
-    ]),
-    ("housing", &[
-        "RBC MORTGAGE PAYMENT", "TD MORTGAGE PAYMENT", "SCOTIABANK MORTGAGE",
-        "BMO MORTGAGE PAYMENT", "CIBC MORTGAGE PAYMENT", "PROPERTY MANAGEMENT RENT",
-        "REALSTAR RESIDENTIAL", "MINTO APARTMENTS",
-    ]),
-    ("gifts", &[
-        "HALLMARK CANADA", "CARLTON CARDS", "CANADIAN RED CROSS", "UNITED WAY",
-        "SICKKIDS FOUNDATION", "CANADIAN CANCER SOCIETY",
-    ]),
+    (
+        "groceries",
+        &[
+            "LOBLAWS",
+            "NO FRILLS",
+            "REAL CANADIAN SUPERSTORE",
+            "SOBEYS",
+            "SAVE ON FOODS",
+            "METRO",
+            "FRESHCO",
+            "FOOD BASICS",
+            "IGA",
+            "T&T SUPERMARKET",
+            "FARM BOY",
+            "LONGOS",
+            "YOUR INDEPENDENT GROCER",
+            "MAXI",
+            "PROVIGO",
+            "ZEHRS",
+            "FORTINOS",
+        ],
+    ),
+    (
+        "dining",
+        &[
+            "TIM HORTONS",
+            "A&W",
+            "HARVEYS",
+            "SWISS CHALET",
+            "ST-HUBERT",
+            "BOSTON PIZZA",
+            "EARLS KITCHEN",
+            "CACTUS CLUB CAFE",
+            "THE KEG STEAKHOUSE",
+            "MONTANAS",
+            "MILESTONES GRILL",
+            "SECOND CUP",
+            "TIM HORTONS",
+            "MARY BROWNS",
+            "PIZZA PIZZA",
+            "NANDOS",
+            "FRESHII",
+            "BOOSTER JUICE",
+        ],
+    ),
+    (
+        "transport",
+        &[
+            "PETRO-CANADA",
+            "ESSO",
+            "SHELL",
+            "HUSKY",
+            "CHEVRON",
+            "PIONEER ENERGY",
+            "PRESTO FARE",
+            "TTC",
+            "TRANSLINK COMPASS",
+            "OC TRANSPO",
+            "GO TRANSIT",
+            "VIA RAIL CANADA",
+            "IMPARK",
+            "GREEN P PARKING",
+            "PARK PLUS",
+            "CAA",
+        ],
+    ),
+    (
+        "shopping",
+        &[
+            "CANADIAN TIRE",
+            "HUDSONS BAY",
+            "WINNERS",
+            "MARSHALLS",
+            "HOMESENSE",
+            "SPORT CHEK",
+            "MARKS",
+            "ROOTS CANADA",
+            "LULULEMON",
+            "INDIGO BOOKS",
+            "DOLLARAMA",
+            "BEST BUY",
+            "STAPLES",
+            "RONA",
+            "HOME DEPOT",
+            "PRINCESS AUTO",
+            "GIANT TIGER",
+            "LA SENZA",
+        ],
+    ),
+    (
+        "travel",
+        &[
+            "AIR CANADA",
+            "WESTJET",
+            "PORTER AIRLINES",
+            "FLAIR AIRLINES",
+            "FAIRMONT HOTELS",
+            "DELTA HOTELS",
+            "SANDMAN HOTEL",
+            "EXPEDIA CA",
+        ],
+    ),
+    (
+        "utilities",
+        &[
+            // The hydro cluster — real Canadian electricity utilities whose names a
+            // general-English encoder reads as water/produce.
+            "BC HYDRO",
+            "HYDRO ONE",
+            "HYDRO-QUEBEC",
+            "HYDRO OTTAWA",
+            "TORONTO HYDRO",
+            "MANITOBA HYDRO",
+            "SASKPOWER",
+            "ENMAX",
+            "EPCOR",
+            "NOVA SCOTIA POWER",
+            "FORTISBC",
+            "ENBRIDGE GAS",
+            "ATCO GAS",
+            // Telecom
+            "ROGERS",
+            "BELL CANADA",
+            "TELUS",
+            "SHAW",
+            "VIDEOTRON",
+            "KOODO MOBILE",
+            "FIDO",
+            "VIRGIN PLUS",
+            "FREEDOM MOBILE",
+            "EASTLINK",
+        ],
+    ),
+    (
+        "subscriptions",
+        &[
+            "CRAVE",
+            "NETFLIX",
+            "SPOTIFY",
+            "DISNEY PLUS",
+            "AMAZON PRIME",
+            "GOODLIFE FITNESS",
+            "FIT4LESS",
+            "ANYTIME FITNESS",
+            "APPLE MUSIC",
+            "CBC GEM PREMIUM",
+            "SPORTSNET NOW",
+        ],
+    ),
+    (
+        "health",
+        &[
+            "SHOPPERS DRUG MART",
+            "REXALL",
+            "PHARMASAVE",
+            "LONDON DRUGS",
+            "JEAN COUTU",
+            "UNIPRIX",
+            "GUARDIAN PHARMACY",
+            "LIFELABS",
+            "DYNACARE",
+            "PHARMAPRIX",
+        ],
+    ),
+    (
+        "housing",
+        &[
+            "RBC MORTGAGE PAYMENT",
+            "TD MORTGAGE PAYMENT",
+            "SCOTIABANK MORTGAGE",
+            "BMO MORTGAGE PAYMENT",
+            "CIBC MORTGAGE PAYMENT",
+            "PROPERTY MANAGEMENT RENT",
+            "REALSTAR RESIDENTIAL",
+            "MINTO APARTMENTS",
+        ],
+    ),
+    (
+        "gifts",
+        &[
+            "HALLMARK CANADA",
+            "CARLTON CARDS",
+            "CANADIAN RED CROSS",
+            "UNITED WAY",
+            "SICKKIDS FOUNDATION",
+            "CANADIAN CANCER SOCIETY",
+        ],
+    ),
 ];
 
 /// Canadian bank descriptor grammars. `{m}` = merchant, `{c}` = city,
@@ -244,14 +378,14 @@ fn templates_for(modality: Modality, rng: &mut Rng) -> &'static [&'static str] {
         Modality::Online => ONLINE_TEMPLATES,
         Modality::Recurring => BILL_TEMPLATES,
         Modality::InPersonAndRecurring => {
-            if rng.next() % 2 == 0 {
+            if rng.next().is_multiple_of(2) {
                 POS_TEMPLATES
             } else {
                 BILL_TEMPLATES
             }
         }
         Modality::InPersonAndOnline => {
-            if rng.next() % 2 == 0 {
+            if rng.next().is_multiple_of(2) {
                 POS_TEMPLATES
             } else {
                 ONLINE_TEMPLATES
@@ -261,11 +395,26 @@ fn templates_for(modality: Modality, rng: &mut Rng) -> &'static [&'static str] {
 }
 
 const CITIES: &[(&str, &str)] = &[
-    ("TORONTO", "ON"), ("VANCOUVER", "BC"), ("MONTREAL", "QC"), ("CALGARY", "AB"),
-    ("EDMONTON", "AB"), ("OTTAWA", "ON"), ("WINNIPEG", "MB"), ("HALIFAX", "NS"),
-    ("VICTORIA", "BC"), ("BURNABY", "BC"), ("SURREY", "BC"), ("MISSISSAUGA", "ON"),
-    ("BRAMPTON", "ON"), ("HAMILTON", "ON"), ("QUEBEC CITY", "QC"), ("SASKATOON", "SK"),
-    ("REGINA", "SK"), ("ST JOHNS", "NL"), ("KELOWNA", "BC"), ("LONDON", "ON"),
+    ("TORONTO", "ON"),
+    ("VANCOUVER", "BC"),
+    ("MONTREAL", "QC"),
+    ("CALGARY", "AB"),
+    ("EDMONTON", "AB"),
+    ("OTTAWA", "ON"),
+    ("WINNIPEG", "MB"),
+    ("HALIFAX", "NS"),
+    ("VICTORIA", "BC"),
+    ("BURNABY", "BC"),
+    ("SURREY", "BC"),
+    ("MISSISSAUGA", "ON"),
+    ("BRAMPTON", "ON"),
+    ("HAMILTON", "ON"),
+    ("QUEBEC CITY", "QC"),
+    ("SASKATOON", "SK"),
+    ("REGINA", "SK"),
+    ("ST JOHNS", "NL"),
+    ("KELOWNA", "BC"),
+    ("LONDON", "ON"),
 ];
 
 /// Deterministic PRNG — a regenerated corpus must be byte-identical, or every
@@ -304,7 +453,9 @@ fn main() -> Result<()> {
     out.push_str("// Canadian counterpart to the US corpus. Real national-chain merchant names\n");
     out.push_str("// composed into real Canadian bank descriptor grammars. Generated by\n");
     out.push_str("// `cargo run -p finsight-eval --bin generate_ca_corpus` — do not hand-edit.\n");
-    out.push_str("// NO data from any real person's statements appears here; see the bin's docs.\n");
+    out.push_str(
+        "// NO data from any real person's statements appears here; see the bin's docs.\n",
+    );
 
     let mut n = 0usize;
     let mut merchants = 0usize;

@@ -129,7 +129,8 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
     let scoped = scope_account.is_some();
 
     // Group by normalized merchant, keeping only the groups in scope.
-    let mut groups: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
     for (i, row) in rows.iter().enumerate() {
         if row.merchant_key.is_empty() {
             continue;
@@ -142,7 +143,7 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
 
     // Flag robust outliers within each in-scope group.
     let mut flagged: Vec<(String, String)> = Vec::new(); // (txn_id, reason)
-    for (_key, idxs) in &groups {
+    for idxs in groups.values() {
         if idxs.len() < MIN_HISTORY {
             continue;
         }
@@ -193,7 +194,10 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
             }
         }
     } else {
-        tx.execute("UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1", [])?;
+        tx.execute(
+            "UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1",
+            [],
+        )?;
     }
     // Persist fresh flags + a deterministic explanation.
     {
@@ -216,7 +220,7 @@ fn median(xs: &[f64]) -> f64 {
     let mut v = xs.to_vec();
     v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = v.len() / 2;
-    if v.len() % 2 == 0 {
+    if v.len().is_multiple_of(2) {
         (v[mid - 1] + v[mid]) / 2.0
     } else {
         v[mid]
@@ -310,7 +314,11 @@ mod tests {
 
         assert_eq!(recompute_anomalies(&mut conn).unwrap(), 1);
         let flagged: i64 = conn
-            .query_row("SELECT is_anomaly FROM transactions WHERE id='outlier'", [], |r| r.get(0))
+            .query_row(
+                "SELECT is_anomaly FROM transactions WHERE id='outlier'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(flagged, 1);
 
@@ -326,11 +334,19 @@ mod tests {
         assert_eq!((isa, dis), (0, 1));
 
         // Recompute must NOT re-flag a dismissed charge.
-        assert_eq!(recompute_anomalies(&mut conn).unwrap(), 0, "dismissed anomaly stays dismissed");
+        assert_eq!(
+            recompute_anomalies(&mut conn).unwrap(),
+            0,
+            "dismissed anomaly stays dismissed"
+        );
 
         // Un-dismissing makes it flaggable again on the next recompute.
         set_dismissed(&conn, "outlier", false).unwrap();
-        assert_eq!(recompute_anomalies(&mut conn).unwrap(), 1, "un-dismissed outlier is flaggable again");
+        assert_eq!(
+            recompute_anomalies(&mut conn).unwrap(),
+            1,
+            "un-dismissed outlier is flaggable again"
+        );
     }
 
     #[test]
@@ -366,7 +382,11 @@ mod tests {
         let n = recompute_anomalies(&mut conn).unwrap();
         assert_eq!(n, 0, "settle-up rows are never anomalies");
         let flagged: i64 = conn
-            .query_row("SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE is_anomaly = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(flagged, 0);
     }
@@ -381,9 +401,16 @@ mod tests {
         insert(&conn, "STARBUCKS  800", -18000, 0);
         assert_eq!(recompute_anomalies(&mut conn).unwrap(), 1);
         // Manually mark an unrelated txn stale, then recompute: it must clear.
-        conn.execute("UPDATE transactions SET is_anomaly = 1 WHERE amount_cents = -1000", []).unwrap();
+        conn.execute(
+            "UPDATE transactions SET is_anomaly = 1 WHERE amount_cents = -1000",
+            [],
+        )
+        .unwrap();
         let n = recompute_anomalies(&mut conn).unwrap();
-        assert_eq!(n, 1, "recompute must clear stale flags and reflect only current outliers");
+        assert_eq!(
+            n, 1,
+            "recompute must clear stale flags and reflect only current outliers"
+        );
     }
 
     #[test]
@@ -456,7 +483,13 @@ mod tests {
         // scoped pass — it was never cleared.
         let is_flagged = |id: &str| full.iter().find(|(i, _, _)| i == id).unwrap().1 == 1;
         assert!(is_flagged("cof_out"), "A-only import outlier must flag");
-        assert!(is_flagged("sha_out"), "shared-group import outlier must flag");
-        assert!(is_flagged("gymb_out"), "untouched merchant's flag must survive");
+        assert!(
+            is_flagged("sha_out"),
+            "shared-group import outlier must flag"
+        );
+        assert!(
+            is_flagged("gymb_out"),
+            "untouched merchant's flag must survive"
+        );
     }
 }

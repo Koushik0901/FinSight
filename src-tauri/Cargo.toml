@@ -1,6 +1,6 @@
 [package]
 name = "finsight-tauri"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 default-run = "finsight"
@@ -13,31 +13,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "finsight"
 path = "src/main.rs"
 
-# Codegen-only bindings exporter. Builds ONLY under the `codegen` feature (see
-# `pnpm bindings`), so a default/shipping `cargo build` skips it and never
-# compiles the `finsight-bindings` command surface. The bin lives here — rather
-# than in `finsight-bindings` — because a Wry-linked binary needs this crate's
-# `tauri_build` (build.rs) resource/manifest setup to be runnable on Windows;
-# keeping it out of the codegen crate leaves that crate free of app config.
-[[bin]]
-name = "export_bindings"
-path = "src/bin/export_bindings.rs"
-required-features = ["codegen"]
-
-[features]
-# Pulls the codegen crate + the TypeScript emitter in for the export_bindings
-# bin only. Not enabled for the shipped `finsight` binary.
-codegen = ["dep:finsight-bindings", "dep:specta-typescript"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # The thin desktop shell links only finsight-core (keychain for the server URL)
-# + Tauri. `finsight-bindings` is an OPTIONAL, codegen-feature-gated dep so it
-# stays out of the shipped `finsight` binary's dependency graph entirely.
+# + Tauri. The codegen command surface lives in a separate package.
 finsight-core = { path = "../crates/finsight-core" }
-finsight-bindings = { path = "../crates/finsight-bindings", optional = true }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
@@ -49,4 +31,3 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
 serde.workspace = true
-specta-typescript = { workspace = true, optional = true }

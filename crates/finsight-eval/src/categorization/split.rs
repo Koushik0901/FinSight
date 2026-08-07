@@ -109,7 +109,10 @@ mod tests {
         }
         let (reference, holdout) = merchant_disjoint_split(&examples, 0.3, 42);
 
-        assert!(!holdout.is_empty(), "expected a non-empty holdout at a 30% target");
+        assert!(
+            !holdout.is_empty(),
+            "expected a non-empty holdout at a 30% target"
+        );
         assert!(!reference.is_empty(), "expected a non-empty reference half");
         assert!(
             merchant_sets_disjoint(&reference, &holdout),
@@ -156,8 +159,16 @@ mod tests {
         let (r1, h1) = merchant_disjoint_split(&examples, 0.25, 7);
         let (r2, h2) = merchant_disjoint_split(&examples, 0.25, 7);
         let ids = |v: &[LabeledExample]| v.iter().map(|e| e.id.clone()).collect::<Vec<_>>();
-        assert_eq!(ids(&r1), ids(&r2), "reference half must be identical across runs");
-        assert_eq!(ids(&h1), ids(&h2), "holdout half must be identical across runs");
+        assert_eq!(
+            ids(&r1),
+            ids(&r2),
+            "reference half must be identical across runs"
+        );
+        assert_eq!(
+            ids(&h1),
+            ids(&h2),
+            "holdout half must be identical across runs"
+        );
     }
 
     #[test]
@@ -167,8 +178,16 @@ mod tests {
             .collect();
         let (_, h_a) = merchant_disjoint_split(&examples, 0.3, 1);
         let (_, h_b) = merchant_disjoint_split(&examples, 0.3, 2);
-        let ids = |v: &[LabeledExample]| v.iter().map(|e| e.merchant_id.clone()).collect::<BTreeSet<_>>();
-        assert_ne!(ids(&h_a), ids(&h_b), "different seeds should (almost always) pick a different holdout set");
+        let ids = |v: &[LabeledExample]| {
+            v.iter()
+                .map(|e| e.merchant_id.clone())
+                .collect::<BTreeSet<_>>()
+        };
+        assert_ne!(
+            ids(&h_a),
+            ids(&h_b),
+            "different seeds should (almost always) pick a different holdout set"
+        );
     }
 
     #[test]
@@ -181,11 +200,18 @@ mod tests {
             examples.push(ex(&format!("heavy-{j}"), "m-heavy", "groceries"));
         }
         for i in 0..9 {
-            examples.push(ex(&format!("light-{i}"), &format!("m-light-{i}"), "groceries"));
+            examples.push(ex(
+                &format!("light-{i}"),
+                &format!("m-light-{i}"),
+                "groceries",
+            ));
         }
         let (reference, holdout) = merchant_disjoint_split(&examples, 0.5, 99);
         let merchant_ids = |v: &[LabeledExample]| {
-            v.iter().map(|e| e.merchant_id.clone()).collect::<BTreeSet<_>>().len()
+            v.iter()
+                .map(|e| e.merchant_id.clone())
+                .collect::<BTreeSet<_>>()
+                .len()
         };
         let total_merchants = 10;
         let holdout_merchants = merchant_ids(&holdout);

@@ -6,6 +6,7 @@ Cargo.lock.bak
 # Tauri
 src-tauri/target/
 src-tauri/gen/
+crates/finsight-bindings/gen/
 
 # Node / pnpm
 node_modules/

@@ -33,9 +33,9 @@ const HOLDOUT_FRACTION: f64 = 0.3;
 const SPLIT_SEED: u64 = 42;
 
 fn main() -> Result<()> {
-    let path = std::env::args().nth(1).context(
-        "usage: keyword_eval <corpus.jsonl>",
-    )?;
+    let path = std::env::args()
+        .nth(1)
+        .context("usage: keyword_eval <corpus.jsonl>")?;
     let loaded = load_corpus_jsonl(&path).with_context(|| format!("loading {path}"))?;
     let (_reference, holdout) =
         merchant_disjoint_split(&loaded.examples, HOLDOUT_FRACTION, SPLIT_SEED);
@@ -43,14 +43,22 @@ fn main() -> Result<()> {
     println!("corpus:     {path}");
     println!("provenance: {}", loaded.provenance.as_str());
 
-    println!("\n{:<16} {:>8} {:>10} {:>11} {:>12}", "scope", "rows", "coverage", "precision", "correct");
-    for (label, rows) in [("full corpus", &loaded.examples), ("holdout only", &holdout)] {
+    println!(
+        "\n{:<16} {:>8} {:>10} {:>11} {:>12}",
+        "scope", "rows", "coverage", "precision", "correct"
+    );
+    for (label, rows) in [
+        ("full corpus", &loaded.examples),
+        ("holdout only", &holdout),
+    ] {
         let m = ConfusionMatrix::build("builtin", rows, predict_builtin_for);
         println!(
             "{label:<16} {:>8} {:>7.1}% {:>11} {:>12}",
             rows.len(),
             m.coverage() * 100.0,
-            m.precision().map(|p| format!("{:.1}%", p * 100.0)).unwrap_or_else(|| "n/a".into()),
+            m.precision()
+                .map(|p| format!("{:.1}%", p * 100.0))
+                .unwrap_or_else(|| "n/a".into()),
             format!("{}/{}", m.n_correct(), m.n_predicted()),
         );
     }
@@ -67,7 +75,11 @@ fn main() -> Result<()> {
             }
         }
     }
-    println!("\nfalse matches: {} of {} predictions", wrong.len(), m.n_predicted());
+    println!(
+        "\nfalse matches: {} of {} predictions",
+        wrong.len(),
+        m.n_predicted()
+    );
     let mut by_pair: std::collections::BTreeMap<(String, String), Vec<String>> =
         std::collections::BTreeMap::new();
     for (actual, got, text) in wrong {
@@ -79,7 +91,12 @@ fn main() -> Result<()> {
         println!(
             "  {actual} -> {got} ({})  e.g. {}",
             texts.len(),
-            texts.iter().take(2).cloned().collect::<Vec<_>>().join(" | ")
+            texts
+                .iter()
+                .take(2)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" | ")
         );
     }
 

@@ -3,7 +3,7 @@
 // Thin desktop shell (Phase 4): no local command surface, no local database.
 // Reads a server URL from the OS keychain. This crate does NOT depend on the
 // command surface at all — the `#[tauri::command]` wrappers and the
-// `export_bindings` codegen live in the separate, codegen-only
+// `export_bindings` codegen tool lives in the separate, codegen-only
 // `finsight-bindings` crate, which is intentionally kept out of this shipped
 // binary's dependency graph.
 // On first launch (no stored URL) the bundled ui/dist app shows its own

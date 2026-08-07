@@ -1246,7 +1246,14 @@ fn spawn_deep_answer(
         let cid = conversation_id.clone();
         let persisted = run(&db, move |conn| {
             let msg = conversations::insert_message(
-                conn, &cid, "assistant", &prose, None, None, None, Some(&parts),
+                conn,
+                &cid,
+                "assistant",
+                &prose,
+                None,
+                None,
+                None,
+                Some(&parts),
             )?;
             conversations::update_message_run_status(
                 conn,
@@ -1530,7 +1537,7 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
                 && opt_label_ok(&v.caveat)
                 && v.funding_source
                     .as_ref()
-                    .map_or(true, |f| label_ok(&f.label) && label_ok(&f.detail))
+                    .is_none_or(|f| label_ok(&f.label) && label_ok(&f.detail))
         }
         AgentResponseBlock::CategoryBreakdown(b) => {
             label_ok(&b.period_label)
@@ -1555,7 +1562,9 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
         }
         AgentResponseBlock::RecategorizationPreview(b) => {
             b.rows.len() <= 20
-                && b.rows.iter().all(|r| label_ok(&r.merchant) && label_ok(&r.category_key))
+                && b.rows
+                    .iter()
+                    .all(|r| label_ok(&r.merchant) && label_ok(&r.category_key))
                 && label_ok(&b.bundle_id)
         }
         AgentResponseBlock::SpendingReview(b) => {
@@ -1632,11 +1641,9 @@ fn response_block_within_artifact_bounds(block: &AgentResponseBlock) -> bool {
             // the label bound is what stops one pathological import row from
             // getting the whole block rejected at the client.
             b.items.len() <= 6
-                && b.items
-                    .iter()
-                    .all(|i| label_ok(&i.merchant)
-                        && label_ok(&i.proposed_category)
-                        && opt_label_ok(&i.date))
+                && b.items.iter().all(|i| {
+                    label_ok(&i.merchant) && label_ok(&i.proposed_category) && opt_label_ok(&i.date)
+                })
         }
     }
 }
@@ -1996,7 +2003,10 @@ mod tests {
         let AgentResponseBlock::TransactionTable(t) = &answer.response_blocks[0] else {
             panic!();
         };
-        assert_eq!(t.query.as_ref().unwrap().merchant.as_deref(), Some("Costco"));
+        assert_eq!(
+            t.query.as_ref().unwrap().merchant.as_deref(),
+            Some("Costco")
+        );
         assert_eq!(t.query.as_ref().unwrap().account, None);
     }
 

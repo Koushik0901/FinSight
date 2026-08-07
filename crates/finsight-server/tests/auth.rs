@@ -129,7 +129,11 @@ async fn setup_when_empty_creates_admin_and_logs_in() {
     let cookie = cookie_from(&res);
     let body = json_body(res).await;
     let recovery_key = body["recoveryKey"].as_str().expect("recoveryKey present");
-    assert_eq!(recovery_key.split('-').count(), 8, "recovery key is 8 dash-separated groups");
+    assert_eq!(
+        recovery_key.split('-').count(),
+        8,
+        "recovery key is 8 dash-separated groups"
+    );
 
     let res = app
         .oneshot(
@@ -174,15 +178,23 @@ async fn concurrent_setup_requests_create_exactly_one_admin() {
     let (state, _dir) = fresh_state();
     let app = build_router(state.clone(), &test_ui_dir());
 
-    let first = app.clone().oneshot(setup_req("alice", "correct horse battery staple"));
-    let second = app.clone().oneshot(setup_req("bob", "another correct horse battery"));
+    let first = app
+        .clone()
+        .oneshot(setup_req("alice", "correct horse battery staple"));
+    let second = app
+        .clone()
+        .oneshot(setup_req("bob", "another correct horse battery"));
     let (first, second) = tokio::join!(first, second);
     let mut statuses = [first.unwrap().status(), second.unwrap().status()];
     statuses.sort();
 
     assert_eq!(statuses, [StatusCode::OK, StatusCode::CONFLICT]);
     let users = state.users.list_users().unwrap();
-    assert_eq!(users.len(), 1, "setup must commit exactly one administrator");
+    assert_eq!(
+        users.len(),
+        1,
+        "setup must commit exactly one administrator"
+    );
     assert!(users[0].is_admin);
 }
 
@@ -200,7 +212,10 @@ async fn malformed_legacy_key_fails_setup_without_stranding_the_ledger() {
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(json_body(res).await["code"], "auth.migration_failed");
     assert!(state.users.is_empty().unwrap());
-    assert_eq!(std::fs::read(data_dir.join("data.sqlcipher")).unwrap(), b"legacy-ledger");
+    assert_eq!(
+        std::fs::read(data_dir.join("data.sqlcipher")).unwrap(),
+        b"legacy-ledger"
+    );
 }
 
 #[tokio::test]
@@ -208,11 +223,19 @@ async fn login_logout_lifecycle() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
 
-    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
     let cookie = cookie_from(&res);
 
     // Authenticated rpc works.
-    let res = app.clone().oneshot(rpc_req("list_accounts", &cookie)).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(rpc_req("list_accounts", &cookie))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
     // Logout invalidates the session.
@@ -228,14 +251,25 @@ async fn login_logout_lifecycle() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let res = app.clone().oneshot(rpc_req("list_accounts", &cookie)).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(rpc_req("list_accounts", &cookie))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
     // Logging back in issues a fresh, working session.
-    let res = app.clone().oneshot(login_req("alice", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let cookie2 = cookie_from(&res);
-    let res = app.oneshot(rpc_req("list_accounts", &cookie2)).await.unwrap();
+    let res = app
+        .oneshot(rpc_req("list_accounts", &cookie2))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -248,13 +282,20 @@ async fn bad_password_is_401_bad_credentials() {
         .await
         .unwrap();
 
-    let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "wrong-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     let body = json_body(res).await;
     assert_eq!(body["code"], "auth.bad_credentials");
 
     // Unknown username returns the SAME code — no username oracle.
-    let res = app.oneshot(login_req("nobody-here", "whatever")).await.unwrap();
+    let res = app
+        .oneshot(login_req("nobody-here", "whatever"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     let body = json_body(res).await;
     assert_eq!(body["code"], "auth.bad_credentials");
@@ -284,7 +325,11 @@ async fn admin_create_user_and_user_isolation() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
 
-    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     let admin_cookie = cookie_from(&res);
 
     // Admin creates an account in their OWN db.
@@ -308,24 +353,30 @@ async fn admin_create_user_and_user_isolation() {
             Request::post("/api/auth/users")
                 .header("content-type", "application/json")
                 .header("cookie", admin_cookie)
-                .body(Body::from(r#"{"username":"bob","password":"bobs-password-1"}"#))
+                .body(Body::from(
+                    r#"{"username":"bob","password":"bobs-password-1"}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let body = json_body(res).await;
-    assert_eq!(
-        body["recoveryKey"].as_str().unwrap().split('-').count(),
-        8
-    );
+    assert_eq!(body["recoveryKey"].as_str().unwrap().split('-').count(), 8);
 
     // Bob logs in and sees an EMPTY account list — isolated from admin's DB.
-    let res = app.clone().oneshot(login_req("bob", "bobs-password-1")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("bob", "bobs-password-1"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let bob_cookie = cookie_from(&res);
 
-    let res = app.oneshot(rpc_req("list_accounts", &bob_cookie)).await.unwrap();
+    let res = app
+        .oneshot(rpc_req("list_accounts", &bob_cookie))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let body = json_body(res).await;
     assert_eq!(body.as_array().unwrap().len(), 0);
@@ -336,7 +387,11 @@ async fn non_admin_cannot_manage_users() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
 
-    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     let admin_cookie = cookie_from(&res);
 
     app.clone()
@@ -344,13 +399,19 @@ async fn non_admin_cannot_manage_users() {
             Request::post("/api/auth/users")
                 .header("content-type", "application/json")
                 .header("cookie", admin_cookie)
-                .body(Body::from(r#"{"username":"bob","password":"bobs-password-1"}"#))
+                .body(Body::from(
+                    r#"{"username":"bob","password":"bobs-password-1"}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
 
-    let res = app.clone().oneshot(login_req("bob", "bobs-password-1")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("bob", "bobs-password-1"))
+        .await
+        .unwrap();
     let bob_cookie = cookie_from(&res);
 
     let res = app
@@ -358,7 +419,9 @@ async fn non_admin_cannot_manage_users() {
             Request::post("/api/auth/users")
                 .header("content-type", "application/json")
                 .header("cookie", bob_cookie)
-                .body(Body::from(r#"{"username":"carol","password":"carols-password"}"#))
+                .body(Body::from(
+                    r#"{"username":"carol","password":"carols-password"}"#,
+                ))
                 .unwrap(),
         )
         .await
@@ -373,7 +436,11 @@ async fn delete_user_removes_dir_and_sessions() {
     let (state, data_dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
 
-    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     let admin_cookie = cookie_from(&res);
 
     let res = app
@@ -382,18 +449,28 @@ async fn delete_user_removes_dir_and_sessions() {
             Request::post("/api/auth/users")
                 .header("content-type", "application/json")
                 .header("cookie", admin_cookie.clone())
-                .body(Body::from(r#"{"username":"bob","password":"bobs-password-1"}"#))
+                .body(Body::from(
+                    r#"{"username":"bob","password":"bobs-password-1"}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let res = app.clone().oneshot(login_req("bob", "bobs-password-1")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("bob", "bobs-password-1"))
+        .await
+        .unwrap();
     let bob_cookie = cookie_from(&res);
 
     // Touch an rpc route so bob's per-user runtime (and on-disk dir) exists.
-    let res = app.clone().oneshot(rpc_req("list_accounts", &bob_cookie)).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(rpc_req("list_accounts", &bob_cookie))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
     let res = app
@@ -418,7 +495,10 @@ async fn delete_user_removes_dir_and_sessions() {
         .to_string();
 
     let bob_dir = data_dir.join("users").join(&bob_id);
-    assert!(bob_dir.exists(), "bob's data dir should exist before delete");
+    assert!(
+        bob_dir.exists(),
+        "bob's data dir should exist before delete"
+    );
 
     let res = app
         .clone()
@@ -432,9 +512,15 @@ async fn delete_user_removes_dir_and_sessions() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    assert!(!bob_dir.exists(), "bob's data dir should be removed on delete");
+    assert!(
+        !bob_dir.exists(),
+        "bob's data dir should be removed on delete"
+    );
 
-    let res = app.oneshot(rpc_req("list_accounts", &bob_cookie)).await.unwrap();
+    let res = app
+        .oneshot(rpc_req("list_accounts", &bob_cookie))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -455,7 +541,10 @@ async fn recover_resets_password_rotates_key_and_logs_in() {
         .await
         .unwrap();
     let setup_cookie = cookie_from(&res);
-    let old_recovery = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+    let old_recovery = json_body(res).await["recoveryKey"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Prove the account owns real data, so we can prove recovery preserves it
     // (the db key is re-wrapped, never regenerated).
@@ -465,7 +554,9 @@ async fn recover_resets_password_rotates_key_and_logs_in() {
             Request::post("/api/rpc/create_account")
                 .header("content-type", "application/json")
                 .header("cookie", &setup_cookie)
-                .body(Body::from(new_account_payload("Pre-Recovery Acct").to_string()))
+                .body(Body::from(
+                    new_account_payload("Pre-Recovery Acct").to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -595,7 +686,11 @@ async fn weak_password_rejected_on_setup_create_user_and_recover() {
     let app = build_router(state, &test_ui_dir());
 
     // setup
-    let res = app.clone().oneshot(setup_req("alice", "short-pw")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "short-pw"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = json_body(res).await;
     assert_eq!(body["code"], "auth.weak_password");
@@ -613,7 +708,10 @@ async fn weak_password_rejected_on_setup_create_user_and_recover() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let admin_cookie = cookie_from(&res);
-    let recovery = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+    let recovery = json_body(res).await["recoveryKey"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // create_user
     let res = app
@@ -674,17 +772,33 @@ async fn login_locks_out_after_five_failures_then_recovers() {
 
     // Failures 1..=4 stay 401 — the budget isn't spent yet.
     for i in 1..5 {
-        let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "attempt {i} should be 401");
+        let res = app
+            .clone()
+            .oneshot(login_req("alice", "wrong-password"))
+            .await
+            .unwrap();
+        assert_eq!(
+            res.status(),
+            StatusCode::UNAUTHORIZED,
+            "attempt {i} should be 401"
+        );
     }
 
     // The 5th trips the lock.
-    let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "wrong-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
     // Now even the CORRECT password is refused, with 429 — proving it's a
     // lockout and not just another credential rejection.
-    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(json_body(res).await["code"], "auth.too_many_attempts");
 
@@ -698,7 +812,11 @@ async fn login_locks_out_after_five_failures_then_recovers() {
 
     // After the window, the correct password works again.
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
     assert_eq!(
         res.status(),
         StatusCode::OK,
@@ -743,7 +861,10 @@ async fn lockout_does_not_reveal_whether_the_account_exists() {
     );
 
     // And a real account is unaffected by another name's exhausted budget.
-    let res = app.oneshot(login_req("alice", "original-password")).await.unwrap();
+    let res = app
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -759,17 +880,31 @@ async fn successful_login_clears_the_failure_budget() {
         .unwrap();
 
     for _ in 0..4 {
-        app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+        app.clone()
+            .oneshot(login_req("alice", "wrong-password"))
+            .await
+            .unwrap();
     }
-    let res = app.clone().oneshot(login_req("alice", "original-password")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
     // Budget reset: four more failures still don't lock.
     for _ in 0..4 {
-        let res = app.clone().oneshot(login_req("alice", "wrong-password")).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(login_req("alice", "wrong-password"))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
-    let res = app.oneshot(login_req("alice", "original-password")).await.unwrap();
+    let res = app
+        .oneshot(login_req("alice", "original-password"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 }
 
@@ -854,12 +989,18 @@ async fn setup_retry_after_a_failed_migration_still_migrates_the_original_data()
     // DB unreadable forever.)
     assert!(data_dir.join("data.sqlcipher").exists());
     assert!(data_dir.join("data.sqlcipher-wal").exists());
-    assert!(data_dir.join("db.key").exists(), "the legacy keyfile must survive a failed migration");
+    assert!(
+        data_dir.join("db.key").exists(),
+        "the legacy keyfile must survive a failed migration"
+    );
 
     // Operator clears the fault and retries.
     std::fs::remove_file(data_dir.join("users")).unwrap();
 
-    let res = app.oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::OK, "the retry must succeed");
     let admin_id = state.users.list_users().unwrap()[0].id.clone();
 
@@ -885,11 +1026,18 @@ async fn setup_retry_after_a_failed_migration_still_migrates_the_original_data()
 async fn token_create_list_and_revoke_round_trip() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
-    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
     let cookie = cookie_from(&res);
 
-    assert_eq!(json_body(app.clone().oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
-        serde_json::json!([]), "a fresh account has no tokens");
+    assert_eq!(
+        json_body(app.clone().oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
+        serde_json::json!([]),
+        "a fresh account has no tokens"
+    );
 
     let res = app
         .clone()
@@ -924,15 +1072,21 @@ async fn token_create_list_and_revoke_round_trip() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(json_body(app.oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
-        serde_json::json!([]));
+    assert_eq!(
+        json_body(app.oneshot(list_tokens_req(&cookie)).await.unwrap()).await,
+        serde_json::json!([])
+    );
 }
 
 #[tokio::test]
 async fn token_scope_defaults_to_read_and_rejects_unknown_values() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
-    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
     let cookie = cookie_from(&res);
 
     // Omitting `scope` must NOT silently grant write access.
@@ -951,7 +1105,11 @@ async fn token_scope_defaults_to_read_and_rejects_unknown_values() {
             .oneshot(create_token_req(&cookie, "x", Some(bad)))
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "scope {bad:?} must be rejected");
+        assert_eq!(
+            res.status(),
+            StatusCode::BAD_REQUEST,
+            "scope {bad:?} must be rejected"
+        );
     }
 
     // Empty / oversized names are rejected too.
@@ -962,7 +1120,10 @@ async fn token_scope_defaults_to_read_and_rejects_unknown_values() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let long = "n".repeat(65);
-    let res = app.oneshot(create_token_req(&cookie, &long, Some("read"))).await.unwrap();
+    let res = app
+        .oneshot(create_token_req(&cookie, &long, Some("read")))
+        .await
+        .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -970,15 +1131,22 @@ async fn token_scope_defaults_to_read_and_rejects_unknown_values() {
 async fn token_endpoints_require_a_session() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
-    app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    app.clone()
+        .oneshot(setup_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
 
     for req in [
-        Request::get("/api/auth/tokens").body(Body::empty()).unwrap(),
+        Request::get("/api/auth/tokens")
+            .body(Body::empty())
+            .unwrap(),
         Request::post("/api/auth/tokens")
             .header("content-type", "application/json")
             .body(Body::from(r#"{"name":"x"}"#))
             .unwrap(),
-        Request::delete("/api/auth/tokens/whatever").body(Body::empty()).unwrap(),
+        Request::delete("/api/auth/tokens/whatever")
+            .body(Body::empty())
+            .unwrap(),
     ] {
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -991,7 +1159,11 @@ async fn token_endpoints_require_a_session() {
 async fn tokens_are_isolated_between_users() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
-    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     let admin_cookie = cookie_from(&res);
 
     let res = app
@@ -1008,7 +1180,12 @@ async fn tokens_are_isolated_between_users() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let bob_cookie = cookie_from(&app.clone().oneshot(login_req("bob", "hunter22-plus")).await.unwrap());
+    let bob_cookie = cookie_from(
+        &app.clone()
+            .oneshot(login_req("bob", "hunter22-plus"))
+            .await
+            .unwrap(),
+    );
 
     let created = json_body(
         app.clone()
@@ -1020,8 +1197,16 @@ async fn tokens_are_isolated_between_users() {
     let admin_token_id = created["id"].as_str().unwrap().to_string();
 
     // Bob sees none of it...
-    assert_eq!(json_body(app.clone().oneshot(list_tokens_req(&bob_cookie)).await.unwrap()).await,
-        serde_json::json!([]));
+    assert_eq!(
+        json_body(
+            app.clone()
+                .oneshot(list_tokens_req(&bob_cookie))
+                .await
+                .unwrap()
+        )
+        .await,
+        serde_json::json!([])
+    );
     // ...and naming the right id doesn't let him revoke it.
     let res = app
         .clone()
@@ -1047,9 +1232,16 @@ async fn recovery_revokes_existing_api_tokens() {
     let (state, _dir) = fresh_state();
     let app = build_router(state, &test_ui_dir());
 
-    let res = app.clone().oneshot(setup_req("alice", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("alice", "hunter22-plus"))
+        .await
+        .unwrap();
     let cookie = cookie_from(&res);
-    let recovery_key = json_body(res).await["recoveryKey"].as_str().unwrap().to_string();
+    let recovery_key = json_body(res).await["recoveryKey"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     app.clone()
         .oneshot(create_token_req(&cookie, "leaked token", Some("full")))
@@ -1083,7 +1275,11 @@ async fn recovery_revokes_existing_api_tokens() {
 async fn deleting_a_user_purges_their_api_tokens() {
     let (state, _dir) = fresh_state();
     let app = build_router(state.clone(), &test_ui_dir());
-    let res = app.clone().oneshot(setup_req("admin", "hunter22-plus")).await.unwrap();
+    let res = app
+        .clone()
+        .oneshot(setup_req("admin", "hunter22-plus"))
+        .await
+        .unwrap();
     let admin_cookie = cookie_from(&res);
 
     app.clone()
@@ -1098,7 +1294,12 @@ async fn deleting_a_user_purges_their_api_tokens() {
         )
         .await
         .unwrap();
-    let bob_cookie = cookie_from(&app.clone().oneshot(login_req("bob", "hunter22-plus")).await.unwrap());
+    let bob_cookie = cookie_from(
+        &app.clone()
+            .oneshot(login_req("bob", "hunter22-plus"))
+            .await
+            .unwrap(),
+    );
     app.clone()
         .oneshot(create_token_req(&bob_cookie, "bob token", Some("full")))
         .await

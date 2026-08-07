@@ -48,7 +48,7 @@ cd ui && npx vitest run src/screens/Settings.test.tsx
 cd ui && npx tsc --noEmit
 
 # Regenerate TypeScript bindings after changing the shared command contract
-cargo run -p finsight-tauri --bin export_bindings --features codegen
+cargo run -p finsight-bindings --bin export_bindings
 
 # Build for production
 cd ui && npm run build
@@ -77,7 +77,7 @@ sent by `bindings.ts`.
 
 **`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-bindings`** — codegen-only Tauri wrapper layer. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract the `export_bindings` binary emits. This crate exists **purely** to generate `ui/src/api/bindings.ts`. `src-tauri` pulls it in only as an *optional*, `codegen`-feature-gated dependency, so it stays out of the shipped desktop binary's dependency graph. The real desktop entry point is `src-tauri/src/main.rs`, a thin webview shell exposing only the three local server-URL commands.
+**`crates/finsight-bindings`** — codegen-only Tauri wrapper and exporter package. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract the `export_bindings` binary emits. This package exists **purely** to generate `ui/src/api/bindings.ts` and is not linked into the shipped desktop binary.
 
 **`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against `bindings.ts`. It also hosts the **MCP server** (`POST /mcp`) — see below.
 
@@ -99,7 +99,7 @@ Adding a Copilot tool needs no MCP work. Changing auth, scopes, or the bundle to
 
 **`crates/finsight-eval`** — evaluation fixtures and runners for Copilot/provider quality checks. Live-provider tests remain opt-in.
 
-**`src-tauri`** (crate alias `finsight-tauri`) — the shipped thin desktop shell binary (`finsight`), which depends only on `finsight-core` (keychain for the server URL) + Tauri. It also hosts the tiny `export_bindings` codegen bin, gated behind the `codegen` feature (which is the only thing that pulls in the optional `finsight-bindings` dep). A default/shipping build skips that bin, so the codegen crate never enters the `finsight` binary's dependency graph; the bin lives here only because it needs this crate's `tauri_build` setup to be a runnable Windows binary.
+**`src-tauri`** (crate alias `finsight-tauri`) — the shipped thin desktop shell binary (`finsight`), which depends only on `finsight-core` (keychain for the server URL) + Tauri. The bindings exporter lives in the separate `finsight-bindings` package, so the command surface cannot enter the shipping binary or its installer.
 
 ### The `run()` pattern
 
@@ -125,7 +125,7 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
    using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
    `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
    client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
-5. `cargo run -p finsight-tauri --bin export_bindings --features codegen` (aka `pnpm bindings`) — regenerates `ui/src/api/bindings.ts`
+5. `cargo run -p finsight-bindings --bin export_bindings` (aka `pnpm bindings`) — regenerates `ui/src/api/bindings.ts`
 
 ### Database migrations
 

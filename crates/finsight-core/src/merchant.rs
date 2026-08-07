@@ -25,7 +25,9 @@ pub fn normalize_merchant(raw: &str) -> String {
     //    real vendor, e.g. "PAYPAL *STARBUCKS"). We only strip an explicit
     //    allowlist so we never accidentally drop the vendor itself (e.g. the
     //    "OPENAI" in "OPENAI *CHATGPT").
-    for prefix in ["paypal *", "paypal*", "sq *", "sq*", "tst-", "tst*", "bam*", "pp*", "pos "] {
+    for prefix in [
+        "paypal *", "paypal*", "sq *", "sq*", "tst-", "tst*", "bam*", "pp*", "pos ",
+    ] {
         if let Some(stripped) = s.strip_prefix(prefix) {
             s = stripped.trim_start_matches('*').trim().to_string();
         }
@@ -52,7 +54,10 @@ pub fn normalize_merchant(raw: &str) -> String {
     let joined = tokens.join(" ");
     if joined.is_empty() {
         // Fall back to a cleaned version of the whole descriptor.
-        head.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+        head.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     } else {
         joined
     }
@@ -368,7 +373,10 @@ mod tests {
         // as a transfer, undoing #31.
         for k in [&hydro, &telus, &rogers] {
             for banned in ["bill payment", "transfer", "payment received", "e-transfer"] {
-                assert!(!k.contains(banned), "recovered key {k:?} leaks payment vocabulary");
+                assert!(
+                    !k.contains(banned),
+                    "recovered key {k:?} leaks payment vocabulary"
+                );
             }
         }
     }
@@ -378,9 +386,15 @@ mod tests {
         // The trigger is the bill-payment PHRASE, not any structural word, so a
         // real vendor that merely contains "pay"/"credit"/"money" never fires.
         // Pinned because it is the obvious over-reach if the trigger widens.
-        assert_eq!(canonical_merchant_key("CREDIT ONE BANK  LAS VEGAS"), "credit one bank");
+        assert_eq!(
+            canonical_merchant_key("CREDIT ONE BANK  LAS VEGAS"),
+            "credit one bank"
+        );
         assert_eq!(canonical_merchant_key("MONEY MART  BURNABY"), "money mart");
-        assert_eq!(canonical_merchant_key("PAYLESS SHOES  BURNABY"), "payless shoes");
+        assert_eq!(
+            canonical_merchant_key("PAYLESS SHOES  BURNABY"),
+            "payless shoes"
+        );
     }
 
     #[test]
@@ -423,20 +437,38 @@ mod tests {
             normalize_merchant("SPOTIFY                 STOCKHOLM"),
             normalize_merchant("WALMART SUPERCENTER 121 BURNABY"),
         );
-        assert_eq!(normalize_merchant("SPOTIFY                 STOCKHOLM"), "spotify");
+        assert_eq!(
+            normalize_merchant("SPOTIFY                 STOCKHOLM"),
+            "spotify"
+        );
     }
 
     #[test]
     fn subscription_and_bill_hints_match_real_vendors() {
         assert!(subscription_vendor_hint(&normalize_merchant("SPOTIFY  STOCKHOLM")).is_some());
-        assert!(subscription_vendor_hint(&normalize_merchant("OPENAI *CHATGPT SUBSCR  SAN FRANCISCO")).is_some());
-        assert!(subscription_vendor_hint(&normalize_merchant("ANTHROPIC  SAN FRANCISCO")).is_some());
-        assert!(subscription_vendor_hint(&normalize_merchant("CLAUDE.AI SUBSCRIPTION  SAN FRANCISCO")).is_some());
-        assert!(subscription_vendor_hint(&normalize_merchant("OPENROUTER, INC  NEW YORK")).is_some());
+        assert!(subscription_vendor_hint(&normalize_merchant(
+            "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO"
+        ))
+        .is_some());
+        assert!(
+            subscription_vendor_hint(&normalize_merchant("ANTHROPIC  SAN FRANCISCO")).is_some()
+        );
+        assert!(subscription_vendor_hint(&normalize_merchant(
+            "CLAUDE.AI SUBSCRIPTION  SAN FRANCISCO"
+        ))
+        .is_some());
+        assert!(
+            subscription_vendor_hint(&normalize_merchant("OPENROUTER, INC  NEW YORK")).is_some()
+        );
         assert!(bill_vendor_hint(&normalize_merchant("FREEDOM MOBILE  877-946-3184")).is_some());
         // Not subscriptions:
-        assert!(subscription_vendor_hint(&normalize_merchant("WALMART SUPERCENTER 121 BURNABY")).is_none());
-        assert!(subscription_vendor_hint(&normalize_merchant("MCDONALD'S  WEST VANCOUVER")).is_none());
+        assert!(
+            subscription_vendor_hint(&normalize_merchant("WALMART SUPERCENTER 121 BURNABY"))
+                .is_none()
+        );
+        assert!(
+            subscription_vendor_hint(&normalize_merchant("MCDONALD'S  WEST VANCOUVER")).is_none()
+        );
         assert!(subscription_vendor_hint(&normalize_merchant("EVO CAR SHARE  BURNABY")).is_none());
     }
 }

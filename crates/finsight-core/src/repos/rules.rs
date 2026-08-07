@@ -186,7 +186,11 @@ mod tests {
     fn apply_to_uncategorized_backfills_history_but_not_transfers_or_income() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+            [],
+        )
+        .unwrap();
         conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('housing','g1','Housing','#f00',0)", []).unwrap();
         conn.execute(
             "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('chk','You','B','Checking','C','CAD','#111','manual',datetime('now'))",
@@ -205,12 +209,29 @@ mod tests {
 
         let n = apply_to_uncategorized(&mut conn, "%landlord properties%", "housing").unwrap();
         assert_eq!(n, 2, "both rent expenses categorized");
-        let housing: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM transactions WHERE category_id='housing'", [], |r| r.get(0)).unwrap();
+        let housing: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE category_id='housing'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(housing, 2);
         // Transfer leg and income row untouched.
-        let tf_cat: Option<String> = conn.query_row("SELECT category_id FROM transactions WHERE id='tf'", [], |r| r.get(0)).unwrap();
-        let in_cat: Option<String> = conn.query_row("SELECT category_id FROM transactions WHERE id='in'", [], |r| r.get(0)).unwrap();
+        let tf_cat: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='tf'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let in_cat: Option<String> = conn
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='in'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(tf_cat, None, "transfer leg never categorized");
         assert_eq!(in_cat, None, "income row (positive amount) not categorized");
     }
@@ -281,7 +302,11 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!((in_settled, out_settled), (1, 1), "both signs settled — not filtered by amount sign");
+        assert_eq!(
+            (in_settled, out_settled),
+            (1, 1),
+            "both signs settled — not filtered by amount sign"
+        );
     }
 
     #[test]
@@ -309,7 +334,10 @@ mod tests {
         .unwrap();
 
         let n = apply_treatment_rules(&mut conn).unwrap();
-        assert_eq!(n, 0, "an explicit per-row verdict always wins over a treatment rule");
+        assert_eq!(
+            n, 0,
+            "an explicit per-row verdict always wins over a treatment rule"
+        );
     }
 
     #[test]
@@ -352,8 +380,16 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(p1_peer.as_deref(), Some("p2"), "pair link intact on both sides");
-        assert_eq!(p2_peer.as_deref(), Some("p1"), "pair link intact on both sides");
+        assert_eq!(
+            p1_peer.as_deref(),
+            Some("p2"),
+            "pair link intact on both sides"
+        );
+        assert_eq!(
+            p2_peer.as_deref(),
+            Some("p1"),
+            "pair link intact on both sides"
+        );
     }
 
     #[test]
@@ -389,7 +425,11 @@ mod tests {
         assert_eq!(n, 1, "only the e-transfer-vocab row is treated");
 
         let e1_settled: i64 = conn
-            .query_row("SELECT settle_up FROM transactions WHERE id = 'e1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT settle_up FROM transactions WHERE id = 'e1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(e1_settled, 1, "the e-transfer is settled up");
 
@@ -401,7 +441,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(g1_settled, 0, "Trader Joe's groceries are left alone");
-        assert!(g1_cat.is_none(), "Trader Joe's groceries stay uncategorized, not settled");
+        assert!(
+            g1_cat.is_none(),
+            "Trader Joe's groceries stay uncategorized, not settled"
+        );
     }
 
     #[test]

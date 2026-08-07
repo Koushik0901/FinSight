@@ -31,7 +31,11 @@ pub async fn get_spending_path_back(
         };
         let assessment = classify::classify_spending_period(conn, &period)?;
         let plan = plan::plan_spending_reduction(conn, &period, target_monthly_cents)?;
-        Ok(Some(PathBackView { period, assessment, plan }))
+        Ok(Some(PathBackView {
+            period,
+            assessment,
+            plan,
+        }))
     })
     .await
     .map_err(AppError::from)

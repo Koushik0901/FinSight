@@ -4,6 +4,7 @@
 //! RANDOM 32-byte key. It is stored only in WRAPPED form, twice:
 //!   - under KEK1 = Argon2id(password, kek_salt)   → password changes re-wrap, not re-encrypt
 //!   - under KEK2 = the recovery key bytes directly → recovery key IS high-entropy, no KDF needed
+//!
 //! Password *verification* uses a separate Argon2id PHC string (its own salt) so
 //! the verifier can't be used to derive the KEK.
 
@@ -45,7 +46,11 @@ pub fn hash_password(password: &str) -> Result<String, CryptoError> {
 
 pub fn verify_password(password: &str, phc: &str) -> bool {
     PasswordHash::new(phc)
-        .map(|h| Argon2::default().verify_password(password.as_bytes(), &h).is_ok())
+        .map(|h| {
+            Argon2::default()
+                .verify_password(password.as_bytes(), &h)
+                .is_ok()
+        })
         .unwrap_or(false)
 }
 
@@ -380,7 +385,10 @@ mod tests {
         let k1 = load_or_create_server_key(&path).unwrap();
         assert!(path.exists(), "first call must persist the generated key");
         let k2 = load_or_create_server_key(&path).unwrap();
-        assert_eq!(k1, k2, "second call must read the same key back, not regenerate");
+        assert_eq!(
+            k1, k2,
+            "second call must read the same key back, not regenerate"
+        );
     }
 
     #[test]
@@ -394,7 +402,9 @@ mod tests {
     async fn async_wrappers_match_their_blocking_counterparts() {
         // The spawn_blocking hop must be behaviour-preserving: same PHC
         // semantics, same wrap/unwrap round trip.
-        let phc = hash_password_async("hunter2-and-more".to_string()).await.unwrap();
+        let phc = hash_password_async("hunter2-and-more".to_string())
+            .await
+            .unwrap();
         assert!(verify_password_async("hunter2-and-more".to_string(), phc.clone()).await);
         assert!(!verify_password_async("wrong".to_string(), phc).await);
 

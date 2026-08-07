@@ -32,16 +32,12 @@ pub async fn delete_push_subscription(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn list_push_devices(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<Vec<PushDevice>> {
+pub async fn list_push_devices(state: tauri::State<'_, AppState>) -> AppResult<Vec<PushDevice>> {
     finsight_api::commands::push::list_push_devices(&state.api).await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn send_test_push(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<PushDeliveryReport> {
+pub async fn send_test_push(state: tauri::State<'_, AppState>) -> AppResult<PushDeliveryReport> {
     finsight_api::commands::push::send_test_push(&state.api).await
 }

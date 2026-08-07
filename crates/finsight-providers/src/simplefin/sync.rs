@@ -214,7 +214,7 @@ fn commit_simplefin_import_inner(
                 activity: None,
             },
         )
-        .map_err(|e| ProviderError::Core(e.into()))?;
+        .map_err(ProviderError::Core)?;
         added += 1;
     }
 
@@ -290,13 +290,13 @@ fn commit_simplefin_import_inner(
                         })
                         .collect(),
                 )
-                .map_err(|e| ProviderError::Core(e.into()))?;
+                .map_err(ProviderError::Core)?;
                 queued_for_review += 1;
             }
             ReconciliationDecision::None => {
                 let mut new_tx = tx;
                 new_tx.raw_synced_data = raw_json;
-                transactions::insert(conn, new_tx).map_err(|e| ProviderError::Core(e.into()))?;
+                transactions::insert(conn, new_tx).map_err(ProviderError::Core)?;
                 added += 1;
             }
         }
@@ -322,7 +322,7 @@ fn commit_simplefin_import_inner(
         available_balance_cents,
         Some("simplefin"),
     )
-    .map_err(|e| ProviderError::Core(e.into()))?;
+    .map_err(ProviderError::Core)?;
 
     // Update last_synced_at.
     accounts::update_sync_metadata(
@@ -331,7 +331,7 @@ fn commit_simplefin_import_inner(
         Some(&pending.simplefin_id),
         Some(Utc::now()),
     )
-    .map_err(|e| ProviderError::Core(e.into()))?;
+    .map_err(ProviderError::Core)?;
 
     Ok(SimpleFinImportSummary {
         added,

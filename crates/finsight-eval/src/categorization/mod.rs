@@ -69,9 +69,9 @@
 //! synthetic seed cannot lose its warning. A corpus that declares no
 //! provenance fails to load.
 
+pub mod centroid_predictor;
 pub mod confusion;
 pub mod corpus;
-pub mod centroid_predictor;
 #[cfg(test)]
 mod multi_archetype;
 pub mod predictors;

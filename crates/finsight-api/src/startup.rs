@@ -246,8 +246,7 @@ mod tests {
         let integrity_status: Option<String> =
             settings::get(&conn, "data.integrity_status").unwrap();
         assert_eq!(integrity_status.as_deref(), Some("ok"));
-        let checked_at: Option<String> =
-            settings::get(&conn, "data.integrity_checked_at").unwrap();
+        let checked_at: Option<String> = settings::get(&conn, "data.integrity_checked_at").unwrap();
         assert!(
             checked_at.is_some_and(|t| chrono::DateTime::parse_from_rfc3339(&t).is_ok()),
             "integrity_checked_at should be a parseable rfc3339 timestamp"
@@ -259,7 +258,11 @@ mod tests {
             "no backup should be taken when nothing is pending"
         );
         let warnings: Option<Vec<String>> = settings::get(&conn, "data.startup_warnings").unwrap();
-        assert_eq!(warnings, Some(Vec::new()), "warnings persisted as a JSON array");
+        assert_eq!(
+            warnings,
+            Some(Vec::new()),
+            "warnings persisted as a JSON array"
+        );
     }
 
     /// The summary is a real report of work done, not a constant. Deleting the
@@ -283,7 +286,11 @@ mod tests {
         // …and the transaction really was categorized, not just counted.
         let conn = db.get().unwrap();
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat.as_deref(), Some("dining"));
         // The summary is mirrored into settings verbatim for the UI.
@@ -310,7 +317,10 @@ mod tests {
         );
 
         let report = run_startup_cascade(&db, backups_dir.path());
-        assert!(report.migration_error.is_none(), "migrations should succeed");
+        assert!(
+            report.migration_error.is_none(),
+            "migrations should succeed"
+        );
         assert!(
             report.warnings.is_empty(),
             "unexpected warnings: {:?}",
@@ -328,7 +338,10 @@ mod tests {
             1,
             "exactly one pre-migration backup expected, found {snapshots:?}"
         );
-        assert!(snapshots[0].metadata().unwrap().len() > 0, "backup is empty");
+        assert!(
+            snapshots[0].metadata().unwrap().len() > 0,
+            "backup is empty"
+        );
 
         // …and it was recorded for the Settings → Data & backups panel.
         let conn = db.get().unwrap();

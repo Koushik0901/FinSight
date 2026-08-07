@@ -1086,7 +1086,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(debt_account_count, 4, "4 debt accounts (mortgage, auto loan, student loan, credit card)");
+        assert_eq!(
+            debt_account_count, 4,
+            "4 debt accounts (mortgage, auto loan, student loan, credit card)"
+        );
 
         // Net-worth history (6 past months + today = 7 rows).
         let nw_count: i64 = conn

@@ -151,7 +151,7 @@ mod tests {
     use super::*;
     use finsight_core::models::NewCategoryProposal;
     use finsight_core::repos::rule_proposals;
-    
+
     use std::sync::Arc;
     use tempfile::TempDir;
 
@@ -231,7 +231,10 @@ mod tests {
 
         let proposal_id = {
             let mut conn = state.db.get().unwrap();
-            category_proposals::get_for_txn(&mut conn, "t4").unwrap().unwrap().id
+            category_proposals::get_for_txn(&mut conn, "t4")
+                .unwrap()
+                .unwrap()
+                .id
         };
 
         let result = accept_category_proposal(&state, proposal_id.clone())
@@ -248,10 +251,15 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(user_rows, 1, "accept appends a source='user' categorizations row");
+        assert_eq!(
+            user_rows, 1,
+            "accept appends a source='user' categorizations row"
+        );
 
         // The proposal itself is resolved as a human decision.
-        let resolved = category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap();
+        let resolved = category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.status, "accepted");
         assert!(resolved.reviewed_at.is_some());
 
@@ -303,7 +311,9 @@ mod tests {
         assert_eq!(result.transaction.category_id.as_deref(), Some("cat2"));
 
         let mut conn = state.db.get().unwrap();
-        let resolved = category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap();
+        let resolved = category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.status, "corrected");
         assert!(resolved.reviewed_at.is_some());
     }
@@ -340,18 +350,26 @@ mod tests {
             p.id
         };
 
-        reject_category_proposal(&state, proposal_id.clone()).await.unwrap();
+        reject_category_proposal(&state, proposal_id.clone())
+            .await
+            .unwrap();
 
         let mut conn = state.db.get().unwrap();
         let cat_id: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(
             cat_id.as_deref(),
             Some("cat1"),
             "reject must not clear the canonical category the LLM already applied"
         );
-        let resolved = category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap();
+        let resolved = category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(resolved.status, "rejected");
 
         // No longer counted in the review queue.
@@ -383,9 +401,14 @@ mod tests {
             p.id
         };
 
-        reject_category_proposal(&state, proposal_id.clone()).await.unwrap();
+        reject_category_proposal(&state, proposal_id.clone())
+            .await
+            .unwrap();
         let second = accept_category_proposal(&state, proposal_id).await;
-        assert!(second.is_err(), "accepting an already-rejected proposal must error, not silently reapply");
+        assert!(
+            second.is_err(),
+            "accepting an already-rejected proposal must error, not silently reapply"
+        );
     }
 
     /// Regression (review finding 3): a proposal can outlive its target
@@ -431,12 +454,21 @@ mod tests {
 
         let mut conn = state.db.get().unwrap();
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(cat, None, "no archived category may be written to canonical");
+        assert_eq!(
+            cat, None,
+            "no archived category may be written to canonical"
+        );
         // The proposal is still actionable — the user can correct it to a live
         // category instead of being stuck with an un-resolvable queue item.
-        let still = category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap();
+        let still = category_proposals::get(&mut conn, &proposal_id)
+            .unwrap()
+            .unwrap();
         assert_eq!(still.status, "pending");
     }
 
@@ -477,11 +509,21 @@ mod tests {
 
         let mut conn = state.db.get().unwrap();
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(cat, None, "no archived category may be written to canonical");
         assert_eq!(
-            category_proposals::get(&mut conn, &proposal_id).unwrap().unwrap().status,
+            cat, None,
+            "no archived category may be written to canonical"
+        );
+        assert_eq!(
+            category_proposals::get(&mut conn, &proposal_id)
+                .unwrap()
+                .unwrap()
+                .status,
             "pending"
         );
 
@@ -490,7 +532,11 @@ mod tests {
             .await
             .expect("an active category is still accepted");
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat.as_deref(), Some("cat1"));
     }

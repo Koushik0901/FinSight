@@ -6,7 +6,9 @@ use crate::csv::mapping::CsvImportMapping;
 use crate::csv::parse::{into_new_transaction, parse_row};
 use crate::csv::{detect_delimiter, read_capped, CsvProvider, RowError};
 use crate::error::{ProviderError, ProviderResult};
-use crate::simplefin::matcher::{reconcile_excluding_batch, PotentialMatch, ReconciliationDecision};
+use crate::simplefin::matcher::{
+    reconcile_excluding_batch, PotentialMatch, ReconciliationDecision,
+};
 use finsight_core::models::NewTransaction;
 use rusqlite::Connection;
 use std::collections::HashSet;
@@ -85,7 +87,12 @@ fn raw_row_json(headers: Option<&[String]>, fields: &[&str]) -> String {
 fn mapping_signature(m: &CsvImportMapping) -> String {
     format!(
         "{:?}|{}|{:?}|{}|{}|{:?}",
-        m.columns, m.date_format, m.amount_convention, m.decimal_separator, m.skip_header_rows, m.delimiter
+        m.columns,
+        m.date_format,
+        m.amount_convention,
+        m.decimal_separator,
+        m.skip_header_rows,
+        m.delimiter
     )
 }
 

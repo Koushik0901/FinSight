@@ -82,7 +82,7 @@ describe("Today", () => {
     });
   });
 
-  it("shows Smart Sweep card when netCents > 5000", async () => {
+  it("offers to record remaining cash flow when netCents > 5000", async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === "get_month_totals") return Promise.resolve({
         incomeCents: 600000, expenseCents: 400000, netCents: 200000,
@@ -95,15 +95,11 @@ describe("Today", () => {
     });
     render(wrap(<Today />));
     await waitFor(() => {
-      const matches = screen.queryAllByText((_, el) =>
-        el?.tagName === "DIV" &&
-        /You have .* unallocated this month/.test(el?.textContent ?? "")
-      );
-      expect(matches.length).toBeGreaterThan(0);
+      expect(screen.getByText(/remains from this month.s cash flow/i)).toBeInTheDocument();
     });
   });
 
-  it("hides Smart Sweep card after Dismiss click", async () => {
+  it("hides the remaining-cash-flow action after Dismiss", async () => {
     vi.mocked(invoke).mockImplementation((cmd) => {
       if (cmd === "get_month_totals") return Promise.resolve({
         incomeCents: 600000, expenseCents: 400000, netCents: 200000,
@@ -115,9 +111,9 @@ describe("Today", () => {
       ]);
     });
     render(wrap(<Today />));
-    await waitFor(() => screen.getByText(/unallocated this month/));
+    await waitFor(() => screen.getByText(/remains from this month.s cash flow/i));
     fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
-    expect(screen.queryByText(/unallocated this month/)).toBeNull();
+    expect(screen.queryByText(/remains from this month.s cash flow/i)).toBeNull();
   });
 
   it("shows recurring chip for item within 7 days but not for item 40 days out", async () => {

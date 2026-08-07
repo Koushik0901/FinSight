@@ -89,7 +89,9 @@ pub async fn set_asset_owners(
     owners: Vec<OwnerShare>,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    run(&db, move |conn| household::set_asset_owners(conn, &asset_id, &owners))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        household::set_asset_owners(conn, &asset_id, &owners)
+    })
+    .await
+    .map_err(AppError::from)
 }

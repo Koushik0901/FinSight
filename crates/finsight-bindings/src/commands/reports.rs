@@ -28,4 +28,3 @@ pub async fn get_savings_rate_history(
 ) -> AppResult<Vec<SavingsRatePoint>> {
     finsight_api::commands::reports::get_savings_rate_history(&state.api).await
 }
-

@@ -69,9 +69,7 @@ pub fn parse_row(fields: &[&str], mapping: &CsvImportMapping) -> Result<ParsedRo
             ColumnRole::Category if !v.is_empty() => category = Some(v),
             // Brokerage exports write "-" for "no sub-type"; treat it as empty.
             ColumnRole::ActivityType if !v.is_empty() && v != "-" => activity_type = Some(v),
-            ColumnRole::ActivitySubType if !v.is_empty() && v != "-" => {
-                activity_sub_type = Some(v)
-            }
+            ColumnRole::ActivitySubType if !v.is_empty() && v != "-" => activity_sub_type = Some(v),
             ColumnRole::Symbol if !v.is_empty() => symbol = Some(v),
             ColumnRole::SecurityName if !v.is_empty() => security_name = Some(v),
             ColumnRole::Quantity if !v.is_empty() => quantity_raw = Some(v),
@@ -125,9 +123,7 @@ pub fn parse_row(fields: &[&str], mapping: &CsvImportMapping) -> Result<ParsedRo
     let merchant = match merchant.filter(|m| !m.is_empty()) {
         Some(m) => m.to_owned(),
         None => match activity_type {
-            Some(at) => {
-                synthesize_merchant(at, activity_sub_type, symbol, amount_cents)
-            }
+            Some(at) => synthesize_merchant(at, activity_sub_type, symbol, amount_cents),
             None => return Err(ParseError::MissingRequiredField("merchant")),
         },
     };
@@ -263,7 +259,10 @@ fn parse_amount(s: &str, decimal_separator: char) -> Result<i64, ParseError> {
     let trimmed = s.trim();
 
     // Detect common bank suffixes before stripping punctuation/currency symbols.
-    let suffix = trimmed.split_whitespace().last().map(str::to_ascii_uppercase);
+    let suffix = trimmed
+        .split_whitespace()
+        .last()
+        .map(str::to_ascii_uppercase);
     let is_credit = suffix.as_deref() == Some("CR");
     let is_debit = suffix.as_deref() == Some("DR");
     let amount_text = if is_credit || is_debit {
@@ -618,8 +617,20 @@ mod tests {
         // Dividend: sub_type "-" means none; quantity duplicates cash → dropped.
         let p = parse_row(
             &[
-                "2025-05-01", "", "WS0000000CAD", "TFSA", "Dividend", "-", "", "INITECH",
-                "Initech Inc", "CAD", "0.03", "", "", "0.03",
+                "2025-05-01",
+                "",
+                "WS0000000CAD",
+                "TFSA",
+                "Dividend",
+                "-",
+                "",
+                "INITECH",
+                "Initech Inc",
+                "CAD",
+                "0.03",
+                "",
+                "",
+                "0.03",
             ],
             &m,
         )
@@ -631,8 +642,20 @@ mod tests {
 
         let p = parse_row(
             &[
-                "2025-02-10", "", "WS0000000CAD", "TFSA", "Interest", "-", "", "", "", "CAD",
-                "0.01", "", "", "0.01",
+                "2025-02-10",
+                "",
+                "WS0000000CAD",
+                "TFSA",
+                "Interest",
+                "-",
+                "",
+                "",
+                "",
+                "CAD",
+                "0.01",
+                "",
+                "",
+                "0.01",
             ],
             &m,
         )
@@ -641,8 +664,20 @@ mod tests {
 
         let p = parse_row(
             &[
-                "2025-05-15", "", "WS0000000CAD", "TFSA", "Tax", "NRT", "", "", "", "CAD",
-                "-0.29", "", "", "-0.29",
+                "2025-05-15",
+                "",
+                "WS0000000CAD",
+                "TFSA",
+                "Tax",
+                "NRT",
+                "",
+                "",
+                "",
+                "CAD",
+                "-0.29",
+                "",
+                "",
+                "-0.29",
             ],
             &m,
         )
@@ -652,8 +687,20 @@ mod tests {
         // MoneyMovement direction comes from the cash sign.
         let p = parse_row(
             &[
-                "2025-01-05", "", "WS0000000CAD", "TFSA", "MoneyMovement", "EFT", "", "", "",
-                "CAD", "200", "", "", "200",
+                "2025-01-05",
+                "",
+                "WS0000000CAD",
+                "TFSA",
+                "MoneyMovement",
+                "EFT",
+                "",
+                "",
+                "",
+                "CAD",
+                "200",
+                "",
+                "",
+                "200",
             ],
             &m,
         )
@@ -661,8 +708,20 @@ mod tests {
         assert_eq!(p.merchant_raw, "Transfer in (EFT)");
         let p = parse_row(
             &[
-                "2025-06-01", "", "WS0000000CAD", "TFSA", "MoneyMovement", "EFT", "", "", "",
-                "CAD", "-75", "", "", "-75",
+                "2025-06-01",
+                "",
+                "WS0000000CAD",
+                "TFSA",
+                "MoneyMovement",
+                "EFT",
+                "",
+                "",
+                "",
+                "CAD",
+                "-75",
+                "",
+                "",
+                "-75",
             ],
             &m,
         )
@@ -705,8 +764,20 @@ mod tests {
         let m = wealthsimple_map();
         let p = parse_row(
             &[
-                "2025-01-01", "2025-01-01", "WS0000000CAD", "TFSA", "Trade", "BUY", "LONG",
-                "ACME", "Acme Corp", "CAD", "8.1234", "15.0876", "0", "-122.6",
+                "2025-01-01",
+                "2025-01-01",
+                "WS0000000CAD",
+                "TFSA",
+                "Trade",
+                "BUY",
+                "LONG",
+                "ACME",
+                "Acme Corp",
+                "CAD",
+                "8.1234",
+                "15.0876",
+                "0",
+                "-122.6",
             ],
             &m,
         )

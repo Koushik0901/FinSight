@@ -81,10 +81,12 @@ export default function SplitModal({ open, onClose, transactionId, totalCents, e
       <div style={{ height: 6, background: "var(--line)", borderRadius: 3, marginBottom: 4, overflow: "hidden" }}>
         <div style={{
           height: "100%",
-          width: `${pct}%`,
+          width: "100%",
           background: balanced ? "var(--accent)" : "var(--negative)",
           borderRadius: 3,
-          transition: "width 0.15s",
+          transform: `scaleX(${pct / 100})`,
+          transformOrigin: "left center",
+          transition: "transform 0.15s ease-out",
         }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--ink-mute)", marginBottom: 16 }}>

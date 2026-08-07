@@ -151,10 +151,8 @@ function EnvelopeCard({ env, editing, onEdit, donor, memberShareCents, memberNam
       )}
 
       {status.tone === "warning" && remaining > 0 && (
-        <div className="card tight" style={{ marginTop: 14, padding: 12, background: "var(--warning-2)", borderColor: "var(--warning)" }}>
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            About <span className="money strong">{money(perDay)}</span>/day left to stay under.
-          </div>
+        <div className="budget-pace-note">
+          About <span className="money strong">{money(perDay)}</span>/day left to stay under.
         </div>
       )}
 
@@ -184,6 +182,7 @@ export default function Budget() {
   const [sort, setSort] = useState<SortKey>("group");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [showAllAttention, setShowAllAttention] = useState(false);
   // Which household member's share of the spend to overlay, or null for the
   // whole household. The budgets stay household-level either way — this only
   // scopes the "spent" side.
@@ -217,7 +216,14 @@ export default function Budget() {
   const totalCarryover = sorted.reduce((sum, env) => sum + env.carryoverCents, 0);
   const totalAvailable = totalBudget + totalCarryover;
   const totalSpent = sorted.reduce((sum, env) => sum + env.spentCents, 0);
-  const projectedEom = today > 0 ? Math.round((totalSpent / today) * totalDays) : 0;
+  const fixedSpent = Math.min(totalSpent, breakdown?.fixedCents ?? 0);
+  const variableSpent = Math.max(0, totalSpent - fixedSpent);
+  const variableProjection = today > 0 ? Math.round((variableSpent / today) * totalDays) : 0;
+  const projectedEom = fixedSpent + variableProjection;
+  const estimateSpread = today < 10 ? 0.2 : today < 21 ? 0.12 : 0.07;
+  const estimateLow = Math.max(totalSpent, Math.round(projectedEom * (1 - estimateSpread)));
+  const estimateHigh = Math.max(estimateLow, Math.round(projectedEom * (1 + estimateSpread)));
+  const estimateConfidence = today < 10 ? "Early estimate" : today < 21 ? "Developing estimate" : "Higher-confidence estimate";
   const fundedEnvelopeCount = sorted.filter((env) => env.budgetCents > 0 || env.carryoverCents !== 0).length;
   const transactionCount = sorted.reduce((sum, env) => sum + env.txnCount, 0);
   const readiness = getBudgetReadiness({
@@ -234,7 +240,10 @@ export default function Budget() {
   // set" is really "unconfigured") — they get their own section below instead
   // of also cluttering "Needs a glance".
   const attention = sorted.filter((env) => envelopeStatus(env).severity >= 2 && !unbudgeted.includes(env));
-  const grouped = Object.entries(sorted.filter((env) => !unbudgeted.includes(env)).reduce<Record<string, BudgetEnvelope[]>>((acc, env) => {
+  const attentionIds = new Set(attention.map((env) => env.categoryId));
+  const visibleAttention = showAllAttention ? attention : attention.slice(0, 3);
+  const regularEnvelopes = sorted.filter((env) => !unbudgeted.includes(env) && !attentionIds.has(env.categoryId));
+  const grouped = Object.entries(regularEnvelopes.reduce<Record<string, BudgetEnvelope[]>>((acc, env) => {
     const key = sort === "group" ? env.groupLabel || "Other" : "All envelopes";
     acc[key] ||= [];
     acc[key].push(env);
@@ -244,9 +253,9 @@ export default function Budget() {
   const insight = readiness === "estimated"
     ? "Your plan is set. FinSight will estimate the month after it observes at least 10 transactions or a week of spending."
     : attention.length > 0
-      ? `${attention.length} envelope${attention.length === 1 ? "" : "s"} need attention. ${projectedEom > totalBudget ? "You are trending over plan." : "The rest of the month still fits the plan."}`
+      ? `${attention.length} envelope${attention.length === 1 ? "" : "s"} need attention. ${projectedEom > totalBudget ? "The current estimate may finish above plan." : "The rest of the month still fits the plan."}`
       : projectedEom > totalBudget
-        ? "You are trending over plan even though no single category is over its limit yet."
+        ? "The current estimate may finish above plan even though no single category is over its limit yet."
         : "Spending is within the plan based on the activity recorded so far.";
 
   const totalTagged = breakdown ? breakdown.fixedCents + breakdown.investmentsCents + breakdown.savingsCents + breakdown.guiltFreeCents + breakdown.untaggedCents : 0;
@@ -299,27 +308,53 @@ export default function Budget() {
     return candidates.reduce((best, env) => (env.budgetCents - env.spentCents > best.budgetCents - best.spentCents ? env : best));
   };
 
-  // Only manual (non-account-linked) goals can be parked into: a linked goal's
-  // balance is synced from its account, so a manual bump double-counts.
+  // Only manual (non-account-linked) goals accept recorded progress: a linked
+  // goal's balance comes from its account, so a manual entry double-counts.
   const parkableGoal = goals.find((goal) => !goal.accountId) ?? null;
 
-  const handleParkInGoal = async () => {
+  const handleRecordGoalProgress = async () => {
     const firstGoal = parkableGoal;
     if (!firstGoal) {
-      toast("No manual goals to park funds in yet — create one on the Goals screen.");
+      toast("Create a manual goal before recording this allocation.", {
+        description: "Account-linked goals update from their connected balance.",
+      });
       return;
     }
     if (toBudget <= 0) {
-      toast("Nothing unassigned to park right now.");
+      toast("There is no unassigned income to record.");
       return;
     }
     try {
-      await contribute.mutateAsync({ id: firstGoal.id, amountCents: toBudget, note: "Parked unassigned budget", source: "sweep" });
-      toast.success(`Parked ${money(toBudget)} in ${firstGoal.name}`);
+      await contribute.mutateAsync({
+        id: firstGoal.id,
+        amountCents: toBudget,
+        note: "Recorded unassigned budget toward goal",
+        source: "sweep",
+      });
+      toast.success(`Recorded ${money(toBudget)} toward ${firstGoal.name}`, {
+        description: "This updates FinSight only. No money was moved.",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void contribute.mutateAsync({
+              id: firstGoal.id,
+              amountCents: -toBudget,
+              note: "Undid recorded unassigned budget",
+              source: "undo",
+            }).then(
+              () => toast.success("Recorded progress removed"),
+              () => toast.error("Could not undo the recorded progress"),
+            );
+          },
+        },
+      });
     } catch {
-      toast.error("Could not park funds");
+      toast.error("Could not record goal progress", {
+        description: "Your budget and bank balances were not changed. Try again.",
+      });
     }
   };
+
 
   if (isLoading) {
     // Mirrors the real grid so the page does not collapse to one line and then
@@ -341,7 +376,7 @@ export default function Budget() {
       </div>
     );
   }
-  if (error) {
+  if (error && envelopes.length === 0) {
     return (
       <div className="stub route-load-problem" role="alert">
         <div className="card">
@@ -435,12 +470,12 @@ export default function Budget() {
           <div>
             <div className="eyebrow"><span className="dot" />Month progress</div>
             <div className="hero-num">
-              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.max(remaining, 0))}</div>
-              <div className="muted">left to spend</div>
+              <div className="figure money" style={{ fontSize: 56, lineHeight: 1, color: remaining < 0 ? "var(--negative)" : "var(--accent)" }}>{money(Math.abs(remaining))}</div>
+              <div className="muted">{remaining < 0 ? "over the current plan" : "left to spend"}</div>
             </div>
-            <div style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
-              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${monthPct}%`, background: "var(--ink-faint)", opacity: 0.4, borderRadius: 999 }} title="Time elapsed" />
-              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${totalAvailable > 0 ? Math.min(100, (totalSpent / totalAvailable) * 100) : 0}%`, background: "var(--accent)", borderRadius: 999, boxShadow: "0 0 12px var(--accent-3)" }} title="Spent" />
+            <div className="budget-progress-track" style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", marginTop: 4 }}>
+              <div className="budget-progress-time" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${monthPct}%`, background: "var(--ink-faint)", opacity: 0.4, borderRadius: 999 }} title="Time elapsed" />
+              <div className="budget-progress-spend" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${totalAvailable > 0 ? Math.min(100, (totalSpent / totalAvailable) * 100) : 0}%`, background: "var(--accent)", borderRadius: 999, boxShadow: "0 0 12px var(--accent-3)" }} title="Spent" />
             </div>
             <div className="hero-meta" style={{ marginTop: 10 }}>
               <span>{monthPct}% through {now.toLocaleString("en-US", { month: "long" })}</span>
@@ -451,15 +486,27 @@ export default function Budget() {
           <div className="budget-grid">
             <div className="stat"><div className="label">Budgeted</div><div className="value money">{money(totalBudget)}</div><div className="sub">Across {sorted.length} envelopes</div></div>
             <div className="stat"><div className="label">Spent so far</div><div className="value money">{money(totalSpent)}</div><div className="sub">{readiness === "reliable" ? <><span className="blurable">{today > 0 ? money(Math.round(totalSpent / today)) : money(0)}</span>/day pace</> : <>{transactionCount} recorded transaction{transactionCount === 1 ? "" : "s"}</>}</div></div>
-            <div className="stat accent">
-              <div className="label">End-of-month estimate</div>
+            <div className="stat budget-forecast">
+              <div className="label">Likely month-end range</div>
               {readiness === "reliable" ? (
                 <>
-                  <div className="value money">{money(projectedEom)}</div>
-                  <div className="sub">{projectedEom > totalAvailable ? <span className="npill neg">Over by <span className="blurable">{money(projectedEom - totalAvailable)}</span></span> : <span className="npill pos">Under by <span className="blurable">{money(totalAvailable - projectedEom)}</span></span>}</div>
+                  <div className="value money">{money(estimateLow)}–{money(estimateHigh)}</div>
+                  <div className="sub">
+                    <span className="chip warning">{estimateConfidence}</span>
+                    {estimateHigh > totalAvailable
+                      ? <span className="budget-forecast-risk">Could finish up to <span className="money">{money(estimateHigh - totalAvailable)}</span> above the current plan.</span>
+                      : <span>The current range fits the amount available.</span>}
+                  </div>
+                  <details className="budget-estimate-details">
+                    <summary>How this range is calculated</summary>
+                    <p>
+                      FinSight keeps {money(fixedSpent)} of fixed costs already recorded, then projects the pace of
+                      {money(variableSpent)} in variable spending. The range is wider earlier in the month.
+                    </p>
+                  </details>
                 </>
               ) : (
-                <><div className="value">—</div><div className="sub">Needs more activity</div></>
+                <><div className="value">Not ready</div><div className="sub">FinSight needs a week or 10 transactions before projecting the month.</div></>
               )}
             </div>
           </div>
@@ -470,26 +517,68 @@ export default function Budget() {
       )}
 
       {readiness !== "unavailable" && (
-      <div className="card tight" style={{ marginTop: 16, padding: 18, display: "grid", gridTemplateColumns: "1.7fr auto", gap: 16, alignItems: "center" }}>
+      <div className="card tight budget-allocation-card" style={{ marginTop: 16, padding: 18, display: "grid", gridTemplateColumns: "1.7fr auto", gap: 16, alignItems: "center" }}>
         <div>
-          <div className="eyebrow"><span className="dot" />To budget · unassigned</div>
+          <div className="eyebrow"><span className="dot" />{toBudget < 0 ? "Over-assigned" : "Unassigned income"}</div>
           <div className="row row-sm wrap" style={{ alignItems: "baseline", marginTop: 8 }}>
             <div className="figure money" style={{ fontSize: 32, color: toBudget >= 0 ? "var(--accent)" : "var(--negative)" }}>{money(Math.abs(toBudget))}</div>
-            <div className="muted">of <span className="money">{money(totals?.incomeCents ?? 0)}</span> income · <span className="money">{money(totalBudget)}</span> assigned</div>
+            <div className="muted">{toBudget < 0
+              ? <>more assigned than the <span className="money">{money(totals?.incomeCents ?? 0)}</span> income recorded this month · <span className="money">{money(totalBudget)}</span> assigned</>
+              : <>available to plan from <span className="money">{money(totals?.incomeCents ?? 0)}</span> income · <span className="money">{money(totalBudget)}</span> assigned</>
+            }</div>
           </div>
         </div>
         {toBudget > 0
-          ? <div className="row row-sm wrap" style={{ justifyContent: "flex-end" }}><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal</button><button className="btn sm" type="button" disabled={contribute.isPending} onClick={() => void handleParkInGoal()}>Park in {parkableGoal?.name ?? "a goal"}</button></div>
-          : <span className="muted">No unassigned income to move.</span>}
+          ? <div className="budget-allocation-action"><span>This records progress in FinSight. It does not move money.</span><div className="row row-sm wrap"><button className="btn outline sm" type="button" onClick={() => navigate("/goals")}>Choose a goal</button><button className="btn sm" type="button" disabled={contribute.isPending} onClick={() => void handleRecordGoalProgress()}>Record toward {parkableGoal?.name ?? "a goal"}</button></div></div>
+          : <span className="muted">{toBudget < 0
+            ? <>Reduce planned budgets by <span className="money">{money(Math.abs(toBudget))}</span> or record more income.</>
+            : "No unassigned income to move."
+          }</span>}
       </div>
 
       )}
       {breakdown && totalTagged > 0 && <div className="card tight" style={{ marginTop: 16 }}><div className="eyebrow"><span className="dot" />Spending mix</div><div className="stream" style={{ marginTop: 10, height: 16, borderRadius: 6 }}><span style={{ width: `${(breakdown.fixedCents / totalTagged) * 100}%`, background: "var(--ink-mute)" }} /><span style={{ width: `${(breakdown.investmentsCents / totalTagged) * 100}%`, background: "var(--accent)" }} /><span style={{ width: `${(breakdown.savingsCents / totalTagged) * 100}%`, background: "var(--positive)" }} /><span style={{ width: `${(breakdown.guiltFreeCents / totalTagged) * 100}%`, background: "var(--c-dining)" }} /><span style={{ width: `${(breakdown.untaggedCents / totalTagged) * 100}%`, background: "var(--ink-faint)" }} /></div></div>}
 
-      {attention.length > 0 && <section className="section"><div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />Needs a glance · {attention.length}</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Just these — the rest is fine.</h2></div></div><div className="budget-grid">{attention.map((env) => <div key={env.categoryId} data-envelope-id={env.categoryId}><EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />{editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}</div>)}</div></section>}
+      {attention.length > 0 && (
+        <section className="section" id="budget-attention">
+          <div className="day-hdr" style={{ marginBottom: 14 }}>
+            <div>
+              <div className="eyebrow"><span className="dot" />Needs attention · {attention.length}</div>
+              <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Start with these categories.</h2>
+            </div>
+            {attention.length > 3 && (
+              <button className="btn ghost sm" type="button" onClick={() => setShowAllAttention((show) => !show)}>
+                {showAllAttention ? "Show fewer" : `Show ${attention.length - 3} more`}
+              </button>
+            )}
+          </div>
+          <div className="budget-grid">
+            {visibleAttention.map((env) => (
+              <div key={env.categoryId} data-envelope-id={env.categoryId}>
+                <EnvelopeCard env={env} editing={editingId === env.categoryId} onEdit={() => setEditingId(env.categoryId)} donor={donorFor(env.categoryId)} memberShareCents={scopeMemberId !== null ? (memberSpendById.get(env.categoryId) ?? 0) : undefined} memberName={members.find((m) => m.id === scopeMemberId)?.name} />
+                {editingId === env.categoryId && <BudgetInput envelope={env} onClose={() => setEditingId(null)} />}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {grouped.length > 0 && <section className="section">
-        <div className="day-hdr" style={{ marginBottom: 14 }}><div><div className="eyebrow"><span className="dot" />All envelopes</div><h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Review every category.</h2></div><div className="toolbar"><button className={sort === "group" ? "on" : ""} type="button" onClick={() => setSort("group")}>By group</button><button className={sort === "stress" ? "on" : ""} type="button" onClick={() => setSort("stress")}>By stress</button><button className={sort === "size" ? "on" : ""} type="button" onClick={() => setSort("size")}>By size</button><button className={sort === "activity" ? "on" : ""} type="button" onClick={() => setSort("activity")}>By activity</button></div></div>
+        <div className="day-hdr" style={{ marginBottom: 14 }}>
+          <div>
+            <div className="eyebrow"><span className="dot" />Everything else</div>
+            <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>Remaining envelopes.</h2>
+          </div>
+          <label className="budget-sort">
+            <span>Sort</span>
+            <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
+              <option value="group">By group</option>
+              <option value="stress">By stress</option>
+              <option value="size">By size</option>
+              <option value="activity">By activity</option>
+            </select>
+          </label>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>{grouped.map(([label, items]) => {
           const groupSpent = items.reduce((sum, env) => sum + env.spentCents, 0);
           const groupBudget = items.reduce((sum, env) => sum + env.budgetCents, 0);
@@ -532,8 +621,8 @@ export default function Budget() {
       )}
 
       {history.length > 0 && (
-        <section className="section">
-          <div className="eyebrow" style={{ marginBottom: 12 }}><span className="dot" />Spending history · last 5 months</div>
+        <details className="section budget-secondary">
+          <summary>Spending history · last 5 months</summary>
           <div className="card flush">
             <div className="tbl-scroll">
             <table className="tbl">
@@ -569,7 +658,7 @@ export default function Budget() {
             </table>
             </div>
           </div>
-        </section>
+        </details>
       )}
 
       {showPlan && <PlanNextMonthModal onClose={() => setShowPlan(false)} />}

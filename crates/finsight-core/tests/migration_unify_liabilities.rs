@@ -181,7 +181,7 @@ fn balance_sign_is_flipped_and_debt_fields_are_preserved() {
 
     run_v039(&conn);
 
-    let (apr, min_pay, payoff, limit, orig, started, currency): (
+    type DebtFields = (
         Option<f64>,
         Option<i64>,
         Option<String>,
@@ -189,7 +189,8 @@ fn balance_sign_is_flipped_and_debt_fields_are_preserved() {
         Option<i64>,
         Option<String>,
         String,
-    ) = conn
+    );
+    let (apr, min_pay, payoff, limit, orig, started, currency): DebtFields = conn
         .query_row(
             "SELECT apr_pct, min_payment_cents, payoff_date, limit_cents, original_balance_cents, started_at, currency \
              FROM accounts WHERE id = 'amex'",
@@ -214,7 +215,10 @@ fn balance_sign_is_flipped_and_debt_fields_are_preserved() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(balance, -113_900, "liability balance must be sign-flipped onto the account");
+    assert_eq!(
+        balance, -113_900,
+        "liability balance must be sign-flipped onto the account"
+    );
 }
 
 #[test]
@@ -251,15 +255,27 @@ fn goal_linked_via_liability_id_is_repointed_to_account_id_and_the_column_is_dro
 
     run_v039(&conn);
 
-    let (g1_account, ) : (Option<String>, ) = conn
-        .query_row("SELECT account_id FROM goals WHERE id = 'g1'", [], |r| Ok((r.get(0)?,)))
+    let (g1_account,): (Option<String>,) = conn
+        .query_row("SELECT account_id FROM goals WHERE id = 'g1'", [], |r| {
+            Ok((r.get(0)?,))
+        })
         .unwrap();
-    assert_eq!(g1_account.as_deref(), Some("carloan"), "liability_id must be copied onto account_id");
+    assert_eq!(
+        g1_account.as_deref(),
+        Some("carloan"),
+        "liability_id must be copied onto account_id"
+    );
 
-    let (g2_account, ): (Option<String>,) = conn
-        .query_row("SELECT account_id FROM goals WHERE id = 'g2'", [], |r| Ok((r.get(0)?,)))
+    let (g2_account,): (Option<String>,) = conn
+        .query_row("SELECT account_id FROM goals WHERE id = 'g2'", [], |r| {
+            Ok((r.get(0)?,))
+        })
         .unwrap();
-    assert_eq!(g2_account.as_deref(), Some("someacct"), "an existing account_id must not be clobbered");
+    assert_eq!(
+        g2_account.as_deref(),
+        Some("someacct"),
+        "an existing account_id must not be clobbered"
+    );
 
     // liability_id column itself is gone.
     let mut stmt = conn.prepare("PRAGMA table_info(goals)").unwrap();
@@ -268,6 +284,12 @@ fn goal_linked_via_liability_id_is_repointed_to_account_id_and_the_column_is_dro
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert!(!columns.contains(&"liability_id".to_string()), "liability_id column must be dropped");
-    assert!(columns.contains(&"account_id".to_string()), "account_id column must survive");
+    assert!(
+        !columns.contains(&"liability_id".to_string()),
+        "liability_id column must be dropped"
+    );
+    assert!(
+        columns.contains(&"account_id".to_string()),
+        "account_id column must survive"
+    );
 }

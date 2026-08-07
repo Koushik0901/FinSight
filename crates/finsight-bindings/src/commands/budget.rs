@@ -5,8 +5,7 @@ use crate::AppState;
 // `finsight_bindings::commands::budget::*` (lib.rs, tests) keep resolving.
 pub use finsight_api::commands::budget::{
     BudgetEnvelope, CategoryHistory, CategoryPlanRow, GoalContributionDto, GoalDto,
-    MemberBudgetEnvelope, MonthlyActual,
-    NewGoalInput, PlanAssignment, PlanData, ProjectedValue,
+    MemberBudgetEnvelope, MonthlyActual, NewGoalInput, PlanAssignment, PlanData, ProjectedValue,
 };
 
 #[tauri::command]

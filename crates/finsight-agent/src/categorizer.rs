@@ -1033,12 +1033,19 @@ mod tests {
             .unwrap()
             .expect("a proposal was recorded for the low-confidence write");
         assert_eq!(low.status, "pending");
-        assert!(low.applied, "the LLM pass still auto-writes canonical today");
+        assert!(
+            low.applied,
+            "the LLM pass still auto-writes canonical today"
+        );
         assert_eq!(low.proposed_category_id, "cat1");
         assert_eq!(low.source, "llm");
         assert!(low.reviewed_at.is_none());
         let t1_cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(
             t1_cat.as_deref(),
@@ -1052,7 +1059,10 @@ mod tests {
             .unwrap()
             .expect("a proposal was recorded for the high-confidence write too");
         assert_eq!(high.status, "accepted");
-        assert!(high.reviewed_at.is_none(), "auto-accept is not a human review");
+        assert!(
+            high.reviewed_at.is_none(),
+            "auto-accept is not a human review"
+        );
 
         assert_eq!(
             finsight_core::repos::category_proposals::count(&mut conn, "pending").unwrap(),
@@ -1140,9 +1150,11 @@ mod tests {
             );
         }
         // The real spending txn still got proposed.
-        assert!(finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
-            .unwrap()
-            .is_some());
+        assert!(
+            finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -1190,12 +1202,17 @@ mod tests {
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut conn); // t1 CHIPOTLE + cat1
-            conn.execute("UPDATE transactions SET category_id='cat1' WHERE id='t1'", []).unwrap();
+            conn.execute(
+                "UPDATE transactions SET category_id='cat1' WHERE id='t1'",
+                [],
+            )
+            .unwrap();
             conn.execute(
                 "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                  VALUES('c1','t1','cat1','user',1.0,'2024-01-16T00:00:00Z')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
         }
         let provider = Arc::new(MockCompletionProvider {
             provider_id: "mock".into(),
@@ -1246,9 +1263,16 @@ mod tests {
 
         let mut conn = db.get().unwrap();
         let cat_id: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert!(cat_id.is_none(), "must abstain rather than write an archived category");
+        assert!(
+            cat_id.is_none(),
+            "must abstain rather than write an archived category"
+        );
         assert!(
             finsight_core::repos::category_proposals::get_for_txn(&mut conn, "t1")
                 .unwrap()
@@ -1308,8 +1332,9 @@ mod tests {
             assert_eq!(p.status, "pending");
             finsight_core::repos::category_proposals::set_status(&mut conn, &p.id, "rejected")
                 .unwrap();
-            let after =
-                finsight_core::repos::category_proposals::get(&mut conn, &p.id).unwrap().unwrap();
+            let after = finsight_core::repos::category_proposals::get(&mut conn, &p.id)
+                .unwrap()
+                .unwrap();
             (p.id, after.reviewed_at)
         };
 
@@ -1336,7 +1361,11 @@ mod tests {
         // the rejected row never entered the batch, so no tokens were spent
         // producing a proposal that `upsert` would only have discarded.
         let conf: Option<f64> = conn
-            .query_row("SELECT ai_confidence FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT ai_confidence FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(
             (conf.unwrap() - 0.4).abs() < 1e-9,
@@ -1349,7 +1378,10 @@ mod tests {
         let after = finsight_core::repos::category_proposals::get(&mut conn, &proposal_id)
             .unwrap()
             .expect("the rejected row was not replaced by a fresh one");
-        assert_eq!(after.status, "rejected", "a re-proposal must not resurrect a rejection");
+        assert_eq!(
+            after.status, "rejected",
+            "a re-proposal must not resurrect a rejection"
+        );
         assert_eq!(
             after.reviewed_at, rejected_at,
             "the human decision timestamp must not be cleared or re-stamped"
@@ -1448,7 +1480,11 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(cat.as_deref(), Some("cat2"), "the rule wins the canonical write");
+        assert_eq!(
+            cat.as_deref(),
+            Some("cat2"),
+            "the rule wins the canonical write"
+        );
         assert_eq!(conf, None, "the rule pass nulls the LLM confidence");
 
         let after = finsight_core::repos::category_proposals::get(&mut conn, &proposal_id)
@@ -1480,7 +1516,10 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert!(legacy.is_empty(), "sanity: the legacy predicate drops a rule-corrected row");
+        assert!(
+            legacy.is_empty(),
+            "sanity: the legacy predicate drops a rule-corrected row"
+        );
         let listed = finsight_core::repos::transactions::list(
             &mut conn,
             finsight_core::repos::transactions::TxnFilter {
@@ -1506,7 +1545,7 @@ mod tests {
         {
             let mut conn = db.get().unwrap();
             seed_db(&mut conn); // t1 CHIPOTLE + cat1 + a1 (t1 reused as the low-confidence LLM row below)
-            // t2: rule-categorized (source='rule'), never touches the LLM.
+                                // t2: rule-categorized (source='rule'), never touches the LLM.
             conn.execute(
                 "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
                  VALUES('t2','a1','2024-01-02T00:00:00Z',-1200,'NETFLIX','cat1','cleared',0,'2024-01-02T00:00:00Z')",
@@ -1516,7 +1555,8 @@ mod tests {
                 "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                  VALUES('rc1','t2','cat1','rule',1.0,'2024-01-02T00:00:00Z')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             // t3: user-categorized directly (source='user'), never touched by AI.
             conn.execute(
                 "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,status,is_anomaly,created_at) \
@@ -1527,7 +1567,8 @@ mod tests {
                 "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                  VALUES('uc1','t3','cat1','user',1.0,'2024-01-03T00:00:00Z')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             // t4: builtin-source categorization (crates/finsight-core/src/
             // categorize.rs writes source='builtin', confidence 1.0) — never
             // an LLM decision, so never in the review queue.
@@ -1540,7 +1581,8 @@ mod tests {
                 "INSERT INTO categorizations(id,txn_id,category_id,source,confidence,at) \
                  VALUES('bc1','t4','cat1','builtin',1.0,'2024-01-04T00:00:00Z')",
                 [],
-            ).unwrap();
+            )
+            .unwrap();
             // t5: will be LLM-categorized at low confidence, THEN manually
             // corrected via the ordinary edit path — the sneaky case: it must
             // drop out of the review population entirely.
@@ -1610,7 +1652,9 @@ mod tests {
 
         // The NEW predicate: category_proposals.status = 'pending'.
         let mut new_stmt = conn
-            .prepare("SELECT txn_id FROM category_proposals WHERE status = 'pending' ORDER BY txn_id")
+            .prepare(
+                "SELECT txn_id FROM category_proposals WHERE status = 'pending' ORDER BY txn_id",
+            )
             .unwrap();
         let fresh: Vec<String> = new_stmt
             .query_map([], |r| r.get(0))

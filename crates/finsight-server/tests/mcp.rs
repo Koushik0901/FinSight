@@ -26,7 +26,9 @@ fn test_ui_dir() -> PathBuf {
 }
 
 async fn json_body(res: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
 }
 
@@ -105,11 +107,19 @@ async fn call_tool(
         .clone()
         .oneshot(mcp_req(
             token,
-            rpc(9, "tools/call", serde_json::json!({"name": name, "arguments": args})),
+            rpc(
+                9,
+                "tools/call",
+                serde_json::json!({"name": name, "arguments": args}),
+            ),
         ))
         .await
         .unwrap();
-    assert_eq!(res.status(), StatusCode::OK, "tools/call {name} should be HTTP 200");
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "tools/call {name} should be HTTP 200"
+    );
     json_body(res).await
 }
 
@@ -168,7 +178,11 @@ async fn protocol_version_is_negotiated_not_blindly_echoed() {
             app.clone()
                 .oneshot(mcp_req(
                     &token,
-                    rpc(1, "initialize", serde_json::json!({"protocolVersion": spoken})),
+                    rpc(
+                        1,
+                        "initialize",
+                        serde_json::json!({"protocolVersion": spoken}),
+                    ),
                 ))
                 .await
                 .unwrap(),
@@ -182,7 +196,11 @@ async fn protocol_version_is_negotiated_not_blindly_echoed() {
     let body = json_body(
         app.oneshot(mcp_req(
             &token,
-            rpc(2, "initialize", serde_json::json!({"protocolVersion": "1999-01-01"})),
+            rpc(
+                2,
+                "initialize",
+                serde_json::json!({"protocolVersion": "1999-01-01"}),
+            ),
         ))
         .await
         .unwrap(),
@@ -202,8 +220,13 @@ async fn notifications_get_202_with_no_body() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::ACCEPTED);
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
-    assert!(bytes.is_empty(), "a notification must not get a JSON-RPC reply");
+    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(
+        bytes.is_empty(),
+        "a notification must not get a JSON-RPC reply"
+    );
 }
 
 #[tokio::test]
@@ -221,7 +244,11 @@ async fn probe_methods_answer_instead_of_erroring() {
                 .unwrap(),
         )
         .await;
-        assert_eq!(body["result"][key], serde_json::json!([]), "{method} should return an empty list");
+        assert_eq!(
+            body["result"][key],
+            serde_json::json!([]),
+            "{method} should return an empty list"
+        );
     }
 
     let body = json_body(
@@ -234,9 +261,12 @@ async fn probe_methods_answer_instead_of_erroring() {
     assert_eq!(body["result"], serde_json::json!({}));
 
     let body = json_body(
-        app.oneshot(mcp_req(&token, rpc(3, "does/not/exist", serde_json::json!({}))))
-            .await
-            .unwrap(),
+        app.oneshot(mcp_req(
+            &token,
+            rpc(3, "does/not/exist", serde_json::json!({})),
+        ))
+        .await
+        .unwrap(),
     )
     .await;
     assert_eq!(body["error"]["code"], -32601);
@@ -347,7 +377,9 @@ async fn a_session_cookie_alone_cannot_call_mcp() {
             Request::post("/mcp")
                 .header("content-type", "application/json")
                 .header("cookie", &cookie)
-                .body(Body::from(rpc(1, "tools/list", serde_json::json!({})).to_string()))
+                .body(Body::from(
+                    rpc(1, "tools/list", serde_json::json!({})).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -411,7 +443,9 @@ async fn a_foreign_origin_header_is_rejected() {
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::ORIGIN, "https://evil.example")
                 .header(header::HOST, "localhost:8674")
-                .body(Body::from(rpc(1, "tools/list", serde_json::json!({})).to_string()))
+                .body(Body::from(
+                    rpc(1, "tools/list", serde_json::json!({})).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -427,7 +461,9 @@ async fn a_foreign_origin_header_is_rejected() {
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::ORIGIN, "http://localhost:8674")
                 .header(header::HOST, "localhost:8674")
-                .body(Body::from(rpc(1, "tools/list", serde_json::json!({})).to_string()))
+                .body(Body::from(
+                    rpc(1, "tools/list", serde_json::json!({})).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -478,7 +514,11 @@ async fn tools_list_matches_the_copilot_toolset_exactly() {
 
     // Every tool must carry a schema a strict client will accept.
     for t in tools {
-        assert_eq!(t["inputSchema"]["type"], "object", "bad schema for {}", t["name"]);
+        assert_eq!(
+            t["inputSchema"]["type"], "object",
+            "bad schema for {}",
+            t["name"]
+        );
         assert!(!t["description"].as_str().unwrap().is_empty());
     }
 }
@@ -509,7 +549,10 @@ async fn a_read_token_cannot_see_or_call_write_tools() {
         "execute_action_bundle",
         "reject_action_item",
     ] {
-        assert!(!listed.contains(&hidden), "{hidden} must be hidden from a read token");
+        assert!(
+            !listed.contains(&hidden),
+            "{hidden} must be hidden from a read token"
+        );
     }
     // Reads still work, including the read half of bundle management.
     assert!(listed.contains(&"get_net_worth"));
@@ -525,7 +568,11 @@ async fn a_read_token_cannot_see_or_call_write_tools() {
             .clone()
             .oneshot(mcp_req(
                 &token,
-                rpc(9, "tools/call", serde_json::json!({"name": blocked, "arguments": {}})),
+                rpc(
+                    9,
+                    "tools/call",
+                    serde_json::json!({"name": blocked, "arguments": {}}),
+                ),
             ))
             .await
             .unwrap();
@@ -583,7 +630,10 @@ async fn calling_a_read_tool_returns_grounded_data_with_display_strings() {
     assert_eq!(structured["ok"], true);
     assert_eq!(body["result"]["isError"], false);
     // Text content mirrors the structured payload so every client can render it.
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("\"ok\""));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("\"ok\""));
 
     // The `_display` augmentation is what keeps a model from dividing cents by
     // hand — assert it actually reached the wire.
@@ -607,7 +657,10 @@ async fn a_tool_error_is_data_not_a_protocol_failure() {
         serde_json::json!({"nonsense_argument": 1}),
     )
     .await;
-    assert!(body["error"].is_null(), "a tool-level failure is not a JSON-RPC error");
+    assert!(
+        body["error"].is_null(),
+        "a tool-level failure is not a JSON-RPC error"
+    );
     assert_eq!(body["result"]["isError"], true);
     assert_eq!(body["result"]["structuredContent"]["ok"], false);
     assert!(!body["result"]["structuredContent"]["error"]["code"]
@@ -629,6 +682,7 @@ async fn a_tool_error_is_data_not_a_protocol_failure() {
 #[tokio::test]
 async fn draft_approve_execute_applies_the_change_end_to_end() {
     let (app, cookie, token) = setup_with_token("full").await;
+    let current_month = chrono::Utc::now().format("%Y-%m").to_string();
 
     let category = json_body(
         app.clone()
@@ -650,7 +704,7 @@ async fn draft_approve_execute_applies_the_change_end_to_end() {
         "draft_set_budget",
         serde_json::json!({
             "category_id": category_id,
-            "month": "2026-07",
+            "month": current_month,
             "amount_cents": 50_000,
             "rationale": "User asked to cap groceries at $500."
         }),
@@ -686,7 +740,10 @@ async fn draft_approve_execute_applies_the_change_end_to_end() {
         "provenance must record which MCP token drafted this, got {}",
         bundles[0]["providerId"]
     );
-    assert_eq!(bundles[0]["modelId"], "Claude Desktop", "the connected client is named");
+    assert_eq!(
+        bundles[0]["modelId"], "Claude Desktop",
+        "the connected client is named"
+    );
 
     // 2. Approve — still not applied.
     let body = call_tool(
@@ -711,7 +768,10 @@ async fn draft_approve_execute_applies_the_change_end_to_end() {
     )
     .await;
     let data = &body["result"]["structuredContent"]["data"];
-    assert_eq!(body["result"]["structuredContent"]["ok"], true, "execute failed: {data}");
+    assert_eq!(
+        body["result"]["structuredContent"]["ok"], true,
+        "execute failed: {data}"
+    );
     assert_eq!(data["succeeded"], 1, "execution summary: {data}");
     assert_eq!(data["failed"], 0);
 
@@ -761,11 +821,23 @@ async fn mcp_cannot_approve_or_execute_an_in_app_bundle() {
     let db = (*rt.api.db).clone();
     let (bundle_id, item_id) = finsight_core::repos::run(&db, move |conn| {
         let mut b = finsight_core::repos::copilot_actions::insert_bundle(
-            conn, None, "In-app proposal", "summary", "rationale", 0.9,
-            Some("openai"), Some("gpt-mini"),
+            conn,
+            None,
+            "In-app proposal",
+            "summary",
+            "rationale",
+            0.9,
+            Some("openai"),
+            Some("gpt-mini"),
         )?;
         let item = finsight_core::repos::copilot_actions::insert_item(
-            conn, &b.id, "set_budget", "{}", "r", 0.9, 0,
+            conn,
+            &b.id,
+            "set_budget",
+            "{}",
+            "r",
+            0.9,
+            0,
         )?;
         b.items.push(item.clone());
         Ok::<_, finsight_core::CoreError>((b.id, item.id))
@@ -778,11 +850,17 @@ async fn mcp_cannot_approve_or_execute_an_in_app_bundle() {
             "approve_action_item",
             serde_json::json!({"bundle_id": bundle_id, "item_id": item_id}),
         ),
-        ("execute_action_bundle", serde_json::json!({"bundle_id": bundle_id})),
+        (
+            "execute_action_bundle",
+            serde_json::json!({"bundle_id": bundle_id}),
+        ),
     ] {
         let body = call_tool(&app, &token, tool, args).await;
         let structured = &body["result"]["structuredContent"];
-        assert_eq!(structured["ok"], false, "{tool} must refuse a non-MCP bundle");
+        assert_eq!(
+            structured["ok"], false,
+            "{tool} must refuse a non-MCP bundle"
+        );
         assert_eq!(structured["error"]["code"], "not_an_mcp_bundle");
         assert_eq!(body["result"]["isError"], true);
     }
@@ -829,7 +907,13 @@ async fn one_connected_client_cannot_approve_anothers_draft() {
     let item_id = bundle["items"][0]["itemId"].as_str().unwrap().to_string();
 
     // The other client can SEE it (answering "what's pending?" is a question)...
-    let listed = call_tool(&app, &chatgpt_token, "list_action_bundles", serde_json::json!({})).await;
+    let listed = call_tool(
+        &app,
+        &chatgpt_token,
+        "list_action_bundles",
+        serde_json::json!({}),
+    )
+    .await;
     assert_eq!(listed["result"]["structuredContent"]["ok"], true);
 
     // ...but cannot act on it.
@@ -842,11 +926,17 @@ async fn one_connected_client_cannot_approve_anothers_draft() {
             "reject_action_item",
             serde_json::json!({"bundle_id": bundle_id, "item_id": item_id}),
         ),
-        ("execute_action_bundle", serde_json::json!({"bundle_id": bundle_id})),
+        (
+            "execute_action_bundle",
+            serde_json::json!({"bundle_id": bundle_id}),
+        ),
     ] {
         let body = call_tool(&app, &chatgpt_token, tool, args).await;
         let structured = &body["result"]["structuredContent"];
-        assert_eq!(structured["ok"], false, "{tool} must refuse another client's bundle");
+        assert_eq!(
+            structured["ok"], false,
+            "{tool} must refuse another client's bundle"
+        );
         assert_eq!(structured["error"]["code"], "not_your_bundle", "for {tool}");
     }
 
@@ -886,7 +976,10 @@ async fn bundle_tools_validate_their_arguments() {
         serde_json::json!({"bundle_id": "nope"}),
     )
     .await;
-    assert_eq!(body["result"]["structuredContent"]["error"]["code"], "bundle_not_found");
+    assert_eq!(
+        body["result"]["structuredContent"]["error"]["code"],
+        "bundle_not_found"
+    );
 }
 
 // ------------------------------------------------------------ discovery ---
@@ -906,7 +999,11 @@ async fn oauth_metadata_documents_are_public_and_well_formed() {
         )
         .await
         .unwrap();
-    assert_eq!(res.status(), StatusCode::OK, "discovery must work unauthenticated");
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "discovery must work unauthenticated"
+    );
     let body = json_body(res).await;
     assert_eq!(body["resource"], "https://fin.example.com/mcp");
     assert_eq!(body["authorization_servers"][0], "https://fin.example.com");
@@ -953,17 +1050,28 @@ async fn ui_resources_are_listed_and_readable() {
 
     let body = json_body(
         app.clone()
-            .oneshot(mcp_req(&token, rpc(1, "resources/list", serde_json::json!({}))))
+            .oneshot(mcp_req(
+                &token,
+                rpc(1, "resources/list", serde_json::json!({})),
+            ))
             .await
             .unwrap(),
     )
     .await;
-    let resources = body["result"]["resources"].as_array().expect("a resources array");
-    assert!(!resources.is_empty(), "widgets must be advertised to render at all");
+    let resources = body["result"]["resources"]
+        .as_array()
+        .expect("a resources array");
+    assert!(
+        !resources.is_empty(),
+        "widgets must be advertised to render at all"
+    );
 
     for r in resources {
         let uri = r["uri"].as_str().unwrap();
-        assert!(uri.starts_with("ui://"), "UI resources use the ui:// scheme, got {uri}");
+        assert!(
+            uri.starts_with("ui://"),
+            "UI resources use the ui:// scheme, got {uri}"
+        );
         assert_eq!(
             r["mimeType"], "text/html;profile=mcp-app",
             "the mime type is what marks this as an MCP App rather than a plain HTML blob"
@@ -984,7 +1092,10 @@ async fn ui_resources_are_listed_and_readable() {
         let content = &read["result"]["contents"][0];
         assert_eq!(content["uri"], *uri);
         let html = content["text"].as_str().unwrap_or_default();
-        assert!(html.contains("id=\"root\""), "{uri} must render into a root node");
+        assert!(
+            html.contains("id=\"root\""),
+            "{uri} must render into a root node"
+        );
         assert!(
             html.contains("ui/notifications/tool-result"),
             "{uri} must listen for the host's tool-result notification"
@@ -1001,7 +1112,11 @@ async fn ui_resources_are_listed_and_readable() {
         app.clone()
             .oneshot(mcp_req(
                 &token,
-                rpc(3, "resources/read", serde_json::json!({"uri": "ui://finsight/nope.html"})),
+                rpc(
+                    3,
+                    "resources/read",
+                    serde_json::json!({"uri": "ui://finsight/nope.html"}),
+                ),
             ))
             .await
             .unwrap(),
@@ -1016,7 +1131,10 @@ async fn tools_with_a_widget_point_at_a_resource_that_exists() {
 
     let listed = json_body(
         app.clone()
-            .oneshot(mcp_req(&token, rpc(1, "resources/list", serde_json::json!({}))))
+            .oneshot(mcp_req(
+                &token,
+                rpc(1, "resources/list", serde_json::json!({})),
+            ))
             .await
             .unwrap(),
     )
@@ -1040,7 +1158,9 @@ async fn tools_with_a_widget_point_at_a_resource_that_exists() {
     for t in tools["result"]["tools"].as_array().unwrap() {
         let Some(meta) = t.get("_meta") else { continue };
         with_widget += 1;
-        let uri = meta["ui"]["resourceUri"].as_str().expect("_meta.ui.resourceUri");
+        let uri = meta["ui"]["resourceUri"]
+            .as_str()
+            .expect("_meta.ui.resourceUri");
         assert!(
             known.contains(&uri.to_string()),
             "{} points at {uri}, which resources/list does not offer",

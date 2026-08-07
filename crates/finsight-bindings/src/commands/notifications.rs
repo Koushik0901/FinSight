@@ -10,7 +10,9 @@ pub use finsight_api::commands::notifications::{
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_notification_prefs(state: tauri::State<'_, AppState>) -> AppResult<NotificationPrefsDto> {
+pub async fn get_notification_prefs(
+    state: tauri::State<'_, AppState>,
+) -> AppResult<NotificationPrefsDto> {
     finsight_api::commands::notifications::get_notification_prefs(&state.api).await
 }
 
@@ -34,7 +36,10 @@ pub async fn list_notifications(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn mark_notification_read(state: tauri::State<'_, AppState>, id: String) -> AppResult<()> {
+pub async fn mark_notification_read(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> AppResult<()> {
     finsight_api::commands::notifications::mark_notification_read(&state.api, id).await
 }
 

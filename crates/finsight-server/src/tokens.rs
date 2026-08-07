@@ -99,16 +99,26 @@ pub(crate) fn issue_token(
     scope: &str,
     dbkey: &[u8; crate::crypto::DB_KEY_LEN],
     expires_unix: Option<i64>,
-) -> Result<(String, crate::users::ApiTokenRecord), Response> {
+) -> Result<(String, crate::users::ApiTokenRecord), Box<Response>> {
     let (token, raw) = generate_pat();
     let wrapped = crate::crypto::wrap_key_with_token(&raw, dbkey).map_err(|e| {
-        err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string())
+        Box::new(err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "auth.crypto",
+            e.to_string(),
+        ))
     })?;
     let hash = crate::crypto::hash_session_token(&token);
     let rec = st
         .users
         .insert_api_token(user_id, name, scope, &hash, &wrapped, expires_unix)
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()))?;
+        .map_err(|e| {
+            Box::new(err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.db",
+                e.to_string(),
+            ))
+        })?;
     Ok((token, rec))
 }
 
@@ -122,13 +132,17 @@ pub(crate) fn issue_token_pair(
     name: &str,
     scope: &str,
     dbkey: &[u8; crate::crypto::DB_KEY_LEN],
-) -> Result<(String, String, i64), Response> {
+) -> Result<(String, String, i64), Box<Response>> {
     let expires_at = chrono::Utc::now().timestamp() + ACCESS_TOKEN_TTL_SECS;
     let (access_token, rec) = issue_token(st, user_id, name, scope, dbkey, Some(expires_at))?;
 
     let (refresh_token, refresh_raw) = generate_refresh_token();
     let wrapped = crate::crypto::wrap_key_with_token(&refresh_raw, dbkey).map_err(|e| {
-        err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string())
+        Box::new(err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "auth.crypto",
+            e.to_string(),
+        ))
     })?;
     st.users
         .insert_refresh_token(
@@ -139,7 +153,13 @@ pub(crate) fn issue_token_pair(
             &wrapped,
             &rec.id,
         )
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()))?;
+        .map_err(|e| {
+            Box::new(err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.db",
+                e.to_string(),
+            ))
+        })?;
 
     Ok((access_token, refresh_token, ACCESS_TOKEN_TTL_SECS))
 }
@@ -220,7 +240,7 @@ pub(crate) async fn create(
             )
                 .into_response()
         }
-        Err(resp) => resp,
+        Err(resp) => *resp,
     }
 }
 
@@ -230,7 +250,11 @@ pub(crate) async fn revoke(
     Path(id): Path<String>,
 ) -> Response {
     match st.users.delete_api_token(&user.user_id, &id) {
-        Ok(0) => err_response(StatusCode::NOT_FOUND, "auth.token_not_found", "no such token"),
+        Ok(0) => err_response(
+            StatusCode::NOT_FOUND,
+            "auth.token_not_found",
+            "no such token",
+        ),
         Ok(_) => {
             // Kill the refresh token too. Revoking a connector in Settings must
             // mean it stops working — leaving the refresh token alive would let

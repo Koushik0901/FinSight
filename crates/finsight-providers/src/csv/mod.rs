@@ -153,7 +153,7 @@ impl CsvProvider {
                     reason,
                 } => {
                     import_candidates::create(
-                        &mut tx,
+                        &tx,
                         NewImportCandidate {
                             source: "csv".to_string(),
                             import_id: Some(import_id.to_string()),

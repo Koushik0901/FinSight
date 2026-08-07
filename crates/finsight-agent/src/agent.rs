@@ -141,10 +141,9 @@ async fn run_loop(
 mod tests {
     use super::*;
     use crate::providers::mock::MockCompletionProvider;
-    
+
     use serde_json::json;
     use std::sync::Mutex;
-    
 
     #[tokio::test]
     async fn handle_sends_job_and_receives_error_when_no_provider() {

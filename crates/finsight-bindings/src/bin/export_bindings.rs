@@ -1,14 +1,12 @@
 //! Exports TypeScript bindings for the frontend.
-//! Invoked by `cargo run -p finsight-tauri --bin export_bindings --features codegen`
+//! Invoked by `cargo run -p finsight-bindings --bin export_bindings`
 //! (aka `pnpm bindings`).
 //!
 //! The codegen contract itself — `build_specta_builder()` and every
 //! `#[tauri::command]` wrapper — lives in the separate, codegen-only
-//! `finsight-bindings` crate. This 15-line entry point stays in `src-tauri`
-//! only because a Wry-linked binary needs this crate's `tauri_build` (build.rs)
-//! resource/manifest setup to be runnable on Windows. It is gated behind the
-//! `codegen` feature, so the shipped `finsight` binary never pulls the command
-//! surface into its dependency graph.
+//! `finsight-bindings` package. Its own `tauri_build` manifest makes this
+//! Wry-linked exporter runnable on Windows without putting it in the shipped
+//! `finsight-tauri` package or installer.
 //! Must be run from the repo root; the output path is relative to CWD.
 
 fn main() -> anyhow::Result<()> {

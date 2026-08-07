@@ -2,7 +2,6 @@
 //! seed call was removed. This test reproduces the startup chain (open + migrate)
 //! and asserts the accounts table is empty.
 
-
 #[test]
 fn fresh_db_after_startup_has_no_accounts() {
     let (_dir, db) = finsight_core::testing::migrated_db();

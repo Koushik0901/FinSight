@@ -780,16 +780,16 @@ pub struct UnresolvedCounterparty {
 /// counterparty (a bare "INTERNET TRANSFER <ref>") fold into one
 /// `pattern: None` "Unnamed internal transfers" bucket. Ordered by net
 /// exposure (`|inflow - outflow|`) descending.
-pub fn list_unresolved_counterparties(conn: &Connection) -> CoreResult<Vec<UnresolvedCounterparty>> {
+pub fn list_unresolved_counterparties(
+    conn: &Connection,
+) -> CoreResult<Vec<UnresolvedCounterparty>> {
     let sql = format!(
         "SELECT t.merchant_raw, t.amount_cents FROM transactions t \
          WHERE {} AND t.settle_up = 0",
         crate::categorize::transfer_review_predicate("t")
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-    })?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
 
     struct Group {
         label: String,
@@ -797,7 +797,8 @@ pub fn list_unresolved_counterparties(conn: &Connection) -> CoreResult<Vec<Unres
         inflow_cents: i64,
         outflow_cents: i64,
     }
-    let mut groups: std::collections::HashMap<Option<String>, Group> = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<Option<String>, Group> =
+        std::collections::HashMap::new();
 
     for row in rows {
         let (merchant_raw, amount_cents) = row?;
@@ -1025,10 +1026,18 @@ pub fn list_counterparty_positions(conn: &Connection) -> CoreResult<Vec<Counterp
             entry.outflow_cents += -amount_cents;
         }
         entry.net_cents = entry.inflow_cents - entry.outflow_cents;
-        if entry.first_at.as_deref().is_none_or(|d| posted_at.as_str() < d) {
+        if entry
+            .first_at
+            .as_deref()
+            .is_none_or(|d| posted_at.as_str() < d)
+        {
             entry.first_at = Some(posted_at.clone());
         }
-        if entry.last_at.as_deref().is_none_or(|d| posted_at.as_str() > d) {
+        if entry
+            .last_at
+            .as_deref()
+            .is_none_or(|d| posted_at.as_str() > d)
+        {
             entry.last_at = Some(posted_at);
         }
     }
@@ -1371,7 +1380,10 @@ mod tests {
         // ...but the user says leg 'a' is real spending.
         let t = set_transfer_override(&mut conn, "a", false).unwrap();
         assert!(!t.is_transfer);
-        assert!(t.transfer_peer_id.is_none(), "peer link removed on this side");
+        assert!(
+            t.transfer_peer_id.is_none(),
+            "peer link removed on this side"
+        );
         let (peer_tf, peer_link): (i64, Option<String>) = conn
             .query_row(
                 "SELECT is_transfer, transfer_peer_id FROM transactions WHERE id = 'b'",
@@ -1379,8 +1391,14 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert!(peer_link.is_none(), "peer link removed on the other side too");
-        assert_eq!(peer_tf, 0, "bare ref-only peer is not a transfer on its own merits");
+        assert!(
+            peer_link.is_none(),
+            "peer link removed on the other side too"
+        );
+        assert_eq!(
+            peer_tf, 0,
+            "bare ref-only peer is not a transfer on its own merits"
+        );
 
         // Neither the pairing pass nor the categorizer may resurrect the pair.
         assert_eq!(
@@ -1390,7 +1408,11 @@ mod tests {
         );
         crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
         let is_tf: i64 = conn
-            .query_row("SELECT is_transfer FROM transactions WHERE id = 'a'", [], |r| r.get(0))
+            .query_row(
+                "SELECT is_transfer FROM transactions WHERE id = 'a'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(is_tf, 0, "override survives the categorizer re-run");
     }
@@ -1408,7 +1430,11 @@ mod tests {
         .unwrap();
         crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
         let is_tf: i64 = conn
-            .query_row("SELECT is_transfer FROM transactions WHERE id = ?1", params![txn_id], |r| r.get(0))
+            .query_row(
+                "SELECT is_transfer FROM transactions WHERE id = ?1",
+                params![txn_id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(is_tf, 1, "precondition: keyword pass flags it");
 
@@ -1416,9 +1442,16 @@ mod tests {
         set_transfer_override(&mut conn, &txn_id, false).unwrap();
         crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
         let is_tf: i64 = conn
-            .query_row("SELECT is_transfer FROM transactions WHERE id = ?1", params![txn_id], |r| r.get(0))
+            .query_row(
+                "SELECT is_transfer FROM transactions WHERE id = ?1",
+                params![txn_id],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(is_tf, 0, "user's NOT-a-transfer verdict beats the keyword pass");
+        assert_eq!(
+            is_tf, 0,
+            "user's NOT-a-transfer verdict beats the keyword pass"
+        );
     }
 
     #[test]
@@ -1449,10 +1482,19 @@ mod tests {
         .unwrap();
         let ids: Vec<&str> = rows.iter().map(|t| t.id.as_str()).collect();
         assert!(ids.contains(&"rv1"), "bare internet transfer needs review");
-        assert!(ids.contains(&"rv2"), "person e-transfer counted as income needs review");
-        assert!(!ids.contains(&"rv3"), "already-flagged transfers are decided");
+        assert!(
+            ids.contains(&"rv2"),
+            "person e-transfer counted as income needs review"
+        );
+        assert!(
+            !ids.contains(&"rv3"),
+            "already-flagged transfers are decided"
+        );
         assert!(!ids.contains(&"rv4"), "user-ruled rows never reappear");
-        assert!(!ids.contains(&txn_id.as_str()), "ordinary merchants are not suspects");
+        assert!(
+            !ids.contains(&txn_id.as_str()),
+            "ordinary merchants are not suspects"
+        );
     }
 
     #[test]
@@ -1480,10 +1522,15 @@ mod tests {
         let siblings = transfer_verdict_siblings(&mut conn, "s1").unwrap();
         let (pattern, n) = siblings.expect("a person e-transfer generalizes");
         assert_eq!(pattern, "%jordan%");
-        assert_eq!(n, 2, "s2+s3 are undecided; s4 categorized, s5 ruled — excluded");
+        assert_eq!(
+            n, 2,
+            "s2+s3 are undecided; s4 categorized, s5 ruled — excluded"
+        );
 
         // A bare internal transfer has no counterparty — no bulk offer.
-        assert!(transfer_verdict_siblings(&mut conn, "u1").unwrap().is_none());
+        assert!(transfer_verdict_siblings(&mut conn, "u1")
+            .unwrap()
+            .is_none());
 
         // Apply the verdict to the whole counterparty.
         let applied = apply_transfer_override_to_matching(&mut conn, &pattern, true).unwrap();
@@ -1496,7 +1543,11 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!((flags, overrides), (3, 3), "all three flagged with a sticky verdict");
+        assert_eq!(
+            (flags, overrides),
+            (3, 3),
+            "all three flagged with a sticky verdict"
+        );
         let s4_touched: (i64, Option<String>) = conn
             .query_row(
                 "SELECT is_transfer, category_id FROM transactions WHERE id = 's4'",
@@ -1510,9 +1561,16 @@ mod tests {
             "the categorized sibling keeps its category and stays real spending"
         );
         let s5_override: i64 = conn
-            .query_row("SELECT transfer_override FROM transactions WHERE id = 's5'", [], |r| r.get(0))
+            .query_row(
+                "SELECT transfer_override FROM transactions WHERE id = 's5'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(s5_override, 0, "an existing verdict is never overwritten by bulk");
+        assert_eq!(
+            s5_override, 0,
+            "an existing verdict is never overwritten by bulk"
+        );
     }
 
     #[test]
@@ -1549,7 +1607,10 @@ mod tests {
 
         let t = set_counterparty_verdict(&mut conn, "su1", Verdict::SettleUp).unwrap();
         assert!(t.settle_up, "settle-up verdict marks the row settled");
-        assert!(!t.is_transfer, "settle-up is real spending, netted — not a transfer");
+        assert!(
+            !t.is_transfer,
+            "settle-up is real spending, netted — not a transfer"
+        );
 
         let still_undecided: i64 = conn
             .query_row(
@@ -1613,7 +1674,10 @@ mod tests {
         .unwrap();
 
         let t = set_counterparty_verdict(&mut conn, "tf1", Verdict::Transfer).unwrap();
-        assert!(t.is_transfer, "transfer verdict delegates to the existing arm");
+        assert!(
+            t.is_transfer,
+            "transfer verdict delegates to the existing arm"
+        );
     }
 
     #[test]
@@ -1631,8 +1695,7 @@ mod tests {
         )
         .unwrap();
 
-        let applied =
-            apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
+        let applied = apply_verdict_to_matching(&mut conn, "%sam%", Verdict::SettleUp).unwrap();
         assert_eq!(applied, 2, "only the two undecided rows are ruled");
 
         let (j1_settled, j2_settled): (i64, i64) = conn
@@ -1643,7 +1706,11 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!((j1_settled, j2_settled), (1, 1), "both undecided rows settled");
+        assert_eq!(
+            (j1_settled, j2_settled),
+            (1, 1),
+            "both undecided rows settled"
+        );
 
         let j3_untouched: (i64, Option<String>) = conn
             .query_row(
@@ -1681,7 +1748,11 @@ mod tests {
         assert_eq!(applied, 1, "only the e-transfer-vocab row is ruled");
 
         let e1_settled: i64 = conn
-            .query_row("SELECT settle_up FROM transactions WHERE id = 'e1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT settle_up FROM transactions WHERE id = 'e1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(e1_settled, 1, "the e-transfer is settled up");
 
@@ -1693,7 +1764,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(g1_settled, 0, "Trader Joe's groceries are left alone");
-        assert!(g1_override.is_none(), "Trader Joe's groceries are still undecided");
+        assert!(
+            g1_override.is_none(),
+            "Trader Joe's groceries are still undecided"
+        );
     }
 
     #[test]
@@ -1731,7 +1805,10 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(treatment, "categorize", "the existing categorize rule is not flipped");
+        assert_eq!(
+            treatment, "categorize",
+            "the existing categorize rule is not flipped"
+        );
         assert_eq!(rule_count, 1, "no duplicate rule is created");
     }
 
@@ -1824,7 +1901,11 @@ mod tests {
         assert_eq!(sam.outflow_cents, 300000, "lent out");
         assert_eq!(sam.inflow_cents, 250000, "repaid");
         assert_eq!(sam.net_cents, -50000, "down $500");
-        assert_eq!(sam.owed_to_user_cents(), 50000, "$500 outstanding with them");
+        assert_eq!(
+            sam.owed_to_user_cents(),
+            50000,
+            "$500 outstanding with them"
+        );
         assert_eq!(sam.owed_by_user_cents(), 0);
         assert_eq!(sam.txn_count, 2);
         assert_eq!(sam.first_at.as_deref(), Some("2026-01-05"));
@@ -1853,7 +1934,10 @@ mod tests {
             .filter(|g| g.label == "sam")
             .map(|g| g.outflow_cents)
             .sum();
-        assert_eq!(queue_total, 10000, "the queue hides the settled leg, by design");
+        assert_eq!(
+            queue_total, 10000,
+            "the queue hides the settled leg, by design"
+        );
 
         let sam = counterparty_position(&conn, "sam").unwrap().unwrap();
         assert_eq!(sam.outflow_cents, 30000, "the tab counts both legs");
@@ -2004,7 +2088,10 @@ mod tests {
             .find(|g| g.label == "sam")
             .expect("a sam group exists");
         assert_eq!(sam.pattern.as_deref(), Some("%sam%"));
-        assert_eq!(sam.txn_count, 3, "j1+j2+j3 only; d1 is decided (categorized)");
+        assert_eq!(
+            sam.txn_count, 3,
+            "j1+j2+j3 only; d1 is decided (categorized)"
+        );
         assert_eq!(sam.inflow_cents, 10000);
         assert_eq!(sam.outflow_cents, 50000);
 
@@ -2032,7 +2119,10 @@ mod tests {
         // Ordered by net exposure (|inflow - outflow|) descending: jordan
         // (40000) and sam (40000) tie for largest, both ahead of the unnamed
         // bucket (5000).
-        let unnamed_pos = groups.iter().position(|g| g.label == "Unnamed internal transfers").unwrap();
+        let unnamed_pos = groups
+            .iter()
+            .position(|g| g.label == "Unnamed internal transfers")
+            .unwrap();
         assert_eq!(unnamed_pos, 2, "smallest net exposure sorts last");
     }
 }

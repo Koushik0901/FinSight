@@ -146,9 +146,10 @@ pub fn create(conn: &Connection, input: NewRestorationEnvelope) -> CoreResult<Re
 }
 
 pub fn get(conn: &Connection, id: &str) -> CoreResult<Option<RestorationEnvelope>> {
-    let mut stmt =
-        conn.prepare(&format!("SELECT {SELECT_COLS} FROM restoration_envelopes WHERE id = ?1"))?;
-    let mut rows = stmt.query_map(params![id], |r| row_to_envelope(r))?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SELECT_COLS} FROM restoration_envelopes WHERE id = ?1"
+    ))?;
+    let mut rows = stmt.query_map(params![id], row_to_envelope)?;
     Ok(rows.next().transpose()?)
 }
 
@@ -158,7 +159,7 @@ pub fn list_open(conn: &Connection) -> CoreResult<Vec<RestorationEnvelope>> {
         "SELECT {SELECT_COLS} FROM restoration_envelopes \
          WHERE closed_at IS NULL ORDER BY opened_on ASC, label ASC"
     ))?;
-    let rows = stmt.query_map([], |r| row_to_envelope(r))?;
+    let rows = stmt.query_map([], row_to_envelope)?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Into::into)
 }
@@ -175,7 +176,10 @@ pub fn close(conn: &Connection, id: &str) -> CoreResult<()> {
 }
 
 pub fn delete(conn: &Connection, id: &str) -> CoreResult<()> {
-    conn.execute("DELETE FROM restoration_envelopes WHERE id = ?1", params![id])?;
+    conn.execute(
+        "DELETE FROM restoration_envelopes WHERE id = ?1",
+        params![id],
+    )?;
     Ok(())
 }
 
@@ -211,7 +215,10 @@ pub fn add_leg(
 }
 
 pub fn remove_leg(conn: &Connection, leg_id: &str) -> CoreResult<()> {
-    conn.execute("DELETE FROM restoration_legs WHERE id = ?1", params![leg_id])?;
+    conn.execute(
+        "DELETE FROM restoration_legs WHERE id = ?1",
+        params![leg_id],
+    )?;
     Ok(())
 }
 
@@ -365,7 +372,11 @@ mod tests {
         .unwrap();
     }
 
-    fn open_envelope(conn: &Connection, original: i64, counterparty: Option<&str>) -> RestorationEnvelope {
+    fn open_envelope(
+        conn: &Connection,
+        original: i64,
+        counterparty: Option<&str>,
+    ) -> RestorationEnvelope {
         create(
             conn,
             NewRestorationEnvelope {
@@ -399,7 +410,10 @@ mod tests {
         let env = open_envelope(&conn, 1_000_000, Some("sam"));
         let st = status(&mut conn, &env.id).unwrap().unwrap();
 
-        assert_eq!(st.left_to_restore_cents, 1_000_000, "nothing has gone back yet");
+        assert_eq!(
+            st.left_to_restore_cents, 1_000_000,
+            "nothing has gone back yet"
+        );
         assert_eq!(st.collectable_cents, 50_000, "$500 outstanding with Sam");
         assert_eq!(
             st.fund_yourself_cents, 950_000,
@@ -424,7 +438,10 @@ mod tests {
             st.envelope.original_cents,
             st.restored_cents + st.left_to_restore_cents
         );
-        assert_eq!(st.fund_yourself_cents, st.left_to_restore_cents - st.collectable_cents);
+        assert_eq!(
+            st.fund_yourself_cents,
+            st.left_to_restore_cents - st.collectable_cents
+        );
     }
 
     #[test]
@@ -525,14 +542,15 @@ mod tests {
         .unwrap();
 
         let st = status(&mut conn, &env.id).unwrap().unwrap();
-        let ceiling = st.still_held_ceiling_cents.expect("a reconstructable account has a trough");
+        let ceiling = st
+            .still_held_ceiling_cents
+            .expect("a reconstructable account has a trough");
         assert!(
             ceiling < 1_000_000,
             "the balance dipped, so the ceiling must be below the original: {ceiling}"
         );
         assert!(st.still_held_basis.contains("lowest point"));
     }
-
 
     #[test]
     fn an_assumed_zero_reconstruction_withholds_the_ceiling_rather_than_asserting_a_wrong_one() {
@@ -577,7 +595,9 @@ mod tests {
             st.still_held_ceiling_cents, None,
             "an off-by-a-constant reconstruction must not masquerade as a ceiling"
         );
-        assert!(st.still_held_basis.contains("without a known opening balance"));
+        assert!(st
+            .still_held_basis
+            .contains("without a known opening balance"));
     }
 
     #[test]

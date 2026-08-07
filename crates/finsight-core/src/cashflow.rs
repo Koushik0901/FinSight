@@ -228,7 +228,12 @@ fn project(
 
 /// Roll a recurring occurrence forward from `first` by `gap_days`, returning
 /// every occurrence inside `[start, end)`.
-fn occurrences_in_window(first: NaiveDate, gap_days: i64, start: NaiveDate, end: NaiveDate) -> Vec<NaiveDate> {
+fn occurrences_in_window(
+    first: NaiveDate,
+    gap_days: i64,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<NaiveDate> {
     let mut out = Vec::new();
     if gap_days <= 0 {
         if first >= start && first < end {
@@ -256,16 +261,18 @@ fn occurrences_in_window(first: NaiveDate, gap_days: i64, start: NaiveDate, end:
 /// Whether a recurring bill/subscription occurrence is already covered by a
 /// user-entered planned transaction, so we don't count the same charge twice.
 /// Fuzzy on purpose: same-ish date and amount.
-fn covered_by_planned(date: NaiveDate, amount_cents: i64, planned: &[(NaiveDate, i64, String)]) -> bool {
+fn covered_by_planned(
+    date: NaiveDate,
+    amount_cents: i64,
+    planned: &[(NaiveDate, i64, String)],
+) -> bool {
     planned.iter().any(|(pd, pa, _)| {
-        (*pd - date).num_days().abs() <= 5
-            && pa.signum() == amount_cents.signum()
-            && {
-                let a = pa.unsigned_abs() as f64;
-                let b = amount_cents.unsigned_abs() as f64;
-                let hi = a.max(b);
-                hi > 0.0 && (a - b).abs() / hi <= 0.20
-            }
+        (*pd - date).num_days().abs() <= 5 && pa.signum() == amount_cents.signum() && {
+            let a = pa.unsigned_abs() as f64;
+            let b = amount_cents.unsigned_abs() as f64;
+            let hi = a.max(b);
+            hi > 0.0 && (a - b).abs() / hi <= 0.20
+        }
     })
 }
 
@@ -273,7 +280,11 @@ fn covered_by_planned(date: NaiveDate, amount_cents: i64, planned: &[(NaiveDate,
 /// what-if overlay. Assembles dated events (recurring income/bills/subs rolled
 /// forward + planned transactions), computes the residual smooth burn, then
 /// hands everything to the pure [`project`].
-pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf) -> CoreResult<CashflowForecast> {
+pub fn build_forecast(
+    conn: &mut Connection,
+    horizon_days: i64,
+    whatif: &WhatIf,
+) -> CoreResult<CashflowForecast> {
     let horizon = horizon_days.clamp(MIN_HORIZON_DAYS, MAX_HORIZON_DAYS);
     let as_of = chrono::Utc::now().date_naive();
     let horizon_end = as_of + Duration::days(horizon);
@@ -292,7 +303,6 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
         PlannedTxnFilter {
             status: Some("pending".to_string()),
             due_before: Some(horizon_end.format("%Y-%m-%d").to_string()),
-            ..Default::default()
         },
     )?;
     let planned: Vec<(NaiveDate, i64, String)> = planned_rows
@@ -311,17 +321,27 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
     let mut dated_obligation_monthly: i64 = 0;
 
     for item in &items {
-        let Some(next) = item.next_expected.as_deref().and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()) else {
+        let Some(next) = item
+            .next_expected
+            .as_deref()
+            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        else {
             continue;
         };
         let gap = item.avg_gap_days.round() as i64;
 
         let (kind, include) = match item.kind {
-            RecurringKind::Income if item.confidence >= recurring::PROJECTION_CONFIDENCE_THRESHOLD => {
+            RecurringKind::Income
+                if item.confidence >= recurring::PROJECTION_CONFIDENCE_THRESHOLD =>
+            {
                 (CashflowEventKind::Income, true)
             }
-            RecurringKind::Bill if item.is_projection_obligation() => (CashflowEventKind::Bill, true),
-            RecurringKind::Subscription if item.is_projection_obligation() => (CashflowEventKind::Subscription, true),
+            RecurringKind::Bill if item.is_projection_obligation() => {
+                (CashflowEventKind::Bill, true)
+            }
+            RecurringKind::Subscription if item.is_projection_obligation() => {
+                (CashflowEventKind::Subscription, true)
+            }
             // Transfers (internal / card payments) and irregular repeat purchases
             // are never projected as dated events — the latter feed the smooth burn.
             _ => (CashflowEventKind::Bill, false),
@@ -331,7 +351,10 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
             continue;
         }
 
-        let is_obligation = matches!(kind, CashflowEventKind::Bill | CashflowEventKind::Subscription);
+        let is_obligation = matches!(
+            kind,
+            CashflowEventKind::Bill | CashflowEventKind::Subscription
+        );
         if is_obligation {
             // Net this bill out of the smooth burn ONLY if its most recent charge
             // is inside the expense window — otherwise it isn't in
@@ -383,14 +406,24 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
         let d = whatif.extra_expense_date.unwrap_or(as_of);
         events.push(CashflowEvent {
             date: d.format("%Y-%m-%d").to_string(),
-            label: whatif.extra_expense_label.clone().unwrap_or_else(|| "Hypothetical spend".to_string()),
+            label: whatif
+                .extra_expense_label
+                .clone()
+                .unwrap_or_else(|| "Hypothetical spend".to_string()),
             amount_cents: -whatif.extra_expense_cents.abs(),
             kind: CashflowEventKind::Hypothetical,
             confidence: None,
         });
     }
 
-    let mut forecast = project(as_of, balances.liquid_cents, horizon, daily_burn_cents, whatif.buffer_cents, &events);
+    let mut forecast = project(
+        as_of,
+        balances.liquid_cents,
+        horizon,
+        daily_burn_cents,
+        whatif.buffer_cents,
+        &events,
+    );
 
     // Data-quality disclosures — the difference between a forecast and a guess.
     let reliable = rolling.data_span_days >= MIN_RELIABLE_SPAN_DAYS;
@@ -413,13 +446,25 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
         });
     }
     if !balances.unconverted.is_empty() {
-        let codes: Vec<&str> = balances.unconverted.iter().map(|h| h.code.as_str()).collect();
+        let codes: Vec<&str> = balances
+            .unconverted
+            .iter()
+            .map(|h| h.code.as_str())
+            .collect();
         warnings.push(CashflowWarning {
             level: WarningLevel::Info,
-            message: format!("This forecast is in your primary currency; money held in {} isn't included.", codes.join(", ")),
+            message: format!(
+                "This forecast is in your primary currency; money held in {} isn't included.",
+                codes.join(", ")
+            ),
         });
     }
-    if forecast.upcoming_events.iter().all(|e| e.kind != CashflowEventKind::Income) && rolling.avg_monthly_income_cents > 0 {
+    if forecast
+        .upcoming_events
+        .iter()
+        .all(|e| e.kind != CashflowEventKind::Income)
+        && rolling.avg_monthly_income_cents > 0
+    {
         warnings.push(CashflowWarning {
             level: WarningLevel::Info,
             message: "No recurring income lands in this window, so the trajectory only falls — the next paycheck may be just beyond it.".to_string(),
@@ -433,7 +478,13 @@ pub fn build_forecast(conn: &mut Connection, horizon_days: i64, whatif: &WhatIf)
 
 /// If an obligation's next occurrence falls just past the horizon, surface it so
 /// a short window can't hide a large upcoming (often annual) charge.
-fn near_horizon_warning(item: &RecurringItem, next: NaiveDate, gap: i64, horizon_end: NaiveDate, warnings: &mut Vec<CashflowWarning>) {
+fn near_horizon_warning(
+    item: &RecurringItem,
+    next: NaiveDate,
+    gap: i64,
+    horizon_end: NaiveDate,
+    warnings: &mut Vec<CashflowWarning>,
+) {
     if !item.is_projection_obligation() {
         return;
     }
@@ -468,7 +519,13 @@ mod tests {
     }
 
     fn ev(date: &str, amount: i64, kind: CashflowEventKind) -> CashflowEvent {
-        CashflowEvent { date: date.into(), label: "x".into(), amount_cents: amount, kind, confidence: None }
+        CashflowEvent {
+            date: date.into(),
+            label: "x".into(),
+            amount_cents: amount,
+            kind,
+            confidence: None,
+        }
     }
 
     // ── Pure projection math ────────────────────────────────────────────────
@@ -482,15 +539,24 @@ mod tests {
         ];
         let f = project(d("2026-01-01"), 100_000, 30, 1_000, 20_000, &events);
         // Lowest point is just before the paycheck; safe-to-spend = lowest - buffer.
-        assert_eq!(f.safe_to_spend_cents, (f.lowest_balance_cents - 20_000).max(0));
-        assert!(f.lowest_balance_cents < 100_000, "burn + bill must draw the balance down");
+        assert_eq!(
+            f.safe_to_spend_cents,
+            (f.lowest_balance_cents - 20_000).max(0)
+        );
+        assert!(
+            f.lowest_balance_cents < 100_000,
+            "burn + bill must draw the balance down"
+        );
     }
 
     #[test]
     fn daily_burn_actually_drains_the_balance() {
         // No events, pure burn: end balance = start - burn*horizon.
         let f = project(d("2026-01-01"), 100_000, 10, 2_000, 0, &[]);
-        assert_eq!(f.days.last().unwrap().projected_balance_cents, 100_000 - 2_000 * 10);
+        assert_eq!(
+            f.days.last().unwrap().projected_balance_cents,
+            100_000 - 2_000 * 10
+        );
         assert_eq!(f.lowest_balance_cents, 100_000 - 2_000 * 10);
     }
 
@@ -523,7 +589,10 @@ mod tests {
             0,
             &[ev("2026-01-01", -40_000, CashflowEventKind::Hypothetical)],
         );
-        assert_eq!(with_spend.safe_to_spend_cents, base.safe_to_spend_cents - 40_000);
+        assert_eq!(
+            with_spend.safe_to_spend_cents,
+            base.safe_to_spend_cents - 40_000
+        );
     }
 
     #[test]
@@ -550,7 +619,15 @@ mod tests {
 
     /// A regular series ending `end` (inclusive), `count` occurrences `gap` days
     /// apart, walking backward — so the data is "current" relative to today.
-    fn series(conn: &Connection, merchant: &str, end: NaiveDate, gap: i64, count: i64, amount: i64, transfer: bool) {
+    fn series(
+        conn: &Connection,
+        merchant: &str,
+        end: NaiveDate,
+        gap: i64,
+        count: i64,
+        amount: i64,
+        transfer: bool,
+    ) {
         for i in 0..count {
             let date = end - Duration::days(i * gap);
             conn.execute(
@@ -566,7 +643,13 @@ mod tests {
     /// jittered amounts, so they feed the average expense WITHOUT being detected
     /// as a single recurring obligation.
     fn steady_spend(conn: &Connection, end: NaiveDate, days: i64) {
-        let merchants = ["CORNER MART", "CAFE DELISH", "GAS N GO", "QUICK BITE", "DAILY GROCER"];
+        let merchants = [
+            "CORNER MART",
+            "CAFE DELISH",
+            "GAS N GO",
+            "QUICK BITE",
+            "DAILY GROCER",
+        ];
         for i in 0..days {
             let date = end - Duration::days(i);
             let merchant = merchants[(i as usize) % merchants.len()];
@@ -604,43 +687,82 @@ mod tests {
         // ~90 days of everyday spending → establishes the average expense.
         steady_spend(&conn, today, 90);
         // A monthly utility bill, last paid 5 days ago → next due ~25 days out.
-        series(&conn, "ACME UTILITIES", today - Duration::days(5), 30, 6, -12_000, false);
+        series(
+            &conn,
+            "ACME UTILITIES",
+            today - Duration::days(5),
+            30,
+            6,
+            -12_000,
+            false,
+        );
         // A monthly paycheck, last received 10 days ago → next ~20 days out.
-        series(&conn, "EMPLOYER PAYROLL", today - Duration::days(10), 30, 6, 400_000, false);
+        series(
+            &conn,
+            "EMPLOYER PAYROLL",
+            today - Duration::days(10),
+            30,
+            6,
+            400_000,
+            false,
+        );
         // A monthly internal transfer to savings — NOT a real cost.
-        series(&conn, "INTERNAL TRANSFER SAVINGS", today - Duration::days(7), 30, 6, -50_000, true);
+        series(
+            &conn,
+            "INTERNAL TRANSFER SAVINGS",
+            today - Duration::days(7),
+            30,
+            6,
+            -50_000,
+            true,
+        );
 
         let f = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
 
         // (a) The smooth burn equals avg expense minus the dated obligations'
         // monthly equivalent — so the bill is counted once, on its date, not also
         // smeared into the daily burn.
-        let avg_exp = metrics::rolling_averages(&conn, 90).unwrap().avg_monthly_expense_cents;
-        let obligations_monthly: i64 = recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
+        let avg_exp = metrics::rolling_averages(&conn, 90)
             .unwrap()
-            .iter()
-            .map(|o| o.monthly_equivalent_cents())
-            .sum();
-        assert!(obligations_monthly > 0, "the monthly bill must be detected as an obligation");
-        let expected_burn = ((avg_exp - obligations_monthly).max(0) as f64 / AVG_DAYS_PER_MONTH).round() as i64;
+            .avg_monthly_expense_cents;
+        let obligations_monthly: i64 =
+            recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
+                .unwrap()
+                .iter()
+                .map(|o| o.monthly_equivalent_cents())
+                .sum();
+        assert!(
+            obligations_monthly > 0,
+            "the monthly bill must be detected as an obligation"
+        );
+        let expected_burn =
+            ((avg_exp - obligations_monthly).max(0) as f64 / AVG_DAYS_PER_MONTH).round() as i64;
         assert_eq!(f.daily_burn_cents, expected_burn);
-        assert!(f.daily_burn_cents > 0, "everyday spending must produce a real daily burn");
+        assert!(
+            f.daily_burn_cents > 0,
+            "everyday spending must produce a real daily burn"
+        );
 
         // (b) The internal transfer is never a projected drain.
         assert!(
-            !f.upcoming_events.iter().any(|e| e.label.to_uppercase().contains("TRANSFER")),
+            !f.upcoming_events
+                .iter()
+                .any(|e| e.label.to_uppercase().contains("TRANSFER")),
             "an internal transfer must not appear as a cash-flow event: {:?}",
             f.upcoming_events
         );
 
         // (c) Income and the recurring obligation (bill/subscription — the
         // classifier's exact label doesn't matter) land as dated events.
-        assert!(f.upcoming_events.iter().any(|e| e.kind == CashflowEventKind::Income));
+        assert!(f
+            .upcoming_events
+            .iter()
+            .any(|e| e.kind == CashflowEventKind::Income));
         assert!(
-            f.upcoming_events
-                .iter()
-                .any(|e| matches!(e.kind, CashflowEventKind::Bill | CashflowEventKind::Subscription)
-                    && e.label.to_uppercase().contains("ACME")),
+            f.upcoming_events.iter().any(|e| matches!(
+                e.kind,
+                CashflowEventKind::Bill | CashflowEventKind::Subscription
+            ) && e.label.to_uppercase().contains("ACME")),
             "the recurring obligation must land as a dated event: {:?}",
             f.upcoming_events
         );
@@ -649,7 +771,10 @@ mod tests {
         // window, so it must be disclosed as a heads-up rather than ignored.
         let short = build_forecast(&mut conn, 7, &WhatIf::default()).unwrap();
         assert!(
-            short.warnings.iter().any(|w| w.message.contains("ACME UTILITIES") && w.message.contains("just after")),
+            short
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("ACME UTILITIES") && w.message.contains("just after")),
             "a bill just past the horizon must be surfaced: {:?}",
             short.warnings
         );
@@ -673,14 +798,34 @@ mod tests {
         .unwrap();
         steady_spend(&conn, today, 90);
         // A monthly bill INSIDE the window — establishes a real burn to compare.
-        series(&conn, "ACME UTILITIES", today - Duration::days(5), 30, 6, -12_000, false);
-        let burn_before = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap().daily_burn_cents;
+        series(
+            &conn,
+            "ACME UTILITIES",
+            today - Duration::days(5),
+            30,
+            6,
+            -12_000,
+            false,
+        );
+        let burn_before = build_forecast(&mut conn, 30, &WhatIf::default())
+            .unwrap()
+            .daily_burn_cents;
         assert!(burn_before > 0);
 
         // A quarterly bill whose charges are ALL >90 days ago: detected over the
         // 400-day window, but absent from the 90-day expense average.
-        series(&conn, "ANNUAL PREMIUM CO", today - Duration::days(100), 90, 3, -60_000, false);
-        let burn_after = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap().daily_burn_cents;
+        series(
+            &conn,
+            "ANNUAL PREMIUM CO",
+            today - Duration::days(100),
+            90,
+            3,
+            -60_000,
+            false,
+        );
+        let burn_after = build_forecast(&mut conn, 30, &WhatIf::default())
+            .unwrap()
+            .daily_burn_cents;
 
         assert_eq!(
             burn_after, burn_before,

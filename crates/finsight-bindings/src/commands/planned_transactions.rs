@@ -40,10 +40,8 @@ pub async fn update_planned_transaction(
     id: String,
     patch: PlannedTransactionPatch,
 ) -> AppResult<PlannedTransaction> {
-    finsight_api::commands::planned_transactions::update_planned_transaction(
-        &state.api, id, patch,
-    )
-    .await
+    finsight_api::commands::planned_transactions::update_planned_transaction(&state.api, id, patch)
+        .await
 }
 
 #[tauri::command]

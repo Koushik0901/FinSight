@@ -150,8 +150,12 @@ mod tests {
 
         delete_all_data(&mut conn).unwrap();
 
-        let acct_count: i64 = conn.query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0)).unwrap();
-        let txn_count: i64 = conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0)).unwrap();
+        let acct_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get(0))
+            .unwrap();
+        let txn_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .unwrap();
         let balance_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM account_balances", [], |r| r.get(0))
             .unwrap();
@@ -160,7 +164,11 @@ mod tests {
         assert_eq!(balance_count, 0);
 
         let provider: Option<String> = crate::settings::get(&conn, "llm_provider").unwrap();
-        assert_eq!(provider.as_deref(), Some("ollama"), "settings must survive a data wipe");
+        assert_eq!(
+            provider.as_deref(),
+            Some("ollama"),
+            "settings must survive a data wipe"
+        );
     }
 
     #[test]
@@ -184,7 +192,14 @@ mod tests {
         )
         .unwrap();
         let bundle = super::super::copilot_actions::insert_bundle(
-            &mut conn, None, "Recat", "summary", "rationale", 0.9, None, None,
+            &mut conn,
+            None,
+            "Recat",
+            "summary",
+            "rationale",
+            0.9,
+            None,
+            None,
         )
         .unwrap();
         super::super::copilot_actions::insert_item(
@@ -218,7 +233,11 @@ mod tests {
         }
 
         // Net worth is no longer meaningful with nothing tracked.
-        assert!(!super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+        assert!(
+            !super::super::net_worth::breakdown(&mut conn)
+                .unwrap()
+                .has_data
+        );
     }
 
     #[test]
@@ -254,23 +273,43 @@ mod tests {
         };
 
         seed(&mut conn);
-        assert!(recurring::detect_recurring(&conn, 400).unwrap().iter().any(|i| i.merchant_key.contains("spotify")));
+        assert!(recurring::detect_recurring(&conn, 400)
+            .unwrap()
+            .iter()
+            .any(|i| i.merchant_key.contains("spotify")));
         assert!(anomaly::recompute_anomalies(&mut conn).unwrap() >= 1);
-        assert!(super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+        assert!(
+            super::super::net_worth::breakdown(&mut conn)
+                .unwrap()
+                .has_data
+        );
 
         // Delete All Data → every derived surface resets.
         delete_all_data(&mut conn).unwrap();
         assert!(recurring::detect_recurring(&conn, 400).unwrap().is_empty());
         assert_eq!(anomaly::recompute_anomalies(&mut conn).unwrap(), 0);
-        assert!(!super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
-        let txns: i64 = conn.query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0)).unwrap();
+        assert!(
+            !super::super::net_worth::breakdown(&mut conn)
+                .unwrap()
+                .has_data
+        );
+        let txns: i64 = conn
+            .query_row("SELECT COUNT(*) FROM transactions", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(txns, 0);
 
         // Re-import → everything recomputes.
         seed(&mut conn);
-        assert!(recurring::detect_recurring(&conn, 400).unwrap().iter().any(|i| i.merchant_key.contains("spotify")));
+        assert!(recurring::detect_recurring(&conn, 400)
+            .unwrap()
+            .iter()
+            .any(|i| i.merchant_key.contains("spotify")));
         assert!(anomaly::recompute_anomalies(&mut conn).unwrap() >= 1);
-        assert!(super::super::net_worth::breakdown(&mut conn).unwrap().has_data);
+        assert!(
+            super::super::net_worth::breakdown(&mut conn)
+                .unwrap()
+                .has_data
+        );
     }
 
     /// Regression (review finding 2): a full reset must leave zero category
@@ -379,7 +418,10 @@ mod tests {
         });
 
         tokio::time::sleep(Duration::from_millis(40)).await;
-        assert!(!reset.is_finished(), "the wipe must wait for the lease to drain");
+        assert!(
+            !reset.is_finished(),
+            "the wipe must wait for the lease to drain"
+        );
         assert!(
             lease.superseded(),
             "the leased writer must see it was superseded and skip its commit"
@@ -397,6 +439,9 @@ mod tests {
         let cats: i64 = conn
             .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(cats, 0, "no pre-reset state may survive a completed Delete-All");
+        assert_eq!(
+            cats, 0,
+            "no pre-reset state may survive a completed Delete-All"
+        );
     }
 }

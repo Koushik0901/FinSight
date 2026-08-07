@@ -51,11 +51,17 @@ fn month_back(period_ym: &str, n: i64) -> String {
     format!("{:04}-{:02}", idx.div_euclid(12), idx.rem_euclid(12) + 1)
 }
 
-pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResult<PeriodAssessment> {
+pub fn classify_spending_period(
+    conn: &Connection,
+    period_ym: &str,
+) -> CoreResult<PeriodAssessment> {
     let base = baseline::trailing(conn, period_ym, 12)?;
     let mixed = base.mixed_currency;
     let period_total = baseline::month_total(conn, period_ym)?;
-    let band = upper_band(base.grand_monthly_median_cents, base.grand_monthly_mad_cents);
+    let band = upper_band(
+        base.grand_monthly_median_cents,
+        base.grand_monthly_mad_cents,
+    );
 
     if base.months < MIN_BASELINE_MONTHS {
         return Ok(PeriodAssessment {
@@ -92,8 +98,12 @@ pub fn classify_spending_period(conn: &Connection, period_ym: &str) -> CoreResul
 
     let mut note = match class {
         PeriodClass::Normal => "Within your normal range.".to_string(),
-        PeriodClass::EpisodicSpike => "A one-month spike — surrounding months are within your normal band.".to_string(),
-        PeriodClass::RegimeShift => "A sustained step up — recent months are also elevated, not a one-off.".to_string(),
+        PeriodClass::EpisodicSpike => {
+            "A one-month spike — surrounding months are within your normal band.".to_string()
+        }
+        PeriodClass::RegimeShift => {
+            "A sustained step up — recent months are also elevated, not a one-off.".to_string()
+        }
         PeriodClass::InsufficientHistory => String::new(),
     };
     if mixed {
@@ -144,7 +154,12 @@ mod tests {
 
     fn setup_year(conn: &Connection, base_cents: i64) {
         for i in 0..12 {
-            ins(conn, &format!("2025-{:02}", i + 1), -base_cents, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                conn,
+                &format!("2025-{:02}", i + 1),
+                -base_cents,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
     }
 

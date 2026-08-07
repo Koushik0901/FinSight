@@ -109,21 +109,76 @@ describe("Budget history section", () => {
     expect(screen.queryByRole("button", { name: /^tracking$/i })).not.toBeInTheDocument();
   });
 
-  it("Assign to a goal navigates to the Goals screen", () => {
+  it("Choose a goal navigates to the Goals screen", () => {
     render(<Budget />, { wrapper: createWrapper() });
-    fireEvent.click(screen.getByRole("button", { name: /assign to a goal/i }));
+    fireEvent.click(screen.getByRole("button", { name: /choose a goal/i }));
     expect(mockNavigate).toHaveBeenCalledWith("/goals");
   });
 
-  it("Park in a goal button is labeled with the real first goal's name", () => {
+  it("keeps rendering persisted budget data when a background refresh fails", () => {
+    (budgetHooks.useBudgetEnvelopes as any).mockReturnValueOnce({
+      data: [{
+        categoryId: "c1",
+        categoryLabel: "Groceries",
+        categoryColor: "#27ae60",
+        groupLabel: "Everyday",
+        budgetCents: 50000,
+        spentCents: 45000,
+        carryoverCents: 0,
+        txnCount: 12,
+      }],
+      isLoading: false,
+      error: new Error("offline"),
+    });
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.queryByText("Budget could not load")).not.toBeInTheDocument();
+    expect(screen.getByText("Where the plan stands today.")).toBeInTheDocument();
+  });
+
+  it("Record goal progress button is labeled with the real first goal's name", () => {
     (budgetHooks.useGoals as any).mockReturnValueOnce({
       data: [{ id: "g1", name: "House Fund", currentCents: 10000, targetCents: 500000 }],
       isLoading: false,
       error: null,
     });
     render(<Budget />, { wrapper: createWrapper() });
-    expect(screen.getByRole("button", { name: /park in house fund/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /record toward house fund/i })).toBeInTheDocument();
   });
+
+  it("explains that recording goal progress does not move money", () => {
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.getByText(/does not move money/i)).toBeInTheDocument();
+  });
+
+  it("shows a confidence-aware month-end range instead of a precise forecast", () => {
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.getByText("Likely month-end range")).toBeInTheDocument();
+    expect(
+      screen.getByText(/^(Early|Developing|Higher-confidence) estimate$/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("End-of-month estimate")).not.toBeInTheDocument();
+  });
+
+  it("does not repeat attention envelopes in the remaining list", () => {
+    (budgetHooks.useBudgetEnvelopes as any).mockReturnValueOnce({
+      data: [{
+        categoryId: "c1",
+        categoryLabel: "Groceries",
+        categoryColor: "#27ae60",
+        groupLabel: "Everyday",
+        budgetCents: 50000,
+        spentCents: 51000,
+        carryoverCents: 0,
+        txnCount: 12,
+      }],
+      isLoading: false,
+      error: null,
+    });
+    render(<Budget />, { wrapper: createWrapper() });
+    expect(screen.getByText("Start with these categories.")).toBeInTheDocument();
+    expect(screen.queryByText("Remaining envelopes.")).not.toBeInTheDocument();
+  });
+
 
   it("shows a carryover line when carryoverCents is non-zero", () => {
     (budgetHooks.useBudgetEnvelopes as any).mockReturnValueOnce({

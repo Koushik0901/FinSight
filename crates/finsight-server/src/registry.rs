@@ -329,7 +329,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(Arc::ptr_eq(&rt1, &rt2), "second call must not double-bootstrap");
+        assert!(
+            Arc::ptr_eq(&rt1, &rt2),
+            "second call must not double-bootstrap"
+        );
     }
 
     #[tokio::test]
@@ -384,8 +387,14 @@ mod tests {
 
         // Sidecars are checked BEFORE reopening — opening the DB legitimately
         // recreates a WAL, which would mask whether the stale one was dropped.
-        assert!(!user_dir.join("data.sqlcipher-wal").exists(), "stale WAL survived");
-        assert!(!user_dir.join("data.sqlcipher-shm").exists(), "stale SHM survived");
+        assert!(
+            !user_dir.join("data.sqlcipher-wal").exists(),
+            "stale WAL survived"
+        );
+        assert!(
+            !user_dir.join("data.sqlcipher-shm").exists(),
+            "stale SHM survived"
+        );
         assert!(
             !user_dir.join("data.pending-restore.sqlcipher").exists(),
             "pending file must be consumed, or get_data_health reports pendingRestore forever"
@@ -394,7 +403,11 @@ mod tests {
         let db = finsight_core::Db::open(&user_dir.join("data.sqlcipher"), &key).unwrap();
         let conn = db.get().unwrap();
         let marker: Option<String> = finsight_core::settings::get(&conn, "marker").unwrap();
-        assert_eq!(marker.as_deref(), Some("restored"), "restore was not applied");
+        assert_eq!(
+            marker.as_deref(),
+            Some("restored"),
+            "restore was not applied"
+        );
     }
 
     #[test]
@@ -515,7 +528,10 @@ mod tests {
             let path = dir.path().to_path_buf();
             let key = key.clone();
             tasks.push(tokio::spawn(async move {
-                registry.get_or_bootstrap(&path, "user-1", &key).await.unwrap()
+                registry
+                    .get_or_bootstrap(&path, "user-1", &key)
+                    .await
+                    .unwrap()
             }));
         }
         let mut runtimes: Vec<Arc<UserRuntime>> = Vec::new();
@@ -559,7 +575,10 @@ mod tests {
 
         // Once the stream closes, normal idle eviction resumes.
         drop(subscriber);
-        assert_eq!(registry.evict_idle(Duration::ZERO), vec!["user-1".to_string()]);
+        assert_eq!(
+            registry.evict_idle(Duration::ZERO),
+            vec!["user-1".to_string()]
+        );
     }
 
     #[tokio::test]

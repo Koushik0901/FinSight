@@ -148,10 +148,12 @@ pub async fn set_subscription_verdict(
     verdict: Option<String>,
 ) -> AppResult<()> {
     let db = (*state.db).clone();
-    let parsed = verdict.as_deref().and_then(SubscriptionVerdict::from_str);
-    run(&db, move |conn| subscriptions::set_verdict(conn, &merchant_key, parsed))
-        .await
-        .map_err(AppError::from)
+    let parsed = verdict.as_deref().and_then(SubscriptionVerdict::parse);
+    run(&db, move |conn| {
+        subscriptions::set_verdict(conn, &merchant_key, parsed)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 /// Mark a detected subscription as a free TRIAL converting on `trial_ends_at`

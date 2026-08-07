@@ -27,7 +27,10 @@ impl fmt::Debug for UserRecord {
             .field("id", &self.id)
             .field("username", &self.username)
             .field("password_phc", &"<redacted>")
-            .field("kek_salt", &format_args!("<redacted {} bytes>", self.kek_salt.len()))
+            .field(
+                "kek_salt",
+                &format_args!("<redacted {} bytes>", self.kek_salt.len()),
+            )
             .field(
                 "wrapped_key_pw",
                 &format_args!("<redacted {} bytes>", self.wrapped_key_pw.len()),
@@ -396,7 +399,13 @@ impl UsersDb {
             "UPDATE users
                 SET password_phc = ?2, kek_salt = ?3, wrapped_key_pw = ?4, wrapped_key_recovery = ?5
               WHERE id = ?1",
-            params![id, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery],
+            params![
+                id,
+                password_phc,
+                kek_salt,
+                wrapped_key_pw,
+                wrapped_key_recovery
+            ],
         )?;
         Ok(())
     }
@@ -488,7 +497,10 @@ impl UsersDb {
     /// signed-out session resurrects on the next restart.
     pub fn delete_session(&self, token_hash: &[u8]) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
-        conn.execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
+        conn.execute(
+            "DELETE FROM sessions WHERE token_hash = ?1",
+            params![token_hash],
+        )?;
         Ok(())
     }
 
@@ -518,7 +530,10 @@ impl UsersDb {
     /// doesn't accumulate dead rows across restarts. Returns the count removed.
     pub fn purge_expired_sessions(&self, now_unix: i64) -> rusqlite::Result<usize> {
         let conn = self.0.lock().unwrap();
-        conn.execute("DELETE FROM sessions WHERE expires_unix <= ?1", params![now_unix])
+        conn.execute(
+            "DELETE FROM sessions WHERE expires_unix <= ?1",
+            params![now_unix],
+        )
     }
 
     // ------------------------------------------------------- API tokens ---
@@ -646,7 +661,10 @@ impl UsersDb {
             "DELETE FROM oauth_refresh_tokens WHERE user_id = ?1",
             params![user_id],
         )?;
-        conn.execute("DELETE FROM api_tokens WHERE user_id = ?1", params![user_id])
+        conn.execute(
+            "DELETE FROM api_tokens WHERE user_id = ?1",
+            params![user_id],
+        )
     }
 
     // ---------------------------------------------------- refresh tokens ---
@@ -787,14 +805,16 @@ impl UsersDb {
                 rusqlite::Error::QueryReturnedNoRows => Ok(None),
                 e => Err(e),
             })?;
-        Ok(row.map(|(client_id, client_name, uris_json, created_at)| OauthClientRecord {
-            client_id,
-            client_name,
-            // A malformed JSON blob degrades to "no registered URIs", which
-            // fails every exact-match check — the safe direction.
-            redirect_uris: serde_json::from_str(&uris_json).unwrap_or_default(),
-            created_at,
-        }))
+        Ok(row.map(
+            |(client_id, client_name, uris_json, created_at)| OauthClientRecord {
+                client_id,
+                client_name,
+                // A malformed JSON blob degrades to "no registered URIs", which
+                // fails every exact-match check — the safe direction.
+                redirect_uris: serde_json::from_str(&uris_json).unwrap_or_default(),
+                created_at,
+            },
+        ))
     }
 
     /// Registration is unauthenticated by spec (RFC 7591 open registration), so
@@ -913,7 +933,10 @@ impl UsersDb {
         let Some((rec, expires_unix)) = found else {
             return Ok(None);
         };
-        conn.execute("DELETE FROM oauth_codes WHERE code_hash = ?1", params![code_hash])?;
+        conn.execute(
+            "DELETE FROM oauth_codes WHERE code_hash = ?1",
+            params![code_hash],
+        )?;
         if expires_unix <= now_unix {
             return Ok(None);
         }
@@ -922,12 +945,18 @@ impl UsersDb {
 
     pub fn purge_expired_oauth_codes(&self, now_unix: i64) -> rusqlite::Result<usize> {
         let conn = self.0.lock().unwrap();
-        conn.execute("DELETE FROM oauth_codes WHERE expires_unix <= ?1", params![now_unix])
+        conn.execute(
+            "DELETE FROM oauth_codes WHERE expires_unix <= ?1",
+            params![now_unix],
+        )
     }
 
     pub fn delete_user_oauth_codes(&self, user_id: &str) -> rusqlite::Result<usize> {
         let conn = self.0.lock().unwrap();
-        conn.execute("DELETE FROM oauth_codes WHERE user_id = ?1", params![user_id])
+        conn.execute(
+            "DELETE FROM oauth_codes WHERE user_id = ?1",
+            params![user_id],
+        )
     }
 }
 
@@ -955,7 +984,14 @@ mod tests {
         let (_d, db) = open_temp();
         assert!(db.is_empty().unwrap());
         let rec = db
-            .create_user("koushik", "pw-verifier-phc", &[1; 16], &[2; 60], &[3; 60], true)
+            .create_user(
+                "koushik",
+                "pw-verifier-phc",
+                &[1; 16],
+                &[2; 60],
+                &[3; 60],
+                true,
+            )
             .unwrap();
         assert!(!db.is_empty().unwrap());
         let got = db.get_by_username("koushik").unwrap().unwrap();
@@ -968,8 +1004,11 @@ mod tests {
     #[test]
     fn duplicate_username_rejected() {
         let (_d, db) = open_temp();
-        db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        assert!(db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], false).is_err());
+        db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
+        assert!(db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], false)
+            .is_err());
     }
 
     #[test]
@@ -997,8 +1036,11 @@ mod tests {
     #[test]
     fn list_and_delete() {
         let (_d, db) = open_temp();
-        let u1 = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.create_user("b", "v", &[0; 16], &[0; 60], &[0; 60], false).unwrap();
+        let u1 = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
+        db.create_user("b", "v", &[0; 16], &[0; 60], &[0; 60], false)
+            .unwrap();
         assert_eq!(db.list_users().unwrap().len(), 2);
         db.delete_user(&u1.id).unwrap();
         assert_eq!(db.list_users().unwrap().len(), 1);
@@ -1009,7 +1051,9 @@ mod tests {
     #[test]
     fn api_token_round_trip() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
 
         let rec = db
             .insert_api_token(&u.id, "Claude Desktop", "full", &[7; 32], &[8; 60], None)
@@ -1034,8 +1078,12 @@ mod tests {
     #[test]
     fn api_token_delete_is_scoped_to_owner() {
         let (_d, db) = open_temp();
-        let owner = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        let other = db.create_user("b", "v", &[0; 16], &[0; 60], &[0; 60], false).unwrap();
+        let owner = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
+        let other = db
+            .create_user("b", "v", &[0; 16], &[0; 60], &[0; 60], false)
+            .unwrap();
         let tok = db
             .insert_api_token(&owner.id, "t", "read", &[1; 32], &[2; 60], None)
             .unwrap();
@@ -1051,10 +1099,22 @@ mod tests {
     #[test]
     fn delete_user_purges_tokens_and_codes() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.insert_api_token(&u.id, "t", "full", &[1; 32], &[2; 60], None).unwrap();
-        db.insert_oauth_code(&[3; 32], "cid", "https://x/cb", "chal", &u.id, &[4; 60], "full", 9_999_999_999)
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
             .unwrap();
+        db.insert_api_token(&u.id, "t", "full", &[1; 32], &[2; 60], None)
+            .unwrap();
+        db.insert_oauth_code(
+            &[3; 32],
+            "cid",
+            "https://x/cb",
+            "chal",
+            &u.id,
+            &[4; 60],
+            "full",
+            9_999_999_999,
+        )
+        .unwrap();
 
         db.delete_user(&u.id).unwrap();
 
@@ -1074,7 +1134,8 @@ mod tests {
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
 
         for id in ["junk_old", "consented_old", "junk_recent"] {
-            db.insert_oauth_client(id, "C", r#"["https://x/cb"]"#).unwrap();
+            db.insert_oauth_client(id, "C", r#"["https://x/cb"]"#)
+                .unwrap();
         }
         // Backdate two of them past the age floor.
         {
@@ -1115,7 +1176,8 @@ mod tests {
     #[test]
     fn marking_authorized_is_idempotent_and_keeps_the_first_stamp() {
         let (_d, db) = open_temp();
-        db.insert_oauth_client("cid", "C", r#"["https://x/cb"]"#).unwrap();
+        db.insert_oauth_client("cid", "C", r#"["https://x/cb"]"#)
+            .unwrap();
 
         db.mark_oauth_client_authorized("cid").unwrap();
         let first: String = {
@@ -1140,15 +1202,22 @@ mod tests {
             )
             .unwrap()
         };
-        assert_eq!(first, second, "the stamp must not drift to the latest consent");
+        assert_eq!(
+            first, second,
+            "the stamp must not drift to the latest consent"
+        );
     }
 
     #[test]
     fn delete_user_api_tokens_revokes_all() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.insert_api_token(&u.id, "t1", "full", &[1; 32], &[0; 60], None).unwrap();
-        db.insert_api_token(&u.id, "t2", "read", &[2; 32], &[0; 60], None).unwrap();
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
+        db.insert_api_token(&u.id, "t1", "full", &[1; 32], &[0; 60], None)
+            .unwrap();
+        db.insert_api_token(&u.id, "t2", "read", &[2; 32], &[0; 60], None)
+            .unwrap();
 
         assert_eq!(db.delete_user_api_tokens(&u.id).unwrap(), 2);
         assert!(db.list_api_tokens(&u.id).unwrap().is_empty());
@@ -1157,7 +1226,9 @@ mod tests {
     #[test]
     fn api_token_scope_check_constraint_rejects_garbage() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
+            .unwrap();
         assert!(db
             .insert_api_token(&u.id, "t", "admin", &[1; 32], &[0; 60], None)
             .is_err());
@@ -1182,9 +1253,20 @@ mod tests {
     #[test]
     fn oauth_code_is_single_use() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.insert_oauth_code(&[5; 32], "cid", "https://x/cb", "chal", &u.id, &[6; 60], "full", 9_999_999_999)
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
             .unwrap();
+        db.insert_oauth_code(
+            &[5; 32],
+            "cid",
+            "https://x/cb",
+            "chal",
+            &u.id,
+            &[6; 60],
+            "full",
+            9_999_999_999,
+        )
+        .unwrap();
 
         let first = db.consume_oauth_code(&[5; 32], 0).unwrap().unwrap();
         assert_eq!(first.user_id, u.id);
@@ -1196,9 +1278,20 @@ mod tests {
     #[test]
     fn expired_oauth_code_is_rejected_and_burned() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.insert_oauth_code(&[7; 32], "cid", "https://x/cb", "chal", &u.id, &[0; 60], "read", 1_000)
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
             .unwrap();
+        db.insert_oauth_code(
+            &[7; 32],
+            "cid",
+            "https://x/cb",
+            "chal",
+            &u.id,
+            &[0; 60],
+            "read",
+            1_000,
+        )
+        .unwrap();
 
         // Expired: rejected...
         assert!(db.consume_oauth_code(&[7; 32], 2_000).unwrap().is_none());
@@ -1209,11 +1302,31 @@ mod tests {
     #[test]
     fn purge_expired_oauth_codes_leaves_live_rows() {
         let (_d, db) = open_temp();
-        let u = db.create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true).unwrap();
-        db.insert_oauth_code(&[1; 32], "c", "https://x/cb", "ch", &u.id, &[0; 60], "full", 1_000)
+        let u = db
+            .create_user("a", "v", &[0; 16], &[0; 60], &[0; 60], true)
             .unwrap();
-        db.insert_oauth_code(&[2; 32], "c", "https://x/cb", "ch", &u.id, &[0; 60], "full", 9_999_999_999)
-            .unwrap();
+        db.insert_oauth_code(
+            &[1; 32],
+            "c",
+            "https://x/cb",
+            "ch",
+            &u.id,
+            &[0; 60],
+            "full",
+            1_000,
+        )
+        .unwrap();
+        db.insert_oauth_code(
+            &[2; 32],
+            "c",
+            "https://x/cb",
+            "ch",
+            &u.id,
+            &[0; 60],
+            "full",
+            9_999_999_999,
+        )
+        .unwrap();
 
         assert_eq!(db.purge_expired_oauth_codes(5_000).unwrap(), 1);
         assert!(db.consume_oauth_code(&[2; 32], 5_000).unwrap().is_some());

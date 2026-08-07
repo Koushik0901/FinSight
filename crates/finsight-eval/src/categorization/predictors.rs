@@ -16,11 +16,17 @@ pub struct Prediction {
 
 impl Prediction {
     pub fn abstain() -> Self {
-        Self { category: None, confidence: 0.0 }
+        Self {
+            category: None,
+            confidence: 0.0,
+        }
     }
 
     pub fn of(category: impl Into<String>, confidence: f64) -> Self {
-        Self { category: Some(category.into()), confidence }
+        Self {
+            category: Some(category.into()),
+            confidence,
+        }
     }
 }
 
@@ -99,12 +105,30 @@ pub struct SyntheticRule {
 /// `rules` table.
 pub fn synthetic_rules() -> Vec<SyntheticRule> {
     vec![
-        SyntheticRule { pattern: "%brightloaf%".to_string(), category_id: "groceries" },
-        SyntheticRule { pattern: "%cloudnote%".to_string(), category_id: "subscriptions" },
-        SyntheticRule { pattern: "%craftbox%".to_string(), category_id: "shopping" },
-        SyntheticRule { pattern: "%swiftcab%".to_string(), category_id: "transport" },
-        SyntheticRule { pattern: "%riverbend diner%".to_string(), category_id: "dining" },
-        SyntheticRule { pattern: "%thoughtful gifts%".to_string(), category_id: "gifts" },
+        SyntheticRule {
+            pattern: "%brightloaf%".to_string(),
+            category_id: "groceries",
+        },
+        SyntheticRule {
+            pattern: "%cloudnote%".to_string(),
+            category_id: "subscriptions",
+        },
+        SyntheticRule {
+            pattern: "%craftbox%".to_string(),
+            category_id: "shopping",
+        },
+        SyntheticRule {
+            pattern: "%swiftcab%".to_string(),
+            category_id: "transport",
+        },
+        SyntheticRule {
+            pattern: "%riverbend diner%".to_string(),
+            category_id: "dining",
+        },
+        SyntheticRule {
+            pattern: "%thoughtful gifts%".to_string(),
+            category_id: "gifts",
+        },
     ]
 }
 
@@ -139,7 +163,10 @@ fn rule_matches(pattern: &str, merchant_raw: &str) -> bool {
 /// matching production (`categorizer.rs` hardcodes `confidence: 1.0` for
 /// `source: "rule"`).
 pub fn predict_rule(merchant_text: &str, rules: &[SyntheticRule]) -> Prediction {
-    match rules.iter().find(|r| rule_matches(&r.pattern, merchant_text)) {
+    match rules
+        .iter()
+        .find(|r| rule_matches(&r.pattern, merchant_text))
+    {
         Some(r) => Prediction::of(r.category_id, 1.0),
         None => Prediction::abstain(),
     }
@@ -223,13 +250,27 @@ mod tests {
     #[test]
     fn rule_contains_prefix_suffix_and_exact_semantics() {
         let rules = vec![
-            SyntheticRule { pattern: "%brightloaf%".to_string(), category_id: "groceries" },
-            SyntheticRule { pattern: "netflix.com".to_string(), category_id: "subscriptions" },
-            SyntheticRule { pattern: "westgate%".to_string(), category_id: "health" },
-            SyntheticRule { pattern: "%pharmacy".to_string(), category_id: "health" },
+            SyntheticRule {
+                pattern: "%brightloaf%".to_string(),
+                category_id: "groceries",
+            },
+            SyntheticRule {
+                pattern: "netflix.com".to_string(),
+                category_id: "subscriptions",
+            },
+            SyntheticRule {
+                pattern: "westgate%".to_string(),
+                category_id: "health",
+            },
+            SyntheticRule {
+                pattern: "%pharmacy".to_string(),
+                category_id: "health",
+            },
         ];
         assert_eq!(
-            predict_rule("Brightloaf Grocers #12", &rules).category.as_deref(),
+            predict_rule("Brightloaf Grocers #12", &rules)
+                .category
+                .as_deref(),
             Some("groceries"),
             "contains-wildcard should match"
         );
@@ -239,24 +280,40 @@ mod tests {
             "exact match (case-insensitive) should match"
         );
         assert_eq!(
-            predict_rule("Westgate Pharmacy", &rules).category.as_deref(),
+            predict_rule("Westgate Pharmacy", &rules)
+                .category
+                .as_deref(),
             Some("health"),
             "prefix wildcard should match"
         );
         assert_eq!(
-            predict_rule("Downtown Pharmacy", &rules).category.as_deref(),
+            predict_rule("Downtown Pharmacy", &rules)
+                .category
+                .as_deref(),
             Some("health"),
             "suffix wildcard should match"
         );
-        assert_eq!(predict_rule("Unrelated Store", &rules), Prediction::abstain());
+        assert_eq!(
+            predict_rule("Unrelated Store", &rules),
+            Prediction::abstain()
+        );
     }
 
     #[test]
     fn rule_first_match_wins() {
         let rules = vec![
-            SyntheticRule { pattern: "%store%".to_string(), category_id: "shopping" },
-            SyntheticRule { pattern: "%store%".to_string(), category_id: "groceries" },
+            SyntheticRule {
+                pattern: "%store%".to_string(),
+                category_id: "shopping",
+            },
+            SyntheticRule {
+                pattern: "%store%".to_string(),
+                category_id: "groceries",
+            },
         ];
-        assert_eq!(predict_rule("Corner Store", &rules).category.as_deref(), Some("shopping"));
+        assert_eq!(
+            predict_rule("Corner Store", &rules).category.as_deref(),
+            Some("shopping")
+        );
     }
 }

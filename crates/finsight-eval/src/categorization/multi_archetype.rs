@@ -51,8 +51,16 @@ use std::time::Instant;
 /// `eval/CATEGORIZATION_CORPUS.md` field table and the small seed's tests
 /// already use.
 const STARTER_CATEGORIES: &[&str] = &[
-    "dining", "groceries", "transport", "shopping", "travel", "gifts", "housing", "utilities",
-    "subscriptions", "health",
+    "dining",
+    "groceries",
+    "transport",
+    "shopping",
+    "travel",
+    "gifts",
+    "housing",
+    "utilities",
+    "subscriptions",
+    "health",
 ];
 
 /// Declared per-category keyword-hit ratio, mirroring
@@ -161,7 +169,9 @@ const FORBIDDEN_VOCAB: &[&str] = &[
 ];
 
 fn repo_file(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(rel)
 }
 
 fn corpus_path() -> PathBuf {
@@ -181,7 +191,11 @@ fn bundled() -> LoadedCorpus {
 #[test]
 fn loads_without_error_at_scale() {
     let loaded = bundled();
-    assert!(loaded.examples.len() > 1000, "expected thousands of rows, got {}", loaded.examples.len());
+    assert!(
+        loaded.examples.len() > 1000,
+        "expected thousands of rows, got {}",
+        loaded.examples.len()
+    );
 }
 
 #[test]
@@ -215,7 +229,10 @@ fn all_starter_categories_present_with_at_least_some_rows() {
     let stats = corpus_stats(&loaded.examples);
     for cat in STARTER_CATEGORIES {
         let n = stats.category_distribution.get(*cat).copied().unwrap_or(0);
-        assert!(n > 0, "starter category {cat:?} has zero rows in the multi-archetype corpus");
+        assert!(
+            n > 0,
+            "starter category {cat:?} has zero rows in the multi-archetype corpus"
+        );
     }
 }
 
@@ -240,14 +257,42 @@ fn every_row_category_is_a_valid_starter_category() {
 fn dining_and_groceries_have_more_rows_than_travel_and_gifts() {
     let loaded = bundled();
     let stats = corpus_stats(&loaded.examples);
-    let dining = stats.category_distribution.get("dining").copied().unwrap_or(0);
-    let groceries = stats.category_distribution.get("groceries").copied().unwrap_or(0);
-    let travel = stats.category_distribution.get("travel").copied().unwrap_or(0);
-    let gifts = stats.category_distribution.get("gifts").copied().unwrap_or(0);
-    assert!(dining > travel, "dining ({dining}) should outnumber travel ({travel})");
-    assert!(dining > gifts, "dining ({dining}) should outnumber gifts ({gifts})");
-    assert!(groceries > travel, "groceries ({groceries}) should outnumber travel ({travel})");
-    assert!(groceries > gifts, "groceries ({groceries}) should outnumber gifts ({gifts})");
+    let dining = stats
+        .category_distribution
+        .get("dining")
+        .copied()
+        .unwrap_or(0);
+    let groceries = stats
+        .category_distribution
+        .get("groceries")
+        .copied()
+        .unwrap_or(0);
+    let travel = stats
+        .category_distribution
+        .get("travel")
+        .copied()
+        .unwrap_or(0);
+    let gifts = stats
+        .category_distribution
+        .get("gifts")
+        .copied()
+        .unwrap_or(0);
+    assert!(
+        dining > travel,
+        "dining ({dining}) should outnumber travel ({travel})"
+    );
+    assert!(
+        dining > gifts,
+        "dining ({dining}) should outnumber gifts ({gifts})"
+    );
+    assert!(
+        groceries > travel,
+        "groceries ({groceries}) should outnumber travel ({travel})"
+    );
+    assert!(
+        groceries > gifts,
+        "groceries ({groceries}) should outnumber gifts ({gifts})"
+    );
 }
 
 /// Explicit exclusion #1 (transfers) and #2 (investment/brokerage), checked
@@ -311,7 +356,10 @@ fn keyword_hit_ratio_matches_declared_target_per_category() {
     // Python mirror.
     let mut by_merchant_texts: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for ex in &loaded.examples {
-        by_merchant_texts.entry(ex.merchant_id.clone()).or_default().push(&ex.merchant_text);
+        by_merchant_texts
+            .entry(ex.merchant_id.clone())
+            .or_default()
+            .push(&ex.merchant_text);
     }
     for (mid, texts) in &by_merchant_texts {
         let first_hit = finsight_core::categorize::builtin_category(texts[0]).is_some();
@@ -327,7 +375,7 @@ fn keyword_hit_ratio_matches_declared_target_per_category() {
 
     let mut hit_count: BTreeMap<&str, u32> = BTreeMap::new();
     let mut total_count: BTreeMap<&str, u32> = BTreeMap::new();
-    for (_mid, (cat, sample_text)) in &merchants {
+    for (cat, sample_text) in merchants.values() {
         let cat_key = STARTER_CATEGORIES
             .iter()
             .find(|c| *c == cat)
@@ -342,7 +390,10 @@ fn keyword_hit_ratio_matches_declared_target_per_category() {
     let mut failures = Vec::new();
     for (cat, declared) in DECLARED_HIT_RATIO {
         let total = *total_count.get(cat).unwrap_or(&0);
-        assert!(total > 0, "category {cat:?} has no merchants at all in the corpus");
+        assert!(
+            total > 0,
+            "category {cat:?} has no merchants at all in the corpus"
+        );
         let hit = *hit_count.get(cat).unwrap_or(&0);
         let measured = hit as f64 / total as f64;
         let diff = (measured - declared).abs();
@@ -404,14 +455,44 @@ fn harness_report_runs_and_produces_sane_numbers() {
         }
     }
 
-    let builtin = report.sources.iter().find(|s| s.source == "builtin").unwrap();
-    assert!(builtin.full_corpus.coverage > 0.0, "builtin must cover more than nothing");
-    assert!(builtin.full_corpus.coverage < 1.0, "builtin must not cover everything");
+    let builtin = report
+        .sources
+        .iter()
+        .find(|s| s.source == "builtin")
+        .unwrap();
+    assert!(
+        builtin.full_corpus.coverage > 0.0,
+        "builtin must cover more than nothing"
+    );
+    assert!(
+        builtin.full_corpus.coverage < 1.0,
+        "builtin must not cover everything"
+    );
 
-    let dining = report.corpus_stats.category_distribution.get("dining").copied().unwrap_or(0);
-    let groceries = report.corpus_stats.category_distribution.get("groceries").copied().unwrap_or(0);
-    let travel = report.corpus_stats.category_distribution.get("travel").copied().unwrap_or(0);
-    let gifts = report.corpus_stats.category_distribution.get("gifts").copied().unwrap_or(0);
+    let dining = report
+        .corpus_stats
+        .category_distribution
+        .get("dining")
+        .copied()
+        .unwrap_or(0);
+    let groceries = report
+        .corpus_stats
+        .category_distribution
+        .get("groceries")
+        .copied()
+        .unwrap_or(0);
+    let travel = report
+        .corpus_stats
+        .category_distribution
+        .get("travel")
+        .copied()
+        .unwrap_or(0);
+    let gifts = report
+        .corpus_stats
+        .category_distribution
+        .get("gifts")
+        .copied()
+        .unwrap_or(0);
     assert!(dining > travel && dining > gifts);
     assert!(groceries > travel && groceries > gifts);
 }

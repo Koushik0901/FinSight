@@ -26,7 +26,11 @@ fn err_response(status: StatusCode, code: &str, msg: impl Into<String>) -> Respo
 }
 
 fn auth_required() -> Response {
-    err_response(StatusCode::UNAUTHORIZED, "auth.required", "authentication required")
+    err_response(
+        StatusCode::UNAUTHORIZED,
+        "auth.required",
+        "authentication required",
+    )
 }
 
 fn bad_credentials() -> Response {
@@ -64,7 +68,8 @@ impl FromRequestParts<Arc<ServerState>> for AuthedUser {
             .get(SESSION_COOKIE)
             .map(|c| c.value().to_string())
             .ok_or_else(auth_required)?;
-        let (user_id, db_key_hex, is_admin) = state.sessions.get(&token).ok_or_else(auth_required)?;
+        let (user_id, db_key_hex, is_admin) =
+            state.sessions.get(&token).ok_or_else(auth_required)?;
         Ok(AuthedUser {
             user_id,
             db_key_hex,
@@ -197,20 +202,20 @@ pub const MAX_PASSWORD_LEN: usize = 1024;
 /// rejecting a short password at sign-in would both break existing accounts
 /// and leak policy through a distinguishable error, so login keeps returning
 /// the uniform `bad_credentials`.
-fn check_password_policy(password: &str) -> Result<(), Response> {
+fn check_password_policy(password: &str) -> Result<(), Box<Response>> {
     if password.chars().count() < MIN_PASSWORD_LEN {
-        return Err(err_response(
+        return Err(Box::new(err_response(
             StatusCode::BAD_REQUEST,
             "auth.weak_password",
             format!("password must be at least {MIN_PASSWORD_LEN} characters"),
-        ));
+        )));
     }
     if password.len() > MAX_PASSWORD_LEN {
-        return Err(err_response(
+        return Err(Box::new(err_response(
             StatusCode::BAD_REQUEST,
             "auth.weak_password",
             format!("password must be at most {MAX_PASSWORD_LEN} bytes"),
-        ));
+        )));
     }
     Ok(())
 }
@@ -386,7 +391,10 @@ fn migrate_legacy_files(data_dir: &FsPath, admin_id: &str) -> std::io::Result<()
     Ok(())
 }
 
-pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<Credentials>) -> Response {
+pub(crate) async fn setup(
+    State(st): State<Arc<ServerState>>,
+    Json(body): Json<Credentials>,
+) -> Response {
     if body.username.trim().is_empty() {
         return err_response(
             StatusCode::BAD_REQUEST,
@@ -395,7 +403,7 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
         );
     }
     if let Err(resp) = check_password_policy(&body.password) {
-        return resp;
+        return *resp;
     }
 
     // Make the empty-check and eventual insert a single-flight transition.
@@ -405,7 +413,11 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
     match st.users.is_empty() {
         Ok(true) => {}
         Ok(false) => {
-            return err_response(StatusCode::CONFLICT, "auth.already_setup", "setup already completed")
+            return err_response(
+                StatusCode::CONFLICT,
+                "auth.already_setup",
+                "setup already completed",
+            )
         }
         Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()),
     }
@@ -425,7 +437,13 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
 
     let phc = match crate::crypto::hash_password_async(body.password.clone()).await {
         Ok(p) => p,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
     let salt = crate::crypto::generate_salt();
     let wrapped_pw = match crate::crypto::wrap_key_with_password_async(
@@ -436,18 +454,34 @@ pub(crate) async fn setup(State(st): State<Arc<ServerState>>, Json(body): Json<C
     .await
     {
         Ok(w) => w,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
     let recovery = crate::crypto::generate_recovery_key();
     let wrapped_recovery = match crate::crypto::wrap_key_with_recovery(&recovery.bytes, &dbkey) {
         Ok(w) => w,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
 
-    let rec = match st
-        .users
-        .create_user(&body.username, &phc, &salt, &wrapped_pw, &wrapped_recovery, true)
-    {
+    let rec = match st.users.create_user(
+        &body.username,
+        &phc,
+        &salt,
+        &wrapped_pw,
+        &wrapped_recovery,
+        true,
+    ) {
         Ok(r) => r,
         Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()),
     };
@@ -515,7 +549,10 @@ fn too_many_attempts() -> Response {
     )
 }
 
-pub(crate) async fn login(State(st): State<Arc<ServerState>>, Json(body): Json<Credentials>) -> Response {
+pub(crate) async fn login(
+    State(st): State<Arc<ServerState>>,
+    Json(body): Json<Credentials>,
+) -> Response {
     // Throttle check comes FIRST — before the DB lookup and before any Argon2
     // work — so a credential-stuffing run is shed cheaply instead of buying
     // the attacker ~20ms of blocking-pool CPU per guess.
@@ -532,15 +569,18 @@ pub(crate) async fn login(State(st): State<Arc<ServerState>>, Json(body): Json<C
             // the dummy inline would leave the timing guard itself blocking
             // the runtime, and would make the unknown-user path measurably
             // different under load.
-            let _ =
-                crate::crypto::verify_password_async(body.password.clone(), dummy_phc().to_string())
-                    .await;
+            let _ = crate::crypto::verify_password_async(
+                body.password.clone(),
+                dummy_phc().to_string(),
+            )
+            .await;
             st.throttle.record_failure(&body.username);
             return bad_credentials();
         }
         Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.db", e.to_string()),
     };
-    if !crate::crypto::verify_password_async(body.password.clone(), rec.password_phc.clone()).await {
+    if !crate::crypto::verify_password_async(body.password.clone(), rec.password_phc.clone()).await
+    {
         st.throttle.record_failure(&body.username);
         return bad_credentials();
     }
@@ -563,7 +603,12 @@ pub(crate) async fn login(State(st): State<Arc<ServerState>>, Json(body): Json<C
     st.throttle.record_success(&body.username);
     let db_key_hex = crate::crypto::db_key_to_hex(&dbkey);
     let token = st.sessions.create(&rec.id, db_key_hex, rec.is_admin);
-    (StatusCode::OK, [set_cookie_header(&token)], Json(serde_json::json!({}))).into_response()
+    (
+        StatusCode::OK,
+        [set_cookie_header(&token)],
+        Json(serde_json::json!({})),
+    )
+        .into_response()
 }
 
 pub(crate) async fn logout(State(st): State<Arc<ServerState>>, jar: CookieJar) -> Response {
@@ -585,7 +630,12 @@ pub(crate) async fn logout(State(st): State<Arc<ServerState>>, jar: CookieJar) -
             }
         }
     }
-    (StatusCode::OK, [clear_cookie_header()], Json(serde_json::json!({}))).into_response()
+    (
+        StatusCode::OK,
+        [clear_cookie_header()],
+        Json(serde_json::json!({})),
+    )
+        .into_response()
 }
 
 /// Sign out every OTHER device for the current user, keeping this session.
@@ -597,15 +647,27 @@ pub(crate) async fn sign_out_others(
     jar: CookieJar,
 ) -> Response {
     let Some(cookie) = jar.get(SESSION_COOKIE) else {
-        return err_response(StatusCode::UNAUTHORIZED, "auth.required", "authentication required");
+        return err_response(
+            StatusCode::UNAUTHORIZED,
+            "auth.required",
+            "authentication required",
+        );
     };
     let token = cookie.value();
     let Some((user_id, _key, _admin)) = st.sessions.get(token) else {
-        return err_response(StatusCode::UNAUTHORIZED, "auth.required", "authentication required");
+        return err_response(
+            StatusCode::UNAUTHORIZED,
+            "auth.required",
+            "authentication required",
+        );
     };
     let removed = st.sessions.remove_user_except(&user_id, token);
     tracing::info!(user_id = %user_id, removed, "signed out other devices");
-    (StatusCode::OK, Json(serde_json::json!({ "signedOut": removed }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "signedOut": removed })),
+    )
+        .into_response()
 }
 
 // -------------------------------------------------------------- recover ---
@@ -671,7 +733,7 @@ pub(crate) async fn recover(
     // route, and skipping the check would leave it as a way to install a weak
     // password that `setup` would have refused.
     if let Err(resp) = check_password_policy(&body.new_password) {
-        return resp;
+        return *resp;
     }
 
     let rec = match st.users.get_by_username(&body.username) {
@@ -707,7 +769,13 @@ pub(crate) async fn recover(
     let new_salt = crate::crypto::generate_salt();
     let phc = match crate::crypto::hash_password_async(body.new_password.clone()).await {
         Ok(p) => p,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
     let wrapped_pw = match crate::crypto::wrap_key_with_password_async(
         body.new_password.clone(),
@@ -717,17 +785,27 @@ pub(crate) async fn recover(
     .await
     {
         Ok(w) => w,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
 
     let new_recovery = crate::crypto::generate_recovery_key();
-    let wrapped_recovery =
-        match crate::crypto::wrap_key_with_recovery(&new_recovery.bytes, &dbkey) {
-            Ok(w) => w,
-            Err(e) => {
-                return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string())
-            }
-        };
+    let wrapped_recovery = match crate::crypto::wrap_key_with_recovery(&new_recovery.bytes, &dbkey)
+    {
+        Ok(w) => w,
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
+    };
 
     // One UPDATE moves all four credential columns together — a partial write
     // here could leave the account unopenable by either password or key.
@@ -749,10 +827,13 @@ pub(crate) async fn recover(
     // doesn't need and leave the credential they do. (Recovery re-wraps the
     // SAME db key rather than rotating it, so revocation is what makes the
     // token stop working, not re-encryption.)
-    let revoked_tokens = st.users.delete_user_api_tokens(&rec.id).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "could not revoke API tokens during recovery");
-        0
-    });
+    let revoked_tokens = st
+        .users
+        .delete_user_api_tokens(&rec.id)
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "could not revoke API tokens during recovery");
+            0
+        });
     let _ = st.users.delete_user_oauth_codes(&rec.id);
     // A runtime owns the event broadcaster and background sync task. Revoking
     // only cookies leaves an already-open SSE connection subscribed to that
@@ -818,12 +899,18 @@ pub(crate) async fn create_user(
         );
     }
     if let Err(resp) = check_password_policy(&body.password) {
-        return resp;
+        return *resp;
     }
     let dbkey = crate::crypto::generate_db_key();
     let phc = match crate::crypto::hash_password_async(body.password.clone()).await {
         Ok(p) => p,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
     let salt = crate::crypto::generate_salt();
     let wrapped_pw = match crate::crypto::wrap_key_with_password_async(
@@ -834,17 +921,33 @@ pub(crate) async fn create_user(
     .await
     {
         Ok(w) => w,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
     let recovery = crate::crypto::generate_recovery_key();
     let wrapped_recovery = match crate::crypto::wrap_key_with_recovery(&recovery.bytes, &dbkey) {
         Ok(w) => w,
-        Err(e) => return err_response(StatusCode::INTERNAL_SERVER_ERROR, "auth.crypto", e.to_string()),
+        Err(e) => {
+            return err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "auth.crypto",
+                e.to_string(),
+            )
+        }
     };
-    match st
-        .users
-        .create_user(&body.username, &phc, &salt, &wrapped_pw, &wrapped_recovery, false)
-    {
+    match st.users.create_user(
+        &body.username,
+        &phc,
+        &salt,
+        &wrapped_pw,
+        &wrapped_recovery,
+        false,
+    ) {
         Ok(_rec) => (
             StatusCode::OK,
             Json(serde_json::json!({ "recoveryKey": recovery.display })),
@@ -950,7 +1053,10 @@ mod tests {
             (src_b.clone(), blocked_parent.join("data.sqlcipher-wal")),
         ];
 
-        assert!(move_all_or_rollback(&moves).is_err(), "the second move must fail");
+        assert!(
+            move_all_or_rollback(&moves).is_err(),
+            "the second move must fail"
+        );
 
         // Everything is back where a retry will look for it, contents intact.
         assert!(src_a.exists(), "the first move must be rolled back");
@@ -980,7 +1086,10 @@ mod tests {
         move_all_or_rollback(&moves).unwrap();
 
         assert!(!src_a.exists() && !src_b.exists());
-        assert_eq!(std::fs::read(dst_dir.join("data.sqlcipher")).unwrap(), b"main-db");
+        assert_eq!(
+            std::fs::read(dst_dir.join("data.sqlcipher")).unwrap(),
+            b"main-db"
+        );
         assert_eq!(
             std::fs::read(dst_dir.join("data.sqlcipher-wal")).unwrap(),
             b"write-ahead-log"

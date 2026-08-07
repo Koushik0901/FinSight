@@ -2183,7 +2183,7 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "finsight-agent"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-api"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2232,7 +2232,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-bindings"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2248,6 +2248,7 @@ dependencies = [
  "specta",
  "specta-typescript",
  "tauri",
+ "tauri-build",
  "tauri-plugin-notification",
  "tauri-specta",
  "tempfile",
@@ -2260,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2286,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-eval"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2303,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-providers"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2328,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "finsight-server"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2364,13 +2365,11 @@ dependencies = [
 
 [[package]]
 name = "finsight-tauri"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
- "finsight-bindings",
  "finsight-core",
  "serde",
- "specta-typescript",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

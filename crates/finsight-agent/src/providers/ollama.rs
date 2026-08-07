@@ -203,7 +203,7 @@ fn parse_json_response(content: &str) -> Result<Value> {
     if let Ok(value) = serde_json::from_str(trimmed) {
         return Ok(value);
     }
-    let Some(start) = trimmed.find(|c| c == '{' || c == '[') else {
+    let Some(start) = trimmed.find(['{', '[']) else {
         return Err(anyhow!("Ollama response did not contain JSON"));
     };
     let end_obj = trimmed.rfind('}');

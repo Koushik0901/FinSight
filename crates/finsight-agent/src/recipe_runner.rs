@@ -132,15 +132,28 @@ pub async fn run_recipe(
     }
 }
 
+pub async fn run_due_recipes(
+    db: &Db,
+    provider: Arc<dyn CompletionProvider>,
+) -> anyhow::Result<u32> {
+    let due = run(db, recipes::list_due).await?;
+    let attempted = due.len() as u32;
+    for recipe in due {
+        if let Err(err) = run_recipe(db, &recipe.id, Arc::clone(&provider)).await {
+            eprintln!("trusted recipe '{}' failed: {err}", recipe.id);
+        }
+    }
+    Ok(attempted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::providers::mock::MockCompletionProvider;
     use crate::reasoning::messages::{AssistantTurn, ToolCall};
-    
+
     use serde_json::json;
     use std::sync::Mutex;
-    
 
     #[tokio::test]
     async fn recipe_run_uses_tool_loop_and_persists_a_grounded_bundle() {
@@ -209,21 +222,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(items, 1, "bundle is grounded in the tool call's draft action");
+        assert_eq!(
+            items, 1,
+            "bundle is grounded in the tool call's draft action"
+        );
         assert_eq!(run_done, 1, "recipe run completed with this bundle");
     }
-}
-
-pub async fn run_due_recipes(
-    db: &Db,
-    provider: Arc<dyn CompletionProvider>,
-) -> anyhow::Result<u32> {
-    let due = run(db, recipes::list_due).await?;
-    let attempted = due.len() as u32;
-    for recipe in due {
-        if let Err(err) = run_recipe(db, &recipe.id, Arc::clone(&provider)).await {
-            eprintln!("trusted recipe '{}' failed: {err}", recipe.id);
-        }
-    }
-    Ok(attempted)
 }

@@ -9,17 +9,15 @@ use finsight_core::models::RuleProposal;
 // consumer (copilot_chat) into the same crate — no longer re-exported here.
 pub use finsight_api::commands::agent::{
     AgentAccountRow, AgentAccountsOverviewBlock, AgentActionPlanBlock, AgentActivity,
-    AgentAffordabilityVerdictBlock, AgentAllocationSegment, AgentAllocationSplitBlock,
-    AgentAnswer, AgentCategoryBreakdownBlock, AgentCategoryReviewQueueBlock, AgentCategoryRow,
-    AgentChange, AgentChartBlock,
-    AgentChartPoint, AgentComparisonBarsBlock, AgentDriver, AgentFundingSource,
-    AgentMetricBlock, AgentMoneyPoint, AgentRankedOption, AgentRankedOptionsBlock,
-    AgentRecatRow, AgentRecategorizationPreviewBlock, AgentResponseBlock, AgentReviewCategory,
-    AgentReviewMonth, AgentReviewQueueItem, AgentScenarioAlternative, AgentSpendTimelineBlock,
-    AgentSpendingDriversBlock,
-    AgentSpendingReviewBlock, AgentStatus, AgentTableBlock, AgentTimelinePoint,
-    AgentTransactionTableBlock, AgentTxRow, AgentTxnSearchQuery, AgentWatchItem,
-    AgentWatchListBlock, CompletionProviderConfig, ProviderTestResult,
+    AgentAffordabilityVerdictBlock, AgentAllocationSegment, AgentAllocationSplitBlock, AgentAnswer,
+    AgentCategoryBreakdownBlock, AgentCategoryReviewQueueBlock, AgentCategoryRow, AgentChange,
+    AgentChartBlock, AgentChartPoint, AgentComparisonBarsBlock, AgentDriver, AgentFundingSource,
+    AgentMetricBlock, AgentMoneyPoint, AgentRankedOption, AgentRankedOptionsBlock, AgentRecatRow,
+    AgentRecategorizationPreviewBlock, AgentResponseBlock, AgentReviewCategory, AgentReviewMonth,
+    AgentReviewQueueItem, AgentScenarioAlternative, AgentSpendTimelineBlock,
+    AgentSpendingDriversBlock, AgentSpendingReviewBlock, AgentStatus, AgentTableBlock,
+    AgentTimelinePoint, AgentTransactionTableBlock, AgentTxRow, AgentTxnSearchQuery,
+    AgentWatchItem, AgentWatchListBlock, CompletionProviderConfig, ProviderTestResult,
 };
 
 #[tauri::command]

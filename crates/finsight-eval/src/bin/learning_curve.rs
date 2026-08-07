@@ -82,10 +82,14 @@ fn shuffled(mut items: Vec<LabeledExample>, seed: u64) -> Vec<LabeledExample> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let corpus_path = std::env::args().nth(1).unwrap_or_else(|| {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../eval/categorization_corpus.synthetic_multi_archetype.jsonl")
-            .to_string()
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../eval/categorization_corpus.synthetic_multi_archetype.jsonl"
+        )
+        .to_string()
     });
-    let loaded = load_corpus_jsonl(&corpus_path).with_context(|| format!("loading {corpus_path}"))?;
+    let loaded =
+        load_corpus_jsonl(&corpus_path).with_context(|| format!("loading {corpus_path}"))?;
 
     // The holdout is fixed across every step, or the curve would be comparing
     // different populations at each point and its shape would mean nothing.
@@ -103,7 +107,11 @@ async fn main() -> Result<()> {
     let data_dir = std::env::var("FINSIGHT_DATA_DIR").unwrap_or_else(|_| "./data".into());
     eprintln!("loading encoder…");
     let encoder = finsight_agent::embedding::get_encoder(std::path::Path::new(&data_dir)).await?;
-    println!("encoder:     {} ({} dims)", encoder.model_id(), encoder.dims());
+    println!(
+        "encoder:     {} ({} dims)",
+        encoder.model_id(),
+        encoder.dims()
+    );
 
     // Embed once, reuse everywhere — the curve re-slices the same vectors.
     let mut all: Vec<LabeledExample> = reference_pool.clone();
@@ -124,7 +132,7 @@ async fn main() -> Result<()> {
         .filter(|ex| {
             let p = predict_builtin_for(ex);
             match p.category {
-                None => true,                 // abstained → lands in review
+                None => true,                    // abstained → lands in review
                 Some(got) => got != ex.category, // wrong → user corrects it
             }
         })
@@ -141,13 +149,19 @@ async fn main() -> Result<()> {
     println!(
         "\nbuiltin (flat reference): coverage {:.1}%  precision {}",
         builtin.coverage() * 100.0,
-        builtin.precision().map(|p| format!("{:.1}%", p * 100.0)).unwrap_or("n/a".into())
+        builtin
+            .precision()
+            .map(|p| format!("{:.1}%", p * 100.0))
+            .unwrap_or("n/a".into())
     );
 
     for (label, pool) in [("uniform", &reference_pool), ("realistic", &realistic_pool)] {
         let ordered = shuffled(pool.clone(), 1234);
         println!("\n{label} accumulation");
-        println!("{:>10} {:>10} {:>10} {:>12}", "corrections", "coverage", "precision", "categories");
+        println!(
+            "{:>10} {:>10} {:>10} {:>12}",
+            "corrections", "coverage", "precision", "categories"
+        );
         for &n in STEPS {
             if n > ordered.len() {
                 continue;
@@ -158,16 +172,17 @@ async fn main() -> Result<()> {
                 .map(|e| vec_by_id.get(&e.id).cloned().unwrap_or_default())
                 .collect();
             let prototypes: Vec<Prototype> = build_prototypes(prefix, &vectors);
-            let m = ConfusionMatrix::build("centroid", &holdout, |ex| {
-                match vec_by_id.get(&ex.id) {
+            let m =
+                ConfusionMatrix::build("centroid", &holdout, |ex| match vec_by_id.get(&ex.id) {
                     Some(v) => predict_centroid(v, &prototypes, MIN_SCORE),
                     None => Prediction::abstain(),
-                }
-            });
+                });
             println!(
                 "{n:>10} {:>9.1}% {:>10} {:>12}",
                 m.coverage() * 100.0,
-                m.precision().map(|p| format!("{:.1}%", p * 100.0)).unwrap_or("n/a".into()),
+                m.precision()
+                    .map(|p| format!("{:.1}%", p * 100.0))
+                    .unwrap_or("n/a".into()),
                 prototypes.len(),
             );
         }

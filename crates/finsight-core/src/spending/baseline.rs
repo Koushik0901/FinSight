@@ -134,7 +134,11 @@ pub fn compute(conn: &Connection, start_ym: &str, end_ym: &str) -> CoreResult<Ba
         .into_iter()
         .filter(|r| crate::currency::normalize_code(&r.currency) == currency)
     {
-        let e = m_month.entry(r.key.clone()).or_default().entry(r.ym.clone()).or_insert((0, 0));
+        let e = m_month
+            .entry(r.key.clone())
+            .or_default()
+            .entry(r.ym.clone())
+            .or_insert((0, 0));
         e.0 += r.net_cents;
         e.1 += 1;
         m_display.entry(r.key.clone()).or_insert(r.display);
@@ -204,7 +208,11 @@ pub fn trailing(conn: &Connection, period_ym: &str, months: i64) -> CoreResult<B
     let (py, pm) = crate::spending::parse_ym(period_ym);
     let end = format!("{py:04}-{pm:02}"); // exclusive end = the period month itself
     let start_idx = py * 12 + (pm as i32 - 1) - months as i32;
-    let start = format!("{:04}-{:02}", start_idx.div_euclid(12), start_idx.rem_euclid(12) + 1);
+    let start = format!(
+        "{:04}-{:02}",
+        start_idx.div_euclid(12),
+        start_idx.rem_euclid(12) + 1
+    );
     compute(conn, &start, &end)
 }
 
@@ -292,6 +300,8 @@ pub fn latest_activity_month(conn: &Connection) -> CoreResult<Option<String>> {
 
 #[cfg(test)]
 mod tests {
+    // Cents fixtures deliberately group dollars and cents (for example, 500_00).
+    #![allow(clippy::inconsistent_digit_grouping)]
     use super::*;
     use crate::Db;
     use tempfile::TempDir;
@@ -346,7 +356,13 @@ mod tests {
     }
 
     /// A settle-up row categorized to `category_id`.
-    fn ins_settle_up_categorized(conn: &Connection, ym: &str, cents: i64, merchant: &str, category_id: &str) {
+    fn ins_settle_up_categorized(
+        conn: &Connection,
+        ym: &str,
+        cents: i64,
+        merchant: &str,
+        category_id: &str,
+    ) {
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,category_id,is_transfer,status,created_at,settle_up) \
              VALUES(hex(randomblob(16)),'a',?1,?2,?3,?4,0,'cleared',datetime('now'),1)",
@@ -368,8 +384,15 @@ mod tests {
         let b = compute(&conn, "2025-01", "2026-01").unwrap();
         assert_eq!(b.months, 12);
         // Grand monthly median stays ~ the groceries level, not dragged up by the spike.
-        assert!(b.grand_monthly_median_cents <= 220_000, "median resists the spike: {}", b.grand_monthly_median_cents);
-        let groceries = b.per_merchant.get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB")).unwrap();
+        assert!(
+            b.grand_monthly_median_cents <= 220_000,
+            "median resists the spike: {}",
+            b.grand_monthly_median_cents
+        );
+        let groceries = b
+            .per_merchant
+            .get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB"))
+            .unwrap();
         assert_eq!(groceries.monthly_cents, 200_000);
         assert_eq!(groceries.active_months, 12);
     }
@@ -382,8 +405,14 @@ mod tests {
         ins(&conn, "2026-03", -50_000, "SAVE ON FOODS  EDMONTON, AB");
         ins(&conn, "2026-04", -50_000, "SAVE ON FOODS  EDMONTON, AB");
         let b = compute(&conn, "2025-05", "2026-05").unwrap();
-        assert_eq!(b.months, 2, "history depth is 2 months, not the 12-month span");
-        assert!(b.grand_monthly_median_cents > 0, "median must not be zero-deflated by empty pre-history");
+        assert_eq!(
+            b.months, 2,
+            "history depth is 2 months, not the 12-month span"
+        );
+        assert!(
+            b.grand_monthly_median_cents > 0,
+            "median must not be zero-deflated by empty pre-history"
+        );
     }
 
     #[test]
@@ -391,13 +420,20 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         for i in 0..12 {
-            ins(&conn, &format!("2025-{:02}", i + 1), -20_000, "SAVE ON FOODS  EDMONTON, AB");
+            ins(
+                &conn,
+                &format!("2025-{:02}", i + 1),
+                -20_000,
+                "SAVE ON FOODS  EDMONTON, AB",
+            );
         }
         ins(&conn, "2026-01", -99_000, "FLAIR AIRLINES  BURNABY, BC"); // the target month
 
         let base = trailing(&conn, "2026-01", 12).unwrap(); // [2025-01, 2026-01)
         assert_eq!(base.months, 12);
-        assert!(base.per_merchant.get(&canonical_merchant_key("FLAIR AIRLINES  BURNABY, BC")).is_none());
+        assert!(!base
+            .per_merchant
+            .contains_key(&canonical_merchant_key("FLAIR AIRLINES  BURNABY, BC")));
         assert!(base.grand_monthly_mad_cents >= 0);
 
         assert_eq!(month_total(&conn, "2026-01").unwrap(), 99_000);
@@ -410,7 +446,10 @@ mod tests {
         assert_eq!(latest_activity_month(&conn).unwrap(), None);
         ins(&conn, "2025-03", -1000, "A  X, BC");
         ins(&conn, "2026-02", -1000, "B  Y, BC");
-        assert_eq!(latest_activity_month(&conn).unwrap().as_deref(), Some("2026-02"));
+        assert_eq!(
+            latest_activity_month(&conn).unwrap().as_deref(),
+            Some("2026-02")
+        );
     }
 
     #[test]
@@ -425,8 +464,14 @@ mod tests {
         ins_settle_up_categorized(&conn, "2026-05", 200_00, "GROCERY REFUND", "food");
 
         let rows = month_category_breakdown(&conn, "2026-05", 10).unwrap();
-        let food = rows.iter().find(|r| r.label == "Food").expect("Food category present");
-        assert_eq!(food.amount_cents, 300_00, "500 expense - 200 settle-up = 300 net spend");
+        let food = rows
+            .iter()
+            .find(|r| r.label == "Food")
+            .expect("Food category present");
+        assert_eq!(
+            food.amount_cents, 300_00,
+            "500 expense - 200 settle-up = 300 net spend"
+        );
     }
 
     #[test]
@@ -450,8 +495,14 @@ mod tests {
         ins_settle_up(&conn, "2026-05", 200_00, "SAVE ON FOODS  EDMONTON, AB");
 
         let b = compute(&conn, "2026-05", "2026-06").unwrap();
-        let groceries = b.per_merchant.get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB")).unwrap();
-        assert_eq!(groceries.monthly_cents, 300_00, "500 expense - 200 settle-up = 300 net spend");
+        let groceries = b
+            .per_merchant
+            .get(&canonical_merchant_key("SAVE ON FOODS  EDMONTON, AB"))
+            .unwrap();
+        assert_eq!(
+            groceries.monthly_cents, 300_00,
+            "500 expense - 200 settle-up = 300 net spend"
+        );
         assert_eq!(b.grand_monthly_median_cents, 300_00);
     }
 
@@ -463,7 +514,8 @@ mod tests {
         // — the same user seeing two different "normal" figures.
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
-        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", []).unwrap();
+        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", [])
+            .unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('cad2','me','B','Checking','Chq','CAD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('usd','me','B','Credit','US Card','USD','#fff',datetime('now'))", []).unwrap();
 
@@ -478,14 +530,18 @@ mod tests {
         .unwrap();
 
         let b = compute(&conn, "2026-05", "2026-06").unwrap();
-        assert_eq!(b.currency, "CAD", "primary comes from accounts, not spend volume");
+        assert_eq!(
+            b.currency, "CAD",
+            "primary comes from accounts, not spend volume"
+        );
         assert!(b.mixed_currency, "the USD holding is flagged");
         assert_eq!(
             b.grand_monthly_median_cents, 100_00,
             "USD spending is excluded, not added to the CAD total"
         );
         assert!(
-            b.per_merchant.get(&canonical_merchant_key("USD MERCHANT")).is_none(),
+            !b.per_merchant
+                .contains_key(&canonical_merchant_key("USD MERCHANT")),
             "a foreign-currency merchant must not appear in a CAD baseline"
         );
     }
@@ -498,7 +554,8 @@ mod tests {
         // up" purely because two figures counted different accounts.
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
-        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", []).unwrap();
+        conn.execute("UPDATE accounts SET currency = 'CAD' WHERE id = 'a'", [])
+            .unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('cad2','me','B','Checking','Chq','CAD','#fff',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,created_at) VALUES('usd','me','B','Credit','US Card','USD','#fff',datetime('now'))", []).unwrap();
         seed_category(&conn, "cat-travel", "Travel");
@@ -532,12 +589,16 @@ mod tests {
     fn currency_casing_does_not_split_one_currency_into_two() {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
-        conn.execute("UPDATE accounts SET currency = 'usd' WHERE id = 'a'", []).unwrap();
+        conn.execute("UPDATE accounts SET currency = 'usd' WHERE id = 'a'", [])
+            .unwrap();
         ins(&conn, "2026-05", -100_00, "MERCHANT");
 
         let b = compute(&conn, "2026-05", "2026-06").unwrap();
         assert_eq!(b.currency, "USD");
-        assert!(!b.mixed_currency, "lowercase 'usd' is not a second currency");
+        assert!(
+            !b.mixed_currency,
+            "lowercase 'usd' is not a second currency"
+        );
         assert_eq!(b.grand_monthly_median_cents, 100_00, "the row still counts");
     }
 }

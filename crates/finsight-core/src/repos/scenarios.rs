@@ -199,7 +199,15 @@ mod tests {
     fn insert_list_delete_round_trip() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let row = insert(&mut conn, "What if I buy a car?", r#"{"verdict":true}"#, Some(r#"{"p":1}"#), Some(r#"{"b":2}"#), Some(12)).unwrap();
+        let row = insert(
+            &mut conn,
+            "What if I buy a car?",
+            r#"{"verdict":true}"#,
+            Some(r#"{"p":1}"#),
+            Some(r#"{"b":2}"#),
+            Some(12),
+        )
+        .unwrap();
         let listed = list(&mut conn).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].description, "What if I buy a car?");
@@ -214,17 +222,42 @@ mod tests {
         // Issue #73: a revision stores alongside the original — never over it.
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let row = insert(&mut conn, "s", r#"{"verdict":true}"#, Some(r#"{"income":1}"#), Some(r#"{"b":2}"#), Some(24)).unwrap();
+        let row = insert(
+            &mut conn,
+            "s",
+            r#"{"verdict":true}"#,
+            Some(r#"{"income":1}"#),
+            Some(r#"{"b":2}"#),
+            Some(24),
+        )
+        .unwrap();
         assert!(row.revised_params_json.is_none());
 
         set_revised_params(&mut conn, &row.id, Some(r#"{"income":9}"#)).unwrap();
         let after = get(&mut conn, &row.id).unwrap().unwrap();
-        assert_eq!(after.revised_params_json.as_deref(), Some(r#"{"income":9}"#));
-        assert_eq!(after.params_json.as_deref(), Some(r#"{"income":1}"#), "original params untouched");
-        assert_eq!(after.result_json, r#"{"verdict":true}"#, "original result untouched");
+        assert_eq!(
+            after.revised_params_json.as_deref(),
+            Some(r#"{"income":9}"#)
+        );
+        assert_eq!(
+            after.params_json.as_deref(),
+            Some(r#"{"income":1}"#),
+            "original params untouched"
+        );
+        assert_eq!(
+            after.result_json, r#"{"verdict":true}"#,
+            "original result untouched"
+        );
 
         set_revised_params(&mut conn, &row.id, None).unwrap();
-        assert!(get(&mut conn, &row.id).unwrap().unwrap().revised_params_json.is_none(), "revision cleared");
+        assert!(
+            get(&mut conn, &row.id)
+                .unwrap()
+                .unwrap()
+                .revised_params_json
+                .is_none(),
+            "revision cleared"
+        );
     }
 
     #[test]
@@ -243,7 +276,15 @@ mod tests {
     fn duplicate_is_independent_and_archive_hides_from_active() {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
-        let orig = insert(&mut conn, "Base", r#"{"verdict":true}"#, Some("{}"), Some("{}"), Some(6)).unwrap();
+        let orig = insert(
+            &mut conn,
+            "Base",
+            r#"{"verdict":true}"#,
+            Some("{}"),
+            Some("{}"),
+            Some(6),
+        )
+        .unwrap();
 
         let copy = duplicate(&mut conn, &orig.id).unwrap().unwrap();
         assert_ne!(copy.id, orig.id);
@@ -253,7 +294,11 @@ mod tests {
         // Archiving the copy hides it from the active list but preserves the row.
         set_archived(&mut conn, &copy.id, true).unwrap();
         assert_eq!(list(&mut conn).unwrap().len(), 1);
-        assert!(get(&mut conn, &copy.id).unwrap().unwrap().archived_at.is_some());
+        assert!(get(&mut conn, &copy.id)
+            .unwrap()
+            .unwrap()
+            .archived_at
+            .is_some());
 
         // The original is untouched.
         set_archived(&mut conn, &copy.id, false).unwrap();
@@ -265,17 +310,41 @@ mod tests {
         crate::repos::accounts::insert(
             conn,
             NewAccount {
-                promo_apr_expires_on: None, post_promo_apr_pct: None,
-                owner: "Me".into(), bank: "Bank".into(), r#type: AccountType::Checking,
-                name: "Ch".into(), last4: None, currency: "USD".into(), color: "#fff".into(),
-                opening_balance_cents: 0, source: "manual".into(), liquidity_type: "liquid".into(),
-                emergency_fund_eligible: true, goal_earmark: None, apy_pct: None,
-                simplefin_account_id: None, nickname: None, connection_id: None,
-                institution_id: None, external_account_id: None, official_name: None,
-                mask: None, subtype: None, account_group: "cash".into(),
-                available_balance_cents: None, balance_date: None, extra_json: None,
-                raw_json: None, import_pending: false, apr_pct: None, min_payment_cents: None,
-                payoff_date: None, limit_cents: None, original_balance_cents: None, started_at: None,
+                promo_apr_expires_on: None,
+                post_promo_apr_pct: None,
+                owner: "Me".into(),
+                bank: "Bank".into(),
+                r#type: AccountType::Checking,
+                name: "Ch".into(),
+                last4: None,
+                currency: "USD".into(),
+                color: "#fff".into(),
+                opening_balance_cents: 0,
+                source: "manual".into(),
+                liquidity_type: "liquid".into(),
+                emergency_fund_eligible: true,
+                goal_earmark: None,
+                apy_pct: None,
+                simplefin_account_id: None,
+                nickname: None,
+                connection_id: None,
+                institution_id: None,
+                external_account_id: None,
+                official_name: None,
+                mask: None,
+                subtype: None,
+                account_group: "cash".into(),
+                available_balance_cents: None,
+                balance_date: None,
+                extra_json: None,
+                raw_json: None,
+                import_pending: false,
+                apr_pct: None,
+                min_payment_cents: None,
+                payoff_date: None,
+                limit_cents: None,
+                original_balance_cents: None,
+                started_at: None,
             },
         )
         .unwrap()
@@ -287,11 +356,20 @@ mod tests {
         crate::repos::transactions::insert(
             conn,
             NewTransaction {
-                account_id: account_id.to_string(), posted_at: chrono::Utc::now(),
-                amount_cents, merchant_raw: merchant.into(), category_id: None, notes: None,
-                status: TransactionStatus::Cleared, imported_id: None, source: None,
-                raw_synced_data: None, pending: false, external_tx_id: None,
-                external_account_id: None, activity: None,
+                account_id: account_id.to_string(),
+                posted_at: chrono::Utc::now(),
+                amount_cents,
+                merchant_raw: merchant.into(),
+                category_id: None,
+                notes: None,
+                status: TransactionStatus::Cleared,
+                imported_id: None,
+                source: None,
+                raw_synced_data: None,
+                pending: false,
+                external_tx_id: None,
+                external_account_id: None,
+                activity: None,
             },
         )
         .unwrap();

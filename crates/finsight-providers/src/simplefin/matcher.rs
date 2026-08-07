@@ -30,7 +30,7 @@ pub struct PotentialMatch {
 }
 
 pub enum ReconciliationDecision {
-    AutoMatch(Transaction),
+    AutoMatch(Box<Transaction>),
     NeedsReview {
         matches: Vec<PotentialMatch>,
         confidence: i64,
@@ -142,7 +142,7 @@ pub fn reconcile_excluding_batch(
 ) -> ProviderResult<ReconciliationDecision> {
     if let Some(id) = imported_id {
         if let Some(txn) = find_by_imported_id(conn, account_id, id).map_err(ProviderError::Core)? {
-            return Ok(ReconciliationDecision::AutoMatch(txn));
+            return Ok(ReconciliationDecision::AutoMatch(Box::new(txn)));
         }
     }
 
@@ -156,7 +156,7 @@ pub fn reconcile_excluding_batch(
         if let Some(txn) = find_pending_provider_match(conn, account_id, external_tx_id)
             .map_err(ProviderError::Core)?
         {
-            return Ok(ReconciliationDecision::AutoMatch(txn));
+            return Ok(ReconciliationDecision::AutoMatch(Box::new(txn)));
         }
     }
 
@@ -223,7 +223,9 @@ pub fn reconcile_excluding_batch(
         });
 
     if best.score >= AUTO_MATCH_SCORE && !ambiguous {
-        Ok(ReconciliationDecision::AutoMatch(best.transaction))
+        Ok(ReconciliationDecision::AutoMatch(Box::new(
+            best.transaction,
+        )))
     } else if best.score >= REVIEW_MATCH_SCORE {
         Ok(ReconciliationDecision::NeedsReview {
             confidence: best.score,
@@ -548,7 +550,10 @@ mod fuzzy_tests {
             Utc.with_ymd_and_hms(2026, 1, 12, 12, 0, 0).unwrap(),
             "uber eats https://help.ub",
         );
-        assert_eq!(score, 0, "different merchants must not be a duplicate candidate");
+        assert_eq!(
+            score, 0,
+            "different merchants must not be a duplicate candidate"
+        );
     }
 
     #[test]
@@ -573,7 +578,10 @@ mod fuzzy_tests {
             Utc.with_ymd_and_hms(2026, 1, 5, 12, 0, 0).unwrap(),
             "spotify  stockholm",
         );
-        assert!(score >= AUTO_MATCH_SCORE, "true duplicate should auto-match, got {score}");
+        assert!(
+            score >= AUTO_MATCH_SCORE,
+            "true duplicate should auto-match, got {score}"
+        );
     }
 
     #[test]
@@ -586,6 +594,9 @@ mod fuzzy_tests {
             Utc.with_ymd_and_hms(2026, 1, 8, 12, 0, 0).unwrap(),
             "uber eats               https://help.ub",
         );
-        assert!(score >= REVIEW_MATCH_SCORE, "same vendor variants should be a candidate, got {score}");
+        assert!(
+            score >= REVIEW_MATCH_SCORE,
+            "same vendor variants should be a candidate, got {score}"
+        );
     }
 }

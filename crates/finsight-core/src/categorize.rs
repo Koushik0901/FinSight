@@ -220,7 +220,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("flair air", "travel"),
     ("makemytrip", "travel"),
     ("hertz", "travel"),
-
     // ══════════════════════════════════════════════════════════════════════
     // Shipped Canadian coverage.
     //
@@ -275,7 +274,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("chatime", "dining"),
     ("van houtte", "dining"),
     ("dairy queen", "dining"),
-
     // ── Groceries ─────────────────────────────────────────────────────────
     ("your independent grocer", "groceries"),
     ("independent grocer", "groceries"),
@@ -298,7 +296,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("hmart", "groceries"),
     ("grocer", "groceries"),
     ("supermarket", "groceries"),
-
     // ── Transport ─────────────────────────────────────────────────────────
     ("oc transpo", "transport"),
     ("via rail", "transport"),
@@ -321,7 +318,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("fuel", "transport"),
     ("toll", "transport"),
     ("407 etr", "transport"),
-
     // ── Shopping ──────────────────────────────────────────────────────────
     ("sport chek", "shopping"),
     ("sportchek", "shopping"),
@@ -349,7 +345,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("etsy", "shopping"),
     ("value village", "shopping"),
     ("homesense", "shopping"),
-
     // ── Utilities ─────────────────────────────────────────────────────────
     ("saskpower", "utilities"),
     ("sasktel", "utilities"),
@@ -373,7 +368,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("recycling", "utilities"),
     ("electricity", "utilities"),
     ("natural gas", "utilities"),
-
     // ── Subscriptions ─────────────────────────────────────────────────────
     ("crave", "subscriptions"),
     ("goodlife fitness", "subscriptions"),
@@ -392,7 +386,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("nintendo online", "subscriptions"),
     ("gym membership", "subscriptions"),
     ("fitness", "subscriptions"),
-
     // ── Health ────────────────────────────────────────────────────────────
     ("london drugs", "health"),
     ("jean coutu", "health"),
@@ -408,7 +401,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("dentist", "health"),
     ("medical", "health"),
     ("hospital", "health"),
-
     // ── Housing ───────────────────────────────────────────────────────────
     ("realstar", "housing"),
     ("minto apartments", "housing"),
@@ -417,7 +409,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("condo fee", "housing"),
     ("property tax", "housing"),
     ("tenant", "housing"),
-
     // ── Travel ────────────────────────────────────────────────────────────
     ("sunwing", "travel"),
     ("air transat", "travel"),
@@ -427,7 +418,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("travelodge", "travel"),
     ("holiday inn", "travel"),
     ("via preference", "travel"),
-
     // ── Gifts ─────────────────────────────────────────────────────────────
     // This category shipped with ZERO keyword coverage until now, despite
     // being one of the ten defaults offered at onboarding.
@@ -450,8 +440,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("donation", "gifts"),
     ("florist", "gifts"),
     ("flower", "gifts"),
-
-
     // ══════════════════════════════════════════════════════════════════════
     // Shipped US coverage.
     //
@@ -492,7 +480,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("ace hardware", "shopping"),
     ("menards", "shopping"),
     ("legalzoom", "shopping"),
-
     // ── Groceries ─────────────────────────────────────────────────────────
     ("wholefds", "groceries"),
     ("whole fds", "groceries"),
@@ -516,7 +503,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("harris teeter", "groceries"),
     ("food lion", "groceries"),
     ("piggly wiggly", "groceries"),
-
     // ── Utilities ─────────────────────────────────────────────────────────
     ("spectrum", "utilities"),
     ("t-mobile", "utilities"),
@@ -541,7 +527,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("sewer", "utilities"),
     ("centurylink", "utilities"),
     ("frontier communications", "utilities"),
-
     // ── Health ────────────────────────────────────────────────────────────
     ("betterhelp", "health"),
     ("talkspace", "health"),
@@ -557,7 +542,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("urgent care", "health"),
     ("family practice", "health"),
     ("vision center", "health"),
-
     // ── Housing ───────────────────────────────────────────────────────────
     // Payment wording, not landlord company names — see the safety note above.
     ("rent pmt", "housing"),
@@ -571,7 +555,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("mtg pmt", "housing"),
     ("home loan", "housing"),
     ("escrow", "housing"),
-
     // ── Travel ────────────────────────────────────────────────────────────
     ("tsa pre", "travel"),
     ("global entry", "travel"),
@@ -586,7 +569,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("priceline", "travel"),
     ("kayak", "travel"),
     ("centurion lounge", "travel"),
-
     // ── Transport ─────────────────────────────────────────────────────────
     ("quiktrip", "transport"),
     ("wawa", "transport"),
@@ -605,7 +587,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("jiffy lube", "transport"),
     ("car wash", "transport"),
     ("dmv", "transport"),
-
     // ── Dining ────────────────────────────────────────────────────────────
     ("chick-fil-a", "dining"),
     ("chickfila", "dining"),
@@ -630,7 +611,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("steakhouse", "dining"),
     ("grill", "dining"),
     ("diner", "dining"),
-
     // ── Subscriptions ─────────────────────────────────────────────────────
     ("hulu", "subscriptions"),
     ("max.com", "subscriptions"),
@@ -647,7 +627,6 @@ const KEYWORD_MAP: &[(&str, &str)] = &[
     ("nordvpn", "subscriptions"),
     ("coursera", "subscriptions"),
     ("duolingo", "subscriptions"),
-
 ];
 
 /// Best-effort deterministic category for a merchant string. Returns the
@@ -681,8 +660,8 @@ const UNILATERAL_TRANSFER_KEYWORDS: &[&str] = &[
     "paiement merci",
     "autopay",
     // Explicit own-account markers (the string names the account moved to/from).
-    "internet withdrawal to",  // Tangerine internal out
-    "internet deposit from",   // Tangerine internal in
+    "internet withdrawal to", // Tangerine internal out
+    "internet deposit from",  // Tangerine internal in
     "transfer to account",
     "transfer from account",
     "internal transfer",
@@ -741,8 +720,7 @@ pub fn activity_implies_transfer(activity_type: &str) -> bool {
 /// `is_transfer`; only ever used together with an equal-and-opposite match.
 fn is_pairing_eligible(merchant_raw: &str) -> bool {
     let m = merchant_raw.to_lowercase();
-    PAIRING_HINT_KEYWORDS.iter().any(|kw| m.contains(kw))
-        || has_cc_counterparty_hint(merchant_raw)
+    PAIRING_HINT_KEYWORDS.iter().any(|kw| m.contains(kw)) || has_cc_counterparty_hint(merchant_raw)
 }
 
 /// Vocabulary for the transfer-review surface: rows that LOOK like a money
@@ -881,8 +859,20 @@ const BANK_ALIASES: &[(&str, &[&str])] = &[
 /// carry no identity (an account owner of "You" or "Household" is not a name
 /// that would appear in an e-transfer descriptor).
 const GENERIC_OWNER_TOKENS: &[&str] = &[
-    "you", "self", "household", "joint", "family", "shared", "and", "the",
-    "account", "chequing", "checking", "savings", "credit", "card",
+    "you",
+    "self",
+    "household",
+    "joint",
+    "family",
+    "shared",
+    "and",
+    "the",
+    "account",
+    "chequing",
+    "checking",
+    "savings",
+    "credit",
+    "card",
 ];
 
 /// The user's own identity, derived from their accounts + household members, so
@@ -965,7 +955,9 @@ impl TransferContext {
     }
 
     fn descriptor_names_owned_bank(&self, lowered: &str) -> bool {
-        self.owned_bank_fragments.iter().any(|f| lowered.contains(f))
+        self.owned_bank_fragments
+            .iter()
+            .any(|f| lowered.contains(f))
     }
 
     /// True when a row is an internal move to/from one of the user's OWN
@@ -1037,13 +1029,46 @@ pub fn is_nameless_bank_movement(merchant_raw: &str) -> bool {
 /// descriptor for the cloud LLM — bank/product/direction words. Anything else
 /// alphabetic in a named-transfer string is a counterparty NAME and is dropped.
 pub(crate) const TRANSFER_STRUCTURAL_TOKENS: &[&str] = &[
-    "internet", "banking", "interac", "transfer", "email", "money", "fulfill",
-    "request", "electronic", "funds", "eft", "payment", "paiement", "merci",
-    "deposit", "withdrawal", "preauthorized", "authorized", "debit", "credit",
-    "account", "card", "to", "from", "thank", "you", "received", "e", "pre",
-    "bill", "pay", "wire", "online", "branch", "transaction",
+    "internet",
+    "banking",
+    "interac",
+    "transfer",
+    "email",
+    "money",
+    "fulfill",
+    "request",
+    "electronic",
+    "funds",
+    "eft",
+    "payment",
+    "paiement",
+    "merci",
+    "deposit",
+    "withdrawal",
+    "preauthorized",
+    "authorized",
+    "debit",
+    "credit",
+    "account",
+    "card",
+    "to",
+    "from",
+    "thank",
+    "you",
+    "received",
+    "e",
+    "pre",
+    "bill",
+    "pay",
+    "wire",
+    "online",
+    "branch",
+    "transaction",
     // Compound tokens whose alphabetic core (hyphen removed) must be kept.
-    "etransfer", "preauthorized", "emt", "etfr",
+    "etransfer",
+    "preauthorized",
+    "emt",
+    "etfr",
 ];
 
 /// The pattern to propose for an "always categorize like this" rule from a
@@ -1111,13 +1136,20 @@ pub fn redact_for_llm(merchant_raw: &str) -> String {
 
     // 2) Drop counterparty names from person-to-person transfer descriptors.
     let lower = masked.to_lowercase();
-    let named_transfer = ["e-transfer", "e transfer", "interac", "email money transfer", "fulfill request"]
-        .iter()
-        .any(|k| lower.contains(k));
+    let named_transfer = [
+        "e-transfer",
+        "e transfer",
+        "interac",
+        "email money transfer",
+        "fulfill request",
+    ]
+    .iter()
+    .any(|k| lower.contains(k));
     if !named_transfer {
         return masked;
     }
-    let keep: std::collections::HashSet<&str> = TRANSFER_STRUCTURAL_TOKENS.iter().copied().collect();
+    let keep: std::collections::HashSet<&str> =
+        TRANSFER_STRUCTURAL_TOKENS.iter().copied().collect();
     let out: Vec<String> = masked
         .split_whitespace()
         .filter(|tok| {
@@ -1215,8 +1247,8 @@ struct PairCandidate {
 ///   THANK YOU") posted to a Credit account, and the other leg's merchant
 ///   carries a bill-payment / card-network hint. Only then is an unflagged
 ///   leg pulled in.
-/// Amounts must be exactly opposite, accounts must differ, the gap must be
-/// ≤ 4 days, and each transaction pairs at most once (nearest date wins).
+///   Amounts must be exactly opposite, accounts must differ, the gap must be
+///   ≤ 4 days, and each transaction pairs at most once (nearest date wins).
 ///
 /// Idempotent: already-paired rows are never touched, so a re-run after new
 /// imports only pairs new legs. Returns the number of pairs created.
@@ -1629,7 +1661,10 @@ mod default_example_tests {
         let second: i64 = conn
             .query_row("SELECT COUNT(*) FROM category_examples", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(first, second, "a duplicated exemplar would skew the prototype");
+        assert_eq!(
+            first, second,
+            "a duplicated exemplar would skew the prototype"
+        );
     }
 
     /// Seeds are ordinary rows, not fixtures: deleting one must stick, so a
@@ -1639,8 +1674,11 @@ mod default_example_tests {
         let (_d, db) = db();
         let mut conn = db.get().unwrap();
         ensure_default_categories(&mut conn).unwrap();
-        conn.execute("DELETE FROM category_examples WHERE category_id = 'dining'", [])
-            .unwrap();
+        conn.execute(
+            "DELETE FROM category_examples WHERE category_id = 'dining'",
+            [],
+        )
+        .unwrap();
         // Re-running the idempotent seeder must not resurrect it: categories
         // already exist, so it returns early and respects the deletion.
         ensure_default_categories(&mut conn).unwrap();
@@ -1651,7 +1689,10 @@ mod default_example_tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(n, 0, "seed examples are a starting point, not an enforced fixture");
+        assert_eq!(
+            n, 0,
+            "seed examples are a starting point, not an enforced fixture"
+        );
     }
 
     /// Every seeded exemplar must point at a category that actually exists, or
@@ -1754,8 +1795,8 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
     // rows per import that per-row recompilation dominates — caching the
     // statements removes it (the same class of win that sped CSV import up).
     {
-        let mut set_transfer = tx
-            .prepare_cached("UPDATE transactions SET is_transfer = ?1 WHERE id = ?2")?;
+        let mut set_transfer =
+            tx.prepare_cached("UPDATE transactions SET is_transfer = ?1 WHERE id = ?2")?;
         let mut set_category = tx.prepare_cached(
             "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
         )?;
@@ -1818,12 +1859,7 @@ pub fn apply_builtin_categorization(conn: &mut Connection) -> CoreResult<u32> {
                 continue;
             }
             set_category.execute(params![cat, txn_id])?;
-            record_categorization.execute(params![
-                Uuid::new_v4().to_string(),
-                txn_id,
-                cat,
-                now
-            ])?;
+            record_categorization.execute(params![Uuid::new_v4().to_string(), txn_id, cat, now])?;
             count += 1;
         }
     }
@@ -1891,15 +1927,42 @@ mod tests {
 
     #[test]
     fn maps_common_real_sample_merchants() {
-        assert_eq!(builtin_category("TIM HORTONS #3356       BURNABY"), Some("dining"));
-        assert_eq!(builtin_category("UBER EATS               HTTPS://HELP.UB"), Some("dining"));
-        assert_eq!(builtin_category("UBER TRIP               HTTPS://HELP.UB"), Some("transport"));
-        assert_eq!(builtin_category("EVO CAR SHARE           BURNABY"), Some("transport"));
-        assert_eq!(builtin_category("WALMART SUPERCENTER  BURNABY"), Some("groceries"));
-        assert_eq!(builtin_category("SPOTIFY                 STOCKHOLM"), Some("subscriptions"));
-        assert_eq!(builtin_category("OPENAI *CHATGPT SUBSCR  SAN FRANCISCO"), Some("subscriptions"));
-        assert_eq!(builtin_category("TEMU.COM                VICTORIA"), Some("shopping"));
-        assert_eq!(builtin_category("COMPASS VENDING BURN    BURNABY"), Some("transport"));
+        assert_eq!(
+            builtin_category("TIM HORTONS #3356       BURNABY"),
+            Some("dining")
+        );
+        assert_eq!(
+            builtin_category("UBER EATS               HTTPS://HELP.UB"),
+            Some("dining")
+        );
+        assert_eq!(
+            builtin_category("UBER TRIP               HTTPS://HELP.UB"),
+            Some("transport")
+        );
+        assert_eq!(
+            builtin_category("EVO CAR SHARE           BURNABY"),
+            Some("transport")
+        );
+        assert_eq!(
+            builtin_category("WALMART SUPERCENTER  BURNABY"),
+            Some("groceries")
+        );
+        assert_eq!(
+            builtin_category("SPOTIFY                 STOCKHOLM"),
+            Some("subscriptions")
+        );
+        assert_eq!(
+            builtin_category("OPENAI *CHATGPT SUBSCR  SAN FRANCISCO"),
+            Some("subscriptions")
+        );
+        assert_eq!(
+            builtin_category("TEMU.COM                VICTORIA"),
+            Some("shopping")
+        );
+        assert_eq!(
+            builtin_category("COMPASS VENDING BURN    BURNABY"),
+            Some("transport")
+        );
     }
 
     #[test]
@@ -1921,8 +1984,12 @@ mod tests {
         // CIBC's "INTERNET TRANSFER <ref> TO ACCOUNT" / "TO CARD" names an own
         // account or card, so it is an internal move even if the other leg is
         // not imported (transfer vocab + own-account marker).
-        assert!(is_transfer("Internet Banking INTERNET TRANSFER 000000112252 TO ACCOUNT 04930"));
-        assert!(is_transfer("Internet Banking INTERNET TRANSFER 000000227766 TO CARD 4505"));
+        assert!(is_transfer(
+            "Internet Banking INTERNET TRANSFER 000000112252 TO ACCOUNT 04930"
+        ));
+        assert!(is_transfer(
+            "Internet Banking INTERNET TRANSFER 000000227766 TO CARD 4505"
+        ));
         // But bare "to account" with no transfer vocabulary must NOT trip it.
         assert!(!is_transfer("REFUND CREDITED TO ACCOUNT HOLDER"));
 
@@ -1933,10 +2000,14 @@ mod tests {
         assert!(!is_transfer("INTERAC e-Transfer To: Koushik C"));
         assert!(!is_transfer("INTERAC e-Transfer From: BRITISH"));
         assert!(!is_transfer("Email Money Transfer to Alice"));
-        assert!(!is_transfer("Internet Banking E-TRANSFER 011630 MORGAN LEE"));
+        assert!(!is_transfer(
+            "Internet Banking E-TRANSFER 011630 MORGAN LEE"
+        ));
         // Payroll and government benefits ride "Electronic Funds Transfer
         // DEPOSIT" too — must never be unilaterally flagged as a transfer.
-        assert!(!is_transfer("Electronic Funds Transfer DEPOSIT 387402_260630 Infoblox"));
+        assert!(!is_transfer(
+            "Electronic Funds Transfer DEPOSIT 387402_260630 Infoblox"
+        ));
         assert!(!is_transfer("Electronic Funds Transfer DEPOSIT AE/EI"));
 
         // Real spending must NOT be flagged as a transfer.
@@ -1958,7 +2029,10 @@ mod tests {
             suggested_rule_pattern("Internet Banking E-TRANSFER 106001023942 Jordan"),
             "%jordan%"
         );
-        assert_eq!(suggested_rule_pattern("INTERAC e-Transfer To: Koushik"), "%koushik%");
+        assert_eq!(
+            suggested_rule_pattern("INTERAC e-Transfer To: Koushik"),
+            "%koushik%"
+        );
         // Normal merchants keep the exact string (unchanged behavior).
         assert_eq!(suggested_rule_pattern("AMAZON.CA"), "AMAZON.CA");
         assert_eq!(
@@ -1977,9 +2051,15 @@ mod tests {
     fn redact_for_llm_strips_names_and_reference_numbers() {
         // Person-to-person e-transfer: name AND reference number removed.
         let r = redact_for_llm("Internet Banking E-TRANSFER 011654884429 jordan");
-        assert!(!r.to_lowercase().contains("jordan"), "name must be dropped: {r}");
+        assert!(
+            !r.to_lowercase().contains("jordan"),
+            "name must be dropped: {r}"
+        );
         assert!(!r.contains("011654884429"), "reference number masked: {r}");
-        assert!(r.to_lowercase().contains("transfer"), "category vocab kept: {r}");
+        assert!(
+            r.to_lowercase().contains("transfer"),
+            "category vocab kept: {r}"
+        );
 
         let r2 = redact_for_llm("INTERAC e-Transfer From: ALEX RIVERA");
         assert!(!r2.to_uppercase().contains("ALEX"));
@@ -1987,9 +2067,15 @@ mod tests {
 
         // Ordinary merchants keep their NAME (only digit runs are masked).
         let tim = redact_for_llm("TIM HORTONS #3356 BURNABY");
-        assert!(tim.contains("TIM HORTONS") && tim.contains("BURNABY"), "{tim}");
+        assert!(
+            tim.contains("TIM HORTONS") && tim.contains("BURNABY"),
+            "{tim}"
+        );
         assert!(!tim.contains("3356"), "store number masked: {tim}");
-        assert_eq!(redact_for_llm("STARBUCKS 12345678 SEATTLE"), "STARBUCKS # SEATTLE");
+        assert_eq!(
+            redact_for_llm("STARBUCKS 12345678 SEATTLE"),
+            "STARBUCKS # SEATTLE"
+        );
         // A non-transfer with a person-looking token is NOT a named transfer, so
         // it is left intact (we never touch normal merchant identities).
         assert_eq!(redact_for_llm("PAYPAL SOMECORP"), "PAYPAL SOMECORP");
@@ -2026,8 +2112,10 @@ mod tests {
             [],
         )
         .unwrap();
-        assert!(!is_transfer("Internet Banking INTERNET TRANSFER 000000238417"),
-            "a bare internet-transfer with no own-account marker is not unilaterally flagged");
+        assert!(
+            !is_transfer("Internet Banking INTERNET TRANSFER 000000238417"),
+            "a bare internet-transfer with no own-account marker is not unilaterally flagged"
+        );
         let n = pair_transfers(&mut conn).unwrap();
         assert_eq!(n, 1, "the two legs pair via their shared reference number");
         let flagged: i64 = conn
@@ -2061,7 +2149,10 @@ mod tests {
         )
         .unwrap();
         let n = pair_transfers(&mut conn).unwrap();
-        assert_eq!(n, 1, "bare equal-and-opposite internet transfers pair despite differing refs");
+        assert_eq!(
+            n, 1,
+            "bare equal-and-opposite internet transfers pair despite differing refs"
+        );
         let flagged: i64 = conn
             .query_row("SELECT COUNT(*) FROM transactions WHERE is_transfer=1 AND transfer_peer_id IS NOT NULL", [], |r| r.get(0))
             .unwrap();
@@ -2091,7 +2182,10 @@ mod tests {
         )
         .unwrap();
         let n = pair_transfers(&mut conn).unwrap();
-        assert_eq!(n, 0, "a nameless transfer does not pair with a NAMED e-transfer of the opposite amount");
+        assert_eq!(
+            n, 0,
+            "a nameless transfer does not pair with a NAMED e-transfer of the opposite amount"
+        );
     }
 
     #[test]
@@ -2138,7 +2232,11 @@ mod tests {
         // Same content, opposite id orderings → identical flagged set.
         let ascending = run(["id-a", "id-b", "id-c"]);
         let descending = run(["id-z", "id-y", "id-x"]);
-        assert_eq!(ascending.len(), 2, "exactly one pair forms from three ambiguous legs");
+        assert_eq!(
+            ascending.len(),
+            2,
+            "exactly one pair forms from three ambiguous legs"
+        );
         assert_eq!(
             ascending, descending,
             "pairing outcome must be identical regardless of row-id ordering"
@@ -2204,7 +2302,10 @@ mod tests {
         )
         .unwrap();
         let n = pair_transfers(&mut conn).unwrap();
-        assert_eq!(n, 0, "a user-declared non-transfer is excluded from pairing");
+        assert_eq!(
+            n, 0,
+            "a user-declared non-transfer is excluded from pairing"
+        );
     }
 
     #[test]
@@ -2214,7 +2315,10 @@ mod tests {
         for kw in TRANSFER_REVIEW_KEYWORDS {
             assert_eq!(*kw, kw.to_lowercase(), "keyword must be lowercase: {kw}");
             for bad in ['\'', '%', '_', '"'] {
-                assert!(!kw.contains(bad), "keyword {kw:?} contains SQL-unsafe {bad:?}");
+                assert!(
+                    !kw.contains(bad),
+                    "keyword {kw:?} contains SQL-unsafe {bad:?}"
+                );
             }
         }
     }
@@ -2241,7 +2345,10 @@ mod tests {
         )
         .unwrap();
         let n = pair_transfers(&mut conn).unwrap();
-        assert_eq!(n, 0, "real income must never pair with a coincidental expense");
+        assert_eq!(
+            n, 0,
+            "real income must never pair with a coincidental expense"
+        );
     }
 
     #[test]
@@ -2314,20 +2421,34 @@ mod tests {
         insert_txn(&conn, "t2", "TIM HORTONS #3356 BURNABY");
 
         let n = apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(n, 1, "TIM HORTONS categorized once default categories auto-seed");
+        assert_eq!(
+            n, 1,
+            "TIM HORTONS categorized once default categories auto-seed"
+        );
         let is_tf: i64 = conn
-            .query_row("SELECT is_transfer FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT is_transfer FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(is_tf, 1, "the card payment is still flagged as a transfer");
         let cat2: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t2'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t2'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat2.as_deref(), Some("dining"));
     }
 
     #[test]
     fn leaves_ambiguous_merchants_uncategorized() {
-        assert_eq!(builtin_category("ANOMALY                 SAN FRANCISCO"), None);
+        assert_eq!(
+            builtin_category("ANOMALY                 SAN FRANCISCO"),
+            None
+        );
         assert_eq!(builtin_category("FELICITAS               VICTORIA"), None);
         assert_eq!(builtin_category("BBYMARKETPLACE*PULSELAB TORONTO"), None);
         assert_eq!(builtin_category("REVENUE SERVICES BC VIC VICTORIA"), None);
@@ -2347,13 +2468,24 @@ mod tests {
         assert_eq!(n, 2, "only t1 and t2 map to existing categories");
 
         let cat1: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat1.as_deref(), Some("dining"));
         let cat4: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t4'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t4'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert!(cat4.is_none(), "travel category absent -> stays uncategorized");
+        assert!(
+            cat4.is_none(),
+            "travel category absent -> stays uncategorized"
+        );
 
         // Idempotent: a second run categorizes nothing new.
         let n2 = apply_builtin_categorization(&mut conn).unwrap();
@@ -2363,7 +2495,11 @@ mod tests {
         insert_txn(&conn, "t5", "TIM HORTONS #9999 VICTORIA");
         apply_builtin_categorization(&mut conn).unwrap();
         let cat5: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t5'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t5'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat5.as_deref(), Some("dining"));
     }
@@ -2382,19 +2518,30 @@ mod tests {
         )
         .unwrap();
         // No categories seeded — simulate import-before-onboarding.
-        let cats_before: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        let cats_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(cats_before, 0);
 
         insert_txn(&conn, "t1", "TIM HORTONS #3356 BURNABY"); // dining
         insert_txn(&conn, "t2", "SPOTIFY STOCKHOLM"); // subscriptions
 
         let n = apply_builtin_categorization(&mut conn).unwrap();
-        assert!(n >= 2, "import-first should now categorize known merchants, got {n}");
+        assert!(
+            n >= 2,
+            "import-first should now categorize known merchants, got {n}"
+        );
 
-        let cats_after: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        let cats_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
+            .unwrap();
         assert!(cats_after >= 10, "default categories should be seeded");
         let cat1: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat1.as_deref(), Some("dining"));
     }
@@ -2416,7 +2563,14 @@ mod tests {
         }
     }
 
-    fn insert_txn_full(conn: &Connection, id: &str, account: &str, date: &str, cents: i64, merchant: &str) {
+    fn insert_txn_full(
+        conn: &Connection,
+        id: &str,
+        account: &str,
+        date: &str,
+        cents: i64,
+        merchant: &str,
+    ) {
         conn.execute(
             "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
              VALUES(?1,?2,?3,?4,?5,'cleared',0,'2024-01-01T00:00:00Z')",
@@ -2448,8 +2602,22 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_accounts_for_pairing(&conn);
-        insert_txn_full(&conn, "out", "chq", "2024-03-01", -50_000, "Internet Withdrawal to Tangerine Savings");
-        insert_txn_full(&conn, "in", "sav", "2024-03-01", 50_000, "Internet Deposit from Tangerine Chequing");
+        insert_txn_full(
+            &conn,
+            "out",
+            "chq",
+            "2024-03-01",
+            -50_000,
+            "Internet Withdrawal to Tangerine Savings",
+        );
+        insert_txn_full(
+            &conn,
+            "in",
+            "sav",
+            "2024-03-01",
+            50_000,
+            "Internet Deposit from Tangerine Chequing",
+        );
 
         apply_builtin_categorization(&mut conn).unwrap();
         let n = pair_transfers(&mut conn).unwrap();
@@ -2466,24 +2634,54 @@ mod tests {
         seed_accounts_for_pairing(&conn);
         // Card side: keyword-flagged by the builtin pass. Bank side: NO transfer
         // keyword — only pairing can identify it.
-        insert_txn_full(&conn, "card", "cc", "2024-03-04", 113_900, "PAYMENT RECEIVED - THANK YOU");
-        insert_txn_full(&conn, "bank", "chq", "2024-03-02", -113_900, "Bill Payment to AMEX BANK OF CANADA");
+        insert_txn_full(
+            &conn,
+            "card",
+            "cc",
+            "2024-03-04",
+            113_900,
+            "PAYMENT RECEIVED - THANK YOU",
+        );
+        insert_txn_full(
+            &conn,
+            "bank",
+            "chq",
+            "2024-03-02",
+            -113_900,
+            "Bill Payment to AMEX BANK OF CANADA",
+        );
 
         apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(transfer_flag(&conn, "bank"), 0, "precondition: bank leg not keyword-flagged");
+        assert_eq!(
+            transfer_flag(&conn, "bank"),
+            0,
+            "precondition: bank leg not keyword-flagged"
+        );
 
         let n = pair_transfers(&mut conn).unwrap();
         assert_eq!(n, 1);
         assert_eq!(peer_of(&conn, "card").as_deref(), Some("bank"));
         assert_eq!(peer_of(&conn, "bank").as_deref(), Some("card"));
-        assert_eq!(transfer_flag(&conn, "bank"), 1, "pairing flags the bank leg");
+        assert_eq!(
+            transfer_flag(&conn, "bank"),
+            1,
+            "pairing flags the bank leg"
+        );
 
         // A later builtin re-run must NOT un-flag the paired bank leg.
         apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(transfer_flag(&conn, "bank"), 1, "paired leg survives keyword re-run");
+        assert_eq!(
+            transfer_flag(&conn, "bank"),
+            1,
+            "paired leg survives keyword re-run"
+        );
         // And the paired bank leg must never be categorized.
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='bank'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='bank'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(cat.is_none(), "paired transfer leg must stay uncategorized");
     }
@@ -2494,11 +2692,39 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_accounts_for_pairing(&conn);
         // Same account: a reversal, not a transfer pair.
-        insert_txn_full(&conn, "s1", "chq", "2024-03-01", -5_000, "Internet Withdrawal to Tangerine Savings");
-        insert_txn_full(&conn, "s2", "chq", "2024-03-01", 5_000, "Internet Deposit from Tangerine Savings");
+        insert_txn_full(
+            &conn,
+            "s1",
+            "chq",
+            "2024-03-01",
+            -5_000,
+            "Internet Withdrawal to Tangerine Savings",
+        );
+        insert_txn_full(
+            &conn,
+            "s2",
+            "chq",
+            "2024-03-01",
+            5_000,
+            "Internet Deposit from Tangerine Savings",
+        );
         // Cross-account but 10 days apart: outside the window.
-        insert_txn_full(&conn, "w1", "chq", "2024-04-01", -7_000, "Internet Withdrawal to Tangerine Savings");
-        insert_txn_full(&conn, "w2", "sav", "2024-04-11", 7_000, "Internet Deposit from Tangerine Chequing");
+        insert_txn_full(
+            &conn,
+            "w1",
+            "chq",
+            "2024-04-01",
+            -7_000,
+            "Internet Withdrawal to Tangerine Savings",
+        );
+        insert_txn_full(
+            &conn,
+            "w2",
+            "sav",
+            "2024-04-11",
+            7_000,
+            "Internet Deposit from Tangerine Chequing",
+        );
 
         apply_builtin_categorization(&mut conn).unwrap();
         let n = pair_transfers(&mut conn).unwrap();
@@ -2518,8 +2744,22 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_accounts_for_pairing(&conn);
-        insert_txn_full(&conn, "etf", "sav", "2024-03-01", 4_000, "INTERAC e-Transfer From: Alice");
-        insert_txn_full(&conn, "gym", "chq", "2024-03-01", -4_000, "PREAUTHORIZED PAYMENT - GYM CLUB");
+        insert_txn_full(
+            &conn,
+            "etf",
+            "sav",
+            "2024-03-01",
+            4_000,
+            "INTERAC e-Transfer From: Alice",
+        );
+        insert_txn_full(
+            &conn,
+            "gym",
+            "chq",
+            "2024-03-01",
+            -4_000,
+            "PREAUTHORIZED PAYMENT - GYM CLUB",
+        );
 
         apply_builtin_categorization(&mut conn).unwrap();
         let n = pair_transfers(&mut conn).unwrap();
@@ -2527,7 +2767,11 @@ mod tests {
         assert_eq!(n, 0);
         assert!(peer_of(&conn, "etf").is_none());
         assert!(peer_of(&conn, "gym").is_none());
-        assert_eq!(transfer_flag(&conn, "gym"), 0, "gym debit must not become a transfer");
+        assert_eq!(
+            transfer_flag(&conn, "gym"),
+            0,
+            "gym debit must not become a transfer"
+        );
     }
 
     #[test]
@@ -2536,9 +2780,30 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_accounts_for_pairing(&conn);
         // Two same-amount deposits: the one 1 day away must win over 3 days away.
-        insert_txn_full(&conn, "out1", "chq", "2024-03-05", -10_000, "Internet Withdrawal to Tangerine Savings");
-        insert_txn_full(&conn, "near", "sav", "2024-03-06", 10_000, "Internet Deposit from Tangerine Chequing");
-        insert_txn_full(&conn, "far", "sav", "2024-03-08", 10_000, "Internet Deposit from Tangerine Chequing");
+        insert_txn_full(
+            &conn,
+            "out1",
+            "chq",
+            "2024-03-05",
+            -10_000,
+            "Internet Withdrawal to Tangerine Savings",
+        );
+        insert_txn_full(
+            &conn,
+            "near",
+            "sav",
+            "2024-03-06",
+            10_000,
+            "Internet Deposit from Tangerine Chequing",
+        );
+        insert_txn_full(
+            &conn,
+            "far",
+            "sav",
+            "2024-03-08",
+            10_000,
+            "Internet Deposit from Tangerine Chequing",
+        );
 
         apply_builtin_categorization(&mut conn).unwrap();
         let n = pair_transfers(&mut conn).unwrap();
@@ -2573,7 +2838,11 @@ mod tests {
                 crate::palette::color_for(&id),
                 "category {id} must carry its canonical palette color"
             );
-            assert_ne!(color, crate::palette::DEFAULT_COLOR, "{id} must not be grey");
+            assert_ne!(
+                color,
+                crate::palette::DEFAULT_COLOR,
+                "{id} must not be grey"
+            );
         }
     }
 
@@ -2596,7 +2865,11 @@ mod tests {
         assert_eq!(read("groceries").as_deref(), Some("fixed"));
         assert_eq!(read("dining").as_deref(), Some("guilt_free"));
         assert_eq!(read("travel").as_deref(), Some("guilt_free"));
-        assert_eq!(default_spending_type("not-a-starter"), None, "custom categories stay untagged");
+        assert_eq!(
+            default_spending_type("not-a-starter"),
+            None,
+            "custom categories stay untagged"
+        );
     }
 
     #[test]
@@ -2604,10 +2877,17 @@ mod tests {
         let (_d, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_categories(&conn); // a partial user set exists
-        let before: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
+        let before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
+            .unwrap();
         ensure_default_categories(&mut conn).unwrap();
-        let after: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0)).unwrap();
-        assert_eq!(before, after, "must not seed defaults when a category set already exists");
+        let after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            before, after,
+            "must not seed defaults when a category set already exists"
+        );
     }
 
     // ---- activity-aware categorization (brokerage CSV imports) ----

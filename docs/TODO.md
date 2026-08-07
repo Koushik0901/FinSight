@@ -4,7 +4,7 @@
 >
 > **Stack:** Rust/Tauri 2 backend · React 18 + TypeScript + Vite frontend · SQLite/SQLCipher via rusqlite · tanstack-query hooks · sonner toasts · zod + react-hook-form · design tokens in `ui/src/styles/tokens.css` + `app.css`
 >
-> **Adding a Tauri command:** (1) write the function in `crates/finsight-app/src/commands/`, (2) register it in `crates/finsight-app/src/lib.rs` inside `build_specta_builder()`, (3) run `cargo run -p finsight-tauri --bin export_bindings` from the **repo root** to regenerate `ui/src/api/bindings.ts`.
+> **Adding a Tauri command:** (1) write the function in `crates/finsight-app/src/commands/`, (2) register it in `crates/finsight-app/src/lib.rs` inside `build_specta_builder()`, (3) run `pnpm bindings` from the **repo root** to regenerate `ui/src/api/bindings.ts`.
 
 ---
 
@@ -654,7 +654,7 @@ The design has a footer nav item that re-launches the onboarding flow. Already p
 
 ## Technical notes for new agents
 
-- **Run `cargo run -p finsight-tauri --bin export_bindings` from the repo root** (not from `ui/`) after adding any Tauri command, or bindings won't update.
+- **Run `pnpm bindings` from the repo root** (not from `ui/`) after adding any Tauri command, or bindings won't update.
 - **CSS variables:** use `var(--ink)`, `var(--ink-mute)`, `var(--ink-faint)`, `var(--line)`, `var(--elevated)` etc. — all defined in `ui/src/styles/tokens.css`. Do NOT use hardcoded colors.
 - **CSS component classes** like `.card`, `.chip`, `.btn`, `.tbl`, `.stat`, `.eyebrow`, `.toolbar`, `.stream`, `.goal-bar`, `.tog`, `.rule`, `.cond`, `.tok` are all in `ui/src/styles/app.css`.
 - **Icons:** import from `ui/src/components/Icons.tsx`. If you need a new icon not in the file, add it there following the existing `icon()` factory pattern.

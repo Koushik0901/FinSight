@@ -157,4 +157,3 @@ pub trait CompletionProvider: Send + Sync {
         ))
     }
 }
-

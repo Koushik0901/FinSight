@@ -64,9 +64,15 @@ export function isTauriRuntime() {
 export function isBackendAvailable(): boolean {
   if (isTauriRuntime()) return true;
   if (typeof window === "undefined") return false;
-  // Mirror api/auth.ts's isServerMode(): the shim sets __FINSIGHT_HTTP__ on
-  // install. Inlined (not imported) to keep this module a dependency-free leaf.
-  return Boolean((window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__);
+  // The HTTP shim and the design harness are both complete RPC transports.
+  // Keep this predicate transport-oriented: the mock may run on 127.0.0.1,
+  // localhost, or another Vite host, so origin checks would incorrectly gate
+  // its queries even though __TAURI_INTERNALS__.invoke is installed.
+  const w = window as unknown as {
+    __FINSIGHT_HTTP__?: unknown;
+    __FINSIGHT_MOCK__?: unknown;
+  };
+  return Boolean(w.__FINSIGHT_HTTP__ || w.__FINSIGHT_MOCK__);
 }
 
 export function userErrorMessage(error: unknown, fallback = "That did not work. Try again.") {

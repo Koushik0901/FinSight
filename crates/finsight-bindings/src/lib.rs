@@ -29,8 +29,8 @@ pub use finsight_api::sync_scheduler;
 /// Re-exported here because integration tests and command modules import them
 /// from `finsight_bindings`/`crate::` today.
 pub use finsight_api::provider::{
-    build_copilot_router_from_settings, build_provider_from_config, load_completion_provider_config,
-    load_provider_from_settings, migrate_provider_settings,
+    build_copilot_router_from_settings, build_provider_from_config,
+    load_completion_provider_config, load_provider_from_settings, migrate_provider_settings,
 };
 
 use finsight_agent::agent::EventCallback;
@@ -288,4 +288,3 @@ pub fn build_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         commands::copilot_chat::delete_conversation_messages_after,
     ])
 }
-

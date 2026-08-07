@@ -32,9 +32,17 @@ impl ConfusionMatrix {
         for ex in examples {
             let pred = predict(ex);
             let key = pred.category.unwrap_or_else(|| ABSTAIN_LABEL.to_string());
-            *counts.entry(key).or_default().entry(ex.category.clone()).or_insert(0) += 1;
+            *counts
+                .entry(key)
+                .or_default()
+                .entry(ex.category.clone())
+                .or_insert(0) += 1;
         }
-        Self { source: source.to_string(), counts, total: examples.len() as u64 }
+        Self {
+            source: source.to_string(),
+            counts,
+            total: examples.len() as u64,
+        }
     }
 
     /// Predictions actually made (excludes abstentions).
@@ -94,7 +102,12 @@ impl ConfusionMatrix {
         }
         totals
             .into_iter()
-            .map(|(cat, total)| (cat.clone(), (correct.get(&cat).copied().unwrap_or(0), total)))
+            .map(|(cat, total)| {
+                (
+                    cat.clone(),
+                    (correct.get(&cat).copied().unwrap_or(0), total),
+                )
+            })
             .collect()
     }
 }
@@ -131,13 +144,21 @@ mod tests {
         let examples = vec![ex("1", "m1", "dining")];
         let matrix = ConfusionMatrix::build("test", &examples, |_| Prediction::abstain());
         assert_eq!(matrix.coverage(), 0.0);
-        assert_eq!(matrix.precision(), None, "precision must be undefined, not 0.0, with zero coverage");
+        assert_eq!(
+            matrix.precision(),
+            None,
+            "precision must be undefined, not 0.0, with zero coverage"
+        );
     }
 
     #[test]
     fn mixed_correct_incorrect_and_abstain() {
         // m1: predicts correctly. m2: predicts wrong category. m3: abstains.
-        let examples = vec![ex("1", "m1", "dining"), ex("2", "m2", "groceries"), ex("3", "m3", "transport")];
+        let examples = vec![
+            ex("1", "m1", "dining"),
+            ex("2", "m2", "groceries"),
+            ex("3", "m3", "transport"),
+        ];
         let matrix = ConfusionMatrix::build("test", &examples, |e| match e.merchant_id.as_str() {
             "m1" => Prediction::of("dining", 1.0),
             "m2" => Prediction::of("shopping", 1.0), // wrong on purpose
@@ -151,11 +172,15 @@ mod tests {
 
     #[test]
     fn per_category_recall_breaks_out_by_actual_category() {
-        let examples = vec![ex("1", "m1", "dining"), ex("2", "m2", "dining"), ex("3", "m3", "groceries")];
+        let examples = vec![
+            ex("1", "m1", "dining"),
+            ex("2", "m2", "dining"),
+            ex("3", "m3", "groceries"),
+        ];
         let matrix = ConfusionMatrix::build("test", &examples, |e| match e.merchant_id.as_str() {
             "m1" => Prediction::of("dining", 1.0),   // correct
             "m2" => Prediction::of("shopping", 1.0), // wrong
-            _ => Prediction::abstain(),               // m3 abstains
+            _ => Prediction::abstain(),              // m3 abstains
         });
         let recall = matrix.per_category_recall();
         assert_eq!(recall.get("dining"), Some(&(1, 2)));

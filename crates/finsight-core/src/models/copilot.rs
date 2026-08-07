@@ -259,9 +259,16 @@ mod missing_data_tests {
 
     #[test]
     fn linked_items_carry_both_halves() {
-        let item = MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1");
+        let item = MissingDataItem::linked(
+            "Visa is missing APR.",
+            "Add APR",
+            "/accounts?focusAccount=a1",
+        );
         assert_eq!(item.action_label.as_deref(), Some("Add APR"));
-        assert_eq!(item.action_path.as_deref(), Some("/accounts?focusAccount=a1"));
+        assert_eq!(
+            item.action_path.as_deref(),
+            Some("/accounts?focusAccount=a1")
+        );
     }
 
     #[test]
@@ -279,7 +286,11 @@ mod missing_data_tests {
     fn dedup_keeps_the_actionable_copy_regardless_of_input_order() {
         // The same gap arrives from a producer that knows the account and one
         // that only has prose. Merging must not downgrade the CTA.
-        let linked = MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1");
+        let linked = MissingDataItem::linked(
+            "Visa is missing APR.",
+            "Add APR",
+            "/accounts?focusAccount=a1",
+        );
         let prose = MissingDataItem::prose("Visa is missing APR.");
 
         for input in [
@@ -289,7 +300,10 @@ mod missing_data_tests {
             let mut items = input;
             MissingDataItem::dedup(&mut items);
             assert_eq!(items.len(), 1);
-            assert_eq!(items[0].action_path.as_deref(), Some("/accounts?focusAccount=a1"));
+            assert_eq!(
+                items[0].action_path.as_deref(),
+                Some("/accounts?focusAccount=a1")
+            );
         }
     }
 
@@ -322,13 +336,24 @@ mod missing_data_tests {
         // same sentence with different destinations. Collapsing them would
         // strip one account's link and leave it unreachable.
         let mut items = vec![
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a2"),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a2",
+            ),
         ];
         MissingDataItem::dedup(&mut items);
         assert_eq!(items.len(), 2, "each account must remain reachable");
 
-        let paths: Vec<_> = items.iter().filter_map(|i| i.action_path.as_deref()).collect();
+        let paths: Vec<_> = items
+            .iter()
+            .filter_map(|i| i.action_path.as_deref())
+            .collect();
         assert!(paths.contains(&"/accounts?focusAccount=a1"));
         assert!(paths.contains(&"/accounts?focusAccount=a2"));
     }
@@ -339,8 +364,16 @@ mod missing_data_tests {
         // adds nothing and must not render as a fourth bullet.
         let mut items = vec![
             MissingDataItem::prose("Visa is missing APR."),
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a2"),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a2",
+            ),
             MissingDataItem::prose("Visa is missing APR."),
         ];
         MissingDataItem::dedup(&mut items);
@@ -351,9 +384,21 @@ mod missing_data_tests {
     #[test]
     fn repeated_identical_links_still_collapse() {
         let mut items = vec![
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
         ];
         MissingDataItem::dedup(&mut items);
         assert_eq!(items.len(), 1);
@@ -364,12 +409,23 @@ mod missing_data_tests {
         // Distinct entities produce distinct messages, so both survive and
         // each keeps its own destination.
         let mut items = vec![
-            MissingDataItem::linked("Visa is missing APR.", "Add APR", "/accounts?focusAccount=a1"),
-            MissingDataItem::linked("Amex is missing APR.", "Add APR", "/accounts?focusAccount=a2"),
+            MissingDataItem::linked(
+                "Visa is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a1",
+            ),
+            MissingDataItem::linked(
+                "Amex is missing APR.",
+                "Add APR",
+                "/accounts?focusAccount=a2",
+            ),
         ];
         MissingDataItem::dedup(&mut items);
         assert_eq!(items.len(), 2);
-        let paths: Vec<_> = items.iter().filter_map(|i| i.action_path.as_deref()).collect();
+        let paths: Vec<_> = items
+            .iter()
+            .filter_map(|i| i.action_path.as_deref())
+            .collect();
         assert!(paths.contains(&"/accounts?focusAccount=a1"));
         assert!(paths.contains(&"/accounts?focusAccount=a2"));
     }

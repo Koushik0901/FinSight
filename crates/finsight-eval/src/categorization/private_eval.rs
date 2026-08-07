@@ -129,7 +129,11 @@ pub fn fetch_user_corrections(conn: &Connection) -> rusqlite::Result<Vec<Labeled
 }
 
 fn distinct_merchants(examples: &[LabeledExample]) -> usize {
-    examples.iter().map(|e| e.merchant_id.as_str()).collect::<BTreeSet<_>>().len()
+    examples
+        .iter()
+        .map(|e| e.merchant_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len()
 }
 
 /// The hard structural gate this tool relies on: a precision/coverage number
@@ -286,7 +290,11 @@ pub fn evaluate_builtin_precision(
 /// them with the module defaults. What an admin-gated surface calls.
 pub fn run_private_eval(conn: &Connection) -> rusqlite::Result<PrivateEvalResult> {
     let examples = fetch_user_corrections(conn)?;
-    Ok(evaluate_builtin_precision(&examples, DEFAULT_HOLDOUT_FRACTION, DEFAULT_SPLIT_SEED))
+    Ok(evaluate_builtin_precision(
+        &examples,
+        DEFAULT_HOLDOUT_FRACTION,
+        DEFAULT_SPLIT_SEED,
+    ))
 }
 
 /// The centroid (semantic) categorizer measured against the SAME real
@@ -339,12 +347,11 @@ pub fn evaluate_centroid_precision(
         .collect();
     let prototypes = super::centroid_predictor::build_prototypes(&reference, &reference_vectors);
 
-    let matrix = ConfusionMatrix::build("centroid", &holdout, |ex| {
-        match vectors_by_id.get(&ex.id) {
+    let matrix =
+        ConfusionMatrix::build("centroid", &holdout, |ex| match vectors_by_id.get(&ex.id) {
             Some(v) => super::centroid_predictor::predict_centroid(v, &prototypes, min_score),
             None => super::predictors::Prediction::abstain(),
-        }
-    });
+        });
 
     PrivateEvalResult {
         source: "centroid",
@@ -422,7 +429,13 @@ mod tests {
     fn fetch_only_pulls_source_user_rows_with_a_real_category() {
         let (_d, db) = fresh_db();
         let conn = db.get().unwrap();
-        seed_correction(&conn, "t-user", "Costco Wholesale", "groceries", "2024-01-01T00:00:00Z");
+        seed_correction(
+            &conn,
+            "t-user",
+            "Costco Wholesale",
+            "groceries",
+            "2024-01-01T00:00:00Z",
+        );
         // A machine-generated categorization on a different transaction —
         // must NOT be picked up as ground truth.
         conn.execute(
@@ -438,7 +451,11 @@ mod tests {
         .unwrap();
 
         let examples = fetch_user_corrections(&conn).unwrap();
-        assert_eq!(examples.len(), 1, "only the source='user' row must be pulled");
+        assert_eq!(
+            examples.len(),
+            1,
+            "only the source='user' row must be pulled"
+        );
         assert_eq!(examples[0].id, "t-user");
         assert_eq!(examples[0].category, "groceries");
     }
@@ -476,13 +493,32 @@ mod tests {
     fn fetch_takes_only_the_latest_user_correction_per_transaction() {
         let (_d, db) = fresh_db();
         let conn = db.get().unwrap();
-        seed_correction(&conn, "t1", "Costco Wholesale", "shopping", "2024-01-01T00:00:00Z");
+        seed_correction(
+            &conn,
+            "t1",
+            "Costco Wholesale",
+            "shopping",
+            "2024-01-01T00:00:00Z",
+        );
         // The user changes their mind later — the LATER row is the real verdict.
-        seed_correction(&conn, "t1", "Costco Wholesale", "groceries", "2024-06-01T00:00:00Z");
+        seed_correction(
+            &conn,
+            "t1",
+            "Costco Wholesale",
+            "groceries",
+            "2024-06-01T00:00:00Z",
+        );
 
         let examples = fetch_user_corrections(&conn).unwrap();
-        assert_eq!(examples.len(), 1, "one transaction must contribute exactly one example");
-        assert_eq!(examples[0].category, "groceries", "the later correction is the final verdict");
+        assert_eq!(
+            examples.len(),
+            1,
+            "one transaction must contribute exactly one example"
+        );
+        assert_eq!(
+            examples[0].category, "groceries",
+            "the later correction is the final verdict"
+        );
     }
 
     #[test]
@@ -570,15 +606,38 @@ mod tests {
         let examples = vec![
             ex("1", "m-costco", "Costco Wholesale Uniq1", "groceries"),
             ex("2", "m-bestbuy", "Best Buy Uniq2", "shopping"),
-            ex("3", "m-oldtown", "Oldtown Rentals Monthly Rent Payment Uniq3", "dining"),
-            ex("4", "m-unknown", "Zzqxw Flibbertigibbet Emporium Uniq4", "dining"),
+            ex(
+                "3",
+                "m-oldtown",
+                "Oldtown Rentals Monthly Rent Payment Uniq3",
+                "dining",
+            ),
+            ex(
+                "4",
+                "m-unknown",
+                "Zzqxw Flibbertigibbet Emporium Uniq4",
+                "dining",
+            ),
         ];
         // Preconditions: pin what the REAL builtin categorizer does on each
         // row, so the hand-computed expectation below is not a guess.
-        assert_eq!(predict_builtin_for(&examples[0]).category.as_deref(), Some("groceries"));
-        assert_eq!(predict_builtin_for(&examples[1]).category.as_deref(), Some("shopping"));
-        assert_eq!(predict_builtin_for(&examples[2]).category.as_deref(), Some("housing"));
-        assert_eq!(predict_builtin_for(&examples[3]).category, None, "must abstain: no keyword overlap");
+        assert_eq!(
+            predict_builtin_for(&examples[0]).category.as_deref(),
+            Some("groceries")
+        );
+        assert_eq!(
+            predict_builtin_for(&examples[1]).category.as_deref(),
+            Some("shopping")
+        );
+        assert_eq!(
+            predict_builtin_for(&examples[2]).category.as_deref(),
+            Some("housing")
+        );
+        assert_eq!(
+            predict_builtin_for(&examples[3]).category,
+            None,
+            "must abstain: no keyword overlap"
+        );
 
         let result = evaluate_builtin_precision(&examples, 1.0, 42);
 
@@ -603,7 +662,10 @@ mod tests {
         assert_eq!(result.precision_for_test(), None);
         assert_eq!(result.n_total_corrections(), 0);
         let rendered = result.to_string();
-        assert!(rendered.contains("N=0"), "must say N=0 plainly, got: {rendered}");
+        assert!(
+            rendered.contains("N=0"),
+            "must say N=0 plainly, got: {rendered}"
+        );
     }
 
     // ── small-N caveat: fires below the floor, does not above it ────────
@@ -613,7 +675,14 @@ mod tests {
         // 6 distinct merchants; holdout_fraction=0.5 -> round(0.5*6)=3 held
         // out, well under the 30-merchant floor.
         let examples: Vec<_> = (0..6)
-            .map(|i| ex(&format!("id{i}"), &format!("m-small-{i}"), &format!("Vendor{i}"), "dining"))
+            .map(|i| {
+                ex(
+                    &format!("id{i}"),
+                    &format!("m-small-{i}"),
+                    &format!("Vendor{i}"),
+                    "dining",
+                )
+            })
             .collect();
         let result = evaluate_builtin_precision(&examples, 0.5, 1);
         assert!(result.n_holdout_merchants() < MIN_HELDOUT_MERCHANTS_FOR_CONFIDENT_CLAIM);
@@ -634,10 +703,20 @@ mod tests {
         // Exactly 30 distinct merchants, holdout_fraction=1.0 so all 30 land
         // in the held-out slice -> n_holdout_merchants == the floor exactly.
         let examples: Vec<_> = (0..MIN_HELDOUT_MERCHANTS_FOR_CONFIDENT_CLAIM)
-            .map(|i| ex(&format!("id{i}"), &format!("m-big-{i}"), &format!("Vendor{i}"), "dining"))
+            .map(|i| {
+                ex(
+                    &format!("id{i}"),
+                    &format!("m-big-{i}"),
+                    &format!("Vendor{i}"),
+                    "dining",
+                )
+            })
             .collect();
         let result = evaluate_builtin_precision(&examples, 1.0, 1);
-        assert_eq!(result.n_holdout_merchants(), MIN_HELDOUT_MERCHANTS_FOR_CONFIDENT_CLAIM);
+        assert_eq!(
+            result.n_holdout_merchants(),
+            MIN_HELDOUT_MERCHANTS_FOR_CONFIDENT_CLAIM
+        );
         assert!(
             !result.is_small_n(),
             "a held-out merchant count at the floor must NOT be flagged as too small"
@@ -657,7 +736,14 @@ mod tests {
     #[test]
     fn rendered_report_always_carries_n_alongside_any_percentage() {
         let examples: Vec<_> = (0..6)
-            .map(|i| ex(&format!("id{i}"), &format!("m-{i}"), "Costco Wholesale", "groceries"))
+            .map(|i| {
+                ex(
+                    &format!("id{i}"),
+                    &format!("m-{i}"),
+                    "Costco Wholesale",
+                    "groceries",
+                )
+            })
             .collect();
         let result = evaluate_builtin_precision(&examples, 0.5, 3);
         let rendered = result.to_string();
@@ -734,7 +820,11 @@ mod tests {
             .collect();
         let vectors = stub_vectors(&examples);
         let r = evaluate_centroid_precision(&examples, &vectors, 0.35, 0.5, 7);
-        assert_eq!(r.precision, Some(1.0), "orthogonal-by-category vectors must separate cleanly");
+        assert_eq!(
+            r.precision,
+            Some(1.0),
+            "orthogonal-by-category vectors must separate cleanly"
+        );
     }
 
     /// A row the caller failed to embed must abstain, not score. An abstain

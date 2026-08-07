@@ -153,7 +153,7 @@ pub fn build_copilot_router_from_settings(db: &Db) -> Option<Arc<dyn CompletionP
 mod tests {
     use super::*;
     use crate::secrets;
-    
+
     use tempfile::TempDir;
 
     fn fresh_db() -> (TempDir, Db) {

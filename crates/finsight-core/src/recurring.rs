@@ -289,7 +289,11 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             any_transfer_flag: false,
             any_membership_like: false,
         });
-        g.occ.push(Occurrence { date, amount_cents: amount, currency });
+        g.occ.push(Occurrence {
+            date,
+            amount_cents: amount,
+            currency,
+        });
         if g.category.is_none() {
             g.category = category;
             g.category_color = color;
@@ -310,7 +314,11 @@ pub fn detect_recurring(conn: &Connection, window_days: i64) -> CoreResult<Vec<R
             out.push(item);
         }
     }
-    out.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out)
 }
 
@@ -353,7 +361,11 @@ fn classify(g: Group) -> Option<RecurringItem> {
     let last = occ.last().unwrap();
     let last_seen = last.date.format("%Y-%m-%d").to_string();
     let next_expected = if avg_gap > 0.0 {
-        Some((last.date + chrono::Duration::days(avg_gap.round() as i64)).format("%Y-%m-%d").to_string())
+        Some(
+            (last.date + chrono::Duration::days(avg_gap.round() as i64))
+                .format("%Y-%m-%d")
+                .to_string(),
+        )
     } else {
         None
     };
@@ -383,10 +395,12 @@ fn classify(g: Group) -> Option<RecurringItem> {
     // is never overridden (those rows aren't categorized), and an uncategorized
     // transfer stays dismissed — so this can't turn a real internal transfer into
     // a fake bill.
-    let user_categorized_real_cost = g
-        .category
-        .as_deref()
-        .map_or(false, |c| !matches!(c.to_lowercase().as_str(), "transfer" | "transfers" | "income"));
+    let user_categorized_real_cost = g.category.as_deref().is_some_and(|c| {
+        !matches!(
+            c.to_lowercase().as_str(),
+            "transfer" | "transfers" | "income"
+        )
+    });
     // `is_nameless_bank_movement` reads the RAW descriptor, which matters
     // twice over: `canonical_merchant_key` strips transfer vocabulary as noise
     // AND keeps only the first three tokens, so testing the key alone asks
@@ -445,9 +459,15 @@ fn classify(g: Group) -> Option<RecurringItem> {
         // recurring commitment. Small/monthly-ish → subscription, else bill.
         reasons.push("regular cadence and stable amount".to_string());
         if avg_gap <= 45.0 && median_abs <= 20_000.0 {
-            (RecurringKind::Subscription, 0.5 + 0.25 * cadence_regularity + 0.15 * amount_stability)
+            (
+                RecurringKind::Subscription,
+                0.5 + 0.25 * cadence_regularity + 0.15 * amount_stability,
+            )
         } else {
-            (RecurringKind::Bill, 0.5 + 0.25 * cadence_regularity + 0.15 * amount_stability)
+            (
+                RecurringKind::Bill,
+                0.5 + 0.25 * cadence_regularity + 0.15 * amount_stability,
+            )
         }
     } else {
         // Repeats but irregular amount or cadence.
@@ -457,7 +477,10 @@ fn classify(g: Group) -> Option<RecurringItem> {
         if cadence_regularity < (1.0 - REGULAR_GAP_CV) {
             reasons.push("timing is irregular".to_string());
         }
-        (RecurringKind::RepeatPurchase, 0.25 + 0.2 * cadence_regularity)
+        (
+            RecurringKind::RepeatPurchase,
+            0.25 + 0.2 * cadence_regularity,
+        )
     };
 
     // Occurrence bonus (more history = more confidence), capped.
@@ -649,7 +672,7 @@ fn median(xs: &[f64]) -> f64 {
     let mut v = xs.to_vec();
     v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = v.len() / 2;
-    if v.len() % 2 == 0 {
+    if v.len().is_multiple_of(2) {
         (v[mid - 1] + v[mid]) / 2.0
     } else {
         v[mid]
@@ -662,7 +685,7 @@ fn median_signed(occ: &[Occurrence]) -> i64 {
     let mid = v.len() / 2;
     if v.is_empty() {
         0
-    } else if v.len() % 2 == 0 {
+    } else if v.len().is_multiple_of(2) {
         (v[mid - 1] + v[mid]) / 2
     } else {
         v[mid]
@@ -681,7 +704,11 @@ mod tests {
     }
 
     fn seed_categories(conn: &Connection) {
-        conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g','G',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO category_groups(id,label,sort_order) VALUES('g','G',0)",
+            [],
+        )
+        .unwrap();
         for (id, label) in [
             ("dining", "Dining"),
             ("groceries", "Groceries"),
@@ -700,6 +727,8 @@ mod tests {
 
     /// Insert `count` charges every `gap` days from `start`, amount jittered by
     /// `jitter_frac`, with an optional category and transfer flag.
+    // Compact fixture constructor: keeping call sites readable matters more than grouping fields.
+    #[allow(clippy::too_many_arguments)]
     fn insert_series(
         conn: &Connection,
         merchant: &str,
@@ -755,7 +784,13 @@ mod tests {
         let start = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").unwrap();
         for i in 0..n {
             let d = start + chrono::Duration::days(30 * i);
-            charge(conn, account, merchant, &d.format("%Y-%m-%d").to_string(), cents);
+            charge(
+                conn,
+                account,
+                merchant,
+                &d.format("%Y-%m-%d").to_string(),
+                cents,
+            );
         }
     }
 
@@ -767,7 +802,11 @@ mod tests {
         monthly(&conn, "a", "NETFLIX.COM", "2025-01-04", 10, -1599);
         let items = detect_recurring(&conn, 500).unwrap();
         let it = find(&items, "netflix").expect("detected");
-        assert!(it.price_change.is_none(), "a flat price must not flag: {:?}", it.price_change);
+        assert!(
+            it.price_change.is_none(),
+            "a flat price must not flag: {:?}",
+            it.price_change
+        );
     }
 
     #[test]
@@ -781,14 +820,27 @@ mod tests {
         for i in 0..3 {
             let d = chrono::NaiveDate::parse_from_str("2025-07-05", "%Y-%m-%d").unwrap()
                 + chrono::Duration::days(30 * i);
-            charge(&conn, "a", "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1299);
+            charge(
+                &conn,
+                "a",
+                "SPOTIFY",
+                &d.format("%Y-%m-%d").to_string(),
+                -1299,
+            );
         }
         let items = detect_recurring(&conn, 500).unwrap();
-        let pc = find(&items, "spotify").expect("detected").price_change.as_ref().expect("a step must be flagged");
+        let pc = find(&items, "spotify")
+            .expect("detected")
+            .price_change
+            .as_ref()
+            .expect("a step must be flagged");
         assert_eq!(pc.from_cents, 999);
         assert_eq!(pc.to_cents, 1299);
         assert!((pc.pct - 30.0).abs() < 0.5, "≈+30%, got {}", pc.pct);
-        assert_eq!(pc.effective_date, "2025-07-05", "dated at the FIRST charge of the new level");
+        assert_eq!(
+            pc.effective_date, "2025-07-05",
+            "dated at the FIRST charge of the new level"
+        );
     }
 
     #[test]
@@ -797,13 +849,25 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        for (i, amt) in [-1000, -1000, -1002, -999, -1001, -1000, -1003, -1000].iter().enumerate() {
+        for (i, amt) in [-1000, -1000, -1002, -999, -1001, -1000, -1003, -1000]
+            .iter()
+            .enumerate()
+        {
             let d = chrono::NaiveDate::parse_from_str("2025-01-05", "%Y-%m-%d").unwrap()
                 + chrono::Duration::days(30 * i as i64);
-            charge(&conn, "a", "DROPBOX", &d.format("%Y-%m-%d").to_string(), *amt);
+            charge(
+                &conn,
+                "a",
+                "DROPBOX",
+                &d.format("%Y-%m-%d").to_string(),
+                *amt,
+            );
         }
         let items = detect_recurring(&conn, 500).unwrap();
-        assert!(find(&items, "dropbox").expect("detected").price_change.is_none());
+        assert!(find(&items, "dropbox")
+            .expect("detected")
+            .price_change
+            .is_none());
     }
 
     #[test]
@@ -817,7 +881,13 @@ mod tests {
         charge(&conn, "a", "ADOBE", "2025-06-06", 2000); // refund
         monthly(&conn, "a", "ADOBE", "2025-07-06", 3, -2000);
         let items = detect_recurring(&conn, 500).unwrap();
-        assert!(find(&items, "adobe").expect("detected").price_change.is_none(), "a refund is not a price change");
+        assert!(
+            find(&items, "adobe")
+                .expect("detected")
+                .price_change
+                .is_none(),
+            "a refund is not a price change"
+        );
     }
 
     #[test]
@@ -830,7 +900,13 @@ mod tests {
         charge(&conn, "a", "NYTIMES", "2025-01-03", -250); // prorated
         monthly(&conn, "a", "NYTIMES", "2025-02-03", 7, -1700);
         let items = detect_recurring(&conn, 500).unwrap();
-        assert!(find(&items, "nytimes").expect("detected").price_change.is_none(), "proration is not a step");
+        assert!(
+            find(&items, "nytimes")
+                .expect("detected")
+                .price_change
+                .is_none(),
+            "proration is not a step"
+        );
     }
 
     #[test]
@@ -840,14 +916,27 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        for (i, amt) in [-6200, -8800, -4100, -9500, -5300, -7700, -10200, -4800].iter().enumerate() {
+        for (i, amt) in [-6200, -8800, -4100, -9500, -5300, -7700, -10200, -4800]
+            .iter()
+            .enumerate()
+        {
             let d = chrono::NaiveDate::parse_from_str("2025-01-09", "%Y-%m-%d").unwrap()
                 + chrono::Duration::days(30 * i as i64);
-            charge(&conn, "a", "BC HYDRO", &d.format("%Y-%m-%d").to_string(), *amt);
+            charge(
+                &conn,
+                "a",
+                "BC HYDRO",
+                &d.format("%Y-%m-%d").to_string(),
+                *amt,
+            );
         }
         let items = detect_recurring(&conn, 500).unwrap();
         if let Some(it) = find(&items, "hydro") {
-            assert!(it.price_change.is_none(), "a variable bill has no price step: {:?}", it.price_change);
+            assert!(
+                it.price_change.is_none(),
+                "a variable bill has no price step: {:?}",
+                it.price_change
+            );
         }
     }
 
@@ -861,15 +950,25 @@ mod tests {
         seed_categories(&conn); // account 'a' is USD
         insert_account(&conn, "cad", "CAD");
         monthly(&conn, "a", "SPOTIFY", "2025-01-05", 5, -999); // USD 9.99
-        // Moved to a CAD card: nominal 13.99 CAD — different currency, not a hike.
+                                                               // Moved to a CAD card: nominal 13.99 CAD — different currency, not a hike.
         for i in 0..3 {
             let d = chrono::NaiveDate::parse_from_str("2025-06-05", "%Y-%m-%d").unwrap()
                 + chrono::Duration::days(30 * i);
-            charge(&conn, "cad", "SPOTIFY", &d.format("%Y-%m-%d").to_string(), -1399);
+            charge(
+                &conn,
+                "cad",
+                "SPOTIFY",
+                &d.format("%Y-%m-%d").to_string(),
+                -1399,
+            );
         }
         let items = detect_recurring(&conn, 500).unwrap();
         let it = find(&items, "spotify").expect("detected across both cards");
-        assert!(it.price_change.is_none(), "cross-currency nominal gap is not a price change: {:?}", it.price_change);
+        assert!(
+            it.price_change.is_none(),
+            "cross-currency nominal gap is not a price change: {:?}",
+            it.price_change
+        );
     }
 
     #[test]
@@ -885,8 +984,14 @@ mod tests {
         monthly(&conn, "a", "NOTION", "2025-01-06", 6, -1000);
         charge(&conn, "a", "NOTION", "2025-07-06", -3000); // anomalous latest charge
         let items = detect_recurring(&conn, 500).unwrap();
-        let pc = find(&items, "notion").expect("detected").price_change.clone();
-        assert!(pc.is_some(), "a new latest level flags — the user reviews or dismisses it");
+        let pc = find(&items, "notion")
+            .expect("detected")
+            .price_change
+            .clone();
+        assert!(
+            pc.is_some(),
+            "a new latest level flags — the user reviews or dismisses it"
+        );
         assert_eq!(pc.unwrap().to_cents, 3000);
     }
 
@@ -902,7 +1007,10 @@ mod tests {
         let items = detect_recurring(&conn, 500).unwrap();
         let it = find(&items, "acme").expect("detected");
         assert_eq!(it.kind, RecurringKind::Income);
-        assert!(it.price_change.is_none(), "income carries no subscription price change");
+        assert!(
+            it.price_change.is_none(),
+            "income carries no subscription price change"
+        );
     }
 
     #[test]
@@ -920,8 +1028,28 @@ mod tests {
         )
         .unwrap();
 
-        insert_series(&conn, "Internet Banking E-TRANSFER 100000000001 Jordan", "2025-01-01", 30, 8, -160_000, 0.01, Some("housing"), 0);
-        insert_series(&conn, "Internet Banking E-TRANSFER 200000000002 Landlord", "2025-01-05", 30, 8, -50_000, 0.01, None, 0);
+        insert_series(
+            &conn,
+            "Internet Banking E-TRANSFER 100000000001 Jordan",
+            "2025-01-01",
+            30,
+            8,
+            -160_000,
+            0.01,
+            Some("housing"),
+            0,
+        );
+        insert_series(
+            &conn,
+            "Internet Banking E-TRANSFER 200000000002 Landlord",
+            "2025-01-05",
+            30,
+            8,
+            -50_000,
+            0.01,
+            None,
+            0,
+        );
 
         let items = detect_recurring(&conn, 400).unwrap();
         let rent = find(&items, "jordan").expect("categorized rent is a distinct, surfaced series");
@@ -944,31 +1072,139 @@ mod tests {
         seed_categories(&conn);
 
         // TRUE subscriptions — stable amount, monthly, subscription vendors.
-        insert_series(&conn, "SPOTIFY                 STOCKHOLM", "2025-01-05", 30, 8, -716, 0.02, Some("subscriptions"), 0);
+        insert_series(
+            &conn,
+            "SPOTIFY                 STOCKHOLM",
+            "2025-01-05",
+            30,
+            8,
+            -716,
+            0.02,
+            Some("subscriptions"),
+            0,
+        );
         // USD-billed sub: amount varies with FX (±10%), but vendor-hinted.
-        insert_series(&conn, "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO", "2025-01-10", 30, 6, -2900, 0.10, None, 0);
-        insert_series(&conn, "ANTHROPIC               SAN FRANCISCO", "2025-02-01", 30, 5, -2940, 0.05, None, 0);
-        insert_series(&conn, "FREEDOM MOBILE          877-946-3184", "2025-01-15", 30, 9, -4368, 0.0, Some("utilities"), 0);
+        insert_series(
+            &conn,
+            "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO",
+            "2025-01-10",
+            30,
+            6,
+            -2900,
+            0.10,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "ANTHROPIC               SAN FRANCISCO",
+            "2025-02-01",
+            30,
+            5,
+            -2940,
+            0.05,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "FREEDOM MOBILE          877-946-3184",
+            "2025-01-15",
+            30,
+            9,
+            -4368,
+            0.0,
+            Some("utilities"),
+            0,
+        );
 
         // FALSE positives — repeat purchases that must NOT be subscriptions.
-        insert_series(&conn, "UBER EATS               TORONTO", "2025-01-02", 6, 20, -1500, 0.6, Some("dining"), 0);
-        insert_series(&conn, "WALMART SUPERCENTER 121 BURNABY", "2025-01-03", 12, 10, -5000, 0.7, Some("groceries"), 0);
-        insert_series(&conn, "EVO CAR SHARE           BURNABY", "2025-01-01", 7, 25, -800, 0.5, Some("transport"), 0);
-        insert_series(&conn, "DOMINOS PIZZA 10082     BURNABY", "2025-01-04", 20, 4, -1200, 0.4, Some("dining"), 0);
+        insert_series(
+            &conn,
+            "UBER EATS               TORONTO",
+            "2025-01-02",
+            6,
+            20,
+            -1500,
+            0.6,
+            Some("dining"),
+            0,
+        );
+        insert_series(
+            &conn,
+            "WALMART SUPERCENTER 121 BURNABY",
+            "2025-01-03",
+            12,
+            10,
+            -5000,
+            0.7,
+            Some("groceries"),
+            0,
+        );
+        insert_series(
+            &conn,
+            "EVO CAR SHARE           BURNABY",
+            "2025-01-01",
+            7,
+            25,
+            -800,
+            0.5,
+            Some("transport"),
+            0,
+        );
+        insert_series(
+            &conn,
+            "DOMINOS PIZZA 10082     BURNABY",
+            "2025-01-04",
+            20,
+            4,
+            -1200,
+            0.4,
+            Some("dining"),
+            0,
+        );
 
         // Card payment / transfer — never a bill/subscription.
-        insert_series(&conn, "PAYMENT RECEIVED - THANK YOU", "2025-01-06", 30, 6, 300000, 0.2, None, 0);
-        insert_series(&conn, "Internet Withdrawal to Tangerine", "2025-01-08", 30, 4, -50000, 0.3, None, 1);
+        insert_series(
+            &conn,
+            "PAYMENT RECEIVED - THANK YOU",
+            "2025-01-06",
+            30,
+            6,
+            300000,
+            0.2,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "Internet Withdrawal to Tangerine",
+            "2025-01-08",
+            30,
+            4,
+            -50000,
+            0.3,
+            None,
+            1,
+        );
 
         let items = detect_recurring(&conn, 400).unwrap();
 
         // True subscriptions detected.
         for v in ["spotify", "openai", "anthropic"] {
             let it = find(&items, v).unwrap_or_else(|| panic!("{v} not detected"));
-            assert_eq!(it.kind, RecurringKind::Subscription, "{v} should be a subscription (reasons: {:?})", it.reasons);
+            assert_eq!(
+                it.kind,
+                RecurringKind::Subscription,
+                "{v} should be a subscription (reasons: {:?})",
+                it.reasons
+            );
         }
         // Freedom Mobile → bill.
-        assert_eq!(find(&items, "freedom mobile").unwrap().kind, RecurringKind::Bill);
+        assert_eq!(
+            find(&items, "freedom mobile").unwrap().kind,
+            RecurringKind::Bill
+        );
 
         // False positives are NOT subscriptions/bills.
         for v in ["uber eats", "walmart", "evo car share", "dominos"] {
@@ -988,11 +1224,20 @@ mod tests {
             "card payment must not be a bill/subscription, got {:?}",
             pay.kind
         );
-        assert_eq!(find(&items, "internet withdrawal").unwrap().kind, RecurringKind::Transfer);
+        assert_eq!(
+            find(&items, "internet withdrawal").unwrap().kind,
+            RecurringKind::Transfer
+        );
 
         // The "subscriptions" count that insights would show is now sane.
-        let sub_count = items.iter().filter(|i| i.kind == RecurringKind::Subscription).count();
-        assert!(sub_count >= 3 && sub_count <= 5, "expected ~3-4 subscriptions, got {sub_count}");
+        let sub_count = items
+            .iter()
+            .filter(|i| i.kind == RecurringKind::Subscription)
+            .count();
+        assert!(
+            (3..=5).contains(&sub_count),
+            "expected ~3-4 subscriptions, got {sub_count}"
+        );
     }
 
     #[test]
@@ -1000,9 +1245,22 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        insert_series(&conn, "SPOTIFY  STOCKHOLM", "2025-01-05", 30, 2, -716, 0.0, Some("subscriptions"), 0);
+        insert_series(
+            &conn,
+            "SPOTIFY  STOCKHOLM",
+            "2025-01-05",
+            30,
+            2,
+            -716,
+            0.0,
+            Some("subscriptions"),
+            0,
+        );
         let items = detect_recurring(&conn, 400).unwrap();
-        assert!(find(&items, "spotify").is_none(), "2 occurrences is not enough");
+        assert!(
+            find(&items, "spotify").is_none(),
+            "2 occurrences is not enough"
+        );
     }
 
     #[test]
@@ -1014,13 +1272,50 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        insert_series(&conn, "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO", "2025-01-04", 90, 4, -2900, 0.05, None, 0);
-        insert_series(&conn, "CHATGPT SUBSCRIPTION    SAN FRANCISCO", "2025-02-03", 90, 4, -2900, 0.05, None, 0);
-        insert_series(&conn, "OPENAI                  SAN FRANCISCO", "2025-03-05", 90, 4, -2900, 0.05, None, 0);
+        insert_series(
+            &conn,
+            "OPENAI *CHATGPT SUBSCR  SAN FRANCISCO",
+            "2025-01-04",
+            90,
+            4,
+            -2900,
+            0.05,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "CHATGPT SUBSCRIPTION    SAN FRANCISCO",
+            "2025-02-03",
+            90,
+            4,
+            -2900,
+            0.05,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "OPENAI                  SAN FRANCISCO",
+            "2025-03-05",
+            90,
+            4,
+            -2900,
+            0.05,
+            None,
+            0,
+        );
 
         let items = detect_recurring(&conn, 500).unwrap();
-        let openai: Vec<_> = items.iter().filter(|i| i.merchant_key == "openai").collect();
-        assert_eq!(openai.len(), 1, "all OpenAI variants must merge into ONE series");
+        let openai: Vec<_> = items
+            .iter()
+            .filter(|i| i.merchant_key == "openai")
+            .collect();
+        assert_eq!(
+            openai.len(),
+            1,
+            "all OpenAI variants must merge into ONE series"
+        );
         let it = openai[0];
         assert_eq!(it.occurrences, 12, "all 12 charges land in one series");
         assert_eq!(it.kind, RecurringKind::Subscription);
@@ -1040,8 +1335,28 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        insert_series(&conn, "MEMBERSHIP FEE INSTALLMENT", "2025-01-24", 30, 6, -1299, 0.0, None, 0);
-        insert_series(&conn, "MEMBERSHIP FEE INSTALLMENT", "2025-07-24", 30, 8, -1599, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "MEMBERSHIP FEE INSTALLMENT",
+            "2025-01-24",
+            30,
+            6,
+            -1299,
+            0.0,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "MEMBERSHIP FEE INSTALLMENT",
+            "2025-07-24",
+            30,
+            8,
+            -1599,
+            0.0,
+            None,
+            0,
+        );
 
         let items = detect_recurring(&conn, 500).unwrap();
         let it = find(&items, "membership fee installment")
@@ -1072,7 +1387,17 @@ mod tests {
             "INTERNET BANKING INTERNET TRANSFER",
             "INTERNET TRANSFER 000000123456",
         ] {
-            insert_series(&conn, descriptor, "2026-01-05", 14, 12, -100_000, 0.0, None, 0);
+            insert_series(
+                &conn,
+                descriptor,
+                "2026-01-05",
+                14,
+                12,
+                -100_000,
+                0.0,
+                None,
+                0,
+            );
         }
 
         let items = detect_recurring(&conn, 395).unwrap();
@@ -1088,7 +1413,17 @@ mod tests {
 
         // A genuine ISP bill must still be recognised — the fix must not have
         // been achieved by blinding the vendor list.
-        insert_series(&conn, "TELUS COMMUNICATIONS", "2026-01-09", 30, 10, -8_500, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "TELUS COMMUNICATIONS",
+            "2026-01-09",
+            30,
+            10,
+            -8_500,
+            0.0,
+            None,
+            0,
+        );
         let items = detect_recurring(&conn, 395).unwrap();
         let telus = find(&items, "telus").unwrap_or_else(|| panic!("telus missing: {items:?}"));
         assert_eq!(telus.kind, RecurringKind::Bill);
@@ -1109,11 +1444,41 @@ mod tests {
         let (_d, db) = fresh();
         let conn = db.get().unwrap();
         seed_categories(&conn);
-        insert_series(&conn, "ONLINE BANKING BILL PAYMENT HYDRO ONE", "2026-01-07", 30, 10, -14_200, 0.0, None, 0);
-        insert_series(&conn, "INTERNET BANKING BILL PAYMENT TELUS", "2026-01-11", 30, 10, -9_300, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "ONLINE BANKING BILL PAYMENT HYDRO ONE",
+            "2026-01-07",
+            30,
+            10,
+            -14_200,
+            0.0,
+            None,
+            0,
+        );
+        insert_series(
+            &conn,
+            "INTERNET BANKING BILL PAYMENT TELUS",
+            "2026-01-11",
+            30,
+            10,
+            -9_300,
+            0.0,
+            None,
+            0,
+        );
         // …alongside a genuinely nameless movement, so the two are separated by
         // the payee and not by anything incidental to the fixture.
-        insert_series(&conn, "INTERNET BANKING INTERNET TRANSFER", "2026-01-05", 30, 10, -50_000, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "INTERNET BANKING INTERNET TRANSFER",
+            "2026-01-05",
+            30,
+            10,
+            -50_000,
+            0.0,
+            None,
+            0,
+        );
 
         let items = detect_recurring(&conn, 395).unwrap();
         let mut keys = Vec::new();
@@ -1136,7 +1501,10 @@ mod tests {
         // The regression guard for #61: two unrelated bills are two series, not
         // one merged one. If the key still truncated to the channel words these
         // would be equal.
-        assert_ne!(keys[0], keys[1], "HYDRO and TELUS must not share a key: {keys:?}");
+        assert_ne!(
+            keys[0], keys[1],
+            "HYDRO and TELUS must not share a key: {keys:?}"
+        );
         let nameless = items
             .iter()
             .find(|i| i.display_merchant.contains("INTERNET TRANSFER"))
@@ -1176,7 +1544,9 @@ mod tests {
             "an internal transfer must not reach projections: {obligations:?}"
         );
         assert!(
-            obligations.iter().any(|i| i.merchant_key.contains("spotify")),
+            obligations
+                .iter()
+                .any(|i| i.merchant_key.contains("spotify")),
             "a real subscription still does: {obligations:?}"
         );
     }
@@ -1187,7 +1557,17 @@ mod tests {
         let conn = db.get().unwrap();
         seed_categories(&conn);
         // Payroll: regular, confident, but an INFLOW — not something to fund.
-        insert_series(&conn, "ACME CORP PAYROLL", "2026-01-02", 14, 12, 250_000, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "ACME CORP PAYROLL",
+            "2026-01-02",
+            14,
+            12,
+            250_000,
+            0.0,
+            None,
+            0,
+        );
         // Groceries: repeats, but irregular amounts — a repeat purchase.
         insert_series(
             &conn,
@@ -1214,7 +1594,9 @@ mod tests {
             assert!(item.confidence >= PROJECTION_CONFIDENCE_THRESHOLD);
         }
         assert!(
-            !obligations.iter().any(|i| i.merchant_key.contains("save on foods")),
+            !obligations
+                .iter()
+                .any(|i| i.merchant_key.contains("save on foods")),
             "irregular grocery spend is not a recurring obligation: {obligations:?}"
         );
     }
@@ -1229,7 +1611,11 @@ mod tests {
         // Three hits at wildly irregular gaps and amounts: enough to be
         // detected, nowhere near enough to budget against.
         let conn_ref = &conn;
-        for (day, amt) in [("2026-01-03", -4_100), ("2026-02-19", -31_500), ("2026-04-27", -8_800)] {
+        for (day, amt) in [
+            ("2026-01-03", -4_100),
+            ("2026-02-19", -31_500),
+            ("2026-04-27", -8_800),
+        ] {
             conn_ref
                 .execute(
                     "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,is_transfer,status,created_at) \
@@ -1240,8 +1626,8 @@ mod tests {
         }
 
         let all = detect_recurring(&conn, 395).unwrap();
-        let item = find(&all, "odd jobs")
-            .unwrap_or_else(|| panic!("still detected and visible: {all:?}"));
+        let item =
+            find(&all, "odd jobs").unwrap_or_else(|| panic!("still detected and visible: {all:?}"));
         assert!(
             item.confidence < PROJECTION_CONFIDENCE_THRESHOLD,
             "an irregular series should not be confident: {item:?}"
@@ -1250,12 +1636,10 @@ mod tests {
             !item.is_projection_obligation(),
             "and so must not feed projections"
         );
-        assert!(
-            !projection_obligations(&conn, 395)
-                .unwrap()
-                .iter()
-                .any(|i| i.merchant_key.contains("odd jobs"))
-        );
+        assert!(!projection_obligations(&conn, 395)
+            .unwrap()
+            .iter()
+            .any(|i| i.merchant_key.contains("odd jobs")));
     }
 
     #[test]
@@ -1284,10 +1668,18 @@ mod tests {
         // $600/year is $50/month of commitment — not $600.
         assert_eq!(base.monthly_equivalent_cents(), 5_000);
 
-        let monthly = RecurringItem { cadence: "monthly".into(), avg_gap_days: 30.0, ..base.clone() };
+        let monthly = RecurringItem {
+            cadence: "monthly".into(),
+            avg_gap_days: 30.0,
+            ..base.clone()
+        };
         assert_eq!(monthly.monthly_equivalent_cents(), 60_000);
 
-        let quarterly = RecurringItem { cadence: "quarterly".into(), avg_gap_days: 91.0, ..base.clone() };
+        let quarterly = RecurringItem {
+            cadence: "quarterly".into(),
+            avg_gap_days: 91.0,
+            ..base.clone()
+        };
         assert_eq!(quarterly.monthly_equivalent_cents(), 20_000);
 
         // Weekly costs MORE per month than its face value — the normalisation
@@ -1329,7 +1721,17 @@ mod tests {
         let conn = db.get().unwrap();
         seed_categories(&conn);
         insert_series(&conn, "SPOTIFY", "2026-01-03", 30, 12, -1_000, 0.0, None, 0);
-        insert_series(&conn, "ANTHROPIC", "2023-02-10", 365, 4, -60_000, 0.0, None, 0);
+        insert_series(
+            &conn,
+            "ANTHROPIC",
+            "2023-02-10",
+            365,
+            4,
+            -60_000,
+            0.0,
+            None,
+            0,
+        );
 
         let monthly_total: i64 = projection_obligations(&conn, 2000)
             .unwrap()
@@ -1343,4 +1745,3 @@ mod tests {
         );
     }
 }
-

@@ -651,8 +651,7 @@ fn investment_context(conn: &Connection) -> Vec<InvestmentAccountContext> {
         let Ok(summary) = finsight_core::investments::summary_for_account(conn, &id) else {
             continue;
         };
-        let Ok(mut positions) = finsight_core::investments::positions_for_account(conn, &id)
-        else {
+        let Ok(mut positions) = finsight_core::investments::positions_for_account(conn, &id) else {
             continue;
         };
         // Skip accounts with no imported investment activity at all.
@@ -1157,6 +1156,8 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
 
 #[cfg(test)]
 mod tests {
+    // Cents fixtures deliberately group dollars and cents (for example, 50_000_00).
+    #![allow(clippy::inconsistent_digit_grouping)]
     use super::*;
     use finsight_core::{
         models::{AccountType, NewAccount, NewTransaction, TransactionStatus},

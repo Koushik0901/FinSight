@@ -89,7 +89,14 @@ pub fn positions_for_account(conn: &Connection, account_id: &str) -> CoreResult<
         let last_price: Option<f64> = r.get(3)?;
         let last_trade_at: Option<String> = r.get(4)?;
         let name: Option<String> = r.get(5)?;
-        Ok((symbol, quantity, invested_cents, last_price, last_trade_at, name))
+        Ok((
+            symbol,
+            quantity,
+            invested_cents,
+            last_price,
+            last_trade_at,
+            name,
+        ))
     })?;
 
     let mut out = Vec::new();
@@ -143,10 +150,7 @@ pub fn summary_for_account(conn: &Connection, account_id: &str) -> CoreResult<In
     )?;
 
     let positions = positions_for_account(conn, account_id)?;
-    let positions_value_cents: i64 = positions
-        .iter()
-        .filter_map(|p| p.market_value_cents)
-        .sum();
+    let positions_value_cents: i64 = positions.iter().filter_map(|p| p.market_value_cents).sum();
     let has_negative_quantity = positions.iter().any(|p| p.quantity < -CLOSED_EPSILON);
 
     let cash_cents = opening_cents + ledger_cents;

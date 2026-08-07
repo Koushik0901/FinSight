@@ -174,7 +174,10 @@ pub(crate) async fn register(
     }
     match st.users.count_oauth_clients() {
         Ok(n) if n >= MAX_REGISTERED_CLIENTS => {
-            tracing::warn!(count = n, "OAuth client registration refused: registry is full");
+            tracing::warn!(
+                count = n,
+                "OAuth client registration refused: registry is full"
+            );
             return oauth_error(
                 StatusCode::TOO_MANY_REQUESTS,
                 "invalid_client_metadata",
@@ -182,7 +185,11 @@ pub(crate) async fn register(
             );
         }
         Err(e) => {
-            return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string())
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &e.to_string(),
+            )
         }
         Ok(_) => {}
     }
@@ -203,7 +210,11 @@ pub(crate) async fn register(
         .users
         .insert_oauth_client(&client_id, &client_name, &uris_json)
     {
-        return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string());
+        return oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            &e.to_string(),
+        );
     }
     tracing::info!(%client_id, %client_name, "registered OAuth client");
 
@@ -236,7 +247,11 @@ pub(crate) async fn client_info(
     match st.users.get_oauth_client(&q.client_id) {
         Ok(Some(c)) => Json(serde_json::json!({"clientName": c.client_name})).into_response(),
         Ok(None) => oauth_error(StatusCode::NOT_FOUND, "invalid_client", "unknown client_id"),
-        Err(e) => oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string()),
+        Err(e) => oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            &e.to_string(),
+        ),
     }
 }
 
@@ -285,14 +300,28 @@ pub(crate) async fn approve(
         );
     }
     if body.scope != crate::tokens::SCOPE_READ && body.scope != crate::tokens::SCOPE_FULL {
-        return oauth_error(StatusCode::BAD_REQUEST, "invalid_scope", "scope must be 'read' or 'full'");
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_scope",
+            "scope must be 'read' or 'full'",
+        );
     }
 
     let client = match st.users.get_oauth_client(&body.client_id) {
         Ok(Some(c)) => c,
-        Ok(None) => return oauth_error(StatusCode::BAD_REQUEST, "invalid_client", "unknown client_id"),
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_client",
+                "unknown client_id",
+            )
+        }
         Err(e) => {
-            return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string())
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &e.to_string(),
+            )
         }
     };
     // Exact string match, not a prefix or host comparison: anything looser is
@@ -306,7 +335,11 @@ pub(crate) async fn approve(
     }
 
     let Some(dbkey) = crate::tokens::db_key_from_hex(&user.db_key_hex) else {
-        return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", "session key is malformed");
+        return oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            "session key is malformed",
+        );
     };
     let mut raw = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut raw);
@@ -319,7 +352,11 @@ pub(crate) async fn approve(
     let wrapped = match crate::crypto::wrap_key_with_token(&raw, &dbkey) {
         Ok(w) => w,
         Err(e) => {
-            return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string())
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &e.to_string(),
+            )
         }
     };
 
@@ -333,7 +370,11 @@ pub(crate) async fn approve(
         &body.scope,
         chrono::Utc::now().timestamp() + CODE_TTL_SECS,
     ) {
-        return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string());
+        return oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            &e.to_string(),
+        );
     }
 
     // This is the one place a human actually approves a client, so it is where
@@ -347,7 +388,11 @@ pub(crate) async fn approve(
         tracing::warn!(error = %e, client_id = %body.client_id, "could not stamp OAuth client as authorized");
     }
 
-    let sep = if body.redirect_uri.contains('?') { '&' } else { '?' };
+    let sep = if body.redirect_uri.contains('?') {
+        '&'
+    } else {
+        '?'
+    };
     let mut redirect_to = format!("{}{sep}code={code}", body.redirect_uri);
     if let Some(state) = body.state.as_deref() {
         redirect_to.push_str(&format!("&state={}", urlencode(state)));
@@ -427,7 +472,11 @@ pub(crate) async fn token(
         Ok(Some(r)) => r,
         Ok(None) => return invalid_grant(),
         Err(e) => {
-            return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string())
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &e.to_string(),
+            )
         }
     };
 
@@ -525,7 +574,11 @@ fn refresh_grant(st: Arc<ServerState>, body: TokenRequest) -> Response {
         Ok(Some(r)) => r,
         Ok(None) => return invalid_grant(),
         Err(e) => {
-            return oauth_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", &e.to_string())
+            return oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                &e.to_string(),
+            )
         }
     };
 
@@ -643,11 +696,15 @@ mod tests {
 
     #[test]
     fn redirect_uri_policy_allows_https_and_loopback_http_only() {
-        assert!(redirect_uri_is_allowed("https://claude.ai/api/mcp/auth_callback"));
+        assert!(redirect_uri_is_allowed(
+            "https://claude.ai/api/mcp/auth_callback"
+        ));
         assert!(redirect_uri_is_allowed("https://example.com:8443/cb"));
         // Local bridges (mcp-remote) listen on an ephemeral loopback port and
         // cannot get a certificate for it.
-        assert!(redirect_uri_is_allowed("http://localhost:33418/oauth/callback"));
+        assert!(redirect_uri_is_allowed(
+            "http://localhost:33418/oauth/callback"
+        ));
         assert!(redirect_uri_is_allowed("http://127.0.0.1:5000/cb"));
 
         // Plain HTTP to anywhere else would leak the code over the wire.
@@ -667,10 +724,7 @@ mod tests {
         assert_eq!(urlencode("a b"), "a%20b");
         // The important case: an opaque state must not be able to inject its
         // own parameters into the redirect.
-        assert_eq!(
-            urlencode("x&code=stolen"),
-            "x%26code%3Dstolen"
-        );
+        assert_eq!(urlencode("x&code=stolen"), "x%26code%3Dstolen");
         assert_eq!(urlencode("#frag"), "%23frag");
     }
 

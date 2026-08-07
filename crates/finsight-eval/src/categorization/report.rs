@@ -120,7 +120,13 @@ pub fn run(
     let rules = synthetic_rules();
 
     let sources = vec![
-        source_report("builtin", examples, &holdout, DEFAULT_THRESHOLDS, predict_builtin_for),
+        source_report(
+            "builtin",
+            examples,
+            &holdout,
+            DEFAULT_THRESHOLDS,
+            predict_builtin_for,
+        ),
         source_report(
             "rule",
             examples,
@@ -152,7 +158,9 @@ mod tests {
     const BASELINE_SEED: u64 = 42;
 
     fn repo_file(rel: &str) -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(rel)
     }
 
     fn bundled() -> LoadedCorpus {
@@ -221,7 +229,10 @@ mod tests {
         );
         // And the JSON a downstream consumer reads carries the same verdict.
         let json = serde_json::to_string(&report).unwrap();
-        assert!(json.contains("\"corpus_provenance\":\"real\""), "got: {json}");
+        assert!(
+            json.contains("\"corpus_provenance\":\"real\""),
+            "got: {json}"
+        );
         assert!(!json.to_lowercase().contains("synthetic"));
 
         std::fs::remove_dir_all(&dir).ok();
@@ -232,7 +243,11 @@ mod tests {
         let report = run_bundled();
         assert_eq!(report.sources.len(), 2);
 
-        let builtin = report.sources.iter().find(|s| s.source == "builtin").unwrap();
+        let builtin = report
+            .sources
+            .iter()
+            .find(|s| s.source == "builtin")
+            .unwrap();
         let rule = report.sources.iter().find(|s| s.source == "rule").unwrap();
 
         // Non-degenerate: the corpus was constructed so builtin actually
@@ -240,14 +255,36 @@ mod tests {
         // keyword rows) and, because the ground truth was authored to agree
         // with the real KEYWORD_MAP except for one deliberate trap row,
         // precision should be high but not artificially 100%.
-        assert!(builtin.full_corpus.coverage > 0.0, "builtin must cover more than nothing");
-        assert!(builtin.full_corpus.coverage < 1.0, "builtin must not cover everything (honest gaps exist)");
-        let builtin_precision = builtin.full_corpus.precision.expect("builtin made at least one prediction");
-        assert!(builtin_precision > 0.5, "builtin precision should be reasonably high on this corpus, got {builtin_precision}");
-        assert!(builtin_precision < 1.0, "the deliberate trap row (Esso Corner Store) must cost at least one point of precision");
+        assert!(
+            builtin.full_corpus.coverage > 0.0,
+            "builtin must cover more than nothing"
+        );
+        assert!(
+            builtin.full_corpus.coverage < 1.0,
+            "builtin must not cover everything (honest gaps exist)"
+        );
+        let builtin_precision = builtin
+            .full_corpus
+            .precision
+            .expect("builtin made at least one prediction");
+        assert!(
+            builtin_precision > 0.5,
+            "builtin precision should be reasonably high on this corpus, got {builtin_precision}"
+        );
+        assert!(
+            builtin_precision < 1.0,
+            "the deliberate trap row (Esso Corner Store) must cost at least one point of precision"
+        );
 
-        assert!(rule.full_corpus.coverage > 0.0, "the synthetic rules must match at least one row");
-        assert_eq!(rule.full_corpus.precision, Some(1.0), "synthetic rules were authored to be correct wherever they fire");
+        assert!(
+            rule.full_corpus.coverage > 0.0,
+            "the synthetic rules must match at least one row"
+        );
+        assert_eq!(
+            rule.full_corpus.precision,
+            Some(1.0),
+            "synthetic rules were authored to be correct wherever they fire"
+        );
 
         // Sanity: every count is internally consistent (predicted <= total, correct <= predicted).
         for s in &report.sources {
@@ -287,7 +324,10 @@ mod tests {
             );
             assert_eq!(s.threshold_sweep_holdout.len(), DEFAULT_THRESHOLDS.len());
             // Each sweep is scoped to its own population.
-            assert_eq!(s.threshold_sweep_full_corpus[0].n_total, s.full_corpus.n_total);
+            assert_eq!(
+                s.threshold_sweep_full_corpus[0].n_total,
+                s.full_corpus.n_total
+            );
             assert_eq!(s.threshold_sweep_holdout[0].n_total, s.holdout_only.n_total);
         }
     }

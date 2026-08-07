@@ -61,10 +61,21 @@ fn rel_changed(a: i64, b: i64) -> bool {
 /// flag, or the "stale" badge would be permanent noise on every scenario.
 pub fn baseline_materially_changed(saved: &Snapshot, current: &Snapshot) -> bool {
     let goal_monthly = |s: &Snapshot| s.goals.iter().map(|g| g.monthly_cents).sum::<i64>();
-    let goal_remaining = |s: &Snapshot| s.goals.iter().map(|g| g.remaining_cents.max(0)).sum::<i64>();
+    let goal_remaining = |s: &Snapshot| {
+        s.goals
+            .iter()
+            .map(|g| g.remaining_cents.max(0))
+            .sum::<i64>()
+    };
     rel_changed(saved.balance_cents, current.balance_cents)
-        || rel_changed(saved.avg_monthly_income_cents, current.avg_monthly_income_cents)
-        || rel_changed(saved.avg_monthly_expense_cents, current.avg_monthly_expense_cents)
+        || rel_changed(
+            saved.avg_monthly_income_cents,
+            current.avg_monthly_income_cents,
+        )
+        || rel_changed(
+            saved.avg_monthly_expense_cents,
+            current.avg_monthly_expense_cents,
+        )
         || saved.goals.len() != current.goals.len()
         || rel_changed(goal_monthly(saved), goal_monthly(current))
         || rel_changed(goal_remaining(saved), goal_remaining(current))

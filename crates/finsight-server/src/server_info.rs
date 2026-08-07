@@ -34,12 +34,18 @@ mod tests {
         let state = crate::router::tests::test_state();
         let app = crate::router::build_router(state, &crate::router::tests::test_ui_dir());
         let res = app
-            .oneshot(Request::get("/api/server/about").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/api/server/about")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         // No auth cookie — this route must stay open.
         assert_eq!(res.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["protocol"], PROTOCOL_VERSION);
         assert_eq!(v["minClientProtocol"], MIN_CLIENT_PROTOCOL);

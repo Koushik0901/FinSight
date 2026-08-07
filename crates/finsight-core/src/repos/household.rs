@@ -72,7 +72,9 @@ pub fn create_member(
 ) -> CoreResult<HouseholdMember> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(CoreError::InvalidState("member name must not be empty".into()));
+        return Err(CoreError::InvalidState(
+            "member name must not be empty".into(),
+        ));
     }
     // Names identify people in every owner picker — a duplicate would be
     // ambiguous everywhere. Surface a friendly error instead of a constraint hit.
@@ -207,8 +209,7 @@ pub fn set_asset_owners(
             params![asset_id, o.member_id, o.share_bps],
         )?;
     }
-    tx.commit()
-        .map_err(crate::error::CoreError::from)
+    tx.commit().map_err(crate::error::CoreError::from)
 }
 
 /// Replace the owner set for an account (empty = household/unassigned).
@@ -280,8 +281,12 @@ mod tests {
     }
 
     fn owner_display(conn: &Connection, id: &str) -> String {
-        conn.query_row("SELECT owner FROM accounts WHERE id = ?1", params![id], |r| r.get(0))
-            .unwrap()
+        conn.query_row(
+            "SELECT owner FROM accounts WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -300,7 +305,7 @@ mod tests {
         assert_eq!(owner_display(&conn, "sav"), "Koushik & Jordan");
 
         // Back to sole ownership.
-        set_account_owners(&mut conn, "sav", &[koushik.id.clone()]).unwrap();
+        set_account_owners(&mut conn, "sav", std::slice::from_ref(&koushik.id)).unwrap();
         assert_eq!(list_account_owners(&mut conn).unwrap().len(), 1);
         assert_eq!(owner_display(&conn, "sav"), "Koushik");
 
@@ -334,8 +339,16 @@ mod tests {
 
         assert_eq!(list_members(&mut conn).unwrap().len(), 1);
         let owners = list_account_owners(&mut conn).unwrap();
-        assert_eq!(owners.len(), 1, "the deleted member's ownership rows cascade away");
-        assert_eq!(owner_display(&conn, "sav"), "Koushik", "display refreshes to the survivor");
+        assert_eq!(
+            owners.len(),
+            1,
+            "the deleted member's ownership rows cascade away"
+        );
+        assert_eq!(
+            owner_display(&conn, "sav"),
+            "Koushik",
+            "display refreshes to the survivor"
+        );
     }
 
     #[test]
@@ -344,12 +357,17 @@ mod tests {
         let mut conn = db.get().unwrap();
         insert_account(&conn, "sav", "Tangerine Savings");
         let a = create_member(&mut conn, "Koushik", None).unwrap();
-        set_account_owners(&mut conn, "sav", &[a.id.clone()]).unwrap();
+        set_account_owners(&mut conn, "sav", std::slice::from_ref(&a.id)).unwrap();
 
-        conn.execute("DELETE FROM accounts WHERE id = 'sav'", []).unwrap();
+        conn.execute("DELETE FROM accounts WHERE id = 'sav'", [])
+            .unwrap();
 
         assert_eq!(list_account_owners(&mut conn).unwrap().len(), 0);
-        assert_eq!(list_members(&mut conn).unwrap().len(), 1, "the member survives");
+        assert_eq!(
+            list_members(&mut conn).unwrap().len(),
+            1,
+            "the member survives"
+        );
     }
 
     #[test]
@@ -358,13 +376,20 @@ mod tests {
         let mut conn = db.get().unwrap();
         let a = create_member(&mut conn, "Koushik", None).unwrap();
         let b = create_member(&mut conn, "Jordan", None).unwrap();
-        assert!(self_member(&mut conn).unwrap().is_none(), "no self by default");
+        assert!(
+            self_member(&mut conn).unwrap().is_none(),
+            "no self by default"
+        );
         assert!(!a.is_self, "create_member never marks self");
 
         set_self_member(&mut conn, &a.id).unwrap();
         assert_eq!(self_member(&mut conn).unwrap().unwrap().id, a.id);
         assert_eq!(
-            list_members(&mut conn).unwrap().iter().filter(|m| m.is_self).count(),
+            list_members(&mut conn)
+                .unwrap()
+                .iter()
+                .filter(|m| m.is_self)
+                .count(),
             1
         );
 
@@ -372,7 +397,11 @@ mod tests {
         set_self_member(&mut conn, &b.id).unwrap();
         assert_eq!(self_member(&mut conn).unwrap().unwrap().id, b.id);
         assert_eq!(
-            list_members(&mut conn).unwrap().iter().filter(|m| m.is_self).count(),
+            list_members(&mut conn)
+                .unwrap()
+                .iter()
+                .filter(|m| m.is_self)
+                .count(),
             1
         );
     }
@@ -401,14 +430,26 @@ mod tests {
 
         // No operator yet: the own e-transfer is not recognized as internal.
         crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(transfer_flag(&conn, "t_self"), 0, "no operator ⇒ own e-transfer not flagged");
+        assert_eq!(
+            transfer_flag(&conn, "t_self"),
+            0,
+            "no operator ⇒ own e-transfer not flagged"
+        );
 
         // Configure the operator; re-running recognizes their own e-transfer only.
         let me = create_member(&mut conn, "Koushik", None).unwrap();
         set_self_member(&mut conn, &me.id).unwrap();
         crate::categorize::apply_builtin_categorization(&mut conn).unwrap();
-        assert_eq!(transfer_flag(&conn, "t_self"), 1, "own e-transfer is an internal move");
-        assert_eq!(transfer_flag(&conn, "t_friend"), 0, "a friend's e-transfer stays for review");
+        assert_eq!(
+            transfer_flag(&conn, "t_self"),
+            1,
+            "own e-transfer is an internal move"
+        );
+        assert_eq!(
+            transfer_flag(&conn, "t_friend"),
+            0,
+            "a friend's e-transfer stays for review"
+        );
     }
 
     fn transfer_flag(conn: &Connection, id: &str) -> i64 {
@@ -433,18 +474,32 @@ mod tests {
             &mut conn,
             "chq",
             &[
-                OwnerShare { member_id: a.id.clone(), share_bps: Some(7000) },
-                OwnerShare { member_id: b.id.clone(), share_bps: Some(3000) },
+                OwnerShare {
+                    member_id: a.id.clone(),
+                    share_bps: Some(7000),
+                },
+                OwnerShare {
+                    member_id: b.id.clone(),
+                    share_bps: Some(3000),
+                },
             ],
         )
         .unwrap();
         let owners = list_account_owners(&mut conn).unwrap();
         assert_eq!(owners.len(), 2);
         assert_eq!(
-            owners.iter().find(|o| o.member_id == a.id).unwrap().share_bps,
+            owners
+                .iter()
+                .find(|o| o.member_id == a.id)
+                .unwrap()
+                .share_bps,
             Some(7000)
         );
-        assert_eq!(owner_display(&conn, "chq"), "Koushik & Jordan", "display still syncs");
+        assert_eq!(
+            owner_display(&conn, "chq"),
+            "Koushik & Jordan",
+            "display still syncs"
+        );
 
         conn.execute(
             "INSERT INTO manual_assets(id,name,asset_type,value_cents,currency,created_at,updated_at) \
@@ -456,15 +511,27 @@ mod tests {
             &mut conn,
             "house",
             &[
-                OwnerShare { member_id: a.id.clone(), share_bps: Some(6000) },
+                OwnerShare {
+                    member_id: a.id.clone(),
+                    share_bps: Some(6000),
+                },
                 // None ⇒ equal-split fallback (stored NULL).
-                OwnerShare { member_id: b.id.clone(), share_bps: None },
+                OwnerShare {
+                    member_id: b.id.clone(),
+                    share_bps: None,
+                },
             ],
         )
         .unwrap();
         let ao = list_asset_owners(&mut conn).unwrap();
         assert_eq!(ao.len(), 2);
-        assert_eq!(ao.iter().find(|o| o.member_id == a.id).unwrap().share_bps, Some(6000));
-        assert_eq!(ao.iter().find(|o| o.member_id == b.id).unwrap().share_bps, None);
+        assert_eq!(
+            ao.iter().find(|o| o.member_id == a.id).unwrap().share_bps,
+            Some(6000)
+        );
+        assert_eq!(
+            ao.iter().find(|o| o.member_id == b.id).unwrap().share_bps,
+            None
+        );
     }
 }

@@ -205,9 +205,12 @@ pub async fn import_csv(
         // must not fail the import; idempotent, so a partial run is safe.
         if !wiped() {
             let treatment_db = (*state.db).clone();
-            let _ = run(&treatment_db, finsight_core::repos::rules::apply_treatment_rules)
-                .await
-                .unwrap_or(0);
+            let _ = run(
+                &treatment_db,
+                finsight_core::repos::rules::apply_treatment_rules,
+            )
+            .await
+            .unwrap_or(0);
         }
         // Recompute statistical anomaly flags from the (now larger) history.
         // Scoped to the imported account's merchants: only those groups can

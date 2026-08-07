@@ -1,7 +1,8 @@
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use finsight_core::models::{effective_apr_pct, EffectiveApr, MissingDataItem};
 use finsight_core::provenance::{
-    MetricAssumption, MetricExplanation, MetricInput, MetricValue, MetricWarning, MetricWarningLevel,
+    MetricAssumption, MetricExplanation, MetricInput, MetricValue, MetricWarning,
+    MetricWarningLevel,
 };
 use finsight_core::repos::goals::{DeadlineStrictness, GoalPriority};
 use finsight_core::routes::AppRoute;
@@ -753,7 +754,10 @@ pub fn compare_payoff_strategies(
 
     MissingDataItem::dedup(&mut missing_data);
 
-    let first_win_sooner = match (baseline.first_cleared_month, alternative.first_cleared_month) {
+    let first_win_sooner = match (
+        baseline.first_cleared_month,
+        alternative.first_cleared_month,
+    ) {
         (Some(b), Some(a)) => Some(b - a),
         _ => None,
     };
@@ -780,7 +784,6 @@ pub fn compare_payoff_strategies(
         alternative,
     })
 }
-
 
 // ── Sinking funds ───────────────────────────────────────────────────────────
 
@@ -877,11 +880,17 @@ pub fn plan_sinking_funds(conn: &mut Connection) -> rusqlite::Result<SinkingFund
         let (months_remaining, required) = match due {
             Some(d) => {
                 let m = months_until(d, today);
-                (Some(m), Some(required_monthly_contribution_cents(remaining, m)))
+                (
+                    Some(m),
+                    Some(required_monthly_contribution_cents(remaining, m)),
+                )
             }
             None => {
                 missing_data.push(MissingDataItem::linked(
-                    format!("{} has no due date, so its monthly requirement cannot be worked out.", goal.name),
+                    format!(
+                        "{} has no due date, so its monthly requirement cannot be worked out.",
+                        goal.name
+                    ),
                     "Set a due date",
                     AppRoute::Goals.focused(&goal.id),
                 ));
@@ -1113,7 +1122,7 @@ fn robust_monthly_expense_cents(conn: &Connection) -> rusqlite::Result<i64> {
     }
     vals.sort_unstable();
     let mid = vals.len() / 2;
-    Ok(if vals.len() % 2 == 0 {
+    Ok(if vals.len().is_multiple_of(2) {
         (vals[mid - 1] + vals[mid]) / 2
     } else {
         vals[mid]
@@ -1704,8 +1713,7 @@ pub fn run_debt_payoff_scenarios(
     let order = PayoffOrder::from_method(method);
     let (minimum, with_extra) = if can_project {
         let minimum = simulate_debt_payoff(&debts, &order, 0);
-        let with_extra =
-            simulate_debt_payoff(&debts, &order, extra_monthly_payment_cents.max(0));
+        let with_extra = simulate_debt_payoff(&debts, &order, extra_monthly_payment_cents.max(0));
         (minimum, with_extra)
     } else {
         missing_data.push(MissingDataItem::prose(
@@ -1755,8 +1763,15 @@ fn goal_priority_rank(g: &SnapshotGoal) -> u8 {
 /// — set a hard date, then clear the date — and trusting the column alone would
 /// have allocation defend a deadline that no longer exists.
 fn hard_deadline_first(g: &SnapshotGoal) -> u8 {
-    let has_date = g.target_date.as_deref().map(str::trim).is_some_and(|d| !d.is_empty());
-    match (has_date, DeadlineStrictness::from_db(&g.deadline_strictness)) {
+    let has_date = g
+        .target_date
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|d| !d.is_empty());
+    match (
+        has_date,
+        DeadlineStrictness::from_db(&g.deadline_strictness),
+    ) {
         (true, DeadlineStrictness::Hard) => 0,
         _ => 1,
     }
@@ -2199,18 +2214,17 @@ pub fn run_purchase_affordability(
     let safe_cash_available_cents = (starting_emergency_fund_cents - emergency_floor_cents).max(0);
     let shortfall_to_cash_purchase_cents =
         (purchase_amount_cents - safe_cash_available_cents).max(0);
-    let months_to_save_without_touching_emergency_floor = if purchase_amount_cents == 0 {
-        Some(0)
-    } else if shortfall_to_cash_purchase_cents == 0 {
-        Some(0)
-    } else if monthly_surplus_cents > 0 {
-        Some(div_ceil(
-            shortfall_to_cash_purchase_cents,
-            monthly_surplus_cents,
-        ))
-    } else {
-        None
-    };
+    let months_to_save_without_touching_emergency_floor =
+        if purchase_amount_cents == 0 || shortfall_to_cash_purchase_cents == 0 {
+            Some(0)
+        } else if monthly_surplus_cents > 0 {
+            Some(div_ceil(
+                shortfall_to_cash_purchase_cents,
+                monthly_surplus_cents,
+            ))
+        } else {
+            None
+        };
 
     let affordable_now = purchase_amount_cents > 0
         && emergency_fund_after_purchase_cents >= emergency_floor_cents
@@ -2262,8 +2276,8 @@ pub fn run_purchase_affordability(
             PurchaseAlternative {
                 name: "Buy now".to_string(),
                 action: format!(
-                    "Spend {} now from emergency-eligible cash.",
-                    format!("${:.2}", purchase_amount_cents as f64 / 100.0)
+                    "Spend ${:.2} now from emergency-eligible cash.",
+                    purchase_amount_cents as f64 / 100.0
                 ),
                 cash_used_cents: purchase_amount_cents,
                 emergency_fund_after_cents: emergency_fund_after_purchase_cents,
@@ -2283,8 +2297,8 @@ pub fn run_purchase_affordability(
             PurchaseAlternative {
                 name: "Reduce purchase size".to_string(),
                 action: format!(
-                    "Cap the purchase near currently safe cash above the emergency floor: {}.",
-                    format!("${:.2}", smaller_purchase_cents as f64 / 100.0)
+                    "Cap the purchase near currently safe cash above the emergency floor: ${:.2}.",
+                    smaller_purchase_cents as f64 / 100.0
                 ),
                 cash_used_cents: smaller_purchase_cents,
                 emergency_fund_after_cents: smaller_after,
@@ -2753,7 +2767,10 @@ fn recurring_bills(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotRecurr
             monthly_equivalent_cents: i.monthly_equivalent_cents(),
             cadence: i.cadence.clone(),
             confidence: i.confidence,
-            next_expected: i.next_expected.clone().unwrap_or_else(|| i.last_seen.clone()),
+            next_expected: i
+                .next_expected
+                .clone()
+                .unwrap_or_else(|| i.last_seen.clone()),
         })
         .collect())
 }
@@ -2840,7 +2857,8 @@ pub fn explain_debt_payoff(conn: &mut Connection) -> rusqlite::Result<MetricExpl
             period: "As of today".into(),
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
-                message: "No open debts with a balance to order — there's nothing to pay down.".into(),
+                message: "No open debts with a balance to order — there's nothing to pay down."
+                    .into(),
             }],
         });
     }
@@ -2867,7 +2885,11 @@ pub fn explain_debt_payoff(conn: &mut Connection) -> rusqlite::Result<MetricExpl
     // engine's own figures (extra interest is what the ALTERNATIVE costs vs. the
     // user's current baseline method). extra_monthly=0 ⇒ compares the pure
     // minimum-payment orderings, i.e. the ranking as shown.
-    let alt_method = if method == "snowball" { "avalanche" } else { "snowball" };
+    let alt_method = if method == "snowball" {
+        "avalanche"
+    } else {
+        "snowball"
+    };
     let mut tradeoffs = Vec::new();
     if let Ok(c) = compare_payoff_strategies(conn, &method, alt_method, None, 0) {
         match c.alternative_extra_interest_cents {
@@ -2935,21 +2957,41 @@ pub fn explain_goals(conn: &mut Connection) -> rusqlite::Result<Vec<MetricExplan
 
 fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
     let inputs = vec![
-        MetricInput { label: "Target".into(), amount_cents: Some(g.target_cents), detail: None },
-        MetricInput { label: "Saved so far".into(), amount_cents: Some(g.current_cents), detail: None },
-        MetricInput { label: "Still to go".into(), amount_cents: Some(g.remaining_cents), detail: None },
-        MetricInput { label: "Monthly contribution".into(), amount_cents: Some(g.monthly_cents), detail: None },
+        MetricInput {
+            label: "Target".into(),
+            amount_cents: Some(g.target_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Saved so far".into(),
+            amount_cents: Some(g.current_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Still to go".into(),
+            amount_cents: Some(g.remaining_cents),
+            detail: None,
+        },
+        MetricInput {
+            label: "Monthly contribution".into(),
+            amount_cents: Some(g.monthly_cents),
+            detail: None,
+        },
     ];
     let mut assumptions = vec![MetricAssumption {
         label: "Contribution".into(),
         value: "Your current monthly amount, held flat".into(),
     }];
     if let Some(d) = g.target_date.as_ref().filter(|s| !s.is_empty()) {
-        assumptions.push(MetricAssumption { label: "Target date".into(), value: d.clone() });
+        assumptions.push(MetricAssumption {
+            label: "Target date".into(),
+            value: d.clone(),
+        });
     }
 
     let definition =
-        "When this goal finishes at your current monthly contribution, and what feeds that date.".to_string();
+        "When this goal finishes at your current monthly contribution, and what feeds that date."
+            .to_string();
     let period = "Projected from today".to_string();
     let key = format!("goal:{}", g.id);
 
@@ -2968,7 +3010,9 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
             period,
             warnings: vec![MetricWarning {
                 level: MetricWarningLevel::Withheld,
-                message: "This goal has no target amount set, so there's no completion date to project.".into(),
+                message:
+                    "This goal has no target amount set, so there's no completion date to project."
+                        .into(),
             }],
         };
     }
@@ -2985,7 +3029,10 @@ fn explain_one_goal(g: &SnapshotGoal) -> MetricExplanation {
             assumptions,
             tradeoffs: Vec::new(),
             period,
-            warnings: vec![MetricWarning { level: MetricWarningLevel::Info, message: "Target reached.".into() }],
+            warnings: vec![MetricWarning {
+                level: MetricWarningLevel::Info,
+                message: "Target reached.".into(),
+            }],
         };
     }
     // No contribution — there is no honest completion date to state.
@@ -3266,7 +3313,10 @@ mod tests {
         assert!(ex.inputs.iter().any(|i| i.label.contains("noapr")));
         assert!(ex.assumptions.iter().any(|a| a.label == "Payoff strategy"));
         // The missing APR is disclosed, not hidden.
-        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Caution));
+        assert!(ex
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Caution));
     }
 
     /// No debts → withhold honestly, don't invent an empty "order".
@@ -3276,7 +3326,10 @@ mod tests {
         let mut conn = db.get().unwrap();
         let ex = explain_debt_payoff(&mut conn).unwrap();
         assert_eq!(ex.value, MetricValue::Withheld);
-        assert!(ex.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(ex
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Withheld));
         assert!(ex.inputs.is_empty());
     }
 
@@ -3294,10 +3347,16 @@ mod tests {
         let vac = out.iter().find(|e| e.key == "goal:g1").unwrap();
         // remaining 400k / 100k a month = 4 months.
         assert_eq!(vac.value, MetricValue::Months { months: 4.0 });
-        assert!(vac.inputs.iter().any(|i| i.label == "Still to go" && i.amount_cents == Some(400_000)));
+        assert!(vac
+            .inputs
+            .iter()
+            .any(|i| i.label == "Still to go" && i.amount_cents == Some(400_000)));
         let house = out.iter().find(|e| e.key == "goal:g2").unwrap();
         assert_eq!(house.value, MetricValue::Withheld);
-        assert!(house.warnings.iter().any(|w| w.level == MetricWarningLevel::Withheld));
+        assert!(house
+            .warnings
+            .iter()
+            .any(|w| w.level == MetricWarningLevel::Withheld));
     }
 
     /// A goal with no target amount (e.g. a target cleared to 0 out-of-band) has
@@ -3311,7 +3370,10 @@ mod tests {
         let out = explain_goals(&mut conn).unwrap();
         let g = out.iter().find(|e| e.key == "goal:gz").unwrap();
         assert_eq!(g.value, MetricValue::Withheld);
-        assert!(g.warnings.iter().any(|w| w.message.contains("no target amount")));
+        assert!(g
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("no target amount")));
     }
 
     /// The failure the issue describes: a 0% balance about to become 22.99% is
@@ -3365,7 +3427,14 @@ mod tests {
         let soon = (Utc::now().date_naive() + Duration::days(30))
             .format("%Y-%m-%d")
             .to_string();
-        insert_card(&mut conn, "big-promo", 900_000, 0.0, Some(&soon), Some(29.99));
+        insert_card(
+            &mut conn,
+            "big-promo",
+            900_000,
+            0.0,
+            Some(&soon),
+            Some(29.99),
+        );
         insert_card(&mut conn, "small", 100_000, 5.0, None, None);
 
         let ranked = rank_debt_payoff(&mut conn, "snowball").unwrap();
@@ -3534,7 +3603,15 @@ mod tests {
         let due = (Utc::now().date_naive() + Duration::days(180))
             .format("%Y-%m-%d")
             .to_string();
-        seed_sinking_fund(&mut conn, "ins", "Car insurance", 180000, 0, 10000, Some(&due));
+        seed_sinking_fund(
+            &mut conn,
+            "ins",
+            "Car insurance",
+            180000,
+            0,
+            10000,
+            Some(&due),
+        );
 
         let plan = plan_sinking_funds(&mut conn).unwrap();
         assert_eq!(plan.funds.len(), 1);
@@ -3543,7 +3620,10 @@ mod tests {
         assert_eq!(f.months_remaining, Some(6));
         assert_eq!(f.required_monthly_cents, Some(30000));
         assert_eq!(f.current_monthly_cents, 10000);
-        assert_eq!(f.shortfall_monthly_cents, 20000, "committed $100 of the $300 needed");
+        assert_eq!(
+            f.shortfall_monthly_cents, 20000,
+            "committed $100 of the $300 needed"
+        );
         assert!(!f.on_track);
         assert!(!f.overdue);
     }
@@ -3555,7 +3635,15 @@ mod tests {
         let due = (Utc::now().date_naive() + Duration::days(180))
             .format("%Y-%m-%d")
             .to_string();
-        seed_sinking_fund(&mut conn, "ins", "Car insurance", 180000, 0, 30000, Some(&due));
+        seed_sinking_fund(
+            &mut conn,
+            "ins",
+            "Car insurance",
+            180000,
+            0,
+            30000,
+            Some(&due),
+        );
 
         let plan = plan_sinking_funds(&mut conn).unwrap();
         assert_eq!(plan.funds[0].shortfall_monthly_cents, 0);
@@ -3568,7 +3656,15 @@ mod tests {
         // Already has the money: a past date does not make it a problem.
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
-        seed_sinking_fund(&mut conn, "done", "Property tax", 100000, 100000, 0, Some("2020-01-01"));
+        seed_sinking_fund(
+            &mut conn,
+            "done",
+            "Property tax",
+            100000,
+            100000,
+            0,
+            Some("2020-01-01"),
+        );
 
         let plan = plan_sinking_funds(&mut conn).unwrap();
         assert_eq!(plan.funds[0].remaining_cents, 0);
@@ -3585,8 +3681,24 @@ mod tests {
         let future = (Utc::now().date_naive() + Duration::days(300))
             .format("%Y-%m-%d")
             .to_string();
-        seed_sinking_fund(&mut conn, "big", "Big future thing", 900000, 0, 0, Some(&future));
-        seed_sinking_fund(&mut conn, "late", "Missed insurance", 50000, 0, 0, Some("2020-01-01"));
+        seed_sinking_fund(
+            &mut conn,
+            "big",
+            "Big future thing",
+            900000,
+            0,
+            0,
+            Some(&future),
+        );
+        seed_sinking_fund(
+            &mut conn,
+            "late",
+            "Missed insurance",
+            50000,
+            0,
+            0,
+            Some("2020-01-01"),
+        );
 
         let plan = plan_sinking_funds(&mut conn).unwrap();
         assert_eq!(plan.funds[0].goal_id, "late");
@@ -3606,7 +3718,10 @@ mod tests {
         let plan = plan_sinking_funds(&mut conn).unwrap();
         assert_eq!(plan.funds[0].required_monthly_cents, None);
         assert_eq!(plan.funds[0].months_remaining, None);
-        assert_eq!(plan.funds[0].shortfall_monthly_cents, 0, "no basis for a shortfall");
+        assert_eq!(
+            plan.funds[0].shortfall_monthly_cents, 0,
+            "no basis for a shortfall"
+        );
         assert!(!plan.missing_data.is_empty());
         assert_eq!(
             plan.missing_data[0].action_path.as_deref(),
@@ -3627,7 +3742,11 @@ mod tests {
         seed_sinking_fund(&mut conn, "b", "Tax", 200000, 0, 0, Some(&due));
 
         let plan = plan_sinking_funds(&mut conn).unwrap();
-        let expected: i64 = plan.funds.iter().filter_map(|f| f.required_monthly_cents).sum();
+        let expected: i64 = plan
+            .funds
+            .iter()
+            .filter_map(|f| f.required_monthly_cents)
+            .sum();
         assert_eq!(plan.total_required_monthly_cents, expected);
         assert_eq!(plan.total_committed_monthly_cents, 5000);
         assert_eq!(
@@ -3705,7 +3824,10 @@ mod tests {
         // And the comparison simulates the same order it displays.
         let cmp =
             compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 20000).unwrap();
-        assert_eq!(cmp.baseline.order.first().map(String::as_str), Some("Promo Card"));
+        assert_eq!(
+            cmp.baseline.order.first().map(String::as_str),
+            Some("Promo Card")
+        );
     }
 
     #[test]
@@ -3720,7 +3842,9 @@ mod tests {
 
         let ranking = rank_debt_payoff(&mut conn, "snowball").unwrap();
         assert!(
-            ranking.items[0].reason.contains("Smallest remaining balance"),
+            ranking.items[0]
+                .reason
+                .contains("Smallest remaining balance"),
             "snowball must explain itself as snowball: {}",
             ranking.items[0].reason
         );
@@ -3739,7 +3863,10 @@ mod tests {
 
         assert_eq!(cmp.baseline.method, "avalanche");
         assert_eq!(cmp.alternative.method, "snowball");
-        assert!(cmp.missing_data.is_empty(), "both debts are fully specified");
+        assert!(
+            cmp.missing_data.is_empty(),
+            "both debts are fully specified"
+        );
 
         // Avalanche is never more expensive than snowball — that is what it
         // optimises for. Here the orders differ, so it must be strictly cheaper.
@@ -3749,8 +3876,14 @@ mod tests {
             cmp.alternative_extra_interest_cents
         );
         // ...and snowball buys the early win it is chosen for.
-        assert_eq!(cmp.alternative.first_cleared_name.as_deref(), Some("Store Card"));
-        assert_eq!(cmp.baseline.first_cleared_name.as_deref(), Some("Travel Card"));
+        assert_eq!(
+            cmp.alternative.first_cleared_name.as_deref(),
+            Some("Store Card")
+        );
+        assert_eq!(
+            cmp.baseline.first_cleared_name.as_deref(),
+            Some("Travel Card")
+        );
         assert!(
             cmp.alternative_first_win_sooner_months.unwrap() > 0,
             "snowball should clear its first debt sooner"
@@ -3786,8 +3919,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(cmp.alternative.method, "custom");
-        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
-        assert_eq!(cmp.alternative.first_cleared_name.as_deref(), Some("Store Card"));
+        assert_eq!(
+            cmp.alternative.order.first().map(String::as_str),
+            Some("Store Card")
+        );
+        assert_eq!(
+            cmp.alternative.first_cleared_name.as_deref(),
+            Some("Store Card")
+        );
     }
 
     #[test]
@@ -3827,8 +3966,7 @@ mod tests {
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('unknown','Household','Manual','Credit','Mystery Card','USD','#999','manual','restricted',0,'debt',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('unknown',date('now'),-50000,'manual')", []).unwrap();
 
-        let cmp =
-            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        let cmp = compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
 
         assert_eq!(cmp.baseline.months_to_debt_free, 0);
         assert!(
@@ -3855,10 +3993,12 @@ mod tests {
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,apr_pct,min_payment_cents,created_at) VALUES('stuck','Household','Manual','Credit','Maxed Card','USD','#F97316','manual','restricted',0,'debt',29.9,10000,datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('stuck',date('now'),-90000000,'manual')", []).unwrap();
 
-        let cmp =
-            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        let cmp = compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
 
-        assert_eq!(cmp.baseline.months_to_debt_free, 0, "comparison is withheld");
+        assert_eq!(
+            cmp.baseline.months_to_debt_free, 0,
+            "comparison is withheld"
+        );
         let said: String = cmp
             .missing_data
             .iter()
@@ -3866,7 +4006,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" | ");
         assert!(
-            said.to_lowercase().contains("minimum payments do not cover"),
+            said.to_lowercase()
+                .contains("minimum payments do not cover"),
             "should explain the payments never overtake the interest, said: {said}"
         );
         assert!(
@@ -3885,8 +4026,7 @@ mod tests {
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,account_group,created_at) VALUES('unknown','Household','Manual','Credit','Mystery Card','USD','#999','manual','restricted',0,'debt',datetime('now'))", []).unwrap();
         conn.execute("INSERT INTO account_balances(account_id,as_of_date,balance_cents,source) VALUES('unknown',date('now'),-50000,'manual')", []).unwrap();
 
-        let cmp =
-            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        let cmp = compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
         let said: String = cmp
             .missing_data
             .iter()
@@ -3907,16 +4047,14 @@ mod tests {
         let mut conn = db.get().unwrap();
         seed_disagreeing_debts(&mut conn);
 
-        let cmp = compare_payoff_strategies(
-            &mut conn,
-            "avalanche",
-            "snowball",
-            Some(Vec::new()),
-            50000,
-        )
-        .unwrap();
+        let cmp =
+            compare_payoff_strategies(&mut conn, "avalanche", "snowball", Some(Vec::new()), 50000)
+                .unwrap();
         assert_eq!(cmp.alternative.method, "snowball");
-        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
+        assert_eq!(
+            cmp.alternative.order.first().map(String::as_str),
+            Some("Store Card")
+        );
     }
 
     #[test]
@@ -3936,7 +4074,10 @@ mod tests {
         )
         .unwrap();
         // The real id still leads; the phantom one simply has no effect.
-        assert_eq!(cmp.alternative.order.first().map(String::as_str), Some("Store Card"));
+        assert_eq!(
+            cmp.alternative.order.first().map(String::as_str),
+            Some("Store Card")
+        );
         assert_eq!(cmp.alternative.order.len(), 2);
     }
 
@@ -3946,8 +4087,7 @@ mod tests {
         let mut conn = db.get().unwrap();
         conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) VALUES('a1','Me','Bank','Checking','Checking','USD','#fff','manual','liquid',1,datetime('now'))", []).unwrap();
 
-        let cmp =
-            compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
+        let cmp = compare_payoff_strategies(&mut conn, "avalanche", "snowball", None, 0).unwrap();
         assert_eq!(cmp.baseline.months_to_debt_free, 0);
         assert!(cmp.baseline.order.is_empty());
         assert!(cmp.missing_data.is_empty(), "no debts is not missing data");
@@ -3967,10 +4107,16 @@ mod tests {
         let first = rank_debt_payoff(&mut conn, "avalanche").unwrap();
         let second = rank_debt_payoff(&mut conn, "avalanche").unwrap();
         let ids = |r: &DebtPayoffRanking| {
-            r.items.iter().map(|i| i.liability_id.clone()).collect::<Vec<_>>()
+            r.items
+                .iter()
+                .map(|i| i.liability_id.clone())
+                .collect::<Vec<_>>()
         };
         assert_eq!(ids(&first), ids(&second));
-        assert_eq!(ids(&first), vec!["twin_a".to_string(), "twin_b".to_string()]);
+        assert_eq!(
+            ids(&first),
+            vec!["twin_a".to_string(), "twin_b".to_string()]
+        );
     }
 
     #[test]
@@ -4002,8 +4148,7 @@ mod tests {
         for method in ["avalanche", "snowball"] {
             let ranking = rank_debt_payoff(&mut conn, method).unwrap();
             let shown: Vec<String> = ranking.items.iter().map(|i| i.name.clone()).collect();
-            let cmp =
-                compare_payoff_strategies(&mut conn, method, method, None, 50000).unwrap();
+            let cmp = compare_payoff_strategies(&mut conn, method, method, None, 50000).unwrap();
             assert_eq!(
                 shown, cmp.baseline.order,
                 "{method}: the ranking shown must be the ordering that was simulated"
@@ -4205,7 +4350,10 @@ mod tests {
         // silently re-ranking the goals of everyone who has not. Pinned so the
         // quirk is a visible decision rather than an accident, and so a future
         // change to it has to be deliberate.
-        assert_eq!(order_of(&mut conn, "priority"), ["undated", "sooner", "later"]);
+        assert_eq!(
+            order_of(&mut conn, "priority"),
+            ["undated", "sooner", "later"]
+        );
     }
 
     #[test]
@@ -4216,7 +4364,13 @@ mod tests {
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
         insert_goal(&mut conn, "vacation", Some("2026-03-01"), None, None);
-        insert_goal(&mut conn, "emergency", Some("2027-01-01"), Some("critical"), None);
+        insert_goal(
+            &mut conn,
+            "emergency",
+            Some("2027-01-01"),
+            Some("critical"),
+            None,
+        );
 
         assert_eq!(order_of(&mut conn, "priority")[0], "emergency");
     }
@@ -4225,10 +4379,19 @@ mod tests {
     fn someday_goals_fall_behind_ordinary_ones() {
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
-        insert_goal(&mut conn, "aspirational", Some("2026-01-01"), Some("someday"), None);
+        insert_goal(
+            &mut conn,
+            "aspirational",
+            Some("2026-01-01"),
+            Some("someday"),
+            None,
+        );
         insert_goal(&mut conn, "ordinary", Some("2027-06-01"), None, None);
 
-        assert_eq!(order_of(&mut conn, "priority"), ["ordinary", "aspirational"]);
+        assert_eq!(
+            order_of(&mut conn, "priority"),
+            ["ordinary", "aspirational"]
+        );
     }
 
     #[test]
@@ -4252,7 +4415,13 @@ mod tests {
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
         insert_goal(&mut conn, "dateless", None, None, Some("hard"));
-        insert_goal(&mut conn, "dated", Some("2026-03-01"), Some("someday"), Some("target"));
+        insert_goal(
+            &mut conn,
+            "dated",
+            Some("2026-03-01"),
+            Some("someday"),
+            Some("target"),
+        );
 
         // If the stray `hard` were honoured, "dateless" would jump the
         // hard-deadline tier and beat even a lower-priority dated goal on that
@@ -4266,8 +4435,7 @@ mod tests {
 
         // The direct check: resolved strictness ignores the stored value when
         // there is no date behind it.
-        let dateless =
-            finsight_core::repos::goals::get_by_id(&mut conn, "dateless").unwrap();
+        let dateless = finsight_core::repos::goals::get_by_id(&mut conn, "dateless").unwrap();
         assert_eq!(dateless.deadline_strictness, DeadlineStrictness::Hard);
         assert_eq!(dateless.effective_strictness(), DeadlineStrictness::None);
     }
@@ -4278,7 +4446,13 @@ mod tests {
         // lose the goal from the user's own plan.
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
-        insert_goal(&mut conn, "weird", Some("2026-03-01"), Some("URGENT!!"), None);
+        insert_goal(
+            &mut conn,
+            "weird",
+            Some("2026-03-01"),
+            Some("URGENT!!"),
+            None,
+        );
         insert_goal(&mut conn, "plain", Some("2026-06-01"), None, None);
 
         let order = order_of(&mut conn, "priority");
@@ -4317,8 +4491,8 @@ mod tests {
         let (_dir, db) = fresh();
         let mut conn = db.get().unwrap();
         seed(&mut conn); // 'a1' checking, $5,000, EF-eligible by default
-        // A liquid but NOT emergency-fund-earmarked account — e.g. a vacation
-        // pot. It lifts total liquid without lifting emergency coverage.
+                         // A liquid but NOT emergency-fund-earmarked account — e.g. a vacation
+                         // pot. It lifts total liquid without lifting emergency coverage.
         conn.execute(
             "INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,liquidity_type,emergency_fund_eligible,created_at) \
              VALUES('vac','Me','Bank','Savings','Vacation','USD','#fff','manual','liquid',0,datetime('now'))",

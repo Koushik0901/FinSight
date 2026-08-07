@@ -110,8 +110,8 @@ async fn vapid_keypair_for_db(db: &finsight_core::Db) -> AppResult<(String, Stri
             return Ok((pem, pubkey));
         }
 
-        let (pem, pubkey) = generate_vapid_keypair()
-            .map_err(|e| finsight_core::error::CoreError::InvalidState(e))?;
+        let (pem, pubkey) =
+            generate_vapid_keypair().map_err(finsight_core::error::CoreError::InvalidState)?;
         settings::set(conn, VAPID_PRIVATE_PEM, &pem)?;
         settings::set(conn, VAPID_PUBLIC_B64, &pubkey)?;
         Ok((pem, pubkey))
@@ -148,7 +148,7 @@ fn generate_vapid_keypair() -> Result<(String, String), String> {
 pub async fn get_push_status(state: &ApiState) -> AppResult<PushStatus> {
     let (_priv, public_key) = vapid_keypair(state).await?;
     let db = (*state.db).clone();
-    let device_count = run(&db, move |conn| push_repo::list(conn))
+    let device_count = run(&db, push_repo::list)
         .await
         .map_err(AppError::from)?
         .len() as i64;
@@ -181,16 +181,16 @@ pub async fn save_push_subscription(
 
 pub async fn delete_push_subscription(state: &ApiState, endpoint: String) -> AppResult<bool> {
     let db = (*state.db).clone();
-    run(&db, move |conn| push_repo::delete_by_endpoint(conn, &endpoint))
-        .await
-        .map_err(AppError::from)
+    run(&db, move |conn| {
+        push_repo::delete_by_endpoint(conn, &endpoint)
+    })
+    .await
+    .map_err(AppError::from)
 }
 
 pub async fn list_push_devices(state: &ApiState) -> AppResult<Vec<PushDevice>> {
     let db = (*state.db).clone();
-    let rows = run(&db, move |conn| push_repo::list(conn))
-        .await
-        .map_err(AppError::from)?;
+    let rows = run(&db, push_repo::list).await.map_err(AppError::from)?;
     Ok(rows
         .into_iter()
         .map(|s| PushDevice {
@@ -245,9 +245,7 @@ pub async fn send_push_for_db(
 
     let (private_pem, _public) = vapid_keypair_for_db(db).await?;
     let db = db.clone();
-    let subs = run(&db, move |conn| push_repo::list(conn))
-        .await
-        .map_err(AppError::from)?;
+    let subs = run(&db, push_repo::list).await.map_err(AppError::from)?;
 
     if subs.is_empty() {
         return Ok(PushDeliveryReport::default());
@@ -341,7 +339,10 @@ pub async fn send_push_for_db(
 
     for endpoint in expired_endpoints {
         let db2 = db.clone();
-        let _ = run(&db2, move |conn| push_repo::delete_by_endpoint(conn, &endpoint)).await;
+        let _ = run(&db2, move |conn| {
+            push_repo::delete_by_endpoint(conn, &endpoint)
+        })
+        .await;
     }
 
     Ok(report)
@@ -378,7 +379,9 @@ mod tests {
         assert_eq!(bytes.len(), 65, "uncompressed P-256 point is 65 bytes");
         assert_eq!(bytes[0], 0x04, "0x04 prefix marks the uncompressed form");
         // Must survive the browser's base64url decoder untouched.
-        assert!(!public_b64.contains('+') && !public_b64.contains('/') && !public_b64.contains('='));
+        assert!(
+            !public_b64.contains('+') && !public_b64.contains('/') && !public_b64.contains('=')
+        );
     }
 
     #[test]

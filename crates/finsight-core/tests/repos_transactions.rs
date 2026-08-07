@@ -427,8 +427,7 @@ fn insert_dividend_activity_is_not_a_transfer() {
         quantity: None,
         unit_price: None,
     };
-    let inserted =
-        transactions::insert(&mut conn, mk_activity_txn(&acct, Some(dividend))).unwrap();
+    let inserted = transactions::insert(&mut conn, mk_activity_txn(&acct, Some(dividend))).unwrap();
     // Dividends are real income — must stay visible to income/expense metrics.
     assert!(!inserted.is_transfer);
 }

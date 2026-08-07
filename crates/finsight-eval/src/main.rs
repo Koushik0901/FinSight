@@ -135,12 +135,18 @@ fn resolve_key() -> Result<String> {
 fn tool_names_from_trace(trace: &[String]) -> Vec<String> {
     trace
         .iter()
-        .filter_map(|t| t.strip_prefix("Called tool: ").map(|s| s.trim().to_string()))
+        .filter_map(|t| {
+            t.strip_prefix("Called tool: ")
+                .map(|s| s.trim().to_string())
+        })
         .collect()
 }
 
 fn block_kind(b: &Value) -> String {
-    b.get("kind").and_then(|k| k.as_str()).unwrap_or("unknown").to_string()
+    b.get("kind")
+        .and_then(|k| k.as_str())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 #[tokio::main(flavor = "current_thread")]

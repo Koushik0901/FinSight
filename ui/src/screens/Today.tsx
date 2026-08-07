@@ -75,33 +75,54 @@ function SmartSweepCard({ netCents, onDismiss }: { netCents: number; onDismiss: 
   const navigate = useNavigate();
   const { data: goals = [] } = useGoals();
   const contribute = useContributeToGoal();
-  // Only manual (non-account-linked) goals can be parked into: a linked goal's
-  // balance is synced from its account, so a contribution would be rejected.
+  // Only manual (non-account-linked) goals accept recorded progress: linked
+  // goals update from their account balance and must not be double-counted.
   const firstGoal = goals.find((goal) => !goal.accountId) ?? null;
 
   const handlePark = async () => {
     if (!firstGoal) return;
     try {
-      // Append an auditable contribution — parking twice records two rows
-      // instead of double-counting a mutated balance.
-      await contribute.mutateAsync({ id: firstGoal.id, amountCents: netCents, note: "Parked surplus from monthly cash flow", source: "sweep" });
-      toast.success(`Parked ${money(netCents)} in ${firstGoal.name}`);
+      await contribute.mutateAsync({
+        id: firstGoal.id,
+        amountCents: netCents,
+        note: "Recorded surplus toward goal",
+        source: "sweep",
+      });
+      toast.success(`Recorded ${money(netCents)} toward ${firstGoal.name}`, {
+        description: "This updates FinSight only. No money was moved.",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void contribute.mutateAsync({
+              id: firstGoal.id,
+              amountCents: -netCents,
+              note: "Undid recorded surplus",
+              source: "undo",
+            }).then(
+              () => toast.success("Recorded progress removed"),
+              () => toast.error("Could not undo the recorded progress"),
+            );
+          },
+        },
+      });
       onDismiss();
     } catch {
-      toast.error("Could not park funds");
+      toast.error("Could not record goal progress", {
+        description: "Your bank balances were not changed. Try again.",
+      });
     }
   };
 
   return (
     <div className="card accent" style={{ height: "100%" }}>
-      <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Smart sweep</div>
-      <h2 className="h3" style={{ marginBottom: 10 }}>You have {money(netCents)} unallocated this month.</h2>
+      <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Available to assign</div>
+      <h2 className="h3" style={{ marginBottom: 10 }}>{money(netCents)} remains from this month&apos;s cash flow.</h2>
       <p className="muted" style={{ marginTop: 0, lineHeight: 1.6 }}>
-        Put surplus cash to work before it disappears into drift. FinSight can park it in your next goal or let you choose where it goes.
+        Record it toward a goal or choose another plan. This updates FinSight only and does not move money.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-        {firstGoal && <button className="btn primary sm" type="button" disabled={contribute.isPending} onClick={() => void handlePark()}>{contribute.isPending ? "Parking…" : `Park in ${firstGoal.name}`}</button>}
-        <button className="btn sm" type="button" onClick={() => navigate("/goals")}>Assign to a goal…</button>
+        {firstGoal && <button className="btn primary sm" type="button" disabled={contribute.isPending} onClick={() => void handlePark()}>{contribute.isPending ? "Recording…" : `Record toward ${firstGoal.name}`}</button>}
+        <button className="btn sm" type="button" onClick={() => navigate("/goals")}>Choose another goal</button>
         <button className="btn ghost sm" type="button" onClick={onDismiss}>Dismiss</button>
       </div>
     </div>
@@ -237,13 +258,33 @@ export default function Today() {
   const trendText = trendDelta === null ? "Baseline building" : `${trendDelta >= 0 ? "↑" : "↓"} ${money(Math.abs(trendDelta), { currency: primaryCurrency })} over ${range}`;
   const biggestCategory = activeCats[0];
   const briefingText = totals ? `You have ${money(Math.max(totals.netCents, 0))} left from ${monthLabel.toLowerCase()} cash flow. ${needsReview > 0 ? `${needsReview} transactions still need review.` : `${biggestCategory?.label ?? "Spending"} is carrying most of the load this month.`}` : "Your latest local snapshot is ready. Open insights for the full story.";
+  const anomalyCount = agentStatus?.anomalyCount ?? 0;
+  const primaryAction = needsReview > 0
+    ? {
+        heading: `Review ${needsReview} transaction${needsReview === 1 ? "" : "s"} before trusting this month's totals.`,
+        label: "Review transactions",
+        route: "/inbox",
+      }
+    : anomalyCount > 0
+      ? {
+          heading: `Check ${anomalyCount} unusual charge${anomalyCount === 1 ? "" : "s"}.`,
+          label: "Review unusual charges",
+          route: "/inbox",
+        }
+      : shouldShowMonthlyReview
+        ? { heading: `Close out ${prevMonthLabel} while the details are fresh.`, label: "Start month-end close", route: "/close" }
+        : showSweep
+          ? { heading: "Decide where this month's remaining cash flow should go.", label: "Review goals", route: "/goals" }
+          : { heading: "Your recorded activity is current.", label: "Review this month's spending", route: "/categories" };
   const lastMonthSpendTotal = cats.reduce((s, c) => s + c.lastMonthCents, 0);
   const daysInLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
   const lastMonthPaceCents = lastMonthSpendTotal * (Math.min(dayOfMonth, daysInLastMonth) / daysInLastMonth);
   let spendNarrative: string | null = null;
   if (lastMonthPaceCents > 0) {
     const pct = Math.round(((lastMonthPaceCents - totalSpendRaw) / lastMonthPaceCents) * 100);
-    if (pct > 0) spendNarrative = `You're tracking ${pct}% below last month's pace.`;
+    if (pct >= 100) spendNarrative = "Spending is well below last month's pace at this point.";
+    else if (pct <= -100) spendNarrative = "Spending is well above last month's pace at this point.";
+    else if (pct > 0) spendNarrative = `You're tracking ${pct}% below last month's pace.`;
     else if (pct < 0) spendNarrative = `You're tracking ${Math.abs(pct)}% above last month's pace.`;
     else spendNarrative = "You're tracking even with last month's pace.";
   }
@@ -283,35 +324,46 @@ export default function Today() {
         </div>
       </section>
 
-      <section className="stat-row">
+      <section className="stat-row today-balance-summary">
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("checking"), width: 8, height: 8, marginRight: 6 }} />Liquid</div><div className="value money">{money(liquidCents, { currency: primaryCurrency })}</div><div className="sub">Cash and near-cash accounts</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("investment"), width: 8, height: 8, marginRight: 6 }} />Invested</div><div className="value money">{money(investedCents, { currency: primaryCurrency })}</div><div className="sub">Brokerage and retirement balances</div></div>
         <div className="stat"><div className="label"><span className="cswatch" style={{ background: accountTypeColor("credit"), width: 8, height: 8, marginRight: 6 }} />Credit</div><div className="value money">{money(creditCents, { currency: primaryCurrency })}</div><div className="sub">Outstanding liabilities on connected accounts</div></div>
         <div className="stat accent"><div className="label" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Runway<ExplainBtn metric="runway_days" label="runway" onOpen={setExplainKey} /></div><div className="value">{runwayDays !== null ? `${runwayDays}d` : "—"}</div><div className="sub">{runwayDays !== null ? `Liquid at avg burn · ${metrics ? money(metrics.avgMonthlyExpenseCents, { currency: primaryCurrency }) : "—"}/mo` : "Needs about a month of history"}</div></div>
       </section>
 
-      <PerPersonCard currency={primaryCurrency} />
-
-      <section className="section today-split">
-        <div className="card">
-          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Morning briefing · 60 seconds</div>
-          <h2 className="h3" style={{ marginBottom: 10 }}>Start with what moved, what needs attention, and what to do next.</h2>
+      <section className="section today-focus">
+        <div className="card today-next-action">
+          <div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Next action</div>
+          <h2 className="h3" style={{ marginBottom: 10 }}>{primaryAction.heading}</h2>
           <p className="muted" style={{ marginTop: 0, lineHeight: 1.65, fontSize: 14 }}>{briefingText}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
-            <button className="btn sm" type="button" onClick={() => navigate("/inbox")}>See what needs attention</button>
-            <CopilotNudge prompt="Give me the short version of what changed financially this week and what I should do next." label="Ask follow-up ⌘K" variant="accent" />
+            <button className="btn primary sm" type="button" onClick={() => navigate(primaryAction.route)}>{primaryAction.label}</button>
+            <CopilotNudge prompt="Give me the short version of what changed financially this week and what I should do next." label="Ask Copilot" />
           </div>
         </div>
 
-        {celebrateMilestones.length > 0 ? (
-          <div className="card accent">
-            <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Milestone unlocked</div>
-            <h2 className="h3" style={{ marginBottom: 10 }}>Net worth crossed {milestoneLabel(celebrateMilestones[0]!, primaryCurrency)}</h2>
-            <p className="muted" style={{ lineHeight: 1.6 }}>Quiet compounding is working. Take a moment, then decide where the next increment should go.</p>
-            <button className="btn ghost sm" type="button" onClick={() => setDismissedMilestones((prev) => [...prev, celebrateMilestones[0]!])}>Dismiss</button>
+        <details className="today-progress">
+          <summary>
+            <span>Progress and planning</span>
+            {celebrateMilestones.length > 0 && <span className="today-milestone-signal">Milestone ready</span>}
+          </summary>
+          <div className="today-progress-panel">
+            {celebrateMilestones.length > 0 ? (
+              <div className="card accent today-milestone-card">
+                <div className="eyebrow" style={{ color: "var(--accent)", marginBottom: 8 }}><span className="dot" />Milestone unlocked</div>
+                <h2 className="h3" style={{ marginBottom: 10 }}>Net worth crossed {milestoneLabel(celebrateMilestones[0]!, primaryCurrency)}</h2>
+                <p className="muted" style={{ lineHeight: 1.6 }}>Quiet compounding is working. Take a moment, then decide where the next increment should go.</p>
+                <button className="btn ghost sm" type="button" onClick={() => setDismissedMilestones((prev) => [...prev, celebrateMilestones[0]!])}>Dismiss</button>
+              </div>
+            ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} onExplain={setExplainKey} />}
           </div>
-        ) : showSweep && totals ? <SmartSweepCard netCents={totals.netCents} onDismiss={() => setSweepDismissed(true)} /> : <HealthScoreCard score={healthScore} savingsPoints={savingsRateHistory} onExplain={setExplainKey} />}
+        </details>
       </section>
+
+      <details className="section today-more">
+      <summary>Explore household and monthly detail</summary>
+      <div className="today-more-content">
+      <PerPersonCard currency={primaryCurrency} />
 
       {shouldShowMonthlyReview && <section className="section"><div className="card"><div className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><div className="eyebrow" style={{ marginBottom: 6 }}>Month-end close</div><h2 className="h3">Close out {prevMonthLabel} — verify the data and record its snapshot.</h2></div><button className="btn primary" type="button" onClick={() => navigate("/close")}>Start close</button></div></div></section>}
 
@@ -321,6 +373,8 @@ export default function Today() {
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}><span className="dot" />Agent · while you were away</div><AgentActivityFeed /><div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{needsReview > 0 && <button className="chip warning" style={{ cursor: "pointer" }} onClick={() => navigate("/accounts")} type="button">{needsReview} transaction{needsReview === 1 ? "" : "s"} need{needsReview === 1 ? "s" : ""} review →</button>}{(agentStatus?.anomalyCount ?? 0) > 0 && <button className="chip warning" style={{ cursor: "pointer" }} onClick={() => navigate("/accounts")} type="button">{agentStatus!.anomalyCount} unusual charge{agentStatus!.anomalyCount === 1 ? "" : "s"} flagged →</button>}{needsReview === 0 && (agentStatus?.anomalyCount ?? 0) === 0 && <span className="muted" style={{ fontSize: 12.5 }}>Nothing needs your attention right now.</span>}</div></div>
         <div className="card"><div className="eyebrow" style={{ marginBottom: 10 }}>{recurringSoon.length > 0 ? "Due in the next two weeks" : "Recurring commitments"}</div>{upcomingRecurring.length === 0 ? <div className="muted">No recurring subscriptions or bills detected yet.</div> : <div className="table-wrap" style={{ border: "none", background: "transparent" }}><table className="tbl"><thead><tr><th>Merchant</th><th>{recurringSoon.length > 0 ? "Due" : "Cadence"}</th><th className="right">Amount</th></tr></thead><tbody>{upcomingRecurring.map((item) => <tr key={`${item.merchantRaw}-${item.nextExpected}`}><td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || "var(--ink-faint)" }} /><span>{item.merchantRaw}</span></div></td><td className="muted tabular">{daysUntilLabel(item.nextExpected) ?? item.cadence}</td><td className="right"><span className={`money num ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(Math.abs(item.lastAmountCents))}</span></td></tr>)}</tbody></table></div>}<div style={{ marginTop: 18 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Cashflow trend</div><SavingsRateSparkline points={savingsRateHistory} /></div></div>
       </section>
+      </div>
+      </details>
 
       <ExplainInspector metricKey={explainKey} currency={primaryCurrency} onClose={() => setExplainKey(null)} />
     </div>

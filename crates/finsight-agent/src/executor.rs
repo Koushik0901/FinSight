@@ -388,14 +388,31 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
             // hand-saved one. Field names are read tolerantly (snake_ or camelCase).
             let p = &payload.params;
             let field = |snake: &str, camel: &str| {
-                p.get(snake).or_else(|| p.get(camel)).cloned().unwrap_or(serde_json::Value::Null)
+                p.get(snake)
+                    .or_else(|| p.get(camel))
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
             };
             let params = finsight_core::forecast::ScenarioParams {
-                income_delta_pct: field("income_delta_pct", "incomeDeltaPct").as_i64().unwrap_or(0) as i32,
-                monthly_expense_delta_cents: field("monthly_expense_delta_cents", "monthlyExpenseDeltaCents").as_i64().unwrap_or(0),
-                one_time_cents: field("one_time_cents", "oneTimeCents").as_i64().unwrap_or(0),
-                start_month_offset: field("start_month_offset", "startMonthOffset").as_u64().unwrap_or(0) as u32,
-                label: field("label", "label").as_str().unwrap_or(&payload.description).to_string(),
+                income_delta_pct: field("income_delta_pct", "incomeDeltaPct")
+                    .as_i64()
+                    .unwrap_or(0) as i32,
+                monthly_expense_delta_cents: field(
+                    "monthly_expense_delta_cents",
+                    "monthlyExpenseDeltaCents",
+                )
+                .as_i64()
+                .unwrap_or(0),
+                one_time_cents: field("one_time_cents", "oneTimeCents")
+                    .as_i64()
+                    .unwrap_or(0),
+                start_month_offset: field("start_month_offset", "startMonthOffset")
+                    .as_u64()
+                    .unwrap_or(0) as u32,
+                label: field("label", "label")
+                    .as_str()
+                    .unwrap_or(&payload.description)
+                    .to_string(),
             };
             let months: u32 = 12;
             let baseline = scenarios::build_baseline(conn)?;
@@ -420,8 +437,8 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 "label": params.label,
             })
             .to_string();
-            let baseline_json =
-                serde_json::to_string(&baseline).map_err(|e| CoreError::InvalidState(e.to_string()))?;
+            let baseline_json = serde_json::to_string(&baseline)
+                .map_err(|e| CoreError::InvalidState(e.to_string()))?;
             let row = scenarios::insert(
                 conn,
                 &payload.description,
@@ -430,7 +447,10 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 Some(&baseline_json),
                 Some(months as i64),
             )?;
-            Ok(format!("Scenario '{}' saved as {}", row.description, row.id))
+            Ok(format!(
+                "Scenario '{}' saved as {}",
+                row.description, row.id
+            ))
         }
         "generate_report" => {
             let payload: GenerateReportPayload = parse_payload(&item.payload_json)?;
@@ -525,11 +545,7 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                 // accept/correct/reject must resolve any live proposal, or the
                 // row lingers in the review queue and a later Accept reverts
                 // this categorization to the stale LLM guess.
-                category_proposals::resolve_for_txn(
-                    conn,
-                    &a.transaction_id,
-                    Some(&a.category_id),
-                )?;
+                category_proposals::resolve_for_txn(conn, &a.transaction_id, Some(&a.category_id))?;
 
                 // Record the categorization + a correction memory so the built-in
                 // categorizer learns this merchant mapping going forward.
@@ -1032,7 +1048,14 @@ mod tests {
         .unwrap();
 
         let bundle = copilot_actions::insert_bundle(
-            &mut conn, None, "Recat", "Summary", "Rationale", 0.9, None, None,
+            &mut conn,
+            None,
+            "Recat",
+            "Summary",
+            "Rationale",
+            0.9,
+            None,
+            None,
         )
         .unwrap();
         let item = copilot_actions::insert_item(
@@ -1063,7 +1086,11 @@ mod tests {
             "the transaction must leave the review queue"
         );
         let cat: Option<String> = conn
-            .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='t1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(cat.as_deref(), Some("cat2"));
     }
@@ -1100,7 +1127,14 @@ mod tests {
         .unwrap();
 
         let bundle = copilot_actions::insert_bundle(
-            &mut conn, None, "Recat", "Summary", "Rationale", 0.9, None, None,
+            &mut conn,
+            None,
+            "Recat",
+            "Summary",
+            "Rationale",
+            0.9,
+            None,
+            None,
         )
         .unwrap();
         let item = copilot_actions::insert_item(

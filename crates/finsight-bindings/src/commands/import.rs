@@ -45,8 +45,7 @@ pub async fn import_csv(
     account_id: String,
     mapping: CsvImportMapping,
 ) -> AppResult<ImportResult> {
-    let sink: Arc<dyn finsight_api::sink::FrameSink> =
-        Arc::new(TauriFrameSink(app.clone()));
+    let sink: Arc<dyn finsight_api::sink::FrameSink> = Arc::new(TauriFrameSink(app.clone()));
     let result =
         finsight_api::commands::import::import_csv(&state.api, sink, path, account_id, mapping)
             .await?;
