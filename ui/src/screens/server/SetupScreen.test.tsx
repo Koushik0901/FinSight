@@ -40,6 +40,16 @@ describe("SetupScreen", () => {
     expect(setup).not.toHaveBeenCalled();
   });
 
+  it("shows the same ten-character minimum enforced by the form and server", () => {
+    render(<SetupScreen onComplete={vi.fn()} />);
+    fillForm("koushik", "short", "short");
+
+    expect(screen.getByText("10+ characters")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+    expect(screen.getByRole("alert")).toHaveTextContent("at least 10 characters");
+    expect(setup).not.toHaveBeenCalled();
+  });
+
   it("only calls onComplete after the recovery key is confirmed via RecoveryKeyReveal", async () => {
     vi.mocked(setup).mockResolvedValue({ recoveryKey: RECOVERY_KEY });
     const onComplete = vi.fn();

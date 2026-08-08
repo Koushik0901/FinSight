@@ -2,12 +2,21 @@ import { beforeEach, describe, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import StepAccounts from "./StepAccounts";
 import StepHistory from "./StepHistory";
+import StepWelcome from "./StepWelcome";
 
 const useAccounts = vi.hoisted(() => vi.fn());
 const useTransactions = vi.hoisted(() => vi.fn());
+const markComplete = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
+const createMember = vi.hoisted(() => ({ mutateAsync: vi.fn() }));
+const setSelf = vi.hoisted(() => ({ mutateAsync: vi.fn() }));
 
 vi.mock("../../api/hooks/accounts", () => ({ useAccounts }));
 vi.mock("../../api/hooks/transactions", () => ({ useTransactions }));
+vi.mock("../../api/hooks/onboarding", () => ({ useMarkOnboardingComplete: () => markComplete }));
+vi.mock("../../api/hooks/household", () => ({
+  useCreateHouseholdMember: () => createMember,
+  useSetSelfMember: () => setSelf,
+}));
 vi.mock("../../components/AccountDrawer", () => ({
   default: ({ open }: { open: boolean }) => open ? <div role="dialog" aria-label="Account editor" /> : null,
 }));
@@ -53,6 +62,13 @@ describe("Onboarding account-first flow", () => {
   beforeEach(() => {
     useAccounts.mockReturnValue({ data: [], isLoading: false, error: null });
     useTransactions.mockReturnValue({ data: [], isLoading: false, error: null });
+  });
+
+  it("describes self-hosting without claiming opted-in integrations keep data local", () => {
+    render(<StepWelcome onNext={() => {}} onSkipToToday={() => {}} />);
+
+    expect(screen.getByText(/stays on your server unless you choose an external service/i)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing leaves your machine/i)).not.toBeInTheDocument();
   });
 
   it("keeps account establishment separate from transaction history", () => {

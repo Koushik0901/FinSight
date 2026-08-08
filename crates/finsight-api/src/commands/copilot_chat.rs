@@ -343,6 +343,7 @@ pub async fn stream_copilot_message(
     let parent_message_id_for_engine = parent_message_id.clone();
     let sequence_for_engine = Arc::clone(&sequence);
     let live_tool_frames_for_engine = Arc::clone(&emitted_live_tool_frames);
+    #[cfg(debug_assertions)]
     let command_run_id = run_id.clone();
     // Capture the arguments of the turn's `search_transactions` call so a
     // transactionTable block it produces can carry them (see the enrichment

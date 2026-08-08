@@ -50,8 +50,9 @@ export default function StepWelcome({ onNext, onSkipToToday }: Props) {
         <div className="num-step">001 · Welcome</div>
         <h1>A quiet way to understand your money.</h1>
         <p className="lead">
-          FinSight is local-first and encrypted. Nothing leaves your machine. Start with the accounts you want to track,
-          then bring in history from statements or secure bank sync.
+          FinSight is self-hosted and encrypted. Your financial data stays on your server unless you choose an external
+          service such as SimpleFIN or a cloud AI provider. Start with the accounts you want to track, then bring in
+          history from statements or secure bank sync.
         </p>
         <div className="row row-sm wrap" style={{ marginBottom: 20 }}>
           <span className="chip"><span className="dot" /> Local-first</span>

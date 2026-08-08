@@ -14,6 +14,9 @@ node_modules/
 ui/dist/
 .pnpm-store/
 
+# Local browser QA artifacts
+.playwright-cli/
+
 # IDE
 .idea/
 .vscode/

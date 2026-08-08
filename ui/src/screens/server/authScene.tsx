@@ -107,14 +107,14 @@ export function Field({
 /* ── password strength ─────────────────────────────────── */
 export function strength(pw: string): number {
   let s = 0;
-  if (pw.length >= 8) s++;
+  if (pw.length >= 10) s++;
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
   if (/\d/.test(pw)) s++;
   if (/[^A-Za-z0-9]/.test(pw)) s++;
   return Math.min(s, 4);
 }
 export const STR = [
-  { lab: "TOO SHORT", c: "var(--ink-faint)", hint: "8+ characters" },
+  { lab: "TOO SHORT", c: "var(--ink-faint)", hint: "10+ characters" },
   { lab: "WEAK", c: "var(--negative)", hint: "Add a number" },
   { lab: "FAIR", c: "var(--warning)", hint: "Add a symbol" },
   { lab: "GOOD", c: "var(--sky)", hint: "Nearly there" },

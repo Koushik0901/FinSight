@@ -1,0 +1,146 @@
+name: Container
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    paths:
+      - ".github/workflows/container.yml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "ui/**"
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: koushik0901/finsight
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build architecture image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ github.sha }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=finsight-container-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=finsight-container-${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+
+  publish:
+    name: Publish multi-architecture manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Merge architecture images
+        id: merge
+        env:
+          RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t tags <<< "$RELEASE_TAGS"
+          tag_args=()
+          for tag in "${tags[@]}"; do
+            if [[ -n "$tag" ]]; then
+              tag_args+=(--tag "$tag")
+            fi
+          done
+
+          image="${REGISTRY}/${IMAGE_NAME}"
+          docker buildx imagetools create "${tag_args[@]}" \
+            "${image}:build-${GITHUB_SHA}-amd64" \
+            "${image}:build-${GITHUB_SHA}-arm64"
+
+          primary="${image}:sha-${GITHUB_SHA::7}"
+          digest="$(docker buildx imagetools inspect "$primary" | awk '/^Digest:/ {print $2; exit}')"
+          test -n "$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published platforms
+        run: |
+          docker buildx imagetools inspect \
+            "${REGISTRY}/${IMAGE_NAME}:sha-${GITHUB_SHA::7}"
+
+      - name: Attest image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true

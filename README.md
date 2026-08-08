@@ -103,10 +103,15 @@ docker compose logs -f finsight
 ```
 
 Open `http://localhost:8674` for a local smoke test. To complete setup and
-sign in over bare HTTP, temporarily set `FINSIGHT_COOKIE_SECURE=0` in
-`docker-compose.yml`; restore it to `1` when HTTPS is configured. The first
-account created becomes the administrator and receives a one-time recovery key.
-Save it before continuing.
+sign in on the Docker host, no cookie override is needed: browsers treat
+`localhost` and `127.0.0.1` as trustworthy local origins. The first account
+created becomes the administrator and receives a one-time recovery key. Save it
+before continuing.
+
+For plain HTTP access from another device over a LAN address, set
+`FINSIGHT_COOKIE_SECURE=0`; that is a limited, non-PWA test mode because browsers
+do not treat a bare LAN HTTP origin as secure. Restore the default value of `1`
+before putting FinSight behind HTTPS.
 
 For normal use, put FinSight behind HTTPS and keep secure cookies enabled. The
 full Tailscale, Caddy, LAN TLS, PWA installation, backup, upgrade, and desktop
