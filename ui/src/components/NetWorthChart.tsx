@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { NetWorthPoint } from "../api/client";
 import { compactMoney } from "../utils/format";
+import { formatCalendarDate, parseCalendarDate } from "../utils/date";
 
 const HEIGHT = 220;
 const PAD_TOP = 34; // room for the end-value callout
@@ -46,7 +47,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
   // monthly (backfilled history) and daily (going forward) cadences, so
   // index-spacing would stretch a 1-day gap as wide as a 30-day gap and bend
   // the trend. Time-proportional x keeps the slope honest.
-  const times = points.map((p) => new Date(p.date).getTime());
+  const times = points.map((p) => parseCalendarDate(p.date).getTime());
   const tMin = times[0]!;
   const tMax = times[times.length - 1]!;
   const tSpan = tMax - tMin || 1;
@@ -129,7 +130,7 @@ export default function NetWorthChart({ points, controls, rangeLabel = "6 months
                 whiteSpace: "nowrap",
               }}
             >
-              {new Date(p.date).toLocaleDateString("en-US", { month: "short" })}
+              {formatCalendarDate(p.date, { month: "short" })}
             </span>
           );
         })}

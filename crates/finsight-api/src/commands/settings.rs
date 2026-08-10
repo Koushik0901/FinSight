@@ -8,11 +8,27 @@ const CURRENCY_KEY: &str = "display_currency";
 /// crate boundary now that the body lives here.
 pub const AUTO_CATEGORIZE_ENABLED_KEY: &str = "agent.auto_categorize_enabled";
 
+fn resolved_currency(conn: &rusqlite::Connection) -> finsight_core::CoreResult<String> {
+    let val: Option<String> = settings::get(conn, CURRENCY_KEY)?;
+    if let Some(currency) = val {
+        return Ok(currency);
+    }
+
+    Ok(finsight_core::currency::currency_profile(conn)?
+        .primary()
+        .unwrap_or(finsight_core::currency::SCHEMA_DEFAULT_CURRENCY)
+        .to_string())
+}
+
 pub async fn get_currency(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
-        let val: Option<String> = settings::get(conn, CURRENCY_KEY)?;
-        Ok(val.unwrap_or_else(|| "USD".to_string()))
+        // Before the user explicitly chooses a display/default currency, use
+        // the currency their accounts actually establish. This keeps the
+        // second account, manual assets, goals, and other currency-less plan
+        // values aligned with a CAD/EUR/etc. household instead of silently
+        // reverting to USD after the first account was entered correctly.
+        resolved_currency(conn)
     })
     .await
     .map_err(AppError::from)
@@ -208,5 +224,23 @@ mod tests {
         .await
         .unwrap();
         assert!(!val);
+    }
+
+    #[test]
+    fn currency_defaults_to_live_account_currency_until_explicitly_set() {
+        let (_dir, db) = fresh_db();
+        let conn = db.get().unwrap();
+
+        assert_eq!(resolved_currency(&conn).unwrap(), "USD");
+        conn.execute(
+            "INSERT INTO accounts (id, owner, bank, type, name, currency, color, created_at) \
+             VALUES ('cad-1', 'joint', 'Bank', 'Checking', 'Chequing', 'CAD', '#000000', '2026-08-08T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(resolved_currency(&conn).unwrap(), "CAD");
+
+        settings::set(&conn, CURRENCY_KEY, &"EUR").unwrap();
+        assert_eq!(resolved_currency(&conn).unwrap(), "EUR");
     }
 }

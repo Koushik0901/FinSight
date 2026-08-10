@@ -14,6 +14,7 @@ import { prettyMerchant } from "../utils/merchant";
 import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";
 import PlannedTransactionDrawer from "../components/PlannedTransactionDrawer";
 import PageHeader from "../components/PageHeader";
+import { formatCalendarDate, parseCalendarDate } from "../utils/date";
 
 function recurringGroup(item: { kind: string; lastAmountCents: number }) {
   // Group by the deterministically-classified kind (Phase 6). Falls back to
@@ -30,7 +31,7 @@ function PriceChangePill({ pc, compact = false }: { pc: NonNullable<RecurringIte
   return (
     <span
       className="chip"
-      title={`Was ${money(pc.fromCents, { decimals: 2 })}, now ${money(pc.toCents, { decimals: 2 })} since ${new Date(pc.effectiveDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+      title={`Was ${money(pc.fromCents, { decimals: 2 })}, now ${money(pc.toCents, { decimals: 2 })} since ${formatCalendarDate(pc.effectiveDate, { month: "short", day: "numeric" })}`}
       style={{ color: tone, borderColor: tone, background: "transparent", fontVariantNumeric: "tabular-nums", ...(compact ? { fontSize: 11, padding: "1px 7px", marginLeft: 6 } : {}) }}
     >
       {up ? "↑" : "↓"} {pc.pct >= 0 ? "+" : ""}{Math.round(pc.pct)}%
@@ -41,7 +42,7 @@ function PriceChangePill({ pc, compact = false }: { pc: NonNullable<RecurringIte
 function fmtShortDate(d: string) {
   // Parse a YYYY-MM-DD as LOCAL midnight (not UTC), so a date doesn't display
   // one day early for viewers behind UTC.
-  return new Date(`${d}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatCalendarDate(d, { month: "short", day: "numeric", year: "numeric" });
 }
 
 /** Today's date as YYYY-MM-DD in the viewer's local timezone. */
@@ -109,11 +110,12 @@ export default function Recurring() {
   const pendingChanges = items.filter((item) => item.priceChange && !item.verdict);
   const [view, setView] = useState<"monthly" | "upcoming" | "all">("monthly");
   const [editingPlanned, setEditingPlanned] = useState<PlannedTransaction | null>(null);
+  const [creatingPlanned, setCreatingPlanned] = useState(false);
 
   const groups = useMemo(() => {
     const filtered = items.filter((item) => {
       if (view === "monthly") return recurringFrequency(item) === "monthly" || recurringFrequency(item) === "annual" || recurringFrequency(item) === "biweekly";
-      if (view === "upcoming") return new Date(item.nextExpected).getTime() <= Date.now() + 7 * 86400000;
+      if (view === "upcoming") return parseCalendarDate(item.nextExpected).getTime() <= Date.now() + 7 * 86400000;
       return true;
     });
     return ["Bills", "Subscriptions", "Income"].map((label) => ({ label, items: filtered.filter((item) => recurringGroup(item) === label) }));
@@ -134,7 +136,7 @@ export default function Recurring() {
   const billsCount = items.filter((item) => recurringGroup(item) === "Bills").length;
   const subscriptionsCount = items.filter((item) => recurringGroup(item) === "Subscriptions").length;
   const incomeCount = items.filter((item) => recurringGroup(item) === "Income").length;
-  const nextSevenDays = items.filter((item) => new Date(item.nextExpected).getTime() <= Date.now() + 7 * 86400000).length;
+  const nextSevenDays = items.filter((item) => parseCalendarDate(item.nextExpected).getTime() <= Date.now() + 7 * 86400000).length;
   const activePlanned = plannedTransactions.filter((item) => item.status === "planned");
 
   useEffect(() => {
@@ -158,8 +160,12 @@ export default function Recurring() {
           headingLevel={1}
           title="No recurring items yet"
           description="Import a few months of statements and FinSight detects your subscriptions, bills, and recurring income automatically."
-          actions={<button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Import transactions</button>}
+          actions={<div className="row row-sm wrap">
+            <button className="btn primary" type="button" onClick={() => navigate("/onboarding")}>Import transactions</button>
+            <button className="btn outline" type="button" onClick={() => setCreatingPlanned(true)}>Add planned transaction</button>
+          </div>}
         />
+        <PlannedTransactionDrawer open={creatingPlanned} onClose={() => setCreatingPlanned(false)} />
       </div>
     );
   }
@@ -209,7 +215,7 @@ export default function Recurring() {
                     <div style={{ fontWeight: 600 }}>{prettyMerchant(item.merchantRaw)} <PriceChangePill pc={pc} /></div>
                     <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
                       <span className="money">{money(pc.fromCents, { decimals: 2 })} → {money(pc.toCents, { decimals: 2 })}</span>
-                      {" · since "}{new Date(pc.effectiveDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      {" · since "}{formatCalendarDate(pc.effectiveDate, { month: "short", day: "numeric" })}
                       {" · "}{Math.round((item.confidence ?? 0) * 100)}% confidence
                     </div>
                   </div>
@@ -249,7 +255,7 @@ export default function Recurring() {
                     <tr key={`${group.label}-${item.merchantKey}`} title={(item.reasons ?? []).join(" · ")} style={dismissed ? { opacity: 0.5 } : undefined}>
                       <td><div className="row row-sm"><span className="cswatch" style={{ background: item.categoryColor || (item.lastAmountCents > 0 ? "var(--accent)" : "var(--ink-faint)") }} /><div><div>{prettyMerchant(item.merchantRaw)}{item.priceChange && <PriceChangePill pc={item.priceChange} compact />}{dismissed && <span className="chip" style={{ marginLeft: 6, fontSize: 11, padding: "1px 8px" }}>dismissed</span>}</div><div className="muted" style={{ fontSize: 12 }}>{item.categoryLabel || group.label} · {item.occurrences}× · {Math.round((item.confidence ?? 0) * 100)}% confidence{item.kind !== "income" && !item.feedsProjections ? " · not used in forecasts" : ""}{canDismiss && <>{" · "}<button type="button" aria-label={`${dismissed ? "Restore" : "Dismiss"} ${prettyMerchant(item.merchantRaw)}`} onClick={() => setVerdict.mutate({ merchantKey: item.merchantKey, verdict: dismissed ? null : "dismissed" })} disabled={setVerdict.isPending} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "var(--ink-mute)", textDecoration: "underline", cursor: "pointer" }}>{dismissed ? "Restore" : "Dismiss"}</button></>}</div><SubscriptionLifecycle item={item} /></div></div></td>
                       <td><span className="chip">{recurringFrequency(item)}</span></td>
-                      <td><span className="mono muted">{new Date(item.nextExpected).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></td>
+                      <td><span className="mono muted">{formatCalendarDate(item.nextExpected, { month: "short", day: "numeric" })}</span></td>
                       <td className="right"><span className={`money ${item.lastAmountCents > 0 ? "pos" : ""}`}>{money(item.lastAmountCents, { decimals: 2 })}</span></td>
                     </tr>
                     );
@@ -268,6 +274,7 @@ export default function Recurring() {
             <div className="eyebrow"><span className="dot" />Planned transactions · {activePlanned.length}</div>
             <h2 className="h1" style={{ fontSize: 22, marginTop: 4 }}>What needs a date and a decision.</h2>
           </div>
+          <button className="btn outline sm" type="button" onClick={() => setCreatingPlanned(true)}>+ Add planned</button>
         </div>
         <div className="card flush">
           {activePlanned.length === 0 ? (
@@ -296,7 +303,7 @@ export default function Recurring() {
                     {item.accountId ? "Linked account" : "No linked account"} · {item.categoryId ? "linked category" : "uncategorized"}
                   </div>
                 </div>
-                <span className="chip">{new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                <span className="chip">{formatCalendarDate(item.dueDate, { month: "short", day: "numeric" })}</span>
                 <span className={`money ${item.amountCents > 0 ? "pos" : ""}`}>{money(item.amountCents, { decimals: 2 })}</span>
               </button>
             ))
@@ -304,7 +311,11 @@ export default function Recurring() {
         </div>
       </section>
 
-      <PlannedTransactionDrawer open={editingPlanned !== null} onClose={() => setEditingPlanned(null)} planned={editingPlanned} />
+      <PlannedTransactionDrawer
+        open={creatingPlanned || editingPlanned !== null}
+        onClose={() => { setCreatingPlanned(false); setEditingPlanned(null); }}
+        planned={editingPlanned}
+      />
     </div>
   );
 }

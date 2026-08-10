@@ -6,6 +6,7 @@ import { useUpdateGoalMonthly, useUpdateGoalPurpose, useUpdateGoalPriority, useG
 import type { GoalDto } from "../api/client";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
+import { formatCalendarDate } from "../utils/date";
 
 interface Props {
   open: boolean;
@@ -121,7 +122,7 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
           <div className="card tight" style={{ padding: 16, background: "var(--surface-2)" }}>
             <div className="row row-sm wrap" style={{ marginBottom: 10 }}>
               <span className="chip">{goal.goalType}</span>
-              {goal.targetDate && <span className="chip">Target {new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}</span>}
+              {goal.targetDate && <span className="chip">Target {formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" })}</span>}
             </div>
             <div className="muted">{goal.targetCents > 0 ? `Goal size ${money(goal.targetCents)}` : "No target amount"}</div>
             <div className="muted" style={{ marginTop: 4 }}>{goal.currentCents > 0 ? `Current balance ${money(goal.currentCents)}` : "No current balance recorded"}</div>

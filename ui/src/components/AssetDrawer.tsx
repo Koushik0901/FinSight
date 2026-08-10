@@ -34,6 +34,7 @@ export default function AssetDrawer({ open, onClose, asset }: Props) {
   // New assets record the user's configured currency — a CAD household's
   // house must not be silently stored (and displayed) as USD.
   const { data: configuredCurrency } = useDefaultCurrency();
+  const formCurrency = (asset?.currency ?? configuredCurrency ?? "USD").toUpperCase();
   const create = useCreateManualAsset();
   const update = useUpdateManualAsset();
   const del = useDeleteManualAsset();
@@ -132,7 +133,7 @@ export default function AssetDrawer({ open, onClose, asset }: Props) {
             {ASSET_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
-        <label> Value ($)
+        <label> Value ({formCurrency})
           <input type="number" step="0.01" {...register("value_dollars")} aria-invalid={!!errors.value_dollars} />
           {errors.value_dollars && <span className="err">{errors.value_dollars.message}</span>}
         </label>

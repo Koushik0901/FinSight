@@ -231,6 +231,33 @@ describe("ImportMappingDialog", () => {
     });
   });
 
+  it("does not refetch the consumed upload after a successful import", async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByText("Safeway")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByRole("combobox", { name: /account/i }), {
+      target: { value: "a1" },
+    });
+
+    const headers = screen.getAllByRole("columnheader");
+    const [dd0, dd1, dd2] = headers.map((h) => h.querySelector("select")!);
+    fireEvent.change(dd0!, { target: { value: "Date" } });
+    fireEvent.change(dd1!, { target: { value: "Merchant" } });
+    fireEvent.change(dd2!, { target: { value: "Amount" } });
+
+    const { commands } = await import("../api/client");
+    await waitFor(() => expect(commands.prepareCsvImport).toHaveBeenCalled());
+    (commands.prepareCsvImport as ReturnType<typeof vi.fn>).mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await waitFor(() => expect(commands.importCsv).toHaveBeenCalled());
+
+    // `useImportCsv` invalidates import caches on success. The dialog must not
+    // turn that invalidation into a prepare call with the now-consumed token.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(commands.prepareCsvImport).not.toHaveBeenCalled();
+  });
+
   it("navigates to /import-review when rows are queued for review", async () => {
     const { commands } = await import("../api/client");
     (commands.importCsv as ReturnType<typeof vi.fn>).mockResolvedValueOnce({

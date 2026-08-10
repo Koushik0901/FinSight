@@ -42,11 +42,7 @@ pub struct NetWorthBreakdown {
 /// to the primary currency so the total is never a cross-currency sum.
 pub fn breakdown(conn: &mut Connection) -> CoreResult<NetWorthBreakdown> {
     let profile = crate::currency::currency_profile(conn)?;
-    let scope = if profile.is_mixed() {
-        profile.primary()
-    } else {
-        None
-    };
+    let scope = profile.primary();
     breakdown_in_currency(conn, scope)
 }
 

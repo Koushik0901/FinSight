@@ -17,6 +17,7 @@ use specta::Type;
 pub struct UnconvertedHolding {
     pub code: String,
     pub account_count: i64,
+    pub asset_count: i64,
     pub balance_cents: i64,
 }
 
@@ -54,9 +55,9 @@ pub struct FinancialMetrics {
     pub emergency_fund_target_months: f64,
     pub expected_annual_return_pct: f64,
     /// The currency every `_cents` field above is denominated in, derived from
-    /// the user's accounts rather than from a display preference — a preference
-    /// goes stale the moment they open an account in another currency. `None`
-    /// only when there are no accounts yet.
+    /// live accounts and manual assets rather than from a display preference —
+    /// a preference goes stale the moment holdings change. `None` only when
+    /// there are no accounts or manual assets yet.
     pub currency: Option<String>,
     /// Money held in other currencies, never converted and never folded into
     /// the totals above. Non-empty means every figure here is a partial view,
@@ -127,6 +128,7 @@ pub async fn get_financial_metrics(
                 .map(|h| UnconvertedHolding {
                     code: h.code.clone(),
                     account_count: h.account_count,
+                    asset_count: h.asset_count,
                     balance_cents: h.balance_cents,
                 })
                 .collect(),

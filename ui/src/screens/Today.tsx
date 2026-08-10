@@ -20,6 +20,7 @@ import { money } from "../utils/format";
 import { accountTypeColor } from "../utils/accountColor";
 import * as I from "../components/Icons";
 import ExplainInspector from "../components/ExplainInspector";
+import { parseCalendarDate } from "../utils/date";
 
 const RANGES = [
   { key: "1M", days: 30, label: "month" },
@@ -40,7 +41,7 @@ function minutesAgoLabel(iso: string | null | undefined) {
 }
 
 function daysUntilLabel(dateStr: string): string | null {
-  const diff = Math.round((new Date(dateStr).getTime() - Date.now()) / 86400000);
+  const diff = Math.round((parseCalendarDate(dateStr).getTime() - Date.now()) / 86400000);
   if (diff < 0 || diff > 14) return null;
   if (diff === 0) return "today";
   if (diff === 1) return "tomorrow";

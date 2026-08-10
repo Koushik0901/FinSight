@@ -22,7 +22,9 @@ describe("UnconvertedCurrencies", () => {
   it("names the excluded money in its own currency, not the headline one", () => {
     render(
       <UnconvertedCurrencies
-        holdings={[{ code: "CAD", accountCount: 2, balanceCents: 418_000 }]}
+        holdings={[
+          { code: "CAD", accountCount: 2, assetCount: 0, balanceCents: 418_000 },
+        ]}
         primary="USD"
       />,
     );
@@ -37,8 +39,8 @@ describe("UnconvertedCurrencies", () => {
     render(
       <UnconvertedCurrencies
         holdings={[
-          { code: "CAD", accountCount: 1, balanceCents: 418_000 },
-          { code: "GBP", accountCount: 1, balanceCents: 90_000 },
+          { code: "CAD", accountCount: 1, assetCount: 0, balanceCents: 418_000 },
+          { code: "GBP", accountCount: 1, assetCount: 0, balanceCents: 90_000 },
         ]}
         primary="USD"
       />,
@@ -51,7 +53,9 @@ describe("UnconvertedCurrencies", () => {
   it("degrades to a generic label when no primary currency is known", () => {
     render(
       <UnconvertedCurrencies
-        holdings={[{ code: "CAD", accountCount: 1, balanceCents: 1000 }]}
+        holdings={[
+          { code: "CAD", accountCount: 1, assetCount: 0, balanceCents: 1000 },
+        ]}
         primary={null}
       />,
     );

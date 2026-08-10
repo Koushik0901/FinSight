@@ -8,13 +8,23 @@ use axum::Json;
 use finsight_api::error::AppError;
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+
+const KEEP_ALIVE_EVENT: &str = "finsight:keepalive";
 
 /// One SSE `data:` line: `{"event": name, "payload": ...}` — the shim
 /// dispatches on `event`, mirroring Tauri's listen(event) semantics.
 pub fn sse_data(ev: &OutboundEvent) -> String {
     serde_json::to_string(ev).unwrap_or_else(|_| "{}".into())
+}
+
+fn sse_keep_alive_data() -> String {
+    sse_data(&OutboundEvent {
+        event: KEEP_ALIVE_EVENT.into(),
+        payload: serde_json::Value::Null,
+    })
 }
 
 pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Response {
@@ -38,9 +48,14 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
         Ok(ev) => Some(Ok::<_, Infallible>(Event::default().data(sse_data(&ev)))),
         Err(_lagged) => None, // dropped frames are acceptable; see spec reconnect rule
     });
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    // Safari/WebKit can time out an otherwise healthy EventSource when the
+    // only traffic is an SSE comment. Send a real, valid envelope instead;
+    // the browser shim parses it and safely ignores the reserved event name
+    // because no listener is registered for it.
+    let keep_alive = KeepAlive::new()
+        .interval(Duration::from_secs(15))
+        .event(Event::default().data(sse_keep_alive_data()));
+    Sse::new(stream).keep_alive(keep_alive).into_response()
 }
 
 #[cfg(test)]
@@ -95,5 +110,12 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
         assert_eq!(parsed["event"], "categorization.progress");
         assert_eq!(parsed["payload"]["done"], 3);
+    }
+
+    #[test]
+    fn keep_alive_is_a_valid_ignorable_event_envelope() {
+        let parsed: serde_json::Value = serde_json::from_str(&sse_keep_alive_data()).unwrap();
+        assert_eq!(parsed["event"], KEEP_ALIVE_EVENT);
+        assert!(parsed["payload"].is_null());
     }
 }

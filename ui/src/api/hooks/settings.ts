@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../client";
 import { useTweaks } from "../../state/tweaks";
@@ -5,16 +6,26 @@ import { isBackendAvailable } from "../../utils/runtime";
 import { downloadBlob } from "../../lib/downloadBlob";
 
 export function useDefaultCurrency() {
-  return useQuery<string>({
+  const setCurrencyTweak = useTweaks((s) => s.setCurrency);
+  const query = useQuery<string>({
     queryKey: ["currency"],
     queryFn: async () => {
       const result = await commands.getCurrency();
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
-    staleTime: Infinity,
+    // This value is per-user server state and can also be derived from newly
+    // added accounts. Do not trust a week-old persisted PWA query forever:
+    // refresh on each authenticated app mount, while still using the cached
+    // value during offline startup.
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: "always",
     enabled: isBackendAvailable(),
   });
+  useEffect(() => {
+    if (query.data) setCurrencyTweak(query.data);
+  }, [query.data, setCurrencyTweak]);
+  return query;
 }
 
 export function useSetCurrency() {

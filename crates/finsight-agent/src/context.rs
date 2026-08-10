@@ -45,6 +45,8 @@ pub struct CurrencyContext {
 pub struct UnconvertedHoldingContext {
     pub code: String,
     pub account_count: i64,
+    #[serde(default)]
+    pub asset_count: i64,
     pub balance_cents: i64,
 }
 
@@ -213,11 +215,25 @@ impl FinancialContext {
                 .unconverted
                 .iter()
                 .map(|h| {
+                    let mut sources = Vec::new();
+                    if h.account_count > 0 {
+                        sources.push(format!(
+                            "{} account{}",
+                            h.account_count,
+                            if h.account_count == 1 { "" } else { "s" }
+                        ));
+                    }
+                    if h.asset_count > 0 {
+                        sources.push(format!(
+                            "{} asset{}",
+                            h.asset_count,
+                            if h.asset_count == 1 { "" } else { "s" }
+                        ));
+                    }
                     format!(
-                        "{} ({} account{}, {})",
+                        "{} ({}, {})",
                         h.code,
-                        h.account_count,
-                        if h.account_count == 1 { "" } else { "s" },
+                        sources.join(", "),
                         fmt_money(h.balance_cents)
                     )
                 })
@@ -621,6 +637,7 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
                 .map(|h| UnconvertedHoldingContext {
                     code: h.code.clone(),
                     account_count: h.account_count,
+                    asset_count: h.asset_count,
                     balance_cents: h.balance_cents,
                 })
                 .collect(),
@@ -1549,6 +1566,7 @@ mod tests {
                 unconverted: vec![UnconvertedHoldingContext {
                     code: "USD".into(),
                     account_count: 2,
+                    asset_count: 0,
                     balance_cents: 320_000,
                 }],
             },

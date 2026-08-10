@@ -94,6 +94,12 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
   };
   const [autoDetected, setAutoDetected] = useState<Set<string>>(new Set());
   const [usingSaved, setUsingSaved] = useState(false);
+  // Once commit starts the upload token is consumed by `import_csv`. Keep the
+  // speculative prepare query disabled from that point forward; otherwise the
+  // import mutation's cache invalidation can refetch the active preview with a
+  // token that no longer exists, leaving a misleading 400 in the console even
+  // though the import itself succeeded.
+  const [commitStarted, setCommitStarted] = useState(false);
   const detectionAppliedForPath = useRef<string | null>(null);
   const savedAppliedForAccount = useRef<string | null>(null);
 
@@ -223,7 +229,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
     const t = setTimeout(() => setDebouncedMapping(previewMapping), 300);
     return () => clearTimeout(t);
   }, [previewMapping]);
-  const prep = usePrepareImport(path, accountId || null, debouncedMapping);
+  const prep = usePrepareImport(path, accountId || null, commitStarted ? null : debouncedMapping);
 
   async function submit() {
     const mapping: CsvImportMapping = previewMapping ?? {
@@ -234,6 +240,8 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       decimal_separator: ".",
       delimiter: null,
     };
+    setCommitStarted(true);
+    await qc.cancelQueries({ queryKey: ["csv-prepare"] });
     try {
       const result = await importCsv.mutateAsync({ path, account_id: accountId, mapping });
       const summary = result.summary;
@@ -300,6 +308,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
       }
     } catch {
       // importCsv.error is now set; rendered in the footer
+      setCommitStarted(false);
     }
   }
 
@@ -632,7 +641,7 @@ export default function ImportMappingDialog({ path, onClose, onImported, default
             <Button
               variant="primary"
               onClick={submit}
-              disabled={!canSubmit || importCsv.isPending}
+              disabled={!canSubmit || commitStarted || importCsv.isPending}
               loading={importCsv.isPending}
             >
               {importCsv.isPending ? "Importing…" : (

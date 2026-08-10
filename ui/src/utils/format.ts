@@ -54,8 +54,8 @@ function formatIn(
  *
  * Prefer passing an explicit `currency` derived from the DATA (an account's
  * own code, or `FinancialMetrics.currency`) over relying on the default. The
- * stored preference is a display setting that nothing keeps in step with the
- * accounts a user actually holds, so it can label a CAD figure as USD.
+ * stored preference is hydrated from the authenticated user's server setting;
+ * explicit data currency is still preferred for mixed-currency screens.
  */
 export function money(cents: number, opts: MoneyOpts = {}): string {
   const decimals = opts.decimals ?? 0;

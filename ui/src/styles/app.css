@@ -3135,6 +3135,13 @@ body::-webkit-scrollbar-track,
     min-height: var(--touch-target);
     min-width: var(--touch-target);
   }
+
+  .drawer-form :is(input:not([type="radio"]):not([type="checkbox"]), select, textarea),
+  .drawer-body .form-actions button,
+  .drawer-form fieldset label {
+    min-height: var(--touch-target);
+  }
+
   .copilot-finsight-chat .copilot-composer {
     grid-template-columns: var(--touch-target) minmax(0, 1fr) var(--touch-target);
   }

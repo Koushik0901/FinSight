@@ -1023,11 +1023,13 @@ mod tests {
             CurrencyHolding {
                 code: "EUR".into(),
                 account_count: 1,
+                asset_count: 0,
                 balance_cents: 120_000,
             },
             CurrencyHolding {
                 code: "GBP".into(),
                 account_count: 1,
+                asset_count: 0,
                 balance_cents: 90_000,
             },
         ];

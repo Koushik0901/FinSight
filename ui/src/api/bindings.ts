@@ -2731,9 +2731,9 @@ export type FinancialMetrics = { liquidCents: number; investedCents: number; deb
 safetyBasisSpanDays: number; targetSavingsRatePct: number; emergencyFundTargetMonths: number; expectedAnnualReturnPct: number; 
 /**
  * The currency every `_cents` field above is denominated in, derived from
- * the user's accounts rather than from a display preference — a preference
- * goes stale the moment they open an account in another currency. `None`
- * only when there are no accounts yet.
+ * live accounts and manual assets rather than from a display preference —
+ * a preference goes stale the moment holdings change. `None` only when
+ * there are no accounts or manual assets yet.
  */
 currency: string | null; 
 /**
@@ -3581,7 +3581,7 @@ export type TxnPatch = { notes: string | null; category_id: string | null; amoun
  * Reported so the UI can say "also holding US$3,200, not converted" instead of
  * either inventing an exchange rate or silently omitting real money.
  */
-export type UnconvertedHolding = { code: string; accountCount: number; balanceCents: number }
+export type UnconvertedHolding = { code: string; accountCount: number; assetCount: number; balanceCents: number }
 /**
  * One counterparty's undecided transfer-like rows, netted for the grouped
  * review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.

@@ -9,6 +9,7 @@ import type { GoalDto, NewGoalInput } from "../api/client";
 import { money } from "../utils/format";
 import { blurAmounts } from "../utils/blurAmounts";
 import { getAccountDisplayName } from "../utils/accounts";
+import { formatCalendarDate, parseCalendarDate } from "../utils/date";
 import GoalDrawer from "../components/GoalDrawer";
 import EmptyState from "../components/EmptyState";
 import { ExplainDrawer } from "../components/ExplainInspector";
@@ -85,7 +86,7 @@ function GoalCard({ goal, onEdit, onExplain, linkedAccountName, onTogglePause, p
                   ? `Cap of ${money(goal.targetCents)} this month`
                   : `Auto-moves ${money(goal.monthlyCents)}/month`) +
                 (goal.targetDate
-                  ? ` · target ${new Date(goal.targetDate).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+                  ? ` · target ${formatCalendarDate(goal.targetDate, { month: "short", year: "numeric" })}`
                   : ""),
             )}
           </div>
@@ -156,7 +157,7 @@ function isBehindSchedule(goal: GoalDto, months: number): boolean {
   const eta = new Date();
   eta.setDate(1);
   eta.setMonth(eta.getMonth() + months);
-  return eta.getTime() > new Date(goal.targetDate).getTime();
+  return eta.getTime() > parseCalendarDate(goal.targetDate).getTime();
 }
 
 export function buildHorizonRows(goals: GoalDto[]): { rows: HorizonRow[]; windowMonths: number } {

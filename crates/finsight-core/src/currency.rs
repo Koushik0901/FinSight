@@ -1,4 +1,5 @@
-//! What currencies the user actually holds, derived from their accounts.
+//! What currencies the user actually holds, derived from accounts and manual
+//! assets.
 //!
 //! Every `_cents` aggregate in this crate is a plain `i64`. Nothing in an `i64`
 //! records which currency it counts, so summing across accounts denominated
@@ -27,7 +28,7 @@
 //! * **The currency set is never read from a setting.** A display preference
 //!   goes stale exactly like a static rate would: the user picks CAD, later
 //!   opens a USD account, and the label keeps saying CAD. Deriving it from the
-//!   accounts themselves means there is nothing to maintain and nothing to
+//!   holdings themselves means there is nothing to maintain and nothing to
 //!   drift.
 
 use crate::error::CoreResult;
@@ -73,27 +74,31 @@ pub struct CurrencyHolding {
     pub code: String,
     /// Non-archived accounts denominated in it.
     pub account_count: i64,
-    /// Signed sum of the *known* balances of those accounts. Accounts whose
-    /// balance is unconfirmed are excluded here for the same reason
-    /// `balance_breakdown` excludes them — a phantom $0 is not a balance.
+    /// Manually tracked assets denominated in it.
+    pub asset_count: i64,
+    /// Signed sum of the *known* account balances and manual-asset values in
+    /// this currency. Accounts whose balance is unconfirmed are excluded here
+    /// for the same reason `balance_breakdown` excludes them — a phantom $0 is
+    /// not a balance.
     pub balance_cents: i64,
 }
 
 /// The currency composition of the user's holdings.
 ///
-/// Ordered most-held first: by account count, then by absolute known balance,
-/// then by code. The last two are tie-breakers that exist so the primary
-/// currency is *deterministic* — a headline figure that silently swapped
-/// currency between two page loads because a `HashMap` reordered would be worse
-/// than the bug this module fixes.
+/// Account currencies come first and are ordered by account count, then by
+/// absolute known balance and code. Asset-only currencies follow, ordered by
+/// asset count, absolute value, and code. Accounts deliberately establish the
+/// primary whenever any exist; every tie-breaker is deterministic so a headline
+/// cannot silently swap currency when a `HashMap` reorders.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CurrencyProfile {
     pub holdings: Vec<CurrencyHolding>,
 }
 
 impl CurrencyProfile {
-    /// The currency aggregates are denominated in. `None` only when there are
-    /// no accounts at all, in which case there is nothing to denominate.
+    /// The currency aggregates are denominated in. Accounts establish the
+    /// primary when any exist; otherwise manual assets do. `None` only when
+    /// neither source exists.
     pub fn primary(&self) -> Option<&str> {
         self.holdings.first().map(|h| h.code.as_str())
     }
@@ -110,7 +115,7 @@ impl CurrencyProfile {
     }
 }
 
-/// Derive the currency profile from live account data.
+/// Derive the currency profile from live account and manual-asset data.
 ///
 /// Scoped to non-archived accounts, matching `accounts::list_summaries`: an
 /// account the user closed should not keep a second currency alive and force
@@ -162,6 +167,7 @@ pub fn currency_profile(conn: &Connection) -> CoreResult<CurrencyProfile> {
             None => holdings.push(CurrencyHolding {
                 code,
                 account_count: 1,
+                asset_count: 0,
                 balance_cents: if known { balance } else { 0 },
             }),
         }
@@ -173,6 +179,54 @@ pub fn currency_profile(conn: &Connection) -> CoreResult<CurrencyProfile> {
             .then_with(|| b.balance_cents.abs().cmp(&a.balance_cents.abs()))
             .then_with(|| a.code.cmp(&b.code))
     });
+
+    // Accounts establish the primary currency. Manual assets join those same
+    // buckets, while an asset-only currency is appended as an unconverted
+    // holding instead of being silently added to the account currency. When a
+    // user has only assets, the largest asset bucket becomes the deterministic
+    // primary so those users still get a meaningful total.
+    let has_accounts = !holdings.is_empty();
+    let mut asset_holdings: Vec<CurrencyHolding> = Vec::new();
+    let mut asset_stmt = conn.prepare_cached("SELECT currency, value_cents FROM manual_assets")?;
+    for row in asset_stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
+        let (raw, value_cents) = row?;
+        let code = normalize_code(&raw);
+        match asset_holdings.iter_mut().find(|h| h.code == code) {
+            Some(h) => {
+                h.asset_count += 1;
+                h.balance_cents += value_cents;
+            }
+            None => asset_holdings.push(CurrencyHolding {
+                code,
+                account_count: 0,
+                asset_count: 1,
+                balance_cents: value_cents,
+            }),
+        }
+    }
+    asset_holdings.sort_by(|a, b| {
+        b.asset_count
+            .cmp(&a.asset_count)
+            .then_with(|| b.balance_cents.abs().cmp(&a.balance_cents.abs()))
+            .then_with(|| a.code.cmp(&b.code))
+    });
+    for asset_holding in asset_holdings {
+        match holdings.iter_mut().find(|h| h.code == asset_holding.code) {
+            Some(h) => {
+                h.asset_count += asset_holding.asset_count;
+                h.balance_cents += asset_holding.balance_cents;
+            }
+            None => holdings.push(asset_holding),
+        }
+    }
+    if !has_accounts {
+        holdings.sort_by(|a, b| {
+            b.asset_count
+                .cmp(&a.asset_count)
+                .then_with(|| b.balance_cents.abs().cmp(&a.balance_cents.abs()))
+                .then_with(|| a.code.cmp(&b.code))
+        });
+    }
 
     Ok(CurrencyProfile { holdings })
 }
@@ -285,11 +339,13 @@ mod tests {
                 CurrencyHolding {
                     code: "AAA".into(),
                     account_count: 1,
+                    asset_count: 0,
                     balance_cents: 100,
                 },
                 CurrencyHolding {
                     code: "ZZZ".into(),
                     account_count: 1,
+                    asset_count: 0,
                     balance_cents: 900,
                 },
             ],

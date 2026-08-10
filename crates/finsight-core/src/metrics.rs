@@ -518,14 +518,11 @@ fn in_scope_currency(account_currency: &str, scope: Option<&str>) -> bool {
 
 pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> {
     let profile = crate::currency::currency_profile(conn)?;
-    // Only narrow when there is something to narrow: for the single-currency
-    // case (almost everyone) scope is None and every account is in scope, so
-    // this path is byte-for-byte the old behaviour.
-    let scope = if profile.is_mixed() {
-        profile.primary()
-    } else {
-        None
-    };
+    // Always name the scope when one exists. A household can have CAD accounts
+    // and a USD manual asset: the accounts alone are single-currency, but the
+    // aggregate is not. `currency_profile` includes both sources so the asset
+    // stays separate instead of being silently added to CAD.
+    let scope = profile.primary();
     let summaries = accounts::list_summaries(conn)?;
     let net_worth_cents = net_worth::breakdown_in_currency(conn, scope)?.net_worth_cents;
 
@@ -831,11 +828,7 @@ pub fn balance_breakdown_for(
     // total and carries the same unconverted list. Otherwise a member's shares
     // would fail to reconcile against a household figure computed on a
     // different set of accounts.
-    let scope = if profile.is_mixed() {
-        profile.primary()
-    } else {
-        None
-    };
+    let scope = profile.primary();
     let weights = account_weights_for_member(conn, member)?;
     let summaries = accounts::list_summaries(conn)?;
     let (mut liquid, mut invested, mut debt, mut ef, mut net) = (0f64, 0f64, 0f64, 0f64, 0f64);
@@ -2102,6 +2095,48 @@ mod tests {
         assert_eq!(bd.unconverted[0].code, "USD");
         assert_eq!(bd.unconverted[0].balance_cents, 320_000);
         assert_eq!(bd.unconverted[0].account_count, 1);
+    }
+
+    #[test]
+    fn foreign_currency_manual_asset_stays_out_of_household_and_member_totals() {
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let member = crate::repos::household::create_member(&mut conn, "Owner", None).unwrap();
+        let cad = accounts::insert(
+            &mut conn,
+            account_in("CAD Chequing", AccountType::Checking, 200_000, true, "CAD"),
+        )
+        .unwrap();
+        crate::repos::household::set_account_owners(
+            &mut conn,
+            &cad.id,
+            std::slice::from_ref(&member.id),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO manual_assets(id,name,asset_type,value_cents,currency,created_at,updated_at) \
+             VALUES('usd-asset','Vehicle','vehicle',1200000,'USD','2026-08-08','2026-08-08')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO asset_owners(asset_id,member_id,share_bps) VALUES('usd-asset',?1,10000)",
+            rusqlite::params![member.id],
+        )
+        .unwrap();
+
+        let household = balance_breakdown(&mut conn).unwrap();
+        assert_eq!(household.currency.as_deref(), Some("CAD"));
+        assert_eq!(household.net_worth_cents, 200_000);
+        assert_eq!(household.unconverted.len(), 1);
+        assert_eq!(household.unconverted[0].code, "USD");
+        assert_eq!(household.unconverted[0].account_count, 0);
+        assert_eq!(household.unconverted[0].asset_count, 1);
+        assert_eq!(household.unconverted[0].balance_cents, 1_200_000);
+
+        let owner = balance_breakdown_for(&mut conn, Some(&member.id)).unwrap();
+        assert_eq!(owner.net_worth_cents, 200_000);
+        assert_eq!(owner.unconverted, household.unconverted);
     }
 
     #[test]

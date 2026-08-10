@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { fireEvent } from "@testing-library/react";
 import Recurring from "./Recurring";
 import { createWrapperWithEntries } from "../test-utils";
@@ -9,6 +9,7 @@ import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
 const mockSetVerdict = vi.fn();
 const mockSetTrial = vi.fn();
 const mockMarkCancelled = vi.fn();
+const mockCreatePlanned = vi.fn();
 vi.mock("../api/hooks/recurring", () => ({
   useSetSubscriptionVerdict: vi.fn(() => ({ mutate: mockSetVerdict, isPending: false })),
   useSetSubscriptionTrial: vi.fn(() => ({ mutate: mockSetTrial, isPending: false })),
@@ -80,7 +81,7 @@ vi.mock("../api/hooks/plannedTransactions", () => ({
       },
     ],
   })),
-  useCreatePlannedTransaction: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useCreatePlannedTransaction: vi.fn(() => ({ mutateAsync: mockCreatePlanned, isPending: false })),
   useUpdatePlannedTransaction: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useDeletePlannedTransaction: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
@@ -100,10 +101,31 @@ describe("Recurring — empty state", () => {
     render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
     expect(screen.getByText("No recurring items yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Import transactions/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add planned transaction/i })).toBeInTheDocument();
   });
 });
 
 describe("Recurring — planned transactions", () => {
+  it("creates a planned transaction from the visible add action", async () => {
+    mockCreatePlanned.mockResolvedValueOnce({ id: "pt-new" });
+    render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring"]) });
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add planned" }));
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Property tax" } });
+    fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: "-950" } });
+    fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-09-01" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add transaction" }));
+
+    await waitFor(() => expect(mockCreatePlanned).toHaveBeenCalledWith({
+      description: "Property tax",
+      amountCents: -95000,
+      accountId: null,
+      categoryId: null,
+      dueDate: "2026-09-01",
+      source: "user",
+    }));
+  });
+
   it("opens the planned transaction drawer when focusPlanned is present", async () => {
     render(<Recurring />, { wrapper: createWrapperWithEntries(["/recurring?focusPlanned=pt-1"]) });
     expect(await screen.findByText("Planned transaction · Insurance premium")).toBeInTheDocument();

@@ -62,6 +62,19 @@ const ACCOUNTS: Root[] = [
   ["budget-envelopes"], // envelopes can be account-scoped
   ["journey-status"],
   ["financial-health-score"],
+  ["financial-metrics"],
+  ["household-net-worth"],
+  ["networth-milestones"],
+];
+
+/** A manually tracked asset was created, repriced, deleted, or re-owned. */
+const MANUAL_ASSETS: Root[] = [
+  ["manual-assets"],
+  ["household-net-worth"],
+  ["networth-history"],
+  ["financial-health-score"],
+  ["journey-status"],
+  ["networth-milestones"],
 ];
 
 /** A category was created/renamed/archived/recolored, or its type/guidance changed. */
@@ -129,6 +142,7 @@ const IMPORT_COMMIT: Root[] = [...TRANSACTIONS, ...ACCOUNTS, ...IMPORT];
 export const DOMAIN_KEYS = {
   transactions: TRANSACTIONS,
   accounts: ACCOUNTS,
+  manualAssets: MANUAL_ASSETS,
   categories: CATEGORIES,
   rules: RULES,
   goals: GOALS,

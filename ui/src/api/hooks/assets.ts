@@ -5,6 +5,7 @@ import {
   type DebtPayoffResult,
 } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
+import { invalidateDomains } from "../invalidation";
 
 export function useManualAssets() {
   return useQuery<ManualAsset[]>({
@@ -28,7 +29,7 @@ export function useCreateManualAsset() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["manual-assets"] });
+      invalidateDomains(qc, "manualAssets");
     },
   });
 }
@@ -43,7 +44,7 @@ export function useUpdateManualAsset() {
       return result.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["manual-assets"] });
+      invalidateDomains(qc, "manualAssets");
     },
   });
 }
@@ -57,7 +58,7 @@ export function useDeleteManualAsset() {
       if (result.status === "error") throw new Error(result.error.message);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["manual-assets"] });
+      invalidateDomains(qc, "manualAssets");
     },
   });
 }

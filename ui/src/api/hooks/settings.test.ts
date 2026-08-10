@@ -1,10 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { createWrapper } from "../../test-utils";
-import { useAutoCategorizeEnabled, useSetAutoCategorizeEnabled, useExportJson, useExportCsv } from "./settings";
+import { useAutoCategorizeEnabled, useDefaultCurrency, useSetAutoCategorizeEnabled, useExportJson, useExportCsv } from "./settings";
+import { useTweaks } from "../../state/tweaks";
 
 vi.mock("../client", () => ({
   commands: {
+    getCurrency: vi.fn().mockResolvedValue({ status: "ok", data: "CAD" }),
     getAutoCategorizeEnabled: vi.fn().mockResolvedValue({ status: "ok", data: true }),
     setAutoCategorizeEnabled: vi.fn().mockResolvedValue({ status: "ok", data: null }),
     exportAllDataJson: vi.fn().mockResolvedValue({ status: "ok", data: '{"accounts":[]}' }),
@@ -17,6 +19,16 @@ vi.mock("../../lib/downloadBlob", () => ({
 }));
 
 import { downloadBlob } from "../../lib/downloadBlob";
+
+describe("useDefaultCurrency", () => {
+  it("refreshes and hydrates the per-user server currency into formatters", async () => {
+    useTweaks.setState({ currency: "USD" });
+    const { result } = renderHook(() => useDefaultCurrency(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(useTweaks.getState().currency).toBe("CAD"));
+  });
+});
 
 describe("useAutoCategorizeEnabled", () => {
   it("returns the enabled value from the backend", async () => {

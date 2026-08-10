@@ -39,6 +39,7 @@ export function useCreateAccount() {
       // Creating the first account advances onboarding; not part of the
       // accounts data domain.
       qc.invalidateQueries({ queryKey: ["onboarding-state"] });
+      qc.invalidateQueries({ queryKey: ["currency"] });
     },
   });
 }
@@ -56,6 +57,7 @@ export function useUpdateAccount() {
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
+      qc.invalidateQueries({ queryKey: ["currency"] });
     },
   });
 }
@@ -125,6 +127,7 @@ export function useArchiveAccount() {
       // (totals, reports, review queue), so invalidate the transaction domain
       // too — not just the account list.
       invalidateDomains(qc, "accounts", "transactions");
+      qc.invalidateQueries({ queryKey: ["currency"] });
     },
   });
 }
@@ -141,6 +144,7 @@ export function useSetAccountBalance() {
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
+      qc.invalidateQueries({ queryKey: ["currency"] });
     },
   });
 }
