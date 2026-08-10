@@ -7,25 +7,41 @@ vi.mock("../utils/runtime", () => ({ isTauriRuntime: () => true, isBackendAvaila
 
 // Spy-able command surface. `vi.hoisted` so the spies exist when the hoisted
 // vi.mock factory runs. Each returns the ok-Result shape the hooks unwrap.
-const { listAccounts, getMonthTotals } = vi.hoisted(() => ({
+const commandMocks = vi.hoisted(() => ({
   listAccounts: vi.fn(async () => ({ status: "ok", data: [] })),
   getMonthTotals: vi.fn(async () => ({ status: "ok", data: { incomeCents: 0, expenseCents: 0 } })),
+  listCategoriesWithSpending: vi.fn(async () => ({ status: "ok", data: [] })),
+  listGoals: vi.fn(async () => ({ status: "ok", data: [] })),
+  listRecurring: vi.fn(async () => ({ status: "ok", data: [] })),
+  getSavingsRateHistory: vi.fn(async () => ({ status: "ok", data: [] })),
+  getNeedsReviewCount: vi.fn(async () => ({ status: "ok", data: 0 })),
+  getAgentStatus: vi.fn(async () => ({ status: "ok", data: null })),
+  getFinancialHealthScore: vi.fn(async () => ({ status: "ok", data: null })),
+  getSpendingBreakdown: vi.fn(async () => ({ status: "ok", data: null })),
+  listBudgetEnvelopes: vi.fn(async () => ({ status: "ok", data: [] })),
+  listBudgetHistory: vi.fn(async () => ({ status: "ok", data: [] })),
+  listHouseholdMembers: vi.fn(async () => ({ status: "ok", data: [] })),
+  listCategoryProposals: vi.fn(async () => ({ status: "ok", data: [] })),
 }));
+const { listAccounts, getMonthTotals } = commandMocks;
 vi.mock("./client", async () => {
   const actual = await vi.importActual<typeof import("./client")>("./client");
   return {
     ...actual,
-    commands: { listAccounts, getMonthTotals },
+    commands: commandMocks,
   };
 });
 
-import { prefetchRoute } from "./prefetch";
+import { prefetchRoute, warmOfflineEssentials } from "./prefetch";
 import { useAccounts } from "./hooks/accounts";
+import { useBudgetEnvelopes, useBudgetHistory } from "./hooks/budget";
+import { useHouseholdMembers } from "./hooks/household";
 import { useMonthTotals } from "./hooks/reports";
 
 beforeEach(() => {
   listAccounts.mockClear();
   getMonthTotals.mockClear();
+  for (const mock of Object.values(commandMocks)) mock.mockClear();
 });
 
 function Harness({ hook }: { hook: () => unknown }) {
@@ -73,5 +89,47 @@ describe("prefetch key-match (warms the cache the screen reads)", () => {
     const spy = vi.spyOn(qc, "prefetchQuery");
     prefetchRoute(qc, "/settings");
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("warms the complete Budget first paint under the screen's exact keys", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000, retry: false } } });
+    prefetchRoute(qc, "/budget");
+
+    await waitFor(() => {
+      expect(commandMocks.listBudgetEnvelopes).toHaveBeenCalledTimes(1);
+      expect(commandMocks.listBudgetHistory).toHaveBeenCalledWith(5);
+      expect(commandMocks.listHouseholdMembers).toHaveBeenCalledTimes(1);
+      expect(commandMocks.getMonthTotals).toHaveBeenCalledTimes(1);
+      expect(commandMocks.listGoals).toHaveBeenCalledTimes(1);
+      expect(commandMocks.getSpendingBreakdown).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("seeds Budget's missing offline data and the real hooks reuse it", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000, retry: false } } });
+    warmOfflineEssentials(qc);
+
+    await waitFor(() => {
+      expect(commandMocks.listBudgetEnvelopes).toHaveBeenCalledTimes(1);
+      expect(commandMocks.listBudgetHistory).toHaveBeenCalledWith(5);
+      expect(commandMocks.getSpendingBreakdown).toHaveBeenCalledTimes(1);
+      expect(commandMocks.listHouseholdMembers).toHaveBeenCalledTimes(1);
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <Harness hook={() => {
+          useBudgetEnvelopes();
+          useBudgetHistory(5);
+          useHouseholdMembers();
+        }} />
+      </QueryClientProvider>
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(commandMocks.listBudgetEnvelopes).toHaveBeenCalledTimes(1);
+    expect(commandMocks.listBudgetHistory).toHaveBeenCalledTimes(1);
+    expect(commandMocks.listHouseholdMembers).toHaveBeenCalledTimes(1);
+    expect(qc.getQueryData(["spending-breakdown"])).toBeNull();
   });
 });

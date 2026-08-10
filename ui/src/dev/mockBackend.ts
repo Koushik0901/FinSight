@@ -1298,6 +1298,8 @@ function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown>
     list_budget_envelopes: () => ds.budgetEnvelopes,
     list_budget_history: () => ds.budgetHistory,
     list_category_groups: () => ds.categoryGroups,
+    probe_ollama: () => ({ reachable: false, models: [], has_nomic_embed: false }),
+    list_provider_models: () => [],
     get_plan_next_month_data: () => ds.planNextMonthData,
     // mutations — echo a plausible success so optimistic flows don't throw
     // ── Month-end close (#59) ──

@@ -24,6 +24,8 @@ import type { TxnFilterInput } from "./client";
 
 /** Keep warmed entries fresh at least long enough to cover hover→click. */
 const PREFETCH_STALE_MS = 10_000;
+/** Keep startup-warmed offline data fresh through IndexedDB persistence. */
+const OFFLINE_WARM_STALE_MS = 60_000;
 
 const unwrap = <T>(r: { status: "ok" | "error"; data?: T; error?: { message: string } }): T => {
   if (r.status === "error") throw new Error(r.error?.message ?? "command failed");
@@ -65,6 +67,18 @@ const D = {
     key: ["spending-breakdown"],
     fn: async () => unwrap(await commands.getSpendingBreakdown()),
   }, // Budget.tsx inline
+  budgetEnvelopes: {
+    key: ["budget-envelopes"],
+    fn: async () => unwrap(await commands.listBudgetEnvelopes()),
+  }, // useBudgetEnvelopes
+  budgetHistory5: {
+    key: ["budget-history", 5],
+    fn: async () => unwrap(await commands.listBudgetHistory(5)),
+  }, // useBudgetHistory(5)
+  householdMembers: {
+    key: ["household-members"],
+    fn: async () => unwrap(await commands.listHouseholdMembers()),
+  }, // useHouseholdMembers
   categoryProposals: {
     key: ["category-proposals"],
     fn: async () => unwrap(await commands.listCategoryProposals()),
@@ -90,7 +104,14 @@ const ROUTE_PREFETCH: Record<string, readonly Descriptor[]> = {
   "/accounts": [D.accounts],
   "/reports": [D.monthTotals, D.savingsRate, D.spendingBreakdown],
   "/categories": [D.categoriesWithSpending],
-  "/budget": [D.categoriesWithSpending, D.goals, D.spendingBreakdown],
+  "/budget": [
+    D.budgetEnvelopes,
+    D.budgetHistory5,
+    D.monthTotals,
+    D.goals,
+    D.spendingBreakdown,
+    D.householdMembers,
+  ],
   "/recurring": [D.recurring],
   "/goals": [D.goals],
   "/inbox": [D.needsReview],
@@ -114,6 +135,33 @@ export function prefetchRoute(qc: QueryClient, path: string): void {
   if (!descriptors) return;
   for (const d of descriptors) {
     void qc.prefetchQuery({ queryKey: d.key, queryFn: d.fn, staleTime: PREFETCH_STALE_MS });
+  }
+}
+
+/**
+ * Seed the small set of useful Budget data that Today does not already load.
+ *
+ * The authenticated app lands on Today, which naturally warms accounts,
+ * totals, goals, categories, recurring items, and health summaries. Budget is
+ * the important exception: without visiting it while online, its envelopes,
+ * history, spending mix, and household scope never reach the encrypted query
+ * cache. Warming only those four reads keeps startup modest while making the
+ * core planning vertical slice available during a later network outage.
+ */
+export function warmOfflineEssentials(qc: QueryClient): void {
+  if (!isBackendAvailable()) return;
+  const descriptors: readonly Descriptor[] = [
+    D.budgetEnvelopes,
+    D.budgetHistory5,
+    D.spendingBreakdown,
+    D.householdMembers,
+  ];
+  for (const d of descriptors) {
+    void qc.prefetchQuery({
+      queryKey: d.key,
+      queryFn: d.fn,
+      staleTime: OFFLINE_WARM_STALE_MS,
+    });
   }
 }
 

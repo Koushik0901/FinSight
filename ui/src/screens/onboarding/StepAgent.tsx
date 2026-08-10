@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { commands } from "../../api/client";
 import type { OllamaProbeResult } from "../../api/client";
 import { useMarkOnboardingComplete } from "../../api/hooks/onboarding";
@@ -33,12 +32,13 @@ export default function StepAgent({ onDone }: Props) {
   const [path, setPath] = useState<Path>(null);
 
   // Ollama path state
-  const [baseUrl] = useState("http://localhost:11434");
+  const [baseUrl, setBaseUrl] = useState("http://localhost:11434");
+  const [probedBaseUrl, setProbedBaseUrl] = useState("http://localhost:11434");
   const [completionModel, setCompletionModel] = useState("");
   const { data: probe, refetch, isFetching } = useQuery<OllamaProbeResult>({
-    queryKey: ["ollama-probe", baseUrl],
+    queryKey: ["ollama-probe", probedBaseUrl],
     queryFn: async () => {
-      const result = await commands.probeOllama(baseUrl);
+      const result = await commands.probeOllama(probedBaseUrl);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
     },
@@ -62,12 +62,14 @@ export default function StepAgent({ onDone }: Props) {
   const saveKey = useSaveProviderApiKey();
   const testProvider = useTestCompletionProvider();
   const { data: ollamaModels = [] } = useListProviderModels(
-    path === "local" ? { kind: "ollama", base_url: baseUrl, model: completionModel } : null
+    path === "local" ? { kind: "ollama", base_url: probedBaseUrl, model: completionModel } : null
   );
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    const first = probe?.models[0];
+    // Treat a partial/older/mock response as "unreachable" instead of letting
+    // onboarding crash while indexing a missing models array.
+    const first = Array.isArray(probe?.models) ? probe.models[0] : undefined;
     if (first && !completionModel) setCompletionModel(first);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [probe]);
@@ -76,12 +78,27 @@ export default function StepAgent({ onDone }: Props) {
     if (!probe?.reachable || !completionModel) return;
     setActionError(null);
     try {
-      await setProvider.mutateAsync({ kind: "ollama", base_url: baseUrl, model: completionModel });
-      await commands.saveLlmProvider({ kind: "ollama", base_url: baseUrl, completion_model: completionModel, embedding_model: "nomic-embed-text" });
+      await setProvider.mutateAsync({ kind: "ollama", base_url: probedBaseUrl, model: completionModel });
+      await commands.saveLlmProvider({ kind: "ollama", base_url: probedBaseUrl, completion_model: completionModel, embedding_model: "nomic-embed-text" });
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
       setActionError(userErrorMessage(err, "Could not save the provider. Check your FinSight server connection and try again."));
+    }
+  }
+
+  function checkOllamaConnection() {
+    const next = baseUrl.trim().replace(/\/+$/, "");
+    if (!next) {
+      setActionError("Enter the Ollama URL that your FinSight server can reach.");
+      return;
+    }
+    setActionError(null);
+    setCompletionModel("");
+    if (next === probedBaseUrl) {
+      void refetch();
+    } else {
+      setProbedBaseUrl(next);
     }
   }
 
@@ -124,7 +141,7 @@ export default function StepAgent({ onDone }: Props) {
       <div className="step-agent onb-split">
         <div className="onb-left">
           <div className="num-step">005 · AI setup</div>          <h1>Choose how to power AI categorization.</h1>
-          <p className="lead">Pick local Ollama for private on-device inference or connect a cloud provider.</p>
+          <p className="lead">Use self-hosted Ollama for private server-side inference or connect a cloud provider.</p>
           <div className="row-md wrap" style={{ marginBottom: 24 }}>
             <Button
               variant="outline"
@@ -132,8 +149,8 @@ export default function StepAgent({ onDone }: Props) {
               style={{ flex: 1, minWidth: 160, padding: "20px 16px", justifyContent: "flex-start" }}
             >
               <div className="stack stack-xs" style={{ textAlign: "left" }}>
-                <div style={{ fontWeight: 700 }}>🏠 Local (Ollama)</div>
-                <div className="muted" style={{ fontSize: 13 }}>Install-free if already running.</div>
+                <div style={{ fontWeight: 700 }}>🏠 Self-hosted Ollama</div>
+                <div className="muted" style={{ fontSize: 13 }}>Runs wherever your FinSight server can reach it.</div>
               </div>
             </Button>
             <Button
@@ -225,7 +242,7 @@ export default function StepAgent({ onDone }: Props) {
           <Card className="stack stack-md">
             <div className="eyebrow"><span className="dot" />Security</div>
             <div className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
-              API keys are stored in your local OS keychain. Your financial data stays local; only prompts needed for categorization are sent to the provider you configure.
+              API keys are encrypted inside your signed-in FinSight profile on the server. Your financial data stays on your self-hosted server; only the prompts needed for categorization are sent to the provider you configure.
             </div>
           </Card>
         </div>
@@ -233,13 +250,13 @@ export default function StepAgent({ onDone }: Props) {
     );
   }
 
-  // Local (Ollama) path
+  // Self-hosted Ollama path
   if (isFetching && !probe) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · Local AI</div>          <h1>Checking for Ollama…</h1>
-          <p className="lead">Looking for a local model runtime on your machine.</p>
+          <div className="num-step">005 · Self-hosted AI</div>          <h1>Checking for Ollama…</h1>
+          <p className="lead">Asking your FinSight server to connect to {probedBaseUrl}.</p>
         </div>
         <div className="onb-right">
           <Card>Waiting for runtime probe…</Card>
@@ -248,29 +265,40 @@ export default function StepAgent({ onDone }: Props) {
     );
   }
 
-  if (!probe?.reachable) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
+  const urlNeedsCheck = normalizedBaseUrl !== probedBaseUrl;
+
+  if (!probe?.reachable || urlNeedsCheck) {
     return (
       <div className="step-agent onb-split">
         <div className="onb-left">
-          <div className="num-step">005 · Local AI</div>          <h1>Set up Ollama.</h1>
+          <div className="num-step">005 · Self-hosted AI</div>          <h1>{urlNeedsCheck ? "Check this Ollama server." : "Connect Ollama."}</h1>
           <p className="lead">
-            We could not find Ollama. Download it from{" "}
-            <a href="#" onClick={(e) => { e.preventDefault(); openUrl("https://ollama.com"); }}>ollama.com</a>.
+            {urlNeedsCheck
+              ? "Test the address from FinSight before choosing a model."
+              : "FinSight could not reach Ollama at this address. Install it on your server host or use another server-reachable URL."}
           </p>
+          <Input
+            label="Ollama URL (as reached by the FinSight server)"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="http://ollama:11434"
+            hint="With the provided Docker Compose service, use http://ollama:11434."
+          />
           {actionError && <p role="alert" className="err">{actionError}</p>}
           <div className="actions row-sm wrap">
-            <Button variant="default" onClick={() => openUrl("https://ollama.com").catch(() => {})}>Install Ollama →</Button>
-            <Button variant="default" onClick={() => refetch()}>I just installed it — refresh</Button>
+            <Button variant="primary" onClick={checkOllamaConnection}>Check connection</Button>
+            <a className="btn" href="https://ollama.com" target="_blank" rel="noreferrer">Ollama setup guide ↗</a>
             <Button variant="default" onClick={() => setPath(null)}>← Back</Button>
             <Button variant="ghost" onClick={skipForLater}>Configure later →</Button>
           </div>
         </div>
         <div className="onb-right">
           <Card className="stack stack-sm">
-            <div className="eyebrow">Local stack</div>
-            <span className="chip">1. Install Ollama</span>
-            <span className="chip">2. Pull model</span>
-            <span className="chip">3. Refresh and continue</span>
+            <div className="eyebrow">Server-side setup</div>
+            <span className="chip">1. Run Ollama on your server or network</span>
+            <span className="chip">2. Pull a completion model</span>
+            <span className="chip">3. Enter the server-reachable URL</span>
           </Card>
         </div>
       </div>
@@ -280,8 +308,8 @@ export default function StepAgent({ onDone }: Props) {
   return (
     <div className="step-agent onb-split">
       <div className="onb-left">
-        <div className="num-step">005 · Local AI</div>        <h1>Ollama is ready.</h1>
-        <p className="lead">Pick a completion model and finish setup.</p>
+        <div className="num-step">005 · Self-hosted AI</div>        <h1>Ollama is ready.</h1>
+        <p className="lead">Connected through your FinSight server at {probedBaseUrl}. Pick a completion model and finish setup.</p>
         <Select
           label="Completion model"
           value={completionModel}

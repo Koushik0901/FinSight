@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useIsFetching } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Toaster, toast } from "sonner";
 import { markRouteStart, markRouteContent, perf } from "./utils/perf";
 import { Sidebar } from "./components/Sidebar";
@@ -18,6 +18,7 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { useTweaks } from "./state/tweaks";
 import { useOnboardingState } from "./api/hooks/onboarding";
 import { useDefaultCurrency } from "./api/hooks/settings";
+import { warmOfflineEssentials } from "./api/prefetch";
 import { useOnboardingRedirect } from "./hooks/useOnboardingRedirect";
 import ImportProgress from "./components/ImportProgress";
 import UnfinishedImportBanner from "./components/UnfinishedImportBanner";
@@ -219,6 +220,7 @@ export function RouteTimer() {
 
 export function App() {
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { data: onboarding } = useOnboardingState();
   useOnboardingRedirect(onboarding);
   // Hydrate the per-user server currency into the synchronous formatter store
@@ -244,6 +246,15 @@ export function App() {
   // when they are not looking at this screen. Fires only when permission is
   // already granted and the tab is hidden; see pwa/nativeNotify.ts.
   useEffect(() => startNativeNotifications(), []);
+
+  // Today warms most core data naturally. Once setup is complete, fetch the
+  // remaining Budget summaries so the encrypted PWA cache can render that
+  // planning screen during a later outage even if this device never opened it
+  // while online. Prefetching is idempotent and respects fresh cache entries.
+  useEffect(() => {
+    if (!onboarding?.completion_marked) return;
+    warmOfflineEssentials(queryClient);
+  }, [onboarding?.completion_marked, queryClient]);
 
   // Global keyboard shortcuts
   useEffect(() => {

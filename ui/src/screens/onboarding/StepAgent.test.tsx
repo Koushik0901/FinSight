@@ -4,8 +4,11 @@ import StepAgent from "./StepAgent";
 import { createWrapper } from "../../test-utils";
 import { useSaveProviderApiKey, useSetCompletionProvider } from "../../api/hooks/agent";
 
+const { probeOllama } = vi.hoisted(() => ({
+  probeOllama: vi.fn().mockResolvedValue({ status: "ok", data: { reachable: false, models: [], has_nomic_embed: false } }),
+}));
+
 vi.mock("react-focus-lock", () => ({ default: ({ children }: any) => <>{children}</> }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../../api/hooks/onboarding", () => ({
   useMarkOnboardingComplete: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
@@ -20,7 +23,7 @@ vi.mock("../../api/hooks/agent", () => ({
 }));
 vi.mock("../../api/client", () => ({
   commands: {
-    probeOllama: vi.fn().mockResolvedValue({ status: "ok", data: { reachable: false, models: [], has_nomic_embed: false } }),
+    probeOllama,
     saveLlmProvider: vi.fn().mockResolvedValue({ status: "ok", data: null }),
   },
 }));
@@ -29,9 +32,29 @@ describe("StepAgent", () => {
   it("shows two-path choice: Local + Cloud", async () => {
     render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /local.*ollama/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /self-hosted ollama/i })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /cloud/i })).toBeInTheDocument();
     });
+    expect(screen.getByText(/private server-side inference/i)).toBeInTheDocument();
+  });
+
+  it("lets a self-hosted deployment enter the server-reachable Ollama URL", async () => {
+    render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /self-hosted ollama/i }));
+
+    const url = await screen.findByRole("textbox", { name: /ollama url/i });
+    expect(url).toHaveValue("http://localhost:11434");
+    expect(screen.getByText(/http:\/\/ollama:11434/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /ollama setup guide/i })).toHaveAttribute("href", "https://ollama.com");
+  });
+
+  it("degrades a partial Ollama probe response to the connection form", async () => {
+    probeOllama.mockResolvedValueOnce({ status: "ok", data: [] } as never);
+    render(<StepAgent onDone={() => {}} />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /self-hosted ollama/i }));
+
+    expect(await screen.findByRole("textbox", { name: /ollama url/i })).toBeInTheDocument();
+    expect(screen.queryByText(/this screen failed to load/i)).not.toBeInTheDocument();
   });
 
   it("shows cloud provider tiles after clicking Cloud path", async () => {
