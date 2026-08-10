@@ -1,0 +1,7 @@
+services:
+  finsight:
+    # Development override: build this checkout instead of pulling GHCR.
+    image: finsight-local:dev
+    pull_policy: never
+    build:
+      context: .

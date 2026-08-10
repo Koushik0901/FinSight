@@ -98,9 +98,19 @@ Prerequisites: Docker Engine and Docker Compose.
 ```bash
 git clone https://github.com/Koushik0901/FinSight.git
 cd FinSight
-docker compose up --build -d
+docker compose up -d
 docker compose logs -f finsight
 ```
+
+This pulls the public multi-architecture image from GitHub Container Registry;
+it does not compile FinSight on your server. To build this checkout instead,
+use `docker compose -f docker-compose.yml -f docker-compose.build.yml up
+--build -d`.
+
+Copy `finsight.env.example` to `.env` when you need to pin an image version,
+change the host port, test over bare LAN HTTP, or declare a reverse-proxy
+origin. Versioned GitHub Releases include a Compose file and environment
+example already pinned to the matching server image.
 
 Open `http://localhost:8674` for a local smoke test. To complete setup and
 sign in on the Docker host, no cookie override is needed: browsers treat
@@ -216,7 +226,8 @@ The default Docker data directory is `/data`; native development defaults to
 
 ```text
 data/
-├── users.db                         # account registry + wrapped keys
+├── users.db                         # account registry, wrapped keys, session hashes
+├── session.key                      # wraps persisted sessions; back this up
 └── users/<user-uuid>/
     ├── data.sqlcipher               # this user's financial data and secrets
     ├── backups/                     # manual and pre-migration snapshots
@@ -225,8 +236,11 @@ data/
 
 Per-user runtimes are created lazily, single-flighted for concurrent requests,
 and evicted after 30 minutes of inactivity when no SSE client is attached.
-Sessions use a sliding 30-day in-memory TTL, so a server restart requires users
-to sign in again.
+Sessions have a sliding 30-day lifetime and survive server restarts. The cookie
+token is stored only on the client; `users.db` stores its hash and a database key
+wrapped by `/data/session.key`. Unwrapped database keys still exist only in
+server memory. Logout, password recovery, user deletion, and “sign out other
+devices” revoke the corresponding persisted rows.
 
 ## CSS conventions
 

@@ -39,10 +39,11 @@ picked.
   the TLS recipes below.
 - **All durable state lives under one directory, mounted as `/data` inside
   the container.** That includes `users.db` (the account registry, password
-  verifiers, and wrapped database keys) plus `users/<uuid>/data.sqlcipher`,
-  backups, and import staging for each user. Sessions are held only in memory
-  and are intentionally not persisted. Back up the whole directory; there is
-  nothing else on the server to back up.
+  verifiers, wrapped database keys, and hashed persistent sessions),
+  `session.key` (which wraps persisted session keys), plus
+  `users/<uuid>/data.sqlcipher`, backups, and import staging for each user.
+  Unwrapped database keys exist only in server memory. Back up the whole
+  directory; there is nothing else on the server to back up.
 - **Prerequisites on the host:**
   - [Docker Engine](https://docs.docker.com/engine/install/) and the
     `docker compose` CLI (bundled with recent Docker installs; standalone
@@ -61,13 +62,20 @@ picked.
 From the repo root (where `docker-compose.yml` lives):
 
 ```bash
-docker compose up --build -d
+docker compose up -d
 ```
 
-The first run builds the image from the included `Dockerfile` (a few minutes
-— it compiles the Rust server release binary and the UI), then starts the
-container in the background, publishing port `8674` and creating a named
-volume (`finsight-data`) for `/data`.
+The first run pulls the public multi-architecture image from GitHub Container
+Registry, then starts it in the background, publishing port `8674` and creating
+a named volume (`finsight-data`) for `/data`. AMD64 PCs and ARM64 home servers
+use the same Compose file.
+
+To build the exact checkout you cloned instead (for development or local
+patches), use the opt-in override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up --build -d
+```
 
 Watch the logs until it's ready:
 
@@ -94,7 +102,8 @@ revokes their sessions and removes their entire `users/<uuid>/` directory.
 Passwords must contain at least 10 characters. Login and recovery share a
 per-username throttle: five consecutive failures trigger a 60-second cooldown,
 with the same behavior for unknown usernames. Sessions use a sliding 30-day
-in-memory lifetime, so restarting the server signs everyone out.
+lifetime and survive server restarts. Logout, recovery, account deletion, and
+“sign out other devices” revoke the corresponding persisted sessions.
 
 LLM API keys and SimpleFIN access URLs are stored inside each user's encrypted
 database. They are not shared between users and do not depend on an OS
@@ -126,6 +135,17 @@ The container sets the supported runtime variables for you:
 | `FINSIGHT_PORT` | `8674` | HTTP listen port |
 | `FINSIGHT_COOKIE_SECURE` | `1` | Adds the `Secure` attribute to session cookies when exactly `1` |
 | `RUST_LOG` | `info` | Server log filter |
+
+Compose also reads these operator settings from an optional `.env` file beside
+`docker-compose.yml` (copy `finsight.env.example` to `.env` as a starting
+point):
+
+| Variable | Compose default | Purpose |
+|---|---:|---|
+| `FINSIGHT_IMAGE` | `ghcr.io/koushik0901/finsight:latest` | Image tag or digest to deploy; pin a version for reproducible upgrades |
+| `FINSIGHT_HOST_PORT` | `8674` | Port exposed on the Docker host |
+| `FINSIGHT_COOKIE_SECURE` | `1` | Set to `0` only for temporary bare-HTTP LAN testing |
+| `FINSIGHT_PUBLIC_ORIGIN` | inferred | External HTTPS origin when proxy headers are insufficient |
 
 ---
 
@@ -224,8 +244,10 @@ touch certbot or manage renewal cron jobs.
    ```yaml
    services:
      finsight:
-       build: .
+       image: ghcr.io/koushik0901/finsight:latest
+       pull_policy: always
        restart: unless-stopped
+       init: true
        # no `ports:` here — only Caddy is exposed externally
        volumes:
          - finsight-data:/data
@@ -389,33 +411,46 @@ consistent snapshot:
 
 ```bash
 docker compose stop finsight
-docker compose cp finsight:/data ./finsight-data-backup
+docker compose cp -a finsight:/data/. ./finsight-data-backup
 docker compose start finsight
 ```
 
-Restore into a fresh volume before starting the replacement container. Keep a
-copy off the Docker host, and protect it like other sensitive account data.
+To prove a backup before depending on it, copy `docker-compose.yml` and the
+backup into an empty test directory. Put `FINSIGHT_HOST_PORT=8675` in that
+directory's `.env` so it cannot collide with the live instance, then restore
+into the fresh Compose project and volume:
+
+```bash
+docker compose create finsight
+docker compose cp -a ./finsight-data-backup/. finsight:/data
+docker compose start finsight
+```
+
+Do not copy a backup over a running instance. Restore into a fresh volume
+before starting the replacement container. Keep a copy off the Docker host,
+and protect it like other sensitive account data.
 Although financial records and integration secrets are SQLCipher-encrypted,
 `users.db` contains password verifiers and wrapped keys that can be attacked
 offline; use strong passwords and encrypt or tightly restrict the backup
 destination.
 
-**Upgrades:** pull or rebuild a newer image, then recreate the container —
+**Upgrades:** pull the newer image, then recreate the container —
 the server takes a per-user pre-migration snapshot and then applies schema
 migrations automatically when that user's runtime opens. The volume itself is
 preserved:
 
 ```bash
-git pull                 # if building locally from this repo
-docker compose build
+docker compose pull
 docker compose up -d
 ```
 
-Or, if you publish/consume a tagged image instead of building locally,
-update the `image:` line in `docker-compose.yml` and `docker compose pull &&
-docker compose up -d`. Already-open browser tabs (including installed PWAs)
-detect the version mismatch via the server's `/api/server/about` handshake
-and show a "refresh to update" banner — no manual cache-busting needed.
+For reproducible deployments, set `FINSIGHT_IMAGE` in a `.env` file to a
+published version tag (for example,
+`ghcr.io/koushik0901/finsight:0.1.0`) instead of the moving `latest` tag.
+Source-build users should pull Git changes and repeat the two-file build command
+from Section 2. Already-open browser tabs (including installed PWAs) detect the
+version mismatch via the server's `/api/server/about` handshake and show a
+"refresh to update" banner — no manual cache-busting needed.
 
 If you used the early single-user server preview, first-run setup also recognizes
 a root-level `/data/data.sqlcipher` + `/data/db.key` pair. It moves the database

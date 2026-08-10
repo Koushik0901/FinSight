@@ -1,15 +1,21 @@
 services:
   finsight:
-    build: .
-    # image: finsight-server:latest   # or pull a published tag
+    # Override FINSIGHT_IMAGE in .env to pin a release or test another image.
+    # The default is public and supports both AMD64 and ARM64 Linux hosts.
+    image: ${FINSIGHT_IMAGE:-ghcr.io/koushik0901/finsight:latest}
+    pull_policy: always
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     ports:
-      - "8674:8674"
+      - "${FINSIGHT_HOST_PORT:-8674}:8674"
     volumes:
       - finsight-data:/data
     environment:
       # Set to 0 ONLY if you are NOT behind an HTTPS reverse proxy (bare http LAN).
-      FINSIGHT_COOKIE_SECURE: "1"
+      FINSIGHT_COOKIE_SECURE: "${FINSIGHT_COOKIE_SECURE:-1}"
+      # Set this when a reverse proxy cannot forward the public origin reliably.
+      FINSIGHT_PUBLIC_ORIGIN: "${FINSIGHT_PUBLIC_ORIGIN:-}"
     # Optional local LLM for the Copilot — uncomment + point the app's provider at http://ollama:11434
     # depends_on: [ollama]
 

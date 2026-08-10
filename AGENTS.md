@@ -20,8 +20,10 @@ cd ui && npm run dev
 # Server mode (Immich-style self-hosted): API + SSE + serves ui/dist on :8674.
 # Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override):
 # users.db (account registry + wrapped keys) + one SQLCipher DB per user.
-# Sessions are in memory; each DB key is wrapped by Argon2id(password) and by
-# a printable recovery key.
+# Sessions have a sliding 30-day lifetime and survive restarts: users.db stores
+# only token hashes plus DB keys wrapped by /data/session.key. Unwrapped DB keys
+# still exist only in memory. Each DB key is also wrapped by Argon2id(password)
+# and by a printable recovery key.
 # A legacy Phase-1 plaintext `db.key` is migrated and deleted on first setup.
 cargo run -p finsight-server
 
