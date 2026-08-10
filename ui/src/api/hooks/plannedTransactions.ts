@@ -27,7 +27,7 @@ export function useCreatePlannedTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewPlannedTransaction) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createPlannedTransaction(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -43,7 +43,7 @@ export function useUpdatePlannedTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: PlannedTransactionPatch }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.updatePlannedTransaction(id, patch);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -59,7 +59,7 @@ export function useDeletePlannedTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.deletePlannedTransaction(id);
       if (result.status === "error") throw new Error(result.error.message);
     },

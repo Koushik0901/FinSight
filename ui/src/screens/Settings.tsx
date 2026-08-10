@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { fetchAuthStatus, isServerMode, logout, signOutOtherSessions } from "../api/auth";
+import { CLIENT_PROTOCOL, fetchServerAbout, type ServerAbout } from "../api/serverInfo";
 import McpConnectionsSection from "../components/McpConnectionsSection";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
 import {
@@ -65,8 +66,8 @@ const SECTIONS = [
   ["keyboard", "Keyboard"],
   ["about", "About"],
 ] as const;
-// Server-mode-only nav entry (Sign out) — appended when isServerMode() so the
-// desktop app's nav/section list is byte-identical to before this feature.
+// Server-mode-only account controls. The navigated desktop shell, browser,
+// and installed PWA all use this same server-backed path.
 const SERVER_ACCOUNT_SECTION = ["account", "Account"] as const;
 
 function providerDisplayName(cfg: CompletionProviderConfig | undefined) {
@@ -504,6 +505,8 @@ export default function Settings() {
   const activeSection = useActiveSection(sectionIds);
   const [signingOut, setSigningOut] = useState(false);
   const [signingOutOthers, setSigningOutOthers] = useState(false);
+  const [sessionUsername, setSessionUsername] = useState<string | null>(null);
+  const [serverAbout, setServerAbout] = useState<ServerAbout | null>(null);
   // Admin-only "Manage users" link in the Account section — resolved once at
   // mount from /api/auth/status. Failures are swallowed: the link simply
   // stays hidden (desktop builds never fetch this at all, serverMode guards
@@ -514,10 +517,28 @@ export default function Settings() {
     let cancelled = false;
     fetchAuthStatus()
       .then((status) => {
-        if (!cancelled) setIsAdmin(Boolean(status.isAdmin));
+        if (!cancelled) {
+          setIsAdmin(Boolean(status.isAdmin));
+          setSessionUsername(status.username);
+        }
       })
       .catch(() => {
         /* link stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [serverMode]);
+
+  useEffect(() => {
+    if (!serverMode) return;
+    let cancelled = false;
+    fetchServerAbout()
+      .then((about) => {
+        if (!cancelled) setServerAbout(about);
+      })
+      .catch(() => {
+        /* About remains honest: version unavailable while disconnected. */
       });
     return () => {
       cancelled = true;
@@ -679,7 +700,7 @@ export default function Settings() {
               <div>{resetError && <div className="muted">{resetError}</div>}</div>
               <button className="btn sm" type="button" onClick={() => void reRunOnboarding()}>Re-run onboarding</button>
             </div>
-            <div className="s-row"><div><div className="label">Account name</div><div className="desc">This desktop app is configured for your local FinSight profile.</div></div><div className="muted">FinSight desktop</div><div /></div>
+            <div className="s-row"><div><div className="label">FinSight profile</div><div className="desc">{serverMode ? "Your encrypted data and preferences live on this FinSight server." : "Connect to a FinSight server to use a persistent profile."}</div></div><div className="muted">{serverMode ? (sessionUsername ? `Signed in as ${sessionUsername}` : "Server account") : "Not connected"}</div><div /></div>
           </Section>
 
           {serverMode && (
@@ -732,11 +753,11 @@ export default function Settings() {
             </div>
             <div className="s-row">
               <div><div className="label">Export data</div><div className="desc">Download the full dataset as JSON or CSV whenever you want a local backup.</div></div>
-              <div className="row row-sm wrap"><button className="btn sm" type="button" onClick={async () => { try { await exportJson.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as JSON</button><button className="btn sm" type="button" onClick={async () => { try { await exportCsv.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Try exporting again from the desktop app.") }); } }}>Export as CSV</button></div>
+              <div className="row row-sm wrap"><button className="btn sm" type="button" onClick={async () => { try { await exportJson.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Check your FinSight server connection and try exporting again.") }); } }}>Export as JSON</button><button className="btn sm" type="button" onClick={async () => { try { await exportCsv.mutateAsync(); toast.success("File saved"); } catch (error) { toast.error("Export failed", { description: userErrorMessage(error, "Check your FinSight server connection and try exporting again.") }); } }}>Export as CSV</button></div>
               <div />
             </div>
             <div className="s-row">
-              <div><div className="label">Delete all data</div><div className="desc">Permanently remove every account, transaction, balance, budget, goal, insight, and agent memory from this device. Your AI provider settings and API keys are kept. This cannot be undone.</div></div>
+              <div><div className="label">Delete all data</div><div className="desc">Permanently remove every account, transaction, balance, budget, goal, insight, and agent memory from this FinSight profile. Your AI provider settings and API keys are kept. This cannot be undone.</div></div>
               <div><button className="btn danger sm" type="button" onClick={() => setDeleteAllOpen(true)}>Delete all data</button></div>
               <div />
             </div>
@@ -749,7 +770,7 @@ export default function Settings() {
               <div className="row row-sm" style={{ alignItems: "flex-start", gap: 8 }}>
                 <span aria-hidden style={{ fontSize: 15 }}>🔒</span>
                 <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--ink)" }}>What leaves your device.</strong> When auto-categorize is on and you use a <em>cloud</em> AI provider (OpenAI-compatible or Anthropic), the merchant description and amount of each <em>uncategorized</em> transaction are sent to that provider to pick a category. Balances, account numbers, and totals are never sent. Transaction reference numbers, and the names of people in e-transfers, are redacted before sending. Choose a local <strong>Ollama</strong> provider to keep everything on this machine, or turn auto-categorize off to categorize manually.
+                  <strong style={{ color: "var(--ink)" }}>What leaves FinSight.</strong> When auto-categorize is on and you use a <em>cloud</em> AI provider (OpenAI-compatible or Anthropic), the merchant description and amount of each <em>uncategorized</em> transaction are sent to that provider to pick a category. Balances, account numbers, and totals are never sent. Transaction reference numbers, and the names of people in e-transfers, are redacted before sending. Choose <strong>Ollama</strong> inside your self-hosted setup to keep processing under your control, or turn auto-categorize off to categorize manually.
                 </div>
               </div>
             </div>
@@ -797,11 +818,11 @@ export default function Settings() {
 
           <Section id="connections" title="Connections" description="Bank feeds, background sync, and external AI assistants.">
             <div className="s-row"><div><div className="label">SimpleFin</div><div className="desc">Connect or add institutions and import synced transactions.</div></div><div className="muted">{sfStatus?.configured ? "Connected" : "Not connected"}</div><button className="btn sm" type="button" onClick={() => setSfDialogOpen(true)}>{sfStatus?.configured ? "Add connection" : "Set up SimpleFin"}</button></div>
-            {sfStatus?.configured && <div className="s-row"><div><div className="label">Background sync</div><div className="desc">Choose how often the desktop app checks for updates.</div></div><div className="toolbar">{[0, 60, 180, 360, 720].map((minutes) => <button key={minutes} className={(sfSyncSettings?.backgroundSyncIntervalMinutes ?? 360) === minutes ? "on" : ""} type="button" onClick={() => setSfSyncSettings.mutate({ backgroundSyncEnabled: minutes > 0, backgroundSyncIntervalMinutes: minutes })}>{minutes === 0 ? "Off" : minutes === 60 ? "1 hour" : minutes === 180 ? "3 hours" : minutes === 360 ? "6 hours" : "12 hours"}</button>)}</div><div /></div>}
+            {sfStatus?.configured && <div className="s-row"><div><div className="label">Background sync</div><div className="desc">Choose how often the FinSight server checks for updates.</div></div><div className="toolbar">{[0, 60, 180, 360, 720].map((minutes) => <button key={minutes} className={(sfSyncSettings?.backgroundSyncIntervalMinutes ?? 360) === minutes ? "on" : ""} type="button" onClick={() => setSfSyncSettings.mutate({ backgroundSyncEnabled: minutes > 0, backgroundSyncIntervalMinutes: minutes })}>{minutes === 0 ? "Off" : minutes === 60 ? "1 hour" : minutes === 180 ? "3 hours" : minutes === 360 ? "6 hours" : "12 hours"}</button>)}</div><div /></div>}
             {sfConnections.map((connection) => <div key={connection.id} className="s-row"><div><div className="label">{connection.label || connection.orgName || "SimpleFin connection"}</div><div className="desc">{connection.status}{connection.lastSyncedAt ? ` · last synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : ""}</div></div><div className="muted">Connected</div><button className="btn ghost sm" type="button" onClick={() => deleteConnection.mutate(connection.id, { onSuccess: () => toast.success("Connection removed"), onError: () => toast.error("Failed to remove connection") })}>Remove</button></div>)}
             {sfConnections.length > 0 && <div className="s-row"><div><div className="label">Disconnect all</div><div className="desc">Remove all stored SimpleFin credentials.</div></div><div /><button className="btn outline sm" type="button" onClick={() => disconnectSf.mutate(undefined, { onSuccess: () => toast.success("All SimpleFin credentials removed"), onError: () => toast.error("Failed to remove credentials") })}>Disconnect all</button></div>}
             {sfConnections.length > 0 && <div className="s-row"><div><div className="label">Remove imported SimpleFin data</div><div className="desc">Deletes SimpleFin accounts, synced transactions, connection records, and stored credentials. Manual accounts are not touched.</div></div><div /><button className="btn outline sm" type="button" disabled={purgeSf.isPending} onClick={() => {
-              if (!confirm("Remove all imported SimpleFin accounts and transactions from this local profile? This keeps manual data but requires reconnecting SimpleFin.")) return;
+              if (!confirm("Remove all imported SimpleFin accounts and transactions from this FinSight profile? This keeps manual data but requires reconnecting SimpleFin.")) return;
               purgeSf.mutate(undefined, {
                 onSuccess: (summary) => toast.success("Imported SimpleFin data removed", { description: `${summary.accountsDeleted} accounts and ${summary.transactionsDeleted} transactions removed.` }),
                 onError: () => toast.error("Failed to remove imported SimpleFin data"),
@@ -823,8 +844,8 @@ export default function Settings() {
             <div className="s-row"><div><div className="label">Privacy mode</div><div className="desc">Toggle amount blurring instantly.</div></div><div><kbd className="tok">⌘.</kbd></div><div /></div>
           </Section>
 
-          <Section id="about" title="About" description="Version info and development helpers.">
-            <div className="s-row"><div><div className="label">App version</div><div className="desc">Desktop runtime build information.</div></div><div className="muted">FinSight desktop · local build</div><div /></div>
+          <Section id="about" title="About" description="Version and compatibility information.">
+            <div className="s-row"><div><div className="label">FinSight version</div><div className="desc">The server version and web-client protocol used by this device.</div></div><div className="muted">{serverMode ? (serverAbout ? `Server ${serverAbout.version} · protocol ${serverAbout.protocol}` : "Server version unavailable") : `Web client · protocol ${CLIENT_PROTOCOL}`}</div><div /></div>
           </Section>
         </div>
       </div>

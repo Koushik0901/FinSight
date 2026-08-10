@@ -33,7 +33,7 @@ export function useSetCurrency() {
   const setCurrencyTweak = useTweaks((s) => s.setCurrency);
   return useMutation({
     mutationFn: async (currency: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setCurrency(currency);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -61,7 +61,7 @@ export function useSetNotificationsEnabled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setNotificationsEnabled(enabled);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -86,7 +86,7 @@ export function useSetAutoCategorizeEnabled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setAutoCategorizeEnabled(enabled);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -118,7 +118,7 @@ export function useDeleteAllData() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.deleteAllData();
       if (result.status === "error") throw new Error(result.error.message);
     },

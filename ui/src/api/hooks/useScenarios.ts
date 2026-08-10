@@ -39,7 +39,7 @@ export function useRunScenario() {
       months: number;
       params: ScenarioParamsInput | null;
     }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.runScenario(description, months, params);
       if (result.status === "error") {
         const err = new Error(result.error.message) as Error & { code?: string };
@@ -63,7 +63,7 @@ export function useSaveScenario() {
       params: ScenarioParamsInput;
       months: number;
     }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.saveScenario(description, params, months);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -76,7 +76,7 @@ export function useDuplicateScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.duplicateScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -89,7 +89,7 @@ export function useArchiveScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.archiveScenario(id, archived);
       if (res.status === "error") throw new Error(res.error.message);
     },
@@ -102,7 +102,7 @@ export function useArchiveScenario() {
 export function usePromoteScenario() {
   return useMutation({
     mutationFn: async (id: string): Promise<ScenarioPlanProposal> => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.promoteScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -117,7 +117,7 @@ export function useReviseScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, params }: { id: string; params: ScenarioParamsInput }): Promise<SavedScenarioDetail> => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.reviseScenario(id, params);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -131,7 +131,7 @@ export function useClearScenarioRevision() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string): Promise<SavedScenarioDetail> => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.clearScenarioRevision(id);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -147,7 +147,7 @@ export function useApplyScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, approvedChangeIds }: { id: string; approvedChangeIds: string[] }): Promise<ApplyScenarioResult> => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.applyScenario(id, approvedChangeIds);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
@@ -179,7 +179,7 @@ export function useDeleteScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const res = await commands.deleteScenario(id);
       if (res.status === "error") throw new Error(res.error.message);
     },

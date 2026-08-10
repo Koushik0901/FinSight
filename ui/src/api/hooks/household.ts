@@ -30,7 +30,7 @@ export function useCreateHouseholdMember() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ name, color }: { name: string; color?: string | null }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createHouseholdMember(name, color ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -45,7 +45,7 @@ export function useSetSelfMember() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (memberId: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setSelfMember(memberId);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -62,7 +62,7 @@ export function useDeleteHouseholdMember() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.deleteHouseholdMember(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -90,7 +90,7 @@ export function useSetAccountOwners() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ accountId, memberIds }: { accountId: string; memberIds: string[] }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setAccountOwners(accountId, memberIds);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -105,7 +105,7 @@ export function useSetAccountOwnerShares() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ accountId, owners }: { accountId: string; owners: OwnerShare[] }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setAccountOwnerShares(accountId, owners);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -132,7 +132,7 @@ export function useSetAssetOwners() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ assetId, owners }: { assetId: string; owners: OwnerShare[] }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setAssetOwners(assetId, owners);
       if (result.status === "error") throw new Error(result.error.message);
     },

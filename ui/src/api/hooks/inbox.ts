@@ -70,7 +70,7 @@ export function useApplyCounterpartyVerdict() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ pattern, verdict }: { pattern: string; verdict: CounterpartyVerdict }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.applyCounterpartyVerdictToSimilar(pattern, verdict);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;

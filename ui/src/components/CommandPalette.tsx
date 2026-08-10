@@ -115,7 +115,7 @@ export function CommandPalette({ open, onClose }: Props) {
             setAnswer({
               prose: isNoProvider
                 ? "No AI provider configured. Set one up in Settings → Agent to use this feature."
-                : userErrorMessage(err, "Copilot could not answer right now. Try again from the desktop app."),
+                : userErrorMessage(err, "Copilot could not answer right now. Check your FinSight server connection and try again."),
               reasoning: "",
               plan: [],
               trace: [],

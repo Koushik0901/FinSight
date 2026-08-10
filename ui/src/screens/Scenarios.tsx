@@ -520,7 +520,7 @@ export default function Scenarios() {
         });
       } else {
         toast.error("Could not run scenario", {
-          description: userErrorMessage(e, "Try again from the desktop app after your data loads."),
+          description: userErrorMessage(e, "Check your FinSight server connection and try again after your data loads."),
         });
       }
     }

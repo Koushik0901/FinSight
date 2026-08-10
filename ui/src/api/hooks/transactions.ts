@@ -59,7 +59,7 @@ export function useCreateTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: NewTransaction) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createTransaction(input);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -74,7 +74,7 @@ export function useImportCsv() {
   const qc = useQueryClient();
   return useMutation<ImportResult, Error, { path: string; account_id: string; mapping: CsvImportMapping }>({
     mutationFn: async (args) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.importCsv(args.path, args.account_id, args.mapping);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -91,7 +91,7 @@ export function useUpdateTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: TxnPatch }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.updateTransaction(id, patch);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data as UpdateTxnResult;
@@ -106,7 +106,7 @@ export function useDeleteTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.deleteTransaction(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -122,7 +122,7 @@ export function useSetAnomalyDismissed() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ txnId, dismissed }: { txnId: string; dismissed: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setAnomalyDismissed(txnId, dismissed);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -136,7 +136,7 @@ export function useCreateRule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ pattern, categoryId }: { pattern: string; categoryId: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createRule(pattern, categoryId);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -151,7 +151,7 @@ export function useSetTransactionOwner() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ transactionId, memberId }: { transactionId: string; memberId: string | null }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setTransactionOwner(transactionId, memberId);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -191,7 +191,7 @@ export function useSetCategorySpendingType() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, spendingType }: { id: string; spendingType: string | null }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setCategorySpendingType(id, spendingType);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -208,7 +208,7 @@ export function useCreateCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ label, groupId, color }: { label: string; groupId: string | null; color: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createCategory(label, groupId, color);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -221,7 +221,7 @@ export function useRenameCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, label }: { id: string; label: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.renameCategory(id, label);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -233,7 +233,7 @@ export function useArchiveCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.archiveCategory(id);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -249,7 +249,7 @@ export function useSetCategoryGuidance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, guidance }: { id: string; guidance: string | null }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setCategoryGuidance(id, guidance);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -261,7 +261,7 @@ export function useUpdateCategoryColor() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, color }: { id: string; color: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.updateCategoryColor(id, color);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -287,7 +287,7 @@ export function useCreateCategoryGroup() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ label, hint }: { label: string; hint?: string | null }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.createCategoryGroup(label, hint ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -302,7 +302,7 @@ export function useSetCategoryGroup() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ categoryId, groupId }: { categoryId: string; groupId: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setCategoryGroup(categoryId, groupId);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -326,7 +326,7 @@ export function useToggleRule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.toggleRule(id, enabled);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -340,7 +340,7 @@ export function useSetTransactionFlags() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, isReimbursable, isSplit }: { id: string; isReimbursable: boolean; isSplit: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setTransactionFlags(id, isReimbursable, isSplit);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -359,7 +359,7 @@ export function useSetTransactionTransfer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, isTransfer }: { id: string; isTransfer: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setTransactionTransfer(id, isTransfer);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -379,7 +379,7 @@ export function useApplyTransferVerdictToSimilar() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ pattern, isTransfer }: { pattern: string; isTransfer: boolean }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.applyTransferVerdictToSimilar(pattern, isTransfer);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -411,7 +411,7 @@ export function useSetTransactionSplits() {
       txnId: string;
       splits: Array<{ categoryId: string | null; amountCents: number }>;
     }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setTransactionSplits(
         txnId,
         splits.map((s): SplitInputDto => ({ categoryId: s.categoryId, amountCents: s.amountCents }))

@@ -81,7 +81,7 @@ export default function StepAgent({ onDone }: Props) {
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
-      setActionError(userErrorMessage(err, "Could not save the local provider. Try again from the desktop app."));
+      setActionError(userErrorMessage(err, "Could not save the provider. Check your FinSight server connection and try again."));
     }
   }
 
@@ -114,7 +114,7 @@ export default function StepAgent({ onDone }: Props) {
       await markComplete.mutateAsync();
       onDone();
     } catch (err) {
-      setActionError(userErrorMessage(err, "Could not finish setup. Try again from the desktop app."));
+      setActionError(userErrorMessage(err, "Could not finish setup. Check your FinSight server connection and try again."));
     }
   }
 

@@ -56,7 +56,7 @@ export default function StepCategories({ onNext }: Props) {
       if (result.status === "error") throw new Error(result.error.message);
       onNext();
     } catch (err) {
-      setSaveError(userErrorMessage(err, "Could not save categories. Try again from the desktop app."));
+      setSaveError(userErrorMessage(err, "Could not save categories. Check your FinSight server connection and try again."));
     } finally {
       setSaving(false);
     }

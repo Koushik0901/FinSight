@@ -42,7 +42,7 @@ export default function DeleteAllDataDialog({ open, onClose }: Props) {
       onClose();
       navigate("/onboarding");
     } catch (err) {
-      toast.error(userErrorMessage(err, "Could not delete data. Try again from the desktop app."));
+      toast.error(userErrorMessage(err, "Could not delete data. Check your FinSight server connection and try again."));
     }
   }
 

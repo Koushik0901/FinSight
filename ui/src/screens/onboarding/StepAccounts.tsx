@@ -45,7 +45,7 @@ export default function StepAccounts({ onNext }: Props) {
 
         {!isBackendAvailable() && (
           <p className="muted onb-runtime-note">
-            Browser preview mode: creating or connecting accounts requires the desktop app.
+            Browser preview mode: creating or connecting accounts requires a connected FinSight server.
           </p>
         )}
         {error && (

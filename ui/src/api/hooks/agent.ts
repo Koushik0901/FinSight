@@ -33,7 +33,7 @@ export function useAgentStatus() {
 export function useAskAgent() {
   return useMutation({
     mutationFn: async ({ question, mode }: { question: string; mode?: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.askAgent(question, mode ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -45,7 +45,7 @@ export function useCompletionProvider() {
   return useQuery<CompletionProviderConfig>({
     queryKey: ["completion-provider"],
     queryFn: async () => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.getCompletionProvider();
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -59,7 +59,7 @@ export function useSetCompletionProvider() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (config: CompletionProviderConfig) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.setCompletionProvider(config);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -72,7 +72,7 @@ export function useSetCompletionProvider() {
 export function useSaveProviderApiKey() {
   return useMutation({
     mutationFn: async ({ providerId, key }: { providerId: string; key: string }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.saveProviderApiKey(providerId, key);
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -101,7 +101,7 @@ export function useTestCompletionProvider() {
       config: CompletionProviderConfig;
       apiKey?: string;
     }) => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.testCompletionProvider(config, apiKey ?? null);
       if (result.status === "error") throw new Error(result.error.message);
       return result.data;
@@ -113,7 +113,7 @@ export function useTriggerCategorize() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.triggerCategorize();
       if (result.status === "error") throw new Error(result.error.message);
     },
@@ -130,7 +130,7 @@ export function useTriggerRecategorizeLowConfidence() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (!isBackendAvailable()) throw new Error("This action needs the desktop app runtime.");
+      if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
       const result = await commands.triggerRecategorizeLowConfidence();
       if (result.status === "error") throw new Error(result.error.message);
     },

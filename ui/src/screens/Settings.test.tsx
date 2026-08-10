@@ -6,6 +6,7 @@ import Settings from "./Settings";
 import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
 import { fetchAuthStatus, logout, signOutOtherSessions } from "../api/auth";
+import { fetchServerAbout } from "../api/serverInfo";
 
 vi.mock("../api/auth", async () => {
   const actual = await vi.importActual<typeof import("../api/auth")>("../api/auth");
@@ -19,6 +20,14 @@ vi.mock("../api/auth", async () => {
       username: "koushik",
       isAdmin: false,
     }),
+  };
+});
+
+vi.mock("../api/serverInfo", async () => {
+  const actual = await vi.importActual<typeof import("../api/serverInfo")>("../api/serverInfo");
+  return {
+    ...actual,
+    fetchServerAbout: vi.fn().mockResolvedValue({ version: "0.1.0", protocol: 1, minClientProtocol: 1 }),
   };
 });
 
@@ -281,7 +290,7 @@ describe("Settings — server-mode Account section", () => {
     expect(screen.queryByRole("button", { name: /^sign out$/i })).toBeNull();
   });
 
-  it("server mode: renders the Account section with a Sign out button", () => {
+  it("server mode: identifies the signed-in server profile and real version", async () => {
     (window as unknown as Record<string, unknown>).__FINSIGHT_HTTP__ = true;
     render(<Settings />, { wrapper: createWrapper() });
     expect(screen.getByRole("heading", { name: "Account" })).toBeInTheDocument();
@@ -289,6 +298,9 @@ describe("Settings — server-mode Account section", () => {
     // Exact match — a plain /sign out/i now also hits "Sign out other devices".
     expect(screen.getByRole("button", { name: /^sign out$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out other devices" })).toBeInTheDocument();
+    expect(await screen.findByText("Signed in as koushik")).toBeInTheDocument();
+    expect(await screen.findByText("Server 0.1.0 · protocol 1")).toBeInTheDocument();
+    expect(fetchServerAbout).toHaveBeenCalledTimes(1);
   });
 
   it("Sign out calls logout() and dispatches finsight:auth-required", async () => {

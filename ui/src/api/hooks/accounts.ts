@@ -28,7 +28,7 @@ export function useCreateAccount() {
   return useMutation({
     mutationFn: async (input: NewAccount) => {
       if (!isBackendAvailable()) {
-        throw new Error("This action needs the desktop app runtime.");
+        throw new Error("This action needs a connected FinSight server.");
       }
       const result = await commands.createAccount(input);
       if (result.status === "error") throw new Error(result.error.message);
@@ -49,7 +49,7 @@ export function useUpdateAccount() {
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: AccountPatch }) => {
       if (!isBackendAvailable()) {
-        throw new Error("This action needs the desktop app runtime.");
+        throw new Error("This action needs a connected FinSight server.");
       }
       const result = await commands.updateAccount(id, patch);
       if (result.status === "error") throw new Error(result.error.message);
@@ -117,7 +117,7 @@ export function useArchiveAccount() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) {
-        throw new Error("This action needs the desktop app runtime.");
+        throw new Error("This action needs a connected FinSight server.");
       }
       const result = await commands.archiveAccount(id);
       if (result.status === "error") throw new Error(result.error.message);
@@ -137,7 +137,7 @@ export function useSetAccountBalance() {
   return useMutation({
     mutationFn: async ({ id, balanceCents }: { id: string; balanceCents: number }) => {
       if (!isBackendAvailable()) {
-        throw new Error("This action needs the desktop app runtime.");
+        throw new Error("This action needs a connected FinSight server.");
       }
       const result = await commands.setAccountBalance(id, balanceCents);
       if (result.status === "error") throw new Error(result.error.message);
