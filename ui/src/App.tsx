@@ -351,7 +351,9 @@ export function App() {
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/settings/users" element={<UsersAdmin />} />
                     <Route path="/copilot" element={<Copilot />} />
-                    <Route path="/copilot/ag-ui-spike" element={<CopilotAgUiSpike />} />
+                    {import.meta.env.DEV && (
+                      <Route path="/copilot/ag-ui-spike" element={<CopilotAgUiSpike />} />
+                    )}
                     <Route path="/recipes" element={<Recipes />} />
                     {import.meta.env.DEV && (
                       <Route path="/dev/genui-preview" element={<GenUiPreview />} />

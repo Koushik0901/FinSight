@@ -95,7 +95,7 @@ export default function PathBack() {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
 
   if (!isBackendAvailable()) {
-    return <div className="stub">Open the desktop app to see your path back.</div>;
+    return <div className="stub">Connect to a FinSight server to see your recovery plan.</div>;
   }
   if (isLoading) {
     return <div className="stub">Charting your path back…</div>;

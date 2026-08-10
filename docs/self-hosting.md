@@ -68,7 +68,9 @@ docker compose up -d
 The first run pulls the public multi-architecture image from GitHub Container
 Registry, then starts it in the background, publishing port `8674` and creating
 a named volume (`finsight-data`) for `/data`. AMD64 PCs and ARM64 home servers
-use the same Compose file.
+use the same Compose file. The default container has no Linux capabilities,
+cannot gain additional privileges, and runs with a read-only root filesystem;
+only `/data` and a small temporary filesystem are writable.
 
 To build the exact checkout you cloned instead (for development or local
 patches), use the opt-in override:
@@ -248,6 +250,10 @@ touch certbot or manage renewal cron jobs.
        pull_policy: always
        restart: unless-stopped
        init: true
+       read_only: true
+       tmpfs: [/tmp:size=64m,mode=1777]
+       security_opt: [no-new-privileges:true]
+       cap_drop: [ALL]
        # no `ports:` here — only Caddy is exposed externally
        volumes:
          - finsight-data:/data

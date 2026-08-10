@@ -23,18 +23,18 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
       - name: Install perl (Windows)
         if: matrix.os == 'windows-latest'
-        uses: shogo82148/actions-setup-perl@v1
+        uses: shogo82148/actions-setup-perl@53e33bb27be492a926eee378e8a5f7ff6618b061 # v1
         with:
           perl-version: '5.38'
       - name: Install Linux deps for Tauri

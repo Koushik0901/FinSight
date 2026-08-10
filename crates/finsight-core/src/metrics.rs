@@ -1805,9 +1805,12 @@ mod tests {
         .unwrap()
         .id;
         // Three months of $3,000 income and $1,000 expense.
+        // Use 32-day spacing: 30-day offsets can land twice in a 31-day month
+        // (for example, 10 and 40 days before August 10 are both in July),
+        // making this calendar-month test depend on the day it runs.
         for m in 0..3 {
-            insert_txn(&mut conn, &acct, 300_000, 10 + m * 30, false);
-            insert_txn(&mut conn, &acct, -100_000, 12 + m * 30, false);
+            insert_txn(&mut conn, &acct, 300_000, 10 + m * 32, false);
+            insert_txn(&mut conn, &acct, -100_000, 12 + m * 32, false);
         }
         let avg = rolling_averages(&conn, 90).unwrap();
         assert_eq!(avg.months, 3);
@@ -1865,10 +1868,11 @@ mod tests {
         )
         .unwrap()
         .id;
-        // Three monthly paychecks: ~72 days from first to last, but three
+        // Three monthly paychecks: 64 days from first to last, but three
         // calendar months of activity.
         for m in 0..3 {
-            insert_txn(&mut conn, &acct, 300_000, 10 + m * 30, false);
+            // More than the longest calendar month, yet safely within 90 days.
+            insert_txn(&mut conn, &acct, 300_000, 10 + m * 32, false);
         }
 
         let avg = rolling_averages(&conn, 90).unwrap();
