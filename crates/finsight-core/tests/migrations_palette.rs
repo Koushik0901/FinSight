@@ -1,6 +1,6 @@
 use finsight_core::{db::run_migrations, palette, Db};
 use rusqlite::Connection;
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
 /// Mirrors the canonical 10 starter categories seeded by `sample.rs`,
 /// `commit_starter_categories`, and the dev-demo seed path.
@@ -28,11 +28,16 @@ fn read_v030_migration() -> String {
     read_migration("V030__category_palette.sql")
 }
 
-fn open_db() -> Db {
+fn open_db() -> (TempDir, Db) {
     let dir = tempdir().unwrap();
     let path = dir.path().join("m.sqlcipher");
     let key = "ab".repeat(32);
-    Db::open(&path, &key).unwrap()
+    let db = Db::open(&path, &key).unwrap();
+    // Keep the directory alive for as long as the pooled SQLite connections.
+    // Dropping TempDir here removed the database out from under the pool and
+    // made the migration table assertion fail with SQLITE_IOERR_FSTAT (1802)
+    // on every CI operating system.
+    (dir, db)
 }
 
 fn seed_grey_categories(conn: &Connection) {
@@ -90,7 +95,7 @@ fn run_v036_sql(conn: &Connection) {
 
 #[test]
 fn v030_migration_backfills_canonical_category_colors() {
-    let db = open_db();
+    let (_dir, db) = open_db();
     run_migrations(&db).unwrap();
     let conn = db.get().unwrap();
 
@@ -118,7 +123,7 @@ fn v030_migration_backfills_canonical_category_colors() {
 
 #[test]
 fn v036_migration_fixes_regreyed_defaults_but_keeps_user_chosen_colors() {
-    let db = open_db();
+    let (_dir, db) = open_db();
     run_migrations(&db).unwrap();
     let conn = db.get().unwrap();
 
@@ -152,7 +157,7 @@ fn v036_migration_fixes_regreyed_defaults_but_keeps_user_chosen_colors() {
 
 #[test]
 fn v037_migration_backfills_spending_types_but_keeps_user_tags() {
-    let db = open_db();
+    let (_dir, db) = open_db();
     run_migrations(&db).unwrap();
     let conn = db.get().unwrap();
 
@@ -186,7 +191,7 @@ fn v037_migration_backfills_spending_types_but_keeps_user_tags() {
 
 #[test]
 fn v030_migration_leaves_custom_categories_untouched() {
-    let db = open_db();
+    let (_dir, db) = open_db();
     run_migrations(&db).unwrap();
     let conn = db.get().unwrap();
 
