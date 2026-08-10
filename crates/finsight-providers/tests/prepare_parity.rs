@@ -1,11 +1,12 @@
-//! prepare() decisions must match import() outcomes exactly, on real samples.
+//! prepare() decisions must match import() outcomes exactly on committed
+//! regression fixtures (fresh clones do not contain the private samples/).
 mod common;
 use finsight_providers::csv::CsvProvider;
 
 /// Case A: against an EMPTY ledger, every amex row is a fresh insert.
 #[test]
 fn prepare_counts_match_import_on_empty_ledger() {
-    let path = common::sample("amex-all-time-statement.csv");
+    let path = common::fixture("amex-all-time-statement.csv");
     let mapping = common::amex_mapping();
 
     let (db, _d, acct) = common::open_with_account();
@@ -38,7 +39,7 @@ fn prepare_counts_match_import_on_empty_ledger() {
 /// ledgers.
 #[test]
 fn prepare_matches_import_on_reimport() {
-    let path = common::sample("amex-all-time-statement.csv");
+    let path = common::fixture("amex-all-time-statement.csv");
     let mapping = common::amex_mapping();
 
     // DB1: import once, then PREPARE the same file (read-only).

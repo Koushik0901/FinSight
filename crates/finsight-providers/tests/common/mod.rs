@@ -6,14 +6,8 @@ use finsight_core::Db;
 use finsight_providers::{AmountConvention, ColumnRole, CsvImportMapping};
 use std::path::PathBuf;
 
-pub fn sample(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../samples")
-        .join(name)
-}
-
-/// Committed fixture under tests/fixtures/csv (unlike `sample`, which points
-/// at the untracked repo-root samples/ directory).
+/// Committed, synthetic fixture under tests/fixtures/csv. Default tests must
+/// never depend on the repo owner's gitignored bank exports in `samples/`.
 #[allow(dead_code)]
 pub fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

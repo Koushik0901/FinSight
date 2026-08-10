@@ -1,9 +1,9 @@
 //! Staleness + edge-case coverage for `CsvProvider::prepare`.
 //!
-//! Ground truth (proven against the real amex sample, do not loosen):
-//! - Empty ledger: prepare/import the amex sample → 1988 rows imported.
-//! - Re-import against a ledger that already has the amex file imported once:
-//!   rows_imported == 0, rows_skipped_duplicates == 1988, rows_queued_for_review == 0.
+//! Ground truth (covered by a committed synthetic Amex regression fixture):
+//! - Empty ledger: every valid fixture row imports.
+//! - Re-import against a ledger that already imported the fixture once:
+//!   rows_imported == 0, every row is skipped, rows_queued_for_review == 0.
 //!   Every incoming row is an exact twin of an existing row, so bipartite
 //!   set-matching pairs them 1:1 and NOTHING queues for review. (The earlier
 //!   1843/145 split predated the P1-4 fix, where ~7% of an identical re-import
@@ -18,7 +18,7 @@ use finsight_providers::{AmountConvention, ColumnRole, CsvImportMapping};
 ///    re-reconciles against current DB state rather than reusing anything.
 #[test]
 fn stale_signature_changes_after_ledger_mutation() {
-    let path = common::sample("amex-all-time-statement.csv");
+    let path = common::fixture("amex-all-time-statement.csv");
     let mapping = common::amex_mapping();
     let (db, _dir, acct) = common::open_with_account();
 
@@ -29,13 +29,11 @@ fn stale_signature_changes_after_ledger_mutation() {
             .signature
     };
 
-    // Mutate the ledger: import the file once (0 -> 1988 rows).
+    // Mutate the ledger: import the fixture once.
     let import_id = uuid::Uuid::new_v4().to_string();
     let summary = CsvProvider::import(&path, &acct, &import_id, &mapping, &db, |_| {}).unwrap();
-    assert_eq!(
-        summary.rows_imported, 1988,
-        "ground truth: empty-ledger import count"
-    );
+    assert!(summary.rows_imported > 0, "fixture must contain valid rows");
+    let imported_once = summary.rows_imported;
 
     let prepared_b = {
         let conn = db.get().unwrap();
@@ -44,14 +42,14 @@ fn stale_signature_changes_after_ledger_mutation() {
 
     assert_ne!(
         sig_a, prepared_b.signature,
-        "ledger fingerprint moved from 0 to 1988 rows; signature must change"
+        "ledger fingerprint moved from empty to populated; signature must change"
     );
     assert_eq!(
         prepared_b.rows_imported, 0,
         "re-import shape: no new inserts"
     );
     assert_eq!(
-        prepared_b.rows_skipped_duplicates, 1988,
+        prepared_b.rows_skipped_duplicates, imported_once,
         "re-import shape: every row is an exact twin → all skip as duplicates"
     );
     assert_eq!(
@@ -81,7 +79,7 @@ fn empty_file_returns_empty_file_error() {
 ///    it inserts nothing new (focused, standalone assertion).
 #[test]
 fn reimport_inserts_nothing_new() {
-    let path = common::sample("amex-all-time-statement.csv");
+    let path = common::fixture("amex-all-time-statement.csv");
     let mapping = common::amex_mapping();
     let (db, _dir, acct) = common::open_with_account();
 
@@ -139,7 +137,7 @@ fn malformed_rows_captured_good_rows_still_import() {
 ///    part of the signature, not just the file).
 #[test]
 fn flipped_amount_convention_changes_signature() {
-    let path = common::sample("amex-all-time-statement.csv");
+    let path = common::fixture("amex-all-time-statement.csv");
     let (db, _dir, acct) = common::open_with_account();
 
     let mapping_pos = common::amex_mapping(); // PositiveIsOutflow (real amex mapping)

@@ -29,7 +29,7 @@ fn amex_mapping() -> CsvImportMapping {
 }
 
 #[tokio::test]
-async fn build_preview_reports_bounded_outcome_for_amex_sample() {
+async fn build_preview_reports_bounded_outcome_for_committed_amex_fixture() {
     let (_d, db) = fresh_db();
     let account_id = {
         let mut conn = db.get().unwrap();
@@ -78,16 +78,16 @@ async fn build_preview_reports_bounded_outcome_for_amex_sample() {
     };
 
     let mapping = amex_mapping();
-    let path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples/amex-all-time-statement.csv");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../finsight-providers/tests/fixtures/csv/amex-all-time-statement.csv");
 
     let preview =
         finsight_bindings::commands::import::build_preview(&db, &path, &account_id, &mapping)
             .expect("build_preview should succeed");
 
-    assert_eq!(preview.rows_imported, 1988);
+    assert_eq!(preview.rows_imported, 5);
     assert_eq!(preview.rows_skipped_duplicates, 0);
     assert_eq!(preview.rows_queued_for_review, 0);
-    assert_eq!(preview.rows_total, 1988);
+    assert_eq!(preview.rows_total, 5);
     assert!(!preview.signature.is_empty());
 }

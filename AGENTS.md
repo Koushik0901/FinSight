@@ -161,9 +161,12 @@ Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/sr
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-A fresh git worktree is missing the gitignored `samples/` directory (CSV fixtures), so `prepare_csv_cmd`, `prepare_edge`, and `prepare_parity` (6 tests total) fail with a "path not found" error there — copy `samples/` in from the primary checkout to run them; this is an environment gap, not a code regression.
+Default CSV integration tests use committed synthetic fixtures and must pass in
+a fresh checkout. The gitignored `samples/` directory contains private bank
+exports and is used only by explicitly ignored, manually invoked audit probes;
+never make the default test suite depend on it.
 
-**Green bar:** run `cargo test --workspace`, `pnpm --filter ui test`, `pnpm typecheck`, and `pnpm build`. Test counts change as coverage grows; ignored tests must remain limited to the explicitly marked live-provider/live-DB/keychain cases.
+**Green bar:** run `cargo test --workspace`, `pnpm --filter ui test`, `pnpm typecheck`, and `pnpm build`. Test counts change as coverage grows; ignored tests must remain limited to explicitly marked live-provider/live-DB/keychain or private-sample audit cases.
 
 ## Financial Freedom Framework
 
