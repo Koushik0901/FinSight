@@ -16,5 +16,11 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"
   },
+  "pnpm": {
+    "overrides": {
+      "dompurify": "3.4.13",
+      "mermaid": "11.16.1"
+    }
+  },
   "packageManager": "pnpm@9.0.0"
 }
