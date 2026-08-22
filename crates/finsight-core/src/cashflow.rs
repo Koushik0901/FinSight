@@ -301,7 +301,7 @@ pub fn build_forecast(
     let planned_rows = planned_transactions::list(
         conn,
         PlannedTxnFilter {
-            status: Some("pending".to_string()),
+            status: Some("planned".to_string()),
             due_before: Some(horizon_end.format("%Y-%m-%d").to_string()),
         },
     )?;
@@ -615,6 +615,33 @@ mod tests {
     fn fresh_db() -> (tempfile::TempDir, crate::Db) {
         let (dir, db) = crate::testing::migrated_db();
         (dir, db)
+    }
+
+    #[test]
+    fn forecast_includes_user_planned_transactions() {
+        let (_dir, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let due = chrono::Utc::now().date_naive() + Duration::days(5);
+        let planned = planned_transactions::insert(
+            &mut conn,
+            crate::models::NewPlannedTransaction {
+                description: "Rent deposit".into(),
+                amount_cents: -120_000,
+                account_id: None,
+                category_id: None,
+                due_date: due.to_string(),
+                source: "manual".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(planned.status, "planned");
+
+        let forecast = build_forecast(&mut conn, 30, &WhatIf::default()).unwrap();
+        assert!(forecast.upcoming_events.iter().any(|event| {
+            event.kind == CashflowEventKind::Planned
+                && event.label == "Rent deposit"
+                && event.amount_cents == -120_000
+        }));
     }
 
     /// A regular series ending `end` (inclusive), `count` occurrences `gap` days
