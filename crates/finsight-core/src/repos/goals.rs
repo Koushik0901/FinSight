@@ -245,7 +245,7 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
                 .as_db()
         ],
     )?;
-    Ok(Goal {
+    let goal = Goal {
         id,
         name: g.name,
         goal_type: g.goal_type,
@@ -261,7 +261,14 @@ pub fn insert(conn: &mut Connection, g: NewGoal) -> CoreResult<Goal> {
         account_id: g.account_id,
         priority: g.priority.unwrap_or(GoalPriority::Normal),
         deadline_strictness: g.deadline_strictness.unwrap_or(DeadlineStrictness::Target),
-    })
+    };
+
+    if let Some(account_id) = goal.account_id.as_deref() {
+        sync_linked_accounts(conn, account_id)?;
+        return get_by_id(conn, &goal.id);
+    }
+
+    Ok(goal)
 }
 
 /// Record how much a goal matters and what its date commits the user to.
@@ -282,21 +289,29 @@ pub fn set_priority(
     Ok(())
 }
 
-/// Sync `current_cents` of every goal linked to the given account with the
-/// account's current debt magnitude (the amount owed — i.e. the absolute
-/// value of its latest negative balance; 0 if the account isn't in debt).
-/// Replaces the old `sync_linked_liabilities`, called from `set_account_balance`
-/// now that debt lives on Account instead of a separate `liabilities` table.
+/// Sync `current_cents` of every goal linked to the given account with its
+/// latest balance. Debt-payoff goals track the positive magnitude still owed;
+/// every savings-style goal tracks the positive asset balance. A goal linked
+/// to the wrong side of zero therefore reports 0 instead of inverted progress.
 pub fn sync_linked_accounts(conn: &mut Connection, account_id: &str) -> CoreResult<()> {
     conn.execute(
         "UPDATE goals
-         SET current_cents = MAX(0, -COALESCE((
-             SELECT balance_cents FROM account_balances b
-             WHERE b.account_id = ?1
-             ORDER BY b.as_of_date DESC,
-                 CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
-             LIMIT 1
-         ), 0))
+         SET current_cents = CASE
+             WHEN type = 'debt-payoff' THEN MAX(0, -COALESCE((
+                 SELECT balance_cents FROM account_balances b
+                 WHERE b.account_id = ?1
+                 ORDER BY b.as_of_date DESC,
+                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+                 LIMIT 1
+             ), 0))
+             ELSE MAX(0, COALESCE((
+                 SELECT balance_cents FROM account_balances b
+                 WHERE b.account_id = ?1
+                 ORDER BY b.as_of_date DESC,
+                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+                 LIMIT 1
+             ), 0))
+         END
          WHERE account_id = ?1",
         params![account_id],
     )?;
@@ -628,21 +643,72 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(goal.current_cents, 0);
-
-        sync_linked_accounts(&mut conn, &account_id).unwrap();
-        let synced = get_by_id(&mut conn, &goal.id).unwrap();
         assert_eq!(
-            synced.current_cents, 5_000_00,
-            "amount owed is the positive magnitude of the negative balance"
+            goal.current_cents, 5_000_00,
+            "a newly linked debt goal starts with the amount currently owed"
         );
 
         // Paying the debt down to $0 must sync the goal to 0, not go negative.
         let today = chrono::Utc::now().date_naive().to_string();
         accounts::upsert_balance_snapshot(&mut conn, &account_id, &today, 0, None, Some("manual"))
             .unwrap();
-        sync_linked_accounts(&mut conn, &account_id).unwrap();
         let paid_off = get_by_id(&mut conn, &goal.id).unwrap();
         assert_eq!(paid_off.current_cents, 0);
+    }
+
+    #[test]
+    fn linked_savings_goal_tracks_the_positive_account_balance() {
+        use crate::repos::accounts;
+        let (_d, db) = fresh_db();
+        let mut conn = db.get().unwrap();
+        let account_id = insert_debt_account(&mut conn, "Emergency savings");
+        conn.execute(
+            "UPDATE accounts SET type = 'Savings' WHERE id = ?1",
+            params![account_id],
+        )
+        .unwrap();
+        let today = chrono::Utc::now().date_naive().to_string();
+        accounts::upsert_balance_snapshot(
+            &mut conn,
+            &account_id,
+            &today,
+            5_000_00,
+            None,
+            Some("manual"),
+        )
+        .unwrap();
+
+        let goal = insert(
+            &mut conn,
+            NewGoal {
+                priority: None,
+                deadline_strictness: None,
+                name: "Emergency fund".into(),
+                goal_type: "build-balance".into(),
+                target_cents: 12_000_00,
+                monthly_cents: 500_00,
+                target_date: None,
+                color: "#C9F950".into(),
+                notes: None,
+                purpose: None,
+                account_id: Some(account_id.clone()),
+            },
+        )
+        .unwrap();
+        assert_eq!(goal.current_cents, 5_000_00);
+
+        accounts::upsert_balance_snapshot(
+            &mut conn,
+            &account_id,
+            &today,
+            6_500_00,
+            None,
+            Some("manual"),
+        )
+        .unwrap();
+        assert_eq!(
+            get_by_id(&mut conn, &goal.id).unwrap().current_cents,
+            6_500_00
+        );
     }
 }

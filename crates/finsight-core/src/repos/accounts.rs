@@ -907,6 +907,7 @@ pub fn upsert_balance_snapshot(
             source.unwrap_or("manual"),
         ],
     )?;
+    super::goals::sync_linked_accounts(conn, account_id)?;
     Ok(())
 }
 

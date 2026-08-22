@@ -48,7 +48,7 @@ impl Db {
         // what it is actually for: genuine contention.
         {
             let probe = Connection::open(path)?;
-            let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", &*key_hex));
+            let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", *key_hex));
             probe.execute_batch(&pragma)?;
             // Any read forces SQLCipher to decrypt the header, so a wrong key
             // surfaces here rather than at some later, more confusing point.
@@ -76,7 +76,7 @@ impl Db {
                 // Raw 256-bit key. MUST come first, before any other PRAGMA touches the DB.
                 // The format! produces a String that contains the key — wrap in Zeroizing
                 // so it's wiped from memory when the closure invocation returns.
-                let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", &*key_hex));
+                let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", *key_hex));
                 conn.execute_batch(&pragma)?;
 
                 // SQLCipher hygiene

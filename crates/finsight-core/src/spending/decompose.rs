@@ -159,7 +159,7 @@ pub fn decompose(
         }
     }
 
-    drivers.sort_by(|a, b| b.delta_cents.cmp(&a.delta_cents));
+    drivers.sort_by_key(|driver| std::cmp::Reverse(driver.delta_cents));
 
     // Subtotals over the full (filtered) driver set BEFORE truncation, so
     // "how much of the increase will recur" reflects every driver.
