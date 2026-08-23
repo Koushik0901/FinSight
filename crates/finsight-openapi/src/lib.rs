@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use utoipa::openapi::OpenApi;
 
 /// Every RPC command that `finsight-server/src/dispatch.rs` routes.
@@ -246,7 +246,7 @@ pub const COMMANDS: &[&str] = &[
 /// at `GET /api/openapi.json` and used by `openapi-typescript` to generate
 /// the typed client. Keeping this as a pure function makes it testable without
 /// a server.
-pub fn build_openapi() -> OpenApi {
+pub fn build_openapi() -> Value {
     let mut paths = serde_json::Map::new();
     for cmd in COMMANDS {
         let path = format!("/api/rpc/{cmd}");
@@ -278,8 +278,6 @@ pub fn build_openapi() -> OpenApi {
             }),
         );
     }
-    // Add non-RPC routes that are part of the public surface (kept minimal here;
-    // Task 5 adds compression/caching headers, not schema changes).
     let mut all_paths = paths;
     all_paths.insert(
         "/api/openapi.json".to_string(),
@@ -300,7 +298,7 @@ pub fn build_openapi() -> OpenApi {
             }
         }),
     );
-    let v = json!({
+    json!({
         "openapi": "3.0.3",
         "info": {
             "title": "FinSight API",
@@ -309,8 +307,12 @@ pub fn build_openapi() -> OpenApi {
             "license": { "name": "AGPL-3.0-or-later" }
         },
         "paths": all_paths
-    });
-    serde_json::from_value(v).expect("openapi json must deserialize to OpenApi")
+    })
+}
+
+/// Typed wrapper for tests that need `OpenApi` struct (keeps utoipa dep used).
+pub fn build_openapi_typed() -> OpenApi {
+    serde_json::from_value(build_openapi()).expect("openapi json must deserialize to OpenApi")
 }
 
 #[cfg(test)]
@@ -319,8 +321,7 @@ mod tests {
 
     #[test]
     fn openapi_is_version_3x() {
-        let spec = build_openapi();
-        let json = serde_json::to_value(&spec).unwrap();
+        let json = build_openapi();
         let v = json["openapi"].as_str().unwrap_or_default();
         assert!(
             v.starts_with("3."),
@@ -330,16 +331,15 @@ mod tests {
 
     #[test]
     fn openapi_has_expected_info() {
-        let spec = build_openapi();
-        let json = serde_json::to_value(&spec).unwrap();
+        let json = build_openapi();
         assert_eq!(json["info"]["title"], "FinSight API");
         assert_eq!(json["info"]["version"], "0.1.0");
     }
 
     #[test]
     fn openapi_serializes_to_valid_json() {
-        let spec = build_openapi();
-        let json_str = serde_json::to_string(&spec).unwrap();
+        let json = build_openapi();
+        let json_str = serde_json::to_string(&json).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json_str).unwrap();
         assert!(v.get("openapi").is_some());
         assert!(v.get("info").is_some());
@@ -347,8 +347,7 @@ mod tests {
 
     #[test]
     fn openapi_contains_every_rpc_command() {
-        let spec = build_openapi();
-        let json = serde_json::to_value(&spec).unwrap();
+        let json = build_openapi();
         let paths = json["paths"].as_object().expect("paths must be object");
         for cmd in COMMANDS {
             let key = format!("/api/rpc/{cmd}");
@@ -361,8 +360,7 @@ mod tests {
 
     #[test]
     fn openapi_paths_match_rpc_command_count() {
-        let spec = build_openapi();
-        let json = serde_json::to_value(&spec).unwrap();
+        let json = build_openapi();
         let paths = json["paths"].as_object().unwrap();
         // Filter only /api/rpc/* (exclude /api/openapi.json itself)
         let rpc_count = paths.keys().filter(|k| k.starts_with("/api/rpc/")).count();
@@ -371,5 +369,13 @@ mod tests {
             COMMANDS.len(),
             "rpc path count must equal COMMANDS.len() — drift between spec and dispatch"
         );
+    }
+
+    #[test]
+    fn openapi_typed_roundtrips() {
+        let v = build_openapi();
+        let typed: OpenApi = serde_json::from_value(v).expect("must deserialize to OpenApi");
+        let json = serde_json::to_value(&typed).unwrap();
+        assert_eq!(json["info"]["title"], "FinSight API");
     }
 }
