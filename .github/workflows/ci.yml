@@ -15,11 +15,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -32,13 +28,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Install perl (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: shogo82148/actions-setup-perl@53e33bb27be492a926eee378e8a5f7ff6618b061 # v1
-        with:
-          perl-version: '5.38'
       - name: Install Linux deps
-        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libdbus-1-dev pkg-config
