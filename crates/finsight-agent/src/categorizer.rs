@@ -227,7 +227,8 @@ pub async fn run_job(
             if !valid_category_ids.contains(&r.category_id) {
                 tracing::warn!(
                     "[categorizer] LLM returned unknown category_id '{}' for txn '{}', skipping",
-                    r.category_id, r.txn_id
+                    r.category_id,
+                    r.txn_id
                 );
                 continue;
             }
@@ -238,7 +239,12 @@ pub async fn run_job(
                 );
                 continue;
             }
-            valid.push((r.txn_id.clone(), r.category_id.clone(), r.confidence, r.rationale.clone()));
+            valid.push((
+                r.txn_id.clone(),
+                r.category_id.clone(),
+                r.confidence,
+                r.rationale.clone(),
+            ));
         }
         if !valid.is_empty() {
             let db_for_chunk = db.clone();
@@ -310,7 +316,8 @@ pub async fn run_job(
                                 .unwrap_or(None)
                                 .unwrap_or_default();
                         warnings.push(format!("categorizer chunk failed: {e}"));
-                        let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                        let _ =
+                            finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
                     }
                 }
                 Err(e) => {
@@ -321,7 +328,8 @@ pub async fn run_job(
                                 .unwrap_or(None)
                                 .unwrap_or_default();
                         warnings.push(format!("categorizer join error: {e}"));
-                        let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                        let _ =
+                            finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
                     }
                 }
             }
@@ -391,7 +399,7 @@ pub async fn run_job(
         })
         .await;
         match res {
-            Ok(Ok(())) => {},
+            Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 tracing::error!("[categorizer] store_last_scan failed: {e}");
                 if let Ok(conn) = db_outer.get() {

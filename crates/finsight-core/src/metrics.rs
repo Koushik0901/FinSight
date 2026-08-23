@@ -144,7 +144,10 @@ pub fn savings_rate_pct(income_cents: i64, expense_cents: i64) -> i64 {
 /// 0.0 when average expense is unknown (can't divide). Pure ratio helper used
 /// by safety-basis callers; new display path should use the conn-based single
 /// source below.
-pub fn emergency_fund_months_ratio(emergency_fund_cents: i64, avg_monthly_expense_cents: i64) -> f64 {
+pub fn emergency_fund_months_ratio(
+    emergency_fund_cents: i64,
+    avg_monthly_expense_cents: i64,
+) -> f64 {
     if avg_monthly_expense_cents > 0 {
         (emergency_fund_cents.max(0) as f64 / avg_monthly_expense_cents as f64)
             .min(EMERGENCY_FUND_MONTHS_CAP)
@@ -211,11 +214,19 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
         })?;
         for row in rows {
             let (id, ty, eligible, cur, bal, known) = row?;
-            if eligible == 0 { continue; }
-            if known == 0 { continue; }
-            if !in_scope_currency(&cur, scope_ref) { continue; }
+            if eligible == 0 {
+                continue;
+            }
+            if known == 0 {
+                continue;
+            }
+            if !in_scope_currency(&cur, scope_ref) {
+                continue;
+            }
             let at = AccountType::from_db(&ty);
-            if is_debt_type(at) || is_investment_type(at) { continue; }
+            if is_debt_type(at) || is_investment_type(at) {
+                continue;
+            }
             if let Some(&w) = weights.get(&id) {
                 total += bal as f64 * w;
             }
@@ -251,11 +262,19 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
     let mut total = 0i64;
     for row in rows {
         let (ty, eligible, cur, bal, known) = row?;
-        if eligible == 0 { continue; }
-        if known == 0 { continue; }
-        if !in_scope_currency(&cur, scope_ref) { continue; }
+        if eligible == 0 {
+            continue;
+        }
+        if known == 0 {
+            continue;
+        }
+        if !in_scope_currency(&cur, scope_ref) {
+            continue;
+        }
         let at = AccountType::from_db(&ty);
-        if is_debt_type(at) || is_investment_type(at) { continue; }
+        if is_debt_type(at) || is_investment_type(at) {
+            continue;
+        }
         total += bal;
     }
     Ok(total)

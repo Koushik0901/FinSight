@@ -212,8 +212,10 @@ pub fn persist_plan(
         );
     }
 
-    let context_json = serde_json::to_string(&build_context(conn).map_err(|e| CoreError::InvalidState(e.to_string()))?)
-        .map_err(|e| CoreError::InvalidState(e.to_string()))?;
+    let context_json = serde_json::to_string(
+        &build_context(conn).map_err(|e| CoreError::InvalidState(e.to_string()))?,
+    )
+    .map_err(|e| CoreError::InvalidState(e.to_string()))?;
     copilot_sessions::save_context_snapshot(conn, session_id, &context_json)?;
 
     Ok(PlanResult {

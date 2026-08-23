@@ -1093,7 +1093,9 @@ fn wellness_context(
     })
 }
 
-fn savings_account_context(conn: &mut Connection) -> Result<Vec<SavingsAccountItem>, finsight_core::CoreError> {
+fn savings_account_context(
+    conn: &mut Connection,
+) -> Result<Vec<SavingsAccountItem>, finsight_core::CoreError> {
     let mut out = Vec::new();
     let mut stmt = conn
         .prepare(&format!(
@@ -1165,10 +1167,11 @@ fn loan_context(conn: &mut Connection) -> Result<Vec<LoanDetailItem>, finsight_c
         })?;
     let mut out = Vec::new();
     for row in rows {
-        let (name, balance_cents, original_balance_cents, apr_pct, started_at) = row.map_err(|e| {
-            tracing::error!("[context] loan_context row failed: {e}");
-            finsight_core::CoreError::InvalidState(format!("loan_context: {e}"))
-        })?;
+        let (name, balance_cents, original_balance_cents, apr_pct, started_at) =
+            row.map_err(|e| {
+                tracing::error!("[context] loan_context row failed: {e}");
+                finsight_core::CoreError::InvalidState(format!("loan_context: {e}"))
+            })?;
         let paid_down_pct = original_balance_cents
             .filter(|o| *o > 0)
             .map(|o| ((o - balance_cents).max(0) * 100 / o).clamp(0, 100));

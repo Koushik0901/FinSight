@@ -30,7 +30,7 @@ impl FrameSink for BroadcastSink {
 fn is_camel_case(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
-        Some(c) if c.is_ascii_lowercase() => {},
+        Some(c) if c.is_ascii_lowercase() => {}
         _ => return false,
     }
     !s.contains('_') && s.chars().all(|c| c.is_ascii_alphanumeric())
@@ -111,8 +111,8 @@ pub async fn rpc(
         Ok(rt) => rt,
         Err(e) => {
             let err = AppError::new("auth.runtime", e.to_string());
-            let status =
-                StatusCode::from_u16(err.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let status = StatusCode::from_u16(err.http_status())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             return (status, Json(err)).into_response();
         }
     };

@@ -100,7 +100,11 @@ async fn run_loop(
                                     .unwrap_or(None)
                                     .unwrap_or_default();
                             warnings.push(format!("due-recipes: {e}"));
-                            let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                            let _ = finsight_core::settings::set(
+                                &conn,
+                                "data.agent_warnings",
+                                &warnings,
+                            );
                         }
                         on_event(AgentEvent::Error {
                             message: format!("Due-recipes failed: {e}"),

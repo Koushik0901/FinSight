@@ -289,7 +289,11 @@ fn analyze(conn: &Connection, scope_account: Option<&str>) -> CoreResult<Analysi
         }
     }
 
-    Ok(Analysis { rows, groups, flagged })
+    Ok(Analysis {
+        rows,
+        groups,
+        flagged,
+    })
 }
 
 fn median(xs: &[f64]) -> f64 {
@@ -511,7 +515,11 @@ mod tests {
         // rows that already carry a flag.
         let candidates = statistical_outlier_candidates(&conn).unwrap();
         let ids: Vec<&str> = candidates.iter().map(|c| c.txn_id.as_str()).collect();
-        assert_eq!(ids, vec!["outlier"], "only the unflagged outlier is a candidate");
+        assert_eq!(
+            ids,
+            vec!["outlier"],
+            "only the unflagged outlier is a candidate"
+        );
         let cand = &candidates[0];
         assert_eq!(cand.amount_cents, -18000);
         assert_eq!(cand.merchant_raw, "STARBUCKS  800");

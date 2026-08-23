@@ -39,7 +39,10 @@ pub fn find_candidates(
         let posted_at = match DateTime::parse_from_rfc3339(&posted_s) {
             Ok(d) => d.with_timezone(&Utc),
             Err(e) => {
-                tracing::warn!(posted_s, "skipping transaction with malformed posted_at: {e}");
+                tracing::warn!(
+                    posted_s,
+                    "skipping transaction with malformed posted_at: {e}"
+                );
                 return Ok(None);
             }
         };
@@ -96,21 +99,30 @@ pub fn list_suggestions(conn: &mut Connection) -> CoreResult<Vec<TransferSuggest
         let detected_at = match DateTime::parse_from_rfc3339(&detected_s) {
             Ok(d) => d.with_timezone(&Utc),
             Err(e) => {
-                tracing::warn!(detected_s, "skipping transfer with malformed detected_at: {e}");
+                tracing::warn!(
+                    detected_s,
+                    "skipping transfer with malformed detected_at: {e}"
+                );
                 return Ok(None);
             }
         };
         let from_posted_at = match DateTime::parse_from_rfc3339(&from_posted_s) {
             Ok(d) => d.with_timezone(&Utc),
             Err(e) => {
-                tracing::warn!(from_posted_s, "skipping transfer with malformed from_posted_at: {e}");
+                tracing::warn!(
+                    from_posted_s,
+                    "skipping transfer with malformed from_posted_at: {e}"
+                );
                 return Ok(None);
             }
         };
         let to_posted_at = match DateTime::parse_from_rfc3339(&to_posted_s) {
             Ok(d) => d.with_timezone(&Utc),
             Err(e) => {
-                tracing::warn!(to_posted_s, "skipping transfer with malformed to_posted_at: {e}");
+                tracing::warn!(
+                    to_posted_s,
+                    "skipping transfer with malformed to_posted_at: {e}"
+                );
                 return Ok(None);
             }
         };

@@ -70,7 +70,11 @@ fn typical_monthly_expense_ignores_one_off_spike_display_path() {
     // Seed 3 distinct months within 90d window but with distinct calendar months.
     // Use offsets 10, 42, 74 days ago (32-day spacing ensures distinct months).
     let dates: Vec<String> = (0..3)
-        .map(|m| (now - Duration::days(10 + m * 32)).format("%Y-%m-%dT12:00:00Z").to_string())
+        .map(|m| {
+            (now - Duration::days(10 + m * 32))
+                .format("%Y-%m-%dT12:00:00Z")
+                .to_string()
+        })
         .collect();
     // Two normal months: 190_000 expense each.
     // Third month (oldest) has normal 190_000 + spike 250_000 anomaly.
@@ -106,8 +110,14 @@ fn is_estimated_when_thin_history() {
     let acct_id = accounts::insert(&mut conn, acct()).unwrap().id;
     let now = Utc::now();
     // Only one month of data
-    let d = (now - Duration::days(5)).format("%Y-%m-%dT12:00:00Z").to_string();
+    let d = (now - Duration::days(5))
+        .format("%Y-%m-%dT12:00:00Z")
+        .to_string();
     insert_txn(&conn, &acct_id, -100_000, &d, 0);
     let r = metrics::rolling_averages(&conn, 90).unwrap();
-    assert!(r.is_estimated, "thin history should be estimated, got {:?}", r);
+    assert!(
+        r.is_estimated,
+        "thin history should be estimated, got {:?}",
+        r
+    );
 }

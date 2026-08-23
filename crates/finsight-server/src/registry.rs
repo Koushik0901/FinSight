@@ -3,8 +3,8 @@
 //! on first authenticated request, evicted after idle timeout (pools dropped;
 //! the session still holds the unwrapped key, so the next request rebuilds).
 
-use crate::state::OutboundEvent;
 use crate::state::lock_recovered;
+use crate::state::OutboundEvent;
 use finsight_agent::agent::{AgentEvent, EventCallback};
 use finsight_api::ApiState;
 use std::collections::HashMap;

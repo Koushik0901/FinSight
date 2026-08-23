@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR for this test is crates/finsight-core
@@ -51,7 +51,9 @@ fn case_fragment_single_sourced() {
         .args([
             "-n",
             "CASE.*source.*WHEN.*simplefin",
-            root.join("crates/finsight-core/src/repos/balance.rs").to_str().unwrap(),
+            root.join("crates/finsight-core/src/repos/balance.rs")
+                .to_str()
+                .unwrap(),
         ])
         .output()
         .unwrap();

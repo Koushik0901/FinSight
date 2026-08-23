@@ -16,7 +16,8 @@
 pub fn latest_balance_subquery(alias: &str) -> String {
     let a = alias.trim().trim_end_matches('.');
     if a.is_empty() {
-        "ORDER BY CASE source WHEN 'simplefin' THEN 1 WHEN 'ledger_recomputed' THEN 2 ELSE 3 END".to_string()
+        "ORDER BY CASE source WHEN 'simplefin' THEN 1 WHEN 'ledger_recomputed' THEN 2 ELSE 3 END"
+            .to_string()
     } else {
         format!("ORDER BY CASE {a}.source WHEN 'simplefin' THEN 1 WHEN 'ledger_recomputed' THEN 2 ELSE 3 END")
     }

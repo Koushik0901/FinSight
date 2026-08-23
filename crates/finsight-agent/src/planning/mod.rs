@@ -157,7 +157,8 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
 
     match plan.task_type {
         FinanceTaskType::CashInflowAllocation => {
-            plan.required_tools.push(names::ANALYZE_CASH_INFLOW.to_string());
+            plan.required_tools
+                .push(names::ANALYZE_CASH_INFLOW.to_string());
             plan.required_inputs.push("amount_cents".to_string());
             if profile.amount_cents.unwrap_or(0) <= 0 {
                 plan.missing_inputs
@@ -165,7 +166,8 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             }
         }
         FinanceTaskType::GoalEta => {
-            plan.required_tools.push(names::CALCULATE_GOAL_ETA.to_string());
+            plan.required_tools
+                .push(names::CALCULATE_GOAL_ETA.to_string());
             plan.required_inputs
                 .extend(["goal_id".to_string(), "contribution_cents".to_string()]);
             if profile.amount_cents.unwrap_or(0) <= 0 {
@@ -174,14 +176,16 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             }
         }
         FinanceTaskType::DebtRanking => {
-            plan.required_tools.push(names::RANK_DEBT_PAYOFF.to_string());
+            plan.required_tools
+                .push(names::RANK_DEBT_PAYOFF.to_string());
         }
         FinanceTaskType::DebtPayoffScenario => {
             plan.required_tools
                 .push(names::RUN_DEBT_PAYOFF_SCENARIOS.to_string());
         }
         FinanceTaskType::DebtVsGoal => {
-            plan.required_tools.push(names::COMPARE_DEBT_VS_GOAL.to_string());
+            plan.required_tools
+                .push(names::COMPARE_DEBT_VS_GOAL.to_string());
             plan.required_inputs.push("goal_id".to_string());
         }
         FinanceTaskType::GoalAllocation => {

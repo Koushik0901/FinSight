@@ -63,7 +63,11 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
             let total = DROPPED_FRAMES.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
             // Emit lag_warned metric once per burst to avoid log spam while still surfacing the loss.
             if !LAG_WARNED.swap(true, Ordering::Relaxed) {
-                tracing::warn!(dropped = n, total_dropped = total, "sse broadcast lagged, dropped frames");
+                tracing::warn!(
+                    dropped = n,
+                    total_dropped = total,
+                    "sse broadcast lagged, dropped frames"
+                );
             }
             None
         }
@@ -106,7 +110,10 @@ mod tests {
             })
             .unwrap();
         let got = rx.recv().await.unwrap();
-        assert_eq!(got.event, finsight_api::sink::event_names::COPILOT_STREAM_FRAME);
+        assert_eq!(
+            got.event,
+            finsight_api::sink::event_names::COPILOT_STREAM_FRAME
+        );
         let line = sse_data(&got);
         assert!(line.contains("\"event\":\"copilot-stream-frame\""));
     }

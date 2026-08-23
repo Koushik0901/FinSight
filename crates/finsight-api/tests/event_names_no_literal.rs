@@ -67,12 +67,17 @@ fn no_literal_event_names_outside_single_source() {
 }
 
 fn collect_hits(dir: &std::path::Path, hits: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         // allow-list: the single source files + this test itself
-        if name.starts_with("event_names") || name.starts_with("eventNames") || name == "event_names_no_literal.rs" {
+        if name.starts_with("event_names")
+            || name.starts_with("eventNames")
+            || name == "event_names_no_literal.rs"
+        {
             continue;
         }
         if path.is_dir() {
@@ -90,7 +95,9 @@ fn collect_hits(dir: &std::path::Path, hits: &mut Vec<String>) {
         }
         if let Ok(text) = std::fs::read_to_string(&path) {
             for (i, line) in text.lines().enumerate() {
-                if line.contains("\"copilot-stream-frame\"") && !line.contains("pub const COPILOT_STREAM_FRAME") {
+                if line.contains("\"copilot-stream-frame\"")
+                    && !line.contains("pub const COPILOT_STREAM_FRAME")
+                {
                     hits.push(format!("{}:{}: {}", path.display(), i + 1, line.trim()));
                 }
             }

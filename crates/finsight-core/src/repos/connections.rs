@@ -92,7 +92,10 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<SimpleFinConnection>> {
         let created_at = match DateTime::parse_from_rfc3339(&created_s) {
             Ok(d) => d.with_timezone(&Utc),
             Err(e) => {
-                tracing::warn!(created_s, "skipping SimpleFin connection with malformed created_at: {e}");
+                tracing::warn!(
+                    created_s,
+                    "skipping SimpleFin connection with malformed created_at: {e}"
+                );
                 return Ok(None);
             }
         };

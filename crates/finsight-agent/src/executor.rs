@@ -609,8 +609,7 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
 }
 
 fn parse_payload<T: for<'de> Deserialize<'de>>(json: &str) -> CoreResult<T> {
-    serde_json::from_str(json)
-        .map_err(|e| CoreError::Validation(format!("invalid payload: {e}")))
+    serde_json::from_str(json).map_err(|e| CoreError::Validation(format!("invalid payload: {e}")))
 }
 
 fn ensure_changed(changed: usize, entity: &str) -> CoreResult<()> {

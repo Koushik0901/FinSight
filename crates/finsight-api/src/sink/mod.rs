@@ -47,7 +47,10 @@ mod tests {
             event_names::IMPORT_PROGRESS,
             serde_json::json!({"rows_done": 1}),
         );
-        sink.emit(event_names::IMPORT_COMPLETE, serde_json::json!({"ok": true}));
+        sink.emit(
+            event_names::IMPORT_COMPLETE,
+            serde_json::json!({"ok": true}),
+        );
         let got = sink.0.lock().unwrap();
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].0, event_names::IMPORT_PROGRESS);

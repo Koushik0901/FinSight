@@ -144,8 +144,16 @@ fn sum_member_views_equals_household() {
 
     // Reconciliation: members + residual == household
     let (u_inc, u_exp) = (70_000, 30_000);
-    assert_eq!(a_inc + b_inc + u_inc, h_inc, "income reconciles with residual");
-    assert_eq!(a_exp + b_exp + u_exp, h_exp, "expense reconciles with residual");
+    assert_eq!(
+        a_inc + b_inc + u_inc,
+        h_inc,
+        "income reconciles with residual"
+    );
+    assert_eq!(
+        a_exp + b_exp + u_exp,
+        h_exp,
+        "expense reconciles with residual"
+    );
 
     // Balance parity: joint 50% split for balances
     // Fresh DB for balance test to avoid transaction interference
@@ -177,7 +185,10 @@ fn sum_member_views_equals_household() {
     let a_bd = metrics::balance_breakdown_for(&mut conn2, Some(&alice2.id)).unwrap();
     let b_bd = metrics::balance_breakdown_for(&mut conn2, Some(&bob2.id)).unwrap();
     // Joint 50_000 each (100_000 / 2)
-    assert_eq!(a_bd.liquid_cents, 90_000, "alice: 40k sole + 50k half joint");
+    assert_eq!(
+        a_bd.liquid_cents, 90_000,
+        "alice: 40k sole + 50k half joint"
+    );
     assert_eq!(b_bd.liquid_cents, 50_000, "bob: half joint");
     assert!(
         (a_bd.liquid_cents + b_bd.liquid_cents - h_bd.liquid_cents).abs() <= 1,
@@ -220,7 +231,11 @@ fn member_rolling_uses_robust_median_not_fallback() {
 
     let now = Utc::now();
     let dates: Vec<String> = (0..3)
-        .map(|m| (now - Duration::days(10 + m * 32)).format("%Y-%m-%dT12:00:00Z").to_string())
+        .map(|m| {
+            (now - Duration::days(10 + m * 32))
+                .format("%Y-%m-%dT12:00:00Z")
+                .to_string()
+        })
         .collect();
     // Two normal months 190k, one month 190k + 250k anomaly spike
     insert_txn(&conn, &acct_id, -190_000, &dates[0], 0);

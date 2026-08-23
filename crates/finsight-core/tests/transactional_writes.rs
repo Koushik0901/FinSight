@@ -74,9 +74,16 @@ fn mid_batch_failure_rolls_back() {
 
     // t1 must remain uncategorized; the partial write did not leak through.
     let cat: Option<String> = conn
-        .query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0))
+        .query_row(
+            "SELECT category_id FROM transactions WHERE id='t1'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert!(cat.is_none(), "transaction category_id must not have been updated by a rolled-back batch");
+    assert!(
+        cat.is_none(),
+        "transaction category_id must not have been updated by a rolled-back batch"
+    );
 }
 
 /// The same guarantee via the `repos::atomic` helper (BEGIN IMMEDIATE / COMMIT)
@@ -86,19 +93,38 @@ fn mid_batch_failure_rolls_back() {
 fn atomic_helper_rolls_back_on_mid_batch_failure() {
     let (_dir, db) = migrated_db();
     let mut conn = db.get().unwrap();
-    conn.execute("INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)", []).unwrap();
+    conn.execute(
+        "INSERT INTO category_groups(id,label,sort_order) VALUES('g1','G',0)",
+        [],
+    )
+    .unwrap();
     conn.execute("INSERT INTO categories(id,group_id,label,color,sort_order) VALUES('cat1','g1','Food','#f00',0)", []).unwrap();
     conn.execute("INSERT INTO accounts(id,owner,bank,type,name,currency,color,source,created_at) VALUES('a1','Me','Bank','Checking','Ch','USD','#fff','manual','2024-01-01T00:00:00Z')", []).unwrap();
     conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) VALUES('t1','a1','2024-01-15T00:00:00Z',-1500,'A','cleared',0,'2024-01-15T00:00:00Z')", []).unwrap();
     conn.execute("INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) VALUES('t2','a1','2024-01-16T00:00:00Z',-2000,'B','cleared',0,'2024-01-16T00:00:00Z')", []).unwrap();
 
-    let res: Result<(), finsight_core::error::CoreError> = finsight_core::repos::atomic(&mut conn, |conn| {
-        conn.execute("UPDATE transactions SET category_id='cat1' WHERE id='t1'", [])?;
-        // Simulate a mid-batch application error after the first row.
-        Err(finsight_core::error::CoreError::InvalidState("injected mid-batch failure".into()))
-    });
+    let res: Result<(), finsight_core::error::CoreError> =
+        finsight_core::repos::atomic(&mut conn, |conn| {
+            conn.execute(
+                "UPDATE transactions SET category_id='cat1' WHERE id='t1'",
+                [],
+            )?;
+            // Simulate a mid-batch application error after the first row.
+            Err(finsight_core::error::CoreError::InvalidState(
+                "injected mid-batch failure".into(),
+            ))
+        });
     assert!(res.is_err());
 
-    let t1: Option<String> = conn.query_row("SELECT category_id FROM transactions WHERE id='t1'", [], |r| r.get(0)).unwrap();
-    assert!(t1.is_none(), "first row must be rolled back when second row fails via atomic()");
+    let t1: Option<String> = conn
+        .query_row(
+            "SELECT category_id FROM transactions WHERE id='t1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        t1.is_none(),
+        "first row must be rolled back when second row fails via atomic()"
+    );
 }

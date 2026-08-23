@@ -1,7 +1,7 @@
 pub mod accounts;
-pub mod balance;
 pub mod agent_memory;
 pub mod alerts;
+pub mod balance;
 pub mod budgets;
 pub mod categories;
 pub mod categorizations;
@@ -61,11 +61,7 @@ pub(super) fn rfc3339(idx: usize, s: &str) -> rusqlite::Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(s)
         .map(|d| d.with_timezone(&Utc))
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                idx,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
         })
 }
 
