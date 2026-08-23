@@ -201,7 +201,7 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         return base;
     }
     let index = ui_dir.join("index.html");
-    return base
+    base
         // Content-hashed bundles: cache for a year without revalidating.
         // Both static services below use `precompressed_br`/`precompressed_gzip`,
         // which make `ServeDir` prefer a sibling `.br`/`.gz` file when the
