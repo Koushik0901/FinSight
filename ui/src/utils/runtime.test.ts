@@ -3,14 +3,6 @@ import { isTauriRuntime, isBackendAvailable } from "./runtime";
 
 const realLocation = window.location;
 
-// isTauriRuntime() short-circuits to `true` under vitest (MODE === "test" /
-// VITEST truthy) and again under jsdom (navigator.userAgent contains
-// "jsdom") — both checks sit ABOVE the bridge/origin logic this suite exists
-// to exercise, and per Task 6 that short-circuit is NOT to be touched. So to
-// actually reach the origin-aware branch from inside a vitest+jsdom test, we
-// have to defeat both short-circuits by stubbing env + navigator to look like
-// a real (non-test) browser. This mirrors what the shipped code path sees in
-// production; it does not change isTauriRuntime() itself.
 beforeEach(() => {
   vi.stubEnv("MODE", "production");
   vi.stubEnv("VITEST", "");
@@ -30,79 +22,47 @@ function setLocation(origin: string) {
   Object.defineProperty(window, "location", { value: { origin }, configurable: true });
 }
 
-describe("isTauriRuntime — origin awareness (Phase 4)", () => {
-  it("true when the bridge is present AND on Tauri's own internal origin (mac/linux)", () => {
+describe("isTauriRuntime — pure PWA (shell deleted)", () => {
+  it("always false — the Tauri thin shell was deleted, PWA is the desktop app", () => {
     (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     setLocation("tauri://localhost");
-    expect(isTauriRuntime()).toBe(true);
+    expect(isTauriRuntime()).toBe(false);
   });
-  it("true on Tauri's Windows-default internal origin", () => {
+  it("false even with bridge + internal origin — shell no longer exists", () => {
     (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     setLocation("http://tauri.localhost");
-    expect(isTauriRuntime()).toBe(true);
+    expect(isTauriRuntime()).toBe(false);
   });
-  it("true on Tauri's Windows https-scheme internal origin", () => {
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    setLocation("https://tauri.localhost");
-    expect(isTauriRuntime()).toBe(true);
-  });
-  it("FALSE when the bridge is present but the origin is a remote self-hosted server — " +
-     "this is the exact Phase 4 shell-after-navigate scenario", () => {
+  it("false on remote server origin", () => {
     (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
     setLocation("https://myhost.ts.net");
     expect(isTauriRuntime()).toBe(false);
   });
-  it("false when the bridge is absent regardless of origin", () => {
+  it("false when bridge absent", () => {
     setLocation("tauri://localhost");
-    expect(isTauriRuntime()).toBe(false);
-  });
-  it("true in DEV when the bridge is present and on Vite's dev-server origin " +
-     "(pnpm tauri:dev navigates the real desktop webview there for HMR)", () => {
-    vi.stubEnv("DEV", true);
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    setLocation("http://localhost:5173");
-    expect(isTauriRuntime()).toBe(true);
-  });
-  it("false on localhost:5173 outside DEV — a production build must not false-positive " +
-     "just because a user's self-hosted server happens to run on that port", () => {
-    // Vitest's own import.meta.env.DEV defaults to true (it runs in a
-    // dev-like mode), so this test must explicitly simulate a production
-    // build's DEV=false to exercise the branch a real prod bundle takes.
-    vi.stubEnv("DEV", false);
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    setLocation("http://localhost:5173");
     expect(isTauriRuntime()).toBe(false);
   });
 });
 
-// isBackendAvailable() is the "may I make an RPC call" predicate — true for a
-// real Tauri desktop-IPC context OR the HTTP/SSE shim (server/PWA/thin shell
-// after navigate). The same beforeEach env/navigator stubs apply, so
-// isTauriRuntime() only returns true here via the bridge+internal-origin path.
-describe("isBackendAvailable — RPC transport availability", () => {
-  it("true when it's a real Tauri desktop-IPC context (bridge + internal origin)", () => {
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
-    setLocation("tauri://localhost");
-    expect(isBackendAvailable()).toBe(true);
-  });
-  it("true when isTauriRuntime() is false but the HTTP shim is installed — " +
-     "THE server-mode regression case (bridge present at a remote origin, so " +
-     "isTauriRuntime() is false, yet RPC still works over HTTP)", () => {
-    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+describe("isBackendAvailable — RPC transport availability (pure PWA)", () => {
+  it("true when HTTP shim is installed", () => {
     setLocation("https://myhost.ts.net");
-    expect(isTauriRuntime()).toBe(false);
     (window as unknown as { __FINSIGHT_HTTP__?: unknown }).__FINSIGHT_HTTP__ = true;
     expect(isBackendAvailable()).toBe(true);
   });
-  it("false when neither a Tauri desktop-IPC context nor the HTTP shim is present", () => {
+  it("false when neither HTTP shim nor mock is present", () => {
     setLocation("https://myhost.ts.net");
-    expect(isTauriRuntime()).toBe(false);
     expect(isBackendAvailable()).toBe(false);
   });
-  it("true when the mock harness is installed on a non-localhost Vite origin", () => {
+  it("true when mock harness is installed (design harness / tests)", () => {
     setLocation("http://127.0.0.1:5173");
     (window as unknown as { __FINSIGHT_MOCK__?: unknown }).__FINSIGHT_MOCK__ = true;
-    expect(isTauriRuntime()).toBe(false);
+    expect(isBackendAvailable()).toBe(true);
+  });
+  it("true in vitest/jsdom even without shim — hooks remain enabled in tests", () => {
+    // No stub — real vitest env has MODE=test / VITEST / jsdom
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     expect(isBackendAvailable()).toBe(true);
   });
 });

@@ -83,6 +83,39 @@ fn supported_matches_collect_commands() {
     );
 }
 
+#[test]
+fn openapi_commands_match_dispatch_supported() {
+    let openapi: BTreeSet<String> = finsight_openapi::COMMANDS.iter().map(|s| s.to_string()).collect();
+    let routed: BTreeSet<String> = finsight_server::dispatch::SUPPORTED.iter().map(|s| s.to_string()).collect();
+    let missing: Vec<_> = openapi.difference(&routed).collect();
+    let stale: Vec<_> = routed.difference(&openapi).collect();
+    assert!(
+        missing.is_empty(),
+        "finsight_openapi::COMMANDS has entries not in dispatch SUPPORTED: {missing:?}"
+    );
+    assert!(
+        stale.is_empty(),
+        "dispatch SUPPORTED has entries not in finsight_openapi::COMMANDS: {stale:?}"
+    );
+}
+
+#[test]
+fn openapi_json_paths_match_commands() {
+    let spec = finsight_openapi::build_openapi();
+    let paths = spec["paths"].as_object().expect("paths must be object");
+    let openapi_cmds: BTreeSet<String> = finsight_openapi::COMMANDS.iter().map(|s| s.to_string()).collect();
+    for cmd in &openapi_cmds {
+        let key = format!("/api/rpc/{cmd}");
+        assert!(paths.contains_key(&key), "openapi.json missing {key}");
+    }
+    let rpc_paths = paths.keys().filter(|k| k.starts_with("/api/rpc/")).count();
+    assert_eq!(
+        rpc_paths,
+        openapi_cmds.len(),
+        "openapi rpc path count must equal COMMANDS.len()"
+    );
+}
+
 /// Event-name contract guard: the generated `ui/src/api/eventNames.ts` must
 /// contain exactly the names in `finsight_api::sink::event_names::ALL`. Catches
 /// a stale generation step after adding/renaming a backend event (the class of

@@ -16,6 +16,15 @@ export function isTauriRuntime(): boolean {
  * production transport) or the mock harness. This gates data queries.
  */
 export function isBackendAvailable(): boolean {
+  // In vitest/jsdom the HTTP shim is not installed (tests use the mock
+  // harness via `src/test/setup.ts` or per-test `installMockBackend`), but
+  // queries should still be enabled — otherwise every hook test would be
+  // disabled and fail as "isSuccess false". Keep the same test-mode gate
+  // the old `isTauriRuntime()` used.
+  const vitest = (import.meta.env as { VITEST?: unknown }).VITEST;
+  if (import.meta.env.MODE === "test" || vitest) return true;
+  if (typeof navigator !== "undefined" && navigator.userAgent.includes("jsdom"))
+    return true;
   if (typeof window === "undefined") return false;
   const w = window as unknown as {
     __FINSIGHT_HTTP__?: unknown;

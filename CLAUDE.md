@@ -5,15 +5,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Thin desktop shell (Phase 4) + Vite frontend with hot reload.
-# NOTE: as of Phase 4 the desktop app is a THIN WEBVIEW SHELL with no local
-# database and no local command surface — it shows a ConnectScreen asking for a
-# self-hosted server URL, then navigates the window there and behaves exactly
-# like the browser/PWA. So `tauri:dev` launches that shell; point it at a
-# running `cargo run -p finsight-server` instance to see real data. (The old
-# `.dev`-isolated local-DB behavior is gone — the shell owns no DB to isolate.)
-pnpm tauri:dev
-
 # Frontend only (no Tauri, faster for UI-only work)
 cd ui && npm run dev
 
@@ -26,9 +17,9 @@ cd ui && npm run dev
 cargo run -p finsight-server
 
 # Browser dev against the server: start the server, then `cd ui && npm run dev`
-# (vite proxies /api → :8674; the HTTP/SSE shim auto-installs when no Tauri and
-# no ?mock). For the served-from-server experience: `cd ui && npm run build`
-# then open http://localhost:8674 directly.
+# (vite proxies /api → :8674; the HTTP shim auto-installs when no ?mock). For
+# the served-from-server experience: `cd ui && npm run build` then open
+# http://localhost:8674 directly.
 
 # Self-hosting (Docker + Tailscale/Caddy/LAN): see docs/self-hosting.md
 
@@ -47,8 +38,8 @@ cd ui && npx vitest run src/screens/Settings.test.tsx
 # TypeScript type-check (no emit)
 cd ui && npx tsc --noEmit
 
-# Regenerate TypeScript bindings after changing the shared command contract
-cargo run -p finsight-bindings --bin export_bindings
+# Regenerate the OpenAPI contract + TypeScript client after changing the API
+pnpm openapi   # cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen
 
 # Build for production
 cd ui && npm run build
@@ -56,16 +47,17 @@ cd ui && npm run build
 
 ## Architecture
 
-FinSight has completed the self-hosted client/server architecture described in
-`docs/superpowers/specs/2026-07-15-server-architecture-design.md`. Every shared
-command body lives in the Tauri-free **`finsight-api`** crate. The browser, PWA,
-and navigated desktop shell use **`finsight-server`** over HTTP/SSE; the shipped
-Tauri binary is only a server-URL webview shell. Server events (Copilot
-streaming, import progress) flow through `FrameSink` to SSE `/api/events`, and
-`ui/src/api/httpBackend.ts` preserves the generated bindings' invoke/event
-contract. The parity tests in `crates/finsight-server/tests/parity.rs` enforce
-that every generated command is routed with exactly the camelCase argument keys
-sent by `bindings.ts`.
+FinSight is a pure self-hosted PWA (`docs/superpowers/specs/2026-08-24-pure-selfhost-openapi-design.md`).
+Every shared command body lives in the Tauri-free **`finsight-api`** crate. The
+browser and installed PWA use **`finsight-server`** over HTTP/SSE; there is no
+native binary. `GET /api/openapi.json` (generated from `finsight-openapi`) is
+the contract for `ui/src/api/openapi.ts` (`openapi-typescript` + `openapi-fetch`);
+`ui/src/api/httpBackend.ts`’s `__TAURI_INTERNALS__` shim is the legacy bridge
+kept for `bindings.ts` compat while hooks migrate. Server events (Copilot
+streaming, import progress) flow through `FrameSink` to SSE `/api/events`. The
+parity tests in `crates/finsight-server/tests/parity.rs` + `crates/finsight-openapi`
+enforce that every `COMMANDS` entry is routed with exactly the camelCase keys
+sent by the generated client.
 
 ### Rust workspace (8 crates)
 
@@ -77,9 +69,11 @@ sent by `bindings.ts`.
 
 **`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-bindings`** — codegen-only Tauri wrapper and exporter package. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract the `export_bindings` binary emits. This package exists **purely** to generate `ui/src/api/bindings.ts` and is not linked into the shipped desktop binary.
+**`crates/finsight-bindings`** — legacy codegen-only Tauri wrapper (kept for `bindings.ts` compat while hooks migrate to the OpenAPI client). Each `#[tauri::command]` delegates to `finsight_api::commands::*`; `build_specta_builder()` supplies the contract for `export_bindings`.
 
-**`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against `bindings.ts`. It also hosts the **MCP server** (`POST /mcp`) — see below.
+**`crates/finsight-openapi`** — OpenAPI spec generation (pure self-hosted contract). `COMMANDS` + `build_openapi()` produce `openapi.json` and `ui/src/api/openapi.json`; `export_openapi` binary + `pnpm openapi:gen` (`openapi-typescript`) generate `ui/src/api/openapi.ts`. No Tauri dep.
+
+**`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, `GET /api/openapi.json`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` + `finsight-openapi` tests machine-check the dispatcher against `COMMANDS`. It also hosts the **MCP server** (`POST /mcp`) — see below.
 
 ### MCP server (bring-your-own-LLM Copilot)
 
@@ -99,7 +93,7 @@ Adding a Copilot tool needs no MCP work. Changing auth, scopes, or the bundle to
 
 **`crates/finsight-eval`** — evaluation fixtures and runners for Copilot/provider quality checks. Live-provider tests remain opt-in.
 
-**`src-tauri`** (crate alias `finsight-tauri`) — the shipped thin desktop shell binary (`finsight`), which depends only on `finsight-core` (keychain for the server URL) + Tauri. The bindings exporter lives in the separate `finsight-bindings` package, so the command surface cannot enter the shipping binary or its installer.
+No `src-tauri` — the thin shell was deleted in `2026-08-24-pure-selfhost-openapi`. The PWA (installed via browser `Install` / `Add to Dock`) is the desktop app. `deploy/compose.split.yaml.example` shows an optional `web (nginx) + api` split with no client change.
 
 ### The `run()` pattern
 
@@ -117,15 +111,20 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 ### Adding or changing a shared command
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
-   `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
-2. Add a thin wrapper in `crates/finsight-bindings/src/commands/` that delegates to it via
-   `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
-3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-bindings/src/lib.rs`
-4. **Add a `finsight-server` route**: one match arm in `crates/finsight-server/src/dispatch.rs`
-   using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
-   `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
-   client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
-5. `cargo run -p finsight-bindings --bin export_bindings` (aka `pnpm bindings`) — regenerates `ui/src/api/bindings.ts`
+   `crates/finsight-api/src/commands/` — command logic lives here.
+2. Add the `finsight-openapi` entry: keep `COMMANDS` in
+   `crates/finsight-openapi/src/lib.rs` sorted and identical to `dispatch.rs`
+   `SUPPORTED` (plus ` crates/finsight-bindings` wrapper if `bindings.ts` compat
+   is still needed — `collect_commands!` in `crates/finsight-bindings/src/lib.rs`
+   for the legacy path).
+3. **Add a `finsight-server` route**: one arm in
+   `crates/finsight-server/src/dispatch.rs` `rpc_routes!(api, events, cmd, p, c: …)`
+   using `arg(&p, "camelCase")` (or `UNSUPPORTED` if it can't work over HTTP).
+   Skipping this fails `tests/parity.rs` + `finsight-openapi` snapshot.
+4. `pnpm openapi` (`cargo run -p finsight-openapi --bin export_openapi` +
+   `pnpm --filter ui openapi:gen`) — regenerates `openapi.json`,
+   `ui/src/api/openapi.json`, `ui/src/api/openapi.ts` (and legacy
+   `bindings.ts` via `pnpm bindings` if you touched the wrapper).
 
 ### Database migrations
 
@@ -134,19 +133,22 @@ SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. R
 ### Frontend data flow
 
 ```
-ui/src/api/bindings.ts   ← generated, never edit
-ui/src/api/client.ts     ← re-exports bindings (import from here, not bindings directly)
-ui/src/api/httpBackend.ts← server-mode invoke/event shim over HTTP + SSE
+ui/src/api/openapi.ts    ← generated by openapi-typescript from openapi.json, never edit
+ui/src/api/openapi.json  ← generated, never edit (also at repo root openapi.json)
+ui/src/api/openapiClient.ts ← typed fetch client (openapi-fetch) over POST /api/rpc/{cmd}
+ui/src/api/bindings.ts   ← legacy generated (tauri-specta) — kept for compat while hooks migrate
+ui/src/api/client.ts     ← re-exports bindings + openapi client (import from here)
+ui/src/api/httpBackend.ts← HTTP/SSE shim that preserves bindings invoke/event contract
 ui/src/api/auth.ts       ← plain REST client for `/api/auth/*`
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
 ui/src/pwa/              ← seven-day IndexedDB query persistence (AES-GCM encrypted
-                            at rest via cacheCrypto.ts) + online state + installed-PWA
-                            surfaces: badge.ts/useAppBadge.ts (icon badge),
-                            shareTarget.ts (OS share sheet), push.ts (Web Push)
+                             at rest via cacheCrypto.ts) + online state + installed-PWA
+                             surfaces: badge.ts/useAppBadge.ts (icon badge),
+                             shareTarget.ts (OS share sheet), push.ts (Web Push)
 ui/public/*-sw.js        ← plain-JS service worker handlers pulled into the generated
-                            Workbox SW via `workbox.importScripts` (vite.config.ts).
-                            NOT bundled — they cannot import from src/, so their
-                            contracts are pinned by tests in ui/src/pwa/
+                             Workbox SW via `workbox.importScripts` (vite.config.ts).
+                             NOT bundled — they cannot import from src/, so their
+                             contracts are pinned by tests in ui/src/pwa/
 ui/src/screens/          ← one file per screen, consumes hooks
 ui/src/components/       ← shared: Sidebar, CommandPalette, TransactionDrawer, Drawer, Icons
 ui/src/components/copilot ← Copilot generative-UI: cards/ (one per block kind) + agUi/artifacts.ts (Zod validation) + renderers

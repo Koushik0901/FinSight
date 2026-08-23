@@ -367,36 +367,25 @@ installable Progressive Web App — no app store, no separate binary.
 
 ---
 
-## 7. Desktop app (thin shell)
+## 7. Desktop via PWA (no native binary)
 
-Alongside the browser and installable PWA, FinSight ships a small native
-**desktop shell** — a single downloaded/built binary that is just a window
-pointed at your server. It holds no data of its own: no local database, no
-local accounts, no separate copy of your finances. It exists so you get a
-real app icon, a dock/taskbar presence, and a system-tray entry, while all
-state stays on your self-hosted server exactly as with any other client.
+FinSight has no native desktop binary — the PWA *is* the desktop app. Install
+it from the browser and it runs standalone with its own icon, window, and
+offline read cache, exactly like a native app.
 
-- **First launch** shows a **Connect** screen asking for your server's
-  address — the same URL you'd open in a browser (a Tailscale hostname like
-  `https://finsight.myhouse.ts.net`, a domain, or a LAN address). It health-
-  checks the server, stores the URL in your OS keychain, and then loads the
-  real app. From that point on the shell behaves exactly like the browser/PWA
-  client for that server — same login, same UI, same read-only offline cache
-  of last-synced data.
-- **The server URL is remembered** across restarts (in the OS keychain), so
-  subsequent launches skip the Connect screen and go straight to your server.
-- **System tray:** left-click the tray icon to show/focus the window. The
-  tray menu has **"Change Server…"** (forgets the stored URL and relaunches
-  back to the Connect screen — use this to point the shell at a different
-  server) and **"Quit"**.
-- **Exports** (CSV/JSON) download through the webview's normal file-download
-  handling — the same Blob download the browser and PWA use — so they land in
-  your OS's usual downloads location, no native "save as" dialog wired
-  separately.
-- **No separate offline mode beyond the web client's.** The shell is the same
-  web app served from your server, so its offline behavior is whatever the
-  browser/PWA offers for that origin (the read-only last-synced cache); it
-  does not add any additional local persistence of its own.
+- **Chrome / Edge (Windows, macOS, Linux):** open the site, click the install
+  icon in the address bar or menu → “Install FinSight” / “Install app”.
+- **macOS Safari / “Add to Dock”:** open the site, File → Add to Dock (Safari
+  17+) or Share → Add to Dock. This gives a dock icon that launches
+  full-screen, no browser chrome.
+- **The server URL is the app:** there is no separate “Connect” screen — you
+  navigate to `https://<your-server>` (Tailscale hostname, domain, or LAN
+  address) and install from there. Subsequent launches open straight to your
+  server.
+- **Exports** (CSV/JSON) download via the browser’s normal download handling
+  (Blob), so they land in your usual downloads location.
+- **Offline** is the same as the PWA: a read-only cache of last-synced data;
+  no additional local database beyond the browser’s IndexedDB cache.
 
 ---
 

@@ -5,8 +5,8 @@ and master your money.
 
 FinSight combines encrypted personal-finance storage, account and transaction
 management, budgeting, goals, reporting, and an AI-assisted Copilot. The
-primary deployment is a server you operate yourself, accessed from a browser,
-an installable PWA, or the thin native desktop shell.
+primary deployment is a server you operate yourself, accessed from a browser
+or an installable PWA (desktop and mobile via Tailscale — no native binary).
 
 Built on principles from *The Richest Man in Babylon*, *The Total Money
 Makeover*, *I Will Teach You to Be Rich*, *The Psychology of Money*, *Rich Dad
@@ -16,14 +16,13 @@ Poor Dad*, and *Think and Grow Rich*.
 
 | Component | What it does | Where data lives |
 |---|---|---|
-| `finsight-server` | Serves the UI, authenticated RPC API, CSV uploads, and SSE events | One encrypted SQLCipher database per user under the server's data directory |
+| `finsight-server` | Serves the UI, authenticated RPC API, CSV uploads, SSE events, and `GET /api/openapi.json` | One encrypted SQLCipher database per user under the server's data directory |
 | Browser / PWA | Connects to the server over same-origin HTTP/SSE | A seven-day, read-only IndexedDB query cache for offline viewing; purged on logout or authentication failure |
-| Desktop shell | Remembers a server URL, then loads that server in a Tauri webview | The URL is stored in the OS keychain; financial data remains on the server, with the same web cache as the PWA |
 
-The desktop binary is intentionally a thin client. It no longer opens a local
-financial database or exposes the full Tauri command surface. On first launch
-it asks for a FinSight server URL, verifies `/api/health`, saves the URL, and
-navigates to the server-hosted app.
+The PWA is the desktop app: install from the browser (or `Add to Dock` on
+macOS) and it runs standalone with its own icon and window, offline read cache
+included. No separate binary — `docker compose up` plus Tailscale/Caddy is the
+whole install.
 
 ## Privacy and security
 
@@ -124,8 +123,10 @@ do not treat a bare LAN HTTP origin as secure. Restore the default value of `1`
 before putting FinSight behind HTTPS.
 
 For normal use, put FinSight behind HTTPS and keep secure cookies enabled. The
-full Tailscale, Caddy, LAN TLS, PWA installation, backup, upgrade, and desktop
-shell instructions are in [docs/self-hosting.md](docs/self-hosting.md).
+full Tailscale, Caddy, LAN TLS, PWA installation, backup, and upgrade
+instructions are in [docs/self-hosting.md](docs/self-hosting.md). An optional
+`deploy/compose.split.yaml.example` shows how to front the same image with
+nginx (`web` + `api`) if you later want a split deployment — no client change.
 
 ## Development
 
@@ -146,14 +147,7 @@ pnpm dev
 ```
 
 The development server stores data in `./data` unless
-`FINSIGHT_DATA_DIR` is set. To exercise the native thin shell, stop the
-standalone Vite process, leave `finsight-server` running, and run:
-
-```bash
-pnpm tauri:dev
-```
-
-Enter `http://localhost:8674` on the Connect screen.
+`FINSIGHT_DATA_DIR` is set.
 
 Validation commands:
 
@@ -163,22 +157,22 @@ pnpm --filter ui test
 cargo test --workspace
 pnpm build
 
-# Regenerate TypeScript bindings after changing the command contract
-pnpm bindings
+# Regenerate the OpenAPI contract + TypeScript client after changing the API
+pnpm openapi   # cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen
 ```
 
 ## Architecture
 
 ```text
-Browser / PWA / navigated desktop shell
-                  │
-       HTTP RPC + CSV upload + SSE
-                  │
-        crates/finsight-server
-                  │
-          crates/finsight-api
-                  │
-     ┌────────────┼──────────────┐
+Browser / PWA
+      │
+ HTTP RPC + CSV upload + SSE (+ GET /api/openapi.json)
+      │
+crates/finsight-server  (Axum, serves ui/dist)
+      │
+crates/finsight-api  (transport-agnostic handlers + ApiState)
+      │
+┌────────────┼──────────────┐
 finsight-core  finsight-agent  finsight-providers
 ```
 
@@ -189,35 +183,40 @@ FinSight/
 │   ├── finsight-providers/  # CSV parsers and LLM HTTP providers
 │   ├── finsight-agent/      # Copilot, finance tools, categorizer, anomalies, recipes
 │   ├── finsight-api/        # Transport-agnostic command bodies and ApiState
-│   ├── finsight-app/        # Codegen-only Tauri wrappers for the shared contract
+│   ├── finsight-openapi/    # OpenAPI spec generation (replaces tauri-specta)
 │   ├── finsight-server/     # Axum auth, RPC, uploads, SSE, static UI, user runtimes
 │   └── finsight-eval/       # Evaluation fixtures and runners
-├── src-tauri/               # Thin desktop shell + bindings exporter
+├── deploy/
+│   ├── compose.split.yaml.example  # optional web (nginx) + api split
+│   └── docker/nginx.conf
 └── ui/
     └── src/
-        ├── api/             # Generated bindings, HTTP shim, auth, query hooks
+        ├── api/             # Generated openapi.ts + openapiClient, auth, query hooks
         ├── components/      # Shared UI, auth/offline gates, Copilot renderers
         ├── pwa/             # IndexedDB persistence and online state
-        ├── screens/         # Product, server-auth, admin, and desktop-connect screens
+        ├── screens/         # Product, server-auth, admin screens
         └── styles/          # Design tokens and component styles
 ```
 
-The generated `ui/src/api/bindings.ts` remains the frontend command contract.
-In server mode, `ui/src/api/httpBackend.ts` implements the Tauri invoke/event
-shape over `POST /api/rpc/{cmd}` and `GET /api/events`, so screens and hooks use
-the same client API in every runtime.
+The generated `ui/src/api/openapi.ts` (from `openapi.json` via
+`openapi-typescript`) is the frontend contract. `ui/src/api/openapiClient.ts`
+(`openapi-fetch`) + `ui/src/api/httpBackend.ts`’s `__TAURI_INTERNALS__` shim
+preserve the `bindings.ts` `invoke` shape over `POST /api/rpc/{cmd}` and
+`GET /api/events`, so screens and hooks keep the same `client.ts` API.
 
 ### Adding or changing a shared command
 
-1. Implement the command body in `crates/finsight-api/src/commands/`.
-2. Add or update its thin `#[tauri::command]` / `#[specta::specta]` wrapper in
-   `crates/finsight-app/src/commands/`.
-3. Register the wrapper in `build_specta_builder()` in
-   `crates/finsight-app/src/lib.rs`.
-4. Add the server dispatcher arm and command name in
-   `crates/finsight-server/src/dispatch.rs`. Dispatcher argument keys must use
-   the camelCase keys emitted by the generated bindings.
-5. Run `pnpm bindings` and `cargo test -p finsight-server --test parity`.
+1. Implement the body as `pub async fn my_cmd(state: &ApiState, ...)` in
+   `crates/finsight-api/src/commands/`.
+2. Add `#[utoipa::path]` + `ToSchema` on the handler/DTOs (see
+   `crates/finsight-openapi/src/lib.rs` `COMMANDS` — keep it sorted and
+   identical to `dispatch.rs` `SUPPORTED`).
+3. Add the dispatcher arm in `crates/finsight-server/src/dispatch.rs`
+   (`rpc_routes!(api, events, cmd, p, c: …)` — use `arg(&p, "camelCase")`).
+4. Run `pnpm openapi` (`cargo run -p finsight-openapi --bin export_openapi`
+   + `pnpm --filter ui openapi:gen`) and `cargo test -p finsight-server --test parity`
+   + `cargo test -p finsight-openapi` (spec must stay in sync with `SUPPORTED`).
+5. If the DTO shape changed, `pnpm typecheck` will fail until hooks are updated.
 
 ## Data layout
 
@@ -251,9 +250,11 @@ devices” revoke the corresponding persisted rows.
 ## Project status
 
 The self-hosted server, multi-user encryption and recovery flow, browser/PWA
-transport, Docker deployment, offline read cache, and thin desktop shell are
-implemented. [docs/self-hosting.md](docs/self-hosting.md) documents current
-deployment and operational limits.
+transport, Docker deployment (single-container default, optional nginx split),
+offline read cache, and OpenAPI contract (`GET /api/openapi.json`,
+`openapi-typescript` client) are implemented.
+[docs/self-hosting.md](docs/self-hosting.md) documents current deployment and
+operational limits.
 
 The dated files in `docs/audits/`, `docs/handoffs/`, and
 `docs/superpowers/` are historical design and verification records. The active
