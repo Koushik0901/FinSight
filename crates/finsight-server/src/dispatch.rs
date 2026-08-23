@@ -27,7 +27,20 @@ impl FrameSink for BroadcastSink {
 
 /// Argument keys arrive in camelCase (what bindings.ts sends — Tauri converted
 /// them to snake_case for us before; here we read them by their camelCase name).
+fn is_camel_case(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {},
+        _ => return false,
+    }
+    !s.contains('_') && s.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
 fn arg<T: serde::de::DeserializeOwned>(p: &serde_json::Value, name: &str) -> Result<T, AppError> {
+    debug_assert!(
+        is_camel_case(name),
+        "arg key `{name}` must be camelCase (bindings.ts sends camelCase)"
+    );
     let v = p.get(name).cloned().unwrap_or(serde_json::Value::Null);
     serde_json::from_value(v)
         .map_err(|e| AppError::new("rpc.bad_arg", format!("argument `{name}`: {e}")))

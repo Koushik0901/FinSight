@@ -47,10 +47,9 @@ rusqlite.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 zeroize.workspace = true
-# regex is a dev-dependency only, added in Task 10 for the parity test parser.
-
 [dev-dependencies]
 finsight-core = { path = "../finsight-core", features = ["testing"] }
+finsight-bindings = { path = "../finsight-bindings" }
 tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
 regex = "1"
