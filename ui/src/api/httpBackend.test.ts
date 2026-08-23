@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COPILOT_STREAM_FRAME, FINSIGHT_AUTH_REQUIRED } from "./eventNames";
 import { installHttpBackend } from "./httpBackend";
 
 type AnyRec = Record<string, unknown>;
@@ -84,11 +85,11 @@ describe("httpBackend shim", () => {
     };
     const received: unknown[] = [];
     const handler = internals.transformCallback((e: unknown) => received.push(e));
-    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    await internals.invoke("plugin:event|listen", { event: COPILOT_STREAM_FRAME, handler });
     const es = (globalThis.EventSource as unknown as AnyRec).last as {
       onmessage: (e: { data: string }) => void;
     };
-    es.onmessage({ data: JSON.stringify({ event: "copilot-stream-frame", payload: { type: "text", delta: "hi" } }) });
+    es.onmessage({ data: JSON.stringify({ event: COPILOT_STREAM_FRAME, payload: { type: "text", delta: "hi" } }) });
     expect(received).toHaveLength(1);
     expect((received[0] as AnyRec).payload).toEqual({ type: "text", delta: "hi" });
   });
@@ -110,7 +111,7 @@ describe("httpBackend shim", () => {
     };
     // Establish the shared EventSource first, via a normal listener registration.
     const handler = internals.transformCallback(() => {});
-    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    await internals.invoke("plugin:event|listen", { event: COPILOT_STREAM_FRAME, handler });
     expect(closeSpy).not.toHaveBeenCalled();
 
     const dispatchSpy = vi.spyOn(window, "dispatchEvent");
@@ -120,7 +121,7 @@ describe("httpBackend shim", () => {
     });
 
     expect(closeSpy).toHaveBeenCalledTimes(1);
-    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }));
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: FINSIGHT_AUTH_REQUIRED }));
   });
 
   it("reopens the EventSource on the next listen after a 401 closed it (listener map is preserved)", async () => {
@@ -139,7 +140,7 @@ describe("httpBackend shim", () => {
       transformCallback: (cb: unknown) => number;
     };
     const handler = internals.transformCallback(() => {});
-    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    await internals.invoke("plugin:event|listen", { event: COPILOT_STREAM_FRAME, handler });
     expect(constructed).toBe(1);
 
     await expect(internals.invoke("list_accounts", {})).rejects.toEqual({
@@ -148,7 +149,7 @@ describe("httpBackend shim", () => {
     });
 
     // A fresh listen (e.g. after re-login remounts the app) opens a new ES.
-    await internals.invoke("plugin:event|listen", { event: "copilot-stream-frame", handler });
+    await internals.invoke("plugin:event|listen", { event: COPILOT_STREAM_FRAME, handler });
     expect(constructed).toBe(2);
   });
 
@@ -159,7 +160,7 @@ describe("httpBackend shim", () => {
     const internals = w.__TAURI_INTERNALS__ as { invoke: (c: string, a?: AnyRec) => Promise<unknown> };
     const dispatchSpy = vi.spyOn(window, "dispatchEvent");
     await expect(internals.invoke("list_accounts", {})).rejects.toEqual({ code: "core.not_found", message: "nope" });
-    expect(dispatchSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }));
+    expect(dispatchSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: FINSIGHT_AUTH_REQUIRED }));
   });
 
   it("installs over a stale __TAURI_INTERNALS__ bridge when isTauriRuntime() says false " +

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatModelRunOptions, ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
+import { COPILOT_STREAM_FRAME } from "../../api/eventNames";
 import { buildMetaFromMessages, createTauriChatModelAdapter } from "./TauriRuntime";
 import type { ConversationMessage } from "../../api/client";
 
@@ -73,28 +74,28 @@ describe("createTauriChatModelAdapter", () => {
       return vi.fn();
     });
     commandMocks.streamCopilotMessage.mockImplementation(async (_conversationId: string, runId: string) => {
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "text", conversationId: "conv-1", runId: "stale-run", delta: "ignored " },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "reasoning", conversation_id: "conv-1", run_id: runId, text: "Checked budget context." },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "toolCallStart", conversationId: "conv-1", runId, toolCallId: "tool-1", toolName: "get_budgets", args: {} },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "toolCallResult", conversationId: "conv-1", runId, toolCallId: "tool-1", result: { ok: true }, isError: false },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "text", conversationId: "conv-1", runId, delta: "Hello " },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "text", conversationId: "conv-1", runId, delta: "there" },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: { type: "usage", conversationId: "conv-1", runId, providerId: "openai", modelId: "gpt-test", elapsedMs: 1200, toolCount: 1 },
       });
-      listeners["copilot-stream-frame"]?.({
+      listeners[COPILOT_STREAM_FRAME]?.({
         payload: {
           type: "done",
           conversationId: "conv-1",
@@ -153,7 +154,7 @@ describe("createTauriChatModelAdapter", () => {
   it("passes previous user and assistant turns as backend history", async () => {
     eventMocks.listen.mockResolvedValue(vi.fn());
     commandMocks.streamCopilotMessage.mockImplementation(async (_conversationId: string, runId: string) => {
-      const done = eventMocks.listen.mock.calls.find(([name]) => name === "copilot-stream-frame")?.[1];
+      const done = eventMocks.listen.mock.calls.find(([name]) => name === COPILOT_STREAM_FRAME)?.[1];
       done({
         payload: {
           type: "done",

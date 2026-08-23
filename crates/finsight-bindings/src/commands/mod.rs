@@ -1,7 +1,7 @@
 /// Tauri-backed [`finsight_api::sink::FrameSink`]: forwards emissions to real
 /// Tauri window events, the same events the frontend already listens for
-/// (`"import-progress"`, `"import-complete"`, and — once Task 6 lands —
-/// `"copilot-stream-frame"`). finsight-server's dispatcher (Task 9) uses a
+/// (`import-progress` / `import-complete` / `copilot-stream-frame`, see
+/// `finsight_api::sink::event_names`). finsight-server's dispatcher (Task 9) uses a
 /// different `FrameSink` impl (`BroadcastSink`) that fans the same events out
 /// over SSE instead.
 pub struct TauriFrameSink(pub tauri::AppHandle);

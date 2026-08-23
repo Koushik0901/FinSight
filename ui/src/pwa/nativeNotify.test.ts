@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { COPILOT_ASYNC_ANSWER, IMPORT_COMPLETE } from "../api/eventNames";
 
 /**
  * Native notifications should reach the user exactly when they can't already
@@ -136,10 +137,10 @@ describe("startNativeNotifications", () => {
     // Let the listen() promises resolve.
     await Promise.resolve();
 
-    listenHandlers.get("copilot-async-answer")?.({ payload: {} });
+    listenHandlers.get(COPILOT_ASYNC_ANSWER)?.({ payload: {} });
     expect(notificationCtor).toHaveBeenCalledWith(
       "Your analysis is ready",
-      expect.objectContaining({ tag: "copilot-async-answer" }),
+      expect.objectContaining({ tag: COPILOT_ASYNC_ANSWER }),
     );
   });
 
@@ -148,10 +149,10 @@ describe("startNativeNotifications", () => {
     startNativeNotifications();
     await Promise.resolve();
 
-    listenHandlers.get("import-complete")?.({ payload: {} });
+    listenHandlers.get(IMPORT_COMPLETE)?.({ payload: {} });
     expect(notificationCtor).toHaveBeenCalledWith(
       "Import finished",
-      expect.objectContaining({ tag: "import-complete" }),
+      expect.objectContaining({ tag: IMPORT_COMPLETE }),
     );
   });
 
@@ -161,7 +162,7 @@ describe("startNativeNotifications", () => {
     startNativeNotifications();
     await Promise.resolve();
 
-    listenHandlers.get("copilot-async-answer")?.({ payload: {} });
+    listenHandlers.get(COPILOT_ASYNC_ANSWER)?.({ payload: {} });
     expect(notificationCtor).not.toHaveBeenCalled();
   });
 

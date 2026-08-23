@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
+import { CATEGORIZATION_COMPLETE, CATEGORIZATION_PROGRESS } from "../api/eventNames";
 import AgentActivityFeed from "./AgentActivityFeed";
 
 // Mock Tauri event listener
@@ -31,7 +32,7 @@ describe("AgentActivityFeed", () => {
   it("shows progress when categorization.progress fires", async () => {
     render(<AgentActivityFeed />);
     await act(async () => {
-      emitTauriEvent("categorization.progress", { done: 12, total: 47 });
+      emitTauriEvent(CATEGORIZATION_PROGRESS, { done: 12, total: 47 });
     });
     expect(screen.getByText(/12\s*\/\s*47/)).toBeInTheDocument();
   });
@@ -39,7 +40,7 @@ describe("AgentActivityFeed", () => {
   it("shows 'Done' after categorization.complete fires", async () => {
     render(<AgentActivityFeed />);
     await act(async () => {
-      emitTauriEvent("categorization.complete", { categorized: 47, skipped: 0 });
+      emitTauriEvent(CATEGORIZATION_COMPLETE, { categorized: 47, skipped: 0 });
     });
     expect(screen.getByText(/done/i)).toBeInTheDocument();
   });

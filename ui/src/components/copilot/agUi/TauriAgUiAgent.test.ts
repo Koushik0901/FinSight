@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
+import { COPILOT_STREAM_FRAME } from "../../../api/eventNames";
 import { TauriAgUiAgent } from "./TauriAgUiAgent";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -42,7 +43,7 @@ function input(text = "Plan my budget"): RunAgentInput {
 }
 
 function emitCopilotFrame(payload: unknown) {
-  const listener = listeners["copilot-stream-frame"];
+  const listener = listeners[COPILOT_STREAM_FRAME];
   if (!listener) throw new Error("copilot-stream-frame listener was not registered");
   listener({ payload });
 }
@@ -64,7 +65,7 @@ describe("TauriAgUiAgent", () => {
       });
     });
 
-    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(listeners[COPILOT_STREAM_FRAME]).toBeTypeOf("function"));
     emitCopilotFrame({ type: "reasoning", conversationId: "conv-1", runId: "run-1", sequenceNumber: 0, text: "Checked budgets." });
     emitCopilotFrame({ type: "toolCallStart", conversationId: "conv-1", runId: "run-1", sequenceNumber: 1, toolCallId: "tool-1", toolName: "get_budgets", args: { month: "2026-07" } });
     emitCopilotFrame({ type: "toolCallResult", conversationId: "conv-1", runId: "run-1", sequenceNumber: 2, toolCallId: "tool-1", result: { ok: true }, isError: false });
@@ -100,7 +101,7 @@ describe("TauriAgUiAgent", () => {
       agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
     });
 
-    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(listeners[COPILOT_STREAM_FRAME]).toBeTypeOf("function"));
     emitCopilotFrame({ type: "text", conversationId: "conv-1", runId: "old-run", sequenceNumber: 0, delta: "stale" });
     emitCopilotFrame({ type: "done", conversationId: "conv-1", runId: "run-1", sequenceNumber: 0, messageId: "asst-1", bundleId: null, toolTrace: [], followUpQuestions: [], actionLabel: null, actionPath: null, providerId: "test", modelId: "test", elapsedMs: 10, toolCount: 0 });
 
@@ -117,7 +118,7 @@ describe("TauriAgUiAgent", () => {
       agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
     });
 
-    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(listeners[COPILOT_STREAM_FRAME]).toBeTypeOf("function"));
     emitCopilotFrame({
       type: "plan",
       conversationId: "conv-1",
@@ -146,7 +147,7 @@ describe("TauriAgUiAgent", () => {
       agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
     });
 
-    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(listeners[COPILOT_STREAM_FRAME]).toBeTypeOf("function"));
     emitCopilotFrame({ type: "text", conversationId: "conv-1", runId: "run-1", sequenceNumber: 0, delta: "first" });
     emitCopilotFrame({ type: "text", conversationId: "conv-1", runId: "run-1", sequenceNumber: 2, delta: "gap" });
 
@@ -162,7 +163,7 @@ describe("TauriAgUiAgent", () => {
       agent.run(input()).subscribe({ next: (event) => events.push(event), error: reject, complete: resolve });
     });
 
-    await vi.waitFor(() => expect(listeners["copilot-stream-frame"]).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(listeners[COPILOT_STREAM_FRAME]).toBeTypeOf("function"));
     emitCopilotFrame({ type: "text", conversationId: "conv-1", runId: "run-1", sequenceNumber: 0, delta: "Review these actions." });
     emitCopilotFrame({ type: "done", conversationId: "conv-1", runId: "run-1", sequenceNumber: 1, messageId: "asst-1", bundleId: "bundle-1", toolTrace: [], followUpQuestions: [], actionLabel: null, actionPath: null, providerId: "test", modelId: "test", elapsedMs: 10, toolCount: 0 });
 

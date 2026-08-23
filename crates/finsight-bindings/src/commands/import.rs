@@ -30,7 +30,7 @@ pub async fn preview_csv_columns(path: String, skip_header_rows: u32) -> AppResu
 
 // Imports the CSV, then best-effort fires the desktop "import complete"
 // notification. Progress/completion events flow through a `TauriFrameSink`
-// into real Tauri window events ("import-progress" / "import-complete",
+// into real Tauri window events (import-progress / import-complete, see event_names),
 // unchanged names + payload shapes). The notification uses `tauri::AppHandle`
 // directly (native notification plugin) and so stays here in the wrapper —
 // the finsight-api body has no tauri dependency.

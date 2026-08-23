@@ -81,12 +81,12 @@ mod tests {
         let mut rx = rt.events.subscribe();
         rt.events
             .send(OutboundEvent {
-                event: "copilot-stream-frame".into(),
+                event: finsight_api::sink::event_names::COPILOT_STREAM_FRAME.into(),
                 payload: serde_json::json!({"type":"text","delta":"hi"}),
             })
             .unwrap();
         let got = rx.recv().await.unwrap();
-        assert_eq!(got.event, "copilot-stream-frame");
+        assert_eq!(got.event, finsight_api::sink::event_names::COPILOT_STREAM_FRAME);
         let line = sse_data(&got);
         assert!(line.contains("\"event\":\"copilot-stream-frame\""));
     }
@@ -101,14 +101,17 @@ mod tests {
         let mut stream = BroadcastStream::new(rt.events.subscribe());
         rt.events
             .send(OutboundEvent {
-                event: "categorization.progress".into(),
+                event: finsight_api::sink::event_names::CATEGORIZATION_PROGRESS.into(),
                 payload: serde_json::json!({"done": 3, "total": 10}),
             })
             .unwrap();
         let item = stream.next().await.unwrap().unwrap();
         let line = sse_data(&item);
         let parsed: serde_json::Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(parsed["event"], "categorization.progress");
+        assert_eq!(
+            parsed["event"],
+            finsight_api::sink::event_names::CATEGORIZATION_PROGRESS
+        );
         assert_eq!(parsed["payload"]["done"], 3);
     }
 
