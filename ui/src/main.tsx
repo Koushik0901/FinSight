@@ -18,6 +18,7 @@ import "@fontsource-variable/geist-mono/wght.css";
 import "./styles/reset.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/copilot-shell.css";
 import "./styles/onboarding.css";
 
 const queryClient = new QueryClient({

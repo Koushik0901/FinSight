@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useFocusParam } from "../api/hooks/useFocusParam";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
@@ -195,7 +196,6 @@ export default function Budget() {
     for (const env of memberEnvelopes) map.set(env.categoryId, env.memberSpentCents);
     return map;
   }, [memberEnvelopes]);
-  const [searchParams, setSearchParams] = useSearchParams();
   const pendingScrollRef = useRef<string | null>(null);
 
   const now = new Date();
@@ -261,33 +261,21 @@ export default function Budget() {
 
   // Deep-link support: ?focusCategory=<id-or-label> opens that envelope's
   // editor, matching the focus idiom used by Accounts, Goals and Recurring.
-  // The Copilot links here after applying a budget change so the user can see
-  // the result rather than take "done" on trust.
-  const focusedCategoryId = useMemo(() => {
-    const focus = searchParams.get("focusCategory");
-    if (!focus) return null;
-    // Accept the label as well as the id — a link may be built from either.
-    const match = envelopes.find(
-      (env) => env.categoryId === focus || env.categoryLabel.toLowerCase() === focus.toLowerCase(),
-    );
-    return match?.categoryId ?? null;
-  }, [envelopes, searchParams]);
-
-  useEffect(() => {
-    if (!searchParams.has("focusCategory")) return;
-    // Wait for envelopes before deciding — otherwise a slow load looks like
-    // "category not found" and the param is dropped before it can match.
-    if (isLoading) return;
-    if (focusedCategoryId && !editingId) {
-      setEditingId(focusedCategoryId);
-      pendingScrollRef.current = focusedCategoryId;
-    }
-    // Clear the param either way, so a stale link to a deleted category does
-    // not stick in the URL and re-fire on every render.
-    const next = new URLSearchParams(searchParams);
-    next.delete("focusCategory");
-    setSearchParams(next, { replace: true });
-  }, [focusedCategoryId, editingId, isLoading, searchParams, setSearchParams]);
+  const handleFocusCategory = useCallback(
+    (raw: string) => {
+      if (isLoading) return false;
+      const match = envelopes.find(
+        (env) => env.categoryId === raw || env.categoryLabel.toLowerCase() === raw.toLowerCase(),
+      );
+      const id = match?.categoryId ?? null;
+      if (id && !editingId) {
+        setEditingId(id);
+        pendingScrollRef.current = id;
+      }
+    },
+    [envelopes, editingId, isLoading],
+  );
+  useFocusParam("focusCategory", handleFocusCategory);
 
   // Runs after every render until the focused envelope is on screen: the row
   // does not exist yet on the render that sets `editingId`.

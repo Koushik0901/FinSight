@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
@@ -56,7 +57,7 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
   const contributionLabel = (c: { note: string | null; source: string }) =>
     c.note || (c.source === "opening" ? "Opening balance" : c.source === "sweep" ? "Parked surplus" : "Contribution");
 
-  useEffect(() => {
+  useDrawerSeed(open, goal?.id, () => {
     if (!goal) {
       setMonthly("");
       setPurpose("");
@@ -66,7 +67,7 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
     setPurpose(goal.purpose ?? "");
     setPriority(goal.priority || "normal");
     setStrictness(goal.deadlineStrictness || "target");
-  }, [goal?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   const linkedAccount = useMemo(
     () => accounts.find((account) => account.id === goal?.accountId) ?? null,

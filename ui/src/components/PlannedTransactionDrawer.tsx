@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
@@ -34,7 +35,7 @@ export default function PlannedTransactionDrawer({ open, onClose, planned }: Pro
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
 
-  useEffect(() => {
+  useDrawerSeed(open, planned?.id, () => {
     if (!planned) {
       setDescription("");
       setAmount("");
@@ -50,7 +51,7 @@ export default function PlannedTransactionDrawer({ open, onClose, planned }: Pro
     setStatus((STATUS_OPTIONS as readonly string[]).includes(planned.status) ? (planned.status as (typeof STATUS_OPTIONS)[number]) : "planned");
     setAccountId(planned.accountId ?? "");
     setCategoryId(planned.categoryId ?? "");
-  }, [planned?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   const linkedAccount = useMemo(
     () => accounts.find((account) => account.id === accountId) ?? null,

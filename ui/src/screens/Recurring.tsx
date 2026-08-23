@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useFocusParam } from "../api/hooks/useFocusParam";
 import EmptyState from "../components/EmptyState";
 import {
   useRecurring,
@@ -104,12 +105,20 @@ export default function Recurring() {
   const { data: items = [], isLoading, error } = useRecurring();
   const { data: plannedTransactions = [] } = usePlannedTransactions();
   const setVerdict = useSetSubscriptionVerdict();
-  const [searchParams, setSearchParams] = useSearchParams();
-
   // Detected price changes the user hasn't yet confirmed or dismissed (#58).
   const pendingChanges = items.filter((item) => item.priceChange && !item.verdict);
   const [view, setView] = useState<"monthly" | "upcoming" | "all">("monthly");
   const [editingPlanned, setEditingPlanned] = useState<PlannedTransaction | null>(null);
+  const handleFocusPlanned = useCallback(
+    (raw: string) => {
+      if (editingPlanned) return false;
+      const target = plannedTransactions.find((item) => item.id === raw || item.description.toLowerCase() === raw.toLowerCase());
+      if (!target) return false;
+      setEditingPlanned(target);
+    },
+    [editingPlanned, plannedTransactions],
+  );
+  useFocusParam("focusPlanned", handleFocusPlanned);
   const [creatingPlanned, setCreatingPlanned] = useState(false);
 
   const groups = useMemo(() => {
@@ -139,16 +148,7 @@ export default function Recurring() {
   const nextSevenDays = items.filter((item) => parseCalendarDate(item.nextExpected).getTime() <= Date.now() + 7 * 86400000).length;
   const activePlanned = plannedTransactions.filter((item) => item.status === "planned");
 
-  useEffect(() => {
-    const focus = searchParams.get("focusPlanned");
-    if (!focus || editingPlanned) return;
-    const target = plannedTransactions.find((item) => item.id === focus || item.description.toLowerCase() === focus.toLowerCase());
-    if (!target) return;
-    setEditingPlanned(target);
-    const next = new URLSearchParams(searchParams);
-    next.delete("focusPlanned");
-    setSearchParams(next, { replace: true });
-  }, [editingPlanned, plannedTransactions, searchParams, setSearchParams]);
+
 
   if (isLoading) return <div className="stub">Loading recurring items…</div>;
   if (error) return <div className="stub" role="alert">Error loading recurring items.</div>;

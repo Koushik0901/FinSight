@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -130,7 +131,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
     },
   });
 
-  useEffect(() => {
+  useDrawerSeed(open, account?.id, () => {
     if (account) {
       reset({
         bank: account.bank,
@@ -177,7 +178,7 @@ export default function AccountDrawer({ open, onClose, account, onCreated, eleva
     }
     setNewPersonName("");
     setArchiveConfirm(false);
-  }, [account?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   const toggleOwner = (memberId: string) => {
     setSelectedOwnerIds((prev) =>

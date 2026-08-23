@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusParam } from "../api/hooks/useFocusParam";
 import { toast } from "sonner";
 import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
@@ -547,7 +547,6 @@ function NewGoalForm({ onClose }: { onClose: () => void }) {
 export default function Goals() {
   const { data: goals = [], isLoading, error, refetch } = useGoals();
   const { data: accounts = [] } = useAccounts();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<GoalFilter>("all");
   const [creating, setCreating] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDto | null>(null);
@@ -585,20 +584,20 @@ export default function Goals() {
   }, {}), [goals]);
 
   const visible = filter === "all" ? goals : goals.filter((goal) => goal.goalType === filter);
-  const focusedGoal = useMemo(() => {
-    const focus = searchParams.get("focusGoal");
-    if (!focus) return null;
-    return goals.find((goal) => goal.id === focus || goal.name.toLowerCase() === focus.toLowerCase()) ?? null;
-  }, [goals, searchParams]);
+  const focusedGoal = useMemo(() => null as GoalDto | null, []);
   const activeEditingGoal = editingGoal ?? focusedGoal;
 
-  useEffect(() => {
-    if (!focusedGoal || editingGoal) return;
-    setEditingGoal(focusedGoal);
-    const next = new URLSearchParams(searchParams);
-    next.delete("focusGoal");
-    setSearchParams(next, { replace: true });
-  }, [editingGoal, focusedGoal, searchParams, setSearchParams]);
+  const handleFocusGoal = useCallback(
+    (raw: string) => {
+      if (editingGoal) return false;
+      if (goals.length === 0) return false;
+      const found = goals.find((goal) => goal.id === raw || goal.name.toLowerCase() === raw.toLowerCase()) ?? null;
+      if (!found) return;
+      setEditingGoal(found);
+    },
+    [goals, editingGoal],
+  );
+  useFocusParam("focusGoal", handleFocusGoal);
 
   if (isLoading) return <div className="stub">Loading goals…</div>;
   if (error) return <div className="stub" role="alert"><p>Goals could not load.</p><button className="btn outline sm" type="button" onClick={() => void refetch()}>Try again</button></div>;

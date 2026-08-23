@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useFocusParam } from "../api/hooks/useFocusParam";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { prefetchAccountTransactions } from "../api/prefetch";
@@ -27,7 +28,6 @@ function formatStamp(value: string | null | undefined) {
 export default function Accounts() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [chooserOpen, setChooserOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editAccount, setEditAccount] = useState<AccountSummary | null>(null);
@@ -86,22 +86,21 @@ export default function Accounts() {
 
   // Deep-link support: ?focusAccount=<id-or-name> opens that account's editor
   // directly (e.g. from a Copilot recommendation about a specific debt).
-  const focusedAccount = useMemo(() => {
-    const focus = searchParams.get("focusAccount");
-    if (!focus) return null;
-    return accounts.find((account) =>
-      account.id === focus || account.name.toLowerCase() === focus.toLowerCase()
-    ) ?? null;
-  }, [accounts, searchParams]);
+  const focusedAccount = useMemo(() => null as AccountSummary | null, []);
   const activeEditAccount = editAccount ?? focusedAccount;
 
-  useEffect(() => {
-    if (!focusedAccount || editAccount) return;
-    setEditAccount(focusedAccount);
-    const next = new URLSearchParams(searchParams);
-    next.delete("focusAccount");
-    setSearchParams(next, { replace: true });
-  }, [editAccount, focusedAccount, searchParams, setSearchParams]);
+  const handleFocusAccount = useCallback(
+    (raw: string) => {
+      if (editAccount) return false;
+      if (accounts.length === 0) return false;
+      const found =
+        accounts.find((account) => account.id === raw || account.name.toLowerCase() === raw.toLowerCase()) ?? null;
+      if (!found) return;
+      setEditAccount(found);
+    },
+    [accounts, editAccount],
+  );
+  useFocusParam("focusAccount", handleFocusAccount);
 
   if (isLoading) return <div className="stub">Loading accounts…</div>;
   if (error) return <div className="stub" role="alert">{userErrorMessage(error, "Could not load accounts.")}</div>;

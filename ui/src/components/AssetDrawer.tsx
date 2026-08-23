@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -64,7 +65,7 @@ export default function AssetDrawer({ open, onClose, asset }: Props) {
     defaultValues: { name: "", assetType: "cash", value_dollars: 0, notes: "" },
   });
 
-  useEffect(() => {
+  useDrawerSeed(open, asset?.id, () => {
     if (asset) {
       reset({
         name: asset.name,
@@ -87,7 +88,7 @@ export default function AssetDrawer({ open, onClose, asset }: Props) {
       setOwnerShares({});
     }
     setDeleteConfirm(false);
-  }, [asset?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   async function onSubmit(values: FormValues) {
     try {

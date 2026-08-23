@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useDrawerSeed } from "../api/hooks/useDrawerSeed";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -85,7 +86,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
     },
   });
 
-  useEffect(() => {
+  useDrawerSeed(open, transaction?.id, () => {
     setDisplayTxn(transaction);
     if (transaction) {
       reset({
@@ -108,7 +109,7 @@ export default function TransactionDrawer({ open, onClose, transaction, accountI
       setSelectedCategory(null);
     }
     setDeleteConfirm(false);
-  }, [transaction?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
 
   async function onSubmit(values: FormValues) {
     try {
