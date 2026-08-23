@@ -58,6 +58,7 @@ fn decode(blob: &[u8], dims: i64) -> CoreResult<Vec<f32>> {
             dims * 4
         )));
     }
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     Ok(blob
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
