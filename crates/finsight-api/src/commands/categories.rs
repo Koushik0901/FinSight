@@ -2,7 +2,9 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::{Category, CategoryGroup};
 use finsight_core::repos::{categories, run};
+use utoipa::ToSchema;
 
+#[utoipa::path(post, path = "/api/rpc/update_category_color", responses((status = 200, description = "Success")))]
 pub async fn update_category_color(state: &ApiState, id: String, color: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::update_color(conn, &id, &color))
@@ -10,6 +12,7 @@ pub async fn update_category_color(state: &ApiState, id: String, color: String) 
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_category", responses((status = 200, body = Category)))]
 pub async fn create_category(
     state: &ApiState,
     label: String,
@@ -24,6 +27,7 @@ pub async fn create_category(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/rename_category", responses((status = 200, description = "Success")))]
 pub async fn rename_category(state: &ApiState, id: String, label: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::rename(conn, &id, &label))
@@ -31,6 +35,8 @@ pub async fn rename_category(state: &ApiState, id: String, label: String) -> App
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/archive_category",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn archive_category(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| categories::archive(conn, &id))
@@ -38,6 +44,7 @@ pub async fn archive_category(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_category_guidance", responses((status = 200, description = "Success")))]
 pub async fn set_category_guidance(
     state: &ApiState,
     id: String,
@@ -51,6 +58,7 @@ pub async fn set_category_guidance(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_category_groups", responses((status = 200, body = Vec<CategoryGroup>)))]
 pub async fn list_category_groups(state: &ApiState) -> AppResult<Vec<CategoryGroup>> {
     let db = (*state.db).clone();
     run(&db, categories::list_groups)
@@ -58,6 +66,7 @@ pub async fn list_category_groups(state: &ApiState) -> AppResult<Vec<CategoryGro
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_category_group", responses((status = 200, body = CategoryGroup)))]
 pub async fn create_category_group(
     state: &ApiState,
     label: String,
@@ -71,6 +80,7 @@ pub async fn create_category_group(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_category_group", responses((status = 200, description = "Success")))]
 pub async fn set_category_group(
     state: &ApiState,
     category_id: String,

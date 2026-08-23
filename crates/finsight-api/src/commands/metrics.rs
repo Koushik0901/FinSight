@@ -8,12 +8,14 @@ use chrono::Utc;
 use finsight_core::{metrics, repos::run};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 /// A currency the user holds that these metrics are NOT denominated in.
 /// Reported so the UI can say "also holding US$3,200, not converted" instead of
 /// either inventing an exchange rate or silently omitting real money.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct UnconvertedHolding {
     pub code: String,
     pub account_count: i64,
@@ -21,8 +23,9 @@ pub struct UnconvertedHolding {
     pub balance_cents: i64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct FinancialMetrics {
     // Balances (known-balance accounts only), classified by account type.
     pub liquid_cents: i64,
@@ -65,6 +68,8 @@ pub struct FinancialMetrics {
     pub unconverted_holdings: Vec<UnconvertedHolding>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_financial_metrics",
+    request_body(content = Option<String>), responses((status = 200, body = FinancialMetrics)))]
 pub async fn get_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
@@ -146,6 +151,8 @@ pub async fn get_financial_metrics(
 /// reads, so an explanation can never disagree with the number shown elsewhere.
 /// The single source of truth is shared verbatim with the Copilot's
 /// `explain_metric` tool.
+#[utoipa::path(post, path = "/api/rpc/explain_financial_metrics",
+    request_body(content = Option<String>), responses((status = 200, body = Vec<finsight_core::provenance::MetricExplanation>)))]
 pub async fn explain_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
@@ -167,6 +174,7 @@ pub async fn explain_financial_metrics(
 /// `finsight_agent::finance::explain_debt_payoff`, surfaced through the Copilot's
 /// `explain_metric` tool — the debt payoff order has no dedicated screen to hang
 /// an "explain" affordance on, so it isn't exposed as a standalone command.)
+#[utoipa::path(post, path = "/api/rpc/explain_goals", responses((status = 200, body = Vec<finsight_core::provenance::MetricExplanation>)))]
 pub async fn explain_goals(
     state: &ApiState,
 ) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
@@ -182,8 +190,9 @@ pub async fn explain_goals(
 /// the unassigned residual — value owned by no recorded member, i.e. by people
 /// running their OWN separate FinSight app (the cross-user share). Member slices
 /// plus the residual reconcile to the household total.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MemberNetWorth {
     pub member_id: Option<String>,
     pub name: String,
@@ -194,6 +203,7 @@ pub struct MemberNetWorth {
     pub debt_cents: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/household_net_worth_breakdown", responses((status = 200, body = Vec<MemberNetWorth>)))]
 pub async fn household_net_worth_breakdown(state: &ApiState) -> AppResult<Vec<MemberNetWorth>> {
     use finsight_core::repos::household;
     let db = (*state.db).clone();
@@ -238,14 +248,17 @@ pub async fn household_net_worth_breakdown(state: &ApiState) -> AppResult<Vec<Me
     .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct FinancialAssumptionsInput {
     pub target_savings_rate_pct: i64,
     pub emergency_fund_target_months: f64,
     pub expected_annual_return_pct: f64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_financial_assumptions",
+    request_body(content = FinancialAssumptionsInput), responses((status = 200, description = "Success")))]
 pub async fn set_financial_assumptions(
     state: &ApiState,
     input: FinancialAssumptionsInput,
@@ -274,8 +287,9 @@ pub async fn set_financial_assumptions(
 /// Strings rather than enums on the wire so an older client that sends an
 /// unrecognised value degrades to the default instead of failing the request —
 /// a preference is never worth erroring over.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct FinancialPhilosophyDto {
     /// "avalanche" | "snowball"
     pub debt_strategy: String,
@@ -310,6 +324,7 @@ fn parse_risk_tolerance(raw: &str) -> metrics::RiskTolerance {
     }
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_financial_philosophy", responses((status = 200, body = FinancialPhilosophyDto)))]
 pub async fn get_financial_philosophy(state: &ApiState) -> AppResult<FinancialPhilosophyDto> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -319,6 +334,8 @@ pub async fn get_financial_philosophy(state: &ApiState) -> AppResult<FinancialPh
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_financial_philosophy",
+    request_body(content = FinancialPhilosophyDto), responses((status = 200, description = "Success")))]
 pub async fn set_financial_philosophy(
     state: &ApiState,
     input: FinancialPhilosophyDto,

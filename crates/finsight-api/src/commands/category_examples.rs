@@ -8,6 +8,7 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::CategoryExample;
 use finsight_core::repos::{category_examples, run};
+use utoipa::ToSchema;
 
 /// Attach an exemplar description to a category, keyed by the category's
 /// stable id (so it rides through renames). Idempotent per (category, text).
@@ -15,6 +16,7 @@ use finsight_core::repos::{category_examples, run};
 /// `source_txn_id` is an optional provenance breadcrumb for an "add this
 /// transaction as an example" affordance; the example survives that
 /// transaction being deleted.
+#[utoipa::path(post, path = "/api/rpc/add_category_example", responses((status = 200, body = CategoryExample)))]
 pub async fn add_category_example(
     state: &ApiState,
     category_id: String,
@@ -30,6 +32,8 @@ pub async fn add_category_example(
 }
 
 /// Remove one exemplar by its own id. No-op if it's already gone.
+#[utoipa::path(post, path = "/api/rpc/remove_category_example",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn remove_category_example(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| category_examples::remove(conn, &id))
@@ -42,6 +46,8 @@ pub async fn remove_category_example(state: &ApiState, id: String) -> AppResult<
 /// Returns rows for ARCHIVED categories too, mirroring how `list_categories`
 /// still returns `guidance` on an archived row — archiving hides examples from
 /// active consumers, it does not delete them.
+#[utoipa::path(post, path = "/api/rpc/list_category_examples",
+    request_body(content = String), responses((status = 200, body = Vec<CategoryExample>)))]
 pub async fn list_category_examples(
     state: &ApiState,
     category_id: String,

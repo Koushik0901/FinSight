@@ -4,16 +4,18 @@ use finsight_core::repos::run;
 use finsight_core::settings;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 const KEY_COMPLETION: &str = "onboarding_completion_marked";
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 pub struct OnboardingState {
     pub account_count: i64,
     pub category_count: i64,
     pub completion_marked: bool,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_onboarding_state", responses((status = 200, body = OnboardingState)))]
 pub async fn get_onboarding_state(state: &ApiState) -> AppResult<OnboardingState> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -38,6 +40,7 @@ pub async fn get_onboarding_state(state: &ApiState) -> AppResult<OnboardingState
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/mark_onboarding_complete", responses((status = 200, description = "Success")))]
 pub async fn mark_onboarding_complete(state: &ApiState) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &true))
@@ -45,6 +48,7 @@ pub async fn mark_onboarding_complete(state: &ApiState) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/reset_onboarding_completion", responses((status = 200, description = "Success")))]
 pub async fn reset_onboarding_completion(state: &ApiState) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, |conn| settings::set(conn, KEY_COMPLETION, &false))
@@ -52,13 +56,15 @@ pub async fn reset_onboarding_completion(state: &ApiState) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type, ToSchema)]
 pub struct OllamaProbeResult {
     pub reachable: bool,
     pub models: Vec<String>,
     pub has_nomic_embed: bool,
 }
 
+#[utoipa::path(post, path = "/api/rpc/probe_ollama",
+    request_body(content = String), responses((status = 200, body = OllamaProbeResult)))]
 pub async fn probe_ollama(base_url: String) -> AppResult<OllamaProbeResult> {
     let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
@@ -82,11 +88,11 @@ pub async fn probe_ollama(base_url: String) -> AppResult<OllamaProbeResult> {
             has_nomic_embed: false,
         });
     }
-    #[derive(serde::Deserialize)]
+    #[derive(serde::Deserialize, ToSchema)]
     struct TagsResp {
         models: Vec<Tag>,
     }
-    #[derive(serde::Deserialize)]
+    #[derive(serde::Deserialize, ToSchema)]
     struct Tag {
         name: String,
     }
@@ -109,8 +115,9 @@ pub async fn probe_ollama(base_url: String) -> AppResult<OllamaProbeResult> {
     })
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type, ToSchema)]
 #[serde(tag = "kind")]
+
 pub enum LlmProviderConfig {
     #[serde(rename = "ollama")]
     Ollama {
@@ -122,6 +129,8 @@ pub enum LlmProviderConfig {
     Unconfigured,
 }
 
+#[utoipa::path(post, path = "/api/rpc/save_llm_provider",
+    request_body(content = LlmProviderConfig), responses((status = 200, description = "Success")))]
 pub async fn save_llm_provider(state: &ApiState, config: LlmProviderConfig) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -131,7 +140,7 @@ pub async fn save_llm_provider(state: &ApiState, config: LlmProviderConfig) -> A
     .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[derive(Debug, Clone, serde::Deserialize, specta::Type, ToSchema)]
 pub struct StarterCategory {
     pub id: String,
     pub label: String,
@@ -139,6 +148,8 @@ pub struct StarterCategory {
     pub color: String,
 }
 
+#[utoipa::path(post, path = "/api/rpc/commit_starter_categories",
+    request_body(content = Vec<StarterCategory>), responses((status = 200, description = "Success")))]
 pub async fn commit_starter_categories(
     state: &ApiState,
     categories: Vec<StarterCategory>,

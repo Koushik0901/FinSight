@@ -2,7 +2,9 @@ use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::models::{AccountOwner, AssetOwner, HouseholdMember, OwnerShare};
 use finsight_core::repos::{household, run};
+use utoipa::ToSchema;
 
+#[utoipa::path(post, path = "/api/rpc/list_household_members", responses((status = 200, body = Vec<HouseholdMember>)))]
 pub async fn list_household_members(state: &ApiState) -> AppResult<Vec<HouseholdMember>> {
     let db = (*state.db).clone();
     run(&db, household::list_members)
@@ -10,6 +12,7 @@ pub async fn list_household_members(state: &ApiState) -> AppResult<Vec<Household
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_household_member", responses((status = 200, body = HouseholdMember)))]
 pub async fn create_household_member(
     state: &ApiState,
     name: String,
@@ -23,6 +26,8 @@ pub async fn create_household_member(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_self_member",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn set_self_member(state: &ApiState, member_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -36,6 +41,8 @@ pub async fn set_self_member(state: &ApiState, member_id: String) -> AppResult<(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_household_member",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn delete_household_member(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| household::delete_member(conn, &id))
@@ -43,6 +50,7 @@ pub async fn delete_household_member(state: &ApiState, id: String) -> AppResult<
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_account_owners", responses((status = 200, body = Vec<AccountOwner>)))]
 pub async fn list_account_owners(state: &ApiState) -> AppResult<Vec<AccountOwner>> {
     let db = (*state.db).clone();
     run(&db, household::list_account_owners)
@@ -50,6 +58,7 @@ pub async fn list_account_owners(state: &ApiState) -> AppResult<Vec<AccountOwner
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_account_owners", responses((status = 200, description = "Success")))]
 pub async fn set_account_owners(
     state: &ApiState,
     account_id: String,
@@ -63,6 +72,7 @@ pub async fn set_account_owners(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_account_owner_shares", responses((status = 200, description = "Success")))]
 pub async fn set_account_owner_shares(
     state: &ApiState,
     account_id: String,
@@ -76,6 +86,7 @@ pub async fn set_account_owner_shares(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_asset_owners", responses((status = 200, body = Vec<AssetOwner>)))]
 pub async fn list_asset_owners(state: &ApiState) -> AppResult<Vec<AssetOwner>> {
     let db = (*state.db).clone();
     run(&db, household::list_asset_owners)
@@ -83,6 +94,7 @@ pub async fn list_asset_owners(state: &ApiState) -> AppResult<Vec<AssetOwner>> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_asset_owners", responses((status = 200, description = "Success")))]
 pub async fn set_asset_owners(
     state: &ApiState,
     asset_id: String,

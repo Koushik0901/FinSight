@@ -19,8 +19,10 @@ use finsight_core::models::{CategoryProposal, TxnPatch};
 use finsight_core::repos::{category_proposals, run, transactions};
 use finsight_core::CoreError;
 use rusqlite::OptionalExtension;
+use utoipa::ToSchema;
 
 /// The current review queue — proposals still awaiting a human decision.
+#[utoipa::path(post, path = "/api/rpc/list_category_proposals", responses((status = 200, body = Vec<CategoryProposal>)))]
 pub async fn list_category_proposals(state: &ApiState) -> AppResult<Vec<CategoryProposal>> {
     let db = (*state.db).clone();
     run(&db, |conn| category_proposals::list(conn, Some("pending")))
@@ -75,6 +77,8 @@ fn active_category_or_error(
 /// The user agrees with the proposed category. Writes it as if the user had
 /// typed it into the transaction-edit drawer — the write is a `source='user'`
 /// categorization from this point on, not an unreviewed AI guess.
+#[utoipa::path(post, path = "/api/rpc/accept_category_proposal",
+    request_body(content = String), responses((status = 200, body = UpdateTxnResult)))]
 pub async fn accept_category_proposal(state: &ApiState, id: String) -> AppResult<UpdateTxnResult> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -102,6 +106,7 @@ pub async fn accept_category_proposal(state: &ApiState, id: String) -> AppResult
 }
 
 /// The user picks a DIFFERENT category than what was proposed.
+#[utoipa::path(post, path = "/api/rpc/correct_category_proposal", responses((status = 200, body = UpdateTxnResult)))]
 pub async fn correct_category_proposal(
     state: &ApiState,
     id: String,
@@ -136,6 +141,8 @@ pub async fn correct_category_proposal(
 /// Canonical `transactions.category_id` is left untouched (it already holds
 /// the LLM's applied guess) — this only removes the item from the review
 /// queue.
+#[utoipa::path(post, path = "/api/rpc/reject_category_proposal",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn reject_category_proposal(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {

@@ -14,6 +14,7 @@ use finsight_core::repos::{accounts, import_candidates};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 use std::path::Path;
 
 const MAX_BYTES: u64 = 50 * 1024 * 1024;
@@ -21,7 +22,7 @@ const PREVIEW_ROWS: usize = 10;
 const PREVIEW_COUNT_CAP: u32 = 10_000;
 const BATCH_SIZE: usize = 500;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct CsvPreview {
     pub headers: Option<Vec<String>>,
     pub rows: Vec<Vec<String>>,
@@ -30,7 +31,7 @@ pub struct CsvPreview {
     pub encoding_note: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct ImportSummary {
     pub import_id: String,
     pub rows_imported: u32,
@@ -39,7 +40,7 @@ pub struct ImportSummary {
     pub errors: Vec<RowError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct RowError {
     pub row_number: u32,
     pub reason: String,

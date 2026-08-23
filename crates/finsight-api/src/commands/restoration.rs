@@ -9,9 +9,11 @@ use finsight_core::repos::restoration::{
 use finsight_core::repos::run;
 use serde::Deserialize;
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct RestorationEnvelopeInput {
     pub label: String,
     pub source_account_id: Option<String>,
@@ -25,6 +27,7 @@ pub struct RestorationEnvelopeInput {
     pub note: Option<String>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_restoration_envelopes", responses((status = 200, body = Vec<RestorationEnvelope>)))]
 pub async fn list_restoration_envelopes(state: &ApiState) -> AppResult<Vec<RestorationEnvelope>> {
     let db = (*state.db).clone();
     run(&db, move |conn| restoration::list_open(conn))
@@ -33,6 +36,8 @@ pub async fn list_restoration_envelopes(state: &ApiState) -> AppResult<Vec<Resto
 }
 
 /// The three reliable numbers plus the honest ceiling, for one envelope.
+#[utoipa::path(post, path = "/api/rpc/get_restoration_status",
+    request_body(content = String), responses((status = 200, body = Option<RestorationStatus>)))]
 pub async fn get_restoration_status(
     state: &ApiState,
     id: String,
@@ -43,6 +48,8 @@ pub async fn get_restoration_status(
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_restoration_envelope",
+    request_body(content = RestorationEnvelopeInput), responses((status = 200, body = RestorationEnvelope)))]
 pub async fn create_restoration_envelope(
     state: &ApiState,
     input: RestorationEnvelopeInput,
@@ -68,6 +75,8 @@ pub async fn create_restoration_envelope(
 
 /// Reconcile and finish. The design nags toward this rather than letting
 /// envelopes accumulate.
+#[utoipa::path(post, path = "/api/rpc/close_restoration_envelope",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn close_restoration_envelope(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| restoration::close(conn, &id))
@@ -75,6 +84,8 @@ pub async fn close_restoration_envelope(state: &ApiState, id: String) -> AppResu
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_restoration_envelope",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn delete_restoration_envelope(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| restoration::delete(conn, &id))
@@ -83,6 +94,7 @@ pub async fn delete_restoration_envelope(state: &ApiState, id: String) -> AppRes
 }
 
 /// Attribute money that has gone back into the pot.
+#[utoipa::path(post, path = "/api/rpc/add_restoration_leg", responses((status = 200, body = RestorationLeg)))]
 pub async fn add_restoration_leg(
     state: &ApiState,
     envelope_id: String,
@@ -104,6 +116,8 @@ pub async fn add_restoration_leg(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/remove_restoration_leg",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn remove_restoration_leg(state: &ApiState, leg_id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| restoration::remove_leg(conn, &leg_id))

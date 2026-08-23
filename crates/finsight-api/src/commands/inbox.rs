@@ -12,10 +12,12 @@ const PROMO_EXPIRY_LEAD_DAYS: i64 = 60;
 use rusqlite::params;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 /// A single prioritized action item in the Financial Inbox.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ActionItem {
     /// Stable ID for this item — used as React key and for deduplication.
     pub id: String,
@@ -39,6 +41,7 @@ fn fmt_money(cents: i64) -> String {
     format!("${abs:.0}")
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_action_items", responses((status = 200, body = Vec<ActionItem>)))]
 pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
     let db = (*state.db).clone();
 
@@ -619,8 +622,9 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
 /// The breakdown fields exist so the number is debuggable — when a badge shows
 /// "7" and the user expects "3", the caller can say which bucket the extra four
 /// came from without re-running five queries by hand.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct InboxBadgeCount {
     pub total: i64,
     pub action_items: i64,
@@ -642,6 +646,7 @@ pub struct InboxBadgeCount {
 /// Runs sequentially rather than via `try_join!`: each call borrows a pooled
 /// blocking connection, and a badge refreshed on a slow poll is not worth
 /// occupying five pool slots at once on a multi-user server.
+#[utoipa::path(post, path = "/api/rpc/get_inbox_badge_count", responses((status = 200, body = InboxBadgeCount)))]
 pub async fn get_inbox_badge_count(state: &ApiState) -> AppResult<InboxBadgeCount> {
     let action_items = get_action_items(state).await?.len() as i64;
     let alerts = crate::commands::simplefin::list_simplefin_alerts(state)

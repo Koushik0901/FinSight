@@ -5,10 +5,12 @@ use finsight_core::repos::run;
 use finsight_core::subscriptions::{self, SubscriptionVerdict};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 /// A detected material change in a fixed-price recurring charge's amount (#58).
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PriceChangeDto {
     pub from_cents: i64,
     pub to_cents: i64,
@@ -31,8 +33,9 @@ impl From<&PriceChange> for PriceChangeDto {
 }
 
 /// A recurring transaction detected from transaction history (Phase 6 redesign).
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct RecurringItem {
     /// The canonical grouping key — the handle the confirm/dismiss verdict is
     /// keyed on (`set_subscription_verdict`).
@@ -89,6 +92,7 @@ fn kind_str(kind: RecurringKind) -> &'static str {
     }
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_recurring", responses((status = 200, body = Vec<RecurringItem>)))]
 pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
     let db = (*state.db).clone();
 
@@ -142,6 +146,7 @@ pub async fn list_recurring(state: &ApiState) -> AppResult<Vec<RecurringItem>> {
 /// Set (or clear, with `verdict = None`) the user's confirm/dismiss verdict on a
 /// detected subscription. `verdict` accepts "confirmed" | "dismissed"; any other
 /// value (or null) clears it, so a bad string can't corrupt state.
+#[utoipa::path(post, path = "/api/rpc/set_subscription_verdict", responses((status = 200, description = "Success")))]
 pub async fn set_subscription_verdict(
     state: &ApiState,
     merchant_key: String,
@@ -160,6 +165,7 @@ pub async fn set_subscription_verdict(
 /// (`YYYY-MM-DD`), or clear it with `trial_ends_at = None`. `label` is the
 /// display name captured for the reminder. A heads-up fires shortly before the
 /// date (#75).
+#[utoipa::path(post, path = "/api/rpc/set_subscription_trial", responses((status = 200, description = "Success")))]
 pub async fn set_subscription_trial(
     state: &ApiState,
     merchant_key: String,
@@ -177,6 +183,7 @@ pub async fn set_subscription_trial(
 /// Mark a detected subscription CANCELLED as of `cancelled_at` (`YYYY-MM-DD`).
 /// Ongoing price/renewal alerts stop; a charge dated after the cancel date is
 /// surfaced as a surprise. `label` names the service in that alert (#75).
+#[utoipa::path(post, path = "/api/rpc/mark_subscription_cancelled", responses((status = 200, description = "Success")))]
 pub async fn mark_subscription_cancelled(
     state: &ApiState,
     merchant_key: String,

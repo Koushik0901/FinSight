@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use finsight_core::{repos::run, settings};
+use utoipa::ToSchema;
 
 const CURRENCY_KEY: &str = "display_currency";
 /// `pub` (not `pub(crate)`): `crates/finsight-bindings/src/lib.rs`'s startup cascade
@@ -20,6 +21,7 @@ fn resolved_currency(conn: &rusqlite::Connection) -> finsight_core::CoreResult<S
         .to_string())
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_currency", responses((status = 200, body = String)))]
 pub async fn get_currency(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -34,6 +36,8 @@ pub async fn get_currency(state: &ApiState) -> AppResult<String> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_currency",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn set_currency(state: &ApiState, currency: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -43,6 +47,7 @@ pub async fn set_currency(state: &ApiState, currency: String) -> AppResult<()> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_all_data", responses((status = 200, description = "Success")))]
 pub async fn delete_all_data(state: &ApiState) -> AppResult<()> {
     let db = (*state.db).clone();
     // Begin a reset: advance the ledger epoch (so looping background writers
@@ -61,6 +66,7 @@ pub async fn delete_all_data(state: &ApiState) -> AppResult<()> {
 
 const NOTIFICATIONS_ENABLED_KEY: &str = "notifications.enabled";
 
+#[utoipa::path(post, path = "/api/rpc/get_notifications_enabled", responses((status = 200, body = bool)))]
 pub async fn get_notifications_enabled(state: &ApiState) -> AppResult<bool> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -71,6 +77,8 @@ pub async fn get_notifications_enabled(state: &ApiState) -> AppResult<bool> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_notifications_enabled",
+    request_body(content = bool), responses((status = 200, description = "Success")))]
 pub async fn set_notifications_enabled(state: &ApiState, enabled: bool) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -80,6 +88,7 @@ pub async fn set_notifications_enabled(state: &ApiState, enabled: bool) -> AppRe
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_auto_categorize_enabled", responses((status = 200, body = bool)))]
 pub async fn get_auto_categorize_enabled(state: &ApiState) -> AppResult<bool> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -90,6 +99,8 @@ pub async fn get_auto_categorize_enabled(state: &ApiState) -> AppResult<bool> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_auto_categorize_enabled",
+    request_body(content = bool), responses((status = 200, description = "Success")))]
 pub async fn set_auto_categorize_enabled(state: &ApiState, enabled: bool) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -100,6 +111,7 @@ pub async fn set_auto_categorize_enabled(state: &ApiState, enabled: bool) -> App
 }
 
 /// Real implementation as of Phase 4 (previously 501'd — dialog-only).
+#[utoipa::path(post, path = "/api/rpc/export_all_data_json", responses((status = 200, body = String)))]
 pub async fn export_all_data_json(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -154,6 +166,7 @@ pub async fn export_all_data_json(state: &ApiState) -> AppResult<String> {
 }
 
 /// Real implementation as of Phase 4 (previously 501'd — dialog-only).
+#[utoipa::path(post, path = "/api/rpc/export_all_data_csv", responses((status = 200, body = String)))]
 pub async fn export_all_data_csv(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     run(&db, move |conn| {

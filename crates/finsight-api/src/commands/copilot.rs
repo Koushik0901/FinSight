@@ -8,16 +8,19 @@ use finsight_core::models::{
 use finsight_core::repos::{copilot_actions, copilot_sessions, run};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ReconcileResult {
     pub delta_cents: i64,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ExecutionSummary {
     pub bundle_id: String,
     pub succeeded: u32,
@@ -29,8 +32,9 @@ pub struct ExecutionSummary {
     pub navigation: Vec<AgentNavigationTarget>,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all = "camelCase")]
 pub struct ExecutionItemResult {
     pub item_id: String,
     pub action_kind: String,
@@ -153,6 +157,7 @@ pub async fn execute_action_bundle(
     })
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_safe_to_spend", request_body(content = serde_json::Value), responses((status = 200, body = CashflowForecast)))]
 pub async fn get_safe_to_spend(
     state: &ApiState,
     horizon_days: Option<i64>,
@@ -174,10 +179,12 @@ pub async fn get_safe_to_spend(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/explain_basis", request_body(content = serde_json::Value), responses((status = 200, body = String)))]
 pub async fn explain_basis(_state: &ApiState, basis: metrics::ExpenseBasis) -> AppResult<String> {
     Ok(metrics::explain(basis).to_string())
 }
 
+#[utoipa::path(post, path = "/api/rpc/reconcile_bases", request_body(content = serde_json::Value), responses((status = 200, body = ReconcileResult)))]
 pub async fn reconcile_bases(
     state: &ApiState,
     basis_a: metrics::ExpenseBasis,

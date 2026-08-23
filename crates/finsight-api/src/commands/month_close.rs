@@ -22,6 +22,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 /// A metric drifts from what was recorded once it moves this far (relative),
 /// matching the scenario-staleness threshold so "materially changed" means one
@@ -58,8 +59,9 @@ fn month_label(year: i32, month: i32) -> String {
 /// The month's key figures. Enriched over the old review snapshot with net
 /// worth, debt, and a count of subscription price changes. Free-form goal JSON
 /// is kept for the UI's progress list.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MonthCloseSnapshot {
     pub income_cents: i64,
     pub expense_cents: i64,
@@ -75,7 +77,7 @@ pub struct MonthCloseSnapshot {
 /// The compact baseline drift is measured against — stored at freeze time so a
 /// completed close can show "recorded then vs recomputed now" without mutating
 /// the recorded snapshot (the V055 scenario-durability pattern).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 struct CloseBaseline {
     income_cents: i64,
     expense_cents: i64,
@@ -85,8 +87,9 @@ struct CloseBaseline {
 /// A data-quality or subscription-change item to review at close. Mirrors an
 /// Inbox action item (or #58 subscription changes) and carries a route to the
 /// screen that resolves it — the close never resolves it inline.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct CloseFlag {
     pub id: String,
     pub category: String,
@@ -100,8 +103,9 @@ pub struct CloseFlag {
 }
 
 /// One "recorded then vs recomputed now" line for a completed close.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct DriftLine {
     pub label: String,
     pub recorded_cents: i64,
@@ -109,8 +113,9 @@ pub struct DriftLine {
     pub changed_materially: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MonthCloseView {
     pub year: i32,
     pub month: i32,
@@ -127,8 +132,9 @@ pub struct MonthCloseView {
     pub drift: Vec<DriftLine>,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MonthCloseListItem {
     pub year: i32,
     pub month: i32,
@@ -139,8 +145,9 @@ pub struct MonthCloseListItem {
     pub net_worth_cents: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SaveMonthCloseInput {
     pub year: i32,
     pub month: i32,
@@ -338,6 +345,7 @@ fn load_row(
 
 /// The close for a given month: live figures/flags while unopened or in
 /// progress; the frozen record (plus drift) once completed.
+#[utoipa::path(post, path = "/api/rpc/get_month_close", responses((status = 200, body = MonthCloseView)))]
 pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResult<MonthCloseView> {
     let action_items = inbox::get_action_items(state).await?;
     let db = (*state.db).clone();
@@ -424,6 +432,8 @@ pub async fn get_month_close(state: &ApiState, year: i32, month: i32) -> AppResu
 /// acknowledged flags; `in_progress`/`skipped` only move status + notes and
 /// leave any prior frozen record intact (reopen keeps history; re-completing
 /// re-freezes explicitly).
+#[utoipa::path(post, path = "/api/rpc/save_month_close",
+    request_body(content = SaveMonthCloseInput), responses((status = 200, body = MonthCloseView)))]
 pub async fn save_month_close(
     state: &ApiState,
     input: SaveMonthCloseInput,
@@ -570,6 +580,7 @@ pub fn refresh_month_end_reminder(
 
 /// Past closes, newest first — the "revisit a recorded close" surface the old
 /// list_monthly_reviews never had a screen for.
+#[utoipa::path(post, path = "/api/rpc/list_month_closes", responses((status = 200, body = Vec<MonthCloseListItem>)))]
 pub async fn list_month_closes(state: &ApiState) -> AppResult<Vec<MonthCloseListItem>> {
     let db = (*state.db).clone();
     run(&db, |conn| {

@@ -5,9 +5,11 @@ use finsight_core::models::{NewTransaction, Transaction, TxnPatch};
 use finsight_core::repos::{rules, run, transactions};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Deserialize, Type, Default)]
+#[derive(Debug, Deserialize, Type, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct TxnFilterInput {
     pub account_id: Option<String>,
     pub limit: Option<i64>,
@@ -18,6 +20,8 @@ pub struct TxnFilterInput {
     pub end_date: Option<String>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_transactions",
+    request_body(content = TxnFilterInput), responses((status = 200, body = Vec<Transaction>)))]
 pub async fn list_transactions(
     state: &ApiState,
     filter: TxnFilterInput,
@@ -42,6 +46,8 @@ pub async fn list_transactions(
     Ok(result)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_transaction",
+    request_body(content = NewTransaction), responses((status = 200, body = Transaction)))]
 pub async fn create_transaction(state: &ApiState, input: NewTransaction) -> AppResult<Transaction> {
     let db = (*state.db).clone();
     run(&db, move |conn| transactions::insert(conn, input))
@@ -49,19 +55,20 @@ pub async fn create_transaction(state: &ApiState, input: NewTransaction) -> AppR
         .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, Type, ToSchema)]
 pub struct ProposedRuleDto {
     pub pattern: String,
     pub category_id: String,
     pub category_label: String,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 pub struct UpdateTxnResult {
     pub transaction: Transaction,
     pub proposed_rule: Option<ProposedRuleDto>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/update_transaction", responses((status = 200, body = UpdateTxnResult)))]
 pub async fn update_transaction(
     state: &ApiState,
     id: String,
@@ -84,6 +91,8 @@ pub async fn update_transaction(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_transaction",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn delete_transaction(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| transactions::delete(conn, &id))
@@ -91,6 +100,7 @@ pub async fn delete_transaction(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_rule", responses((status = 200, body = finsight_core::models::Rule)))]
 pub async fn create_rule(
     state: &ApiState,
     pattern: String,
@@ -117,6 +127,7 @@ pub async fn create_rule(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_transaction_owner", responses((status = 200, description = "Success")))]
 pub async fn set_transaction_owner(
     state: &ApiState,
     transaction_id: String,
@@ -134,7 +145,7 @@ pub async fn set_transaction_owner(
     .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct CategoryDto {
     pub id: String,
     pub label: String,
@@ -144,6 +155,7 @@ pub struct CategoryDto {
     pub spending_type: Option<String>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_categories", responses((status = 200, body = Vec<CategoryDto>)))]
 pub async fn list_categories(state: &ApiState) -> AppResult<Vec<CategoryDto>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -175,8 +187,9 @@ pub async fn list_categories(state: &ApiState) -> AppResult<Vec<CategoryDto>> {
 }
 
 /// Category with real spending aggregated from transactions.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct CategoryWithSpending {
     pub id: String,
     pub label: String,
@@ -275,6 +288,7 @@ fn categories_with_spending(
     Ok(out)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_categories_with_spending", responses((status = 200, body = Vec<CategoryWithSpending>)))]
 pub async fn list_categories_with_spending(
     state: &ApiState,
 ) -> AppResult<Vec<CategoryWithSpending>> {
@@ -305,8 +319,9 @@ pub async fn list_categories_with_spending(
     .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SpendingBreakdown {
     pub fixed_cents: i64,
     pub investments_cents: i64,
@@ -316,6 +331,7 @@ pub struct SpendingBreakdown {
     pub total_income_cents: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_category_spending_type", responses((status = 200, description = "Success")))]
 pub async fn set_category_spending_type(
     state: &ApiState,
     id: String,
@@ -344,6 +360,7 @@ pub async fn set_category_spending_type(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_spending_breakdown", responses((status = 200, body = SpendingBreakdown)))]
 pub async fn get_spending_breakdown(state: &ApiState) -> AppResult<SpendingBreakdown> {
     let db = (*state.db).clone();
     let this_month_start = Utc::now().format("%Y-%m-01").to_string();
@@ -408,8 +425,9 @@ pub async fn get_spending_breakdown(state: &ApiState) -> AppResult<SpendingBreak
 }
 
 /// Rule with resolved category label and color.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct RuleWithCategory {
     pub id: String,
     pub pattern: String,
@@ -421,6 +439,7 @@ pub struct RuleWithCategory {
     pub created_at: String,
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_rules_with_categories", responses((status = 200, body = Vec<RuleWithCategory>)))]
 pub async fn list_rules_with_categories(state: &ApiState) -> AppResult<Vec<RuleWithCategory>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -454,6 +473,7 @@ pub async fn list_rules_with_categories(state: &ApiState) -> AppResult<Vec<RuleW
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/toggle_rule", responses((status = 200, description = "Success")))]
 pub async fn toggle_rule(state: &ApiState, id: String, enabled: bool) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| rules::set_enabled(conn, &id, enabled))
@@ -461,6 +481,7 @@ pub async fn toggle_rule(state: &ApiState, id: String, enabled: bool) -> AppResu
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_transaction_count", responses((status = 200, body = i64)))]
 pub async fn get_transaction_count(state: &ApiState) -> AppResult<i64> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -470,6 +491,7 @@ pub async fn get_transaction_count(state: &ApiState) -> AppResult<i64> {
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_transaction_flags", responses((status = 200, body = finsight_core::models::Transaction)))]
 pub async fn set_transaction_flags(
     state: &ApiState,
     id: String,
@@ -487,8 +509,9 @@ pub async fn set_transaction_flags(
 /// Result of a transfer verdict: the updated transaction, plus how many other
 /// UNDECIDED transactions share the same counterparty so the UI can offer to
 /// apply the verdict to all of them in one click.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct TransferVerdictResult {
     pub transaction: finsight_core::models::Transaction,
     /// LIKE pattern identifying the siblings (pass to
@@ -499,6 +522,7 @@ pub struct TransferVerdictResult {
     pub similar_count: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_transaction_transfer", responses((status = 200, body = TransferVerdictResult)))]
 pub async fn set_transaction_transfer(
     state: &ApiState,
     id: String,
@@ -528,6 +552,7 @@ pub async fn set_transaction_transfer(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/apply_transfer_verdict_to_similar", responses((status = 200, body = u32)))]
 pub async fn apply_transfer_verdict_to_similar(
     state: &ApiState,
     pattern: String,
@@ -544,8 +569,9 @@ pub async fn apply_transfer_verdict_to_similar(
 /// Serializable mirror of `finsight_core::repos::transactions::Verdict` —
 /// the core enum has no serde/specta derives by design (finsight-core has no
 /// Tauri/specta dependency), so this DTO crosses the specta boundary instead.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub enum CounterpartyVerdict {
     Transfer,
     SettleUp,
@@ -566,6 +592,7 @@ impl From<CounterpartyVerdict> for finsight_core::repos::transactions::Verdict {
 /// Record the user's 3-way verdict (transfer / settle-up / real spending) on
 /// a transfer-review counterparty transaction. Sticky: survives re-imports
 /// and categorizer re-runs.
+#[utoipa::path(post, path = "/api/rpc/set_counterparty_verdict", responses((status = 200, body = finsight_core::models::Transaction)))]
 pub async fn set_counterparty_verdict(
     state: &ApiState,
     id: String,
@@ -583,6 +610,7 @@ pub async fn set_counterparty_verdict(
 /// counterparty pattern (from [`UnresolvedCounterpartyDto::pattern`] or
 /// `TransferVerdictResult::similar_pattern`). One decision clears a whole
 /// person's e-transfer history from the review list.
+#[utoipa::path(post, path = "/api/rpc/apply_counterparty_verdict_to_similar", responses((status = 200, body = u32)))]
 pub async fn apply_counterparty_verdict_to_similar(
     state: &ApiState,
     pattern: String,
@@ -598,8 +626,9 @@ pub async fn apply_counterparty_verdict_to_similar(
 
 /// One counterparty's undecided transfer-like rows, netted for the grouped
 /// review surface. Mirrors `finsight_core::repos::transactions::UnresolvedCounterparty`.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct UnresolvedCounterpartyDto {
     pub pattern: Option<String>,
     pub label: String,
@@ -622,6 +651,7 @@ impl From<transactions::UnresolvedCounterparty> for UnresolvedCounterpartyDto {
 
 /// The undecided transfer-review queue, grouped by counterparty for a
 /// bulk-decision surface.
+#[utoipa::path(post, path = "/api/rpc/list_unresolved_counterparties", responses((status = 200, body = Vec<UnresolvedCounterpartyDto>)))]
 pub async fn list_unresolved_counterparties(
     state: &ApiState,
 ) -> AppResult<Vec<UnresolvedCounterpartyDto>> {
@@ -636,8 +666,9 @@ pub async fn list_unresolved_counterparties(
 
 // ── Split transaction commands ────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct TransactionSplitDto {
     pub id: String,
     pub txn_id: String,
@@ -645,13 +676,16 @@ pub struct TransactionSplitDto {
     pub amount_cents: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SplitInputDto {
     pub category_id: Option<String>,
     pub amount_cents: i64,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_transaction_splits",
+    request_body(content = String), responses((status = 200, body = Vec<TransactionSplitDto>)))]
 pub async fn get_transaction_splits(
     state: &ApiState,
     transaction_id: String,
@@ -673,6 +707,7 @@ pub async fn get_transaction_splits(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/set_transaction_splits", responses((status = 200, description = "Success")))]
 pub async fn set_transaction_splits(
     state: &ApiState,
     transaction_id: String,
@@ -696,6 +731,8 @@ pub async fn set_transaction_splits(
 /// Returns the CSV content for transactions matching a filter (caller
 /// downloads it client-side — no server-side file I/O). Real implementation
 /// as of Phase 4; previously 501'd behind a native-dialog-only Tauri command.
+#[utoipa::path(post, path = "/api/rpc/export_transactions_csv",
+    request_body(content = TxnFilterInput), responses((status = 200, body = String)))]
 pub async fn export_transactions_csv(
     state: &ApiState,
     filter: TxnFilterInput,
@@ -733,8 +770,9 @@ pub async fn export_transactions_csv(
 /// `search_transactions` tool's query shape so the exported rows match
 /// exactly what the card displayed. Moved here from finsight-bindings in Phase 4
 /// (was finsight-bindings-only before the export commands became transport-agnostic).
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct SearchTxnQueryInput {
     pub merchant: Option<String>,
     pub account: Option<String>,
@@ -749,6 +787,8 @@ pub struct SearchTxnQueryInput {
 /// `transactions::search` with the Copilot tool so the exported rows match
 /// exactly what the card displayed. Real implementation as of Phase 4;
 /// previously 501'd behind a native-dialog-only Tauri command.
+#[utoipa::path(post, path = "/api/rpc/export_search_transactions_csv",
+    request_body(content = SearchTxnQueryInput), responses((status = 200, body = String)))]
 pub async fn export_search_transactions_csv(
     state: &ApiState,
     query: SearchTxnQueryInput,

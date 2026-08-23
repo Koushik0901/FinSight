@@ -24,6 +24,7 @@ use finsight_core::repos::{push as push_repo, run};
 use finsight_core::settings;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 const VAPID_PRIVATE_PEM: &str = "push.vapid_private_pem";
 const VAPID_PUBLIC_B64: &str = "push.vapid_public_b64";
@@ -38,8 +39,9 @@ const VAPID_SUBJECT: &str = "mailto:finsight@localhost";
 /// a stale "your bill is due" doesn't surface days later.
 const PUSH_TTL_SECONDS: u32 = 4 * 60 * 60;
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PushStatus {
     /// Base64url VAPID public key for `pushManager.subscribe`.
     pub public_key: String,
@@ -47,8 +49,9 @@ pub struct PushStatus {
     pub device_count: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PushDevice {
     pub endpoint: String,
     pub label: Option<String>,
@@ -58,8 +61,9 @@ pub struct PushDevice {
 
 /// Outcome of a send. Reported rather than swallowed so the Settings screen can
 /// tell "no devices registered" apart from "the push service rejected us".
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PushDeliveryReport {
     pub delivered: i64,
     /// Subscriptions the push service reported as permanently gone; these are
@@ -70,8 +74,9 @@ pub struct PushDeliveryReport {
 
 /// The JSON body `push-sw.js` parses. Keep the field names in lockstep with it
 /// — the contract is pinned by `ui/src/pwa/push.test.ts`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PushPayload {
     pub title: String,
     pub body: String,
@@ -145,6 +150,7 @@ fn generate_vapid_keypair() -> Result<(String, String), String> {
 
 // -------------------------------------------------------------- commands ---
 
+#[utoipa::path(post, path = "/api/rpc/get_push_status", responses((status = 200, body = PushStatus)))]
 pub async fn get_push_status(state: &ApiState) -> AppResult<PushStatus> {
     let (_priv, public_key) = vapid_keypair(state).await?;
     let db = (*state.db).clone();
@@ -158,6 +164,7 @@ pub async fn get_push_status(state: &ApiState) -> AppResult<PushStatus> {
     })
 }
 
+#[utoipa::path(post, path = "/api/rpc/save_push_subscription", responses((status = 200, description = "Success")))]
 pub async fn save_push_subscription(
     state: &ApiState,
     endpoint: String,
@@ -179,6 +186,8 @@ pub async fn save_push_subscription(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_push_subscription",
+    request_body(content = String), responses((status = 200, body = bool)))]
 pub async fn delete_push_subscription(state: &ApiState, endpoint: String) -> AppResult<bool> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -188,6 +197,7 @@ pub async fn delete_push_subscription(state: &ApiState, endpoint: String) -> App
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_push_devices", responses((status = 200, body = Vec<PushDevice>)))]
 pub async fn list_push_devices(state: &ApiState) -> AppResult<Vec<PushDevice>> {
     let db = (*state.db).clone();
     let rows = run(&db, push_repo::list).await.map_err(AppError::from)?;
@@ -206,6 +216,7 @@ pub async fn list_push_devices(state: &ApiState) -> AppResult<Vec<PushDevice>> {
 /// (permission, subscription, VAPID signing, push service, worker) actually
 /// works on their device. Push cannot be verified from the server side alone —
 /// a 201 from the push service only means it accepted the message for delivery.
+#[utoipa::path(post, path = "/api/rpc/send_test_push", responses((status = 200, body = PushDeliveryReport)))]
 pub async fn send_test_push(state: &ApiState) -> AppResult<PushDeliveryReport> {
     send_push(
         state,
@@ -229,12 +240,15 @@ pub async fn send_test_push(state: &ApiState) -> AppResult<PushDeliveryReport> {
 /// report instead. A 404/410 from the push service means the subscription is
 /// permanently gone, and the row is deleted — otherwise every future send
 /// retries a device that will never come back.
+#[utoipa::path(post, path = "/api/rpc/send_push",
+    request_body(content = PushPayload), responses((status = 200, body = PushDeliveryReport)))]
 pub async fn send_push(state: &ApiState, payload: PushPayload) -> AppResult<PushDeliveryReport> {
     send_push_for_db(&state.db, payload).await
 }
 
 /// See `vapid_keypair_for_db` — the `Db`-only entry point, for the background
 /// scheduler.
+#[utoipa::path(post, path = "/api/rpc/send_push_for_db", responses((status = 200, body = PushDeliveryReport)))]
 pub async fn send_push_for_db(
     db: &finsight_core::Db,
     payload: PushPayload,

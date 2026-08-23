@@ -30,10 +30,11 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
+use utoipa::ToSchema;
 
 // ── Public types emitted via the FrameSink as `copilot-stream-frame` ───────────
 
-#[derive(Debug, Serialize, Clone, Type)]
+#[derive(Debug, Serialize, Clone, Type, ToSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum CopilotStreamFrame {
     Text {
@@ -163,15 +164,17 @@ pub enum CopilotStreamFrame {
 // ── Input types ──────────────────────────────────────────────────────────────
 
 /// A single prior turn from the conversation history for multi-turn awareness.
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ChatHistoryEntry {
     pub role: String, // "user" | "assistant"
     pub content: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct EditConversationMessageInput {
     pub conversation_id: String,
     pub message_id: String,
@@ -189,6 +192,7 @@ pub struct EditConversationMessageInput {
 ///    finsight-server).
 /// 4. Persists the assistant message and emits the `Done` frame.
 /// 5. Auto-generates a title for new conversations after the first message.
+#[utoipa::path(post, path = "/api/rpc/stream_copilot_message", responses((status = 200, body = String)))]
 pub async fn stream_copilot_message(
     state: &ApiState,
     sink: Arc<dyn FrameSink>,
@@ -969,6 +973,7 @@ pub async fn stream_copilot_message(
     Ok(conv_id)
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_conversations", responses((status = 200, body = Vec<ConversationSummary>)))]
 pub async fn list_conversations(state: &ApiState) -> AppResult<Vec<ConversationSummary>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
@@ -979,6 +984,8 @@ pub async fn list_conversations(state: &ApiState) -> AppResult<Vec<ConversationS
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_conversation_messages",
+    request_body(content = String), responses((status = 200, body = Vec<ConversationMessage>)))]
 pub async fn get_conversation_messages(
     state: &ApiState,
     conversation_id: String,
@@ -992,6 +999,8 @@ pub async fn get_conversation_messages(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_conversation",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn delete_conversation(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
@@ -1002,6 +1011,7 @@ pub async fn delete_conversation(state: &ApiState, id: String) -> AppResult<()> 
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_conversation", responses((status = 200, body = String)))]
 pub async fn create_conversation(state: &ApiState) -> AppResult<String> {
     let db = (*state.db).clone();
     let id = uuid::Uuid::new_v4().to_string();
@@ -1014,6 +1024,8 @@ pub async fn create_conversation(state: &ApiState) -> AppResult<String> {
     .map(|s| s.id)
 }
 
+#[utoipa::path(post, path = "/api/rpc/edit_conversation_user_message",
+    request_body(content = EditConversationMessageInput), responses((status = 200, description = "Success")))]
 pub async fn edit_conversation_user_message(
     state: &ApiState,
     input: EditConversationMessageInput,
@@ -1038,6 +1050,7 @@ pub async fn edit_conversation_user_message(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_conversation_messages_after", responses((status = 200, body = u32)))]
 pub async fn delete_conversation_messages_after(
     state: &ApiState,
     conversation_id: String,

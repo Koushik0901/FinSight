@@ -3,7 +3,10 @@ use crate::ApiState;
 use finsight_agent::{context, planner};
 use finsight_core::models::{AgentRecipe, AgentRecipeRun};
 use finsight_core::repos::{recipes, run};
+use utoipa::ToSchema;
 
+#[utoipa::path(post, path = "/api/rpc/list_recipes",
+    request_body(content = bool), responses((status = 200, body = Vec<AgentRecipe>)))]
 pub async fn list_recipes(state: &ApiState, include_paused: bool) -> AppResult<Vec<AgentRecipe>> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::list(conn, include_paused))
@@ -11,6 +14,7 @@ pub async fn list_recipes(state: &ApiState, include_paused: bool) -> AppResult<V
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/create_recipe", responses((status = 200, body = AgentRecipe)))]
 pub async fn create_recipe(
     state: &ApiState,
     title: String,
@@ -38,6 +42,7 @@ pub async fn create_recipe(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/update_recipe", responses((status = 200, body = AgentRecipe)))]
 pub async fn update_recipe(
     state: &ApiState,
     id: String,
@@ -65,6 +70,8 @@ pub async fn update_recipe(
     .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/pause_recipe",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn pause_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "paused"))
@@ -72,6 +79,8 @@ pub async fn pause_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/resume_recipe",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn resume_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "active"))
@@ -79,6 +88,8 @@ pub async fn resume_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/delete_recipe",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn delete_recipe(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| recipes::set_status(conn, &id, "deleted"))
@@ -86,6 +97,8 @@ pub async fn delete_recipe(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/trigger_recipe",
+    request_body(content = String), responses((status = 200, body = String)))]
 pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     let db = (*state.db).clone();
     let recipe_id_for_load = id.clone();
@@ -183,6 +196,7 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     }
 }
 
+#[utoipa::path(post, path = "/api/rpc/list_recipe_runs", responses((status = 200, body = Vec<AgentRecipeRun>)))]
 pub async fn list_recipe_runs(
     state: &ApiState,
     recipe_id: String,

@@ -5,12 +5,16 @@ use finsight_core::models::AgentMemory;
 use finsight_core::repos::{agent_memory, run};
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
+#[utoipa::path(post, path = "/api/rpc/list_agent_memory", responses((status = 200, body = Vec<AgentMemory>)))]
 pub async fn list_agent_memory(state: &ApiState) -> AppResult<Vec<AgentMemory>> {
     let db = (*state.db).clone();
     run(&db, agent_memory::list).await.map_err(AppError::from)
 }
 
+#[utoipa::path(post, path = "/api/rpc/forget_agent_memory",
+    request_body(content = String), responses((status = 200, description = "Success")))]
 pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> {
     let db = (*state.db).clone();
     run(&db, move |conn| agent_memory::forget(conn, &id))
@@ -18,8 +22,9 @@ pub async fn forget_agent_memory(state: &ApiState, id: String) -> AppResult<()> 
         .map_err(AppError::from)
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct HealthScoreBreakdown {
     pub savings_rate_pts: u8,
     pub emergency_fund_pts: u8,
@@ -33,8 +38,9 @@ pub struct HealthScoreBreakdown {
     pub budget_adherence_pct: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct HealthScore {
     pub total: u8,
     pub grade: String,
@@ -42,6 +48,7 @@ pub struct HealthScore {
     pub tips: Vec<String>,
 }
 
+#[utoipa::path(post, path = "/api/rpc/get_financial_health_score", responses((status = 200, body = HealthScore)))]
 pub async fn get_financial_health_score(state: &ApiState) -> AppResult<HealthScore> {
     let db = (*state.db).clone();
     run(&db, |conn| {
