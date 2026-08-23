@@ -1,3 +1,8 @@
+/**
+ * Copilot AG-UI Spike — reference/rollback surface for the AG-UI runtime.
+ * Routed at /copilot/ag-ui-spike, excluded from SW precache.
+ * Sunset: remove after AG-UI has been default for one release with no rollback.
+ */
 import { useMemo } from "react";
 import {
   AssistantRuntimeProvider,
