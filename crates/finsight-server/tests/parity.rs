@@ -85,8 +85,14 @@ fn supported_matches_collect_commands() {
 
 #[test]
 fn openapi_commands_match_dispatch_supported() {
-    let openapi: BTreeSet<String> = finsight_openapi::COMMANDS.iter().map(|s| s.to_string()).collect();
-    let routed: BTreeSet<String> = finsight_server::dispatch::SUPPORTED.iter().map(|s| s.to_string()).collect();
+    let openapi: BTreeSet<String> = finsight_openapi::COMMANDS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let routed: BTreeSet<String> = finsight_server::dispatch::SUPPORTED
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let missing: Vec<_> = openapi.difference(&routed).collect();
     let stale: Vec<_> = routed.difference(&openapi).collect();
     assert!(
@@ -103,7 +109,10 @@ fn openapi_commands_match_dispatch_supported() {
 fn openapi_json_paths_match_commands() {
     let spec = finsight_openapi::build_openapi();
     let paths = spec["paths"].as_object().expect("paths must be object");
-    let openapi_cmds: BTreeSet<String> = finsight_openapi::COMMANDS.iter().map(|s| s.to_string()).collect();
+    let openapi_cmds: BTreeSet<String> = finsight_openapi::COMMANDS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     for cmd in &openapi_cmds {
         let key = format!("/api/rpc/{cmd}");
         assert!(paths.contains_key(&key), "openapi.json missing {key}");

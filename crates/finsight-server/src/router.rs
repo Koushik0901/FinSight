@@ -238,7 +238,7 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
                 )
                 .layer(CompressionLayer::new())
                 .layer(cache_header(REVALIDATE)),
-        )
+        );
 }
 
 async fn openapi() -> impl IntoResponse {
@@ -652,7 +652,11 @@ pub(crate) mod tests {
     async fn openapi_json_route_is_no_cache() {
         let app = build_router(test_state(), &test_ui_dir());
         let res = app
-            .oneshot(Request::get("/api/openapi.json").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/api/openapi.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
