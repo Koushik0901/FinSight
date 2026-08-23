@@ -1,12 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import AccountTransactions from "./AccountTransactions";
 import { downloadBlob } from "../lib/downloadBlob";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+vi.mock("../api/csvUpload", () => ({
+  uploadCsv: vi.fn(() => Promise.resolve("/tmp/uploaded.csv")),
 }));
 
 vi.mock("../components/ImportMappingDialog", () => ({
@@ -151,7 +150,6 @@ describe("AccountTransactions", () => {
   });
 
   it("opens the import mapping dialog after picking a CSV", async () => {
-    (openDialog as ReturnType<typeof vi.fn>).mockResolvedValueOnce("/path/to/export.csv");
     render(
       <MemoryRouter initialEntries={["/accounts/acc-1/transactions"]}>
         <Routes>
@@ -159,10 +157,13 @@ describe("AccountTransactions", () => {
         </Routes>
       </MemoryRouter>
     );
-    const importBtn = await screen.findByRole("button", { name: /Import/i });
-    fireEvent.click(importBtn);
+    // FilePicker now uses an HTML file input + server upload (no Tauri dialog).
+    const fileInput = document.querySelector('input[data-testid="csv-file-input"]') as HTMLInputElement;
+    // jsdom does not populate files via fireEvent.change easily without defining the File.
+    const file = new File(["date,amount\n2026-06-28,-84.32\n"], "export.csv", { type: "text/csv" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
     await waitFor(() => {
-      expect(screen.getByText("Map CSV columns for /path/to/export.csv")).toBeInTheDocument();
+      expect(screen.getByText("Map CSV columns for /tmp/uploaded.csv")).toBeInTheDocument();
     });
   });
 
