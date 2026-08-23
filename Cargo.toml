@@ -6,6 +6,7 @@ members = [
   "crates/finsight-agent",
   "crates/finsight-api",
   "crates/finsight-bindings",
+  "crates/finsight-openapi",
   "crates/finsight-eval",
   "crates/finsight-server",
   "src-tauri",
