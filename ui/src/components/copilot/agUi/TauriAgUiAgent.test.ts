@@ -16,9 +16,9 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-vi.mock("../../../api/client", () => ({
+vi.mock("../../../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     createConversation: vi.fn(async () => ({ status: "ok", data: "conv-1" })),
     streamCopilotMessage: vi.fn(async () => ({ status: "ok", data: "conv-1" })),
   },
@@ -183,8 +183,8 @@ describe("TauriAgUiAgent", () => {
   });
 
   it("surfaces a structured command error's message, never [object Object]", async () => {
-    const { commands } = await import("../../../api/client");
-    (commands.streamCopilotMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    const { api } = await import("../../../api/openapiClient");
+    (api.streamCopilotMessage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "error",
       error: { code: "agent.reasoning", message: "The Copilot could not complete this request." },
     });

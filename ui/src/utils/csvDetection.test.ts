@@ -6,7 +6,7 @@ import {
   detectHeaderRow,
   buildDetectedMapping,
 } from "./csvDetection";
-import type { CsvPreview } from "../api/client";
+import type { CsvPreview } from "../api/openapiClient";
 
 function preview(headers: string[], rows: string[][]): CsvPreview {
   return {

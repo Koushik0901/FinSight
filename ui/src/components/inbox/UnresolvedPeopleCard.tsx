@@ -5,7 +5,7 @@ import Card from "../Card";
 import Button from "../Button";
 import { money } from "../../utils/format";
 import { useApplyCounterpartyVerdict, useUnresolvedCounterparties } from "../../api/hooks/inbox";
-import type { CounterpartyVerdict, UnresolvedCounterpartyDto } from "../../api/client";
+import type { CounterpartyVerdict, UnresolvedCounterpartyDto } from "../../api/openapiClient";
 
 const VERDICTS: { verdict: CounterpartyVerdict; label: string }[] = [
   { verdict: "transfer", label: "Transfer" },

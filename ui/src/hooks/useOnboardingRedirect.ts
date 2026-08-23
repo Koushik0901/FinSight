@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { OnboardingState } from "../api/client";
+import type { OnboardingState } from "../api/openapiClient";
 
 export function shouldShowOnboarding(
   onboarding: OnboardingState | undefined

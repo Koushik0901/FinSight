@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AccountSummary } from "../api/client";
+import type { AccountSummary } from "../api/openapiClient";
 import { useAccountBalanceTimeline } from "../api/hooks/accounts";
 import { money } from "../utils/format";
 import NetWorthChart from "./NetWorthChart";

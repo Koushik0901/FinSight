@@ -12,6 +12,7 @@ vi.mock("./openapiClient", async () => {
   const actual = await vi.importActual<typeof import("./openapiClient")>("./openapiClient");
   return {
     ...actual,
+    api: { listAccounts, listTransactions, listCategoriesWithSpending },
     commands: { listAccounts, listTransactions, listCategoriesWithSpending },
   };
 });

@@ -2,9 +2,37 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
-import { invoke } from "@tauri-apps/api/core";
 import Today from "../screens/Today";
 import type { ReactNode } from "react";
+
+const mockUseAccounts = vi.fn();
+const mockUseMonthTotals = vi.fn();
+const mockUseSavingsRateHistory = vi.fn();
+const mockUseFinancialMetrics = vi.fn();
+const mockUseCategoriesWithSpending = vi.fn();
+const mockUseNeedsReviewCount = vi.fn();
+const mockUseAgentStatus = vi.fn();
+
+vi.mock("../api/hooks/accounts", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return { ...actual, useAccounts: () => mockUseAccounts() };
+});
+vi.mock("../api/hooks", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return { ...actual, useMonthTotals: () => mockUseMonthTotals(), useSavingsRateHistory: () => mockUseSavingsRateHistory() };
+});
+vi.mock("../api/hooks/metrics", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return { ...actual, useFinancialMetrics: () => mockUseFinancialMetrics() };
+});
+vi.mock("../api/hooks/transactions", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return { ...actual, useCategoriesWithSpending: () => mockUseCategoriesWithSpending() };
+});
+vi.mock("../api/hooks/agent", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return { ...actual, useNeedsReviewCount: () => mockUseNeedsReviewCount(), useAgentStatus: () => mockUseAgentStatus() };
+});
 
 vi.mock("../api/hooks/networth", () => ({
   useNetWorth: () => 1482042,
@@ -70,29 +98,34 @@ function wrap(node: ReactNode) {
   );
 }
 
+const defaultAccounts = [
+  { id: "a1", name: "Joint Checking", bank: "Mercury", type: "Checking", balanceCents: 1482042, currency: "USD", color: "#C9F950", accountGroup: "cash", goalEarmark: null } as any,
+];
+const defaultMetrics = {
+  liquidCents: 1482042, investedCents: 0, debtCents: 0, netWorthCents: 1482042, currency: "USD", runwayDays: 30, avgMonthlyExpenseCents: 400000, accountsWithUnknownBalance: 0, unconvertedHoldings: [],
+} as any;
+const defaultCategories = [] as any[];
+
+beforeEach(() => {
+  mockUseAccounts.mockReturnValue({ data: defaultAccounts, isLoading: false });
+  mockUseMonthTotals.mockReturnValue({ data: { incomeCents: 0, expenseCents: 0, netCents: 0, savingsRatePct: 0, txnCount: 0 }, isLoading: false });
+  mockUseSavingsRateHistory.mockReturnValue({ data: [] });
+  mockUseFinancialMetrics.mockReturnValue({ data: defaultMetrics });
+  mockUseCategoriesWithSpending.mockReturnValue({ data: defaultCategories });
+  mockUseNeedsReviewCount.mockReturnValue({ data: 0 });
+  mockUseAgentStatus.mockReturnValue({ data: { lastScanAt: null, anomalyCount: 0 } });
+});
+
 describe("Today", () => {
   it("renders the net-worth hero from useNetWorth", async () => {
-    vi.mocked(invoke).mockResolvedValue([
-      { id: "a1", owner: "joint", bank: "Mercury", type: "Checking", name: "Joint Checking",
-        balance_cents: 1482042, currency: "USD", color: "#C9F950" },
-    ]);
     render(wrap(<Today />));
     await waitFor(() => {
-      expect(screen.getByText(/\$14,820/)).toBeInTheDocument();
+      expect(screen.getAllByText(/\$14,820/).length).toBeGreaterThan(0);
     });
   });
 
   it("offers to record remaining cash flow when netCents > 5000", async () => {
-    vi.mocked(invoke).mockImplementation((cmd) => {
-      if (cmd === "get_month_totals") return Promise.resolve({
-        incomeCents: 600000, expenseCents: 400000, netCents: 200000,
-        savingsRatePct: 33, txnCount: 42,
-      });
-      return Promise.resolve([
-        { id: "a1", owner: "joint", bank: "Mercury", type: "Checking", name: "Joint Checking",
-          balance_cents: 1482042, currency: "USD", color: "#C9F950" },
-      ]);
-    });
+    mockUseMonthTotals.mockReturnValue({ data: { incomeCents: 600000, expenseCents: 400000, netCents: 200000, savingsRatePct: 33, txnCount: 42 }, isLoading: false });
     render(wrap(<Today />));
     await waitFor(() => {
       expect(screen.getByText(/remains from this month.s cash flow/i)).toBeInTheDocument();
@@ -100,16 +133,7 @@ describe("Today", () => {
   });
 
   it("hides the remaining-cash-flow action after Dismiss", async () => {
-    vi.mocked(invoke).mockImplementation((cmd) => {
-      if (cmd === "get_month_totals") return Promise.resolve({
-        incomeCents: 600000, expenseCents: 400000, netCents: 200000,
-        savingsRatePct: 33, txnCount: 42,
-      });
-      return Promise.resolve([
-        { id: "a1", owner: "joint", bank: "Mercury", type: "Checking", name: "Joint Checking",
-          balance_cents: 1482042, currency: "USD", color: "#C9F950" },
-      ]);
-    });
+    mockUseMonthTotals.mockReturnValue({ data: { incomeCents: 600000, expenseCents: 400000, netCents: 200000, savingsRatePct: 33, txnCount: 42 }, isLoading: false });
     render(wrap(<Today />));
     await waitFor(() => screen.getByText(/remains from this month.s cash flow/i));
     fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
@@ -117,10 +141,6 @@ describe("Today", () => {
   });
 
   it("shows recurring chip for item within 7 days but not for item 40 days out", async () => {
-    vi.mocked(invoke).mockResolvedValue([
-      { id: "a1", owner: "joint", bank: "Mercury", type: "Checking", name: "Joint Checking",
-        balance_cents: 1482042, currency: "USD", color: "#C9F950" },
-    ]);
     render(wrap(<Today />));
     await waitFor(() => {
       expect(screen.getByText(/Spotify/)).toBeInTheDocument();
@@ -129,16 +149,7 @@ describe("Today", () => {
   });
 
   it("shows Runway stat with computed value", async () => {
-    vi.mocked(invoke).mockImplementation((cmd) => {
-      if (cmd === "get_month_totals") return Promise.resolve({
-        incomeCents: 600000, expenseCents: 300000, netCents: 300000,
-        savingsRatePct: 50, txnCount: 20,
-      });
-      return Promise.resolve([
-        { id: "a1", owner: "joint", bank: "Mercury", type: "Checking", name: "Joint Checking",
-          balance_cents: 1482042, currency: "USD", color: "#C9F950" },
-      ]);
-    });
+    mockUseMonthTotals.mockReturnValue({ data: { incomeCents: 600000, expenseCents: 300000, netCents: 300000, savingsRatePct: 50, txnCount: 20 }, isLoading: false });
     render(wrap(<Today />));
     await waitFor(() => {
       expect(screen.getByText("Runway")).toBeInTheDocument();

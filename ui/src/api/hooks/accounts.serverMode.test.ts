@@ -18,9 +18,9 @@ vi.mock("../../utils/runtime", () => ({
 }));
 
 const listAccounts = vi.fn();
-vi.mock("../client", () => ({
+vi.mock("../openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: { listAccounts: (...args: unknown[]) => listAccounts(...args) },
+  api: { listAccounts: (...args: unknown[]) => listAccounts(...args) },
 }));
 
 import { useAccounts } from "./accounts";

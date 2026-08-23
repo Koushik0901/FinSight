@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type FinancialMetrics,
   type FinancialAssumptionsInput,
   type FinancialPhilosophyDto,
   type MetricExplanation,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /**
@@ -21,7 +21,7 @@ export function useFinancialMetrics(memberId?: string | null) {
     // whole household (unchanged behaviour).
     queryKey: ["financial-metrics", memberId ?? null],
     queryFn: async () => {
-      return unwrap(commands.getFinancialMetrics(memberId ?? null));
+      return unwrap(api.getFinancialMetrics(memberId ?? null));
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -41,7 +41,7 @@ export function useMetricExplanations(memberId?: string | null) {
   return useQuery<Record<string, MetricExplanation>>({
     queryKey: ["metric-explanations", memberId ?? null],
     queryFn: async () => {
-      const explanations = await unwrap(commands.explainFinancialMetrics(memberId ?? null));
+      const explanations = await unwrap(api.explainFinancialMetrics(memberId ?? null));
       return Object.fromEntries(explanations.map((e) => [e.key, e]));
     },
     staleTime: 60_000,
@@ -60,7 +60,7 @@ export function useGoalExplanations() {
   return useQuery<Record<string, MetricExplanation>>({
     queryKey: ["goal-explanations"],
     queryFn: async () => {
-      const explanations = await unwrap(commands.explainGoals());
+      const explanations = await unwrap(api.explainGoals());
       return Object.fromEntries(explanations.map((e) => [e.key, e]));
     },
     staleTime: 60_000,
@@ -72,7 +72,7 @@ export function useSetFinancialAssumptions() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: FinancialAssumptionsInput) => {
-      await unwrap(commands.setFinancialAssumptions(input));
+      await unwrap(api.setFinancialAssumptions(input));
     },
     onSuccess: () => {
       // Targets feed the metrics response and the compound projector.
@@ -94,7 +94,7 @@ export function useFinancialPhilosophy() {
   return useQuery<FinancialPhilosophyDto>({
     queryKey: ["financial-philosophy"],
     queryFn: async () => {
-      return unwrap(commands.getFinancialPhilosophy());
+      return unwrap(api.getFinancialPhilosophy());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -105,7 +105,7 @@ export function useSetFinancialPhilosophy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: FinancialPhilosophyDto) => {
-      await unwrap(commands.setFinancialPhilosophy(input));
+      await unwrap(api.setFinancialPhilosophy(input));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["financial-philosophy"] });

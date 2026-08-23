@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import HoldingsCard from "./HoldingsCard";
-import type { AccountSummary } from "../api/client";
+import type { AccountSummary } from "../api/openapiClient";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     listAccountPositions: vi.fn().mockResolvedValue({
       status: "ok",
       data: [
@@ -80,19 +80,19 @@ describe("HoldingsCard", () => {
   });
 
   it("Set balance from estimate calls setAccountBalance with the estimate", async () => {
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     render(wrap(<HoldingsCard account={account} />));
     await waitFor(() => expect(screen.getByText("GLOBEX")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /set balance from estimate/i }));
     await waitFor(() =>
-      expect(commands.setAccountBalance).toHaveBeenCalledWith("inv1", 192_323),
+      expect(api.setAccountBalance).toHaveBeenCalledWith("inv1", 192_323),
     );
   });
 
   it("warns when positions carry a negative quantity (partial history)", async () => {
-    const { commands } = await import("../api/client");
-    (commands.getInvestmentSummary as ReturnType<typeof vi.fn>).mockResolvedValue({
+    const { api } = await import("../api/openapiClient");
+    (api.getInvestmentSummary as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "ok",
       data: {
         cashCents: 21_000,

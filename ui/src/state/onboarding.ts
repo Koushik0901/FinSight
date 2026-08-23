@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CsvImportMapping } from "../api/bindings";
+import type { CsvImportMapping } from "../api/openapiClient";
 
 export type OnboardingStep = "welcome" | "accounts" | "history" | "categories" | "agent";
 

@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { commands } from "../client";
+import { api } from "../openapiClient";
 
 export function useConversations() {
   return useQuery({
     queryKey: ["conversations"],
     queryFn: async () => {
-      const res = await commands.listConversations();
+      const res = await api.listConversations();
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -17,7 +17,7 @@ export function useConversationMessages(conversationId: string | null) {
     queryKey: ["conversation-messages", conversationId],
     queryFn: async () => {
       if (!conversationId) return [];
-      const res = await commands.getConversationMessages(conversationId);
+      const res = await api.getConversationMessages(conversationId);
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -29,7 +29,7 @@ export function useCreateConversation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const res = await commands.createConversation();
+      const res = await api.createConversation();
       if (res.status === "error") throw new Error(res.error.message);
       return res.data;
     },
@@ -43,7 +43,7 @@ export function useDeleteConversation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await commands.deleteConversation(id);
+      const res = await api.deleteConversation(id);
       if (res.status === "error") throw new Error(res.error.message);
     },
     onSuccess: () => {

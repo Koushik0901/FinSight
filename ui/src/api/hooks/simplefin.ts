@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type SimpleFinAccountImportRequest,
   type SimpleFinStatus,
   type SimpleFinAccountInfo,
@@ -10,8 +10,8 @@ import {
   type SimpleFinAlert,
   type TransferSuggestionInfo,
   type ImportCandidateWithMatches,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { invalidateDomains } from "../invalidation";
 import { simplefinKeys } from "./_factory";
 export { simplefinKeys };
@@ -20,7 +20,7 @@ export function useSimpleFinStatus() {
   return useQuery<SimpleFinStatus>({
     queryKey: simplefinKeys.status,
     queryFn: async () => {
-      return unwrap(commands.getSimplefinStatus());
+      return unwrap(api.getSimplefinStatus());
     },
   });
 }
@@ -29,7 +29,7 @@ export function useSaveSimpleFinToken() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (token: string) => {
-      return unwrap(commands.saveSimplefinSetupToken(token));
+      return unwrap(api.saveSimplefinSetupToken(token));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.status });
@@ -42,7 +42,7 @@ export function useSimpleFinConnections() {
   return useQuery<SimpleFinConnectionInfo[]>({
     queryKey: simplefinKeys.connections,
     queryFn: async () => {
-      return unwrap(commands.listSimplefinConnections());
+      return unwrap(api.listSimplefinConnections());
     },
   });
 }
@@ -51,7 +51,7 @@ export function useSimpleFinAccounts() {
   return useQuery<SimpleFinAccountInfo[]>({
     queryKey: simplefinKeys.accounts,
     queryFn: async () => {
-      return unwrap(commands.listSimplefinAccounts());
+      return unwrap(api.listSimplefinAccounts());
     },
     enabled: false,
   });
@@ -61,7 +61,7 @@ export function useImportSimpleFinAccounts() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (accounts: SimpleFinAccountImportRequest[]) => {
-      return unwrap(commands.importSimplefinAccounts(accounts));
+      return unwrap(api.importSimplefinAccounts(accounts));
     },
     onSuccess: () => {
       // A committed SimpleFin import touches the whole ledger + accounts +
@@ -76,7 +76,7 @@ export function useSyncSimpleFinAccount() {
   const qc = useQueryClient();
   return useMutation<SyncSummary, Error, string>({
     mutationFn: async (accountId: string) => {
-      return unwrap(commands.syncSimplefinAccount(accountId));
+      return unwrap(api.syncSimplefinAccount(accountId));
     },
     onSuccess: () => {
       // Sync adds/updates rows: full ledger fan-out, not just the two roots.
@@ -89,7 +89,7 @@ export function useDisconnectSimpleFin() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      return unwrap(commands.disconnectSimplefin());
+      return unwrap(api.disconnectSimplefin());
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.status });
@@ -103,7 +103,7 @@ export function usePurgeSimpleFinData() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      return unwrap(commands.purgeSimplefinData());
+      return unwrap(api.purgeSimplefinData());
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.status });
@@ -122,7 +122,7 @@ export function useDeleteSimpleFinConnection() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (connectionId: string) => {
-      return unwrap(commands.deleteSimplefinConnection(connectionId));
+      return unwrap(api.deleteSimplefinConnection(connectionId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.connections });
@@ -136,7 +136,7 @@ export function useSyncAllSimpleFinAccounts() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      return unwrap(commands.syncAllSimplefinAccounts());
+      return unwrap(api.syncAllSimplefinAccounts());
     },
     onSuccess: () => {
       invalidateDomains(qc, "simplefin");
@@ -151,7 +151,7 @@ export function useSimpleFinSyncSettings() {
   return useQuery<SimpleFinSyncSettings>({
     queryKey: simplefinKeys.syncSettings,
     queryFn: async () => {
-      return unwrap(commands.getSimplefinSyncSettings());
+      return unwrap(api.getSimplefinSyncSettings());
     },
   });
 }
@@ -160,7 +160,7 @@ export function useSetSimpleFinSyncSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (settings: SimpleFinSyncSettings) => {
-      return unwrap(commands.setSimplefinSyncSettings(settings));
+      return unwrap(api.setSimplefinSyncSettings(settings));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.syncSettings });
@@ -172,7 +172,7 @@ export function useSimpleFinAlerts() {
   return useQuery<SimpleFinAlert[]>({
     queryKey: simplefinKeys.alerts,
     queryFn: async () => {
-      return unwrap(commands.listSimplefinAlerts());
+      return unwrap(api.listSimplefinAlerts());
     },
   });
 }
@@ -181,7 +181,7 @@ export function useAcknowledgeSimpleFinAlert() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (alertId: string) => {
-      return unwrap(commands.acknowledgeSimplefinAlert(alertId));
+      return unwrap(api.acknowledgeSimplefinAlert(alertId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.alerts });
@@ -193,7 +193,7 @@ export function useSimpleFinTransferSuggestions() {
   return useQuery<TransferSuggestionInfo[]>({
     queryKey: simplefinKeys.transfers,
     queryFn: async () => {
-      return unwrap(commands.listSimplefinTransferSuggestions());
+      return unwrap(api.listSimplefinTransferSuggestions());
     },
   });
 }
@@ -202,7 +202,7 @@ export function useConfirmSimpleFinTransfer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (transferId: string) => {
-      return unwrap(commands.confirmSimplefinTransfer(transferId));
+      return unwrap(api.confirmSimplefinTransfer(transferId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
@@ -215,7 +215,7 @@ export function useRejectSimpleFinTransfer() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (transferId: string) => {
-      return unwrap(commands.rejectSimplefinTransfer(transferId));
+      return unwrap(api.rejectSimplefinTransfer(transferId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
@@ -227,7 +227,7 @@ export function useImportReviewCandidates() {
   return useQuery<ImportCandidateWithMatches[]>({
     queryKey: simplefinKeys.importReview,
     queryFn: async () => {
-      return unwrap(commands.listImportReviewCandidates());
+      return unwrap(api.listImportReviewCandidates());
     },
   });
 }
@@ -236,7 +236,7 @@ export function useAcceptImportCandidateMatch() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ candidateId, transactionId }: { candidateId: string; transactionId: string }) => {
-      return unwrap(commands.acceptImportCandidateMatch(candidateId, transactionId));
+      return unwrap(api.acceptImportCandidateMatch(candidateId, transactionId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
@@ -249,7 +249,7 @@ export function useCreateImportCandidateTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (candidateId: string) => {
-      return unwrap(commands.createImportCandidateTransaction(candidateId));
+      return unwrap(api.createImportCandidateTransaction(candidateId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
@@ -262,7 +262,7 @@ export function useDismissImportCandidate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (candidateId: string) => {
-      return unwrap(commands.dismissImportCandidate(candidateId));
+      return unwrap(api.dismissImportCandidate(candidateId));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: simplefinKeys.importReview });

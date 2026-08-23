@@ -15,7 +15,7 @@ vi.mock("react-focus-lock", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-// Hook-level mocks so components don't call unmocked Tauri commands
+// Hook-level mocks so components don't call unmocked Tauri api
 vi.mock("../api/hooks/accounts", () => ({
   useAccounts: vi.fn(() => ({ data: [], isLoading: false, error: null })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue({}) })),
@@ -51,9 +51,9 @@ vi.mock("../api/hooks/onboarding", () => ({
   useResetOnboarding: vi.fn(() => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) })),
 }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     listAccounts: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
     listTransactions: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
     createAccount: vi.fn().mockResolvedValue({ status: "ok", data: null }),

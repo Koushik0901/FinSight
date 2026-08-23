@@ -1,4 +1,4 @@
-import type { RecurringItem } from "../api/client";
+import type { RecurringItem } from "../api/openapiClient";
 
 /**
  * Human cadence label for a recurring item. Prefers the backend-provided

@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  commands,
+  api,
   type AccountSummary,
   type NewAccount,
   type AccountPatch,
   type AccountBalancePoint,
   type AccountBalanceTimeline,
   type AccountSparkline,
-} from "../client";
-import { unwrap } from "../client";
+} from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -16,7 +16,7 @@ export function useAccounts() {
   return useQuery<AccountSummary[]>({
     queryKey: ["accounts"],
     queryFn: async () => {
-      return unwrap(commands.listAccounts());
+      return unwrap(api.listAccounts());
     },
     enabled: isBackendAvailable(),
   });
@@ -29,7 +29,7 @@ export function useCreateAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      return unwrap(commands.createAccount(input));
+      return unwrap(api.createAccount(input));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
@@ -48,7 +48,7 @@ export function useUpdateAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      return unwrap(commands.updateAccount(id, patch));
+      return unwrap(api.updateAccount(id, patch));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
@@ -62,7 +62,7 @@ export function useAccountBalanceHistory(accountId: string | undefined, days: nu
     queryKey: ["account-balance-history", accountId, days],
     queryFn: async () => {
       if (!accountId) return [];
-      return unwrap(commands.listAccountBalanceHistory(accountId, days));
+      return unwrap(api.listAccountBalanceHistory(accountId, days));
     },
     enabled: !!accountId && isBackendAvailable(),
   });
@@ -81,7 +81,7 @@ export function useAccountBalanceTimeline(accountId: string | undefined, since: 
   return useQuery<AccountBalanceTimeline>({
     queryKey: ["account-balance-timeline", accountId, since],
     queryFn: async () => {
-      return unwrap(commands.getAccountBalanceTimeline(accountId!, since));
+      return unwrap(api.getAccountBalanceTimeline(accountId!, since));
     },
     enabled: !!accountId && isBackendAvailable(),
     // Keep the current curve on screen while the range selector's refetch is in
@@ -95,7 +95,7 @@ export function useAccountBalanceSparklines(days: number) {
   return useQuery<AccountSparkline[]>({
     queryKey: ["account-balance-sparklines", days],
     queryFn: async () => {
-      return unwrap(commands.listAccountBalanceSparklines(days));
+      return unwrap(api.listAccountBalanceSparklines(days));
     },
     enabled: isBackendAvailable(),
   });
@@ -108,7 +108,7 @@ export function useArchiveAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      await unwrap(commands.archiveAccount(id));
+      await unwrap(api.archiveAccount(id));
     },
     onSuccess: () => {
       // Archiving an account removes its transactions from the ledger view
@@ -127,7 +127,7 @@ export function useSetAccountBalance() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      await unwrap(commands.setAccountBalance(id, balanceCents));
+      await unwrap(api.setAccountBalance(id, balanceCents));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");

@@ -6,9 +6,9 @@ import { useAppBadge } from "./useAppBadge";
 const getInboxBadgeCount = vi.fn();
 const notificationUnreadCount = vi.fn();
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     get getInboxBadgeCount() {
       return getInboxBadgeCount;
     },

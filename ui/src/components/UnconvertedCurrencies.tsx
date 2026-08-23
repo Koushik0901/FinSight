@@ -1,5 +1,5 @@
 import { money } from "../utils/format";
-import type { UnconvertedHolding } from "../api/client";
+import type { UnconvertedHolding } from "../api/openapiClient";
 
 /**
  * Names money the user holds that the surrounding totals deliberately exclude.

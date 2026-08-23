@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import TransactionFilter from "./TransactionFilter";
-import type { TxnFilterInput } from "../api/client";
+import type { TxnFilterInput } from "../api/openapiClient";
 
 const baseFilter: TxnFilterInput = {
   accountId: null,

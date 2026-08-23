@@ -8,8 +8,8 @@ import type {
   ThreadMessageLike,
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { commands } from "../../../api/client";
-import type { ConversationMessage, CopilotStreamFrame } from "../../../api/client";
+import { api } from "../../../api/openapiClient";
+import type { ConversationMessage, CopilotStreamFrame } from "../../../api/openapiClient";
 import { TauriAgUiAgent } from "./TauriAgUiAgent";
 import {
   buildMetaFromMessages,
@@ -187,7 +187,7 @@ export function useTauriAgUiRuntime(initialConversationId?: string | null): {
     }
 
     agent.setConversationId(conversationId);
-    const messages = unwrapCommandResult(await commands.getConversationMessages(conversationId));
+    const messages = unwrapCommandResult(await api.getConversationMessages(conversationId));
     const meta = buildMetaFromMessages(messages);
     setMetaByMessageId(meta);
     return {
@@ -214,7 +214,7 @@ export function useTauriAgUiRuntime(initialConversationId?: string | null): {
       const messageId = backendMessageId(item.message);
       const content = textFromMessage(item.message).trim();
       if (!conversationId || !messageId || !content) return;
-      unwrapCommandResult(await commands.editConversationUserMessage({
+      unwrapCommandResult(await api.editConversationUserMessage({
         conversationId,
         messageId,
         content,
@@ -227,7 +227,7 @@ export function useTauriAgUiRuntime(initialConversationId?: string | null): {
         .map((item) => backendMessageId(item.message))
         .find((id): id is string => Boolean(id));
       if (!conversationId || !firstBackendId) return;
-      unwrapCommandResult(await commands.deleteConversationMessagesAfter(conversationId, firstBackendId));
+      unwrapCommandResult(await api.deleteConversationMessagesAfter(conversationId, firstBackendId));
       void queryClient.invalidateQueries({ queryKey: ["conversation-messages", conversationId] });
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },

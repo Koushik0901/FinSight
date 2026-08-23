@@ -9,7 +9,7 @@ import {
   useDeletePlannedTransaction,
   useUpdatePlannedTransaction,
 } from "../api/hooks/plannedTransactions";
-import type { PlannedTransaction } from "../api/client";
+import type { PlannedTransaction } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import { formatCalendarDate } from "../utils/date";

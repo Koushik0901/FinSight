@@ -6,7 +6,7 @@ import {
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
   type ApplyScenarioResult,
-} from "../api/client";
+} from "../api/openapiClient";
 import {
   useSavedScenarios,
   useRunScenario,

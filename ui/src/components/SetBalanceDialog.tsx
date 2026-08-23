@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useSetAccountBalance } from "../api/hooks/accounts";
 import { userErrorMessage } from "../utils/runtime";
-import type { AccountSummary } from "../api/client";
+import type { AccountSummary } from "../api/openapiClient";
 
 interface Props {
   open: boolean;

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import type { AgentRecipe, AgentRecipeRun } from "../api/client";
+import type { AgentRecipe, AgentRecipeRun } from "../api/openapiClient";
 import {
   useCreateRecipe,
   useDeleteRecipe,

@@ -8,8 +8,8 @@ import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { useResetOnboarding } from "../api/hooks/onboarding";
 import { useAccounts } from "../api/hooks/accounts";
 import { useGoals } from "../api/hooks/budget";
-import { commands } from "../api/client";
-import { unwrap } from "../api/client";
+import { api } from "../api/openapiClient";
+import { unwrap } from "../api/openapiClient";
 import { actionBundleKeys } from "../api/hooks/_factory";
 import { isBackendAvailable } from "../utils/runtime";
 
@@ -66,7 +66,7 @@ export function Sidebar({ onOpenCmd }: Props) {
   const { data: pendingBundles = [] } = useQuery({
     queryKey: actionBundleKeys.list("pending"),
     queryFn: async () => {
-      return unwrap(commands.listActionBundles("pending", null, null));
+      return unwrap(api.listActionBundles("pending", null, null));
     },
     staleTime: 60_000,
     enabled: hasBackend,

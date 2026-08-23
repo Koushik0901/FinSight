@@ -1,4 +1,4 @@
-import type { CsvPreview, ColumnRole, AmountConvention } from "../api/client";
+import type { CsvPreview, ColumnRole, AmountConvention } from "../api/openapiClient";
 
 export interface DetectedMapping {
   skipHeaderRows: number;

@@ -15,7 +15,7 @@ import {
   useCreateCategoryGroup,
   useSetCategoryGroup,
 } from "../api/hooks/transactions";
-import type { CategoryWithSpending } from "../api/client";
+import type { CategoryWithSpending } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, iconFor, nextCategoryColor } from "../utils/categoryColor";
 import Swatch from "../components/Swatch";

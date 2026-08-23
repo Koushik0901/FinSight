@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { conversationMessagesToAgUiThreadMessages } from "./TauriAgUiRuntime";
-import type { ConversationMessage } from "../../../api/client";
+import type { ConversationMessage } from "../../../api/openapiClient";
 
 function message(overrides: Partial<ConversationMessage>): ConversationMessage {
   return {

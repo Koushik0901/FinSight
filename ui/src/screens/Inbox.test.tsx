@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Inbox from "./Inbox";
 import { createWrapper } from "../test-utils";
-import type { ActionItem } from "../api/client";
+import type { ActionItem } from "../api/openapiClient";
 
 vi.mock("../api/hooks/inbox", () => ({
   useActionItems: vi.fn(() => ({ data: undefined, isLoading: true, error: null, dataUpdatedAt: 0 })),

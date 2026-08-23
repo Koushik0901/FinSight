@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Reports, { buildReportCsv } from "./Reports";
 import { createWrapper } from "../test-utils";
-import { commands } from "../api/client";
+import { api } from "../api/openapiClient";
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     getReportData: vi.fn(),
   },
 }));
@@ -44,7 +44,7 @@ const REPORT_DATA = {
 };
 
 beforeEach(() => {
-  vi.mocked(commands.getReportData).mockResolvedValue({ status: "ok", data: REPORT_DATA });
+  vi.mocked(api.getReportData).mockResolvedValue({ status: "ok", data: REPORT_DATA });
 });
 
 describe("Reports screen", () => {
@@ -68,7 +68,7 @@ describe("Reports screen", () => {
     fireEvent.click(screen.getByText("Quarter"));
     await waitFor(() =>
       // second arg is the household-member filter (null = whole household)
-      expect(commands.getReportData).toHaveBeenCalledWith("quarter", null)
+      expect(api.getReportData).toHaveBeenCalledWith("quarter", null)
     );
   });
 
@@ -76,10 +76,10 @@ describe("Reports screen", () => {
     render(<Reports />, { wrapper: createWrapper() });
     await screen.findByText("See the shape of your money over time.");
     // Default scope is "year"; whole-household fetch uses a null member.
-    await waitFor(() => expect(commands.getReportData).toHaveBeenCalledWith("year", null));
+    await waitFor(() => expect(api.getReportData).toHaveBeenCalledWith("year", null));
     // Selecting a person refetches the report scoped to that member.
     fireEvent.click(screen.getByRole("tab", { name: /Alice/ }));
-    await waitFor(() => expect(commands.getReportData).toHaveBeenCalledWith("year", "m-alice"));
+    await waitFor(() => expect(api.getReportData).toHaveBeenCalledWith("year", "m-alice"));
   });
 
   it("renders category and merchant tables when data is present", async () => {
@@ -120,7 +120,7 @@ describe("Reports screen", () => {
   });
 
   it("replaces empty analytics with an honest setup state", async () => {
-    vi.mocked(commands.getReportData).mockResolvedValueOnce({
+    vi.mocked(api.getReportData).mockResolvedValueOnce({
       status: "ok",
       data: { monthly: [], monthlyLastYear: [], topCategories: [], topMerchants: [] },
     });

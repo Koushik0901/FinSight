@@ -5,7 +5,7 @@ import { useMonthTotals } from "../api/hooks/reports";
 import { useAccounts } from "../api/hooks/accounts";
 import { useGoals, useCreateGoal, useUpdateGoalMonthly, useProjectGoalGrowth } from "../api/hooks/budget";
 import { useGoalExplanations } from "../api/hooks/metrics";
-import type { GoalDto, NewGoalInput } from "../api/client";
+import type { GoalDto, NewGoalInput } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { blurAmounts } from "../utils/blurAmounts";
 import { getAccountDisplayName } from "../utils/accounts";

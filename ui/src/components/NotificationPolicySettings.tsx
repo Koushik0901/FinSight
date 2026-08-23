@@ -1,6 +1,6 @@
 import { useNotificationPrefs, useSetNotificationPrefs } from "../api/hooks/notifications";
 import { Toggle } from "./Toggle";
-import type { NotificationPrefsDto, PrivacyLevel, DigestFrequency } from "../api/client";
+import type { NotificationPrefsDto, PrivacyLevel, DigestFrequency } from "../api/openapiClient";
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const fmtHour = (h: number) => `${String(h).padStart(2, "0")}:00`;

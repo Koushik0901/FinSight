@@ -9,7 +9,7 @@ import {
   useMarkSubscriptionCancelled,
 } from "../api/hooks/recurring";
 import { usePlannedTransactions } from "../api/hooks/plannedTransactions";
-import type { PlannedTransaction, RecurringItem } from "../api/client";
+import type { PlannedTransaction, RecurringItem } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { prettyMerchant } from "../utils/merchant";
 import { recurringFrequency, monthlyEquivalentCents } from "../utils/recurring";

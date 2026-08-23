@@ -53,7 +53,7 @@ import {
 import { useAccounts } from "../api/hooks/accounts";
 import { useNavigate } from "react-router-dom";
 import { useClarifications } from "../state/clarifications";
-import { commands, type AgentNavigationTarget } from "../api/client";
+import { api, type AgentNavigationTarget } from "../api/openapiClient";
 import { COPILOT_ASYNC_ANSWER } from "../api/eventNames";
 import { normalizeCount } from "../utils/dataReadiness";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
@@ -716,7 +716,7 @@ function useCopilotDataReadiness() {
   const { data: rawTransactionCount = 0 } = useQuery({
     queryKey: ["transaction-count"],
     queryFn: async () => {
-      const res = await commands.getTransactionCount();
+      const res = await api.getTransactionCount();
       return res.status === "ok" ? res.data : 0;
     },
   });

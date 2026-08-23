@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { commands, type CsvPreview, type CsvImportMapping, type PreparedImportPreview } from "../client";
-import { unwrap } from "../client";
+import { api, type CsvPreview, type CsvImportMapping, type PreparedImportPreview } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 
 export function usePreviewCsvColumns(path: string | null, skipHeaderRows: number) {
   return useQuery<CsvPreview>({
     queryKey: ["csv-preview", path, skipHeaderRows],
     queryFn: async () => {
-      return unwrap(commands.previewCsvColumns(path!, skipHeaderRows));
+      return unwrap(api.previewCsvColumns(path!, skipHeaderRows));
     },
     enabled: !!path,
     staleTime: 30_000,
@@ -18,7 +18,7 @@ export function useSavedCsvMapping(accountId: string | null) {
   return useQuery<CsvImportMapping | null>({
     queryKey: ["csv-saved-mapping", accountId],
     queryFn: async () => {
-      return unwrap(commands.getSavedCsvMapping(accountId!));
+      return unwrap(api.getSavedCsvMapping(accountId!));
     },
     enabled: !!accountId,
     staleTime: 30_000,
@@ -36,7 +36,7 @@ export function usePrepareImport(
   return useQuery<PreparedImportPreview>({
     queryKey: ["csv-prepare", path, accountId, mapping],
     queryFn: async () => {
-      const r = await commands.prepareCsvImport(path!, accountId!, mapping!);
+      const r = await api.prepareCsvImport(path!, accountId!, mapping!);
       if (r.status === "error") throw new Error(r.error.message);
       return r.data;
     },

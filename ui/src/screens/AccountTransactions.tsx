@@ -5,8 +5,8 @@ import { useAccounts } from "../api/hooks/accounts";
 import { useInfiniteTransactions, useCategoriesWithSpending } from "../api/hooks/transactions";
 import { useNeedsReviewCount, useAgentStatus } from "../api/hooks/agent";
 import { useSyncSimpleFinAccount } from "../api/hooks/simplefin";
-import { commands } from "../api/client";
-import type { Transaction, TxnFilterInput } from "../api/client";
+import { api } from "../api/openapiClient";
+import type { Transaction, TxnFilterInput } from "../api/openapiClient";
 import TransactionFilter from "../components/TransactionFilter";
 import TransactionDrawer from "../components/TransactionDrawer";
 import FilePicker from "../components/FilePicker";
@@ -156,7 +156,7 @@ export default function AccountTransactions() {
 
   const handleExport = async () => {
     try {
-      const result = await commands.exportTransactionsCsv(filterValue);
+      const result = await api.exportTransactionsCsv(filterValue);
       if (result.status === "ok" && result.data) {
         downloadBlob(result.data, "text/csv", "transactions.csv");
         toast.success("Exported");

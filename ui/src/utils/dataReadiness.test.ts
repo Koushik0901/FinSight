@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AccountSummary, MonthSummary } from "../api/client";
+import type { AccountSummary, MonthSummary } from "../api/openapiClient";
 import {
   getBudgetReadiness,
   getReportReadiness,

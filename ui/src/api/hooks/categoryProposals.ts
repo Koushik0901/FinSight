@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { commands, type CategoryProposal, type UpdateTxnResult } from "../client";
-import { unwrap } from "../client";
+import { api, type CategoryProposal, type UpdateTxnResult } from "../openapiClient";
+import { unwrap } from "../openapiClient";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -18,7 +18,7 @@ export function useCategoryProposals() {
   return useQuery<CategoryProposal[]>({
     queryKey: ["category-proposals"],
     queryFn: async () => {
-      return unwrap(commands.listCategoryProposals());
+      return unwrap(api.listCategoryProposals());
     },
     enabled: isBackendAvailable(),
   });
@@ -50,7 +50,7 @@ export function useAcceptCategoryProposal() {
   return useMutation<UpdateTxnResult, Error, string>({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      return unwrap(commands.acceptCategoryProposal(id));
+      return unwrap(api.acceptCategoryProposal(id));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -65,7 +65,7 @@ export function useCorrectCategoryProposal() {
   return useMutation<UpdateTxnResult, Error, { id: string; categoryId: string }>({
     mutationFn: async ({ id, categoryId }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      return unwrap(commands.correctCategoryProposal(id, categoryId));
+      return unwrap(api.correctCategoryProposal(id, categoryId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -87,7 +87,7 @@ export function useRejectCategoryProposal() {
   return useMutation<void, Error, string>({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      await unwrap(commands.rejectCategoryProposal(id));
+      await unwrap(api.rejectCategoryProposal(id));
     },
     onSuccess: () => {
       invalidateQueue(qc);

@@ -56,9 +56,9 @@ vi.mock("../api/hooks/agent", () => ({
   useTriggerCategorize: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useListProviderModels: vi.fn(() => ({ data: ["llama3.2"] })),
 }));
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     getNeedsReviewCount: vi.fn().mockResolvedValue({ status: "ok", data: 0 }),
   },
 }));

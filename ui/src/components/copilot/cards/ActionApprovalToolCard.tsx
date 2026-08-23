@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import * as I from "../../Icons";
 import Button from "../../Button";
 import Badge from "../../Badge";
-import type { AgentNavigationTarget, ExecutionSummary } from "../../../api/client";
+import type { AgentNavigationTarget, ExecutionSummary } from "../../../api/openapiClient";
 import {
   useActionBundle,
   useApproveActionItem,

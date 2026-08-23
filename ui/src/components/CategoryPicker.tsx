@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useCategories } from "../api/hooks/transactions";
-import type { CategoryDto } from "../api/bindings";
+import type { CategoryDto } from "../api/openapiClient";
 
 interface Props {
   value: string | null;

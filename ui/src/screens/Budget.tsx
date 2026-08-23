@@ -6,8 +6,8 @@ import { toast } from "sonner";
 import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContributeToGoal, useMemberBudgetEnvelopes } from "../api/hooks/budget";
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
-import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
-import { unwrap } from "../api/client";
+import { api, type BudgetEnvelope, type SpendingBreakdown } from "../api/openapiClient";
+import { unwrap } from "../api/openapiClient";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
@@ -175,7 +175,7 @@ export default function Budget() {
   const { data: breakdown } = useQuery<SpendingBreakdown>({
     queryKey: ["spending-breakdown"],
     queryFn: async () => {
-      return unwrap(commands.getSpendingBreakdown());
+      return unwrap(api.getSpendingBreakdown());
     },
     staleTime: 60_000,
   });

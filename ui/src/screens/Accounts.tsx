@@ -11,7 +11,7 @@ import { useAccountOwners, useHouseholdMembers, useHouseholdNetWorthBreakdown } 
 import { useNetWorth } from "../api/hooks/networth";
 import { useCurrencyScope } from "../api/hooks/currencyScope";
 import { UnconvertedCurrencies } from "../components/UnconvertedCurrencies";
-import type { AccountSummary, ManualAsset } from "../api/client";
+import type { AccountSummary, ManualAsset } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { userErrorMessage } from "../utils/runtime";
 import { getAccountDisplayName } from "../utils/accounts";

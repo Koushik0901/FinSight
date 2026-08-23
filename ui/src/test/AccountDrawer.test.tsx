@@ -6,9 +6,9 @@ import AccountDrawer from "../components/AccountDrawer";
 
 vi.mock("react-focus-lock", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 
-vi.mock("../api/client", () => ({
+vi.mock("../api/openapiClient", () => ({
   unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
-  commands: {
+  api: {
     createAccount: vi.fn().mockResolvedValue({ status: "ok", data: { id: "a1" } }),
     listAccounts: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
   },
@@ -29,9 +29,9 @@ describe("AccountDrawer", () => {
   it("blocks submission when bank/name empty", async () => {
     renderDrawer();
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.createAccount).not.toHaveBeenCalled();
+      expect(api.createAccount).not.toHaveBeenCalled();
     });
   });
 
@@ -41,9 +41,9 @@ describe("AccountDrawer", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Joint Checking" } });
     fireEvent.change(screen.getByLabelText(/Opening balance/i), { target: { value: "100.50" } });
     fireEvent.click(screen.getByRole("button", { name: /create account/i }));
-    const { commands } = await import("../api/client");
+    const { api } = await import("../api/openapiClient");
     await waitFor(() => {
-      expect(commands.createAccount).toHaveBeenCalledWith(expect.objectContaining({
+      expect(api.createAccount).toHaveBeenCalledWith(expect.objectContaining({
         bank: "Chase",
         name: "Joint Checking",
         opening_balance_cents: 10050,

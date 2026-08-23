@@ -15,7 +15,7 @@ import {
 } from "../api/hooks/transactions";
 import { useAccounts } from "../api/hooks/accounts";
 import { useAccountOwners, useHouseholdMembers } from "../api/hooks/household";
-import type { Transaction } from "../api/bindings";
+import type { Transaction } from "../api/openapiClient";
 import { userErrorMessage } from "../utils/runtime";
 
 const schema = z.object({

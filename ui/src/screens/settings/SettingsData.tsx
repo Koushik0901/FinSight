@@ -10,7 +10,7 @@ import { useTweaks } from "../../state/tweaks";
 import DeleteAllDataDialog from "../../components/DeleteAllDataDialog";
 import { Toggle as Tog } from "../../components/Toggle";
 import { Section } from "./Section";
-import type { CompletionProviderConfig } from "../../api/client";
+import type { CompletionProviderConfig } from "../../api/openapiClient";
 import { userErrorMessage } from "../../utils/runtime";
 
 type ProviderKind = "ollama" | "openai_compat" | "anthropic" | null;

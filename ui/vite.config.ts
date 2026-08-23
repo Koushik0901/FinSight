@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -121,6 +122,13 @@ export default defineConfig({
         // keep optional charting code out of the application entry bundle.
         manualChunks: vendorChunk,
       },
+    },
+  },
+  resolve: {
+    alias: {
+      "@tauri-apps/api/core": path.resolve(__dirname, "src/test/stubs/tauriCore.ts"),
+      "@tauri-apps/api/event": path.resolve(__dirname, "src/test/stubs/tauriEvent.ts"),
+      "@tauri-apps/api/webviewWindow": path.resolve(__dirname, "src/test/stubs/tauriWebview.ts"),
     },
   },
   clearScreen: false,

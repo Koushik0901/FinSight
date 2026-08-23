@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import type { CopilotResponseBlock } from "../../../api/client";
+import type { CopilotResponseBlock } from "../../../api/openapiClient";
 import { money } from "../../../utils/format";
 import { colorForCategoryLabel } from "../../../utils/categoryColor";
 import Button from "../../Button";

@@ -1,6 +1,6 @@
 import Drawer from "./Drawer";
 import { useMetricExplanations } from "../api/hooks/metrics";
-import type { MetricExplanation, MetricValue } from "../api/client";
+import type { MetricExplanation, MetricValue } from "../api/openapiClient";
 import { money } from "../utils/format";
 
 /**

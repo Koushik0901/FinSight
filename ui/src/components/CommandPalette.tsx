@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import FocusLock from "react-focus-lock";
 import * as I from "./Icons";
 import { useAskAgent } from "../api/hooks/agent";
-import type { AgentAnswer } from "../api/client";
+import type { AgentAnswer } from "../api/openapiClient";
 import { userErrorMessage } from "../utils/runtime";
 
 const AgentResponseRenderer = lazy(() =>

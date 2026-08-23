@@ -4,7 +4,7 @@ import {
   useApplyNextMonthPlan,
   useUpdateGoalMonthly,
 } from "../api/hooks/budget";
-import { type CategoryPlanRow, type PlanAssignment } from "../api/client";
+import { type CategoryPlanRow, type PlanAssignment } from "../api/openapiClient";
 import { toast } from "sonner";
 import { money } from "../utils/format";
 

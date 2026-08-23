@@ -6,7 +6,7 @@ import {
   useCategoriesWithSpending,
   useCreateRule,
 } from "../api/hooks/transactions";
-import type { RuleWithCategory, RuleProposal, CategoryWithSpending } from "../api/client";
+import type { RuleWithCategory, RuleProposal, CategoryWithSpending } from "../api/openapiClient";
 import * as I from "../components/Icons";
 import Button from "../components/Button";
 import Card from "../components/Card";

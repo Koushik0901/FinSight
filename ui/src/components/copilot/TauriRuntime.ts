@@ -21,7 +21,7 @@ import type {
   ToolCallMessagePart,
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { commands } from "../../api/client";
+import { api } from "../../api/openapiClient";
 import { COPILOT_STREAM_FRAME } from "../../api/eventNames";
 import { normalizeCopilotStreamFrame } from "./streamFrame";
 import type {
@@ -31,7 +31,7 @@ import type {
   CopilotDonePayload,
   CopilotResponseBlock,
   MissingDataItem,
-} from "../../api/client";
+} from "../../api/openapiClient";
 
 /** Missing-data items rehydrated from a stored message.
  *
@@ -339,7 +339,7 @@ export function createTauriChatModelAdapter({
           })
         );
 
-        void commands
+        void api
           .streamCopilotMessage(
             conversationId,
             runId,
@@ -553,7 +553,7 @@ function FinSightThreadHistoryProvider({
         if (!remoteId) return { messages: [] };
 
         const messages = unwrapCommandResult(
-          await commands.getConversationMessages(remoteId)
+          await api.getConversationMessages(remoteId)
         );
         onLoadedMeta(buildMetaFromMessages(messages));
         return {
@@ -573,7 +573,7 @@ function FinSightThreadHistoryProvider({
         const content = textFromMessage(item.message).trim();
         if (!messageId || !conversationId || !content) return;
         unwrapCommandResult(
-          await commands.editConversationUserMessage({
+          await api.editConversationUserMessage({
             conversationId,
             messageId,
             content,
@@ -587,7 +587,7 @@ function FinSightThreadHistoryProvider({
           .find((id): id is string => Boolean(id));
         if (!conversationId || !firstBackendId) return;
         unwrapCommandResult(
-          await commands.deleteConversationMessagesAfter(conversationId, firstBackendId)
+          await api.deleteConversationMessagesAfter(conversationId, firstBackendId)
         );
       },
     }),
@@ -622,7 +622,7 @@ export function useTauriCopilotRuntime(initialConversationId?: string | null): {
 
   const ensureConversationId = useCallback(async () => {
     if (convIdRef.current) return convIdRef.current;
-    const conversationId = unwrapCommandResult(await commands.createConversation());
+    const conversationId = unwrapCommandResult(await api.createConversation());
     convIdRef.current = conversationId;
     return conversationId;
   }, []);
@@ -643,7 +643,7 @@ export function useTauriCopilotRuntime(initialConversationId?: string | null): {
   const threadListAdapter = useMemo<RemoteThreadListAdapter>(
     () => ({
       async list() {
-        const conversations = unwrapCommandResult(await commands.listConversations());
+        const conversations = unwrapCommandResult(await api.listConversations());
         return {
           threads: conversations.map((conversation) => ({
             status: "regular" as const,
@@ -658,7 +658,7 @@ export function useTauriCopilotRuntime(initialConversationId?: string | null): {
         };
       },
       async initialize() {
-        const remoteId = unwrapCommandResult(await commands.createConversation());
+        const remoteId = unwrapCommandResult(await api.createConversation());
         convIdRef.current = remoteId;
         void queryClient.invalidateQueries({ queryKey: ["conversations"] });
         return { remoteId, externalId: undefined };
@@ -673,12 +673,12 @@ export function useTauriCopilotRuntime(initialConversationId?: string | null): {
         // FinSight does not yet persist archived Copilot threads.
       },
       async delete(remoteId) {
-        unwrapCommandResult(await commands.deleteConversation(remoteId));
+        unwrapCommandResult(await api.deleteConversation(remoteId));
         if (convIdRef.current === remoteId) convIdRef.current = null;
         void queryClient.invalidateQueries({ queryKey: ["conversations"] });
       },
       async fetch(remoteId) {
-        const conversations = unwrapCommandResult(await commands.listConversations());
+        const conversations = unwrapCommandResult(await api.listConversations());
         const conversation = conversations.find((item) => item.id === remoteId);
         if (!conversation) throw new Error("Conversation not found.");
         return {

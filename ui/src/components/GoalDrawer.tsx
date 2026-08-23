@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import Drawer from "./Drawer";
 import { useAccounts } from "../api/hooks/accounts";
 import { useUpdateGoalMonthly, useUpdateGoalPurpose, useUpdateGoalPriority, useGoalContributions, useContributeToGoal } from "../api/hooks/budget";
-import type { GoalDto } from "../api/client";
+import type { GoalDto } from "../api/openapiClient";
 import { money } from "../utils/format";
 import { getAccountDisplayName } from "../utils/accounts";
 import { formatCalendarDate } from "../utils/date";

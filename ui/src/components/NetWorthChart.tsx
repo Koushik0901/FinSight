@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import type { NetWorthPoint } from "../api/client";
+import type { NetWorthPoint } from "../api/openapiClient";
 import { compactMoney } from "../utils/format";
 import { formatCalendarDate, parseCalendarDate } from "../utils/date";
 
