@@ -116,6 +116,16 @@ fn openapi_json_paths_match_commands() {
     );
 }
 
+#[test]
+fn openapi_json_files_are_identical() {
+    let root = include_str!("../../../openapi.json");
+    let ui = include_str!("../../../ui/src/api/openapi.json");
+    assert_eq!(
+        root, ui,
+        "openapi.json and ui/src/api/openapi.json must be identical — run `cargo run -p finsight-openapi --bin export_openapi`"
+    );
+}
+
 /// Event-name contract guard: the generated `ui/src/api/eventNames.ts` must
 /// contain exactly the names in `finsight_api::sink::event_names::ALL`. Catches
 /// a stale generation step after adding/renaming a backend event (the class of

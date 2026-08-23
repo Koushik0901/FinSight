@@ -55,15 +55,14 @@ function renderApp() {
   );
 }
 
-// Pure self-hosted boot: no Tauri shell, no selectBackend branching.
+// Pure self-hosted boot: no Tauri shell.
 // Browser, PWA, and any future split `web` container all use the HTTP/SSE
 // shim. The `?mock` harness remains for design work.
 async function boot() {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const hasMock = import.meta.env.DEV && params.has("mock");
-    const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
-    if (hasMock && !w.__TAURI_INTERNALS__) {
+    if (hasMock) {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
     } else {

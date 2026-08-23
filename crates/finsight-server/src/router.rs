@@ -51,8 +51,12 @@ fn cache_header(cache_control: &'static str) -> SetResponseHeaderLayer<HeaderVal
 /// client-side route like `/transactions`) falls back to `index.html` so the
 /// React router can take over. Registered LAST so `/api/*` routes always win.
 pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
-    let index = ui_dir.join("index.html");
-    Router::new()
+    let is_empty_ui = ui_dir.as_os_str().is_empty();
+    // Build the API-only router first — static serving is appended only when
+    // a real ui_dir is configured. An empty string (FINSIGHT_UI_DIR="") in
+    // split mode disables static serving so the API container never serves the
+    // SPA from CWD (the previous PathBuf("") → "." behavior was a bug).
+    let base = Router::new()
         // CORS on the public health probe only: the thin desktop shell's
         // ConnectScreen runs at its OWN origin (tauri://localhost, or Vite's
         // localhost:5173 under `tauri:dev`) and does a cross-origin
@@ -190,7 +194,12 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         // launched share window. Redirecting into the app turns that into a
         // toast the user can act on. 303 so the follow-up is a GET.
         .route("/share-target", post(share_target_fallback))
-        .with_state(state)
+        .with_state(state.clone());
+    if is_empty_ui {
+        return base;
+    }
+    let index = ui_dir.join("index.html");
+    return base
         // Content-hashed bundles: cache for a year without revalidating.
         // Both static services below use `precompressed_br`/`precompressed_gzip`,
         // which make `ServeDir` prefer a sibling `.br`/`.gz` file when the

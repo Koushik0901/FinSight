@@ -37,11 +37,6 @@ jobs:
         uses: shogo82148/actions-setup-perl@53e33bb27be492a926eee378e8a5f7ff6618b061 # v1
         with:
           perl-version: '5.38'
-      - name: Install Linux deps for Tauri
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - run: pnpm install --frozen-lockfile
       - run: cargo fmt --all -- --check
       - run: cargo test --workspace

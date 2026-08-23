@@ -33,6 +33,11 @@ async function wrap<T>(p: Promise<{ data?: T; error?: unknown; response: Respons
       (body as { code?: string }).code === "auth.required"
     ) {
       window.dispatchEvent(new CustomEvent(FINSIGHT_AUTH_REQUIRED));
+      // Close the shared SSE stream so it stops reconnecting with 401s —
+      // mirrors httpBackend.ts's 401 handling for the legacy shim.
+      const w = window as unknown as { __FINSIGHT_ES__?: EventSource | null };
+      w.__FINSIGHT_ES__?.close();
+      w.__FINSIGHT_ES__ = null;
     }
     return {
       status: "error",
