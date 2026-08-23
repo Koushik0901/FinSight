@@ -291,6 +291,10 @@ pub fn build_forecast(
 
     let balances = metrics::balance_breakdown(conn)?;
     let rolling = metrics::rolling_averages(conn, EXPENSE_WINDOW_DAYS)?;
+    // Cashflow burn must be the conservative 90-day MEAN, not the robust median
+    // (which excludes anomalies and would be flattered by a quarterly bill
+    // outside the window being folded into the median).
+    let recent_mean_expense = metrics::avg_monthly_expense_90d(conn)?;
     let items = recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)?;
     // Only obligations whose last charge lands inside the expense window are
     // reflected in `avg_monthly_expense`, so only those may be netted out of the
@@ -398,7 +402,7 @@ pub fn build_forecast(
     // Residual everyday variable spend = typical monthly expense minus the dated
     // obligations already applied above, spread evenly per day. Never negative:
     // if obligations exceed the average, the dated events already carry the load.
-    let residual_monthly = (rolling.avg_monthly_expense_cents - dated_obligation_monthly).max(0);
+    let residual_monthly = (recent_mean_expense - dated_obligation_monthly).max(0);
     let daily_burn_cents = (residual_monthly as f64 / AVG_DAYS_PER_MONTH).round() as i64;
 
     // What-if overlay: hypothetical outflow (as a dated event) + buffer.

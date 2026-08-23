@@ -203,7 +203,19 @@ pub struct SafetyExpenseBasis {
 /// Complete months only: the current partial month would otherwise drag the mean
 /// down purely because it has not finished yet.
 pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis> {
-    let rolling = rolling_averages(conn, 90)?;
+    // Safety must remain conservative: the larger of the 12-month mean and the
+    // recent 90-day MEAN. The display path uses a robust median (anomaly-excluded)
+    // for surplus, but runway must not be flattered by it — a step-up or an
+    // annual bill must be visible here even if the median hides it.
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let (_, expense_total) = income_expense_since(conn, &cutoff)?;
+    let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
+    let months = months_in_span(months_with_data, 90);
+    let recent_mean = if months > 0 {
+        expense_total / months
+    } else {
+        0
+    };
     let pred = non_investment_txn_predicate("t");
     let cur = primary_currency_clause(conn, "t");
     let this_month = chrono::Utc::now().format("%Y-%m").to_string();
@@ -212,9 +224,9 @@ pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis>
                           WHEN t.amount_cents < 0 THEN -t.amount_cents \
                           ELSE 0 END) \
          FROM transactions t \
-         WHERE t.is_transfer = 0 AND {pred}{cur} AND substr(t.posted_at,1,7) < ?1 \
-         GROUP BY substr(t.posted_at,1,7) \
-         ORDER BY substr(t.posted_at,1,7) DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
+          WHERE t.is_transfer = 0 AND {pred}{cur} AND substr(t.posted_at,1,7) < ?1 \
+          GROUP BY substr(t.posted_at,1,7) \
+          ORDER BY substr(t.posted_at,1,7) DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
     ))?;
     let mut totals: Vec<i64> = Vec::new();
     for row in stmt.query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))? {
@@ -228,10 +240,10 @@ pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis>
     };
 
     Ok(SafetyExpenseBasis {
-        monthly_expense_cents: long_mean.max(rolling.avg_monthly_expense_cents),
-        sufficient: rolling.data_span_days >= SAFETY_BASIS_MIN_SPAN_DAYS,
+        monthly_expense_cents: long_mean.max(recent_mean),
+        sufficient: data_span_days >= SAFETY_BASIS_MIN_SPAN_DAYS,
         months_observed: totals.len() as i64,
-        data_span_days: rolling.data_span_days,
+        data_span_days,
     })
 }
 
@@ -409,6 +421,10 @@ pub struct RollingAverages {
     /// withhold rather than state a number — being wrong high there tells
     /// someone they are safer than they are.
     pub data_span_days: i64,
+    /// True when `avg_monthly_expense_cents` is the 90-day mean fallback
+    /// because there were fewer than 2 complete months of history to take a
+    /// robust median from. Consumers can show an ⓘ.
+    pub is_estimated: bool,
 }
 
 /// Average monthly income and expense over the last `days`, transfers excluded.
@@ -421,6 +437,49 @@ pub struct RollingAverages {
 /// direction, and it landed on brand-new users, who are least equipped to
 /// notice.
 ///
+/// Robust median monthly expense, anomaly-excluded, over the last up-to-12
+/// complete calendar months. Returns `None` when there are fewer than 2
+/// complete months of history, so callers fall back to the 90-day mean and
+/// mark the result estimated.
+pub fn robust_monthly_expense_cents(conn: &Connection) -> CoreResult<Option<i64>> {
+    let this_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let pred = non_investment_txn_predicate("t");
+    let cur = primary_currency_clause(conn, "t");
+    let sql = format!(
+        "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                          WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                          ELSE 0 END) \
+          FROM transactions t \
+          WHERE t.is_transfer = 0 AND t.is_anomaly = 0 AND substr(t.posted_at,1,7) < ?1 \
+            AND {pred}{cur} \
+          GROUP BY substr(t.posted_at,1,7) \
+          ORDER BY substr(t.posted_at,1,7) DESC LIMIT 12"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut vals: Vec<i64> = stmt
+        .query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))?
+        .filter_map(|r| r.ok().flatten())
+        .collect();
+    if vals.len() < 2 {
+        return Ok(None);
+    }
+    vals.sort_unstable();
+    let mid = vals.len() / 2;
+    let median = if vals.len().is_multiple_of(2) {
+        (vals[mid - 1] + vals[mid]) / 2
+    } else {
+        vals[mid]
+    };
+    Ok(Some(median))
+}
+
+/// Typical monthly expense (median-month, anomaly-excluded) — alias for
+/// `robust_monthly_expense_cents` used by projections and now the display
+/// path.
+pub fn typical_monthly_expense_cents(conn: &Connection) -> CoreResult<Option<i64>> {
+    robust_monthly_expense_cents(conn)
+}
+
 /// Sub-month histories are floored at one month rather than extrapolated: a
 /// single large purchase three days in would otherwise imply an absurd monthly
 /// burn. That floor understates instead, so `data_span_days` is reported
@@ -431,15 +490,21 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
     let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
     let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
-    let avg_expense = expense_total / months;
+    let fallback_expense = expense_total / months;
+    let (avg_expense, is_estimated) = match robust_monthly_expense_cents(conn)? {
+        Some(v) => (v, false),
+        None => (fallback_expense, true),
+    };
+    let net = avg_income - avg_expense;
     Ok(RollingAverages {
         window_days: days,
         months,
         avg_monthly_income_cents: avg_income,
         avg_monthly_expense_cents: avg_expense,
-        net_monthly_cents: avg_income - avg_expense,
+        net_monthly_cents: net,
         savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
         data_span_days,
+        is_estimated,
     })
 }
 
@@ -453,7 +518,7 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
 /// 2.4 months and inflate monthly income by half. Three paychecks land in three
 /// calendar months, which is also how a user would describe it: "I have three
 /// months of data."
-fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
+pub fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
     // Scoped identically to the totals it divides. Counting months of history
     // from rows the numerator excludes would divide primary-currency spending
@@ -483,12 +548,23 @@ fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)
 /// at the window and floored at one. An empty window falls back to the window's
 /// nominal length so a zero-activity account reports a $0 average rather than
 /// dividing by zero.
-fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
+pub fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
     let window_months = (window_days / 30).max(1);
     if months_with_data <= 0 {
         return window_months;
     }
     months_with_data.clamp(1, window_months)
+}
+
+/// 90-day mean monthly expense (raw average, anomaly-included) — the
+/// conservative recent burn used by safety and cashflow, as opposed to the
+/// robust median used for display surplus.
+pub fn avg_monthly_expense_90d(conn: &Connection) -> CoreResult<i64> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let (_, expense_total) = income_expense_since(conn, &cutoff)?;
+    let (months_with_data, _) = data_coverage_since(conn, &cutoff)?;
+    let months = months_in_span(months_with_data, 90);
+    Ok(expense_total / months.max(1))
 }
 
 // ── Balance breakdown ───────────────────────────────────────────────────────
@@ -812,16 +888,40 @@ pub fn rolling_averages_for(
     let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
     let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
-    let avg_expense = expense_total / months;
-    Ok(RollingAverages {
-        window_days: days,
-        months,
-        avg_monthly_income_cents: avg_income,
-        avg_monthly_expense_cents: avg_expense,
-        net_monthly_cents: avg_income - avg_expense,
-        savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
-        data_span_days,
-    })
+    let fallback_expense = expense_total / months;
+    if member_id.is_none() {
+        let (avg_expense, is_estimated) = match robust_monthly_expense_cents(conn)? {
+            Some(v) => (v, false),
+            None => (fallback_expense, true),
+        };
+        let net = avg_income - avg_expense;
+        Ok(RollingAverages {
+            window_days: days,
+            months,
+            avg_monthly_income_cents: avg_income,
+            avg_monthly_expense_cents: avg_expense,
+            net_monthly_cents: net,
+            savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
+            data_span_days,
+            is_estimated,
+        })
+    } else {
+        // Per-member display will be fully parametrized in Phase 3 (Task 6).
+        // Keep the member-weighted fallback for now, but still surface the
+        // household estimate flag so thin histories are not shown as precise.
+        let is_estimated = robust_monthly_expense_cents(conn)?.is_none();
+        let net = avg_income - fallback_expense;
+        Ok(RollingAverages {
+            window_days: days,
+            months,
+            avg_monthly_income_cents: avg_income,
+            avg_monthly_expense_cents: fallback_expense,
+            net_monthly_cents: net,
+            savings_rate_pct: savings_rate_pct(avg_income, fallback_expense),
+            data_span_days,
+            is_estimated,
+        })
+    }
 }
 
 /// [`balance_breakdown`] optionally scoped to one member. Each account balance
