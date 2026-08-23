@@ -753,9 +753,10 @@ mod tests {
         // (a) The smooth burn equals avg expense minus the dated obligations'
         // monthly equivalent — so the bill is counted once, on its date, not also
         // smeared into the daily burn.
-        let avg_exp = metrics::rolling_averages(&conn, 90)
-            .unwrap()
-            .avg_monthly_expense_cents;
+        // Cashflow burn is conservative 90d MEAN (avg_monthly_expense_90d), not the
+        // robust median used for display surplus — see metrics::safety_expense_basis
+        // and docs spec §3. Rolling median would flatter runway/ hide step-ups.
+        let avg_exp = metrics::avg_monthly_expense_90d(&conn).unwrap();
         let obligations_monthly: i64 =
             recurring::projection_obligations(&conn, RECURRING_WINDOW_DAYS)
                 .unwrap()

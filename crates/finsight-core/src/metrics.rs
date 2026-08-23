@@ -518,7 +518,7 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
 /// 2.4 months and inflate monthly income by half. Three paychecks land in three
 /// calendar months, which is also how a user would describe it: "I have three
 /// months of data."
-pub fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
+pub(crate) fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
     // Scoped identically to the totals it divides. Counting months of history
     // from rows the numerator excludes would divide primary-currency spending
@@ -548,7 +548,7 @@ pub fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, 
 /// at the window and floored at one. An empty window falls back to the window's
 /// nominal length so a zero-activity account reports a $0 average rather than
 /// dividing by zero.
-pub fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
+pub(crate) fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
     let window_months = (window_days / 30).max(1);
     if months_with_data <= 0 {
         return window_months;
@@ -559,7 +559,7 @@ pub fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
 /// 90-day mean monthly expense (raw average, anomaly-included) — the
 /// conservative recent burn used by safety and cashflow, as opposed to the
 /// robust median used for display surplus.
-pub fn avg_monthly_expense_90d(conn: &Connection) -> CoreResult<i64> {
+pub(crate) fn avg_monthly_expense_90d(conn: &Connection) -> CoreResult<i64> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
     let (_, expense_total) = income_expense_since(conn, &cutoff)?;
     let (months_with_data, _) = data_coverage_since(conn, &cutoff)?;
