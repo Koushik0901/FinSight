@@ -1095,40 +1095,6 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
-/// Median of the last up-to-12 COMPLETE calendar months of expense (transfers
-/// excluded). Robust to a single one-off purchase that inflates a 90-day
-/// average. Returns 0 when there is less than 3 months of completed history, so
-/// callers fall back to the 90-day average.
-fn robust_monthly_expense_cents(conn: &Connection) -> rusqlite::Result<i64> {
-    let this_month = chrono::Utc::now().format("%Y-%m").to_string();
-    // A `settle_up = 1` row nets as `-amount_cents`, matching metrics.rs
-    // cashflow, instead of being silently dropped by an `amount_cents < 0`-only
-    // CASE.
-    let mut stmt = conn.prepare(
-        "SELECT SUM(CASE WHEN settle_up = 1 THEN -amount_cents \
-                          WHEN amount_cents < 0 THEN -amount_cents \
-                          ELSE 0 END) AS spent \
-         FROM transactions \
-         WHERE is_transfer = 0 AND substr(posted_at,1,7) < ?1 \
-         GROUP BY substr(posted_at,1,7) \
-         ORDER BY substr(posted_at,1,7) DESC LIMIT 12",
-    )?;
-    let mut vals: Vec<i64> = stmt
-        .query_map(rusqlite::params![this_month], |r| r.get::<_, i64>(0))?
-        .filter_map(|r| r.ok())
-        .collect();
-    if vals.len() < 3 {
-        return Ok(0);
-    }
-    vals.sort_unstable();
-    let mid = vals.len() / 2;
-    Ok(if vals.len().is_multiple_of(2) {
-        (vals[mid - 1] + vals[mid]) / 2
-    } else {
-        vals[mid]
-    })
-}
-
 pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapshot> {
     let now = Utc::now();
     let cut90 = (now - Duration::days(90)).to_rfc3339();
@@ -1160,8 +1126,11 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
     let avg_monthly_expense_12m_cents = expense365 / 12;
     // One-off-proof "typical month" for surplus projections; fall back to the
     // 90-day average when there isn't enough completed history to take a median.
+    // Authoritative source — inherits <2 + currency + anomaly + investment scoping.
     let typical_monthly_expense_cents = {
-        let median = robust_monthly_expense_cents(conn)?;
+        let median = finsight_core::metrics::typical_monthly_expense_cents(conn)
+            .unwrap_or(None)
+            .unwrap_or(0);
         if median > 0 {
             median
         } else {

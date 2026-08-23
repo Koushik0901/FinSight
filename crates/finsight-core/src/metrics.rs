@@ -176,22 +176,26 @@ pub fn emergency_fund_months_scoped(conn: &Connection, member_id: Option<&str>) 
 }
 
 /// EF-eligible liquid pool: sum of latest known balances for accounts where
-/// `is_emergency_fund=1` and not debt/investment, respecting `balance_known`.
-/// Member-scoped variant weights by ownership share when `member_id` is Some.
+/// `is_emergency_fund=1` and not debt/investment, respecting `balance_known`
+/// and primary-currency scoping — mirroring `balance_breakdown` so EF months
+/// never overstates safety when holdings are mixed-currency or partially
+/// unknown.
 fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreResult<i64> {
+    let profile = crate::currency::currency_profile(conn)?;
+    let scope = profile.primary().map(|s| s.to_string());
+    let scope_ref = scope.as_deref();
     if let Some(mid) = member_id {
-        // Per-member weighted pool — mirrors `balance_breakdown_for` weighting.
-        // For task 2 household-only callers this branch is not exercised, but
-        // kept correct for future parametrization.
         let weights = account_weights_for_member(conn, mid)?;
         let mut total: f64 = 0.0;
-        // Use same latest-balance logic as `balance_breakdown` but via direct SQL
-        // to stay on &Connection without &mut. For EF-months display, count seed
-        // balances even when transactions exist — see household branch.
         let mut stmt = conn.prepare(&format!(
-            "SELECT a.id, a.type, a.emergency_fund_eligible, \
+            "SELECT a.id, a.type, a.emergency_fund_eligible, a.currency, \
                     COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
-                      ORDER BY {} LIMIT 1),0) AS bal \
+                      ORDER BY {} LIMIT 1),0) AS bal, \
+                    CASE \
+                      WHEN EXISTS (SELECT 1 FROM account_balances b WHERE b.account_id = a.id AND b.source <> 'seed') THEN 1 \
+                      WHEN NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id) THEN 1 \
+                      ELSE 0 \
+                    END AS balance_known \
              FROM accounts a WHERE a.archived_at IS NULL",
             crate::repos::balance::balance_snapshot_order("b.", "DESC")
         ))?;
@@ -200,12 +204,16 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, i64>(2)?,
-                r.get::<_, i64>(3)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
             ))
         })?;
         for row in rows {
-            let (id, ty, eligible, bal) = row?;
+            let (id, ty, eligible, cur, bal, known) = row?;
             if eligible == 0 { continue; }
+            if known == 0 { continue; }
+            if !in_scope_currency(&cur, scope_ref) { continue; }
             let at = AccountType::from_db(&ty);
             if is_debt_type(at) || is_investment_type(at) { continue; }
             if let Some(&w) = weights.get(&id) {
@@ -214,25 +222,43 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
         }
         return Ok(total.round() as i64);
     }
-    // Household pool — sum latest balances for EF-eligible liquid accounts.
-    // For display EF-months we count the seed balance even when the account
-    // also holds transactions (otherwise a freshly-seeded test account with
-    // expense history would read as $0 pool). The broader `balance_breakdown`
-    // still surfaces unknown-balance warnings separately.
-    let ef: Option<i64> = conn.query_row(
-        &format!(
-            "SELECT COALESCE(SUM(latest),0) FROM (
-            SELECT COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
-              ORDER BY {} LIMIT 1),0) AS latest,
-                   a.type, a.emergency_fund_eligible
-            FROM accounts a WHERE a.archived_at IS NULL
-         ) WHERE emergency_fund_eligible=1 AND type NOT IN ('Credit','Loan','Investment')",
-            crate::repos::balance::balance_snapshot_order("b.", "DESC")
-        ),
-        [],
-        |r| r.get(0),
-    )?;
-    Ok(ef.unwrap_or(0))
+    // Household pool — sum latest *known* balances for EF-eligible liquid
+    // accounts in the primary currency. Unknown balances (seed-only with
+    // activity) are excluded, exactly as `balance_breakdown` does, so the
+    // EF-months figure never treats a phantom $0 or a foreign-currency
+    // account as spendable safety.
+    let mut stmt = conn.prepare(&format!(
+        "SELECT a.type, a.emergency_fund_eligible, a.currency, \
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
+                  ORDER BY {} LIMIT 1),0) AS bal, \
+                CASE \
+                  WHEN EXISTS (SELECT 1 FROM account_balances b WHERE b.account_id = a.id AND b.source <> 'seed') THEN 1 \
+                  WHEN NOT EXISTS (SELECT 1 FROM transactions t WHERE t.account_id = a.id) THEN 1 \
+                  ELSE 0 \
+                END AS balance_known \
+         FROM accounts a WHERE a.archived_at IS NULL",
+        crate::repos::balance::balance_snapshot_order("b.", "DESC")
+    ))?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+            r.get::<_, i64>(4)?,
+        ))
+    })?;
+    let mut total = 0i64;
+    for row in rows {
+        let (ty, eligible, cur, bal, known) = row?;
+        if eligible == 0 { continue; }
+        if known == 0 { continue; }
+        if !in_scope_currency(&cur, scope_ref) { continue; }
+        let at = AccountType::from_db(&ty);
+        if is_debt_type(at) || is_investment_type(at) { continue; }
+        total += bal;
+    }
+    Ok(total)
 }
 
 /// Days a liquid balance lasts at a given average monthly burn — the single

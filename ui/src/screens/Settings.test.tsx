@@ -7,6 +7,7 @@ import { createWrapper } from "../test-utils";
 import { useCompletionProvider, useSaveProviderApiKey, useSetCompletionProvider } from "../api/hooks/agent";
 import { fetchAuthStatus, logout, signOutOtherSessions } from "../api/auth";
 import { fetchServerAbout } from "../api/serverInfo";
+import { FINSIGHT_AUTH_REQUIRED } from "../api/eventNames";
 
 vi.mock("../api/auth", async () => {
   const actual = await vi.importActual<typeof import("../api/auth")>("../api/auth");
@@ -314,7 +315,7 @@ describe("Settings — server-mode Account section", () => {
 
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: FINSIGHT_AUTH_REQUIRED }))
     );
   });
 
@@ -327,7 +328,7 @@ describe("Settings — server-mode Account section", () => {
     fireEvent.click(screen.getByRole("button", { name: /^sign out$/i }));
 
     await waitFor(() =>
-      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "finsight:auth-required" }))
+      expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: FINSIGHT_AUTH_REQUIRED }))
     );
   });
 
@@ -342,7 +343,7 @@ describe("Settings — server-mode Account section", () => {
     await waitFor(() => expect(signOutOtherSessions).toHaveBeenCalledTimes(1));
     // Unlike a full sign-out, this must NOT drop the current session.
     expect(dispatchSpy).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "finsight:auth-required" }),
+      expect.objectContaining({ type: FINSIGHT_AUTH_REQUIRED }),
     );
   });
 
