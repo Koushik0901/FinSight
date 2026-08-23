@@ -74,7 +74,9 @@ pub fn build_router(state: Arc<ServerState>, ui_dir: &Path) -> Router {
         .route("/api/server/about", get(crate::server_info::about))
         .route(
             "/api/openapi.json",
-            get(openapi).layer(dynamic_compression()).layer(cache_header(REVALIDATE)),
+            get(openapi)
+                .layer::<CompressionLayer, std::convert::Infallible>(dynamic_compression())
+                .layer(cache_header(REVALIDATE)),
         )
         .route("/api/auth/status", get(crate::auth::status))
         .route("/api/auth/setup", post(crate::auth::setup))
