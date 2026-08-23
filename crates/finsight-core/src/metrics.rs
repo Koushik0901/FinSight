@@ -397,52 +397,74 @@ pub fn set_assumptions(conn: &Connection, a: &Assumptions) -> CoreResult<()> {
 
 // ── Cashflow over a window ──────────────────────────────────────────────────
 
+/// Single parametrized core for income/expense with `scope` (`None` = household,
+/// `Some(member_id)` = member share via `JOIN account_owners` with `share_bps`
+/// split and `owner_member_id` override (joint 50% when share_bps is NULL).
+/// Household (`None`) runs the existing unweighted query verbatim; `Some(id)`
+/// delegates to `weighted_income_expense` so both views stay in one place.
+fn income_expense_core(
+    conn: &Connection,
+    start_inclusive: &str,
+    end_exclusive: Option<&str>,
+    scope: Option<&str>,
+) -> CoreResult<(i64, i64)> {
+    match scope {
+        None => {
+            let pred = non_investment_txn_predicate("t");
+            let cur = primary_currency_clause(conn, "t");
+            if let Some(end) = end_exclusive {
+                conn.query_row(
+                    &format!(
+                        "SELECT
+                            COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
+                            COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                              WHEN amount_cents < 0 THEN -amount_cents
+                                              ELSE 0 END), 0)
+                         FROM transactions t
+                         WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0 \
+                           AND {pred}{cur}"
+                    ),
+                    params![start_inclusive, end],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(Into::into)
+            } else {
+                conn.query_row(
+                    &format!(
+                        "SELECT
+                            COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
+                            COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
+                                              WHEN amount_cents < 0 THEN -amount_cents
+                                              ELSE 0 END), 0)
+                         FROM transactions t
+                         WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
+                    ),
+                    params![start_inclusive],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(Into::into)
+            }
+        }
+        Some(member_id) => weighted_income_expense(conn, start_inclusive, end_exclusive, member_id),
+    }
+}
+
 /// Income and expense (both positive cents) since `start_inclusive`, transfers
 /// and investment-account activity excluded, scoped to the primary currency.
+/// Delegates to `income_expense_core` with `scope=None` (household).
 pub fn income_expense_since(conn: &Connection, start_inclusive: &str) -> CoreResult<(i64, i64)> {
-    let pred = non_investment_txn_predicate("t");
-    let cur = primary_currency_clause(conn, "t");
-    conn.query_row(
-        &format!(
-            "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
-                                  WHEN amount_cents < 0 THEN -amount_cents
-                                  ELSE 0 END), 0)
-             FROM transactions t
-             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
-        ),
-        params![start_inclusive],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .map_err(Into::into)
+    income_expense_core(conn, start_inclusive, None, None)
 }
 
 /// Income and expense (both positive cents) over `[start_inclusive, end_exclusive)`,
 /// transfers and investment-account activity excluded, scoped to the primary
-/// currency.
+/// currency. Delegates to `income_expense_core` with `scope=None`.
 pub fn income_expense_between(
     conn: &Connection,
     start_inclusive: &str,
     end_exclusive: &str,
 ) -> CoreResult<(i64, i64)> {
-    let pred = non_investment_txn_predicate("t");
-    let cur = primary_currency_clause(conn, "t");
-    conn.query_row(
-        &format!(
-            "SELECT
-                COALESCE(SUM(CASE WHEN amount_cents > 0 AND settle_up = 0 THEN amount_cents ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN settle_up = 1 THEN -amount_cents
-                                  WHEN amount_cents < 0 THEN -amount_cents
-                                  ELSE 0 END), 0)
-             FROM transactions t
-             WHERE t.posted_at >= ?1 AND t.posted_at < ?2 AND t.is_transfer = 0 \
-               AND {pred}{cur}"
-        ),
-        params![start_inclusive, end_exclusive],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .map_err(Into::into)
+    income_expense_core(conn, start_inclusive, Some(end_exclusive), None)
 }
 
 /// Income, expense, net, and savings rate for a single window.
@@ -525,24 +547,62 @@ pub struct RollingAverages {
 /// complete months of history, so callers fall back to the 90-day mean and
 /// mark the result estimated.
 pub fn robust_monthly_expense_cents(conn: &Connection) -> CoreResult<Option<i64>> {
+    robust_monthly_expense_cents_scoped(conn, None)
+}
+
+/// Scoped robust median monthly expense, anomaly-excluded, optionally weighted
+/// by `scope` (`None` = household, `Some(member_id)` = member share via
+/// `JOIN account_owners` with `share_bps` split and `owner_member_id` override).
+/// Single source so `rolling_averages` and future member displays never drift.
+pub fn robust_monthly_expense_cents_scoped(
+    conn: &Connection,
+    scope: Option<&str>,
+) -> CoreResult<Option<i64>> {
     let this_month = chrono::Utc::now().format("%Y-%m").to_string();
     let pred = non_investment_txn_predicate("t");
     let cur = primary_currency_clause(conn, "t");
-    let sql = format!(
-        "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
-                          WHEN t.amount_cents < 0 THEN -t.amount_cents \
-                          ELSE 0 END) \
-          FROM transactions t \
-          WHERE t.is_transfer = 0 AND t.is_anomaly = 0 AND substr(t.posted_at,1,7) < ?1 \
-            AND {pred}{cur} \
-          GROUP BY substr(t.posted_at,1,7) \
-          ORDER BY substr(t.posted_at,1,7) DESC LIMIT 12"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let mut vals: Vec<i64> = stmt
-        .query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))?
-        .filter_map(|r| r.ok().flatten())
-        .collect();
+    let mut vals: Vec<i64>;
+    if let Some(member_id) = scope {
+        let sql = format!(
+            "SELECT SUM((CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                               WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                               ELSE 0 END) * t.mw) \
+              FROM ( \
+                  SELECT t.amount_cents AS amount_cents, t.settle_up AS settle_up, \
+                         substr(t.posted_at,1,7) AS ym, \
+                         CASE WHEN t.owner_member_id IS NOT NULL \
+                              THEN (CASE WHEN t.owner_member_id = ?1 THEN 1.0 ELSE 0.0 END) \
+                              ELSE COALESCE(w.weight, 0.0) END AS mw \
+                  FROM transactions t \
+                  LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+                  WHERE t.is_transfer = 0 AND t.is_anomaly = 0 AND substr(t.posted_at,1,7) < ?2 \
+                    AND {pred}{cur} \
+              ) t \
+              GROUP BY ym \
+              ORDER BY ym DESC LIMIT 12"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![member_id, this_month], |r| {
+            r.get::<_, Option<f64>>(0)
+        })?;
+        vals = rows
+            .filter_map(|r| r.ok().flatten().map(|v| v.round() as i64))
+            .collect();
+    } else {
+        let sql = format!(
+            "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                              WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                              ELSE 0 END) \
+               FROM transactions t \
+               WHERE t.is_transfer = 0 AND t.is_anomaly = 0 AND substr(t.posted_at,1,7) < ?1 \
+                 AND {pred}{cur} \
+               GROUP BY substr(t.posted_at,1,7) \
+               ORDER BY substr(t.posted_at,1,7) DESC LIMIT 12"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))?;
+        vals = rows.filter_map(|r| r.ok().flatten()).collect();
+    }
     if vals.len() < 2 {
         return Ok(None);
     }
@@ -567,19 +627,27 @@ pub fn typical_monthly_expense_cents(conn: &Connection) -> CoreResult<Option<i64
 /// single large purchase three days in would otherwise imply an absurd monthly
 /// burn. That floor understates instead, so `data_span_days` is reported
 /// alongside and safety-metric consumers are expected to hedge below ~30 days.
-pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAverages> {
+/// Single core for rolling averages parametrized by `scope` (`None` = household,
+/// `Some(member_id)` = member share via `JOIN account_owners` with `share_bps`).
+/// `rolling_averages` and `rolling_averages_for` are thin delegates so callers
+/// never reimplement the SQL and drift.
+fn rolling_averages_scoped(
+    conn: &Connection,
+    days: i64,
+    scope: Option<&str>,
+) -> CoreResult<RollingAverages> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
-    let (income_total, expense_total) = income_expense_since(conn, &cutoff)?;
+    let (income_total, expense_total) = income_expense_since_for(conn, &cutoff, scope)?;
     let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
     let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
     let fallback_expense = expense_total / months;
-    let (avg_expense, is_estimated) = match robust_monthly_expense_cents(conn)? {
+    let (avg_expense, is_estimated) = match robust_monthly_expense_cents_scoped(conn, scope)? {
         Some(v) => (v, false),
         None => (fallback_expense, true),
     };
     let net = avg_income - avg_expense;
-    let emergency_fund_months = emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
+    let emergency_fund_months = emergency_fund_months_scoped(conn, scope).unwrap_or(0.0);
     Ok(RollingAverages {
         window_days: days,
         months,
@@ -591,6 +659,10 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
         is_estimated,
         emergency_fund_months,
     })
+}
+
+pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAverages> {
+    rolling_averages_scoped(conn, days, None)
 }
 
 /// How much history the window actually holds: the number of distinct calendar
@@ -692,16 +764,74 @@ fn in_scope_currency(account_currency: &str, scope: Option<&str>) -> bool {
     }
 }
 
-pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> {
+/// Single parametrized core for balance breakdown with `scope` (`None` = household,
+/// `Some(member_id)` = member share via `JOIN account_owners` with `share_bps`
+/// split (joint 50%) and manual asset weighting. Household and member views
+/// share this one place so `sum(member views) + residual == household`.
+fn balance_breakdown_core(
+    conn: &mut Connection,
+    scope: Option<&str>,
+) -> CoreResult<BalanceBreakdown> {
     let profile = crate::currency::currency_profile(conn)?;
-    // Always name the scope when one exists. A household can have CAD accounts
-    // and a USD manual asset: the accounts alone are single-currency, but the
-    // aggregate is not. `currency_profile` includes both sources so the asset
-    // stays separate instead of being silently added to CAD.
-    let scope = profile.primary();
+    let currency_scope = profile.primary();
+    if let Some(member) = scope {
+        let weights = account_weights_for_member(conn, member)?;
+        let summaries = accounts::list_summaries(conn)?;
+        let (mut liquid, mut invested, mut debt, mut ef, mut net) = (0f64, 0f64, 0f64, 0f64, 0f64);
+        let mut unknown = 0i64;
+        for a in &summaries {
+            let Some(&weight) = weights.get(&a.id) else {
+                continue;
+            };
+            if !in_scope_currency(&a.currency, currency_scope) {
+                continue;
+            }
+            if !a.balance_known {
+                unknown += 1;
+                continue;
+            }
+            let bal = a.balance_cents as f64 * weight;
+            if is_debt_type(a.r#type) {
+                if a.balance_cents < 0 {
+                    debt += -bal;
+                }
+                net += bal;
+            } else if is_investment_type(a.r#type) {
+                invested += bal;
+                net += bal;
+            } else {
+                liquid += bal;
+                net += bal;
+            }
+            if a.emergency_fund_eligible && !is_debt_type(a.r#type) {
+                ef += bal;
+            }
+        }
+        let asset_weights = asset_weights_for_member(conn, member)?;
+        if !asset_weights.is_empty() {
+            for asset in crate::repos::manual_assets::list(conn)? {
+                if !in_scope_currency(&asset.currency, currency_scope) {
+                    continue;
+                }
+                if let Some(&w) = asset_weights.get(&asset.id) {
+                    net += asset.value_cents as f64 * w;
+                }
+            }
+        }
+        return Ok(BalanceBreakdown {
+            liquid_cents: liquid.round() as i64,
+            invested_cents: invested.round() as i64,
+            debt_cents: debt.round() as i64,
+            emergency_fund_cents: ef.round() as i64,
+            net_worth_cents: net.round() as i64,
+            accounts_with_unknown_balance: unknown,
+            currency: profile.primary().map(str::to_string),
+            unconverted: profile.unconverted().to_vec(),
+        });
+    }
+    // Household
     let summaries = accounts::list_summaries(conn)?;
-    let net_worth_cents = net_worth::breakdown_in_currency(conn, scope)?.net_worth_cents;
-
+    let net_worth_cents = net_worth::breakdown_in_currency(conn, currency_scope)?.net_worth_cents;
     let mut out = BalanceBreakdown {
         net_worth_cents,
         currency: profile.primary().map(str::to_string),
@@ -709,7 +839,7 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
         ..Default::default()
     };
     for a in &summaries {
-        if !in_scope_currency(&a.currency, scope) {
+        if !in_scope_currency(&a.currency, currency_scope) {
             continue;
         }
         if !a.balance_known {
@@ -717,7 +847,6 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
             continue;
         }
         if is_debt_type(a.r#type) {
-            // Debt is stored as a negative balance; report the magnitude owed.
             if a.balance_cents < 0 {
                 out.debt_cents += -a.balance_cents;
             }
@@ -731,6 +860,10 @@ pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> 
         }
     }
     Ok(out)
+}
+
+pub fn balance_breakdown(conn: &mut Connection) -> CoreResult<BalanceBreakdown> {
+    balance_breakdown_core(conn, None)
 }
 
 // ── Per-member attribution ──────────────────────────────────────────────────
@@ -911,43 +1044,41 @@ fn weighted_income_expense(
     Ok((inc.round() as i64, exp.round() as i64))
 }
 
-/// [`income_expense_since`] optionally scoped to one member (`None` = household,
-/// running the existing unweighted query verbatim).
+/// [`income_expense_since`] optionally scoped to one member (`None` = household).
+/// Thin delegate to `income_expense_core` with `scope` so household and member
+/// share the single parametrized SQL (joint 50% via `share_bps`).
 pub fn income_expense_since_for(
     conn: &Connection,
     start_inclusive: &str,
     member_id: Option<&str>,
 ) -> CoreResult<(i64, i64)> {
-    match member_id {
-        None => income_expense_since(conn, start_inclusive),
-        Some(m) => weighted_income_expense(conn, start_inclusive, None, m),
-    }
+    income_expense_core(conn, start_inclusive, None, member_id)
 }
 
 /// [`income_expense_between`] optionally scoped to one member.
+/// Thin delegate to `income_expense_core`.
 pub fn income_expense_between_for(
     conn: &Connection,
     start_inclusive: &str,
     end_exclusive: &str,
     member_id: Option<&str>,
 ) -> CoreResult<(i64, i64)> {
-    match member_id {
-        None => income_expense_between(conn, start_inclusive, end_exclusive),
-        Some(m) => weighted_income_expense(conn, start_inclusive, Some(end_exclusive), m),
-    }
+    income_expense_core(conn, start_inclusive, Some(end_exclusive), member_id)
 }
 
 /// [`cashflow_since`] optionally scoped to one member.
+/// Thin delegate to `income_expense_core`.
 pub fn cashflow_since_for(
     conn: &Connection,
     start_inclusive: &str,
     member_id: Option<&str>,
 ) -> CoreResult<Cashflow> {
-    let (income, expense) = income_expense_since_for(conn, start_inclusive, member_id)?;
+    let (income, expense) = income_expense_core(conn, start_inclusive, None, member_id)?;
     Ok(Cashflow::from_income_expense(income, expense))
 }
 
 /// [`cashflow_between`] optionally scoped to one member.
+/// Thin delegate to `income_expense_core`.
 pub fn cashflow_between_for(
     conn: &Connection,
     start_inclusive: &str,
@@ -955,141 +1086,29 @@ pub fn cashflow_between_for(
     member_id: Option<&str>,
 ) -> CoreResult<Cashflow> {
     let (income, expense) =
-        income_expense_between_for(conn, start_inclusive, end_exclusive, member_id)?;
+        income_expense_core(conn, start_inclusive, Some(end_exclusive), member_id)?;
     Ok(Cashflow::from_income_expense(income, expense))
 }
 
 /// [`rolling_averages`] optionally scoped to one member.
+/// Thin delegate to the single `rolling_averages_scoped` core so household and
+/// member views never drift (joint 50% via `share_bps`, zero-member parity via `None`).
 pub fn rolling_averages_for(
     conn: &Connection,
     days: i64,
     member_id: Option<&str>,
 ) -> CoreResult<RollingAverages> {
-    let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
-    let (income_total, expense_total) = income_expense_since_for(conn, &cutoff, member_id)?;
-    // Household-wide span deliberately, not the member's own first transaction:
-    // a member who joined recently should not have their averages inflated by a
-    // short personal span when the household has months of history behind it.
-    let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
-    let months = months_in_span(months_with_data, days);
-    let avg_income = income_total / months;
-    let fallback_expense = expense_total / months;
-    if member_id.is_none() {
-        let (avg_expense, is_estimated) = match robust_monthly_expense_cents(conn)? {
-            Some(v) => (v, false),
-            None => (fallback_expense, true),
-        };
-        let net = avg_income - avg_expense;
-        let emergency_fund_months = emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
-        Ok(RollingAverages {
-            window_days: days,
-            months,
-            avg_monthly_income_cents: avg_income,
-            avg_monthly_expense_cents: avg_expense,
-            net_monthly_cents: net,
-            savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
-            data_span_days,
-            is_estimated,
-            emergency_fund_months,
-        })
-    } else {
-        // Per-member display will be fully parametrized in Phase 3 (Task 6).
-        // Keep the member-weighted fallback for now, but still surface the
-        // household estimate flag so thin histories are not shown as precise.
-        let is_estimated = robust_monthly_expense_cents(conn)?.is_none();
-        let net = avg_income - fallback_expense;
-        let emergency_fund_months = emergency_fund_months_scoped(conn, member_id).unwrap_or(0.0);
-        Ok(RollingAverages {
-            window_days: days,
-            months,
-            avg_monthly_income_cents: avg_income,
-            avg_monthly_expense_cents: fallback_expense,
-            net_monthly_cents: net,
-            savings_rate_pct: savings_rate_pct(avg_income, fallback_expense),
-            data_span_days,
-            is_estimated,
-            emergency_fund_months,
-        })
-    }
+    rolling_averages_scoped(conn, days, member_id)
 }
 
-/// [`balance_breakdown`] optionally scoped to one member. Each account balance
-/// AND each jointly-owned manual asset is weighted by the member's ownership
-/// share; ownerless accounts and ownerless assets stay in the household residual
-/// (never attributed to a member). So per-member `net_worth_cents` is the
-/// member's owned share of accounts + assets, and the members' slices plus the
-/// residual reconcile to the household total.
+/// [`balance_breakdown`] optionally scoped to one member.
+/// Thin delegate to the single `balance_breakdown_core` with `scope` so household
+/// and member share the one parametrized weighting (joint 50% via `share_bps`).
 pub fn balance_breakdown_for(
     conn: &mut Connection,
     member_id: Option<&str>,
 ) -> CoreResult<BalanceBreakdown> {
-    let Some(member) = member_id else {
-        return balance_breakdown(conn);
-    };
-    let profile = crate::currency::currency_profile(conn)?;
-    // Currency scoping is a fact about the DATA, not about ownership, so a
-    // member's slice is narrowed to the same primary currency as the household
-    // total and carries the same unconverted list. Otherwise a member's shares
-    // would fail to reconcile against a household figure computed on a
-    // different set of accounts.
-    let scope = profile.primary();
-    let weights = account_weights_for_member(conn, member)?;
-    let summaries = accounts::list_summaries(conn)?;
-    let (mut liquid, mut invested, mut debt, mut ef, mut net) = (0f64, 0f64, 0f64, 0f64, 0f64);
-    let mut unknown = 0i64;
-    for a in &summaries {
-        let Some(&weight) = weights.get(&a.id) else {
-            continue; // not owned by this member
-        };
-        if !in_scope_currency(&a.currency, scope) {
-            continue;
-        }
-        if !a.balance_known {
-            unknown += 1;
-            continue;
-        }
-        let bal = a.balance_cents as f64 * weight;
-        if is_debt_type(a.r#type) {
-            if a.balance_cents < 0 {
-                debt += -bal;
-            }
-            net += bal;
-        } else if is_investment_type(a.r#type) {
-            invested += bal;
-            net += bal;
-        } else {
-            liquid += bal;
-            net += bal;
-        }
-        if a.emergency_fund_eligible && !is_debt_type(a.r#type) {
-            ef += bal;
-        }
-    }
-    // Fold in the member's share of jointly-owned manual assets. Assets aren't
-    // liquid/invested/debt — they only move net worth — matching how the
-    // household breakdown folds in manual_asset_cents. An asset with no owner
-    // stays in the household residual, exactly like an ownerless account.
-    let asset_weights = asset_weights_for_member(conn, member)?;
-    if !asset_weights.is_empty() {
-        for asset in crate::repos::manual_assets::list(conn)? {
-            if !in_scope_currency(&asset.currency, scope) {
-                continue;
-            }
-            if let Some(&w) = asset_weights.get(&asset.id) {
-                net += asset.value_cents as f64 * w;
-            }
-        }
-    }
-    Ok(BalanceBreakdown {
-        liquid_cents: liquid.round() as i64,
-        invested_cents: invested.round() as i64,
-        debt_cents: debt.round() as i64,
-        emergency_fund_cents: ef.round() as i64,
-        net_worth_cents: net.round() as i64,
-        accounts_with_unknown_balance: unknown,
-        currency: profile.primary().map(str::to_string),
-        unconverted: profile.unconverted().to_vec(),
-    })
+    balance_breakdown_core(conn, member_id)
 }
 
 #[cfg(test)]
