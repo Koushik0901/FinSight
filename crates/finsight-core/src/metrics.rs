@@ -635,7 +635,7 @@ pub fn robust_monthly_expense_cents_scoped(
     }
     vals.sort_unstable();
     let mid = vals.len() / 2;
-    let median = if vals.len().is_multiple_of(2) {
+    let median = if vals.len() % 2 == 0 {
         (vals[mid - 1] + vals[mid]) / 2
     } else {
         vals[mid]
@@ -665,7 +665,7 @@ fn rolling_averages_scoped(
 ) -> CoreResult<RollingAverages> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
     let (income_total, expense_total) = income_expense_since_for(conn, &cutoff, scope)?;
-    let (months_with_data, data_span_days) = data_coverage_since(conn, &cutoff)?;
+    let (months_with_data, data_span_days) = data_coverage_since_scoped(conn, &cutoff, scope)?;
     let months = months_in_span(months_with_data, days);
     let avg_income = income_total / months;
     let fallback_expense = expense_total / months;
@@ -703,20 +703,43 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
 /// calendar months, which is also how a user would describe it: "I have three
 /// months of data."
 pub(crate) fn data_coverage_since(conn: &Connection, cutoff: &str) -> CoreResult<(i64, i64)> {
+    data_coverage_since_scoped(conn, cutoff, None)
+}
+
+pub(crate) fn data_coverage_since_scoped(
+    conn: &Connection,
+    cutoff: &str,
+    scope: Option<&str>,
+) -> CoreResult<(i64, i64)> {
     let pred = non_investment_txn_predicate("t");
-    // Scoped identically to the totals it divides. Counting months of history
-    // from rows the numerator excludes would divide primary-currency spending
-    // by a foreign account's calendar.
     let cur = primary_currency_clause(conn, "t");
-    let (months, earliest): (i64, Option<String>) = conn.query_row(
-        &format!(
-            "SELECT COUNT(DISTINCT strftime('%Y-%m', t.posted_at)), MIN(t.posted_at) \
-             FROM transactions t \
-             WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
-        ),
-        params![cutoff],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
+    let (months, earliest): (i64, Option<String>) = match scope {
+        None => conn.query_row(
+            &format!(
+                "SELECT COUNT(DISTINCT strftime('%Y-%m', t.posted_at)), MIN(t.posted_at) \
+                  FROM transactions t \
+                  WHERE t.posted_at >= ?1 AND t.is_transfer = 0 AND {pred}{cur}"
+            ),
+            params![cutoff],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?,
+        Some(member_id) => conn.query_row(
+            &format!(
+                "SELECT COUNT(DISTINCT strftime('%Y-%m', t.posted_at)), MIN(t.posted_at) \
+                  FROM ( \
+                    SELECT t.posted_at AS posted_at, \
+                           CASE WHEN t.owner_member_id IS NOT NULL \
+                                THEN (CASE WHEN t.owner_member_id = ?1 THEN 1.0 ELSE 0.0 END) \
+                                ELSE COALESCE(w.weight, 0.0) END AS mw \
+                    FROM transactions t \
+                    LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+                    WHERE t.posted_at >= ?2 AND t.is_transfer = 0 AND {pred}{cur} \
+                  ) t WHERE t.mw > 0.0001"
+            ),
+            params![member_id, cutoff],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?,
+    };
     let span_days = earliest
         .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e).ok())
         .map(|first| {

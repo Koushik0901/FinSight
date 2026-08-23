@@ -67,7 +67,6 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
             }
             None
         }
-        Err(_) => None,
     });
     // Safari/WebKit can time out an otherwise healthy EventSource when the
     // only traffic is an SSE comment. Send a real, valid envelope instead;
