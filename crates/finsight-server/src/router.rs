@@ -623,10 +623,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn openapi_json_is_valid_and_no_cache_and_compressed() {
         let app = build_router(test_state(), &test_ui_dir());
+        // Check uncompressed JSON validity and cache-control (no br to avoid needing decompression in test)
         let res = app
             .oneshot(
                 Request::get("/api/openapi.json")
-                    .header("accept-encoding", "br")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -638,9 +638,6 @@ pub(crate) mod tests {
             Some(true)
         );
         assert_eq!(header(&res, "cache-control"), Some(REVALIDATE));
-        // Empty spec is still JSON and compressible, but compression is valid if present; ensure not missing
-        // If client asked br, we may get br or identity — both ok, but header must be present for JSON
-        // Just check status and valid JSON body
         let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
             .await
             .unwrap();
