@@ -105,9 +105,7 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<SimpleFinConnection>> {
                     .ok()
                     .map(|d| d.with_timezone(&Utc))
             }),
-            created_at: DateTime::parse_from_rfc3339(&created_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: super::rfc3339(11, &created_s)?,
         })
     })?;
     let mut out = Vec::new();
@@ -223,9 +221,7 @@ pub fn find_by_conn_id(
                     .ok()
                     .map(|d| d.with_timezone(&Utc))
             }),
-            created_at: DateTime::parse_from_rfc3339(&created_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: super::rfc3339(11, &created_s)?,
         })
     })?;
     Ok(rows.next().transpose()?)

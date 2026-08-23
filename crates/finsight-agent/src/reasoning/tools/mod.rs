@@ -2,6 +2,50 @@ pub mod act;
 pub mod read;
 pub mod spending;
 
+/// Names of the finance-question tools the planner references by name —
+/// `required_tools` plans and the per-question evidence builders in
+/// `crate::planning` all point at these.
+///
+/// This module is the single spelling of each name: the tool impls in
+/// `read.rs` return these consts, and `planning` references them through the
+/// consts too, so renaming a tool is one edit here. The
+/// `planner_referenced_tool_names_are_registered` test fails if a name ever
+/// stops matching a registered tool.
+pub mod names {
+    pub const GET_FINANCIAL_SNAPSHOT: &str = "get_financial_snapshot";
+    pub const ANALYZE_CASH_INFLOW: &str = "analyze_cash_inflow";
+    pub const CALCULATE_GOAL_ETA: &str = "calculate_goal_eta";
+    pub const RANK_DEBT_PAYOFF: &str = "rank_debt_payoff";
+    pub const PLAN_SINKING_FUNDS: &str = "plan_sinking_funds";
+    pub const COMPARE_PAYOFF_STRATEGIES: &str = "compare_payoff_strategies";
+    pub const COMPARE_DEBT_VS_GOAL: &str = "compare_debt_vs_goal";
+    pub const RUN_DEBT_PAYOFF_SCENARIOS: &str = "run_debt_payoff_scenarios";
+    pub const RUN_GOAL_ALLOCATION_SCENARIOS: &str = "run_goal_allocation_scenarios";
+    pub const RUN_GOAL_CONFLICT_SCENARIO: &str = "run_goal_conflict_scenario";
+    pub const RUN_EMERGENCY_FUND_SCENARIOS: &str = "run_emergency_fund_scenarios";
+    pub const RUN_CASHFLOW_TIMELINE: &str = "run_cashflow_timeline";
+    pub const RUN_PURCHASE_AFFORDABILITY: &str = "run_purchase_affordability";
+    pub const GET_DATA_QUALITY_REPORT: &str = "get_data_quality_report";
+
+    /// Every name above. Drives the registry-membership guard test.
+    pub const PLANNER_TOOLS: &[&str] = &[
+        GET_FINANCIAL_SNAPSHOT,
+        ANALYZE_CASH_INFLOW,
+        CALCULATE_GOAL_ETA,
+        RANK_DEBT_PAYOFF,
+        PLAN_SINKING_FUNDS,
+        COMPARE_PAYOFF_STRATEGIES,
+        COMPARE_DEBT_VS_GOAL,
+        RUN_DEBT_PAYOFF_SCENARIOS,
+        RUN_GOAL_ALLOCATION_SCENARIOS,
+        RUN_GOAL_CONFLICT_SCENARIO,
+        RUN_EMERGENCY_FUND_SCENARIOS,
+        RUN_CASHFLOW_TIMELINE,
+        RUN_PURCHASE_AFFORDABILITY,
+        GET_DATA_QUALITY_REPORT,
+    ];
+}
+
 use crate::reasoning::messages::{AgentDraftAction, ToolDefinition};
 use anyhow::Result;
 use rusqlite::Connection;
@@ -389,6 +433,22 @@ mod format_tests {
 mod execution_smoke_tests {
     use super::*;
     use crate::reasoning::messages::{AgentChange, AgentDraftAction};
+
+    /// Every planner-referenced tool must exist in the registry: a renamed or
+    /// removed tool would otherwise compile fine and break finance-question
+    /// plans at runtime (the plan requires a tool the model can never call).
+    #[test]
+    fn planner_referenced_tool_names_are_registered() {
+        let tools = standard_toolset();
+        let mut seen = std::collections::BTreeSet::new();
+        for name in names::PLANNER_TOOLS {
+            assert!(
+                tools.get(name).is_some(),
+                "planner references `{name}` but it is not registered in standard_toolset()"
+            );
+            assert!(seen.insert(*name), "duplicate in PLANNER_TOOLS: {name}");
+        }
+    }
 
     /// Tools whose required argument names a real entity (a goal, a merchant).
     /// On an empty ledger there is nothing valid to name, so exercising them

@@ -146,7 +146,7 @@ pub async fn import_csv(
     let summary = tokio::task::spawn_blocking(move || {
         CsvProvider::import(&path, &account_id, &import_id, &mapping, &import_db, |p| {
             progress_sink.emit(
-                "import-progress",
+                crate::sink::event_names::IMPORT_PROGRESS,
                 serde_json::to_value(ProgressPayload {
                     import_id: import_id_for_progress.clone(),
                     rows_done: p.rows_done,
@@ -307,7 +307,7 @@ pub async fn import_csv(
         ai_categorization_started,
     };
     sink.emit(
-        "import-complete",
+        crate::sink::event_names::IMPORT_COMPLETE,
         serde_json::to_value(&result).expect("ImportResult serializes"),
     );
 

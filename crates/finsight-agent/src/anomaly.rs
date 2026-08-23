@@ -1,20 +1,15 @@
 use crate::CompletionProvider;
 use anyhow::Result;
-use finsight_core::{settings, Db};
+use finsight_core::{
+    anomaly::{statistical_outlier_candidates, AnomalyCandidate},
+    settings, Db,
+};
 use rusqlite::params;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
 const BATCH_SIZE: usize = 20;
-
-struct Candidate {
-    txn_id: String,
-    merchant_raw: String,
-    amount_cents: i64,
-    median_cents: i64,
-    p75_cents: i64,
-}
 
 #[derive(Deserialize)]
 struct LlmAnomalyResult {
@@ -23,25 +18,36 @@ struct LlmAnomalyResult {
     reason: String,
 }
 
-/// Detect anomalous transactions using a two-phase approach:
+/// Detect anomalous transactions using a two-phase approach on top of the one
+/// authoritative statistics engine ([`finsight_core::anomaly`]):
 ///
-/// 1. **Statistical pre-filter (IQR):** For each merchant with ≥ 3 historical
-///    transactions, compute Q1/Q3 of `abs(amount_cents)`. Flag candidates where
-///    `abs(amount) > Q3 + 1.5 * IQR`. Merchants with < 3 transactions are skipped.
+/// 1. **Candidates:** [`statistical_outlier_candidates`] applies the same
+///    median/MAD thresholds and the same exclusions (transfers, settle-up rows,
+///    investment-account trades, user-dismissed charges) as the deterministic
+///    recompute. There is deliberately no second statistical implementation
+///    here: a divergent one could re-flag charges the user explicitly
+///    dismissed and overwrite the authoritative detector's verdicts.
+/// 2. **LLM confirmation:** candidates are sent to the LLM in batches with
+///    their historical baseline; only transactions the LLM confirms get
+///    flagged, with the LLM's human-readable reason stored as explanation.
 ///
-/// 2. **LLM confirmation:** Send candidates to the LLM in batches with their
-///    historical baseline. The LLM returns `is_anomaly` + a human-readable reason.
-///    Only transactions confirmed by the LLM get `is_anomaly = 1`.
-///
-/// Evaluates all recent (≤ 90 days) transactions not yet flagged as anomalies.
-/// Returns the number of anomalies flagged.
+/// Only *not-yet-flagged* transactions are reviewed (the same scope the
+/// deterministic recompute just (re)computed from live data). Writes hold a
+/// reset-barrier lease across a single transactional commit, so a concurrent
+/// Delete-All can never leave these flags orphaned on a wiped ledger.
+/// Returns the number of anomalies written.
 pub async fn detect_anomalies(db: &Db, provider: Arc<dyn CompletionProvider>) -> Result<u32> {
-    // ── Step 1: statistical pre-filter ──────────────────────────────────────
-    let candidates: Vec<Candidate> = {
+    // Snapshot the barrier epoch before any LLM round-trip: if a Delete-All
+    // lands while we await the provider, the lease below reports superseded
+    // and we skip writing entirely.
+    let start_epoch = db.reset_barrier().epoch();
+
+    // ── Step 1: candidates from the shared core analysis ────────────────────
+    let candidates: Vec<AnomalyCandidate> = {
         let db = db.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db.get()?;
-            find_statistical_candidates(&conn)
+            statistical_outlier_candidates(&conn)
         })
         .await??
     };
@@ -68,8 +74,7 @@ Each item: {\"txn_id\": \"...\", \"is_anomaly\": true/false, \"reason\": \"one s
                     "txn_id": c.txn_id,
                     "merchant_raw": c.merchant_raw,
                     "amount_cents": c.amount_cents,
-                    "historical_median_cents": c.median_cents,
-                    "historical_p75_cents": c.p75_cents,
+                    "historical_median_cents": c.typical_cents,
                 })
             })
             .collect();
@@ -89,25 +94,36 @@ Each item: {\"txn_id\": \"...\", \"is_anomaly\": true/false, \"reason\": \"one s
         }
     }
 
-    let count = confirmed.len() as u32;
-
-    // ── Step 3: write results ────────────────────────────────────────────────
-    if !confirmed.is_empty() {
-        let db = db.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db.get()?;
-            for (txn_id, reason) in &confirmed {
-                conn.execute(
-                    "UPDATE transactions SET is_anomaly = 1, ai_explanation = ?1 WHERE id = ?2",
-                    params![reason, txn_id],
-                )?;
-            }
-            Ok::<_, anyhow::Error>(())
-        })
-        .await??;
+    // ── Step 3: transactional write under the reset barrier ─────────────────
+    if confirmed.is_empty() {
+        return Ok(0);
     }
+    let lease = db.reset_barrier().writer_lease(start_epoch).await;
+    if lease.superseded() {
+        return Ok(0);
+    }
+    let db = db.clone();
+    let written = tokio::task::spawn_blocking(move || {
+        let mut conn = db.get()?;
+        let tx = conn.transaction()?;
+        let mut written = 0u32;
+        {
+            // The dismissal guard is belt-and-braces (candidates already exclude
+            // dismissed rows): between listing and writing, a dismissal may land.
+            let mut stmt = tx.prepare(
+                "UPDATE transactions SET is_anomaly = 1, ai_explanation = ?1 \
+                 WHERE id = ?2 AND COALESCE(anomaly_dismissed, 0) = 0",
+            )?;
+            for (txn_id, reason) in &confirmed {
+                written += stmt.execute(params![reason, txn_id])? as u32;
+            }
+        }
+        tx.commit()?;
+        Ok::<_, anyhow::Error>(written)
+    })
+    .await??;
 
-    Ok(count)
+    Ok(written)
 }
 
 /// Store last scan metadata in settings KV after a completed categorization run.
@@ -122,58 +138,6 @@ pub fn store_last_scan(
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-fn find_statistical_candidates(conn: &rusqlite::Connection) -> Result<Vec<Candidate>> {
-    // Fetch recent, not-yet-flagged transactions.
-    let txns: Vec<(String, String, i64)> = {
-        let mut stmt = conn.prepare(
-            "SELECT id, merchant_raw, amount_cents \
-             FROM transactions \
-             WHERE posted_at >= date('now', '-90 days') AND is_anomaly = 0",
-        )?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        rows.collect::<Result<Vec<_>, _>>()?
-    };
-
-    let mut candidates = Vec::new();
-
-    for (txn_id, merchant_raw, amount_cents) in txns {
-        let abs_amount = amount_cents.unsigned_abs() as i64;
-
-        // Get historical amounts for this merchant (all except this transaction).
-        let mut hist_stmt = conn.prepare(
-            "SELECT ABS(amount_cents) FROM transactions \
-             WHERE merchant_raw = ?1 AND id != ?2 \
-             ORDER BY ABS(amount_cents)",
-        )?;
-        let hist: Vec<i64> = hist_stmt
-            .query_map(params![merchant_raw, txn_id], |r| r.get(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if hist.len() < 3 {
-            continue; // not enough baseline
-        }
-
-        let n = hist.len();
-        let q1 = hist[n / 4];
-        let q3 = hist[(3 * n) / 4];
-        let median = hist[n / 2];
-        let iqr = q3 - q1;
-        let upper_fence = q3 + (iqr * 3 / 2); // Q3 + 1.5 * IQR
-
-        if abs_amount > upper_fence && iqr > 0 {
-            candidates.push(Candidate {
-                txn_id,
-                merchant_raw,
-                amount_cents,
-                median_cents: median,
-                p75_cents: q3,
-            });
-        }
-    }
-
-    Ok(candidates)
-}
 
 #[cfg(test)]
 mod tests {
@@ -220,8 +184,14 @@ mod tests {
         let outlier_id;
         {
             let mut conn = db.get().unwrap();
-            // 4 normal transactions at ~$15, plus one $200 outlier
-            seed_merchant(&mut conn, "a1", "COSTCO", &[-1500, -1600, -1400, -1550]);
+            // 6 normal transactions at ~$15 (the shared core criteria need a
+            // group of >= 6), plus one $200 outlier.
+            seed_merchant(
+                &mut conn,
+                "a1",
+                "COSTCO",
+                &[-1500, -1600, -1400, -1550, -1450, -1500],
+            );
             // Insert the outlier separately so we know its ID
             outlier_id = "outlier-1".to_string();
             conn.execute(
@@ -238,8 +208,9 @@ mod tests {
             tool_turns: Mutex::new(vec![]),
         });
 
-        let _count = detect_anomalies(&db, provider).await.unwrap();
+        let count = detect_anomalies(&db, provider).await.unwrap();
 
+        assert_eq!(count, 1);
         let conn = db.get().unwrap();
         let is_anomaly: i64 = conn
             .query_row(
@@ -256,7 +227,7 @@ mod tests {
         let (_d, db) = fresh_db();
         {
             let mut conn = db.get().unwrap();
-            // Only 2 transactions — below the 3-occurrence threshold
+            // Only 2 transactions — below the shared 6-occurrence threshold
             seed_merchant(&mut conn, "a2", "RARE_STORE", &[-5000, -50000]);
         }
 
@@ -270,6 +241,87 @@ mod tests {
 
         let count = detect_anomalies(&db, provider).await.unwrap();
         assert_eq!(count, 0, "sparse merchant should not produce anomalies");
+    }
+
+    #[tokio::test]
+    async fn never_flags_a_dismissed_charge() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_merchant(
+                &mut conn,
+                "a3",
+                "DISMISSED CO",
+                &[-1500, -1600, -1400, -1550, -1450, -1500],
+            );
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES('dismissed-1','a3',date('now', '-1 days'),-20000,'DISMISSED CO','cleared',0,date('now', '-1 days'))",
+                [],
+            ).unwrap();
+            finsight_core::anomaly::set_dismissed(&conn, "dismissed-1", true).unwrap();
+        }
+
+        // The LLM would confirm the charge if it were ever asked.
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: json!([{"txn_id": "dismissed-1", "is_anomaly": true, "reason": "large"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+
+        let count = detect_anomalies(&db, provider).await.unwrap();
+        assert_eq!(count, 0, "dismissed charges must never be re-flagged");
+        let conn = db.get().unwrap();
+        let (isa, dis): (i64, i64) = conn
+            .query_row(
+                "SELECT is_anomaly, anomaly_dismissed FROM transactions WHERE id='dismissed-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((isa, dis), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn does_not_re_review_already_flagged_rows() {
+        let (_d, db) = fresh_db();
+        {
+            let mut conn = db.get().unwrap();
+            seed_merchant(
+                &mut conn,
+                "a4",
+                "FLAGGED CO",
+                &[-1500, -1600, -1400, -1550, -1450, -1500],
+            );
+            conn.execute(
+                "INSERT INTO transactions(id,account_id,posted_at,amount_cents,merchant_raw,status,is_anomaly,created_at) \
+                 VALUES('flagged-1','a4',date('now', '-1 days'),-20000,'FLAGGED CO','cleared',1,date('now', '-1 days'))",
+                [],
+            ).unwrap();
+        }
+
+        let provider = Arc::new(MockCompletionProvider {
+            provider_id: "mock".into(),
+            model_id: "test".into(),
+            response: json!([{"txn_id": "flagged-1", "is_anomaly": true, "reason": "llm reason"}]),
+            tool_turns: Mutex::new(vec![]),
+        });
+
+        // Already-flagged rows are outside the review scope; the deterministic
+        // explanation written by the core detector stays untouched.
+        let count = detect_anomalies(&db, provider).await.unwrap();
+        assert_eq!(count, 0);
+        let conn = db.get().unwrap();
+        let (isa, why): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_anomaly, ai_explanation FROM transactions WHERE id='flagged-1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(isa, 1);
+        assert_ne!(why.as_deref(), Some("llm reason"));
     }
 
     #[test]

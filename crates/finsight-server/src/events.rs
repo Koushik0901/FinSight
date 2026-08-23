@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-const KEEP_ALIVE_EVENT: &str = "finsight:keepalive";
+const KEEP_ALIVE_EVENT: &str = finsight_api::sink::event_names::KEEP_ALIVE;
 
 /// One SSE `data:` line: `{"event": name, "payload": ...}` — the shim
 /// dispatches on `event`, mirroring Tauri's listen(event) semantics.

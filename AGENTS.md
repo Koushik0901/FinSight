@@ -104,14 +104,21 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
    `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
-2. Add a thin wrapper in `crates/finsight-app/src/commands/` that delegates to it via
+2. Add a thin wrapper in `crates/finsight-bindings/src/commands/` that delegates to it via
    `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
-3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-app/src/lib.rs`
-4. **Add a `finsight-server` route**: one match arm in `crates/finsight-server/src/dispatch.rs`
-   using the strict `arg(&p, "camelCaseKey")` convention, plus the command name in
-   `SUPPORTED` (or `UNSUPPORTED` if it genuinely can't work over HTTP — e.g. it takes a
-   client-supplied filesystem path). Skipping this fails `tests/parity.rs`.
-5. `cargo run -p finsight-bindings --bin export_bindings` — regenerates `ui/src/api/bindings.ts`
+3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-bindings/src/lib.rs`
+4. **Add a `finsight-server` route**: ONE entry in the `rpc_routes!(api, events, cmd, p, c: …)`
+   table at the bottom of `crates/finsight-server/src/dispatch.rs`, using the strict
+   `arg(&p, "camelCaseKey")` convention (or `UNSUPPORTED` if it genuinely can't work over
+   HTTP — e.g. it takes a client-supplied filesystem path). The macro generates both the
+   dispatch arm and the `SUPPORTED` list, so they cannot drift. Skipping this fails
+   `tests/parity.rs`.
+5. `cargo run -p finsight-bindings --bin export_bindings` — regenerates `ui/src/api/bindings.ts`,
+   plus `ui/src/api/eventNames.ts` and `ui/src/api/commandNames.ts`. Event names live in
+   `finsight_api::sink::event_names` (Rust) and are GENERATED into TypeScript — never spell a
+   wire event name as a literal. The dev mock backend (`ui/src/dev/mockBackend.ts`) types its
+   responders against the generated `CommandName` union, so new/renamed commands surface at
+   type-check time.
 
 ### Database migrations
 
@@ -134,7 +141,7 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-app` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### TypeScript type field naming
 

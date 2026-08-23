@@ -97,6 +97,21 @@ pub fn is_liquid_type(t: AccountType) -> bool {
 /// Public so that aggregates which must build their own SQL — a `GROUP BY
 /// month` series, say — narrow by exactly the same rule instead of
 /// re-implementing it and drifting.
+/// The canonical ranking of balance snapshots used everywhere a "latest known
+/// balance per account" is selected (repo queries, agent snapshot loaders,
+/// Copilot context, and reasoning tools): newest `as_of_date` first — pass
+/// `"ASC"` for the reverse — with source precedence
+/// `simplefin` > `derived` > `seed` > anything else.
+///
+/// One copy on purpose: adding a new `source` value means editing this
+/// helper and every surface updates together. `alias` qualifies the columns
+/// (`""`, `"b."`, …) to match the surrounding query.
+pub fn balance_snapshot_order(alias: &str, direction: &str) -> String {
+    format!(
+        "{alias}as_of_date {direction}, CASE {alias}source WHEN 'simplefin' THEN 0 \
+         WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END"
+    )
+}
 pub fn primary_currency_clause(conn: &Connection, alias: &str) -> String {
     let Ok(profile) = crate::currency::currency_profile(conn) else {
         return String::new();

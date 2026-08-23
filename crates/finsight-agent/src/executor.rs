@@ -131,10 +131,28 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
         )));
     }
 
-    copilot_actions::set_bundle_status(conn, bundle_id, "executing")?;
+    // One atomic unit around the whole execution. Every item runs against the
+    // same connection and only touches local DB state (no LLM calls), so this
+    // is cheap — and it makes a crash mid-bundle roll back to the pre-execution
+    // snapshot ("pending"/"reviewed") instead of leaving the bundle stuck in
+    // "executing" with a half-mixed ledger. Per-item failure handling below is
+    // unchanged: an item that fails is recorded as failed *inside* the same
+    // transaction; only an actual crash/connection error aborts everything.
+    // (repos::atomic rather than conn.transaction() because every repo helper
+    // below takes `&mut Connection`.)
+    finsight_core::repos::atomic(conn, |conn| execute_bundle_tx(conn, &bundle))
+}
+
+fn execute_bundle_tx(
+    conn: &mut Connection,
+    bundle: &finsight_core::models::AgentActionBundle,
+) -> CoreResult<BundleExecutionResult> {
+    let bundle_id = bundle.id.clone();
+    copilot_actions::set_bundle_status(conn, &bundle_id, "executing")?;
 
     let approved_items: Vec<_> = bundle
         .items
+        .clone()
         .into_iter()
         .filter(|item| item.status == "approved")
         .collect();
@@ -156,7 +174,7 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
                 copilot_actions::insert_execution_log_entry(
                     conn,
                     &item.id,
-                    bundle_id,
+                    &bundle_id,
                     &item.action_kind,
                     "success",
                     Some(&result_json),
@@ -172,16 +190,18 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
                 });
             }
             Err(err) => {
-                let status = if err.to_string().contains("validation:") {
-                    "validation_error"
-                } else {
-                    "failed"
+                // Classify by error variant, not by substring-matching the
+                // message: any future message containing "validation:" would
+                // otherwise be miscounted as a validation_error.
+                let status = match &err {
+                    CoreError::Validation(_) => "validation_error",
+                    _ => "failed",
                 };
                 copilot_actions::set_item_status(conn, &item.id, "failed")?;
                 copilot_actions::insert_execution_log_entry(
                     conn,
                     &item.id,
-                    bundle_id,
+                    &bundle_id,
                     &item.action_kind,
                     status,
                     None,
@@ -206,7 +226,7 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
     } else {
         "partially_executed"
     };
-    copilot_actions::set_bundle_status(conn, bundle_id, final_status)?;
+    copilot_actions::set_bundle_status(conn, &bundle_id, final_status)?;
 
     let navigation = crate::navigation::navigation_targets(
         &applied
@@ -219,7 +239,7 @@ pub fn execute_bundle(conn: &mut Connection, bundle_id: &str) -> CoreResult<Bund
     );
 
     Ok(BundleExecutionResult {
-        bundle_id: bundle_id.to_string(),
+        bundle_id,
         executed,
         succeeded,
         failed,
@@ -279,10 +299,11 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
         "set_transaction_category" => {
             let payload: SetTransactionCategoryPayload = parse_payload(&item.payload_json)?;
 
-            // Existence check up front, purely to keep the "validation:
-            // transaction not found" error this branch has always produced.
-            // Delegating to `update` for a missing id would still fail, but as
-            // a foreign-key violation from inside the audit insert — a worse
+            // Existence check up front, purely to keep the
+            // "validation: transaction not found" error this branch has always
+            // produced (now via `CoreError::Validation`). Delegating to
+            // `update` for a missing id would still fail, but as a
+            // foreign-key violation from inside the audit insert — a worse
             // message for the same condition.
             let exists = conn
                 .query_row(
@@ -356,8 +377,8 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
                     format!("Transaction {} anomaly cleared", payload.transaction_id),
                 ),
                 other => {
-                    return Err(CoreError::InvalidState(format!(
-                        "validation: unsupported transaction flag '{other}'"
+                    return Err(CoreError::Validation(format!(
+                        "unsupported transaction flag '{other}'"
                     )))
                 }
             };
@@ -481,8 +502,8 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
         "recategorize_bulk" => {
             let payload: RecategorizeBulkPayload = parse_payload(&item.payload_json)?;
             if payload.assignments.is_empty() {
-                return Err(CoreError::InvalidState(
-                    "validation: recategorize_bulk has no assignments".to_string(),
+                return Err(CoreError::Validation(
+                    "recategorize_bulk has no assignments".to_string(),
                 ));
             }
             let mut applied = 0usize;
@@ -589,14 +610,12 @@ fn execute_item(conn: &mut Connection, item: &AgentActionItem) -> CoreResult<Str
 
 fn parse_payload<T: for<'de> Deserialize<'de>>(json: &str) -> CoreResult<T> {
     serde_json::from_str(json)
-        .map_err(|e| CoreError::InvalidState(format!("validation: invalid payload: {e}")))
+        .map_err(|e| CoreError::Validation(format!("invalid payload: {e}")))
 }
 
 fn ensure_changed(changed: usize, entity: &str) -> CoreResult<()> {
     if changed == 0 {
-        Err(CoreError::InvalidState(format!(
-            "validation: {entity} not found"
-        )))
+        Err(CoreError::Validation(format!("{entity} not found")))
     } else {
         Ok(())
     }

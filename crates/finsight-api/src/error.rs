@@ -39,6 +39,9 @@ impl From<CoreError> for AppError {
             CoreError::Pool(_) => "core.pool",
             CoreError::Migration(_) => "core.migration",
             CoreError::InvalidState(_) => "core.invalid_state",
+            // Validation failures historically surfaced as invalid_state over
+            // the wire; keep that code so frontend handling is unchanged.
+            CoreError::Validation(_) => "core.invalid_state",
         };
         AppError::new(code, e.to_string())
     }

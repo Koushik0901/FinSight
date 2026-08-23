@@ -1,5 +1,17 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// Lock a mutex, recovering from poisoning instead of panicking.
+///
+/// A panic in one request thread while holding a server mutex (the users.db
+/// connection, the session map, the runtime registry) would otherwise poison
+/// it and turn every subsequent login/token/registry operation into a panic
+/// loop until restart. The guarded data is kept consistent by transactional
+/// discipline in the writers, so a poisoned-but-recovered lock is strictly
+/// better than a bricked auth layer.
+pub(crate) fn lock_recovered<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// How long an OAuth client registration that no one ever consented to is kept
 /// before the startup sweep drops it.

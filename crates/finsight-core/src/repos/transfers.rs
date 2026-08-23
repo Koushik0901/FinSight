@@ -39,9 +39,7 @@ pub fn find_candidates(
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, i64>(1)?,
-            DateTime::parse_from_rfc3339(&posted_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            super::rfc3339(2, &posted_s)?,
         ))
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.into())
@@ -85,23 +83,17 @@ pub fn list_suggestions(conn: &mut Connection) -> CoreResult<Vec<TransferSuggest
         Ok(TransferSuggestion {
             id: r.get(0)?,
             confidence: r.get(1)?,
-            detected_at: DateTime::parse_from_rfc3339(&detected_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            detected_at: super::rfc3339(2, &detected_s)?,
             from_transaction_id: r.get(3)?,
             from_account_name: r.get(4)?,
             from_merchant: r.get(5)?,
             from_amount_cents: r.get(6)?,
-            from_posted_at: DateTime::parse_from_rfc3339(&from_posted_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            from_posted_at: super::rfc3339(7, &from_posted_s)?,
             to_transaction_id: r.get(8)?,
             to_account_name: r.get(9)?,
             to_merchant: r.get(10)?,
             to_amount_cents: r.get(11)?,
-            to_posted_at: DateTime::parse_from_rfc3339(&to_posted_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            to_posted_at: super::rfc3339(12, &to_posted_s)?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.into())

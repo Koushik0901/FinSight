@@ -27,12 +27,38 @@ const MAD_TO_SIGMA: f64 = 1.4826;
 
 struct Row {
     id: String,
+    merchant_raw: String,
+    /// Signed amount, preserved so downstream consumers (e.g. the LLM
+    /// confirmation pass) can show the original charge.
+    amount_cents: i64,
     abs_cents: f64,
     merchant_key: String,
     was_flagged: bool,
     /// User marked this flagged charge as reviewed-and-fine — it still counts
     /// toward its merchant's baseline but must never be re-flagged.
     dismissed: bool,
+}
+
+/// One statistically-unusual expense found by [`recompute`]'s shared analysis.
+struct Flagged {
+    id: String,
+    merchant_raw: String,
+    amount_cents: i64,
+    /// Median absolute charge for the merchant group — the "typical" baseline.
+    typical_cents: i64,
+    reason: String,
+    /// Whether this row already carried a flag when the analysis ran. The LLM
+    /// confirmation pass reviews only *new* candidates (`was_flagged = false`),
+    /// matching the historical "evaluate transactions not yet flagged" scope.
+    was_flagged: bool,
+}
+
+/// Result of the shared load/group/threshold analysis over expense rows.
+struct Analysis {
+    rows: Vec<Row>,
+    /// merchant_key → indices into `rows`.
+    groups: std::collections::HashMap<String, Vec<usize>>,
+    flagged: Vec<Flagged>,
 }
 
 /// Recompute `is_anomaly` for every expense transaction from live data.
@@ -81,6 +107,84 @@ pub fn set_dismissed(conn: &Connection, txn_id: &str, dismissed: bool) -> CoreRe
 /// (no extra query, merchants normalized once) so the scoped path is no slower
 /// than the full one on a single-account ledger.
 fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u32> {
+    let analysis = analyze(conn, scope_account)?;
+    let scoped = scope_account.is_some();
+
+    let tx = conn.transaction()?;
+    // Clear prior flags. Full pass: clear everything stale in one statement.
+    // Scoped pass: clear only rows belonging to the in-scope groups, so other
+    // merchants' flags survive untouched.
+    if scoped {
+        // Only rows that are CURRENTLY flagged need clearing, and only within
+        // touched groups — proportional to the (small) set of existing
+        // anomalies in those groups, not every touched row.
+        let mut clear =
+            tx.prepare_cached("UPDATE transactions SET is_anomaly = 0 WHERE id = ?1")?;
+        for idxs in analysis.groups.values() {
+            for &i in idxs {
+                if analysis.rows[i].was_flagged {
+                    clear.execute([&analysis.rows[i].id])?;
+                }
+            }
+        }
+    } else {
+        tx.execute(
+            "UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1",
+            [],
+        )?;
+    }
+    // Persist fresh flags + a deterministic explanation.
+    {
+        let mut set_flag = tx.prepare_cached(
+            "UPDATE transactions SET is_anomaly = 1, ai_explanation = ?1 WHERE id = ?2",
+        )?;
+        for f in &analysis.flagged {
+            set_flag.execute(rusqlite::params![f.reason, f.id])?;
+        }
+    }
+    tx.commit()?;
+
+    Ok(analysis.flagged.len() as u32)
+}
+
+/// A candidate charge surfaced by [`statistical_outlier_candidates`] for
+/// downstream confirmation (e.g. LLM review in finsight-agent). Derived from
+/// the exact same analysis as [`recompute_anomalies`], so there is only one
+/// statistics implementation in the system.
+pub struct AnomalyCandidate {
+    pub txn_id: String,
+    pub merchant_raw: String,
+    /// Signed amount of the candidate charge.
+    pub amount_cents: i64,
+    /// Median absolute charge for this merchant group (the typical baseline).
+    pub typical_cents: i64,
+}
+
+/// Statistical outlier candidates under exactly the criteria
+/// [`recompute_anomalies`] uses — same exclusions (transfers, settle-up rows,
+/// investment-account rows), same robust thresholds, and never a row the user
+/// dismissed. Rows that already carry a flag are excluded, matching the
+/// historical "evaluate transactions not yet flagged" review scope of the
+/// agent-side confirmation pass. Read-only; touches no state.
+pub fn statistical_outlier_candidates(conn: &Connection) -> CoreResult<Vec<AnomalyCandidate>> {
+    let analysis = analyze(conn, None)?;
+    Ok(analysis
+        .flagged
+        .into_iter()
+        .filter(|f| !f.was_flagged)
+        .map(|f| AnomalyCandidate {
+            txn_id: f.id,
+            merchant_raw: f.merchant_raw,
+            amount_cents: f.amount_cents,
+            typical_cents: f.typical_cents,
+        })
+        .collect())
+}
+
+/// Shared core. Loads expenses, groups them by normalized merchant (scoped to
+/// `scope_account`'s merchants when set), and judges each group with the
+/// median/MAD thresholds. Pure read — writing flags is `recompute`'s job.
+fn analyze(conn: &Connection, scope_account: Option<&str>) -> CoreResult<Analysis> {
     // Load expenses (exclude transfers — a large transfer is not an anomaly).
     // A group's outlier judgement needs its *full* cross-account membership, so
     // even the scoped pass loads all expenses and filters which groups to act
@@ -117,8 +221,10 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
                 }
             }
             out.push(Row {
-                id,
+                merchant_raw: raw,
+                amount_cents: amount,
                 abs_cents: amount.unsigned_abs() as f64,
+                id,
                 merchant_key,
                 was_flagged,
                 dismissed,
@@ -142,7 +248,7 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
     }
 
     // Flag robust outliers within each in-scope group.
-    let mut flagged: Vec<(String, String)> = Vec::new(); // (txn_id, reason)
+    let mut flagged: Vec<Flagged> = Vec::new();
     for idxs in groups.values() {
         if idxs.len() < MIN_HISTORY {
             continue;
@@ -171,46 +277,19 @@ fn recompute(conn: &mut Connection, scope_account: Option<&str>) -> CoreResult<u
                     a / med,
                     med / 100.0
                 );
-                flagged.push((rows[i].id.clone(), reason));
+                flagged.push(Flagged {
+                    id: rows[i].id.clone(),
+                    merchant_raw: rows[i].merchant_raw.clone(),
+                    amount_cents: rows[i].amount_cents,
+                    typical_cents: med.round() as i64,
+                    reason,
+                    was_flagged: rows[i].was_flagged,
+                });
             }
         }
     }
 
-    let tx = conn.transaction()?;
-    // Clear prior flags. Full pass: clear everything stale in one statement.
-    // Scoped pass: clear only rows belonging to the in-scope groups, so other
-    // merchants' flags survive untouched.
-    if scoped {
-        // Only rows that are CURRENTLY flagged need clearing, and only within
-        // touched groups — proportional to the (small) set of existing
-        // anomalies in those groups, not every touched row.
-        let mut clear =
-            tx.prepare_cached("UPDATE transactions SET is_anomaly = 0 WHERE id = ?1")?;
-        for idxs in groups.values() {
-            for &i in idxs {
-                if rows[i].was_flagged {
-                    clear.execute([&rows[i].id])?;
-                }
-            }
-        }
-    } else {
-        tx.execute(
-            "UPDATE transactions SET is_anomaly = 0 WHERE is_anomaly = 1",
-            [],
-        )?;
-    }
-    // Persist fresh flags + a deterministic explanation.
-    {
-        let mut set_flag = tx.prepare_cached(
-            "UPDATE transactions SET is_anomaly = 1, ai_explanation = ?1 WHERE id = ?2",
-        )?;
-        for (id, reason) in &flagged {
-            set_flag.execute(rusqlite::params![reason, id])?;
-        }
-    }
-    tx.commit()?;
-
-    Ok(flagged.len() as u32)
+    Ok(Analysis { rows, groups, flagged })
 }
 
 fn median(xs: &[f64]) -> f64 {
@@ -410,6 +489,41 @@ mod tests {
         assert_eq!(
             n, 1,
             "recompute must clear stale flags and reflect only current outliers"
+        );
+    }
+
+    #[test]
+    fn candidates_match_recompute_and_exclude_flagged_and_dismissed() {
+        let (_d, db) = fresh();
+        let mut conn = db.get().unwrap();
+        for i in 0..8 {
+            ins(&conn, &format!("n{i}"), "a", "STARBUCKS  800", -1000);
+        }
+        ins(&conn, "outlier", "a", "STARBUCKS  800", -18000);
+        // A dismissed outlier: must never appear as a candidate.
+        ins(&conn, "dismissed", "a", "OTHER SHOP 1", -50000);
+        for i in 0..8 {
+            ins(&conn, &format!("m{i}"), "a", "OTHER SHOP 1", -1000);
+        }
+        set_dismissed(&conn, "dismissed", true).unwrap();
+
+        // Candidate list = exactly what a fresh recompute would flag, minus
+        // rows that already carry a flag.
+        let candidates = statistical_outlier_candidates(&conn).unwrap();
+        let ids: Vec<&str> = candidates.iter().map(|c| c.txn_id.as_str()).collect();
+        assert_eq!(ids, vec!["outlier"], "only the unflagged outlier is a candidate");
+        let cand = &candidates[0];
+        assert_eq!(cand.amount_cents, -18000);
+        assert_eq!(cand.merchant_raw, "STARBUCKS  800");
+        assert_eq!(cand.typical_cents, 1000);
+
+        // After the recompute flags it, the candidate list is empty: the LLM
+        // confirmation pass reviews only not-yet-flagged rows.
+        recompute_anomalies(&mut conn).unwrap();
+        let after = statistical_outlier_candidates(&conn).unwrap();
+        assert!(
+            after.is_empty(),
+            "already-flagged rows are outside the review scope"
         );
     }
 

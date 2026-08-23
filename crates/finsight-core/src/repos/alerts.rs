@@ -46,9 +46,7 @@ pub fn list_unacknowledged(conn: &mut Connection) -> CoreResult<Vec<SimpleFinAle
                     .ok()
                     .map(|d| d.with_timezone(&Utc))
             }),
-            created_at: DateTime::parse_from_rfc3339(&created_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: super::rfc3339(7, &created_s)?,
         })
     })?;
     let mut out = Vec::new();

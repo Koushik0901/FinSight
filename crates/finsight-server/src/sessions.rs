@@ -9,6 +9,7 @@
 //! exists solely in server-key-wrapped form. See
 //! `crypto::load_or_create_server_key` for the security tradeoff this accepts.
 
+use crate::state::lock_recovered;
 use crate::users::UsersDb;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -70,7 +71,7 @@ impl SessionStore {
         // Mirror to disk first (best-effort — a persistence hiccup must not
         // fail the login; the in-memory session still works this run).
         self.persist_row(&token, user_id, &db_key_hex, is_admin, ttl);
-        self.map.lock().unwrap().insert(
+        lock_recovered(&self.map).insert(
             token.clone(),
             SessionEntry {
                 user_id: user_id.to_string(),
@@ -96,7 +97,7 @@ impl SessionStore {
     /// restart re-authenticates transparently, no re-login.
     pub fn get(&self, token: &str) -> Option<(String, Zeroizing<String>, bool)> {
         {
-            let mut map = self.map.lock().unwrap();
+            let mut map = lock_recovered(&self.map);
             let now = Instant::now();
             match map.get_mut(token) {
                 Some(entry) if entry.expires > now => {
@@ -139,7 +140,7 @@ impl SessionStore {
         let _ = persist
             .users
             .slide_session_expiry(&token_hash, now_unix + SESSION_TTL_SECS);
-        self.map.lock().unwrap().insert(
+        lock_recovered(&self.map).insert(
             token.to_string(),
             SessionEntry {
                 user_id: row.user_id.clone(),
@@ -189,7 +190,7 @@ impl SessionStore {
     }
 
     pub fn remove(&self, token: &str) {
-        self.map.lock().unwrap().remove(token);
+        lock_recovered(&self.map).remove(token);
         // Purge the on-disk mirror too, or a signed-out session resurrects on
         // the next restart. This is a security invariant, not an optimization.
         if let Some(persist) = self.persist.as_ref() {
@@ -200,7 +201,7 @@ impl SessionStore {
 
     /// Drop every session for a user (admin deletion), in memory and on disk.
     pub fn remove_user(&self, user_id: &str) {
-        self.map.lock().unwrap().retain(|_, e| e.user_id != user_id);
+        lock_recovered(&self.map).retain(|_, e| e.user_id != user_id);
         if let Some(persist) = self.persist.as_ref() {
             let _ = persist.users.delete_user_sessions(user_id);
         }
@@ -214,7 +215,7 @@ impl SessionStore {
     /// count.
     pub fn remove_user_except(&self, user_id: &str, keep_token: &str) -> usize {
         let mem_removed = {
-            let mut map = self.map.lock().unwrap();
+            let mut map = lock_recovered(&self.map);
             let before = map.len();
             map.retain(|tok, e| e.user_id != user_id || tok == keep_token);
             before - map.len()
@@ -247,9 +248,7 @@ impl SessionStore {
     /// outlive the last session that holds it, but a sign-out on ONE device
     /// must not evict a runtime another device is still using.
     pub fn has_user_sessions(&self, user_id: &str) -> bool {
-        self.map
-            .lock()
-            .unwrap()
+        lock_recovered(&self.map)
             .values()
             .any(|e| e.user_id == user_id)
     }
@@ -310,7 +309,7 @@ impl LoginThrottle {
     /// attack is the point). An elapsed lock is cleared here, so the very next
     /// attempt proceeds normally with a fresh budget.
     pub fn is_locked(&self, username: &str) -> bool {
-        let mut map = self.entries.lock().unwrap();
+        let mut map = lock_recovered(&self.entries);
         let key = Self::key(username);
         let Some(entry) = map.get_mut(&key) else {
             return false;
@@ -331,7 +330,7 @@ impl LoginThrottle {
     /// failure. Call on EVERY failure path — including unknown-username — so
     /// the throttle can't be probed for account existence.
     pub fn record_failure(&self, username: &str) {
-        let mut map = self.entries.lock().unwrap();
+        let mut map = lock_recovered(&self.entries);
         let entry = map.entry(Self::key(username)).or_default();
         entry.consecutive += 1;
         if entry.consecutive >= MAX_FAILURES {
@@ -341,7 +340,7 @@ impl LoginThrottle {
 
     /// Successful auth wipes the budget.
     pub fn record_success(&self, username: &str) {
-        self.entries.lock().unwrap().remove(&Self::key(username));
+        lock_recovered(&self.entries).remove(&Self::key(username));
     }
 }
 

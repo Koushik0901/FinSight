@@ -7,6 +7,8 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Mutex;
 
+use crate::state::lock_recovered;
+
 #[derive(Clone)]
 pub struct UserRecord {
     pub id: String,
@@ -296,7 +298,7 @@ impl UsersDb {
     }
 
     pub fn is_empty(&self) -> rusqlite::Result<bool> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
         Ok(n == 0)
     }
@@ -320,7 +322,7 @@ impl UsersDb {
             is_admin,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT INTO users (id, username, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery, is_admin, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -339,7 +341,7 @@ impl UsersDb {
     }
 
     pub fn get_by_username(&self, username: &str) -> rusqlite::Result<Option<UserRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.query_row(
             "SELECT id, username, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery, is_admin, created_at
              FROM users WHERE username = ?1",
@@ -354,7 +356,7 @@ impl UsersDb {
     }
 
     pub fn get_by_id(&self, id: &str) -> rusqlite::Result<Option<UserRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.query_row(
             "SELECT id, username, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery, is_admin, created_at
              FROM users WHERE id = ?1",
@@ -369,7 +371,7 @@ impl UsersDb {
     }
 
     pub fn list_users(&self) -> rusqlite::Result<Vec<UserRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         let mut stmt = conn.prepare(
             "SELECT id, username, password_phc, kek_salt, wrapped_key_pw, wrapped_key_recovery, is_admin, created_at
              FROM users ORDER BY created_at",
@@ -394,7 +396,7 @@ impl UsersDb {
         wrapped_key_pw: &[u8],
         wrapped_key_recovery: &[u8],
     ) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "UPDATE users
                 SET password_phc = ?2, kek_salt = ?3, wrapped_key_pw = ?4, wrapped_key_recovery = ?5
@@ -411,7 +413,7 @@ impl UsersDb {
     }
 
     pub fn delete_user(&self, id: &str) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         // Drop the user's persisted sessions in the same breath — a deleted
         // account's sessions must never be recoverable on the next restart.
         // Same reasoning for API tokens and in-flight authorization codes: both
@@ -440,7 +442,7 @@ impl UsersDb {
         wrapped_db_key: &[u8],
         expires_unix: i64,
     ) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT OR REPLACE INTO sessions (token_hash, user_id, is_admin, wrapped_db_key, expires_unix)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -457,7 +459,7 @@ impl UsersDb {
         token_hash: &[u8],
         now_unix: i64,
     ) -> rusqlite::Result<Option<PersistedSession>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.query_row(
             "SELECT user_id, is_admin, wrapped_db_key FROM sessions
              WHERE token_hash = ?1 AND expires_unix > ?2",
@@ -485,7 +487,7 @@ impl UsersDb {
         token_hash: &[u8],
         new_expires_unix: i64,
     ) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "UPDATE sessions SET expires_unix = ?2 WHERE token_hash = ?1",
             params![token_hash, new_expires_unix],
@@ -496,7 +498,7 @@ impl UsersDb {
     /// Remove one persisted session (logout). MUST run on every logout, or the
     /// signed-out session resurrects on the next restart.
     pub fn delete_session(&self, token_hash: &[u8]) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM sessions WHERE token_hash = ?1",
             params![token_hash],
@@ -506,7 +508,7 @@ impl UsersDb {
 
     /// Remove every persisted session for a user (admin delete / sign-out-all).
     pub fn delete_user_sessions(&self, user_id: &str) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![user_id])?;
         Ok(())
     }
@@ -519,7 +521,7 @@ impl UsersDb {
         user_id: &str,
         keep_token_hash: &[u8],
     ) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM sessions WHERE user_id = ?1 AND token_hash != ?2",
             params![user_id, keep_token_hash],
@@ -529,7 +531,7 @@ impl UsersDb {
     /// Drop every already-expired session. Called once at startup so the table
     /// doesn't accumulate dead rows across restarts. Returns the count removed.
     pub fn purge_expired_sessions(&self, now_unix: i64) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM sessions WHERE expires_unix <= ?1",
             params![now_unix],
@@ -560,7 +562,7 @@ impl UsersDb {
             last_used_at: None,
             expires_unix,
         };
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT INTO api_tokens (id, user_id, name, token_hash, wrapped_db_key, scope, created_at, last_used_at, expires_unix)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8)",
@@ -582,7 +584,7 @@ impl UsersDb {
         &self,
         token_hash: &[u8],
     ) -> rusqlite::Result<Option<ApiTokenRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.query_row(
             "SELECT id, user_id, name, scope, wrapped_db_key, created_at, last_used_at, expires_unix
              FROM api_tokens WHERE token_hash = ?1",
@@ -611,7 +613,7 @@ impl UsersDb {
     /// security control — callers throttle it so a chatty MCP client doesn't
     /// write on every single tool call.
     pub fn touch_api_token(&self, id: &str) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "UPDATE api_tokens SET last_used_at = ?2 WHERE id = ?1",
             params![id, chrono::Utc::now().to_rfc3339()],
@@ -620,7 +622,7 @@ impl UsersDb {
     }
 
     pub fn list_api_tokens(&self, user_id: &str) -> rusqlite::Result<Vec<ApiTokenSummary>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         let mut stmt = conn.prepare(
             "SELECT id, name, scope, created_at, last_used_at
              FROM api_tokens WHERE user_id = ?1 ORDER BY created_at",
@@ -642,7 +644,7 @@ impl UsersDb {
     /// caller can delete another user's token by id. Returns rows removed (0 =
     /// not found OR not yours — deliberately indistinguishable).
     pub fn delete_api_token(&self, user_id: &str, id: &str) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM api_tokens WHERE user_id = ?1 AND id = ?2",
             params![user_id, id],
@@ -653,7 +655,7 @@ impl UsersDb {
     /// bearer token must not survive the flow you run precisely because you
     /// think the account is compromised.
     pub fn delete_user_api_tokens(&self, user_id: &str) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         // Refresh tokens go with them: leaving one behind would let a revoked
         // connector mint itself a fresh access token, which is the opposite of
         // what every caller of this means by "revoke everything".
@@ -678,7 +680,7 @@ impl UsersDb {
         wrapped_db_key: &[u8],
         access_token_id: &str,
     ) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT INTO oauth_refresh_tokens
                (token_hash, user_id, client_id, scope, wrapped_db_key, access_token_id, created_at)
@@ -707,7 +709,7 @@ impl UsersDb {
         &self,
         token_hash: &[u8],
     ) -> rusqlite::Result<Option<RefreshTokenRecord>> {
-        let mut conn = self.0.lock().unwrap();
+        let mut conn = lock_recovered(&self.0);
         let tx = conn.transaction()?;
         let rec = tx
             .query_row(
@@ -749,7 +751,7 @@ impl UsersDb {
         &self,
         access_token_id: &str,
     ) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM oauth_refresh_tokens WHERE access_token_id = ?1",
             params![access_token_id],
@@ -759,7 +761,7 @@ impl UsersDb {
     /// Sweep access tokens whose expiry has passed. Expired tokens are already
     /// refused at auth time; this just stops the table growing without bound.
     pub fn purge_expired_api_tokens(&self, now_unix: i64) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM api_tokens WHERE expires_unix IS NOT NULL AND expires_unix <= ?1",
             params![now_unix],
@@ -775,7 +777,7 @@ impl UsersDb {
         redirect_uris_json: &str,
     ) -> rusqlite::Result<String> {
         let created_at = chrono::Utc::now().to_rfc3339();
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at)
              VALUES (?1, ?2, ?3, ?4)",
@@ -785,7 +787,7 @@ impl UsersDb {
     }
 
     pub fn get_oauth_client(&self, client_id: &str) -> rusqlite::Result<Option<OauthClientRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         let row = conn
             .query_row(
                 "SELECT client_id, client_name, redirect_uris, created_at
@@ -820,7 +822,7 @@ impl UsersDb {
     /// Registration is unauthenticated by spec (RFC 7591 open registration), so
     /// the table needs a ceiling to keep it from being a free write primitive.
     pub fn count_oauth_clients(&self) -> rusqlite::Result<i64> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.query_row("SELECT COUNT(*) FROM oauth_clients", [], |r| r.get(0))
     }
 
@@ -829,7 +831,7 @@ impl UsersDb {
     /// to the most recent one — this is a "has ever been used" marker, not a
     /// last-seen timestamp, and only the former is safe to base a delete on.
     pub fn mark_oauth_client_authorized(&self, client_id: &str) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "UPDATE oauth_clients SET first_authorized_at = ?2
              WHERE client_id = ?1 AND first_authorized_at IS NULL",
@@ -854,7 +856,7 @@ impl UsersDb {
     /// registered mid-flow, moments before its user finishes clicking Approve,
     /// is never caught.
     pub fn prune_unused_oauth_clients(&self, created_before: &str) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM oauth_clients
              WHERE first_authorized_at IS NULL AND created_at < ?1",
@@ -876,7 +878,7 @@ impl UsersDb {
         scope: &str,
         expires_unix: i64,
     ) -> rusqlite::Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "INSERT INTO oauth_codes (code_hash, client_id, redirect_uri, code_challenge, user_id, wrapped_db_key, scope, expires_unix, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -905,7 +907,7 @@ impl UsersDb {
         code_hash: &[u8],
         now_unix: i64,
     ) -> rusqlite::Result<Option<OauthCodeRecord>> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         let found = conn
             .query_row(
                 "SELECT client_id, redirect_uri, code_challenge, user_id, wrapped_db_key, scope, expires_unix
@@ -944,7 +946,7 @@ impl UsersDb {
     }
 
     pub fn purge_expired_oauth_codes(&self, now_unix: i64) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM oauth_codes WHERE expires_unix <= ?1",
             params![now_unix],
@@ -952,7 +954,7 @@ impl UsersDb {
     }
 
     pub fn delete_user_oauth_codes(&self, user_id: &str) -> rusqlite::Result<usize> {
-        let conn = self.0.lock().unwrap();
+        let conn = lock_recovered(&self.0);
         conn.execute(
             "DELETE FROM oauth_codes WHERE user_id = ?1",
             params![user_id],

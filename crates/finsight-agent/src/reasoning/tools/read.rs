@@ -23,10 +23,11 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
             // No COALESCE-to-zero: an account with no balance snapshot must read
             // as UNKNOWN (null), not $0, so the model doesn't report a fabricated
             // zero for e.g. an unsynced brokerage.
-            let mut stmt = ctx.conn.prepare(
-                "SELECT a.name, (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1) AS balance \
-                 FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name"
-            )?;
+            let mut stmt = ctx.conn.prepare(&format!(
+                "SELECT a.name, (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1) AS balance \
+                 FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name",
+                finsight_core::metrics::balance_snapshot_order("", "DESC")
+            ))?;
             let rows: Vec<Value> = stmt
                 .query_map([], |r| {
                     let name: String = r.get(0)?;
@@ -38,8 +39,7 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
                         }
                     })
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
             let total: i64 = rows
                 .iter()
                 .filter_map(|r| r["balance_cents"].as_i64())
@@ -566,7 +566,7 @@ pub fn get_top_spending_categories() -> Arc<dyn Tool> {
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, limit], |r| {
                 Ok(json!({"category": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
-            })?.filter_map(|r| r.ok()).collect();
+            })?.collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(json!({"categories": rows}))
         }
     }
@@ -612,8 +612,7 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .query_map(rusqlite::params![start_str, limit], |r| {
                     Ok(json!({"category": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             let mut merch_stmt = ctx.conn.prepare(
                 "SELECT t.merchant_raw, \
@@ -628,8 +627,7 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .query_map(rusqlite::params![start_str, limit], |r| {
                     Ok(json!({"merchant": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             let mut month_stmt = ctx.conn.prepare(
                 "SELECT substr(t.posted_at, 1, 7) AS ym, \
@@ -644,8 +642,7 @@ pub fn get_spending_breakdown() -> Arc<dyn Tool> {
                 .query_map(rusqlite::params![start_str], |r| {
                     Ok(json!({"month": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             // Complete window total = sum of per-month spend (top_categories is
             // capped at `limit`, so its sum would undercount).
@@ -776,8 +773,7 @@ pub fn get_member_spending() -> Arc<dyn Tool> {
                 .query_map(rusqlite::params![member.id, start_str], |r| {
                     Ok(json!({"category": r.get::<_, String>(0)?, "spent_cents": r.get::<_, i64>(1)?}))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             Ok(json!({
                 "member": member.name,
@@ -824,7 +820,7 @@ pub fn get_budgets() -> Arc<dyn Tool> {
             )?;
             let rows: Vec<Value> = stmt.query_map(rusqlite::params![month_start, month], |r| {
                 Ok(json!({"category": r.get::<_, String>(0)?, "budget_cents": r.get::<_, i64>(1)?, "spent_cents": r.get::<_, i64>(2)?}))
-            })?.filter_map(|r| r.ok()).collect();
+            })?.collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(json!({"budgets": rows, "month": month}))
         }
     }
@@ -852,7 +848,7 @@ pub fn get_goals() -> Arc<dyn Tool> {
                 let current: i64 = r.get(2)?;
                 let pct = if target > 0 { current * 100 / target } else { 0 };
                 Ok(json!({"name": r.get::<_, String>(0)?, "target_cents": target, "current_cents": current, "monthly_cents": r.get::<_, i64>(3)?, "progress_pct": pct}))
-            })?.filter_map(|r| r.ok()).collect();
+            })?.collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(json!({"goals": rows}))
         }
     }
@@ -934,17 +930,18 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
             // Debt is a Credit/Loan-type Account with a negative balance, not
             // a separate liabilities-table row; "balance_cents" here is the
             // amount owed (positive), matching the old liabilities convention.
-            let mut stmt = ctx.conn.prepare(
+            let mut stmt = ctx.conn.prepare(&format!(
                 "SELECT id, name, type, balance, apr_pct, limit_cents, min_payment_cents, payoff_date, promo_apr_expires_on, post_promo_apr_pct FROM (
                      SELECT a.id, a.name, a.type,
-                            -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                            -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                             a.apr_pct, a.limit_cents, a.min_payment_cents, a.payoff_date,
                             a.promo_apr_expires_on, a.post_promo_apr_pct
                      FROM accounts a
                      WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
                  ) WHERE balance > 0
-                 ORDER BY balance DESC"
-            )?;
+                 ORDER BY balance DESC",
+                finsight_core::metrics::balance_snapshot_order("", "DESC")
+            ))?;
             let rows: Vec<Value> = stmt.query_map([], |r| {
                 let account_type: String = r.get(2)?;
                 let liability_type = if account_type == "Credit" { "credit-card" } else { "loan" };
@@ -953,7 +950,7 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
                 // as free that is about to become expensive, so the expiry and
                 // the rate it reverts to travel with it.
                 Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?, "liability_type": liability_type, "balance_cents": r.get::<_, i64>(3)?, "apr_pct": r.get::<_, Option<f64>>(4)?, "limit_cents": r.get::<_, Option<i64>>(5)?, "min_payment_cents": r.get::<_, Option<i64>>(6)?, "payoff_date": r.get::<_, Option<String>>(7)?, "promo_apr_expires_on": r.get::<_, Option<String>>(8)?, "post_promo_apr_pct": r.get::<_, Option<f64>>(9)?}))
-            })?.filter_map(|r| r.ok()).collect();
+            })?.collect::<std::result::Result<Vec<_>, _>>()?;
             let total: i64 = rows
                 .iter()
                 .filter_map(|r| r["balance_cents"].as_i64())
@@ -1064,8 +1061,7 @@ pub fn find_anomalies() -> Arc<dyn Tool> {
                         "reason": r.get::<_, String>(5)?
                     }))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
             Ok(json!({"anomalies": rows, "count": rows.len()}))
         }
     }
@@ -1115,8 +1111,7 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
                         "account": r.get::<_, String>(4)?
                     }))
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             let mut cat_stmt = ctx.conn.prepare(
                 "SELECT id, label, guidance FROM categories WHERE archived_at IS NULL ORDER BY label",
@@ -1133,8 +1128,7 @@ pub fn list_uncategorized_transactions() -> Arc<dyn Tool> {
                     }
                     Ok(obj)
                 })?
-                .filter_map(|r| r.ok())
-                .collect();
+                .collect::<std::result::Result<Vec<_>, _>>()?;
 
             Ok(json!({
                 "total_uncategorized": total_uncategorized,
@@ -1208,7 +1202,7 @@ pub fn get_financial_snapshot() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_financial_snapshot"
+            super::names::GET_FINANCIAL_SNAPSHOT
         }
         fn description(&self) -> &str {
             "Get the full local finance snapshot for planning: liquid balances, cashflow, goals, debts, recurring bills, planned transactions, and data warnings. Any account with balance_known=false has an UNKNOWN balance (its balance_cents is a placeholder 0) — report it as unknown, never as $0, and exclude it from totals."
@@ -1227,7 +1221,7 @@ pub fn analyze_cash_inflow() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "analyze_cash_inflow"
+            super::names::ANALYZE_CASH_INFLOW
         }
         fn description(&self) -> &str {
             "Deterministically allocate a paycheck or windfall across emergency fund, high-interest debt, goals, and investing eligibility"
@@ -1251,7 +1245,7 @@ pub fn calculate_goal_eta() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "calculate_goal_eta"
+            super::names::CALCULATE_GOAL_ETA
         }
         fn description(&self) -> &str {
             "Calculate exact ETA for a goal given a weekly, biweekly, semimonthly, or monthly contribution"
@@ -1282,7 +1276,7 @@ pub fn rank_debt_payoff() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "rank_debt_payoff"
+            super::names::RANK_DEBT_PAYOFF
         }
         fn description(&self) -> &str {
             "Rank debts for payoff using avalanche by APR or snowball by balance"
@@ -1326,7 +1320,7 @@ pub fn plan_sinking_funds() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "plan_sinking_funds"
+            super::names::PLAN_SINKING_FUNDS
         }
         fn description(&self) -> &str {
             "Required monthly contribution for each sinking fund — a known amount due on a known \
@@ -1405,7 +1399,7 @@ pub fn compare_payoff_strategies() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "compare_payoff_strategies"
+            super::names::COMPARE_PAYOFF_STRATEGIES
         }
         fn description(&self) -> &str {
             "Compare two debt payoff strategies side by side — total interest, months to              debt-free, and when the first debt clears. Use for 'snowball vs avalanche',              'which payoff method is better', or to justify a hybrid order. Pass              custom_order (account ids) to model a hybrid plan: clear those first, then              optimise the rest by APR."
@@ -1447,7 +1441,7 @@ pub fn compare_debt_vs_goal() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "compare_debt_vs_goal"
+            super::names::COMPARE_DEBT_VS_GOAL
         }
         fn description(&self) -> &str {
             "Compare preserving a savings goal against using some goal savings or paycheck surplus for debt"
@@ -1474,7 +1468,7 @@ pub fn run_debt_payoff_scenarios() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_debt_payoff_scenarios"
+            super::names::RUN_DEBT_PAYOFF_SCENARIOS
         }
         fn description(&self) -> &str {
             "Run deterministic payoff scenarios for all active debts using avalanche or snowball, minimum payments, APRs, and optional extra monthly debt payment"
@@ -1500,7 +1494,7 @@ pub fn run_goal_allocation_scenarios() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_goal_allocation_scenarios"
+            super::names::RUN_GOAL_ALLOCATION_SCENARIOS
         }
         fn description(&self) -> &str {
             "Allocate available monthly savings across goals by priority, deadline, or proportional strategy and estimate goal ETAs"
@@ -1525,7 +1519,7 @@ pub fn run_goal_conflict_scenario() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_goal_conflict_scenario"
+            super::names::RUN_GOAL_CONFLICT_SCENARIO
         }
         fn description(&self) -> &str {
             "Compare a proposed goal contribution against upcoming bills, planned transactions, monthly surplus, and the emergency floor"
@@ -1554,7 +1548,7 @@ pub fn run_emergency_fund_scenarios() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_emergency_fund_scenarios"
+            super::names::RUN_EMERGENCY_FUND_SCENARIOS
         }
         fn description(&self) -> &str {
             "Model one-, three-, and six-month emergency fund targets, gaps, liquidity runway, and time-to-target. Defaults the monthly savings rate to the current monthly surplus and returns an estimated completion date per target. Use for emergency-fund questions, 'when will my emergency fund be full', how-long-could-I-get-by-if-I-lost-my-income, and liquidity-runway questions. Report the target, current saved amount, the monthly contribution used, and the completion date."
@@ -1576,7 +1570,7 @@ pub fn run_cashflow_timeline() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_cashflow_timeline"
+            super::names::RUN_CASHFLOW_TIMELINE
         }
         fn description(&self) -> &str {
             "Build a deterministic month-by-month cashflow timeline from local average income, expenses, planned transactions, and liquid balance"
@@ -1598,7 +1592,7 @@ pub fn run_purchase_affordability() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "run_purchase_affordability"
+            super::names::RUN_PURCHASE_AFFORDABILITY
         }
         fn description(&self) -> &str {
             "Model whether a one-time purchase is affordable. Pass the purchase amount in cents as `purchase_amount_cents`. Weighs emergency cash, monthly surplus, obligations, and high-interest debt, and suggests wait/save alternatives. Be cautious: do not approve a purchase that would drop the user below their emergency floor or lean on high-APR debt. Use for 'can I afford X for $N' questions."
@@ -1621,7 +1615,7 @@ pub fn get_data_quality_report() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {
         fn name(&self) -> &str {
-            "get_data_quality_report"
+            super::names::GET_DATA_QUALITY_REPORT
         }
         fn description(&self) -> &str {
             "Report missing finance data that can weaken planning answers, including APRs, minimum payments, uncategorized expenses, goals, debts, and planned transactions"

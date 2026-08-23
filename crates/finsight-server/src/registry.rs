@@ -4,6 +4,7 @@
 //! the session still holds the unwrapped key, so the next request rebuilds).
 
 use crate::state::OutboundEvent;
+use crate::state::lock_recovered;
 use finsight_agent::agent::{AgentEvent, EventCallback};
 use finsight_api::ApiState;
 use std::collections::HashMap;
@@ -134,7 +135,7 @@ impl Registry {
     ) -> anyhow::Result<Arc<UserRuntime>> {
         // --- Lock held for the cell lookup/insert ONLY, never across await ---
         let cell: RuntimeCell = {
-            let mut map = self.0.lock().unwrap();
+            let mut map = lock_recovered(&self.0);
             Arc::clone(map.entry(user_id.to_string()).or_default())
         };
 
@@ -200,9 +201,13 @@ impl Registry {
             // Same names Phase 1's state.rs bootstrap uses, so the UI event
             // listeners work unchanged.
             let name = match &event {
-                AgentEvent::CategorizationProgress { .. } => "categorization.progress",
-                AgentEvent::CategorizationComplete { .. } => "categorization.complete",
-                AgentEvent::Error { .. } => "agent.error",
+                AgentEvent::CategorizationProgress { .. } => {
+                    finsight_api::sink::event_names::CATEGORIZATION_PROGRESS
+                }
+                AgentEvent::CategorizationComplete { .. } => {
+                    finsight_api::sink::event_names::CATEGORIZATION_COMPLETE
+                }
+                AgentEvent::Error { .. } => finsight_api::sink::event_names::AGENT_ERROR,
             };
             let _ = etx.send(OutboundEvent {
                 event: name.to_string(),
@@ -234,14 +239,14 @@ impl Registry {
     }
 
     pub fn touch(&self, user_id: &str) {
-        if let Some(rt) = self.0.lock().unwrap().get(user_id).and_then(|c| c.get()) {
-            *rt.last_active.lock().unwrap() = Instant::now();
+        if let Some(rt) = lock_recovered(&self.0).get(user_id).and_then(|c| c.get()) {
+            *lock_recovered(&rt.last_active) = Instant::now();
         }
     }
 
     /// Removes the runtime and aborts its background sync task.
     pub fn evict(&self, user_id: &str) {
-        if let Some(cell) = self.0.lock().unwrap().remove(user_id) {
+        if let Some(cell) = lock_recovered(&self.0).remove(user_id) {
             if let Some(rt) = cell.get() {
                 rt.sync_task.abort();
             }
@@ -260,7 +265,7 @@ impl Registry {
     pub fn evict_idle(&self, max_idle: Duration) -> Vec<String> {
         let now = Instant::now();
         let idle_ids: Vec<String> = {
-            let map = self.0.lock().unwrap();
+            let map = lock_recovered(&self.0);
             map.iter()
                 .filter(|(_, cell)| match cell.get() {
                     // Still bootstrapping — not idle, and evicting the cell
@@ -268,7 +273,7 @@ impl Registry {
                     None => false,
                     Some(rt) => {
                         rt.events.receiver_count() == 0
-                            && now.duration_since(*rt.last_active.lock().unwrap()) >= max_idle
+                            && now.duration_since(*lock_recovered(&rt.last_active)) >= max_idle
                     }
                 })
                 .map(|(id, _)| id.clone())

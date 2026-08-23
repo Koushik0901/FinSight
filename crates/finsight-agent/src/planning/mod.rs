@@ -4,6 +4,7 @@ use crate::finance::{
     FinancialSnapshot, GoalAllocationScenarios, GoalConflictScenario, GoalEtaResult,
     PurchaseAffordabilityScenario,
 };
+use crate::reasoning::tools::names;
 use chrono::{NaiveDate, Utc};
 use finsight_core::models::MissingDataItem;
 use rusqlite::Connection;
@@ -146,7 +147,7 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
     let profile = finance::infer_question_profile(question);
     let mut plan = FinancePlan {
         task_type: map_task_type(profile.kind, question),
-        required_tools: vec!["get_financial_snapshot".to_string()],
+        required_tools: vec![names::GET_FINANCIAL_SNAPSHOT.to_string()],
         optional_tools: Vec::new(),
         required_inputs: Vec::new(),
         missing_inputs: Vec::new(),
@@ -156,7 +157,7 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
 
     match plan.task_type {
         FinanceTaskType::CashInflowAllocation => {
-            plan.required_tools.push("analyze_cash_inflow".to_string());
+            plan.required_tools.push(names::ANALYZE_CASH_INFLOW.to_string());
             plan.required_inputs.push("amount_cents".to_string());
             if profile.amount_cents.unwrap_or(0) <= 0 {
                 plan.missing_inputs
@@ -164,7 +165,7 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             }
         }
         FinanceTaskType::GoalEta => {
-            plan.required_tools.push("calculate_goal_eta".to_string());
+            plan.required_tools.push(names::CALCULATE_GOAL_ETA.to_string());
             plan.required_inputs
                 .extend(["goal_id".to_string(), "contribution_cents".to_string()]);
             if profile.amount_cents.unwrap_or(0) <= 0 {
@@ -173,19 +174,19 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             }
         }
         FinanceTaskType::DebtRanking => {
-            plan.required_tools.push("rank_debt_payoff".to_string());
+            plan.required_tools.push(names::RANK_DEBT_PAYOFF.to_string());
         }
         FinanceTaskType::DebtPayoffScenario => {
             plan.required_tools
-                .push("run_debt_payoff_scenarios".to_string());
+                .push(names::RUN_DEBT_PAYOFF_SCENARIOS.to_string());
         }
         FinanceTaskType::DebtVsGoal => {
-            plan.required_tools.push("compare_debt_vs_goal".to_string());
+            plan.required_tools.push(names::COMPARE_DEBT_VS_GOAL.to_string());
             plan.required_inputs.push("goal_id".to_string());
         }
         FinanceTaskType::GoalAllocation => {
             plan.required_tools
-                .push("run_goal_allocation_scenarios".to_string());
+                .push(names::RUN_GOAL_ALLOCATION_SCENARIOS.to_string());
             plan.required_inputs
                 .push("monthly_available_cents".to_string());
             if profile.amount_cents.unwrap_or(0) <= 0 {
@@ -195,7 +196,7 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
         }
         FinanceTaskType::GoalConflict => {
             plan.required_tools
-                .push("run_goal_conflict_scenario".to_string());
+                .push(names::RUN_GOAL_CONFLICT_SCENARIO.to_string());
             plan.required_inputs
                 .extend(["goal_id".to_string(), "contribution_cents".to_string()]);
             if profile.amount_cents.unwrap_or(0) <= 0 {
@@ -205,15 +206,15 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
         }
         FinanceTaskType::EmergencyFundPlanning => {
             plan.required_tools
-                .push("run_emergency_fund_scenarios".to_string());
+                .push(names::RUN_EMERGENCY_FUND_SCENARIOS.to_string());
         }
         FinanceTaskType::CashflowTimeline => {
             plan.required_tools
-                .push("run_cashflow_timeline".to_string());
+                .push(names::RUN_CASHFLOW_TIMELINE.to_string());
         }
         FinanceTaskType::PurchaseAffordability => {
             plan.required_tools
-                .push("run_purchase_affordability".to_string());
+                .push(names::RUN_PURCHASE_AFFORDABILITY.to_string());
             plan.required_inputs
                 .push("purchase_amount_cents".to_string());
             if profile.amount_cents.unwrap_or(0) <= 0 {
@@ -223,7 +224,7 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
         }
         FinanceTaskType::DataQualityReport => {
             plan.required_tools
-                .push("get_data_quality_report".to_string());
+                .push(names::GET_DATA_QUALITY_REPORT.to_string());
         }
         FinanceTaskType::FinancialSnapshot => {}
         FinanceTaskType::InvestmentReadiness => {
@@ -234,12 +235,12 @@ pub fn plan_finance_question(question: &str) -> FinancePlan {
             plan.optional_tools.extend([
                 "get_budgets".to_string(),
                 "run_cashflow_projection".to_string(),
-                "run_debt_payoff_scenarios".to_string(),
-                "run_goal_allocation_scenarios".to_string(),
-                "run_goal_conflict_scenario".to_string(),
-                "run_emergency_fund_scenarios".to_string(),
-                "run_cashflow_timeline".to_string(),
-                "get_data_quality_report".to_string(),
+                names::RUN_DEBT_PAYOFF_SCENARIOS.to_string(),
+                names::RUN_GOAL_ALLOCATION_SCENARIOS.to_string(),
+                names::RUN_GOAL_CONFLICT_SCENARIO.to_string(),
+                names::RUN_EMERGENCY_FUND_SCENARIOS.to_string(),
+                names::RUN_CASHFLOW_TIMELINE.to_string(),
+                names::GET_DATA_QUALITY_REPORT.to_string(),
             ]);
         }
         FinanceTaskType::Unknown => {}
@@ -713,12 +714,12 @@ fn build_answer(
                         NumberUsed {
                             label: "cash used".to_string(),
                             value: format_cents(alternative.cash_used_cents),
-                            source: "compare_debt_vs_goal".to_string(),
+                            source: names::COMPARE_DEBT_VS_GOAL.to_string(),
                         },
                         NumberUsed {
                             label: "emergency fund after action".to_string(),
                             value: format!("{:.1} months", alternative.emergency_fund_months),
-                            source: "compare_debt_vs_goal".to_string(),
+                            source: names::COMPARE_DEBT_VS_GOAL.to_string(),
                         },
                     ],
                 })
@@ -812,12 +813,12 @@ fn build_answer(
                         NumberUsed {
                             label: "goal contribution".to_string(),
                             value: format_cents(alternative.goal_contribution_cents),
-                            source: "run_goal_conflict_scenario".to_string(),
+                            source: names::RUN_GOAL_CONFLICT_SCENARIO.to_string(),
                         },
                         NumberUsed {
                             label: "cash after obligations".to_string(),
                             value: format_cents(alternative.cash_after_obligations_cents),
-                            source: "run_goal_conflict_scenario".to_string(),
+                            source: names::RUN_GOAL_CONFLICT_SCENARIO.to_string(),
                         },
                     ],
                 })
@@ -962,12 +963,12 @@ fn build_answer(
                         NumberUsed {
                             label: "cash used".to_string(),
                             value: format_cents(alternative.cash_used_cents),
-                            source: "run_purchase_affordability".to_string(),
+                            source: names::RUN_PURCHASE_AFFORDABILITY.to_string(),
                         },
                         NumberUsed {
                             label: "emergency cash after".to_string(),
                             value: format_cents(alternative.emergency_fund_after_cents),
-                            source: "run_purchase_affordability".to_string(),
+                            source: names::RUN_PURCHASE_AFFORDABILITY.to_string(),
                         },
                     ],
                 })
@@ -1382,7 +1383,7 @@ fn empty_verification() -> VerificationReport {
 
 fn snapshot_evidence(snapshot: &FinancialSnapshot) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "get_financial_snapshot".to_string(),
+        tool_name: names::GET_FINANCIAL_SNAPSHOT.to_string(),
         summary: format!(
             "Liquid balance {}, total balance {}, emergency coverage {:.1} months.",
             format_cents(snapshot.liquid_balance_cents),
@@ -1414,7 +1415,7 @@ fn snapshot_evidence(snapshot: &FinancialSnapshot) -> anyhow::Result<ToolEvidenc
 
 fn cash_inflow_evidence(advice: &CashInflowAdvice) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "analyze_cash_inflow".to_string(),
+        tool_name: names::ANALYZE_CASH_INFLOW.to_string(),
         summary: format!(
             "Allocated {} across {} bucket(s).",
             format_cents(advice.amount_cents),
@@ -1433,7 +1434,7 @@ fn cash_inflow_evidence(advice: &CashInflowAdvice) -> anyhow::Result<ToolEvidenc
             .map(|allocation| NumberUsed {
                 label: allocation.bucket.clone(),
                 value: format_cents(allocation.amount_cents),
-                source: "analyze_cash_inflow".to_string(),
+                source: names::ANALYZE_CASH_INFLOW.to_string(),
             })
             .collect(),
         raw_json: serde_json::to_value(advice)?,
@@ -1442,7 +1443,7 @@ fn cash_inflow_evidence(advice: &CashInflowAdvice) -> anyhow::Result<ToolEvidenc
 
 fn goal_eta_evidence(eta: &GoalEtaResult) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "calculate_goal_eta".to_string(),
+        tool_name: names::CALCULATE_GOAL_ETA.to_string(),
         summary: format!("{} ETA is {:?} month(s).", eta.goal_name, eta.eta_months),
         data_sources: vec!["Active goals".to_string()],
         missing_data: Vec::new(),
@@ -1455,7 +1456,7 @@ fn goal_eta_evidence(eta: &GoalEtaResult) -> anyhow::Result<ToolEvidence> {
             NumberUsed {
                 label: "monthly equivalent contribution".to_string(),
                 value: format_cents(eta.monthly_equivalent_cents),
-                source: "calculate_goal_eta".to_string(),
+                source: names::CALCULATE_GOAL_ETA.to_string(),
             },
         ],
         raw_json: serde_json::to_value(eta)?,
@@ -1464,7 +1465,7 @@ fn goal_eta_evidence(eta: &GoalEtaResult) -> anyhow::Result<ToolEvidence> {
 
 fn debt_ranking_evidence(ranking: &DebtPayoffRanking) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "rank_debt_payoff".to_string(),
+        tool_name: names::RANK_DEBT_PAYOFF.to_string(),
         summary: format!(
             "Ranked {} debt(s) by {}.",
             ranking.items.len(),
@@ -1487,7 +1488,7 @@ fn debt_ranking_evidence(ranking: &DebtPayoffRanking) -> anyhow::Result<ToolEvid
 
 fn debt_payoff_scenario_evidence(scenarios: &DebtPayoffScenarios) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_debt_payoff_scenarios".to_string(),
+        tool_name: names::RUN_DEBT_PAYOFF_SCENARIOS.to_string(),
         summary: format!(
             "Modeled {} payoff with {} extra monthly.",
             scenarios.method,
@@ -1504,7 +1505,7 @@ fn debt_payoff_scenario_evidence(scenarios: &DebtPayoffScenarios) -> anyhow::Res
             NumberUsed {
                 label: "extra monthly debt payment".to_string(),
                 value: format_cents(scenarios.extra_monthly_payment_cents),
-                source: "run_debt_payoff_scenarios".to_string(),
+                source: names::RUN_DEBT_PAYOFF_SCENARIOS.to_string(),
             },
         ],
         raw_json: serde_json::to_value(scenarios)?,
@@ -1513,7 +1514,7 @@ fn debt_payoff_scenario_evidence(scenarios: &DebtPayoffScenarios) -> anyhow::Res
 
 fn goal_allocation_evidence(scenarios: &GoalAllocationScenarios) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_goal_allocation_scenarios".to_string(),
+        tool_name: names::RUN_GOAL_ALLOCATION_SCENARIOS.to_string(),
         summary: format!(
             "Allocated {} monthly across {} goal(s).",
             format_cents(scenarios.monthly_available_cents),
@@ -1532,7 +1533,7 @@ fn goal_allocation_evidence(scenarios: &GoalAllocationScenarios) -> anyhow::Resu
             .map(|item| NumberUsed {
                 label: format!("{} suggested monthly", item.goal_name),
                 value: format_cents(item.suggested_monthly_cents),
-                source: "run_goal_allocation_scenarios".to_string(),
+                source: names::RUN_GOAL_ALLOCATION_SCENARIOS.to_string(),
             })
             .collect(),
         raw_json: serde_json::to_value(scenarios)?,
@@ -1541,7 +1542,7 @@ fn goal_allocation_evidence(scenarios: &GoalAllocationScenarios) -> anyhow::Resu
 
 fn goal_conflict_evidence(scenario: &GoalConflictScenario) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_goal_conflict_scenario".to_string(),
+        tool_name: names::RUN_GOAL_CONFLICT_SCENARIO.to_string(),
         summary: format!(
             "Compared {} goal contribution against {} of upcoming obligations.",
             format_cents(scenario.requested_contribution_cents),
@@ -1568,7 +1569,7 @@ fn goal_conflict_evidence(scenario: &GoalConflictScenario) -> anyhow::Result<Too
             NumberUsed {
                 label: "safe contribution now".to_string(),
                 value: format_cents(scenario.safe_contribution_now_cents),
-                source: "run_goal_conflict_scenario".to_string(),
+                source: names::RUN_GOAL_CONFLICT_SCENARIO.to_string(),
             },
         ],
         raw_json: serde_json::to_value(scenario)?,
@@ -1577,7 +1578,7 @@ fn goal_conflict_evidence(scenario: &GoalConflictScenario) -> anyhow::Result<Too
 
 fn emergency_fund_evidence(scenarios: &EmergencyFundScenarios) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_emergency_fund_scenarios".to_string(),
+        tool_name: names::RUN_EMERGENCY_FUND_SCENARIOS.to_string(),
         summary: format!(
             "Emergency coverage is {:.1} month(s).",
             scenarios.current_months
@@ -1595,7 +1596,7 @@ fn emergency_fund_evidence(scenarios: &EmergencyFundScenarios) -> anyhow::Result
             .map(|target| NumberUsed {
                 label: format!("{} month emergency fund gap", target.target_months),
                 value: format_cents(target.gap_cents),
-                source: "run_emergency_fund_scenarios".to_string(),
+                source: names::RUN_EMERGENCY_FUND_SCENARIOS.to_string(),
             })
             .collect(),
         raw_json: serde_json::to_value(scenarios)?,
@@ -1604,7 +1605,7 @@ fn emergency_fund_evidence(scenarios: &EmergencyFundScenarios) -> anyhow::Result
 
 fn cashflow_timeline_evidence(timeline: &CashflowTimeline) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_cashflow_timeline".to_string(),
+        tool_name: names::RUN_CASHFLOW_TIMELINE.to_string(),
         summary: format!(
             "Modeled {} month(s) from starting liquid balance {}.",
             timeline.months.len(),
@@ -1623,7 +1624,7 @@ fn cashflow_timeline_evidence(timeline: &CashflowTimeline) -> anyhow::Result<Too
             .map(|month| NumberUsed {
                 label: format!("month {} ending balance", month.month_index),
                 value: format_cents(month.ending_balance_cents),
-                source: "run_cashflow_timeline".to_string(),
+                source: names::RUN_CASHFLOW_TIMELINE.to_string(),
             })
             .collect(),
         raw_json: serde_json::to_value(timeline)?,
@@ -1634,7 +1635,7 @@ fn purchase_affordability_evidence(
     scenario: &PurchaseAffordabilityScenario,
 ) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "run_purchase_affordability".to_string(),
+        tool_name: names::RUN_PURCHASE_AFFORDABILITY.to_string(),
         summary: format!(
             "Modeled {} purchase; affordable now: {}.",
             format_cents(scenario.purchase_amount_cents),
@@ -1656,7 +1657,7 @@ fn purchase_affordability_evidence(
             NumberUsed {
                 label: "emergency floor".to_string(),
                 value: format_cents(scenario.emergency_floor_cents),
-                source: "run_purchase_affordability".to_string(),
+                source: names::RUN_PURCHASE_AFFORDABILITY.to_string(),
             },
             NumberUsed {
                 label: "monthly surplus".to_string(),
@@ -1669,7 +1670,7 @@ fn purchase_affordability_evidence(
 }
 fn data_quality_evidence(report: &DataQualityReport) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "get_data_quality_report".to_string(),
+        tool_name: names::GET_DATA_QUALITY_REPORT.to_string(),
         summary: format!(
             "Data quality report found {} warning(s).",
             report.warnings.len()
@@ -1685,12 +1686,12 @@ fn data_quality_evidence(report: &DataQualityReport) -> anyhow::Result<ToolEvide
             NumberUsed {
                 label: "missing APR count".to_string(),
                 value: report.missing_apr_count.to_string(),
-                source: "get_data_quality_report".to_string(),
+                source: names::GET_DATA_QUALITY_REPORT.to_string(),
             },
             NumberUsed {
                 label: "missing minimum payment count".to_string(),
                 value: report.missing_min_payment_count.to_string(),
-                source: "get_data_quality_report".to_string(),
+                source: names::GET_DATA_QUALITY_REPORT.to_string(),
             },
         ],
         raw_json: serde_json::to_value(report)?,
@@ -1699,7 +1700,7 @@ fn data_quality_evidence(report: &DataQualityReport) -> anyhow::Result<ToolEvide
 
 fn debt_vs_goal_evidence(comparison: &DebtGoalComparison) -> anyhow::Result<ToolEvidence> {
     Ok(ToolEvidence {
-        tool_name: "compare_debt_vs_goal".to_string(),
+        tool_name: names::COMPARE_DEBT_VS_GOAL.to_string(),
         summary: comparison.recommendation.clone(),
         data_sources: default_data_sources(),
         missing_data: comparison
@@ -1926,17 +1927,17 @@ mod tests {
             (
                 "starter",
                 "I got paid $1,000. What should I do?",
-                "analyze_cash_inflow",
+                names::ANALYZE_CASH_INFLOW,
             ),
             (
                 "debt_heavy",
                 "How long to pay off my debt with an extra $500 monthly?",
-                "run_debt_payoff_scenarios",
+                names::RUN_DEBT_PAYOFF_SCENARIOS,
             ),
             (
                 "goal_pressure",
                 "Can I put $1,000 into my car goal with upcoming bills?",
-                "run_goal_conflict_scenario",
+                names::RUN_GOAL_CONFLICT_SCENARIO,
             ),
         ];
 
@@ -1962,10 +1963,10 @@ mod tests {
         assert_eq!(plan.task_type, FinanceTaskType::CashInflowAllocation);
         assert!(plan
             .required_tools
-            .contains(&"analyze_cash_inflow".to_string()));
+            .contains(&names::ANALYZE_CASH_INFLOW.to_string()));
         assert!(plan
             .required_tools
-            .contains(&"get_financial_snapshot".to_string()));
+            .contains(&names::GET_FINANCIAL_SNAPSHOT.to_string()));
     }
 
     #[test]
@@ -1974,7 +1975,7 @@ mod tests {
         assert_eq!(plan.task_type, FinanceTaskType::GoalEta);
         assert!(plan
             .required_tools
-            .contains(&"calculate_goal_eta".to_string()));
+            .contains(&names::CALCULATE_GOAL_ETA.to_string()));
     }
 
     #[test]
@@ -1983,25 +1984,25 @@ mod tests {
         assert_eq!(debt.task_type, FinanceTaskType::DebtPayoffScenario);
         assert!(debt
             .required_tools
-            .contains(&"run_debt_payoff_scenarios".to_string()));
+            .contains(&names::RUN_DEBT_PAYOFF_SCENARIOS.to_string()));
 
         let emergency = plan_finance_question("How much emergency fund do I need?");
         assert_eq!(emergency.task_type, FinanceTaskType::EmergencyFundPlanning);
         assert!(emergency
             .required_tools
-            .contains(&"run_emergency_fund_scenarios".to_string()));
+            .contains(&names::RUN_EMERGENCY_FUND_SCENARIOS.to_string()));
 
         let cashflow = plan_finance_question("Will my end of month balance get too low?");
         assert_eq!(cashflow.task_type, FinanceTaskType::CashflowTimeline);
         assert!(cashflow
             .required_tools
-            .contains(&"run_cashflow_timeline".to_string()));
+            .contains(&names::RUN_CASHFLOW_TIMELINE.to_string()));
 
         let quality = plan_finance_question("What missing data should I fix?");
         assert_eq!(quality.task_type, FinanceTaskType::DataQualityReport);
         assert!(quality
             .required_tools
-            .contains(&"get_data_quality_report".to_string()));
+            .contains(&names::GET_DATA_QUALITY_REPORT.to_string()));
     }
 
     #[test]
@@ -2062,7 +2063,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("compare_debt_vs_goal")));
+            .any(|t| t.contains(names::COMPARE_DEBT_VS_GOAL)));
     }
 
     #[test]
@@ -2134,7 +2135,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("calculate_goal_eta")));
+            .any(|t| t.contains(names::CALCULATE_GOAL_ETA)));
         assert!(answer.recommendation.contains("semimonthly"));
         assert!(answer.summary.contains("$1000"));
         assert!(answer.summary.contains("$15000") || answer.summary.contains("$15,000"));
@@ -2191,7 +2192,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("run_debt_payoff_scenarios")));
+            .any(|t| t.contains(names::RUN_DEBT_PAYOFF_SCENARIOS)));
         assert!(answer.summary.contains("saving about"));
     }
 
@@ -2208,7 +2209,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("run_purchase_affordability")));
+            .any(|t| t.contains(names::RUN_PURCHASE_AFFORDABILITY)));
         assert!(
             answer.recommendation.contains("Delay") || answer.recommendation.contains("affordable")
         );
@@ -2241,7 +2242,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("run_goal_conflict_scenario")));
+            .any(|t| t.contains(names::RUN_GOAL_CONFLICT_SCENARIO)));
         assert!(answer.recommendation.contains("Delay") || answer.recommendation.contains("safe"));
         assert!(answer.summary.contains("upcoming obligations"));
         assert!(answer.alternatives.len() >= 3);
@@ -2264,7 +2265,7 @@ mod tests {
         assert!(answer
             .trace
             .iter()
-            .any(|t| t.contains("run_emergency_fund_scenarios")));
+            .any(|t| t.contains(names::RUN_EMERGENCY_FUND_SCENARIOS)));
         assert!(answer.summary.contains("six-month") || answer.summary.contains("6 mo"));
     }
 

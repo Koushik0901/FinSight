@@ -344,9 +344,7 @@ pub fn get_by_id(conn: &mut Connection, id: &str) -> CoreResult<Account> {
                 emergency_fund_eligible: r.get::<_, i64>(10)? != 0,
                 goal_earmark: r.get(11)?,
                 apy_pct: r.get(12)?,
-                created_at: DateTime::parse_from_rfc3339(&created_s)
-                    .unwrap()
-                    .with_timezone(&Utc),
+                created_at: super::rfc3339(13, &created_s)?,
                 simplefin_account_id: r.get(14)?,
                 last_synced_at: last_synced_s.and_then(|s| {
                     DateTime::parse_from_rfc3339(&s)
@@ -727,9 +725,7 @@ pub fn list_by_connection_id(
             emergency_fund_eligible: r.get::<_, i64>(10)? != 0,
             goal_earmark: r.get(11)?,
             apy_pct: r.get(12)?,
-            created_at: DateTime::parse_from_rfc3339(&created_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: super::rfc3339(13, &created_s)?,
             simplefin_account_id: r.get(14)?,
             last_synced_at: last_synced_s.and_then(|s| {
                 DateTime::parse_from_rfc3339(&s)
@@ -843,9 +839,7 @@ pub fn get_by_simplefin_id(
             emergency_fund_eligible: r.get::<_, i64>(10)? != 0,
             goal_earmark: r.get(11)?,
             apy_pct: r.get(12)?,
-            created_at: DateTime::parse_from_rfc3339(&created_s)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: super::rfc3339(13, &created_s)?,
             simplefin_account_id: r.get(14)?,
             last_synced_at: last_synced_s.and_then(|s| {
                 DateTime::parse_from_rfc3339(&s)
@@ -919,11 +913,12 @@ pub fn list_balance_history(
     days: u32,
 ) -> CoreResult<Vec<AccountBalancePoint>> {
     let cutoff = format!("-{} days", days);
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT as_of_date, balance_cents, source FROM account_balances \
          WHERE account_id = ?1 AND as_of_date >= date('now', ?2) \
-         ORDER BY as_of_date ASC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END",
-    )?;
+         ORDER BY {}",
+        crate::metrics::balance_snapshot_order("", "ASC")
+    ))?;
     let rows = stmt.query_map(params![account_id, cutoff], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
     })?;

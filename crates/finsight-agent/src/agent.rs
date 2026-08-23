@@ -5,9 +5,6 @@ use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum AgentJob {
-    CategorizeImport {
-        import_id: String,
-    },
     CategorizeAll,
     /// Re-run LLM categorization on transactions whose current AI confidence
     /// is below the threshold. Useful after a user adds new rules or corrections.
@@ -90,7 +87,11 @@ async fn run_loop(
             AgentJob::CheckDueRecipes => {
                 let p = provider.read().unwrap().clone();
                 if let Some(p) = p {
-                    let _ = crate::recipe_runner::run_due_recipes(&db, p).await;
+                    if let Err(e) = crate::recipe_runner::run_due_recipes(&db, p).await {
+                        // Background job — nothing subscribes to a result here,
+                        // but the failure must not vanish without a trace.
+                        eprintln!("[agent] due-recipes run failed: {e}");
+                    }
                 }
             }
             AgentJob::RunRecipe { recipe_id } => {
@@ -112,9 +113,7 @@ async fn run_loop(
                     }
                 }
             }
-            job @ (AgentJob::CategorizeImport { .. }
-            | AgentJob::CategorizeAll
-            | AgentJob::RecategorizeLowConfidence) => {
+            job @ (AgentJob::CategorizeAll | AgentJob::RecategorizeLowConfidence) => {
                 let p = provider.read().unwrap().clone();
                 match p {
                     None => {

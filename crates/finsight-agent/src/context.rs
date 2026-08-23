@@ -703,16 +703,19 @@ fn investment_context(conn: &Connection) -> Vec<InvestmentAccountContext> {
 
 fn latest_total_balance(conn: &mut Connection) -> i64 {
     conn.query_row(
-        "SELECT COALESCE(SUM(COALESCE(
+        &format!(
+            "SELECT COALESCE(SUM(COALESCE(
              (SELECT balance_cents
               FROM account_balances b
               WHERE b.account_id = a.id
-              ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+              ORDER BY {}
               LIMIT 1),
              0
          )), 0)
          FROM accounts a
          WHERE a.archived_at IS NULL",
+            finsight_core::metrics::balance_snapshot_order("b.", "DESC")
+        ),
         [],
         |r| r.get(0),
     )
@@ -1092,15 +1095,22 @@ fn wellness_context(
 
 fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
     let mut out = Vec::new();
-    let mut stmt = match conn.prepare(
+    // Best-effort section: a failure degrades this one context block instead of
+    // aborting the whole Copilot prompt — but it must be visible in logs, not
+    // silently read as "no savings accounts".
+    let mut stmt = match conn.prepare(&format!(
         "SELECT a.name,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                 a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Savings'",
-    ) {
+        finsight_core::metrics::balance_snapshot_order("", "DESC")
+    )) {
         Ok(stmt) => stmt,
-        Err(_) => return out,
+        Err(e) => {
+            eprintln!("[context] savings_account_context query failed: {e}");
+            return out;
+        }
     };
     let rows = match stmt.query_map([], |r| {
         Ok((
@@ -1110,7 +1120,10 @@ fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
         ))
     }) {
         Ok(rows) => rows,
-        Err(_) => return out,
+        Err(e) => {
+            eprintln!("[context] savings_account_context query failed: {e}");
+            return out;
+        }
     };
     for row in rows.flatten() {
         let (name, balance_cents, apy_pct) = row;
@@ -1131,16 +1144,23 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
     // (AccountType::Credit) are deliberately excluded here — a mortgage/loan
     // has a fixed original balance you pay down over time, which "% paid
     // down" measures; revolving credit-card debt doesn't have that shape.
-    let mut stmt = match conn.prepare(
+    // Best-effort section (same policy as savings_account_context): failures
+    // degrade this block, but are logged rather than silently reading as
+    // "no loans".
+    let mut stmt = match conn.prepare(&format!(
         "SELECT a.name,
-                -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                 a.original_balance_cents, a.apr_pct, a.started_at
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Loan'
          ORDER BY balance DESC",
-    ) {
+        finsight_core::metrics::balance_snapshot_order("", "DESC")
+    )) {
         Ok(stmt) => stmt,
-        Err(_) => return out,
+        Err(e) => {
+            eprintln!("[context] loan_context query failed: {e}");
+            return out;
+        }
     };
     let rows = match stmt.query_map([], |r| {
         Ok((
@@ -1152,7 +1172,10 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
         ))
     }) {
         Ok(rows) => rows,
-        Err(_) => return out,
+        Err(e) => {
+            eprintln!("[context] loan_context query failed: {e}");
+            return out;
+        }
     };
     for row in rows.flatten() {
         let (name, balance_cents, original_balance_cents, apr_pct, started_at) = row;

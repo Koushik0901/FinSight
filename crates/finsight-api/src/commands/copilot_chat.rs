@@ -1055,7 +1055,7 @@ pub async fn delete_conversation_messages_after(
 
 fn emit_copilot_frame(sink: &Arc<dyn FrameSink>, frame: CopilotStreamFrame) {
     sink.emit(
-        "copilot-stream-frame",
+        crate::sink::event_names::COPILOT_STREAM_FRAME,
         serde_json::to_value(frame).expect("frame serializes"),
     );
 }
@@ -1267,7 +1267,7 @@ fn spawn_deep_answer(
         .await;
         let Ok(message_id) = persisted else { return };
         sink.emit(
-            "copilot-async-answer",
+            crate::sink::event_names::COPILOT_ASYNC_ANSWER,
             json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,

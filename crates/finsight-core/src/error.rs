@@ -16,6 +16,14 @@ pub enum CoreError {
 
     #[error("invalid state: {0}")]
     InvalidState(String),
+
+    /// A proposed action failed validation before touching state (malformed
+    /// payload, target not found). Distinct from [`CoreError::InvalidState`]
+    /// so callers can classify outcomes by variant instead of matching on
+    /// message substrings. Display still carries the historical
+    /// "validation: " prefix those messages always had.
+    #[error("validation: {0}")]
+    Validation(String),
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;

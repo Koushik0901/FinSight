@@ -2606,15 +2606,16 @@ fn expected_monthly_income_cents(snapshot: &FinancialSnapshot) -> i64 {
 }
 
 fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT a.id, a.name, a.type,
-                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                 a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct,
                 EXISTS(SELECT 1 FROM account_balances b WHERE b.account_id = a.id) AS balance_known
          FROM accounts a
          WHERE a.archived_at IS NULL
          ORDER BY a.bank, a.name",
-    )?;
+         finsight_core::metrics::balance_snapshot_order("", "DESC"),
+     ))?;
     let rows = stmt.query_map([], |r| {
         Ok(SnapshotAccount {
             id: r.get(0)?,
@@ -2707,17 +2708,18 @@ fn goal_by_id(conn: &mut Connection, goal_id: &str) -> rusqlite::Result<Option<S
 /// (and everything downstream that reasons about debt) already expects — the
 /// planning/reasoning logic itself is unchanged, only its data source moved.
 fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT id, name, type, balance, limit_cents, apr_pct, min_payment_cents, payoff_date, original_balance_cents, started_at, promo_apr_expires_on, post_promo_apr_pct FROM (
              SELECT a.id, a.name, a.type,
-                    -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1), 0) AS balance,
+                    -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                     a.limit_cents, a.apr_pct, a.min_payment_cents, a.payoff_date, a.original_balance_cents, a.started_at,
                     a.promo_apr_expires_on, a.post_promo_apr_pct
              FROM accounts a
              WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
          ) WHERE balance > 0
          ORDER BY balance DESC",
-    )?;
+        finsight_core::metrics::balance_snapshot_order("", "DESC")
+    ))?;
     let rows = stmt.query_map([], |r| {
         let account_type: String = r.get(2)?;
         Ok(SnapshotLiability {

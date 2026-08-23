@@ -28,8 +28,9 @@ fn parse_bindings() -> BTreeMap<String, BTreeSet<String>> {
 /// each `"cmd" =>` match arm up to the next arm.
 fn parse_dispatch_arg_keys() -> BTreeMap<String, BTreeSet<String>> {
     let src = include_str!("../src/dispatch.rs");
-    // Everything after `match cmd {` (skip the const arrays above it).
-    let body = &src[src.find("match cmd {").expect("match cmd block")..];
+    // Everything after the `rpc_routes!` invocation starts (skip the macro
+    // definition above it, whose templates are not real arms).
+    let body = &src[src.find("rpc_routes!(").expect("rpc_routes table")..];
     let mut out = BTreeMap::new();
     // Arm headers look like:  "list_accounts" =>
     let arm_re = regex::Regex::new(r#""([a-z0-9_]+)"\s*=>"#).unwrap();
@@ -104,5 +105,35 @@ fn dispatcher_arg_keys_match_bindings_exactly() {
         problems.is_empty(),
         "dispatcher arg-key mismatches (fix the arg(&p, \"…\") keys):\n{}",
         problems.join("\n")
+    );
+}
+
+/// Event-name contract guard: the generated `ui/src/api/eventNames.ts` must
+/// contain exactly the names in `finsight_api::sink::event_names::ALL`. Catches
+/// a stale generation step after adding/renaming a backend event (the class of
+/// drift that used to break streaming/import UX silently at runtime).
+#[test]
+fn generated_event_names_match_the_rust_contract() {
+    let src = include_str!("../../../ui/src/api/eventNames.ts");
+    let ts_names: BTreeSet<String> = src
+        .lines()
+        .filter(|l| l.contains('"'))
+        .map(|l| l.split('"').nth(1).unwrap().to_string())
+        .collect();
+    assert!(
+        ts_names.len() > 5,
+        "eventNames.ts parse looks broken: {ts_names:?}"
+    );
+    let rust: BTreeSet<String> = finsight_api::sink::event_names::ALL
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let missing: Vec<_> = rust.difference(&ts_names).collect();
+    let stale: Vec<_> = ts_names.difference(&rust).collect();
+    assert!(
+        missing.is_empty() && stale.is_empty(),
+        "eventNames.ts drifted from finsight_api::sink::event_names — \
+         rerun `cargo run -p finsight-bindings --bin export_bindings`: \
+         missing={missing:?} stale={stale:?}"
     );
 }

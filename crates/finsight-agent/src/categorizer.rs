@@ -36,7 +36,6 @@ pub async fn run_job(
     on_event: EventCallback,
 ) -> Result<()> {
     let (import_id, rerun_mode) = match &job {
-        AgentJob::CategorizeImport { import_id } => (Some(import_id.clone()), false),
         AgentJob::CategorizeAll => (None, false),
         AgentJob::RecategorizeLowConfidence => (None, true),
         _ => return Ok(()),
@@ -55,13 +54,12 @@ pub async fn run_job(
     // Load data needed for categorization on a blocking thread
     let (uncategorized, active_rules, categories, recent_examples) = {
         let db = db.clone();
-        let import_id_clone = import_id.clone();
         tokio::task::spawn_blocking(move || {
             let mut conn = db.get()?;
             let uncategorized = if rerun_mode {
                 load_low_confidence(&mut conn)?
             } else {
-                load_uncategorized(&mut conn, import_id_clone.as_deref())?
+                load_uncategorized(&mut conn)?
             };
             let active_rules = rules::list_active(&mut conn)?;
             let categories = load_categories(&mut conn)?;
@@ -123,37 +121,41 @@ pub async fn run_job(
             let cat_id = rule.category_id.clone();
             let txn_id = txn_id.clone();
             let wdb = db.clone();
+            // One atomic unit per transaction: the audit row, the canonical
+            // column, and the proposal resolution must land together, or a
+            // crash between them leaves a half-recorded categorization.
             tokio::task::spawn_blocking(move || {
                 let mut conn = wdb.get()?;
-                categorizations::insert(&mut conn, NewCategorization {
-                    txn_id: txn_id.clone(),
-                    category_id: Some(cat_id.clone()),
-                    source: "rule".to_string(),
-                    confidence: 1.0,
-                    model: None,
-                })?;
-                conn.execute(
-                    "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
-                    params![cat_id, txn_id],
-                )?;
-                // Issue #87: this is a canonical write through a path that is
-                // NOT accept/correct/reject, so it must resolve any live
-                // proposal — same contract as `repos::transactions::update`.
-                // It matters in rerun mode (`RecategorizeLowConfidence`),
-                // where `load_low_confidence` re-selects rows that may still
-                // carry a pending proposal: a user who adds a merchant rule
-                // and hits "Re-check" is giving a deliberate, stronger signal
-                // than the stale LLM guess. Without this, the proposal stays
-                // `pending` and clicking Accept later REVERTS the user's own
-                // rule back to that guess. Unconditional (no `rerun_mode`
-                // branch) — `resolve_for_txn` already no-ops unless a pending
-                // proposal exists.
-                finsight_core::repos::category_proposals::resolve_for_txn(
-                    &mut conn,
-                    &txn_id,
-                    Some(&cat_id),
-                )?;
-                Ok::<_, anyhow::Error>(())
+                finsight_core::repos::atomic(&mut conn, |conn| {
+                    categorizations::insert(conn, NewCategorization {
+                        txn_id: txn_id.clone(),
+                        category_id: Some(cat_id.clone()),
+                        source: "rule".to_string(),
+                        confidence: 1.0,
+                        model: None,
+                    })?;
+                    conn.execute(
+                        "UPDATE transactions SET category_id = ?1, ai_confidence = NULL, ai_explanation = NULL WHERE id = ?2",
+                        params![cat_id, txn_id],
+                    )?;
+                    // Issue #87: this is a canonical write through a path that is
+                    // NOT accept/correct/reject, so it must resolve any live
+                    // proposal — same contract as `repos::transactions::update`.
+                    // It matters in rerun mode (`RecategorizeLowConfidence`),
+                    // where `load_low_confidence` re-selects rows that may still
+                    // carry a pending proposal: a user who adds a merchant rule
+                    // and hits "Re-check" is giving a deliberate, stronger signal
+                    // than the stale LLM guess. Without this, the proposal stays
+                    // `pending` and clicking Accept later REVERTS the user's own
+                    // rule back to that guess. Unconditional (no `rerun_mode`
+                    // branch) — `resolve_for_txn` already no-ops unless a pending
+                    // proposal exists.
+                    finsight_core::repos::category_proposals::resolve_for_txn(
+                        conn,
+                        &txn_id,
+                        Some(&cat_id),
+                    )
+                })
             }).await??;
             drop(lease);
             categorized += 1;
@@ -245,53 +247,57 @@ pub async fn run_job(
             let db = db.clone();
             let write = tokio::task::spawn_blocking(move || {
                 let mut conn = db.get()?;
-                categorizations::insert(&mut conn, NewCategorization {
-                    txn_id: txn_id.clone(),
-                    category_id: Some(cat_id.clone()),
-                    source: "llm".to_string(),
-                    confidence,
-                    model: Some(model.clone()),
-                })?;
-                conn.execute(
-                    "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
-                    params![cat_id, confidence, rationale, txn_id],
-                )?;
-                // Issue #87 (Slice 1), additive: record a proposal ALONGSIDE
-                // the canonical write above — zero change to what counts as
-                // "categorized" today (`applied = true`, the write already
-                // happened). Below-threshold confidence is the only signal
-                // that puts a proposal in the review queue (`status =
-                // "pending"`); at/above threshold it is immediately
-                // "accepted" with `reviewed_at` left NULL (auto-accepted, not
-                // a human decision — see `CategoryProposal::reviewed_at`).
-                // This only runs for txn_ids/category_ids already validated
-                // above (`valid_category_ids` excludes archived categories,
-                // `chunk_txn_ids` excludes hallucinated ids), so it inherits
-                // the same abstain-on-archived and no-dangling-FK guarantees
-                // as the canonical write.
-                let status = if confidence < LOW_CONFIDENCE_THRESHOLD {
-                    "pending"
-                } else {
-                    "accepted"
-                };
-                finsight_core::repos::category_proposals::upsert(
-                    &mut conn,
-                    finsight_core::models::NewCategoryProposal {
+                // One atomic unit per transaction: the audit row, the canonical
+                // column, and the proposal record must land together.
+                finsight_core::repos::atomic(&mut conn, |conn| {
+                    categorizations::insert(conn, NewCategorization {
                         txn_id: txn_id.clone(),
-                        proposed_category_id: cat_id.clone(),
+                        category_id: Some(cat_id.clone()),
                         source: "llm".to_string(),
                         confidence,
-                        rationale: Some(rationale.clone()),
-                        candidates_json: Some(
-                            json!([{"category_id": cat_id.clone(), "confidence": confidence}])
-                                .to_string(),
-                        ),
-                        status: status.to_string(),
-                        applied: true,
-                        model: Some(model),
-                    },
-                )?;
-                Ok::<_, anyhow::Error>(())
+                        model: Some(model.clone()),
+                    })?;
+                    conn.execute(
+                        "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
+                        params![cat_id, confidence, rationale, txn_id],
+                    )?;
+                    // Issue #87 (Slice 1), additive: record a proposal ALONGSIDE
+                    // the canonical write above — zero change to what counts as
+                    // "categorized" today (`applied = true`, the write already
+                    // happened). Below-threshold confidence is the only signal
+                    // that puts a proposal in the review queue (`status =
+                    // "pending"`); at/above threshold it is immediately
+                    // "accepted" with `reviewed_at` left NULL (auto-accepted, not
+                    // a human decision — see `CategoryProposal::reviewed_at`).
+                    // This only runs for txn_ids/category_ids already validated
+                    // above (`valid_category_ids` excludes archived categories,
+                    // `chunk_txn_ids` excludes hallucinated ids), so it inherits
+                    // the same abstain-on-archived and no-dangling-FK guarantees
+                    // as the canonical write.
+                    let status = if confidence < LOW_CONFIDENCE_THRESHOLD {
+                        "pending"
+                    } else {
+                        "accepted"
+                    };
+                    finsight_core::repos::category_proposals::upsert(
+                        conn,
+                        finsight_core::models::NewCategoryProposal {
+                            txn_id: txn_id.clone(),
+                            proposed_category_id: cat_id.clone(),
+                            source: "llm".to_string(),
+                            confidence,
+                            rationale: Some(rationale.clone()),
+                            candidates_json: Some(
+                                json!([{"category_id": cat_id.clone(), "confidence": confidence}])
+                                    .to_string(),
+                            ),
+                            status: status.to_string(),
+                            applied: true,
+                            model: Some(model),
+                        },
+                    )
+                    .map(|_| ())
+                })
             })
             .await;
             // Defense in depth: a single row's write failure must not abort the
@@ -339,8 +345,11 @@ pub async fn run_job(
         skipped: final_skipped,
     });
 
-    // Post-run: anomaly detection (best-effort — failures don't abort the scan).
-    let _ = crate::anomaly::detect_anomalies(db, Arc::clone(&provider)).await;
+    // Post-run: anomaly detection (best-effort — failures don't abort the scan,
+    // but they must not vanish silently).
+    if let Err(e) = crate::anomaly::detect_anomalies(db, Arc::clone(&provider)).await {
+        eprintln!("[categorizer] post-scan anomaly detection failed: {e}");
+    }
 
     // Post-run: persist scan metadata for status ticker.
     {
@@ -370,13 +379,10 @@ pub async fn run_job(
 pub(crate) fn load_uncategorized_for_proposals(
     conn: &mut rusqlite::Connection,
 ) -> Result<Vec<(String, String, i64)>> {
-    load_uncategorized(conn, None)
+    load_uncategorized(conn)
 }
 
-fn load_uncategorized(
-    conn: &mut rusqlite::Connection,
-    _import_id: Option<&str>,
-) -> Result<Vec<(String, String, i64)>> {
+fn load_uncategorized(conn: &mut rusqlite::Connection) -> Result<Vec<(String, String, i64)>> {
     // Exclude transfers / credit-card payments: the builtin pass already flags
     // them (is_transfer = 1) and they are not spending or income, so they must
     // not be handed to the LLM — otherwise it invents a bogus spending category
