@@ -1,7 +1,5 @@
 import { useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import { isServerMode } from "../api/auth";
 import { uploadCsv } from "../api/csvUpload";
 import { userErrorMessage } from "../utils/runtime";
 
@@ -16,17 +14,8 @@ export default function FilePicker({ onPicked, label = "Pick a CSV…", disabled
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  async function pick() {
-    if (isServerMode()) {
-      inputRef.current?.click();
-      return;
-    }
-    const selected = await openDialog({
-      multiple: false,
-      directory: false,
-      filters: [{ name: "CSV", extensions: ["csv"] }],
-    });
-    if (typeof selected === "string") onPicked(selected);
+  function pick() {
+    inputRef.current?.click();
   }
 
   async function uploadSelected(file: File | undefined) {
@@ -55,16 +44,14 @@ export default function FilePicker({ onPicked, label = "Pick a CSV…", disabled
       >
         {uploading ? "Uploading…" : label}
       </button>
-      {isServerMode() && (
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv,text/csv"
-          hidden
-          onChange={(event) => void uploadSelected(event.target.files?.[0])}
-          data-testid="csv-file-input"
-        />
-      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,text/csv"
+        hidden
+        onChange={(event) => void uploadSelected(event.target.files?.[0])}
+        data-testid="csv-file-input"
+      />
     </>
   );
 }
