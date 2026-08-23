@@ -115,7 +115,7 @@ pub async fn trigger_recipe(state: &ApiState, id: String) -> AppResult<String> {
     .await
     .map_err(AppError::from)?;
 
-    let ctx = match run(&db, |conn| Ok(context::build_context(conn))).await {
+    let ctx = match run(&db, |conn| context::build_context(conn)).await {
         Ok(ctx) => ctx,
         Err(err) => {
             let run_id = recipe_run.id.clone();

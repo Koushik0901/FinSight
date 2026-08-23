@@ -90,7 +90,21 @@ async fn run_loop(
                     if let Err(e) = crate::recipe_runner::run_due_recipes(&db, p).await {
                         // Background job — nothing subscribes to a result here,
                         // but the failure must not vanish without a trace.
-                        eprintln!("[agent] due-recipes run failed: {e}");
+                        tracing::error!("[agent] due-recipes run failed: {e}");
+                        // Durable Inbox-style warning so the failure is visible in the UI
+                        // beyond the server log. Best-effort: recording the warning
+                        // must not mask the job outcome.
+                        if let Ok(conn) = db.get() {
+                            let mut warnings: Vec<String> =
+                                finsight_core::settings::get(&conn, "data.agent_warnings")
+                                    .unwrap_or(None)
+                                    .unwrap_or_default();
+                            warnings.push(format!("due-recipes: {e}"));
+                            let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                        }
+                        on_event(AgentEvent::Error {
+                            message: format!("Due-recipes failed: {e}"),
+                        });
                     }
                 }
             }

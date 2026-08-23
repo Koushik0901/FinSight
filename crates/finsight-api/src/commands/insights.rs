@@ -45,7 +45,7 @@ pub struct HealthScore {
 pub async fn get_financial_health_score(state: &ApiState) -> AppResult<HealthScore> {
     let db = (*state.db).clone();
     run(&db, |conn| {
-        let ctx = build_context(conn);
+        let ctx = build_context(conn)?;
         // Score against the user's configured targets, not hardcoded numbers, so
         // the scorecard reflects the goals set in Settings → Financial targets.
         let assumptions = finsight_core::metrics::assumptions(conn);

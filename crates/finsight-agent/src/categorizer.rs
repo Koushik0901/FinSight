@@ -195,7 +195,7 @@ pub async fn run_job(
         let results = match chunk_result {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("[categorizer] chunk failed, skipping: {e}");
+                tracing::error!("[categorizer] chunk failed, skipping: {e}");
                 on_event(AgentEvent::CategorizationProgress {
                     import_id: import_id.clone(),
                     done: categorized,
@@ -219,95 +219,111 @@ pub async fn run_job(
         if lease.superseded() {
             return Ok(());
         }
+        // Collect valid results first — category and txn validation outside the
+        // transaction so only well-formed rows enter the atomic batch.
+        let model_id = provider.model_id().to_string();
+        let mut valid: Vec<(String, String, f64, String)> = Vec::new();
         for r in &results {
-            // Validate the category_id returned by the LLM exists in our category set.
-            // Skip results with hallucinated or stale IDs to avoid writing dangling FKs.
             if !valid_category_ids.contains(&r.category_id) {
-                eprintln!(
+                tracing::warn!(
                     "[categorizer] LLM returned unknown category_id '{}' for txn '{}', skipping",
                     r.category_id, r.txn_id
                 );
                 continue;
             }
-            // Validate the txn_id was actually in this batch (guards the
-            // transactions FK against LLM-hallucinated ids).
             if !chunk_txn_ids.contains(r.txn_id.as_str()) {
-                eprintln!(
+                tracing::warn!(
                     "[categorizer] LLM returned unknown txn_id '{}', skipping",
                     r.txn_id
                 );
                 continue;
             }
-
-            let txn_id = r.txn_id.clone();
-            let cat_id = r.category_id.clone();
-            let confidence = r.confidence;
-            let rationale = r.rationale.clone();
-            let model = provider.model_id().to_string();
-            let db = db.clone();
-            let write = tokio::task::spawn_blocking(move || {
-                let mut conn = db.get()?;
-                // One atomic unit per transaction: the audit row, the canonical
-                // column, and the proposal record must land together.
-                finsight_core::repos::atomic(&mut conn, |conn| {
-                    categorizations::insert(conn, NewCategorization {
-                        txn_id: txn_id.clone(),
-                        category_id: Some(cat_id.clone()),
-                        source: "llm".to_string(),
-                        confidence,
-                        model: Some(model.clone()),
-                    })?;
-                    conn.execute(
-                        "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
-                        params![cat_id, confidence, rationale, txn_id],
+            valid.push((r.txn_id.clone(), r.category_id.clone(), r.confidence, r.rationale.clone()));
+        }
+        if !valid.is_empty() {
+            let db_for_chunk = db.clone();
+            let valid_for_task = valid.clone();
+            let model_for_task = model_id.clone();
+            // One transaction for the whole chunk — like repos/rules.rs:90-104.
+            // A mid-batch failure rolls back the entire chunk rather than leaving
+            // a partial write (0 rows not 1).
+            let write_res = tokio::task::spawn_blocking(move || {
+                let mut conn = db_for_chunk.get()?;
+                let tx = conn.transaction()?;
+                {
+                    let mut insert_cat = tx.prepare_cached(
+                        "INSERT INTO categorizations(id, txn_id, category_id, source, confidence, model, at) VALUES(?1, ?2, ?3, 'llm', ?4, ?5, ?6)",
                     )?;
-                    // Issue #87 (Slice 1), additive: record a proposal ALONGSIDE
-                    // the canonical write above — zero change to what counts as
-                    // "categorized" today (`applied = true`, the write already
-                    // happened). Below-threshold confidence is the only signal
-                    // that puts a proposal in the review queue (`status =
-                    // "pending"`); at/above threshold it is immediately
-                    // "accepted" with `reviewed_at` left NULL (auto-accepted, not
-                    // a human decision — see `CategoryProposal::reviewed_at`).
-                    // This only runs for txn_ids/category_ids already validated
-                    // above (`valid_category_ids` excludes archived categories,
-                    // `chunk_txn_ids` excludes hallucinated ids), so it inherits
-                    // the same abstain-on-archived and no-dangling-FK guarantees
-                    // as the canonical write.
-                    let status = if confidence < LOW_CONFIDENCE_THRESHOLD {
-                        "pending"
-                    } else {
-                        "accepted"
-                    };
-                    finsight_core::repos::category_proposals::upsert(
-                        conn,
-                        finsight_core::models::NewCategoryProposal {
-                            txn_id: txn_id.clone(),
-                            proposed_category_id: cat_id.clone(),
-                            source: "llm".to_string(),
-                            confidence,
-                            rationale: Some(rationale.clone()),
-                            candidates_json: Some(
-                                json!([{"category_id": cat_id.clone(), "confidence": confidence}])
-                                    .to_string(),
-                            ),
-                            status: status.to_string(),
-                            applied: true,
-                            model: Some(model),
-                        },
-                    )
-                    .map(|_| ())
-                })
+                    let mut update_txn = tx.prepare_cached(
+                        "UPDATE transactions SET category_id = ?1, ai_confidence = ?2, ai_explanation = ?3 WHERE id = ?4",
+                    )?;
+                    for (txn_id, cat_id, confidence, rationale) in &valid_for_task {
+                        let cid = uuid::Uuid::new_v4().to_string();
+                        let now = chrono::Utc::now().to_rfc3339();
+                        insert_cat.execute(rusqlite::params![cid, txn_id, cat_id, confidence, model_for_task.clone(), now])?;
+                        update_txn.execute(rusqlite::params![cat_id, confidence, rationale, txn_id])?;
+                        let status = if *confidence < LOW_CONFIDENCE_THRESHOLD { "pending" } else { "accepted" };
+                        let prop_id = uuid::Uuid::new_v4().to_string();
+                        let candidates = json!([{"category_id": cat_id.clone(), "confidence": confidence}]).to_string();
+                        tx.execute(
+                            "INSERT INTO category_proposals \
+                                (id, txn_id, proposed_category_id, source, confidence, rationale, candidates_json, status, applied, model, created_at, reviewed_at) \
+                             VALUES (?1, ?2, ?3, 'llm', ?4, ?5, ?6, ?7, 1, ?8, ?9, NULL) \
+                             ON CONFLICT(txn_id) DO UPDATE SET \
+                                id = excluded.id, \
+                                proposed_category_id = excluded.proposed_category_id, \
+                                source = excluded.source, \
+                                confidence = excluded.confidence, \
+                                rationale = excluded.rationale, \
+                                candidates_json = excluded.candidates_json, \
+                                status = excluded.status, \
+                                applied = excluded.applied, \
+                                model = excluded.model, \
+                                created_at = excluded.created_at, \
+                                reviewed_at = NULL \
+                             WHERE category_proposals.status = 'pending'",
+                            rusqlite::params![
+                                prop_id,
+                                txn_id,
+                                cat_id,
+                                confidence,
+                                rationale,
+                                candidates,
+                                status,
+                                model_for_task.clone(),
+                                now
+                            ],
+                        )?;
+                    }
+                }
+                tx.commit()?;
+                Ok::<_, anyhow::Error>(valid_for_task.len() as u32)
             })
             .await;
-            // Defense in depth: a single row's write failure must not abort the
-            // whole categorization job — log it and keep going.
-            match write {
-                Ok(Ok(())) => categorized += 1,
+            match write_res {
+                Ok(Ok(n)) => categorized += n,
                 Ok(Err(e)) => {
-                    eprintln!("[categorizer] write failed for one transaction, skipping: {e}")
+                    tracing::error!("[categorizer] chunk transaction failed, rolled back: {e}");
+                    if let Ok(conn) = db.get() {
+                        let mut warnings: Vec<String> =
+                            finsight_core::settings::get(&conn, "data.agent_warnings")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                        warnings.push(format!("categorizer chunk failed: {e}"));
+                        let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                    }
                 }
-                Err(e) => eprintln!("[categorizer] write task join error, skipping: {e}"),
+                Err(e) => {
+                    tracing::error!("[categorizer] chunk task join error: {e}");
+                    if let Ok(conn) = db.get() {
+                        let mut warnings: Vec<String> =
+                            finsight_core::settings::get(&conn, "data.agent_warnings")
+                                .unwrap_or(None)
+                                .unwrap_or_default();
+                        warnings.push(format!("categorizer join error: {e}"));
+                        let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                    }
+                }
             }
         }
         drop(lease);
@@ -346,21 +362,59 @@ pub async fn run_job(
     });
 
     // Post-run: anomaly detection (best-effort — failures don't abort the scan,
-    // but they must not vanish silently).
+    // but they must not vanish silently). Anomaly writes already honor the
+    // ResetBarrier lease (Bound B exception — see anomaly::detect_anomalies).
     if let Err(e) = crate::anomaly::detect_anomalies(db, Arc::clone(&provider)).await {
-        eprintln!("[categorizer] post-scan anomaly detection failed: {e}");
+        tracing::error!("[categorizer] post-scan anomaly detection failed: {e}");
+        // Surface as a durable Inbox-style warning so the failure is visible
+        // beyond the server log. Best-effort: a failure to record the warning
+        // must not mask the scan result.
+        if let Ok(conn) = db.get() {
+            let mut warnings: Vec<String> =
+                finsight_core::settings::get(&conn, "data.agent_warnings")
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+            warnings.push(format!("anomaly detection: {e}"));
+            let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+        }
     }
 
     // Post-run: persist scan metadata for status ticker.
     {
-        let db = db.clone();
+        let db_outer = db.clone();
+        let db_for_task = db.clone();
         let n = categorized;
-        let _ = tokio::task::spawn_blocking(move || {
-            let conn = db.get()?;
+        let res = tokio::task::spawn_blocking(move || {
+            let conn = db_for_task.get()?;
             crate::anomaly::store_last_scan(&conn, n)?;
             Ok::<_, anyhow::Error>(())
         })
         .await;
+        match res {
+            Ok(Ok(())) => {},
+            Ok(Err(e)) => {
+                tracing::error!("[categorizer] store_last_scan failed: {e}");
+                if let Ok(conn) = db_outer.get() {
+                    let mut warnings: Vec<String> =
+                        finsight_core::settings::get(&conn, "data.agent_warnings")
+                            .unwrap_or(None)
+                            .unwrap_or_default();
+                    warnings.push(format!("store_last_scan: {e}"));
+                    let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                }
+            }
+            Err(e) => {
+                tracing::error!("[categorizer] store_last_scan join error: {e}");
+                if let Ok(conn) = db_outer.get() {
+                    let mut warnings: Vec<String> =
+                        finsight_core::settings::get(&conn, "data.agent_warnings")
+                            .unwrap_or(None)
+                            .unwrap_or_default();
+                    warnings.push(format!("store_last_scan join: {e}"));
+                    let _ = finsight_core::settings::set(&conn, "data.agent_warnings", &warnings);
+                }
+            }
+        }
     }
 
     Ok(())

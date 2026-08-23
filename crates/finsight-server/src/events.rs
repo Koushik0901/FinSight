@@ -7,10 +7,19 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use finsight_api::error::AppError;
 use std::convert::Infallible;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+
+static DROPPED_FRAMES: AtomicU64 = AtomicU64::new(0);
+static LAG_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// Total broadcast frames dropped due to lag since process start.
+pub fn dropped_frames() -> u64 {
+    DROPPED_FRAMES.load(Ordering::Relaxed)
+}
 
 const KEEP_ALIVE_EVENT: &str = finsight_api::sink::event_names::KEEP_ALIVE;
 
@@ -45,8 +54,20 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
     st.registry.touch(&user.user_id);
     let rx = rt.events.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|ev| match ev {
-        Ok(ev) => Some(Ok::<_, Infallible>(Event::default().data(sse_data(&ev)))),
-        Err(_lagged) => None, // dropped frames are acceptable; see spec reconnect rule
+        Ok(ev) => {
+            // Reset burst flag on successful delivery so next lag burst warns again.
+            LAG_WARNED.store(false, Ordering::Relaxed);
+            Some(Ok::<_, Infallible>(Event::default().data(sse_data(&ev))))
+        }
+        Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
+            let total = DROPPED_FRAMES.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+            // Emit lag_warned metric once per burst to avoid log spam while still surfacing the loss.
+            if !LAG_WARNED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(dropped = n, total_dropped = total, "sse broadcast lagged, dropped frames");
+            }
+            None
+        }
+        Err(_) => None,
     });
     // Safari/WebKit can time out an otherwise healthy EventSource when the
     // only traffic is an SSE comment. Send a real, valid envelope instead;

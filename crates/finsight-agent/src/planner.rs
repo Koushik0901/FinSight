@@ -39,7 +39,7 @@ pub async fn plan(
     provider_id: &str,
     model_id: &str,
 ) -> anyhow::Result<PlanResult> {
-    let context = build_context(conn);
+    let context = build_context(conn).map_err(|e| anyhow::anyhow!("context: {e}"))?;
     let llm_response = provider
         .complete_json(&build_system_prompt(&context), question)
         .await?;
@@ -212,7 +212,7 @@ pub fn persist_plan(
         );
     }
 
-    let context_json = serde_json::to_string(&build_context(conn))
+    let context_json = serde_json::to_string(&build_context(conn).map_err(|e| CoreError::InvalidState(e.to_string()))?)
         .map_err(|e| CoreError::InvalidState(e.to_string()))?;
     copilot_sessions::save_context_snapshot(conn, session_id, &context_json)?;
 

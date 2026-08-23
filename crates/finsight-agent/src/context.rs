@@ -564,7 +564,7 @@ impl FinancialContext {
     }
 }
 
-pub fn build_context(conn: &mut Connection) -> FinancialContext {
+pub fn build_context(conn: &mut Connection) -> Result<FinancialContext, finsight_core::CoreError> {
     let now = Utc::now();
     let month = now.format("%Y-%m").to_string();
     let month_start = now.format("%Y-%m-01").to_string();
@@ -600,7 +600,7 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
         )
         .unwrap_or(0);
 
-    FinancialContext {
+    Ok(FinancialContext {
         generated_at: now.to_rfc3339(),
         cashflow: CashflowContext {
             total_balance_cents,
@@ -624,7 +624,7 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
         goals: goal_context(conn, now.date_naive()),
         transactions: transaction_context(conn, &month_start),
         memory: recent_memory(conn),
-        wellness: wellness_context(conn, avg_monthly_expense_cents, savings_rate_pct),
+        wellness: wellness_context(conn, avg_monthly_expense_cents, savings_rate_pct)?,
         household_members: finsight_core::repos::household::list_members(conn)
             .map(|ms| ms.into_iter().map(|m| m.name).collect())
             .unwrap_or_default(),
@@ -642,7 +642,7 @@ pub fn build_context(conn: &mut Connection) -> FinancialContext {
                 })
                 .collect(),
         },
-    }
+    })
 }
 
 /// Ledger-derived portfolio picture per investment account (top 5 positions
@@ -1007,7 +1007,7 @@ fn wellness_context(
     conn: &mut Connection,
     avg_monthly_expense_cents: i64,
     savings_rate_pct: i64,
-) -> WellnessContext {
+) -> Result<WellnessContext, finsight_core::CoreError> {
     // Emergency-fund coverage from the shared metrics layer: liquid,
     // emergency-fund-eligible, non-debt balance over average monthly expense.
     let emergency_fund_balance = metrics::balance_breakdown(conn)
@@ -1077,10 +1077,10 @@ fn wellness_context(
         "declining".to_string()
     };
 
-    let savings_accounts = savings_account_context(conn);
-    let loans = loan_context(conn);
+    let savings_accounts = savings_account_context(conn)?;
+    let loans = loan_context(conn)?;
 
-    WellnessContext {
+    Ok(WellnessContext {
         emergency_fund_months,
         emergency_fund_months_reliable,
         total_debt_cents,
@@ -1090,95 +1090,85 @@ fn wellness_context(
         pay_yourself_first_target_pct: target_savings_rate_pct,
         savings_accounts,
         loans,
-    }
+    })
 }
 
-fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
+fn savings_account_context(conn: &mut Connection) -> Result<Vec<SavingsAccountItem>, finsight_core::CoreError> {
     let mut out = Vec::new();
-    // Best-effort section: a failure degrades this one context block instead of
-    // aborting the whole Copilot prompt — but it must be visible in logs, not
-    // silently read as "no savings accounts".
-    let mut stmt = match conn.prepare(&format!(
-        "SELECT a.name,
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT a.name,
                 COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                 a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Savings'",
-        finsight_core::repos::balance::balance_snapshot_order("", "DESC")
-    )) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            eprintln!("[context] savings_account_context query failed: {e}");
-            return out;
-        }
-    };
-    let rows = match stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, Option<f64>>(2)?,
+            finsight_core::repos::balance::balance_snapshot_order("", "DESC")
         ))
-    }) {
-        Ok(rows) => rows,
-        Err(e) => {
-            eprintln!("[context] savings_account_context query failed: {e}");
-            return out;
-        }
-    };
-    for row in rows.flatten() {
-        let (name, balance_cents, apy_pct) = row;
+        .map_err(|e| {
+            tracing::error!("[context] savings_account_context prepare failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("savings_account_context: {e}"))
+        })?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<f64>>(2)?,
+            ))
+        })
+        .map_err(|e| {
+            tracing::error!("[context] savings_account_context query failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("savings_account_context: {e}"))
+        })?;
+    for row in rows {
+        let (name, balance_cents, apy_pct) = row.map_err(|e| {
+            tracing::error!("[context] savings_account_context row failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("savings_account_context: {e}"))
+        })?;
         out.push(SavingsAccountItem {
             name,
             balance_cents,
             apy_pct,
         });
     }
-    out
+    Ok(out)
 }
 
-fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
-    let mut out = Vec::new();
-    // Debt used to live in a separate `liabilities` table (loan_type IN
-    // ('loan','mortgage'), balance stored as a positive amount owed); it's
-    // now a Loan-type Account with a negative balance. Credit cards
-    // (AccountType::Credit) are deliberately excluded here — a mortgage/loan
-    // has a fixed original balance you pay down over time, which "% paid
-    // down" measures; revolving credit-card debt doesn't have that shape.
-    // Best-effort section (same policy as savings_account_context): failures
-    // degrade this block, but are logged rather than silently reading as
-    // "no loans".
-    let mut stmt = match conn.prepare(&format!(
-        "SELECT a.name,
+fn loan_context(conn: &mut Connection) -> Result<Vec<LoanDetailItem>, finsight_core::CoreError> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT a.name,
                 -COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1), 0) AS balance,
                 a.original_balance_cents, a.apr_pct, a.started_at
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Loan'
          ORDER BY balance DESC",
-        finsight_core::repos::balance::balance_snapshot_order("", "DESC")
-    )) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            eprintln!("[context] loan_context query failed: {e}");
-            return out;
-        }
-    };
-    let rows = match stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, Option<i64>>(2)?,
-            r.get::<_, Option<f64>>(3)?,
-            r.get::<_, Option<String>>(4)?,
+            finsight_core::repos::balance::balance_snapshot_order("", "DESC")
         ))
-    }) {
-        Ok(rows) => rows,
-        Err(e) => {
-            eprintln!("[context] loan_context query failed: {e}");
-            return out;
-        }
-    };
-    for row in rows.flatten() {
-        let (name, balance_cents, original_balance_cents, apr_pct, started_at) = row;
+        .map_err(|e| {
+            tracing::error!("[context] loan_context prepare failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("loan_context: {e}"))
+        })?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<i64>>(2)?,
+                r.get::<_, Option<f64>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(|e| {
+            tracing::error!("[context] loan_context query failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("loan_context: {e}"))
+        })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (name, balance_cents, original_balance_cents, apr_pct, started_at) = row.map_err(|e| {
+            tracing::error!("[context] loan_context row failed: {e}");
+            finsight_core::CoreError::InvalidState(format!("loan_context: {e}"))
+        })?;
         let paid_down_pct = original_balance_cents
             .filter(|o| *o > 0)
             .map(|o| ((o - balance_cents).max(0) * 100 / o).clamp(0, 100));
@@ -1191,7 +1181,7 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
             paid_down_pct,
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1261,7 +1251,7 @@ mod tests {
         let (_dir, db) = fresh_db();
         let mut conn = db.get().unwrap();
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
 
         assert_eq!(ctx.cashflow.total_balance_cents, 0);
         assert_eq!(ctx.cashflow.avg_monthly_income_cents, 0);
@@ -1327,7 +1317,7 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
 
         assert_eq!(
             ctx.budget.total_spent_cents, 3000,
@@ -1363,7 +1353,7 @@ mod tests {
             [&acct],
         ).unwrap();
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
         assert_eq!(ctx.transactions.total_count, 2);
         assert_eq!(
             ctx.transactions.uncategorized_count, 1,
@@ -1460,7 +1450,7 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
 
         assert_eq!(ctx.wellness.savings_accounts.len(), 1);
         assert_eq!(ctx.wellness.savings_accounts[0].apy_pct, Some(4.5));
@@ -1498,7 +1488,7 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
         assert_eq!(ctx.investments.len(), 1);
         let inv = &ctx.investments[0];
         assert_eq!(inv.name, "TFSA");
@@ -1523,7 +1513,7 @@ mod tests {
         let (_dir, db) = fresh_db();
         let mut conn = db.get().unwrap();
         seed_account(&mut conn, 100_000);
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
         assert!(ctx.investments.is_empty());
         assert!(!ctx.to_prompt_string().contains("7. INVESTMENTS"));
     }
@@ -1565,7 +1555,7 @@ mod tests {
             .unwrap();
         }
 
-        let ctx = build_context(&mut conn);
+        let ctx = build_context(&mut conn).unwrap();
 
         // Derive model: opening $10,000 + net activity (+$6,000) = $16,000, and
         // the Copilot context now reads the derived balance (not the stale seed).
