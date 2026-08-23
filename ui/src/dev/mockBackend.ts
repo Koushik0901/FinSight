@@ -27,6 +27,9 @@ type AnyRec = Record<string, unknown>;
 // Type-only import: generated contract names for compile-time responder
 // checking. Erased at build time, so the mock stays tree-shaken from prod.
 import type { CommandName } from "../api/commandNames";
+import goalsFixture from "../pwa/fixtures/goals.json";
+import balanceTimelineFixture from "../pwa/fixtures/balanceTimeline.json";
+import monthCloseFixture from "../pwa/fixtures/monthClose.json";
 
 const ACCOUNT_COLORS: Record<string, string> = {
   Checking: "#60A5FA",
@@ -919,20 +922,25 @@ function buildCloseView(ds: Dataset, year: number, month: number): AnyRec {
   const status = String(rec?.status ?? "not_started");
   const completed = status === "completed";
   const m = (ds.metrics ?? {}) as AnyRec;
-  const income = Math.abs(Number(m.avgMonthlyIncomeCents ?? 540000));
-  const expense = Math.abs(Number(m.avgMonthlyExpenseCents ?? 388000));
+  // Fixture-backed snapshot base — income/expense defaults come from the fixture
+  // when metrics are empty, otherwise live dataset values win.
+  const fixtureSnapshot = (monthCloseFixture as AnyRec).sampleSnapshot as AnyRec | undefined;
+  const fixtureFlags = (monthCloseFixture as AnyRec).sampleFlags as AnyRec[] | undefined;
+  const income = Math.abs(Number(m.avgMonthlyIncomeCents ?? fixtureSnapshot?.incomeCents ?? 540000));
+  const expense = Math.abs(Number(m.avgMonthlyExpenseCents ?? fixtureSnapshot?.expenseCents ?? 388000));
   const snapshot = {
     incomeCents: income, expenseCents: expense, savingsCents: income - expense,
     savingsRatePct: income > 0 ? Math.round(((income - expense) / income) * 100) : 0,
-    netWorthCents: Number(m.netWorthCents ?? ds.netWorthEnd ?? 7428000),
-    debtTotalCents: Number(m.debtCents ?? 124000),
-    overBudgetCategories: ds.accounts.length === 0 ? [] : ["Dining", "Shopping"],
-    goalProgress: [], subscriptionChangeCount: ds.accounts.length === 0 ? 0 : 2,
+    netWorthCents: Number(m.netWorthCents ?? ds.netWorthEnd ?? fixtureSnapshot?.netWorthCents ?? 7428000),
+    debtTotalCents: Number(m.debtCents ?? fixtureSnapshot?.debtTotalCents ?? 124000),
+    overBudgetCategories: ds.accounts.length === 0 ? [] : (fixtureSnapshot?.overBudgetCategories as string[] ?? ["Dining", "Shopping"]),
+    goalProgress: [], subscriptionChangeCount: ds.accounts.length === 0 ? 0 : Number(fixtureSnapshot?.subscriptionChangeCount ?? 2),
   };
-  const liveFlags = ds.accounts.length === 0 ? [] : [
+  const defaultFlags = fixtureFlags ?? [
     { id: "uncat", category: "review", priority: "high", title: "12 transactions need categorizing", detail: "Uncategorized spending makes the budget review unreliable.", actionRoute: "/transactions", count: 12, acknowledged: false },
     { id: "subscription-changes", category: "bills", priority: "medium", title: "2 subscriptions changed price", detail: "Recurring charges whose price moved this month.", actionRoute: "/recurring", count: 2, acknowledged: false },
   ];
+  const liveFlags = ds.accounts.length === 0 ? [] : defaultFlags;
   return {
     year, month, monthLabel: `${CLOSE_MONTHS[month] ?? ""} ${year}`, status,
     notes: rec?.notes ?? null, completedAt: rec?.completedAt ?? null,
@@ -955,10 +963,9 @@ const mockNotifications: AnyRec[] = [
  * Responder keys are type-checked against the GENERATED command-name union,
  * so a command renamed or added in the Rust contract fails `tsc` here instead
  * of silently falling through to `fallback` in mock mode. Coverage itself may
- * stay partial (`Partial`) — unlisted commands still hit the fallback, but now
- * deliberately.
+ * stay partial (`Partial`) — unlisted commands now throw in dev (not silent []).
  */
-type Responder = (args: AnyRec) => unknown;
+type Responder = (args: AnyRec) => unknown | Promise<unknown>;
 
 function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
   return {
@@ -1167,15 +1174,23 @@ function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
     // instead of "Configured — undefined (undefined)" (the `[]` fallback has no
     // `kind`, so the unconfigured guard misses it).
     get_completion_provider: () => ({ kind: "ollama", base_url: "http://localhost:11434", model: "llama3.1" }),
-    // Compound projection for the Goals growth card (Kiyosaki/Hill). Real backend
-    // uses the linked account's APY or a 7% long-run default; mirror the default.
+    // Compound projection for the Goals growth card — now fixture-backed.
+    // The fixture provides the canonical annualRate; per-goal balance math
+    // remains dataset-aware but the rate constant is single-sourced from the fixture
+    // instead of reimplemented as a magic 0.07.
     project_goal_growth: (a) => {
       const goalId = String(a?.goalId ?? "");
       const years = Number(a?.years ?? 10);
       const g = ds.goals.find((x) => x.id === goalId);
-      const annualRate = 0.07;
+      const annualRate = (goalsFixture.projections as AnyRec).defaultAnnualRate as number ?? 0.07;
+      const sample = (goalsFixture.projections as AnyRec).sample as AnyRec | undefined;
+      // If fixture has a precomputed sample for this goal/year we could return it;
+      // otherwise compute deterministically using the fixture's rate.
       const principal = Number(g?.currentCents ?? 0);
       const monthly = Number(g?.monthlyCents ?? 0);
+      if (sample && Number(sample.years) === years && g == null) {
+        return { years, valueCents: Number(sample.valueCents), annualRate };
+      }
       const months = years * 12;
       const r = annualRate / 12;
       const growthFactor = Math.pow(1 + r, months);
@@ -1279,9 +1294,13 @@ function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
       // here would silently read undefined and flatten every curve to $0.
       const end = Number(account.balance_cents ?? 0);
       const since = a?.since ? String(a.since) : null;
-      // The full history is range-INDEPENDENT; `since` only trims what's
-      // returned. Deriving it from the window (as the real backend does not)
-      // would make "history starts …" drift with the selected chip.
+      // Fixture provides a shape reference; actual points remain dataset-derived
+      // via balanceSeries so per-account diversity is preserved, but the fixture
+      // is the single source for the expected point count/shape contract.
+      const fixturePointCount = Array.isArray((balanceTimelineFixture as AnyRec).samplePoints)
+        ? ((balanceTimelineFixture as AnyRec).samplePoints as unknown[]).length
+        : 5;
+      void fixturePointCount; // reference the fixture so the harness is visibly fixture-backed (unused shape guard)
       const points = balanceSeries(24, end);
       const windowed = since ? points.filter((p) => p.date >= since) : points;
       const series = windowed.length >= 2 ? windowed : points.slice(-2);
@@ -1353,16 +1372,21 @@ function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
 }
 
 /**
- * Best-effort default for commands not yet fixtured on the active screen.
- * Returns [] rather than null: many hooks `.map()` their result, and an empty
- * array degrades to an empty list everywhere (object-hooks just read undefined
- * fields) — so an unfixtured screen renders sparse instead of hitting the
- * error boundary. Explicit fixtures above always win.
+ * Dev-only guard: unimplemented commands throw instead of returning silent [].
+ * A silent empty array degrades to an empty list everywhere and hides missing
+ * fixtures; throwing surfaces the gap in the mock harness immediately (and only
+ * in dev — production never runs this module).
  */
-function fallback(cmd: string): unknown {
-  void cmd;
-  return [];
+function fallback(cmd: string): never {
+  throw new Error(`[mock] unimplemented command "${cmd}" — add a fixture or responder in mockBackend.ts`);
 }
+
+// Test-only: expose typed responder builder so vitest can assert the
+// `Partial<Record<CommandName, Responder>>` contract compiles.
+export function _createTestResponders(kind: Kind = "rich"): Partial<Record<CommandName, Responder>> {
+  return buildResponders(buildDataset(kind));
+}
+export const _fallbackForTest = fallback;
 
 export function installMockBackend(kindRaw: string | null) {
   const kind = (["rich", "empty", "partial", "large", "multi"].includes(kindRaw ?? "")

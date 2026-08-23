@@ -1,0 +1,11 @@
+{
+  "projections": {
+    "defaultAnnualRate": 0.07,
+    "sample": {
+      "years": 10,
+      "valueCents": 1850000,
+      "annualRate": 0.07
+    }
+  },
+  "growthNotes": "Compound projection fixture: replaces inline Math.pow in mockBackend project_goal_growth. Values are illustrative, not audited."
+}

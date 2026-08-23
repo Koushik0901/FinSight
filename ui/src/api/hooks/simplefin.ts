@@ -13,21 +13,8 @@ import {
 } from "../client";
 import { unwrap } from "../client";
 import { invalidateDomains } from "../invalidation";
-
-/**
- * Canonical keys for every simplefin query. Exported so screens that need to
- * invalidate one surface (e.g. the Inbox resolving alerts/transfers/import
- * review) reuse these instead of re-typing the shape by hand.
- */
-export const simplefinKeys = {
-  status: ["simplefin", "status"] as const,
-  accounts: ["simplefin", "accounts"] as const,
-  connections: ["simplefin", "connections"] as const,
-  syncSettings: ["simplefin", "syncSettings"] as const,
-  alerts: ["simplefin", "alerts"] as const,
-  transfers: ["simplefin", "transfers"] as const,
-  importReview: ["simplefin", "importReview"] as const,
-};
+import { simplefinKeys } from "./_factory";
+export { simplefinKeys };
 
 export function useSimpleFinStatus() {
   return useQuery<SimpleFinStatus>({

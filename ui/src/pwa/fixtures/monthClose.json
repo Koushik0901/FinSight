@@ -1,0 +1,17 @@
+{
+  "meta": "Fixture for mockBackend month-end close snapshots — replaces inline buildCloseView math",
+  "sampleSnapshot": {
+    "incomeCents": 540000,
+    "expenseCents": 388000,
+    "savingsCents": 152000,
+    "savingsRatePct": 28,
+    "netWorthCents": 7428000,
+    "debtTotalCents": 124000,
+    "overBudgetCategories": ["Dining", "Shopping"],
+    "goalProgress": [],
+    "subscriptionChangeCount": 2
+  },
+  "sampleFlags": [
+    { "id": "uncat", "category": "review", "priority": "high", "title": "12 transactions need categorizing", "detail": "Uncategorized spending makes the budget review unreliable.", "actionRoute": "/transactions", "count": 12, "acknowledged": false }
+  ]
+}

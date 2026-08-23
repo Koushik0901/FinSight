@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type AgentActionBundle, type AgentExecutionEntry, type AgentSession } from "../client";
 import { unwrap } from "../client";
 import { invalidateDomains } from "../invalidation";
+import { actionBundleKeys } from "./_factory";
+// Re-export for consumers that historically imported from this module.
+export { actionBundleKeys };
 
 export function useAgentSessions() {
   return useQuery<AgentSession[]>({
@@ -35,19 +38,6 @@ export function useCloseAgentSession() {
     },
   });
 }
-
-/**
- * Canonical keys for action-bundle queries. Any other module that needs this
- * key shape must use these factories — hand-copied literals silently become a
- * *different* cache entry the day the key gains a segment.
- */
-export const actionBundleKeys = {
-  /** Root, for prefix invalidation only. */
-  all: ["action-bundles"] as const,
-  /** List shape used by every bundle-list consumer (session slot may be null). */
-  list: (statusFilter?: string | null, sessionId?: string | null, limit?: number) =>
-    ["action-bundles", statusFilter ?? null, sessionId ?? null, limit ?? null] as const,
-};
 
 export function useActionBundles(statusFilter?: string | null, limit?: number) {
   return useQuery<AgentActionBundle[]>({

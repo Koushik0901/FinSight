@@ -6,7 +6,7 @@ import * as I from "./Icons";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { commands } from "../api/client";
 import { unwrap } from "../api/client";
-import { actionBundleKeys } from "../api/hooks/copilot";
+import { actionBundleKeys } from "../api/hooks/_factory";
 import { isBackendAvailable } from "../utils/runtime";
 import Drawer from "./Drawer";
 

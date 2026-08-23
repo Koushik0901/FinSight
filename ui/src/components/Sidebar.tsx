@@ -10,7 +10,7 @@ import { useAccounts } from "../api/hooks/accounts";
 import { useGoals } from "../api/hooks/budget";
 import { commands } from "../api/client";
 import { unwrap } from "../api/client";
-import { actionBundleKeys } from "../api/hooks/copilot";
+import { actionBundleKeys } from "../api/hooks/_factory";
 import { isBackendAvailable } from "../utils/runtime";
 
 interface NavEntry {

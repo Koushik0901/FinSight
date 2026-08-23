@@ -155,6 +155,12 @@ export const DOMAIN_KEYS = {
   simplefin: SIMPLEFIN,
 } as const;
 
+// ── Canonical query-key factories (re-exported from _factory for consumers that
+// prefer importing from the invalidation module). Keeping them here makes
+// `import { actionBundleKeys } from "../invalidation"` work alongside the
+// preferred `import { actionBundleKeys } from "./hooks/_factory"`.
+export { actionBundleKeys, simplefinKeys, inboxKeys } from "./hooks/_factory";
+
 export type InvalidationDomain = keyof typeof DOMAIN_KEYS;
 
 /** Stable string id for a root, so composite domains dedupe overlapping keys. */

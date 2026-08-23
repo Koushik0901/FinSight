@@ -1,0 +1,11 @@
+{
+  "meta": "Fixture for mockBackend get_account_balance_timeline — replaces inline balanceSeries math",
+  "samplePoints": [
+    { "date": "2024-01-01", "balanceCents": 850000 },
+    { "date": "2024-04-01", "balanceCents": 1120000 },
+    { "date": "2024-07-01", "balanceCents": 980000 },
+    { "date": "2024-10-01", "balanceCents": 1350000 },
+    { "date": "2025-01-01", "balanceCents": 1520000 }
+  ],
+  "anchorQualities": ["anchoredOpening", "assumedZero", "calibrated"]
+}

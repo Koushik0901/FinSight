@@ -16,7 +16,8 @@ import {
   useCreateImportCandidateTransaction,
   useDismissImportCandidate,
 } from "../api/hooks/simplefin";
-import { simplefinKeys } from "../api/hooks/simplefin";
+import { simplefinKeys } from "../api/hooks/_factory";
+import { inboxKeys } from "../api/hooks/_factory";
 import { money } from "../utils/format";
 import Button from "../components/Button";
 import Card from "../components/Card";
@@ -434,12 +435,12 @@ export default function Inbox({ embedded = false }: { embedded?: boolean }) {
     : null;
 
   const handleRefresh = () => {
-    void qc.invalidateQueries({ queryKey: ["action-items"] });
+    void qc.invalidateQueries({ queryKey: inboxKeys.actionItems });
     void qc.invalidateQueries({ queryKey: simplefinKeys.alerts });
     void qc.invalidateQueries({ queryKey: simplefinKeys.transfers });
     void qc.invalidateQueries({ queryKey: simplefinKeys.importReview });
-    void qc.invalidateQueries({ queryKey: ["unresolved-counterparties"] });
-    void qc.invalidateQueries({ queryKey: ["notifications"] });
+    void qc.invalidateQueries({ queryKey: inboxKeys.unresolvedCounterparties });
+    void qc.invalidateQueries({ queryKey: inboxKeys.notifications });
   };
 
   const handleRerunAi = () => {
