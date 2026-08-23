@@ -9,8 +9,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 /// loop until restart. The guarded data is kept consistent by transactional
 /// discipline in the writers, so a poisoned-but-recovered lock is strictly
 /// better than a bricked auth layer.
-pub(crate) fn lock_recovered<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+pub fn lock_recovered<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| {
+        tracing::warn!("recovering poisoned mutex");
+        poisoned.into_inner()
+    })
 }
 
 /// How long an OAuth client registration that no one ever consented to is kept

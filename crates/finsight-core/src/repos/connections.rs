@@ -89,7 +89,21 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<SimpleFinConnection>> {
     let rows = stmt.query_map([], |r| {
         let last_synced_s: Option<String> = r.get(10)?;
         let created_s: String = r.get(11)?;
-        Ok(SimpleFinConnection {
+        let created_at = match DateTime::parse_from_rfc3339(&created_s) {
+            Ok(d) => d.with_timezone(&Utc),
+            Err(e) => {
+                tracing::warn!(created_s, "skipping SimpleFin connection with malformed created_at: {e}");
+                return Ok(None);
+            }
+        };
+        let last_synced_at = last_synced_s.and_then(|s| match DateTime::parse_from_rfc3339(&s) {
+            Ok(d) => Some(d.with_timezone(&Utc)),
+            Err(e) => {
+                tracing::warn!(value = %s, "malformed last_synced_at, treating as None: {e}");
+                None
+            }
+        });
+        Ok(Some(SimpleFinConnection {
             id: r.get(0)?,
             access_url_ref: r.get(1)?,
             conn_id: r.get(2)?,
@@ -100,17 +114,15 @@ pub fn list(conn: &mut Connection) -> CoreResult<Vec<SimpleFinConnection>> {
             label: r.get(7)?,
             status: r.get(8)?,
             last_error: r.get(9)?,
-            last_synced_at: last_synced_s.and_then(|s| {
-                DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            created_at: super::rfc3339(11, &created_s)?,
-        })
+            last_synced_at,
+            created_at,
+        }))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        out.push(row?);
+        if let Some(conn) = row? {
+            out.push(conn);
+        }
     }
     Ok(out)
 }
@@ -123,6 +135,13 @@ pub fn get(conn: &mut Connection, id: &str) -> CoreResult<SimpleFinConnection> {
         |r| {
             let last_synced_s: Option<String> = r.get(10)?;
             let created_s: String = r.get(11)?;
+            let last_synced_at = last_synced_s.and_then(|s| match DateTime::parse_from_rfc3339(&s) {
+                Ok(d) => Some(d.with_timezone(&Utc)),
+                Err(e) => {
+                    tracing::warn!(value = %s, "malformed last_synced_at, treating as None: {e}");
+                    None
+                }
+            });
             Ok(SimpleFinConnection {
                 id: r.get(0)?,
                 access_url_ref: r.get(1)?,
@@ -134,14 +153,8 @@ pub fn get(conn: &mut Connection, id: &str) -> CoreResult<SimpleFinConnection> {
                 label: r.get(7)?,
                 status: r.get(8)?,
                 last_error: r.get(9)?,
-                last_synced_at: last_synced_s.and_then(|s| {
-                    DateTime::parse_from_rfc3339(&s)
-                        .ok()
-                        .map(|d| d.with_timezone(&Utc))
-                }),
-                created_at: DateTime::parse_from_rfc3339(&created_s)
-                    .unwrap()
-                    .with_timezone(&Utc),
+                last_synced_at,
+                created_at: super::rfc3339(11, &created_s)?,
             })
         },
     )
@@ -205,6 +218,13 @@ pub fn find_by_conn_id(
     let mut rows = stmt.query_map(params![conn_id], |r| {
         let last_synced_s: Option<String> = r.get(10)?;
         let created_s: String = r.get(11)?;
+        let last_synced_at = last_synced_s.and_then(|s| match DateTime::parse_from_rfc3339(&s) {
+            Ok(d) => Some(d.with_timezone(&Utc)),
+            Err(e) => {
+                tracing::warn!(value = %s, "malformed last_synced_at, treating as None: {e}");
+                None
+            }
+        });
         Ok(SimpleFinConnection {
             id: r.get(0)?,
             access_url_ref: r.get(1)?,
@@ -216,11 +236,7 @@ pub fn find_by_conn_id(
             label: r.get(7)?,
             status: r.get(8)?,
             last_error: r.get(9)?,
-            last_synced_at: last_synced_s.and_then(|s| {
-                DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
+            last_synced_at,
             created_at: super::rfc3339(11, &created_s)?,
         })
     })?;

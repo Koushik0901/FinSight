@@ -576,7 +576,7 @@ mod tests {
             registry.evict_idle(Duration::ZERO).is_empty(),
             "a runtime with a live SSE subscriber must never be evicted"
         );
-        assert!(registry.0.lock().unwrap().contains_key("user-1"));
+        assert!(lock_recovered(&registry.0).contains_key("user-1"));
 
         // Once the stream closes, normal idle eviction resumes.
         drop(subscriber);
@@ -599,6 +599,6 @@ mod tests {
 
         let evicted = registry.evict_idle(Duration::ZERO);
         assert_eq!(evicted, vec!["user-1".to_string()]);
-        assert!(!registry.0.lock().unwrap().contains_key("user-1"));
+        assert!(!lock_recovered(&registry.0).contains_key("user-1"));
     }
 }

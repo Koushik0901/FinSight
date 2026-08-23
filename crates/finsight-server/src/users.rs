@@ -297,6 +297,16 @@ impl UsersDb {
         Ok(Self(Mutex::new(conn)))
     }
 
+    /// Test helper: poison the inner mutex by panicking while holding it.
+    /// Subsequent calls via `lock_recovered` must still succeed.
+    #[doc(hidden)]
+    pub fn poison_for_test(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = self.0.lock().unwrap();
+            panic!("intentional poison for users_poison test");
+        }));
+    }
+
     pub fn is_empty(&self) -> rusqlite::Result<bool> {
         let conn = lock_recovered(&self.0);
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
@@ -1141,7 +1151,7 @@ mod tests {
         }
         // Backdate two of them past the age floor.
         {
-            let conn = db.0.lock().unwrap();
+            let conn = crate::state::lock_recovered(&db.0);
             for id in ["junk_old", "consented_old"] {
                 conn.execute(
                     "UPDATE oauth_clients SET created_at = ?2 WHERE client_id = ?1",
@@ -1183,7 +1193,7 @@ mod tests {
 
         db.mark_oauth_client_authorized("cid").unwrap();
         let first: String = {
-            let conn = db.0.lock().unwrap();
+            let conn = crate::state::lock_recovered(&db.0);
             conn.query_row(
                 "SELECT first_authorized_at FROM oauth_clients WHERE client_id='cid'",
                 [],
@@ -1196,7 +1206,7 @@ mod tests {
         db.mark_oauth_client_authorized("cid").unwrap();
 
         let second: String = {
-            let conn = db.0.lock().unwrap();
+            let conn = crate::state::lock_recovered(&db.0);
             conn.query_row(
                 "SELECT first_authorized_at FROM oauth_clients WHERE client_id='cid'",
                 [],

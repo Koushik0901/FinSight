@@ -36,13 +36,26 @@ pub fn find_candidates(
     )?;
     let rows = stmt.query_map(params![account_id, since.to_rfc3339()], |r| {
         let posted_s: String = r.get(2)?;
-        Ok((
+        let posted_at = match DateTime::parse_from_rfc3339(&posted_s) {
+            Ok(d) => d.with_timezone(&Utc),
+            Err(e) => {
+                tracing::warn!(posted_s, "skipping transaction with malformed posted_at: {e}");
+                return Ok(None);
+            }
+        };
+        Ok(Some((
             r.get::<_, String>(0)?,
             r.get::<_, i64>(1)?,
-            super::rfc3339(2, &posted_s)?,
-        ))
+            posted_at,
+        )))
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.into())
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(v) = row? {
+            out.push(v);
+        }
+    }
+    Ok(out)
 }
 
 /// A pending transfer suggestion with the two transactions and accounts shown.
@@ -80,23 +93,50 @@ pub fn list_suggestions(conn: &mut Connection) -> CoreResult<Vec<TransferSuggest
         let from_posted_s: String = r.get(7)?;
         let to_posted_s: String = r.get(12)?;
         let detected_s: String = r.get(2)?;
-        Ok(TransferSuggestion {
+        let detected_at = match DateTime::parse_from_rfc3339(&detected_s) {
+            Ok(d) => d.with_timezone(&Utc),
+            Err(e) => {
+                tracing::warn!(detected_s, "skipping transfer with malformed detected_at: {e}");
+                return Ok(None);
+            }
+        };
+        let from_posted_at = match DateTime::parse_from_rfc3339(&from_posted_s) {
+            Ok(d) => d.with_timezone(&Utc),
+            Err(e) => {
+                tracing::warn!(from_posted_s, "skipping transfer with malformed from_posted_at: {e}");
+                return Ok(None);
+            }
+        };
+        let to_posted_at = match DateTime::parse_from_rfc3339(&to_posted_s) {
+            Ok(d) => d.with_timezone(&Utc),
+            Err(e) => {
+                tracing::warn!(to_posted_s, "skipping transfer with malformed to_posted_at: {e}");
+                return Ok(None);
+            }
+        };
+        Ok(Some(TransferSuggestion {
             id: r.get(0)?,
             confidence: r.get(1)?,
-            detected_at: super::rfc3339(2, &detected_s)?,
+            detected_at,
             from_transaction_id: r.get(3)?,
             from_account_name: r.get(4)?,
             from_merchant: r.get(5)?,
             from_amount_cents: r.get(6)?,
-            from_posted_at: super::rfc3339(7, &from_posted_s)?,
+            from_posted_at,
             to_transaction_id: r.get(8)?,
             to_account_name: r.get(9)?,
             to_merchant: r.get(10)?,
             to_amount_cents: r.get(11)?,
-            to_posted_at: super::rfc3339(12, &to_posted_s)?,
-        })
+            to_posted_at,
+        }))
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.into())
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(v) = row? {
+            out.push(v);
+        }
+    }
+    Ok(out)
 }
 
 pub fn confirm(conn: &mut Connection, id: &str) -> CoreResult<()> {

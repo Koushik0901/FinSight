@@ -434,7 +434,7 @@ mod tests {
         let token = "expired-token".to_string();
         // Insert directly with an expiry already in the past — deterministic,
         // no reliance on real time elapsing between create() and get().
-        store.map.lock().unwrap().insert(
+        lock_recovered(&store.map).insert(
             token.clone(),
             SessionEntry {
                 user_id: "user-1".to_string(),
@@ -446,7 +446,7 @@ mod tests {
 
         assert!(store.get(&token).is_none());
         // And it was purged, not just skipped.
-        assert!(!store.map.lock().unwrap().contains_key(&token));
+        assert!(!lock_recovered(&store.map).contains_key(&token));
     }
 
     // ------------------------------------------------ persistent sessions ---

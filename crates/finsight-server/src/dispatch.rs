@@ -110,23 +110,20 @@ pub async fn rpc(
     {
         Ok(rt) => rt,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AppError::new("auth.runtime", e.to_string())),
-            )
-                .into_response()
+            let err = AppError::new("auth.runtime", e.to_string());
+            let status =
+                StatusCode::from_u16(err.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            return (status, Json(err)).into_response();
         }
     };
     st.registry.touch(&user.user_id);
     match dispatch(&rt.api, &rt.events, &cmd, p).await {
         Ok(v) => (StatusCode::OK, Json(v)).into_response(),
-        Err(e) if e.code == "rpc.unknown_command" => {
-            (StatusCode::NOT_FOUND, Json(e)).into_response()
+        Err(e) => {
+            let status =
+                StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            (status, Json(e)).into_response()
         }
-        Err(e) if e.code == "rpc.bad_arg" || e.code == "rpc.invalid_import_upload" => {
-            (StatusCode::BAD_REQUEST, Json(e)).into_response()
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(e)).into_response(),
     }
 }
 

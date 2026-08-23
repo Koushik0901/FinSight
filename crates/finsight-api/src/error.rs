@@ -27,6 +27,67 @@ impl AppError {
         self.details = Some(details);
         self
     }
+
+    /// Map the machine-readable `code` to an HTTP status. The mapping is
+    /// intentionally coarse — the code is the primary discriminator for the
+    /// frontend, the status is only for HTTP semantics and observability.
+    pub fn http_status(&self) -> u16 {
+        let c = self.code.as_str();
+        if c == "rpc.unknown_command" {
+            return 404;
+        }
+        if c == "validation"
+            || c.starts_with("validation.")
+            || c.starts_with("validation:")
+            || c == "core.invalid_state"
+            || c == "rpc.bad_arg"
+            || c == "rpc.invalid_import_upload"
+            || c == "auth.invalid_input"
+            || c == "auth.weak_password"
+        {
+            return 400;
+        }
+        if c == "conflict"
+            || c.starts_with("conflict.")
+            || c == "auth.already_setup"
+            || c == "auth.username_taken"
+        {
+            return 409;
+        }
+        if c == "unprocessable" || c.starts_with("unprocessable") {
+            return 422;
+        }
+        // Internal-type auth codes must not be treated as 401.
+        if c == "auth.db"
+            || c == "auth.crypto"
+            || c == "auth.runtime"
+            || c == "auth.migration_failed"
+            || c == "core.db"
+            || c == "core.pool"
+            || c == "core.migration"
+            || c == "core.keychain"
+        {
+            return 500;
+        }
+        if c == "auth.admin_required" {
+            return 403;
+        }
+        if c == "auth.too_many_attempts" {
+            return 429;
+        }
+        if c == "auth" || c.starts_with("auth.") || c.starts_with("auth:") {
+            return 401;
+        }
+        if c == "internal"
+            || c.starts_with("internal")
+            || c.starts_with("core.")
+            || c.starts_with("rpc.")
+            || c.starts_with("simplefin.")
+        {
+            return 500;
+        }
+        500
+    }
 }
 
 /// Explicit conversion from CoreError. Mapping preserves the cause kind so
