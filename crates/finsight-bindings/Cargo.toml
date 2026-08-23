@@ -52,7 +52,7 @@ tauri-plugin-notification = "2"
 # feature on from the other crates' dev-dependencies and would hide its absence,
 # but `cargo test -p finsight-bindings` resolves features from this crate's
 # graph alone and would not find `finsight_core::testing`.
-finsight-core = { path = "../finsight-core", features = ["testing"] }
+finsight-core = { path = "../finsight-core", features = ["testing", "dev-seed"] }
 keyring.workspace = true
 rusqlite.workspace = true
 tempfile.workspace = true

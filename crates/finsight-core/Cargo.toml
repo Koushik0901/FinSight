@@ -31,9 +31,13 @@ tempfile = { workspace = true, optional = true }
 # shipped binaries: dev-dependencies do not contribute features to a normal
 # `cargo build`.
 testing = ["dep:tempfile"]
+# Dev-only sample/demo seed data. The `sample` and `seed` modules are compiled
+# only for tests or when this feature is enabled — they must not bloat release
+# builds (unlike `testing`, which is also test-gated in lib.rs).
+dev-seed = []
 
 [dev-dependencies]
 rstest.workspace = true
 tempfile.workspace = true
 # finsight-core's own tests use the fixtures too.
-finsight-core = { path = ".", features = ["testing"] }
+finsight-core = { path = ".", features = ["testing", "dev-seed"] }

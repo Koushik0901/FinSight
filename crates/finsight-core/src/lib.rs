@@ -19,7 +19,9 @@ pub mod recurring;
 pub mod repos;
 pub mod reset_barrier;
 pub mod routes;
+#[cfg(any(test, feature = "dev-seed"))]
 pub mod sample;
+#[cfg(any(test, feature = "dev-seed"))]
 pub mod seed;
 pub mod settings;
 pub mod spending;
