@@ -107,7 +107,7 @@ fn openapi_commands_match_dispatch_supported() {
 
 #[test]
 fn openapi_json_paths_match_commands() {
-    let spec = finsight_openapi::build_openapi();
+    let spec = finsight_openapi::build_openapi_value();
     let paths = spec["paths"].as_object().expect("paths must be object");
     let openapi_cmds: BTreeSet<String> = finsight_openapi::COMMANDS
         .iter()

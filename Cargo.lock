@@ -2278,6 +2278,9 @@ name = "finsight-openapi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "finsight-api",
+ "finsight-core",
+ "finsight-providers",
  "serde",
  "serde_json",
  "utoipa",
