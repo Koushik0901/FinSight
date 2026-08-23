@@ -60,7 +60,7 @@ pub async fn events(State(st): State<Arc<ServerState>>, user: AuthedUser) -> Res
             Some(Ok::<_, Infallible>(Event::default().data(sse_data(&ev))))
         }
         Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
-            let total = DROPPED_FRAMES.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+            let total = DROPPED_FRAMES.fetch_add(n, Ordering::Relaxed) + n;
             // Emit lag_warned metric once per burst to avoid log spam while still surfacing the loss.
             if !LAG_WARNED.swap(true, Ordering::Relaxed) {
                 tracing::warn!(

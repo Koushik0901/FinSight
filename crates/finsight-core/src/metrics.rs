@@ -654,6 +654,7 @@ pub fn robust_monthly_expense_cents_scoped(
     }
     vals.sort_unstable();
     let mid = vals.len() / 2;
+    #[allow(clippy::manual_is_multiple_of)]
     let median = if vals.len() % 2 == 0 {
         (vals[mid - 1] + vals[mid]) / 2
     } else {
