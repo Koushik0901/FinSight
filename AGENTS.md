@@ -1,36 +1,25 @@
 # AGENTS.md
 
-This file provides guidance to Codex and other coding agents working in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Commands
 
 ```bash
-# Thin desktop shell (Phase 4) + Vite frontend with hot reload.
-# NOTE: as of Phase 4 the desktop app is a THIN WEBVIEW SHELL with no local
-# database and no local command surface — it shows a ConnectScreen asking for a
-# self-hosted server URL, then navigates the window there and behaves exactly
-# like the browser/PWA. So `tauri:dev` launches that shell; point it at a
-# running `cargo run -p finsight-server` instance to see real data. (The old
-# `.dev`-isolated local-DB behavior is gone — the shell owns no DB to isolate.)
-pnpm tauri:dev
-
 # Frontend only (no Tauri, faster for UI-only work)
 cd ui && npm run dev
 
 # Server mode (Immich-style self-hosted): API + SSE + serves ui/dist on :8674.
 # Data dir defaults to ./data (gitignored; FINSIGHT_DATA_DIR to override):
 # users.db (account registry + wrapped keys) + one SQLCipher DB per user.
-# Sessions have a sliding 30-day lifetime and survive restarts: users.db stores
-# only token hashes plus DB keys wrapped by /data/session.key. Unwrapped DB keys
-# still exist only in memory. Each DB key is also wrapped by Argon2id(password)
-# and by a printable recovery key.
+# Sessions are in memory; each DB key is wrapped by Argon2id(password) and by
+# a printable recovery key.
 # A legacy Phase-1 plaintext `db.key` is migrated and deleted on first setup.
 cargo run -p finsight-server
 
 # Browser dev against the server: start the server, then `cd ui && npm run dev`
-# (vite proxies /api → :8674; the HTTP/SSE shim auto-installs when no Tauri and
-# no ?mock). For the served-from-server experience: `cd ui && npm run build`
-# then open http://localhost:8674 directly.
+# (vite proxies /api → :8674; the HTTP shim auto-installs when no ?mock). For
+# the served-from-server experience: `cd ui && npm run build` then open
+# http://localhost:8674 directly.
 
 # Self-hosting (Docker + Tailscale/Caddy/LAN): see docs/self-hosting.md
 
@@ -49,8 +38,8 @@ cd ui && npx vitest run src/screens/Settings.test.tsx
 # TypeScript type-check (no emit)
 cd ui && npx tsc --noEmit
 
-# Regenerate TypeScript bindings after changing the shared command contract
-cargo run -p finsight-bindings --bin export_bindings
+# Regenerate the OpenAPI contract + TypeScript client after changing the API
+pnpm openapi   # cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen
 
 # Build for production
 cd ui && npm run build
@@ -58,20 +47,21 @@ cd ui && npm run build
 
 ## Architecture
 
-FinSight has completed the self-hosted client/server architecture described in
-`docs/superpowers/specs/2026-07-15-server-architecture-design.md`. Every shared
-command body lives in the Tauri-free **`finsight-api`** crate. The browser, PWA,
-and navigated desktop shell use **`finsight-server`** over HTTP/SSE; the shipped
-Tauri binary is only a server-URL webview shell. Server events (Copilot
-streaming, import progress) flow through `FrameSink` to SSE `/api/events`, and
-`ui/src/api/httpBackend.ts` preserves the generated bindings' invoke/event
-contract. The parity tests in `crates/finsight-server/tests/parity.rs` enforce
-that every generated command is routed with exactly the camelCase argument keys
-sent by `bindings.ts`.
+FinSight is a pure self-hosted PWA (`docs/superpowers/specs/2026-08-24-pure-selfhost-openapi-design.md`).
+Every shared command body lives in the Tauri-free **`finsight-api`** crate. The
+browser and installed PWA use **`finsight-server`** over HTTP/SSE; there is no
+native binary. `GET /api/openapi.json` (generated from `finsight-openapi`) is
+the contract for `ui/src/api/openapi.ts` (`openapi-typescript` + `openapi-fetch`);
+`ui/src/api/httpBackend.ts`’s `__TAURI_INTERNALS__` shim is the legacy bridge
+kept for `bindings.ts` compat while hooks migrate. Server events (Copilot
+streaming, import progress) flow through `FrameSink` to SSE `/api/events`. The
+parity tests in `crates/finsight-server/tests/parity.rs` + `crates/finsight-openapi`
+enforce that every `COMMANDS` entry is routed with exactly the camelCase keys
+sent by the generated client.
 
 ### Rust workspace (8 crates)
 
-**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store. All SQL lives here. No Tauri dependency.
+**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store, and the financial engines (`metrics`, `forecast`, `cashflow`, `provenance`). All SQL lives here. No Tauri dependency.
 
 **`crates/finsight-providers`** — CSV import parsers, LLM provider HTTP clients (`CompletionProvider` trait with Ollama / OpenAI-compat / Anthropic impls).
 
@@ -79,13 +69,31 @@ sent by `bindings.ts`.
 
 **`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-bindings`** — codegen-only Tauri wrapper and exporter package. Each `#[tauri::command]` delegates to the same-named `finsight_api::commands::*` function through `&state.api`; `build_specta_builder()` supplies the contract emitted by `export_bindings`. This package is not linked into the shipped desktop binary.
+**`crates/finsight-bindings`** — legacy codegen-only Tauri wrapper (kept for `bindings.ts` compat while hooks migrate to the OpenAPI client). Each `#[tauri::command]` delegates to `finsight_api::commands::*`; `build_specta_builder()` supplies the contract for `export_bindings`.
 
-**`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` machine-checks the dispatcher against `bindings.ts`.
+**`crates/finsight-openapi`** — OpenAPI spec generation (pure self-hosted contract). `COMMANDS` + `build_openapi()` produce `openapi.json` and `ui/src/api/openapi.json`; `export_openapi` binary + `pnpm openapi:gen` (`openapi-typescript`) generate `ui/src/api/openapi.ts`. No Tauri dep.
+
+**`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, `GET /api/openapi.json`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` + `finsight-openapi` tests machine-check the dispatcher against `COMMANDS`. It also hosts the **MCP server** (`POST /mcp`) — see below.
+
+### MCP server (bring-your-own-LLM Copilot)
+
+`crates/finsight-server/src/mcp.rs` exposes the Copilot's capabilities to external LLM clients (Claude Desktop, claude.ai, ChatGPT, Claude Code) so a user's own subscription can replace the in-app Copilot. Hand-rolled JSON-RPC over Streamable HTTP with plain-JSON responses (no `rmcp` dep, no SSE, stateless — every tool is a sub-second local read).
+
+- **The tool list IS `standard_toolset()`** (43 tools) plus 5 hand-written wrappers over `finsight_api::commands::copilot` for action bundles. Registering a tool in the Copilot's toolset exposes it over MCP automatically — `tests/mcp.rs` machine-checks that link, the same way `parity.rs` guards the RPC surface. `tools/list` must stay **sorted by name** (`ToolSet` is `HashMap`-backed, so unsorted output reorders every restart).
+- **Auth is bearer-only, never cookies** (`mcp.rs::McpAuth`): `finsight_pat_<base64url 32B>` tokens whose raw bytes are the KEK wrapping the user's DB key (`crypto::wrap_key_with_token`), stored as a SHA-256 hash in `users.db`'s `api_tokens`. Scopes are `read` (38 tools) and `full` (48+widgets). Password recovery revokes all tokens — a leaked bearer must not survive the flow you run when you think you're compromised.
+- **Scope refusals are HTTP 403 + `error="insufficient_scope"`, not a JSON-RPC error.** That is the one failure a client can fix itself, via the spec's step-up flow; a `-32602` would just dead-end the user on a read-only token.
+- **OAuth tokens expire (1h) and carry a refresh token; hand-made PATs never expire** (`expires_unix` NULL). Refresh **rotates**: `consume_refresh_token` deletes the presented token *and* the access token it minted in one transaction, so a stolen refresh token buys exactly one renewal. Revoking a token in Settings also drops its refresh token, or revocation silently wouldn't stick.
+- **Writes stay two-phase.** `draft_*` tools stage a pending `copilot_actions` bundle stamped `provider_id = "mcp:<token id>"`; approve/execute refuse anything else, so a client can apply only what **it** drafted — not an in-app proposal mid-review, and not another connected client's pending draft (approval means "the user agreed in this conversation", which a second assistant never witnessed).
+- `src/oauth.rs` is the OAuth 2.1 authorization server (RFC 8414/9728 discovery, RFC 7591 dynamic registration, PKCE S256, `authorization_code` + `refresh_token` grants) that cloud connectors use; `/oauth/authorize` is an SPA screen, not a server route.
+- `src/mcp_ui.rs` serves **MCP Apps UI** widgets: `ui://` resources (`text/html;profile=mcp-app`) that hosts render inline, linked from a tool's `_meta.ui.resourceUri` **and** the `openai/outputTemplate` alias (emit both or it renders in one product and silently not the other). Widgets are self-contained HTML — no external origin, so no host CSP can blank them — and render the server's `*_display` strings rather than dividing cents, the same invariant the model is held to. They deliberately never call `tools/call`: a widget that could would be a second, unaudited path to the write surface.
+
+Adding a Copilot tool needs no MCP work. Changing auth, scopes, or the bundle tools means updating `tests/mcp.rs`.
+
+**Why widgets aren't the AG-UI cards.** Reusing `AgentResponseBlock` + the React cards looks obvious and isn't: `money()` reads a zustand store, `colorForCategoryLabel` imports live components, 4 of the 21 kinds need router/mutations/thread-runtime that a sandboxed iframe can't have, and nothing maps a tool result to a block (blocks come from the *model*, then get hydrated). An adapter per tool costs what a renderer per tool costs. Revisit at ~8 widgets — the enum is already reachable from this crate and `artifacts.ts` is pure zod with a 47-case parity corpus.
 
 **`crates/finsight-eval`** — evaluation fixtures and runners for Copilot/provider quality checks. Live-provider tests remain opt-in.
 
-**`src-tauri`** (crate alias `finsight-tauri`) — shipped thin desktop shell exposing only the three local server-URL commands.
+No `src-tauri` — the thin shell was deleted in `2026-08-24-pure-selfhost-openapi`. The PWA (installed via browser `Install` / `Add to Dock`) is the desktop app. `deploy/compose.split.yaml.example` shows an optional `web (nginx) + api` split with no client change.
 
 ### The `run()` pattern
 
@@ -103,22 +111,20 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 ### Adding or changing a shared command
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
-   `crates/finsight-api/src/commands/` — command logic lives here, never in the wrapper.
-2. Add a thin wrapper in `crates/finsight-bindings/src/commands/` that delegates to it via
-   `&state.api`, with `#[tauri::command]` + `#[specta::specta]` (must be `pub async fn`).
-3. Register in `build_specta_builder()` → `collect_commands![..., commands::mymod::my_cmd]` in `crates/finsight-bindings/src/lib.rs`
-4. **Add a `finsight-server` route**: ONE entry in the `rpc_routes!(api, events, cmd, p, c: …)`
-   table at the bottom of `crates/finsight-server/src/dispatch.rs`, using the strict
-   `arg(&p, "camelCaseKey")` convention (or `UNSUPPORTED` if it genuinely can't work over
-   HTTP — e.g. it takes a client-supplied filesystem path). The macro generates both the
-   dispatch arm and the `SUPPORTED` list, so they cannot drift. Skipping this fails
-   `tests/parity.rs`.
-5. `cargo run -p finsight-bindings --bin export_bindings` — regenerates `ui/src/api/bindings.ts`,
-   plus `ui/src/api/eventNames.ts` and `ui/src/api/commandNames.ts`. Event names live in
-   `finsight_api::sink::event_names` (Rust) and are GENERATED into TypeScript — never spell a
-   wire event name as a literal. The dev mock backend (`ui/src/dev/mockBackend.ts`) types its
-   responders against the generated `CommandName` union, so new/renamed commands surface at
-   type-check time.
+   `crates/finsight-api/src/commands/` — command logic lives here.
+2. Add the `finsight-openapi` entry: keep `COMMANDS` in
+   `crates/finsight-openapi/src/lib.rs` sorted and identical to `dispatch.rs`
+   `SUPPORTED` (plus ` crates/finsight-bindings` wrapper if `bindings.ts` compat
+   is still needed — `collect_commands!` in `crates/finsight-bindings/src/lib.rs`
+   for the legacy path).
+3. **Add a `finsight-server` route**: one arm in
+   `crates/finsight-server/src/dispatch.rs` `rpc_routes!(api, events, cmd, p, c: …)`
+   using `arg(&p, "camelCase")` (or `UNSUPPORTED` if it can't work over HTTP).
+   Skipping this fails `tests/parity.rs` + `finsight-openapi` snapshot.
+4. `pnpm openapi` (`cargo run -p finsight-openapi --bin export_openapi` +
+   `pnpm --filter ui openapi:gen`) — regenerates `openapi.json`,
+   `ui/src/api/openapi.json`, `ui/src/api/openapi.ts` (and legacy
+   `bindings.ts` via `pnpm bindings` if you touched the wrapper).
 
 ### Database migrations
 
@@ -127,12 +133,22 @@ SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. R
 ### Frontend data flow
 
 ```
-ui/src/api/bindings.ts   ← generated, never edit
-ui/src/api/client.ts     ← re-exports bindings (import from here, not bindings directly)
-ui/src/api/httpBackend.ts← server-mode invoke/event shim over HTTP + SSE
+ui/src/api/openapi.ts    ← generated by openapi-typescript from openapi.json, never edit
+ui/src/api/openapi.json  ← generated, never edit (also at repo root openapi.json)
+ui/src/api/openapiClient.ts ← typed fetch client (openapi-fetch) over POST /api/rpc/{cmd}
+ui/src/api/bindings.ts   ← legacy generated (tauri-specta) — kept for compat while hooks migrate
+ui/src/api/client.ts     ← re-exports bindings + openapi client (import from here)
+ui/src/api/httpBackend.ts← HTTP/SSE shim that preserves bindings invoke/event contract
 ui/src/api/auth.ts       ← plain REST client for `/api/auth/*`
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
-ui/src/pwa/              ← seven-day IndexedDB query persistence + online state
+ui/src/pwa/              ← seven-day IndexedDB query persistence (AES-GCM encrypted
+                             at rest via cacheCrypto.ts) + online state + installed-PWA
+                             surfaces: badge.ts/useAppBadge.ts (icon badge),
+                             shareTarget.ts (OS share sheet), push.ts (Web Push)
+ui/public/*-sw.js        ← plain-JS service worker handlers pulled into the generated
+                             Workbox SW via `workbox.importScripts` (vite.config.ts).
+                             NOT bundled — they cannot import from src/, so their
+                             contracts are pinned by tests in ui/src/pwa/
 ui/src/screens/          ← one file per screen, consumes hooks
 ui/src/components/       ← shared: Sidebar, CommandPalette, TransactionDrawer, Drawer, Icons
 ui/src/components/copilot ← Copilot generative-UI: cards/ (one per block kind) + agUi/artifacts.ts (Zod validation) + renderers
@@ -141,7 +157,15 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-bindings` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+
+### Financial forecasting, cash-flow & scenarios
+
+Money math lives in `finsight-core` so the app and the Copilot compute identical numbers — route financial figures through the shared engines, never hand-roll them in a command or the UI.
+
+- **`cashflow`** powers the **`/cashflow`** screen (safe-to-spend) and the Copilot `get_safe_to_spend` tool. It's a near-term **daily** projection = dated events (recurring income/bills/subscriptions rolled forward by cadence + planned transactions) **plus** a residual smooth daily burn for everyday variable spending (`avg_monthly_expense` − the monthly equivalent of the in-window dated obligations). Two invariants keep safe-to-spend from *overstating* — the one direction it must never err: `RecurringKind::Transfer` is excluded (internal transfers/card payments aren't spending), and an obligation is netted out of the burn **only if its last charge falls inside the 90-day expense window** (else a lumpy annual bill absent from the average would understate the burn). `safe_to_spend = lowest projected balance − buffer`; the buffer + an optional hypothetical spend are pure what-if params, nothing persisted.
+
+- **Scenarios** (`finsight-api::commands::scenarios` over `forecast::project`) are **durable**: each stores its params **and** the `forecast::Snapshot` baseline it ran against (nullable columns via V055 — pre-existing result-only rows degrade to "legacy": viewable, not recomputable/comparable). Comparison (`list_saved_scenarios`) recomputes every scenario against the **current** baseline via `repos::scenarios::build_baseline` — the single baseline source, shared by the command and the Copilot `list_saved_scenarios` tool — so rows compare on one baseline while each original result stays labeled. Staleness is `forecast::baseline_materially_changed`: a **relative ~10%** threshold (never exact-equality or absolute cents, or every scenario reads stale within a day). `promote_scenario` returns a reviewable proposal with **no write path** — exploration can never mutate live budgets/goals/debt; applying is the user's separate, explicit act.
 
 ### TypeScript type field naming
 
@@ -162,18 +186,47 @@ The Copilot renders **typed, validated finance blocks** natively (not just markd
 - **Server auth state:** the prior-session marker contains no credential; logout/401 must clear it and purge both the in-memory QueryClient and IndexedDB cache
 - **Server secrets:** LLM keys and SimpleFIN access URLs belong in the authenticated user's SQLCipher settings through `finsight-api::secrets`, never in a process-global keychain slot
 
+### Delivery performance (compression, caching, bundles)
+
+The transport rules live in `crates/finsight-server/src/router.rs` and are
+pinned by tests in its `mod tests`.
+
+- **Compression is attached PER ROUTE, never to the whole `Router`.** tower-http's
+  encoder buffers, so an SSE response routed through it withholds frames until
+  that buffer fills — Copilot token streaming and import progress would arrive
+  in lumps. `/api/events` therefore gets no compression layer, and
+  `sse_event_stream_is_never_compressed` fails if someone "simplifies" this
+  into one global `.layer()`. `/api/rpc/{cmd}`, `/mcp`, and both static
+  services do get it.
+- **Two cache policies, and the split matters.** `/assets/*` is content-hashed
+  by Vite, so it's `immutable` for a year. Everything else — `index.html`,
+  `sw.js`, the manifest, icons — keeps its filename across deploys and must
+  stay `no-cache`, or an installed client pins itself to a stale shell and
+  never sees another release.
+- **Static assets are precompressed at build time**, not per request:
+  `ui/scripts/precompress.mjs` (node:zlib, no dependency) writes `.br`/`.gz`
+  siblings at max quality and `ServeDir::precompressed_br()` serves them.
+  `npm run build` runs it; a build that skips it still works, just slower —
+  `CompressionLayer` compresses on the fly as the fallback.
+- **Keep the entry bundle lean.** Every screen is `lazy()`. A *static* import in
+  `App.tsx` costs every user on every page load: `Onboarding` and
+  `ShareTargetImport` each reached `AccountDrawer`, which pulls in
+  react-hook-form **and** zod, and that put the whole form stack in the entry
+  chunk. When adding anything to `App.tsx`, check what it drags in behind it.
+- To see what's actually in a chunk, build with `--sourcemap` and read the
+  `.map`'s `sources` — grepping minified output tells you nothing, and Rollup
+  names shared chunks after an arbitrary member module (the 353kB
+  `featureFlag-*.js` chunk is the AG-UI runtime, not a feature flag).
+
 ## Testing
 
 Frontend tests use vitest + jsdom + `@testing-library/react`. Setup file: `ui/src/test/setup.ts`. The axe a11y tests produce jsdom canvas warnings in stderr — these are expected and non-fatal.
 
 The two `keychain::tests::*` tests are marked `#[cfg_attr(target_os = "linux", ignore)]` — gnome-keyring 46 in headless CI never initialises its default Secret Service collection. They run normally on macOS and Windows. The `set_key_round_trip` test is additionally intermittently flaky under parallel execution on Windows (pre-existing, not caused by code changes).
 
-Default CSV integration tests use committed synthetic fixtures and must pass in
-a fresh checkout. The gitignored `samples/` directory contains private bank
-exports and is used only by explicitly ignored, manually invoked audit probes;
-never make the default test suite depend on it.
+A fresh git worktree is missing the gitignored `samples/` directory (CSV fixtures), so `prepare_csv_cmd`, `prepare_edge`, and `prepare_parity` (6 tests total) fail with a "path not found" error there — copy `samples/` in from the primary checkout to run them; this is an environment gap, not a code regression.
 
-**Green bar:** run `cargo test --workspace`, `pnpm --filter ui test`, `pnpm typecheck`, and `pnpm build`. Test counts change as coverage grows; ignored tests must remain limited to explicitly marked live-provider/live-DB/keychain or private-sample audit cases.
+**Green bar:** run `cargo test --workspace`, `pnpm --filter ui test`, `pnpm typecheck`, and `pnpm build`. Test counts change as coverage grows; ignored tests must remain limited to the explicitly marked live-provider/live-DB/keychain cases.
 
 ## Financial Freedom Framework
 

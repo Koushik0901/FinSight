@@ -56,8 +56,13 @@ export function installHttpBackend(): void {
     // import progress stayed broken until a full page reload.
     if (es && es.readyState !== EventSource.CLOSED) return;
     es = new EventSource("/api/events");
+    // Expose for openapiClient's 401 handling (pure PWA, no Tauri).
+    (w as unknown as { __FINSIGHT_ES__?: EventSource | null }).__FINSIGHT_ES__ = es;
     es.onerror = () => {
-      if (es && es.readyState === EventSource.CLOSED) es = null;
+      if (es && es.readyState === EventSource.CLOSED) {
+        es = null;
+        (w as unknown as { __FINSIGHT_ES__?: EventSource | null }).__FINSIGHT_ES__ = null;
+      }
     };
     es.onmessage = (msg) => {
       const { event, payload } = JSON.parse(msg.data) as { event: string; payload: unknown };
@@ -130,6 +135,7 @@ export function installHttpBackend(): void {
         window.dispatchEvent(new CustomEvent(FINSIGHT_AUTH_REQUIRED));
         es?.close();
         es = null;
+        (w as unknown as { __FINSIGHT_ES__?: EventSource | null }).__FINSIGHT_ES__ = null;
       }
       throw body;
     }

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 finsight-api = { path = "../finsight-api" }
+finsight-openapi = { path = "../finsight-openapi" }
 finsight-core = { path = "../finsight-core" }
 finsight-agent = { path = "../finsight-agent" }
 # Lib target only (src/categorization/…) — the private, local-only precision-eval

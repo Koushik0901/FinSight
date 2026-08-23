@@ -10,9 +10,11 @@ async fn main() -> anyhow::Result<()> {
     let data_dir = std::path::PathBuf::from(
         std::env::var("FINSIGHT_DATA_DIR").unwrap_or_else(|_| "./data".into()),
     );
-    let ui_dir = std::path::PathBuf::from(
-        std::env::var("FINSIGHT_UI_DIR").unwrap_or_else(|_| "ui/dist".into()),
-    );
+    let ui_dir = match std::env::var("FINSIGHT_UI_DIR") {
+        Ok(s) if s.trim().is_empty() => std::path::PathBuf::new(), // empty disables static serving (split mode)
+        Ok(s) => std::path::PathBuf::from(s),
+        Err(_) => std::path::PathBuf::from("ui/dist"),
+    };
     let port: u16 = std::env::var("FINSIGHT_PORT")
         .ok()
         .and_then(|p| p.parse().ok())

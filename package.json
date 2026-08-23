@@ -5,16 +5,11 @@
   "scripts": {
     "dev": "pnpm --filter ui dev",
     "build": "pnpm --filter ui build",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
     "test": "pnpm --filter ui test && cargo test --workspace",
     "typecheck": "pnpm --filter ui typecheck",
     "lint": "pnpm --filter ui lint && cargo clippy --workspace --all-targets -- -D warnings",
-    "bindings": "cargo run -p finsight-bindings --bin export_bindings"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "bindings": "cargo run -p finsight-bindings --bin export_bindings",
+    "openapi": "cargo run -p finsight-openapi --bin export_openapi && pnpm --filter ui openapi:gen"
   },
   "pnpm": {
     "overrides": {

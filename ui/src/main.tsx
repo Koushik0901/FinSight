@@ -1,17 +1,14 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthGate } from "./components/AuthGate";
-import DesktopConnectGate from "./components/DesktopConnectGate";
 import VersionBanner from "./components/VersionBanner";
 import OfflineBanner from "./components/OfflineBanner";
 import { createIdbPersister } from "./pwa/persist";
 import { sweepStaleSharedFiles } from "./pwa/shareTarget";
-import { isServerMode } from "./api/auth";
-import { selectBackend } from "./api/selectBackend";
 import { instrumentQueryCache } from "./utils/perf";
 import "@fontsource-variable/geist/wght.css";
 import "@fontsource-variable/geist-mono/wght.css";
@@ -25,34 +22,14 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      // FinSight is a local-first app: the SQLite ledger only changes via
-      // in-app actions (mutations, imports, sync), and each of those already
-      // invalidates precisely. That premise — the one the disabled
-      // window-focus refetch below already rests on — argues for a much longer
-      // staleTime than the 5s this used to run with.
-      //
-      // At 5s, navigating Today → Budget → Today refetched Today's entire
-      // query set on the way back, every time, for data that provably had not
-      // changed: an RPC round trip plus a SQL fan-out to render bytes already
-      // sitting in the cache. At 60s that return trip is instant, and the
-      // window in which anything could go stale without invalidating is
-      // narrow and self-correcting (out-of-band changes — a second device, a
-      // background SimpleFIN sync — arrive over SSE anyway).
       staleTime: 60_000,
-      // Refetching every active query whenever the window regains focus would
-      // replay that whole query set as an IPC + SQL storm for no new data.
       refetchOnWindowFocus: false,
     },
   },
 });
 
-// Opt-in perf instrumentation (localStorage.finsightPerf="1" or ?perf=1) for
-// real-desktop before/after measurement. Zero overhead when off.
 instrumentQueryCache(queryClient.getQueryCache());
 
-// IndexedDB-backed persister for the query cache — server/PWA mode only (see
-// pwa/persist.ts). Constructed unconditionally (cheap, no I/O until used) so
-// renderApp() can pick the provider without re-creating it per render.
 const persister = createIdbPersister();
 
 function renderApp() {
@@ -68,48 +45,30 @@ function renderApp() {
 
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <DesktopConnectGate>
-        {isServerMode() ? (
-          <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
-          >
-            {tree}
-          </PersistQueryClientProvider>
-        ) : (
-          <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
-        )}
-      </DesktopConnectGate>
-    </React.StrictMode>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7 }}
+      >
+        {tree}
+      </PersistQueryClientProvider>
+    </React.StrictMode>,
   );
 }
 
-// Transport selection lives in selectBackend() (api/selectBackend.ts) so the
-// bridge/origin decision is unit-testable. In short:
-// - DEV `?mock=…` → fixture backend (plain-browser design harness);
-// - not a real desktop-IPC context (isTauriRuntime(), origin-aware) → the
-//   production HTTP/SSE shim — this is the transport for the browser, the PWA,
-//   AND the thin desktop shell once it has navigated to a remote server (the
-//   Tauri bridge persists at the remote origin, so we must gate on the origin-
-//   aware check, not raw bridge presence);
-// - otherwise → leave the native Tauri bridge in place (shell pre-navigation).
+// Pure self-hosted boot: no Tauri shell.
+// Browser, PWA, and any future split `web` container all use the HTTP/SSE
+// shim. The `?mock` harness remains for design work.
 async function boot() {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    const backend = selectBackend(params);
-    if (backend === "mock") {
+    const hasMock = import.meta.env.DEV && params.has("mock");
+    if (hasMock) {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
-    } else if (backend === "http") {
+    } else {
       const { installHttpBackend } = await import("./api/httpBackend");
       installHttpBackend();
     }
-
-    // Discard a stale CSV parked by the OS share sheet. Deliberately here and
-    // not inside AuthGate: a share received while signed out never reaches the
-    // app tree at all (AuthGate renders the login screen instead of children),
-    // so this is the only place guaranteed to run and clean it up. Fire-and-
-    // forget — nothing about rendering depends on it.
     void sweepStaleSharedFiles();
   }
   renderApp();
