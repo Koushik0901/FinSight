@@ -59,7 +59,7 @@ const CopilotAgUiSpike = lazy(() => import("./screens/CopilotAgUiSpike"));
 const Recipes = lazy(() => import("./screens/Recipes"));
 // DEV-only: gallery of the Copilot generative-UI blocks (never routed in prod builds).
 const GenUiPreview = lazy(() => import("./dev/GenUiPreview"));
-// Pulls in @nivo/bar, @nivo/line, and react-markdown via AgentResponseRenderer —
+// Pulls in recharts and react-markdown via AgentResponseRenderer —
 // code-split so those land only when the palette is actually opened, not in
 // the entry bundle.
 const CommandPalette = lazy(() =>
