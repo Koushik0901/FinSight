@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRecipe {
     pub id: String,
     pub title: String,
@@ -20,8 +22,9 @@ pub struct AgentRecipe {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentRecipeRun {
     pub id: String,
     pub recipe_id: String,

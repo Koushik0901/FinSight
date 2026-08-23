@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 /// A first-class record of an automated categorization SUGGESTION for a
 /// transaction, decoupled from the canonical `transactions.category_id`
@@ -12,8 +13,9 @@ use specta::Type;
 /// current outstanding suggestion". Full per-attempt provenance already
 /// lives in the append-only `categorizations` table (V003) — this table
 /// exists to drive the review queue, not to be a second audit log.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct CategoryProposal {
     pub id: String,
     pub txn_id: String,

@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PlannedTransaction {
     pub id: String,
     pub description: String,
@@ -15,8 +17,9 @@ pub struct PlannedTransaction {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct NewPlannedTransaction {
     pub description: String,
     pub amount_cents: i64,
@@ -26,8 +29,9 @@ pub struct NewPlannedTransaction {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PlannedTransactionPatch {
     pub description: Option<String>,
     pub amount_cents: Option<i64>,
@@ -38,8 +42,9 @@ pub struct PlannedTransactionPatch {
     pub source: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct PlannedTxnFilter {
     pub status: Option<String>,
     pub due_before: Option<String>,

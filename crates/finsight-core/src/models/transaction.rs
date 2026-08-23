@@ -1,9 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[schema(rename_all="lowercase")]
 pub enum TransactionStatus {
     Cleared,
     Pending,
@@ -33,8 +35,9 @@ impl TransactionStatus {
 /// (Wealthsimple et al). Stored provider-verbatim in the six V048 columns;
 /// `categorize::activity_implies_transfer` decides which activity types are
 /// internal moves (Trade, MoneyMovement) vs real income/expense.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct TxnActivity {
     pub activity_type: String,
     pub activity_sub_type: Option<String>,
@@ -46,7 +49,7 @@ pub struct TxnActivity {
     pub unit_price: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct Transaction {
     pub id: String,
     pub account_id: String,
@@ -88,7 +91,7 @@ pub struct Transaction {
     pub activity: Option<TxnActivity>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct NewTransaction {
     pub account_id: String,
     pub posted_at: DateTime<Utc>,
@@ -108,7 +111,7 @@ pub struct NewTransaction {
     pub activity: Option<TxnActivity>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Deserialize, Type, ToSchema)]
 pub struct TxnPatch {
     pub notes: Option<Option<String>>,
     pub category_id: Option<Option<String>>,
@@ -117,7 +120,7 @@ pub struct TxnPatch {
     pub ai_confidence: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct ProposedRule {
     pub pattern: String,
     pub category_id: String,

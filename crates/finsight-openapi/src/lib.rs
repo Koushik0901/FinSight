@@ -379,4 +379,25 @@ mod tests {
         let json = serde_json::to_value(&typed).unwrap();
         assert_eq!(json["info"]["title"], "FinSight API");
     }
+
+    #[test]
+    fn openapi_schemas_not_shallow() {
+        let spec = build_openapi();
+        let json = serde_json::to_value(&spec).unwrap();
+        let schemas = json["components"]["schemas"]
+            .as_object()
+            .expect("schemas");
+        assert!(
+            schemas.len() > 20,
+            "expected many schemas, got {}",
+            schemas.len()
+        );
+        for (name, schema) in schemas {
+            let s = schema.to_string();
+            assert!(
+                !s.contains(r#""type":"object""#) || s.contains("properties"),
+                "shallow schema {name} still type:object without properties"
+            );
+        }
+    }
 }

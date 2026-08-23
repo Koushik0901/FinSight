@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentSession {
     pub id: String,
     pub title: String,
@@ -12,8 +14,9 @@ pub struct AgentSession {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentActionBundle {
     pub id: String,
     pub session_id: Option<String>,
@@ -29,8 +32,9 @@ pub struct AgentActionBundle {
     pub items: Vec<AgentActionItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentActionItem {
     pub id: String,
     pub bundle_id: String,
@@ -61,8 +65,9 @@ pub struct AgentActionItem {
 /// missing data (notably the model itself, on the deep reasoning path) build
 /// these through [`From<String>`], which leaves both `None` — the message
 /// still renders, just without a shortcut.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct MissingDataItem {
     /// Human-readable description of what is missing.
     pub message: String,
@@ -181,8 +186,9 @@ impl From<&str> for MissingDataItem {
 /// Built from executed action payloads (which carry real entity ids) rather
 /// than from model-authored prose, so the destination is always a screen that
 /// exists and an entity that was actually touched.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentNavigationTarget {
     /// Button text, e.g. "View in Budget".
     pub label: String,
@@ -190,8 +196,9 @@ pub struct AgentNavigationTarget {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AgentExecutionEntry {
     pub id: String,
     pub item_id: String,
@@ -204,8 +211,9 @@ pub struct AgentExecutionEntry {
 }
 
 /// Summary of a conversation thread shown in the sidebar.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ConversationSummary {
     pub id: String,
     pub title: String,
@@ -215,8 +223,9 @@ pub struct ConversationSummary {
 }
 
 /// A single message within a conversation thread.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct ConversationMessage {
     pub id: String,
     pub conversation_id: String,

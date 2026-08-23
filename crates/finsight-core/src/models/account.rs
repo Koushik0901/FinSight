@@ -1,9 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
+#[schema(rename_all="PascalCase")]
 pub enum AccountType {
     Checking,
     Savings,
@@ -40,7 +42,7 @@ impl AccountType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct Account {
     pub id: String,
     pub owner: String,
@@ -93,7 +95,7 @@ pub struct Account {
     pub post_promo_apr_pct: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct AccountSummary {
     pub id: String,
     pub owner: String,
@@ -175,15 +177,17 @@ fn default_import_pending() -> bool {
     false
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AccountBalancePoint {
     pub date: String,
     pub balance_cents: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AccountSparkline {
     pub account_id: String,
     pub points: Vec<AccountBalancePoint>,
@@ -194,8 +198,9 @@ pub struct AccountSparkline {
 /// A reconstruction is `opening + Σ(cleared activity)`, so its SHAPE (when the
 /// balance rose and fell, and therefore when it peaked) is correct regardless of
 /// the anchor. Its LEVEL is only as good as that opening figure.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub enum BalanceAnchorQuality {
     /// A real balance was confirmed for this account — bank-reported, or pinned
     /// by the user — so the curve is calibrated to a known value.
@@ -212,8 +217,9 @@ pub enum BalanceAnchorQuality {
 
 /// A reconstructed balance curve for one account, derived from its opening
 /// anchor plus cleared transaction activity.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(rename_all="camelCase")]
 pub struct AccountBalanceTimeline {
     pub account_id: String,
     pub account_name: String,
@@ -238,7 +244,7 @@ pub struct AccountBalanceTimeline {
     pub skip_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Deserialize, Type, ToSchema)]
 pub struct AccountPatch {
     pub name: Option<String>,
     pub bank: Option<String>,
@@ -265,7 +271,7 @@ pub struct AccountPatch {
     pub post_promo_apr_pct: Option<Option<f64>>,
 }
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize, Type, ToSchema)]
 pub struct NewAccount {
     pub owner: String,
     pub bank: String,
