@@ -5,6 +5,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::Utc;
+use finsight_core::provenance::MetricExplanation;
 use finsight_core::{metrics, repos::run};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -152,11 +153,11 @@ pub async fn get_financial_metrics(
 /// The single source of truth is shared verbatim with the Copilot's
 /// `explain_metric` tool.
 #[utoipa::path(post, path = "/api/rpc/explain_financial_metrics",
-    request_body(content = Option<String>), responses((status = 200, body = Vec<finsight_core::provenance::MetricExplanation>)))]
+    request_body(content = Option<String>), responses((status = 200, body = Vec<MetricExplanation>)))]
 pub async fn explain_financial_metrics(
     state: &ApiState,
     member_id: Option<String>,
-) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+) -> AppResult<Vec<MetricExplanation>> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         finsight_core::provenance::explain_financial_metrics(conn, member_id.as_deref())
@@ -174,10 +175,10 @@ pub async fn explain_financial_metrics(
 /// `finsight_agent::finance::explain_debt_payoff`, surfaced through the Copilot's
 /// `explain_metric` tool — the debt payoff order has no dedicated screen to hang
 /// an "explain" affordance on, so it isn't exposed as a standalone command.)
-#[utoipa::path(post, path = "/api/rpc/explain_goals", responses((status = 200, body = Vec<finsight_core::provenance::MetricExplanation>)))]
+#[utoipa::path(post, path = "/api/rpc/explain_goals", responses((status = 200, body = Vec<MetricExplanation>)))]
 pub async fn explain_goals(
     state: &ApiState,
-) -> AppResult<Vec<finsight_core::provenance::MetricExplanation>> {
+) -> AppResult<Vec<MetricExplanation>> {
     let db = (*state.db).clone();
     run(&db, |conn| {
         Ok(finsight_agent::finance::explain_goals(conn)?)

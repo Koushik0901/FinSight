@@ -32,6 +32,7 @@ use chrono::{Duration, NaiveDate};
 use rusqlite::Connection;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 pub const DEFAULT_HORIZON_DAYS: i64 = 30;
 const MIN_HORIZON_DAYS: i64 = 7;
@@ -53,7 +54,7 @@ const MIN_RELIABLE_SPAN_DAYS: i64 = 30;
 const NEAR_HORIZON_LOOKAHEAD_DAYS: i64 = 21;
 const AVG_DAYS_PER_MONTH: f64 = 30.44;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum CashflowEventKind {
     Income,
@@ -66,7 +67,7 @@ pub enum CashflowEventKind {
 
 /// A single dated cash movement. `amount_cents` is signed: positive inflow,
 /// negative outflow.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CashflowEvent {
     pub date: String,
@@ -79,7 +80,7 @@ pub struct CashflowEvent {
 }
 
 /// One projected day.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CashflowDay {
     pub date: String,
@@ -93,14 +94,14 @@ pub struct CashflowDay {
     pub below_buffer: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum WarningLevel {
     Info,
     Caution,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CashflowWarning {
     pub level: WarningLevel,
@@ -108,7 +109,7 @@ pub struct CashflowWarning {
 }
 
 /// The forward cash-flow forecast.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CashflowForecast {
     pub as_of: String,

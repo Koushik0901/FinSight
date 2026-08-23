@@ -26,12 +26,13 @@ use chrono::{DateTime, Timelike, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
 /// What a notification is about. Drives the per-category user preference and how
 /// events are grouped. The string form is the stored value and the preference key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationCategory {
     CashflowRisk,
@@ -105,7 +106,7 @@ impl NotificationCategory {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Urgency {
     /// Bypasses quiet hours (e.g. security).
@@ -135,7 +136,7 @@ impl Urgency {
 /// "blur amounts" privacy concept rather than inventing a parallel model — a
 /// push composed server-side can't consult the client's blur, so this is the
 /// server-side equivalent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyLevel {
     /// Full detail — amounts and merchants may appear.
@@ -176,7 +177,7 @@ pub struct NewNotification {
 
 /// How often to batch routine notifications into one summary instead of pushing
 /// each individually (#69).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DigestFrequency {
     /// Push each notification as it happens (the default).
@@ -242,7 +243,7 @@ impl Prefs {
 }
 
 /// What happened to an `enqueue`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Disposition {
     /// Recorded and ready to surface/push now.
@@ -268,7 +269,7 @@ pub struct EnqueueOutcome {
 }
 
 /// A stored notification, as the history surface reads it.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     pub id: String,

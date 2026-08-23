@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
-use finsight_core::models::{NewTransaction, Transaction, TxnPatch};
+use finsight_core::models::{NewTransaction, Rule, Transaction, TxnPatch};
 use finsight_core::repos::{rules, run, transactions};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -100,12 +100,12 @@ pub async fn delete_transaction(state: &ApiState, id: String) -> AppResult<()> {
         .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/create_rule", responses((status = 200, body = finsight_core::models::Rule)))]
+#[utoipa::path(post, path = "/api/rpc/create_rule", responses((status = 200, body = Rule)))]
 pub async fn create_rule(
     state: &ApiState,
     pattern: String,
     category_id: String,
-) -> AppResult<finsight_core::models::Rule> {
+) -> AppResult<Rule> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         let rule = rules::insert(
@@ -491,13 +491,13 @@ pub async fn get_transaction_count(state: &ApiState) -> AppResult<i64> {
     .map_err(AppError::from)
 }
 
-#[utoipa::path(post, path = "/api/rpc/set_transaction_flags", responses((status = 200, body = finsight_core::models::Transaction)))]
+#[utoipa::path(post, path = "/api/rpc/set_transaction_flags", responses((status = 200, body = Transaction)))]
 pub async fn set_transaction_flags(
     state: &ApiState,
     id: String,
     is_reimbursable: bool,
     is_split: bool,
-) -> AppResult<finsight_core::models::Transaction> {
+) -> AppResult<Transaction> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         transactions::set_flags(conn, &id, is_reimbursable, is_split)
@@ -513,7 +513,7 @@ pub async fn set_transaction_flags(
 #[serde(rename_all = "camelCase")]
 #[schema(rename_all="camelCase")]
 pub struct TransferVerdictResult {
-    pub transaction: finsight_core::models::Transaction,
+    pub transaction: Transaction,
     /// LIKE pattern identifying the siblings (pass to
     /// `apply_transfer_verdict_to_similar`), e.g. `%jordan%`.
     pub similar_pattern: Option<String>,
@@ -592,12 +592,12 @@ impl From<CounterpartyVerdict> for finsight_core::repos::transactions::Verdict {
 /// Record the user's 3-way verdict (transfer / settle-up / real spending) on
 /// a transfer-review counterparty transaction. Sticky: survives re-imports
 /// and categorizer re-runs.
-#[utoipa::path(post, path = "/api/rpc/set_counterparty_verdict", responses((status = 200, body = finsight_core::models::Transaction)))]
+#[utoipa::path(post, path = "/api/rpc/set_counterparty_verdict", responses((status = 200, body = Transaction)))]
 pub async fn set_counterparty_verdict(
     state: &ApiState,
     id: String,
     verdict: CounterpartyVerdict,
-) -> AppResult<finsight_core::models::Transaction> {
+) -> AppResult<Transaction> {
     let db = (*state.db).clone();
     run(&db, move |conn| {
         transactions::set_counterparty_verdict(conn, &id, verdict.into())

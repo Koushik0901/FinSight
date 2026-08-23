@@ -7,12 +7,13 @@ use crate::spending::baseline;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 const MIN_BASELINE_MONTHS: i64 = 3;
 const BAND_K: f64 = 2.5;
 const MAD_TO_SIGMA: f64 = 1.4826;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PeriodClass {
     Normal,
@@ -21,7 +22,7 @@ pub enum PeriodClass {
     InsufficientHistory,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct PeriodAssessment {
     pub class: PeriodClass,
     pub period_total_cents: i64,

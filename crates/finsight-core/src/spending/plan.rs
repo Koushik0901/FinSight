@@ -9,8 +9,9 @@ use crate::spending::{baseline, Driver, Persistence, Window};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 pub struct SpendingPlan {
     pub currency: String,
     /// The elevated month's spend (monthly-equivalent).

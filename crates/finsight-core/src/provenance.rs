@@ -17,6 +17,7 @@ use crate::CoreResult;
 use rusqlite::Connection;
 use serde::Serialize;
 use specta::Type;
+use utoipa::ToSchema;
 
 /// The trailing window (days) the descriptive averages are computed over. Kept
 /// in lockstep with what [`get_financial_metrics`] requests (90) so the
@@ -24,7 +25,7 @@ use specta::Type;
 const ROLLING_WINDOW_DAYS: i64 = 90;
 
 /// Severity of a data-quality caveat attached to a metric.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum MetricWarningLevel {
     /// Neutral context — e.g. which window was used. Does not undermine the figure.
@@ -37,7 +38,7 @@ pub enum MetricWarningLevel {
 }
 
 /// One data-quality caveat: missing, stale, low-confidence, or unsupported data.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricWarning {
     pub level: MetricWarningLevel,
@@ -47,7 +48,7 @@ pub struct MetricWarning {
 /// A material input that fed the metric. `amount_cents` is present when the
 /// input is a money figure (formatted by the UI in the user's currency);
 /// `detail` carries non-money context such as "3 months of history".
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricInput {
     pub label: String,
@@ -56,7 +57,7 @@ pub struct MetricInput {
 }
 
 /// A tunable assumption that shaped the metric (e.g. the user's target rate).
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricAssumption {
     pub label: String,
@@ -65,7 +66,7 @@ pub struct MetricAssumption {
 
 /// The metric's value, tagged so the UI knows how to format it and so a
 /// withheld figure is a first-class state rather than a fabricated zero.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum MetricValue {
     Money {
@@ -87,7 +88,7 @@ pub enum MetricValue {
 /// A complete, self-consistent explanation of one financial metric: what it
 /// means, what produced it, what it leaves out, what it assumes, over what
 /// period, and how far to trust it.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricExplanation {
     /// Stable identifier, e.g. `"net_worth"`. Safe to switch on.

@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
 use chrono::{Datelike, Utc};
+use finsight_core::repos::budgets::LookBackFact;
 use finsight_core::repos::{budgets, goals, run};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -240,7 +241,7 @@ pub struct PlanData {
     pub goals: Vec<GoalDto>,
     pub sinking_funds: Vec<GoalDto>,
     pub recurring_expense_cents: i64,
-    pub look_back: Vec<budgets::LookBackFact>,
+    pub look_back: Vec<LookBackFact>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, Type, ToSchema)]

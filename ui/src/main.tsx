@@ -65,9 +65,6 @@ async function boot() {
     if (hasMock) {
       const { installMockBackend } = await import("./dev/mockBackend");
       installMockBackend(params.get("mock"));
-    } else {
-      const { installHttpBackend } = await import("./api/httpBackend");
-      installHttpBackend();
     }
     void sweepStaleSharedFiles();
   }

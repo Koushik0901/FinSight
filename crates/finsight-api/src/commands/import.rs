@@ -1,7 +1,9 @@
 use crate::error::{AppError, AppResult};
 use crate::sink::FrameSink;
 use crate::ApiState;
+use finsight_core::repos::imports::Import;
 use finsight_core::repos::{imports as imports_repo, run};
+use finsight_providers::csv::RowError;
 use finsight_providers::{CsvImportMapping, CsvPreview, CsvProvider, ImportSummary};
 use serde::Serialize;
 use specta::Type;
@@ -31,7 +33,7 @@ pub struct PreparedImportPreview {
     pub rows_imported: u32,
     pub rows_skipped_duplicates: u32,
     pub rows_queued_for_review: u32,
-    pub errors: Vec<finsight_providers::csv::RowError>,
+    pub errors: Vec<RowError>,
 }
 
 /// Build a bounded preview of the import outcome. Testable without a Tauri
@@ -335,8 +337,8 @@ pub async fn get_saved_csv_mapping(
     .map_err(|e| AppError::new("internal", format!("join: {e}")))?
 }
 
-#[utoipa::path(post, path = "/api/rpc/list_unfinished_imports", responses((status = 200, body = Vec<imports_repo::Import>)))]
-pub async fn list_unfinished_imports(state: &ApiState) -> AppResult<Vec<imports_repo::Import>> {
+#[utoipa::path(post, path = "/api/rpc/list_unfinished_imports", responses((status = 200, body = Vec<Import>)))]
+pub async fn list_unfinished_imports(state: &ApiState) -> AppResult<Vec<Import>> {
     let db = (*state.db).clone();
     run(&db, |conn| imports_repo::list_unfinished(conn))
         .await

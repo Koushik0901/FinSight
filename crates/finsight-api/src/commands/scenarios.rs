@@ -1,5 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
+use finsight_core::provenance::MetricExplanation;
 use finsight_core::forecast::{self, ScenarioParams, Snapshot};
 use finsight_core::repos::{run, scenarios as scenarios_repo};
 use serde::{Deserialize, Serialize};
@@ -462,11 +463,11 @@ pub async fn list_saved_scenarios(state: &ApiState) -> AppResult<Vec<SavedScenar
 /// the legacy variant: a withheld value with the reason, never a fabricated
 /// breakdown.
 #[utoipa::path(post, path = "/api/rpc/explain_scenario",
-    request_body(content = String), responses((status = 200, body = finsight_core::provenance::MetricExplanation)))]
+    request_body(content = String), responses((status = 200, body = MetricExplanation)))]
 pub async fn explain_scenario(
     state: &ApiState,
     id: String,
-) -> AppResult<finsight_core::provenance::MetricExplanation> {
+) -> AppResult<MetricExplanation> {
     let current = build_snapshot(state).await?;
     let db = (*state.db).clone();
     let row = run(&db, move |conn| scenarios_repo::get(conn, &id))
@@ -837,7 +838,8 @@ pub async fn delete_scenario(state: &ApiState, id: String) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use finsight_core::forecast::Snapshot;
+    use finsight_core::provenance::MetricExplanation;
+use finsight_core::forecast::Snapshot;
 
     fn snap(income: i64, expense: i64) -> Snapshot {
         Snapshot {

@@ -1,10 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { commands } from "./client";
-import { unwrapResult } from "./client";
+import { commands } from "./openapiClient";
+import { unwrapResult } from "./openapiClient";
 import { isBackendAvailable } from "../utils/runtime";
 import { prefetchRouteChunk } from "../utils/routePrefetch";
 import { TXN_PAGE_SIZE } from "./hooks/transactions";
-import type { TxnFilterInput } from "./client";
+import type { TxnFilterInput } from "./openapiClient";
 
 /**
  * Prefetch-on-intent: warm a route's summary queries when the user *signals*

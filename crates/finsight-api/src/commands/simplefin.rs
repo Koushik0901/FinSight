@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use crate::sync_scheduler::{AccountSyncResult, SimpleFinSyncSettings};
 use crate::secrets;
 use crate::ApiState;
 use chrono::{DateTime, Utc};
@@ -934,31 +935,31 @@ pub async fn delete_simplefin_connection(state: &ApiState, connection_id: String
     Ok(())
 }
 
-#[utoipa::path(post, path = "/api/rpc/sync_all_simplefin_accounts", responses((status = 200, body = Vec<crate::sync_scheduler::AccountSyncResult>)))]
+#[utoipa::path(post, path = "/api/rpc/sync_all_simplefin_accounts", responses((status = 200, body = Vec<AccountSyncResult>)))]
 pub async fn sync_all_simplefin_accounts(
     state: &ApiState,
-) -> AppResult<Vec<crate::sync_scheduler::AccountSyncResult>> {
+) -> AppResult<Vec<AccountSyncResult>> {
     let results = state.sync_scheduler.sync_all_now().await;
     Ok(results)
 }
 
-#[utoipa::path(post, path = "/api/rpc/get_simplefin_sync_settings", responses((status = 200, body = crate::sync_scheduler::SimpleFinSyncSettings)))]
+#[utoipa::path(post, path = "/api/rpc/get_simplefin_sync_settings", responses((status = 200, body = SimpleFinSyncSettings)))]
 pub async fn get_simplefin_sync_settings(
     state: &ApiState,
-) -> AppResult<crate::sync_scheduler::SimpleFinSyncSettings> {
+) -> AppResult<SimpleFinSyncSettings> {
     let interval = state.sync_scheduler.interval();
     let enabled = state.sync_scheduler.enabled();
-    Ok(crate::sync_scheduler::SimpleFinSyncSettings {
+    Ok(SimpleFinSyncSettings {
         background_sync_enabled: enabled,
         background_sync_interval_minutes: interval,
     })
 }
 
 #[utoipa::path(post, path = "/api/rpc/set_simplefin_sync_settings",
-    request_body(content = crate::sync_scheduler::SimpleFinSyncSettings), responses((status = 200, description = "Success")))]
+    request_body(content = SimpleFinSyncSettings), responses((status = 200, description = "Success")))]
 pub async fn set_simplefin_sync_settings(
     state: &ApiState,
-    settings: crate::sync_scheduler::SimpleFinSyncSettings,
+    settings: SimpleFinSyncSettings,
 ) -> AppResult<()> {
     state
         .sync_scheduler

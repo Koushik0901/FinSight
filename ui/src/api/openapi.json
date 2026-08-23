@@ -932,7 +932,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/finsight_core.models.Rule"
+                  "$ref": "#/components/schemas/Rule"
                 }
               }
             }
@@ -1439,7 +1439,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/finsight_core.provenance.MetricExplanation"
+                    "$ref": "#/components/schemas/MetricExplanation"
                   }
                 }
               }
@@ -1464,7 +1464,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/finsight_core.provenance.MetricExplanation"
+                    "$ref": "#/components/schemas/MetricExplanation"
                   }
                 }
               }
@@ -1497,7 +1497,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/finsight_core.provenance.MetricExplanation"
+                  "$ref": "#/components/schemas/MetricExplanation"
                 }
               }
             }
@@ -2389,7 +2389,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/crate.sync_scheduler.SimpleFinSyncSettings"
+                  "$ref": "#/components/schemas/SimpleFinSyncSettings"
                 }
               }
             }
@@ -3764,7 +3764,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/imports_repo.Import"
+                    "$ref": "#/components/schemas/Import"
                   }
                 }
               }
@@ -4665,7 +4665,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/finsight_core.models.Transaction"
+                  "$ref": "#/components/schemas/Transaction"
                 }
               }
             }
@@ -4821,7 +4821,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/crate.sync_scheduler.SimpleFinSyncSettings"
+                "$ref": "#/components/schemas/SimpleFinSyncSettings"
               }
             }
           },
@@ -4889,7 +4889,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/finsight_core.models.Transaction"
+                  "$ref": "#/components/schemas/Transaction"
                 }
               }
             }
@@ -5002,7 +5002,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/crate.sync_scheduler.AccountSyncResult"
+                    "$ref": "#/components/schemas/AccountSyncResult"
                   }
                 }
               }
@@ -5861,6 +5861,41 @@
           },
           "type": {
             "$ref": "#/components/schemas/AccountType"
+          }
+        }
+      },
+      "AccountSyncResult": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "added",
+          "updated",
+          "skipped",
+          "queuedForReview"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "added": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "queuedForReview": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -7899,6 +7934,177 @@
           }
         }
       },
+      "CashflowDay": {
+        "type": "object",
+        "description": "One projected day.",
+        "required": [
+          "date",
+          "projectedBalanceCents",
+          "eventNetCents",
+          "burnCents",
+          "belowBuffer"
+        ],
+        "properties": {
+          "belowBuffer": {
+            "type": "boolean",
+            "description": "Whether the projected balance is below the safety buffer this day."
+          },
+          "burnCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The day's share of everyday variable spend (<= 0)."
+          },
+          "date": {
+            "type": "string"
+          },
+          "eventNetCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Net of the dated events landing on this day."
+          },
+          "projectedBalanceCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Projected end-of-day liquid balance."
+          }
+        }
+      },
+      "CashflowEvent": {
+        "type": "object",
+        "description": "A single dated cash movement. `amount_cents` is signed: positive inflow,\nnegative outflow.",
+        "required": [
+          "date",
+          "label",
+          "amountCents",
+          "kind"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "description": "Detection confidence for recurring-derived events (0..1); `None` for\nuser-entered planned/hypothetical events, which aren't guesses.",
+            "nullable": true
+          },
+          "date": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CashflowEventKind"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "CashflowEventKind": {
+        "type": "string",
+        "enum": [
+          "income",
+          "bill",
+          "subscription",
+          "planned",
+          "hypothetical"
+        ]
+      },
+      "CashflowForecast": {
+        "type": "object",
+        "description": "The forward cash-flow forecast.",
+        "required": [
+          "asOf",
+          "horizonDays",
+          "startBalanceCents",
+          "bufferCents",
+          "dailyBurnCents",
+          "days",
+          "lowestBalanceCents",
+          "lowestDate",
+          "safeToSpendCents",
+          "upcomingEvents",
+          "warnings",
+          "reliable"
+        ],
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "bufferCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "dailyBurnCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Everyday variable spend spread per day (magnitude, >= 0)."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashflowDay"
+            }
+          },
+          "firstBreachDate": {
+            "type": "string",
+            "description": "First day the projected balance drops below the buffer, if any.",
+            "nullable": true
+          },
+          "horizonDays": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lowestBalanceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lowestDate": {
+            "type": "string"
+          },
+          "reliable": {
+            "type": "boolean",
+            "description": "False when there's too little history (or no known balance) for the\nforecast to be trusted as precise. Consumers must say so, not imply rigor."
+          },
+          "safeToSpendCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The conservative amount safe to spend today: the lowest projected balance\nminus the buffer, floored at zero. Spending it today lowers every later\nday by the same amount, so the lowest point is the binding constraint."
+          },
+          "startBalanceCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "upcomingEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashflowEvent"
+            },
+            "description": "The dated events inside the horizon, chronological, for display."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashflowWarning"
+            }
+          }
+        }
+      },
+      "CashflowWarning": {
+        "type": "object",
+        "required": [
+          "level",
+          "message"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/WarningLevel"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "Categorization": {
         "type": "object",
         "required": [
@@ -8378,6 +8584,93 @@
           "Quantity",
           "UnitPrice"
         ]
+      },
+      "CompletionProviderConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unconfigured"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "base_url",
+              "model",
+              "kind"
+            ],
+            "properties": {
+              "base_url": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ollama"
+                ]
+              },
+              "model": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "preset",
+              "base_url",
+              "model",
+              "kind"
+            ],
+            "properties": {
+              "base_url": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "openai_compat"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "preset": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "model",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "anthropic"
+                ]
+              },
+              "model": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
       },
       "ConversationMessage": {
         "type": "object",
@@ -9295,6 +9588,26 @@
           }
         }
       },
+      "DigestFrequency": {
+        "type": "string",
+        "description": "How often to batch routine notifications into one summary instead of pushing\neach individually (#69).",
+        "enum": [
+          "off",
+          "daily",
+          "weekly"
+        ]
+      },
+      "Disposition": {
+        "type": "string",
+        "description": "What happened to an `enqueue`.",
+        "enum": [
+          "delivered",
+          "held",
+          "batched",
+          "suppressed_duplicate",
+          "suppressed_disabled"
+        ]
+      },
       "DriftLine": {
         "type": "object",
         "description": "One \"recorded then vs recomputed now\" line for a completed close.",
@@ -9318,6 +9631,63 @@
           "recordedCents": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "Driver": {
+        "type": "object",
+        "required": [
+          "merchant_key",
+          "display",
+          "delta_cents",
+          "recent_monthly_cents",
+          "base_monthly_cents",
+          "recent_txns_per_month",
+          "base_txns_per_month",
+          "mechanism",
+          "persistence"
+        ],
+        "properties": {
+          "base_monthly_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "base_txns_per_month": {
+            "type": "number",
+            "format": "double"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "delta_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "display": {
+            "type": "string"
+          },
+          "mechanism": {
+            "$ref": "#/components/schemas/Mechanism"
+          },
+          "merchant_key": {
+            "type": "string"
+          },
+          "persistence": {
+            "$ref": "#/components/schemas/Persistence"
+          },
+          "recent_monthly_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recent_txns_per_month": {
+            "type": "number",
+            "format": "double"
+          },
+          "user_verdict": {
+            "type": "string",
+            "description": "A sticky user verdict (one_off / expected / investment) if the user has\nannotated this merchant; overrides how it counts toward the \"levers\".",
+            "nullable": true
           }
         }
       },
@@ -9838,6 +10208,53 @@
           }
         }
       },
+      "Import": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "started_at",
+          "rows_imported",
+          "rows_skipped_duplicates"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "filename": {
+            "type": "string",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "rows_imported": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rows_skipped_duplicates": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ImportSource"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ImportCandidate": {
         "type": "object",
         "required": [
@@ -10026,6 +10443,15 @@
           }
         }
       },
+      "ImportSource": {
+        "type": "string",
+        "enum": [
+          "csv",
+          "manual",
+          "sample",
+          "simple_fin"
+        ]
+      },
       "ImportSummary": {
         "type": "object",
         "required": [
@@ -10123,6 +10549,60 @@
           }
         }
       },
+      "InvestmentSummary": {
+        "type": "object",
+        "description": "Ledger-derived portfolio summary for one investment account.",
+        "required": [
+          "cashCents",
+          "positionsValueCents",
+          "portfolioEstimateCents",
+          "dividendIncomeCents",
+          "interestIncomeCents",
+          "withholdingTaxCents",
+          "openPositions",
+          "hasNegativeQuantity"
+        ],
+        "properties": {
+          "cashCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Cash in the account: opening (seed) balance + every ledger row. Trades,\ncontributions, dividends, interest, and tax are all cash movements."
+          },
+          "dividendIncomeCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "All-time dividend income (activity_type = 'Dividend')."
+          },
+          "hasNegativeQuantity": {
+            "type": "boolean",
+            "description": "True when any symbol nets below zero — a SELL without its earlier BUYs\n(partial-history import). The estimate is unreliable; warn, don't hide."
+          },
+          "interestIncomeCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "All-time interest income (activity_type = 'Interest')."
+          },
+          "openPositions": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "portfolioEstimateCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "cash + positions value — the \"portfolio estimate\"."
+          },
+          "positionsValueCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Σ market value of open positions at their last trade price."
+          },
+          "withholdingTaxCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "All-time withholding tax, as a positive magnitude (rows are negative)."
+          }
+        }
+      },
       "JourneyMilestone": {
         "type": "object",
         "required": [
@@ -10185,6 +10665,86 @@
             "items": {
               "$ref": "#/components/schemas/JourneyMilestone"
             }
+          }
+        }
+      },
+      "LlmProviderConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "base_url",
+              "completion_model",
+              "embedding_model",
+              "kind"
+            ],
+            "properties": {
+              "base_url": {
+                "type": "string"
+              },
+              "completion_model": {
+                "type": "string"
+              },
+              "embedding_model": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ollama"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unconfigured"
+                ]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "LookBackFact": {
+        "type": "object",
+        "description": "A single plain-language fact about how `month` went for a budgeted category,\nused to open the Plan Next Month wizard. Deterministic, no LLM — the frontend\ncomposes the sentence (and applies the user's money formatting/privacy mode)\nfrom `kind` + `amount_cents`/`streak_months`; this never bakes a formatted\ndollar string server-side.",
+        "required": [
+          "categoryId",
+          "categoryLabel",
+          "kind",
+          "amountCents",
+          "streakMonths"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Meaningful for \"over\" (spent − budgeted) and \"under\" (budgeted − spent); 0 for \"streak\"."
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "\"over\" | \"under\" | \"streak\""
+          },
+          "streakMonths": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Meaningful for \"streak\" (consecutive zero-spend months including `month`); 0 otherwise."
           }
         }
       },
@@ -10253,6 +10813,19 @@
             "nullable": true
           }
         }
+      },
+      "Mechanism": {
+        "type": "string",
+        "enum": [
+          "new",
+          "stopped",
+          "price_up",
+          "price_down",
+          "frequency_up",
+          "frequency_down",
+          "mixed",
+          "flat"
+        ]
       },
       "MemberBudgetEnvelope": {
         "type": "object",
@@ -10370,6 +10943,236 @@
             "format": "int64"
           }
         }
+      },
+      "MetricAssumption": {
+        "type": "object",
+        "description": "A tunable assumption that shaped the metric (e.g. the user's target rate).",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "MetricExplanation": {
+        "type": "object",
+        "description": "A complete, self-consistent explanation of one financial metric: what it\nmeans, what produced it, what it leaves out, what it assumes, over what\nperiod, and how far to trust it.",
+        "required": [
+          "key",
+          "label",
+          "value",
+          "definition",
+          "inputs",
+          "exclusions",
+          "assumptions",
+          "period",
+          "warnings"
+        ],
+        "properties": {
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricAssumption"
+            },
+            "description": "Tunable assumptions that shaped it."
+          },
+          "definition": {
+            "type": "string",
+            "description": "One-sentence definition of what the number represents."
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What was deliberately left out."
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricInput"
+            },
+            "description": "The material inputs that produced it, with their amounts where money."
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable identifier, e.g. `\"net_worth\"`. Safe to switch on."
+          },
+          "label": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string",
+            "description": "The time window the figure covers."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Material tradeoffs between this result and the competing option(s) — the\n\"why this and not the alternative\" reasoning. Empty for a descriptive\nmetric that has no alternative (e.g. net worth); populated for a\nrecommendation such as a debt-payoff order or a contribution level."
+          },
+          "value": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricWarning"
+            },
+            "description": "Data-quality caveats: missing / stale / withheld / low-confidence disclosures."
+          }
+        }
+      },
+      "MetricInput": {
+        "type": "object",
+        "description": "A material input that fed the metric. `amount_cents` is present when the\ninput is a money figure (formatted by the UI in the user's currency);\n`detail` carries non-money context such as \"3 months of history\".",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "MetricValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "cents",
+              "kind"
+            ],
+            "properties": {
+              "cents": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "money"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "pct",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "percent"
+                ]
+              },
+              "pct": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "months",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "months"
+                ]
+              },
+              "months": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "days",
+              "kind"
+            ],
+            "properties": {
+              "days": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "days"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "withheld"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The metric's value, tagged so the UI knows how to format it and so a\nwithheld figure is a first-class state rather than a fabricated zero.",
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "MetricWarning": {
+        "type": "object",
+        "description": "One data-quality caveat: missing, stale, low-confidence, or unsupported data.",
+        "required": [
+          "level",
+          "message"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/MetricWarningLevel"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "MetricWarningLevel": {
+        "type": "string",
+        "description": "Severity of a data-quality caveat attached to a metric.",
+        "enum": [
+          "info",
+          "caution",
+          "withheld"
+        ]
       },
       "MissingDataItem": {
         "type": "object",
@@ -11045,6 +11848,75 @@
           }
         }
       },
+      "Notification": {
+        "type": "object",
+        "description": "A stored notification, as the history surface reads it.",
+        "required": [
+          "id",
+          "category",
+          "urgency",
+          "title",
+          "body",
+          "createdAt"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/NotificationCategory"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "readAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolvedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "route": {
+            "type": "string",
+            "nullable": true
+          },
+          "sensitive": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "urgency": {
+            "$ref": "#/components/schemas/Urgency"
+          }
+        }
+      },
+      "NotificationCategory": {
+        "type": "string",
+        "description": "What a notification is about. Drives the per-category user preference and how\nevents are grouped. The string form is the stored value and the preference key.",
+        "enum": [
+          "cashflow_risk",
+          "stale_data",
+          "debt_deadline",
+          "subscription_change",
+          "categorization",
+          "goal_progress",
+          "month_end_review",
+          "security",
+          "sync_error",
+          "account_activity",
+          "digest"
+        ]
+      },
       "NotificationCategoryPref": {
         "type": "object",
         "required": [
@@ -11191,6 +12063,71 @@
           }
         }
       },
+      "PeriodAssessment": {
+        "type": "object",
+        "required": [
+          "class",
+          "period_total_cents",
+          "baseline_monthly_cents",
+          "upper_band_cents",
+          "elevated_recent_months",
+          "baseline_months",
+          "mixed_currency",
+          "note"
+        ],
+        "properties": {
+          "baseline_monthly_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "baseline_months": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "class": {
+            "$ref": "#/components/schemas/PeriodClass"
+          },
+          "elevated_recent_months": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many of the 3 months before `period` were also above the band."
+          },
+          "mixed_currency": {
+            "type": "boolean",
+            "description": "True when the ledger spans multiple currencies — the totals mix them, so\ntreat the verdict as approximate (parity with decompose's warning)."
+          },
+          "note": {
+            "type": "string"
+          },
+          "period_total_cents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "upper_band_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "median + BAND_K robust sigmas — spend above this is \"elevated\"."
+          }
+        }
+      },
+      "PeriodClass": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "episodic_spike",
+          "regime_shift",
+          "insufficient_history"
+        ]
+      },
+      "Persistence": {
+        "type": "string",
+        "enum": [
+          "one_off",
+          "recurring",
+          "emerging",
+          "uncertain"
+        ]
+      },
       "PlanAssignment": {
         "type": "object",
         "required": [
@@ -11273,7 +12210,7 @@
           "lookBack": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/budgets.LookBackFact"
+              "$ref": "#/components/schemas/LookBackFact"
             }
           },
           "recurringExpenseCents": {
@@ -11379,6 +12316,51 @@
           }
         }
       },
+      "Position": {
+        "type": "object",
+        "description": "One open position in an investment account, aggregated from Trade rows.",
+        "required": [
+          "symbol",
+          "quantity",
+          "investedCents"
+        ],
+        "properties": {
+          "investedCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Net cash put into this symbol: SUM(−amount) over its trades. A closed\nround trip leaves the realized P&L here as a negative (profit) or\npositive (loss) residue."
+          },
+          "lastPrice": {
+            "type": "number",
+            "format": "double",
+            "description": "Unit price of the most recent trade in this symbol (dollars).",
+            "nullable": true
+          },
+          "lastTradeAt": {
+            "type": "string",
+            "description": "Date of that most recent trade (RFC3339).",
+            "nullable": true
+          },
+          "marketValueCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "quantity × last_price, rounded to cents. None when no price is known.",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double",
+            "description": "Net units held: SUM(quantity) over all trades (SELL rows are negative)."
+          },
+          "symbol": {
+            "type": "string"
+          }
+        }
+      },
       "PreparedImportPreview": {
         "type": "object",
         "description": "A lightweight, bounded preview of what an import WOULD do — counts + a\ncapped error list + a staleness signature — so the UI can show\n\"N new · D duplicates · R to review\" before the user commits to importing.\nDeliberately excludes per-row decisions: those can number in the\nthousands and must never cross the Tauri IPC boundary wholesale.",
@@ -11394,7 +12376,7 @@
           "errors": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/finsight_providers.csv.RowError"
+              "$ref": "#/components/schemas/RowError"
             }
           },
           "rowsImported": {
@@ -11453,6 +12435,14 @@
             "format": "int64"
           }
         }
+      },
+      "PrivacyLevel": {
+        "type": "string",
+        "description": "How much sensitive detail a notification may expose. Mirrors the app's\n\"blur amounts\" privacy concept rather than inventing a parallel model — a\npush composed server-side can't consult the client's blur, so this is the\nserver-side equivalent.",
+        "enum": [
+          "full",
+          "hide_amounts"
+        ]
       },
       "ProgressPayload": {
         "type": "object",
@@ -11853,6 +12843,54 @@
           }
         }
       },
+      "RestorationEnvelope": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "originalCents",
+          "openedOn",
+          "createdAt"
+        ],
+        "properties": {
+          "closedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "counterpartyPattern": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "destinationAccountId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "openedOn": {
+            "type": "string"
+          },
+          "originalCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sourceAccountId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "RestorationEnvelopeInput": {
         "type": "object",
         "required": [
@@ -11887,6 +12925,98 @@
           },
           "sourceAccountId": {
             "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RestorationLeg": {
+        "type": "object",
+        "required": [
+          "id",
+          "envelopeId",
+          "amountCents",
+          "notedOn"
+        ],
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "envelopeId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "notedOn": {
+            "type": "string"
+          },
+          "transactionId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RestorationStatus": {
+        "type": "object",
+        "description": "Everything needed to say the sentence, and nothing that would need to be\nasserted without evidence.",
+        "required": [
+          "envelope",
+          "legs",
+          "restoredCents",
+          "leftToRestoreCents",
+          "collectableCents",
+          "fundYourselfCents",
+          "stillHeldBasis",
+          "daysOpen",
+          "stale"
+        ],
+        "properties": {
+          "collectableCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What a person still owes, from the counterparty tab. Zero when the\nenvelope names nobody — an unlinked envelope has nothing collectable,\nand guessing across every counterparty would produce a confident wrong\nfigure."
+          },
+          "daysOpen": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "envelope": {
+            "$ref": "#/components/schemas/RestorationEnvelope"
+          },
+          "fundYourselfCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What the user has to find themselves: left-to-restore minus collectable."
+          },
+          "leftToRestoreCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Original minus restored. The headline number."
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RestorationLeg"
+            }
+          },
+          "restoredCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sum of everything attributed as already gone back."
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Open long enough that it should be reconciled and closed."
+          },
+          "stillHeldBasis": {
+            "type": "string",
+            "description": "Why the ceiling is what it is, or why there isn't one."
+          },
+          "stillHeldCeilingCents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "An UPPER BOUND on what could still be sitting in the destination\naccount, never a claim that it is.\n\nThe naive \"still remaining\" figure degrades silently: withdraw in\nJanuary, flag a couple of legs, and it will still confidently report the\nsame number in July after six months of unrelated churn. At that point\nit is not measuring anything.\n\nThe account's lowest end-of-day balance since the withdrawal is a real\nbound instead — if checking dipped to $2,000 in March, the user\ndemonstrably is not still holding $9,500. `None` when the destination is\nunknown or its balance cannot be reconstructed, which is the honest\nanswer rather than a guess.",
             "nullable": true
           }
         }
@@ -12577,6 +13707,23 @@
           }
         }
       },
+      "SimpleFinSyncSettings": {
+        "type": "object",
+        "required": [
+          "backgroundSyncEnabled",
+          "backgroundSyncIntervalMinutes"
+        ],
+        "properties": {
+          "backgroundSyncEnabled": {
+            "type": "boolean"
+          },
+          "backgroundSyncIntervalMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "SkippedChange": {
         "type": "object",
         "required": [
@@ -12626,6 +13773,86 @@
           "untaggedCents": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "SpendingPlan": {
+        "type": "object",
+        "required": [
+          "currency",
+          "recent_monthly_cents",
+          "baseline_monthly_cents",
+          "self_correcting_cents",
+          "recoverable_recurring_cents",
+          "projected_after_levers_cents",
+          "levers",
+          "self_correcting",
+          "accepted",
+          "note"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Driver"
+            },
+            "description": "Drivers the user accepted (expected/investment) — kept in the floor,\nsurfaced so they can be reviewed and undone; not levers, not self-correcting."
+          },
+          "baseline_monthly_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Your robust normal (median of the trailing months)."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "levers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Driver"
+            },
+            "description": "The specific recurring levers to act on, ranked by size."
+          },
+          "note": {
+            "type": "string"
+          },
+          "projected_after_levers_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Where you'd land if the one-offs lapse AND you trim every lever."
+          },
+          "recent_monthly_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The elevated month's spend (monthly-equivalent)."
+          },
+          "recoverable_recurring_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Recurring/emerging drivers you could trim — the levers."
+          },
+          "self_correcting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Driver"
+            },
+            "description": "The one-off drivers that lapse on their own — shown as \"leave them\"."
+          },
+          "self_correcting_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "One-off drivers that fall off on their own — no action needed."
+          },
+          "structural_gap_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Present only with a target BELOW what trimming reaches: the remaining\ngap is structural (a floor / fixed commitments), not more trimming.",
+            "nullable": true
+          },
+          "target_monthly_cents": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
           }
         }
       },
@@ -13060,7 +14287,7 @@
             "nullable": true
           },
           "transaction": {
-            "$ref": "#/components/schemas/finsight_core.models.Transaction"
+            "$ref": "#/components/schemas/Transaction"
           }
         }
       },
@@ -13238,6 +14465,21 @@
             "$ref": "#/components/schemas/Transaction"
           }
         }
+      },
+      "Urgency": {
+        "type": "string",
+        "enum": [
+          "critical",
+          "normal",
+          "low"
+        ]
+      },
+      "WarningLevel": {
+        "type": "string",
+        "enum": [
+          "info",
+          "caution"
+        ]
       }
     }
   }

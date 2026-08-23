@@ -21,6 +21,7 @@ use chrono::{NaiveDate, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 /// An envelope stops being "in flight" and starts being clutter somewhere
 /// around here. The issue this implements is explicit that features needing
@@ -28,7 +29,7 @@ use specta::Type;
 /// design nags toward reconcile-and-close rather than letting them pile up.
 pub const STALE_AFTER_DAYS: i64 = 45;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RestorationEnvelope {
     pub id: String,
@@ -43,7 +44,7 @@ pub struct RestorationEnvelope {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RestorationLeg {
     pub id: String,
@@ -55,7 +56,7 @@ pub struct RestorationLeg {
 
 /// Everything needed to say the sentence, and nothing that would need to be
 /// asserted without evidence.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RestorationStatus {
     pub envelope: RestorationEnvelope,

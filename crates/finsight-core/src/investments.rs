@@ -12,9 +12,10 @@ use crate::error::CoreResult;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use utoipa::ToSchema;
 
 /// One open position in an investment account, aggregated from Trade rows.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
     pub symbol: String,
@@ -34,7 +35,7 @@ pub struct Position {
 }
 
 /// Ledger-derived portfolio summary for one investment account.
-#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct InvestmentSummary {
     /// Cash in the account: opening (seed) balance + every ledger row. Trades,
