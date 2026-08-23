@@ -6,6 +6,7 @@ import { useBudgetEnvelopes, useBudgetHistory, useSetBudget, useGoals, useContri
 import { useHouseholdMembers } from "../api/hooks/household";
 import { useMonthTotals } from "../api/hooks/reports";
 import { commands, type BudgetEnvelope, type SpendingBreakdown } from "../api/client";
+import { unwrap } from "../api/client";
 import PlanNextMonthModal from "./PlanNextMonthModal";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
@@ -173,9 +174,7 @@ export default function Budget() {
   const { data: breakdown } = useQuery<SpendingBreakdown>({
     queryKey: ["spending-breakdown"],
     queryFn: async () => {
-      const result = await commands.getSpendingBreakdown();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getSpendingBreakdown());
     },
     staleTime: 60_000,
   });

@@ -1,13 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type RuleProposal } from "../client";
+import { unwrap } from "../client";
 
 export function useRuleProposals() {
   return useQuery<RuleProposal[]>({
     queryKey: ["rule-proposals"],
     queryFn: async () => {
-      const result = await commands.listRuleProposals();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listRuleProposals());
     },
   });
 }
@@ -16,8 +15,7 @@ export function useAcceptRuleProposal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.acceptRuleProposal(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.acceptRuleProposal(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rule-proposals"] });
@@ -30,8 +28,7 @@ export function useDeclineRuleProposal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.declineRuleProposal(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.declineRuleProposal(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["rule-proposals"] });

@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type JourneyStatus } from "../client";
+import { unwrap } from "../client";
 
 export function useJourneyStatus() {
   return useQuery<JourneyStatus>({
     queryKey: ["journey-status"],
     queryFn: async () => {
-      const result = await commands.getJourneyStatus();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getJourneyStatus());
     },
     staleTime: 60_000,
   });

@@ -9,6 +9,8 @@ import { useResetOnboarding } from "../api/hooks/onboarding";
 import { useAccounts } from "../api/hooks/accounts";
 import { useGoals } from "../api/hooks/budget";
 import { commands } from "../api/client";
+import { unwrap } from "../api/client";
+import { actionBundleKeys } from "../api/hooks/copilot";
 import { isBackendAvailable } from "../utils/runtime";
 
 interface NavEntry {
@@ -62,11 +64,9 @@ export function Sidebar({ onOpenCmd }: Props) {
   const warm = (path: string) => prefetchRoute(qc, path);
 
   const { data: pendingBundles = [] } = useQuery({
-    queryKey: ["action-bundles", "pending", null],
+    queryKey: actionBundleKeys.list("pending"),
     queryFn: async () => {
-      const result = await commands.listActionBundles("pending", null, null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listActionBundles("pending", null, null));
     },
     staleTime: 60_000,
     enabled: hasBackend,

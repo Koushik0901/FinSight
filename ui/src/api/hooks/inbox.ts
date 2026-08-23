@@ -6,6 +6,7 @@ import {
   type InboxBadgeCount,
   type UnresolvedCounterpartyDto,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -13,9 +14,7 @@ export function useActionItems() {
   return useQuery<ActionItem[]>({
     queryKey: ["action-items"],
     queryFn: async () => {
-      const result = await commands.getActionItems();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getActionItems());
     },
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -37,9 +36,7 @@ export function useInboxBadgeCount() {
   return useQuery<InboxBadgeCount>({
     queryKey: ["inbox-badge-count"],
     queryFn: async () => {
-      const result = await commands.getInboxBadgeCount();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getInboxBadgeCount());
     },
     staleTime: 60_000,
     refetchInterval: 120_000,
@@ -55,9 +52,7 @@ export function useUnresolvedCounterparties() {
   return useQuery<UnresolvedCounterpartyDto[]>({
     queryKey: ["unresolved-counterparties"],
     queryFn: async () => {
-      const result = await commands.listUnresolvedCounterparties();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listUnresolvedCounterparties());
     },
     enabled: isBackendAvailable(),
   });
@@ -71,9 +66,7 @@ export function useApplyCounterpartyVerdict() {
   return useMutation({
     mutationFn: async ({ pattern, verdict }: { pattern: string; verdict: CounterpartyVerdict }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.applyCounterpartyVerdictToSimilar(pattern, verdict);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.applyCounterpartyVerdictToSimilar(pattern, verdict));
     },
     // A verdict moves money in/out of income & spending — every headline
     // number (savings rate, cashflow, budget, inbox) can change, same as the

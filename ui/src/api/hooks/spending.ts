@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type PathBackView } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /**
@@ -12,9 +13,7 @@ export function usePathBack(period: string | null, targetMonthlyCents: number | 
   return useQuery<PathBackView | null>({
     queryKey: ["path-back", period, targetMonthlyCents],
     queryFn: async () => {
-      const result = await commands.getSpendingPathBack(period, targetMonthlyCents);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getSpendingPathBack(period, targetMonthlyCents));
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -29,8 +28,7 @@ export function useSetSpendingAnnotation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (v: { merchantKey: string; verdict: string }) => {
-      const result = await commands.setSpendingAnnotation(v.merchantKey, v.verdict);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setSpendingAnnotation(v.merchantKey, v.verdict));
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["path-back"] });

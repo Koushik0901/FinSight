@@ -1,14 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type AccountOwner, type AssetOwner, type HouseholdMember, type MemberNetWorth, type OwnerShare } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export function useHouseholdNetWorthBreakdown() {
   return useQuery<MemberNetWorth[]>({
     queryKey: ["household-net-worth"],
     queryFn: async () => {
-      const result = await commands.householdNetWorthBreakdown();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.householdNetWorthBreakdown());
     },
     enabled: isBackendAvailable(),
   });
@@ -18,9 +17,7 @@ export function useHouseholdMembers() {
   return useQuery<HouseholdMember[]>({
     queryKey: ["household-members"],
     queryFn: async () => {
-      const result = await commands.listHouseholdMembers();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listHouseholdMembers());
     },
     enabled: isBackendAvailable(),
   });
@@ -31,9 +28,7 @@ export function useCreateHouseholdMember() {
   return useMutation({
     mutationFn: async ({ name, color }: { name: string; color?: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createHouseholdMember(name, color ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createHouseholdMember(name, color ?? null));
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["household-members"] });
@@ -46,8 +41,7 @@ export function useSetSelfMember() {
   return useMutation({
     mutationFn: async (memberId: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setSelfMember(memberId);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setSelfMember(memberId));
     },
     // Setting the operator re-runs the classification cascade (their own
     // e-transfers become internal moves), so cashflow, savings rate, anomalies
@@ -63,8 +57,7 @@ export function useDeleteHouseholdMember() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.deleteHouseholdMember(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.deleteHouseholdMember(id));
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["household-members"] });
@@ -78,9 +71,7 @@ export function useAccountOwners() {
   return useQuery<AccountOwner[]>({
     queryKey: ["account-owners"],
     queryFn: async () => {
-      const result = await commands.listAccountOwners();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAccountOwners());
     },
     enabled: isBackendAvailable(),
   });
@@ -91,8 +82,7 @@ export function useSetAccountOwners() {
   return useMutation({
     mutationFn: async ({ accountId, memberIds }: { accountId: string; memberIds: string[] }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setAccountOwners(accountId, memberIds);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAccountOwners(accountId, memberIds));
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["account-owners"] });
@@ -106,8 +96,7 @@ export function useSetAccountOwnerShares() {
   return useMutation({
     mutationFn: async ({ accountId, owners }: { accountId: string; owners: OwnerShare[] }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setAccountOwnerShares(accountId, owners);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAccountOwnerShares(accountId, owners));
     },
     // Explicit shares change every per-member number, so invalidate broadly.
     onSuccess: () => {
@@ -120,9 +109,7 @@ export function useAssetOwners() {
   return useQuery<AssetOwner[]>({
     queryKey: ["asset-owners"],
     queryFn: async () => {
-      const result = await commands.listAssetOwners();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAssetOwners());
     },
     enabled: isBackendAvailable(),
   });
@@ -133,8 +120,7 @@ export function useSetAssetOwners() {
   return useMutation({
     mutationFn: async ({ assetId, owners }: { assetId: string; owners: OwnerShare[] }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setAssetOwners(assetId, owners);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAssetOwners(assetId, owners));
     },
     onSuccess: () => {
       void qc.invalidateQueries();

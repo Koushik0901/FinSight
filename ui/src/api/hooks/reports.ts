@@ -7,15 +7,14 @@ import {
   type SaveMonthCloseInput,
   type SavingsRatePoint,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export function useMonthTotals() {
   return useQuery<MonthTotals>({
     queryKey: ["month-totals"],
     queryFn: async () => {
-      const result = await commands.getMonthTotals();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getMonthTotals());
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -27,9 +26,7 @@ export function useSavingsRateHistory() {
   return useQuery<SavingsRatePoint[]>({
     queryKey: ["savings-rate-history"],
     queryFn: async () => {
-      const result = await commands.getSavingsRateHistory();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getSavingsRateHistory());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -42,9 +39,7 @@ export function useMonthClose(year: number, month: number) {
   return useQuery<MonthCloseView>({
     queryKey: ["month-close", year, month],
     queryFn: async () => {
-      const result = await commands.getMonthClose(year, month);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getMonthClose(year, month));
     },
     enabled: isBackendAvailable(),
   });
@@ -55,9 +50,7 @@ export function useSaveMonthClose() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: SaveMonthCloseInput) => {
-      const result = await commands.saveMonthClose(input);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.saveMonthClose(input));
     },
     onSuccess: (data) => {
       qc.setQueryData(["month-close", data.year, data.month], data);
@@ -72,9 +65,7 @@ export function useMonthCloses() {
   return useQuery<MonthCloseListItem[]>({
     queryKey: ["month-closes"],
     queryFn: async () => {
-      const result = await commands.listMonthCloses();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listMonthCloses());
     },
     enabled: isBackendAvailable(),
   });

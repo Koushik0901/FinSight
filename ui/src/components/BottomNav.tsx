@@ -5,6 +5,8 @@ import { prefetchRoute } from "../api/prefetch";
 import * as I from "./Icons";
 import { useAgentStatus, useNeedsReviewCount } from "../api/hooks/agent";
 import { commands } from "../api/client";
+import { unwrap } from "../api/client";
+import { actionBundleKeys } from "../api/hooks/copilot";
 import { isBackendAvailable } from "../utils/runtime";
 import Drawer from "./Drawer";
 
@@ -52,11 +54,9 @@ export function BottomNav() {
   const warm = (path: string) => prefetchRoute(qc, path);
 
   const { data: pendingBundles = [] } = useQuery({
-    queryKey: ["action-bundles", "pending", null],
+    queryKey: actionBundleKeys.list("pending"),
     queryFn: async () => {
-      const result = await commands.listActionBundles("pending", null, null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listActionBundles("pending", null, null));
     },
     staleTime: 60_000,
     enabled: hasBackend,

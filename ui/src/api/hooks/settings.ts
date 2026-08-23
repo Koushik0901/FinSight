@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "../client";
+import { unwrap } from "../client";
 import { useTweaks } from "../../state/tweaks";
 import { isBackendAvailable } from "../../utils/runtime";
 import { downloadBlob } from "../../lib/downloadBlob";
@@ -10,9 +11,7 @@ export function useDefaultCurrency() {
   const query = useQuery<string>({
     queryKey: ["currency"],
     queryFn: async () => {
-      const result = await commands.getCurrency();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getCurrency());
     },
     // This value is per-user server state and can also be derived from newly
     // added accounts. Do not trust a week-old persisted PWA query forever:
@@ -34,8 +33,7 @@ export function useSetCurrency() {
   return useMutation({
     mutationFn: async (currency: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setCurrency(currency);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setCurrency(currency));
     },
     onSuccess: (_, currency) => {
       setCurrencyTweak(currency);
@@ -48,9 +46,7 @@ export function useNotificationsEnabled() {
   return useQuery<boolean>({
     queryKey: ["notifications-enabled"],
     queryFn: async () => {
-      const result = await commands.getNotificationsEnabled();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getNotificationsEnabled());
     },
     staleTime: Infinity,
     enabled: isBackendAvailable(),
@@ -62,8 +58,7 @@ export function useSetNotificationsEnabled() {
   return useMutation({
     mutationFn: async (enabled: boolean) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setNotificationsEnabled(enabled);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setNotificationsEnabled(enabled));
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications-enabled"] }),
   });
@@ -73,9 +68,7 @@ export function useAutoCategorizeEnabled() {
   return useQuery<boolean>({
     queryKey: ["auto-categorize-enabled"],
     queryFn: async () => {
-      const result = await commands.getAutoCategorizeEnabled();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getAutoCategorizeEnabled());
     },
     staleTime: Infinity,
     enabled: isBackendAvailable(),
@@ -87,8 +80,7 @@ export function useSetAutoCategorizeEnabled() {
   return useMutation({
     mutationFn: async (enabled: boolean) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setAutoCategorizeEnabled(enabled);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAutoCategorizeEnabled(enabled));
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["auto-categorize-enabled"] }),
   });
@@ -97,9 +89,8 @@ export function useSetAutoCategorizeEnabled() {
 export function useExportJson() {
   return useMutation({
     mutationFn: async () => {
-      const result = await commands.exportAllDataJson();
-      if (result.status === "error") throw new Error(result.error.message);
-      downloadBlob(result.data, "application/json", "finsight-export.json");
+      const blob = await unwrap(commands.exportAllDataJson());
+      downloadBlob(blob, "application/json", "finsight-export.json");
     },
   });
 }
@@ -107,9 +98,8 @@ export function useExportJson() {
 export function useExportCsv() {
   return useMutation({
     mutationFn: async () => {
-      const result = await commands.exportAllDataCsv();
-      if (result.status === "error") throw new Error(result.error.message);
-      downloadBlob(result.data, "text/csv", "finsight-transactions.csv");
+      const blob = await unwrap(commands.exportAllDataCsv());
+      downloadBlob(blob, "text/csv", "finsight-transactions.csv");
     },
   });
 }
@@ -119,8 +109,7 @@ export function useDeleteAllData() {
   return useMutation({
     mutationFn: async () => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.deleteAllData();
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.deleteAllData());
     },
     onSuccess: () => {
       // Blow away every cached query so no stale dashboard/report/chart/balance

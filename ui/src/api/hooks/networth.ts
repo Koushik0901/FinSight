@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type NetWorthPoint } from "../client";
+import { unwrap } from "../client";
 import { useManualAssets } from "./assets";
 import { useAccounts } from "./accounts";
 import { useCurrencyScope } from "./currencyScope";
@@ -10,9 +11,7 @@ export function useNetWorthHistory(days: number) {
   return useQuery<NetWorthPoint[]>({
     queryKey: ["networth-history", days],
     queryFn: async () => {
-      const result = await commands.listNetWorthHistory(days);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listNetWorthHistory(days));
     },
     enabled: isBackendAvailable(),
     // Keep the current chart on screen while a range switch refetches, instead

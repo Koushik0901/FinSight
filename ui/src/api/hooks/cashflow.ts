@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type CashflowForecast } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export interface CashflowParams {
@@ -19,14 +20,12 @@ export function useCashflowForecast(params: CashflowParams) {
   return useQuery<CashflowForecast>({
     queryKey: ["cashflow-forecast", params.horizonDays, params.bufferCents, params.extraExpenseCents],
     queryFn: async () => {
-      const result = await commands.getCashflowForecast(
+      return unwrap(commands.getCashflowForecast(
         params.horizonDays,
         params.bufferCents,
         params.extraExpenseCents > 0 ? params.extraExpenseCents : null,
         null,
-      );
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      ));
     },
     staleTime: 30_000,
     // Keep showing the previous forecast while a new buffer/horizon refetches,

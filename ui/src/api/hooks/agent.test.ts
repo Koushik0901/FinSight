@@ -4,6 +4,7 @@ import { createWrapper } from "../../test-utils";
 import { useNeedsReviewCount, useTriggerCategorize } from "./agent";
 
 vi.mock("../client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     getNeedsReviewCount: vi.fn().mockResolvedValue({ status: "ok", data: 3 }),
     triggerCategorize: vi.fn().mockResolvedValue({ status: "ok", data: null }),

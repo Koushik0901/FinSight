@@ -76,6 +76,7 @@ vi.mock("../api/hooks/accounts", () => ({
 }));
 const txnCountMock = vi.hoisted(() => ({ count: 42 }));
 vi.mock("../api/client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     getTransactionCount: vi.fn(async () => ({ status: "ok", data: txnCountMock.count })),
   },

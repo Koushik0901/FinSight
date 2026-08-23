@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef, useCallback, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AssistantRuntimeProvider,
@@ -44,6 +44,7 @@ import {
   useApproveActionItem,
   useRejectActionItem,
   useActionBundle,
+  useExecuteActionBundle,
 } from "../api/hooks/copilot";
 import {
   useConversations,
@@ -53,6 +54,7 @@ import { useAccounts } from "../api/hooks/accounts";
 import { useNavigate } from "react-router-dom";
 import { useClarifications } from "../state/clarifications";
 import { commands, type AgentNavigationTarget } from "../api/client";
+import { COPILOT_ASYNC_ANSWER } from "../api/eventNames";
 import { normalizeCount } from "../utils/dataReadiness";
 import { useTauriCopilotRuntime, type MessageMeta } from "../components/copilot/TauriRuntime";
 import { sourcesFromToolTrace } from "../components/copilot/toolSources";
@@ -62,8 +64,6 @@ import {
   copilotToolkit,
   generativeUIComponents,
 } from "../components/copilot/renderers";
-import { invoke } from "@tauri-apps/api/core";
-import type { ExecutionSummary } from "../api/client";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
   const { data: bundle } = useActionBundle(bundleId);
   const approve = useApproveActionItem();
   const reject = useRejectActionItem();
-  const qc = useQueryClient();
+  const execute = useExecuteActionBundle();
   const navigate = useNavigate();
   const [isExecuting, setIsExecuting] = useState(false);
   const [executed, setExecuted] = useState(false);
@@ -144,17 +144,14 @@ function ActionBundlePanel({ bundleId }: { bundleId: string }) {
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      const raw = await invoke<ExecutionSummary>("execute_action_bundle", {
-        bundleId: bundle.id,
-      });
+      const summary = await execute.mutateAsync(bundle.id);
       setExecuted(true);
       // Older servers omit this field; an absent offer is fine, a wrong one is not.
-      setNavTargets(raw.navigation ?? []);
-      await qc.invalidateQueries({ queryKey: ["action-bundles"] });
-      if (raw.failed === 0) {
-        toast.success(`${raw.succeeded} action${raw.succeeded !== 1 ? "s" : ""} applied`);
+      setNavTargets(summary.navigation ?? []);
+      if (summary.failed === 0) {
+        toast.success(`${summary.succeeded} action${summary.succeeded !== 1 ? "s" : ""} applied`);
       } else {
-        toast.error(`${raw.failed} failed`, { description: `${raw.succeeded} succeeded` });
+        toast.error(`${summary.failed} failed`, { description: `${summary.succeeded} succeeded` });
       }
     } catch (e) {
       toast.error("Execution failed", { description: String(e) });
@@ -1223,7 +1220,7 @@ function CopilotAgUiEnabled() {
   // toast to open the conversation it landed in.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<{ conversationId?: string }>("copilot-async-answer", (event) => {
+    void listen<{ conversationId?: string }>(COPILOT_ASYNC_ANSWER, (event) => {
       const convId = event.payload?.conversationId;
       if (!convId) return;
       if (convId === activeIdRef.current) {

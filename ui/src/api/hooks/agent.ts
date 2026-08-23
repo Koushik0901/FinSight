@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type CompletionProviderConfig, type AgentStatus } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -7,9 +8,7 @@ export function useNeedsReviewCount() {
   return useQuery<number>({
     queryKey: ["needs-review-count"],
     queryFn: async () => {
-      const result = await commands.getNeedsReviewCount();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getNeedsReviewCount());
     },
     refetchInterval: 30_000,
     enabled: isBackendAvailable(),
@@ -20,9 +19,7 @@ export function useAgentStatus() {
   return useQuery<AgentStatus>({
     queryKey: ["agent-status"],
     queryFn: async () => {
-      const result = await commands.getAgentStatus();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getAgentStatus());
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
@@ -34,9 +31,7 @@ export function useAskAgent() {
   return useMutation({
     mutationFn: async ({ question, mode }: { question: string; mode?: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.askAgent(question, mode ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.askAgent(question, mode ?? null));
     },
   });
 }
@@ -46,9 +41,7 @@ export function useCompletionProvider() {
     queryKey: ["completion-provider"],
     queryFn: async () => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.getCompletionProvider();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getCompletionProvider());
     },
     staleTime: 30_000,
     enabled: isBackendAvailable(),
@@ -60,8 +53,7 @@ export function useSetCompletionProvider() {
   return useMutation({
     mutationFn: async (config: CompletionProviderConfig) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setCompletionProvider(config);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setCompletionProvider(config));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["completion-provider"] });
@@ -73,8 +65,7 @@ export function useSaveProviderApiKey() {
   return useMutation({
     mutationFn: async ({ providerId, key }: { providerId: string; key: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.saveProviderApiKey(providerId, key);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.saveProviderApiKey(providerId, key));
     },
   });
 }
@@ -84,9 +75,7 @@ export function useListProviderModels(config: CompletionProviderConfig | null) {
     queryKey: ["provider-models", config],
     queryFn: async () => {
       if (!config) return [];
-      const result = await commands.listProviderModels(config);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listProviderModels(config));
     },
     enabled: config !== null && (config as { kind: string }).kind === "ollama" && isBackendAvailable(),
   });
@@ -102,9 +91,7 @@ export function useTestCompletionProvider() {
       apiKey?: string;
     }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.testCompletionProvider(config, apiKey ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.testCompletionProvider(config, apiKey ?? null));
     },
   });
 }
@@ -114,8 +101,7 @@ export function useTriggerCategorize() {
   return useMutation({
     mutationFn: async () => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.triggerCategorize();
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.triggerCategorize());
     },
     onSuccess: () => {
       // The categorize job runs in the background; refresh once it has had a
@@ -131,8 +117,7 @@ export function useTriggerRecategorizeLowConfidence() {
   return useMutation({
     mutationFn: async () => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.triggerRecategorizeLowConfidence();
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.triggerRecategorizeLowConfidence());
     },
     onSuccess: () => {
       // Recategorization reassigns transaction categories in the background;

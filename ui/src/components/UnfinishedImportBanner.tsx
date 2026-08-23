@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Import } from "../api/client";
+import { unwrap } from "../api/client";
 import { isBackendAvailable } from "../utils/runtime";
 
 export default function UnfinishedImportBanner() {
@@ -7,9 +8,7 @@ export default function UnfinishedImportBanner() {
   const { data: unfinished = [] } = useQuery<Import[]>({
     queryKey: ["unfinished-imports"],
     queryFn: async () => {
-      const result = await commands.listUnfinishedImports();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listUnfinishedImports());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),

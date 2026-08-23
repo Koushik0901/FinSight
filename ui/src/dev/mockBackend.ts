@@ -24,6 +24,10 @@ type Kind = "rich" | "empty" | "partial" | "large" | "multi";
 // ── AccountSummary builder (fills every required binding field) ──────────────
 type AnyRec = Record<string, unknown>;
 
+// Type-only import: generated contract names for compile-time responder
+// checking. Erased at build time, so the mock stays tree-shaken from prod.
+import type { CommandName } from "../api/commandNames";
+
 const ACCOUNT_COLORS: Record<string, string> = {
   Checking: "#60A5FA",
   Savings: "#34D399",
@@ -947,7 +951,16 @@ const mockNotifications: AnyRec[] = [
   { id: "n-stale", category: "stale_data", urgency: "normal", title: "An account hasn't synced", body: "One linked account is more than 3 days out of date", sensitive: null, route: "/accounts", createdAt: isoDaysAgo(2), deliveredAt: isoDaysAgo(2), readAt: isoDaysAgo(1), resolvedAt: null },
 ];
 
-function buildResponders(ds: Dataset): Record<string, (args: AnyRec) => unknown> {
+/**
+ * Responder keys are type-checked against the GENERATED command-name union,
+ * so a command renamed or added in the Rust contract fails `tsc` here instead
+ * of silently falling through to `fallback` in mock mode. Coverage itself may
+ * stay partial (`Partial`) — unlisted commands still hit the fallback, but now
+ * deliberately.
+ */
+type Responder = (args: AnyRec) => unknown;
+
+function buildResponders(ds: Dataset): Partial<Record<CommandName, Responder>> {
   return {
     list_accounts: () => ds.accounts,
     // Keep Copilot's grounding rail consistent with the populated budget and
@@ -1367,7 +1380,7 @@ export function installMockBackend(kindRaw: string | null) {
       if (cmd === "plugin:event|listen") return ++cbSeq;
       return null;
     }
-    const fn = responders[cmd];
+    const fn = responders[cmd as CommandName];
     if (fn) return fn(args ?? {});
     if (!w.__finsightMockWarned) w.__finsightMockWarned = new Set<string>();
     const warned = w.__finsightMockWarned as Set<string>;

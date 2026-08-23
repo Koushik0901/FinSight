@@ -56,6 +56,7 @@ vi.mock("../api/hooks/agent", () => ({
   useListProviderModels: vi.fn(() => ({ data: ["llama3.2"] })),
 }));
 vi.mock("../api/client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     getNeedsReviewCount: vi.fn().mockResolvedValue({ status: "ok", data: 0 }),
   },

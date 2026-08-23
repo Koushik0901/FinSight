@@ -2,8 +2,10 @@ import { listen } from "@tauri-apps/api/event";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
 import { commands } from "../../../api/client";
+import { COPILOT_STREAM_FRAME } from "../../../api/eventNames";
 import type { ChatHistoryEntry, CopilotStreamFrame, MissingDataItem } from "../../../api/client";
 import { serializeFinanceArtifactEnvelope } from "./artifacts";
+import { normalizeCopilotStreamFrame } from "../streamFrame";
 
 function unwrapCommandResult<T>(result: { status: "ok"; data: T } | { status: "error"; error: unknown }): T {
   if (result.status === "error") throw result.error;
@@ -50,132 +52,6 @@ function historyFromAgUiMessages(messages: readonly unknown[]): ChatHistoryEntry
     const content = textFromAgUiMessage(message).trim();
     return content ? [{ role, content }] : [];
   });
-}
-
-function normalizeFrameType(type: unknown): CopilotStreamFrame["type"] | null {
-  if (typeof type !== "string") return null;
-  const mapped: Record<string, CopilotStreamFrame["type"]> = {
-    text: "text",
-    reasoning: "reasoning",
-    toolCallStart: "toolCallStart",
-    tool_call_start: "toolCallStart",
-    toolCallResult: "toolCallResult",
-    tool_call_result: "toolCallResult",
-    responseBlock: "responseBlock",
-    response_block: "responseBlock",
-    source: "source",
-    plan: "plan",
-    usage: "usage",
-    done: "done",
-    error: "error",
-  };
-  return mapped[type] ?? null;
-}
-
-function pick<T>(raw: Record<string, unknown>, camelKey: string, snakeKey: string): T {
-  return (raw[camelKey] ?? raw[snakeKey]) as T;
-}
-
-export function normalizeCopilotFrame(payload: unknown): CopilotStreamFrame | null {
-  if (!payload || typeof payload !== "object") return null;
-  const raw = payload as Record<string, unknown>;
-  const type = normalizeFrameType(raw.type);
-  if (!type) return null;
-  const base = {
-    type,
-    conversationId: pick<string>(raw, "conversationId", "conversation_id"),
-    runId: pick<string>(raw, "runId", "run_id"),
-    threadId: pick<string | undefined>(raw, "threadId", "thread_id"),
-    assistantMessageId: pick<string | undefined>(raw, "assistantMessageId", "assistant_message_id"),
-    parentMessageId: pick<string | null | undefined>(raw, "parentMessageId", "parent_message_id") ?? null,
-    sequenceNumber: Number(pick<number | undefined>(raw, "sequenceNumber", "sequence_number") ?? -1),
-  };
-  if (!base.conversationId || !base.runId) return null;
-
-  switch (type) {
-    case "text":
-      return { ...base, type, delta: pick<string>(raw, "delta", "delta") ?? "" };
-    case "reasoning":
-      return {
-        ...base,
-        type,
-        reasoningMessageId: pick<string | undefined>(raw, "reasoningMessageId", "reasoning_message_id"),
-        text: pick<string>(raw, "text", "text") ?? "",
-      };
-    case "toolCallStart":
-      return {
-        ...base,
-        type,
-        toolCallId: pick<string>(raw, "toolCallId", "tool_call_id"),
-        toolName: pick<string>(raw, "toolName", "tool_name"),
-        args: (pick(raw, "args", "args") ?? {}) as Record<string, unknown>,
-      };
-    case "toolCallResult":
-      return {
-        ...base,
-        type,
-        toolCallId: pick<string>(raw, "toolCallId", "tool_call_id"),
-        toolResultMessageId: pick<string | undefined>(raw, "toolResultMessageId", "tool_result_message_id"),
-        result: pick(raw, "result", "result"),
-        isError: Boolean(pick(raw, "isError", "is_error")),
-      };
-    case "responseBlock":
-      return {
-        ...base,
-        type,
-        blockId: pick<string>(raw, "blockId", "block_id"),
-        block: pick(raw, "block", "block"),
-      } as Extract<CopilotStreamFrame, { type: "responseBlock" }>;
-    case "source":
-      return {
-        ...base,
-        type,
-        sourceId: pick<string>(raw, "sourceId", "source_id"),
-        title: pick<string>(raw, "title", "title") ?? "FinSight source",
-      };
-    case "plan":
-      return {
-        ...base,
-        type,
-        steps: (pick(raw, "steps", "steps") ?? []) as string[],
-      };
-    case "usage":
-      return {
-        ...base,
-        type,
-        providerId: pick<string>(raw, "providerId", "provider_id") ?? "unknown",
-        modelId: pick<string>(raw, "modelId", "model_id") ?? "unknown",
-        elapsedMs: Number(pick(raw, "elapsedMs", "elapsed_ms") ?? 0),
-        toolCount: Number(pick(raw, "toolCount", "tool_count") ?? 0),
-        cachedTokens: Number(pick(raw, "cachedTokens", "cached_tokens") ?? 0),
-        promptTokens: Number(pick(raw, "promptTokens", "prompt_tokens") ?? 0),
-      };
-    case "done":
-      return {
-        ...base,
-        type,
-        messageId: pick<string>(raw, "messageId", "message_id"),
-        bundleId: pick<string | null>(raw, "bundleId", "bundle_id") ?? null,
-        toolTrace: (pick(raw, "toolTrace", "tool_trace") ?? []) as string[],
-        followUpQuestions: (pick(raw, "followUpQuestions", "follow_up_questions") ?? []) as string[],
-        missingData: (pick(raw, "missingData", "missing_data") ?? []) as MissingDataItem[],
-        actionLabel: pick<string | null>(raw, "actionLabel", "action_label") ?? null,
-        actionPath: pick<string | null>(raw, "actionPath", "action_path") ?? null,
-        providerId: pick<string>(raw, "providerId", "provider_id") ?? "unknown",
-        modelId: pick<string>(raw, "modelId", "model_id") ?? "unknown",
-        elapsedMs: Number(pick(raw, "elapsedMs", "elapsed_ms") ?? 0),
-        toolCount: Number(pick(raw, "toolCount", "tool_count") ?? 0),
-        cachedTokens: Number(pick(raw, "cachedTokens", "cached_tokens") ?? 0),
-        promptTokens: Number(pick(raw, "promptTokens", "prompt_tokens") ?? 0),
-      };
-    case "error":
-      return {
-        ...base,
-        type,
-        code: pick<string>(raw, "code", "code") ?? "copilot.error",
-        message: pick<string>(raw, "message", "message") ?? "Copilot request failed.",
-      };
-  }
 }
 
 type AgentOptions = {
@@ -446,8 +322,8 @@ export class TauriAgUiAgent extends AbstractAgent {
             return;
           }
 
-          unlisten = await listen<unknown>("copilot-stream-frame", (event) => {
-            const frame = normalizeCopilotFrame(event.payload);
+          unlisten = await listen<unknown>(COPILOT_STREAM_FRAME, (event) => {
+            const frame = normalizeCopilotStreamFrame(event.payload, "agui");
             if (frame) handleFrame(frame);
           });
 

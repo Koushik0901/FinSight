@@ -22,6 +22,8 @@ import type {
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { commands } from "../../api/client";
+import { COPILOT_STREAM_FRAME } from "../../api/eventNames";
+import { normalizeCopilotStreamFrame } from "./streamFrame";
 import type {
   ChatHistoryEntry,
   ConversationMessage,
@@ -162,133 +164,6 @@ function createEventQueue<T>(): EventQueue<T> {
       });
     },
   };
-}
-
-function normalizeFrameType(type: unknown): CopilotStreamFrame["type"] | null {
-  if (typeof type !== "string") return null;
-  const mapped: Record<string, CopilotStreamFrame["type"]> = {
-    text: "text",
-    reasoning: "reasoning",
-    toolCallStart: "toolCallStart",
-    tool_call_start: "toolCallStart",
-    toolCallResult: "toolCallResult",
-    tool_call_result: "toolCallResult",
-    responseBlock: "responseBlock",
-    response_block: "responseBlock",
-    source: "source",
-    usage: "usage",
-    done: "done",
-    error: "error",
-  };
-  return mapped[type] ?? null;
-}
-
-function pickFrameValue<T = unknown>(raw: Record<string, unknown>, camelKey: string, snakeKey: string): T {
-  return (raw[camelKey] ?? raw[snakeKey]) as T;
-}
-
-function normalizeCopilotStreamFrame(payload: unknown): CopilotStreamFrame | null {
-  if (!payload || typeof payload !== "object") return null;
-  const raw = payload as Record<string, unknown>;
-  const type = normalizeFrameType(raw.type);
-  if (!type) return null;
-
-  const base = {
-    type,
-    conversationId: pickFrameValue<string>(raw, "conversationId", "conversation_id"),
-    runId: pickFrameValue<string>(raw, "runId", "run_id"),
-    threadId: pickFrameValue<string | undefined>(raw, "threadId", "thread_id") ?? "",
-    assistantMessageId: pickFrameValue<string | undefined>(raw, "assistantMessageId", "assistant_message_id") ?? "",
-    parentMessageId: pickFrameValue<string | null | undefined>(raw, "parentMessageId", "parent_message_id") ?? null,
-    sequenceNumber: Number(pickFrameValue(raw, "sequenceNumber", "sequence_number") ?? -1),
-  };
-  if (!base.conversationId || !base.runId) return null;
-
-  switch (type) {
-    case "text":
-      return { ...base, type, delta: pickFrameValue<string>(raw, "delta", "delta") ?? "" };
-    case "reasoning":
-      return {
-        ...base,
-        type,
-        reasoningMessageId: pickFrameValue<string | undefined>(raw, "reasoningMessageId", "reasoning_message_id") ?? "",
-        text: pickFrameValue<string>(raw, "text", "text") ?? "",
-      };
-    case "toolCallStart":
-      return {
-        ...base,
-        type,
-        toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
-        parentMessageId: pickFrameValue<string | null | undefined>(raw, "parentMessageId", "parent_message_id") ?? null,
-        toolName: pickFrameValue<string>(raw, "toolName", "tool_name"),
-        args: (pickFrameValue(raw, "args", "args") ?? {}) as Record<string, unknown>,
-      };
-    case "toolCallResult":
-      return {
-        ...base,
-        type,
-        toolCallId: pickFrameValue<string>(raw, "toolCallId", "tool_call_id"),
-        toolResultMessageId: pickFrameValue<string | undefined>(raw, "toolResultMessageId", "tool_result_message_id") ?? "",
-        result: pickFrameValue(raw, "result", "result"),
-        isError: Boolean(pickFrameValue(raw, "isError", "is_error")),
-      };
-    case "responseBlock":
-      return {
-        ...base,
-        type,
-        blockId: pickFrameValue<string>(raw, "blockId", "block_id"),
-        block: pickFrameValue(raw, "block", "block") as CopilotResponseBlock,
-      };
-    case "source":
-      return {
-        ...base,
-        type,
-        sourceId: pickFrameValue<string>(raw, "sourceId", "source_id"),
-        title: pickFrameValue<string>(raw, "title", "title") ?? "FinSight source",
-      };
-    case "usage":
-      return {
-        ...base,
-        type,
-        providerId: pickFrameValue<string>(raw, "providerId", "provider_id") ?? "unknown",
-        modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
-        elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
-        toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
-        cachedTokens: Number(pickFrameValue(raw, "cachedTokens", "cached_tokens") ?? 0),
-        promptTokens: Number(pickFrameValue(raw, "promptTokens", "prompt_tokens") ?? 0),
-      };
-    case "done":
-      return {
-        ...base,
-        type,
-        messageId: pickFrameValue<string>(raw, "messageId", "message_id"),
-        bundleId: pickFrameValue<string | null>(raw, "bundleId", "bundle_id") ?? null,
-        toolTrace: (pickFrameValue(raw, "toolTrace", "tool_trace") ?? []) as string[],
-        followUpQuestions: (pickFrameValue(raw, "followUpQuestions", "follow_up_questions") ?? []) as string[],
-        missingData: (pickFrameValue(raw, "missingData", "missing_data") ?? []) as MissingDataItem[],
-        actionLabel: pickFrameValue<string | null>(raw, "actionLabel", "action_label") ?? null,
-        actionPath: pickFrameValue<string | null>(raw, "actionPath", "action_path") ?? null,
-        providerId: pickFrameValue<string>(raw, "providerId", "provider_id") ?? "unknown",
-        modelId: pickFrameValue<string>(raw, "modelId", "model_id") ?? "unknown",
-        elapsedMs: Number(pickFrameValue(raw, "elapsedMs", "elapsed_ms") ?? 0),
-        toolCount: Number(pickFrameValue(raw, "toolCount", "tool_count") ?? 0),
-        cachedTokens: Number(pickFrameValue(raw, "cachedTokens", "cached_tokens") ?? 0),
-        promptTokens: Number(pickFrameValue(raw, "promptTokens", "prompt_tokens") ?? 0),
-      };
-    case "error":
-      return {
-        ...base,
-        type,
-        code: pickFrameValue<string>(raw, "code", "code") ?? "copilot.error",
-        message: pickFrameValue<string>(raw, "message", "message") ?? "Copilot request failed.",
-      };
-    case "plan":
-      // The legacy (non-AG-UI) runtime never surfaces the Plan section — it
-      // reads MessageMeta.plan back from persisted agUiMetadataJson on reload
-      // instead (see TauriRuntime's history-load path), so live Plan frames
-      // are intentionally dropped here rather than converted to an event.
-      return null;
-  }
 }
 
 export function formatCommandError(error: unknown) {
@@ -450,8 +325,8 @@ export function createTauriChatModelAdapter({
 
       try {
         cleanup.push(
-          await listen<unknown>("copilot-stream-frame", (event) => {
-            const frame = normalizeCopilotStreamFrame(event.payload);
+          await listen<unknown>(COPILOT_STREAM_FRAME, (event) => {
+            const frame = normalizeCopilotStreamFrame(event.payload, "legacy");
             if (!frame) return;
             if (
               frame.conversationId !== conversationId ||

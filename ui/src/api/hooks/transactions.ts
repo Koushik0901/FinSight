@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type Transaction, type TxnFilterInput, type NewTransaction, type CsvImportMapping, type ImportResult, type TxnPatch, type UpdateTxnResult, type CategoryDto, type CategoryWithSpending, type CategoryGroup, type RuleWithCategory, type SplitInputDto } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -17,9 +18,7 @@ export function useTransactions(filter: TxnFilterInput = DEFAULT_FILTER) {
   return useQuery<Transaction[]>({
     queryKey: ["transactions", filter],
     queryFn: async () => {
-      const result = await commands.listTransactions(filter);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listTransactions(filter));
     },
     enabled: isBackendAvailable(),
   });
@@ -41,13 +40,11 @@ export function useInfiniteTransactions(
     queryKey: ["transactions-infinite", filter],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
-      const result = await commands.listTransactions({
+      return unwrap(commands.listTransactions({
         ...filter,
         limit: TXN_PAGE_SIZE,
         offset: pageParam * TXN_PAGE_SIZE,
-      } as TxnFilterInput);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      } as TxnFilterInput));
     },
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length < TXN_PAGE_SIZE ? undefined : allPages.length,
@@ -60,9 +57,7 @@ export function useCreateTransaction() {
   return useMutation({
     mutationFn: async (input: NewTransaction) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createTransaction(input);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createTransaction(input));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -75,9 +70,7 @@ export function useImportCsv() {
   return useMutation<ImportResult, Error, { path: string; account_id: string; mapping: CsvImportMapping }>({
     mutationFn: async (args) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.importCsv(args.path, args.account_id, args.mapping);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.importCsv(args.path, args.account_id, args.mapping));
     },
     onSuccess: () => {
       // A CSV commit touches the ledger, account balances, and import state
@@ -92,9 +85,7 @@ export function useUpdateTransaction() {
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: TxnPatch }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.updateTransaction(id, patch);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data as UpdateTxnResult;
+      return (await unwrap(commands.updateTransaction(id, patch))) as UpdateTxnResult;
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -107,8 +98,7 @@ export function useDeleteTransaction() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.deleteTransaction(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.deleteTransaction(id));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -123,8 +113,7 @@ export function useSetAnomalyDismissed() {
   return useMutation({
     mutationFn: async ({ txnId, dismissed }: { txnId: string; dismissed: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setAnomalyDismissed(txnId, dismissed);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAnomalyDismissed(txnId, dismissed));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -137,9 +126,7 @@ export function useCreateRule() {
   return useMutation({
     mutationFn: async ({ pattern, categoryId }: { pattern: string; categoryId: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createRule(pattern, categoryId);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createRule(pattern, categoryId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "rules");
@@ -152,8 +139,7 @@ export function useSetTransactionOwner() {
   return useMutation({
     mutationFn: async ({ transactionId, memberId }: { transactionId: string; memberId: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setTransactionOwner(transactionId, memberId);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setTransactionOwner(transactionId, memberId));
     },
     // Attribution changes per-member cashflow — refresh transactions and metrics.
     onSuccess: () => {
@@ -167,9 +153,7 @@ export function useCategories() {
   return useQuery<CategoryDto[]>({
     queryKey: ["categories"],
     queryFn: async () => {
-      const result = await commands.listCategories();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listCategories());
     },
     enabled: isBackendAvailable(),
   });
@@ -179,9 +163,7 @@ export function useCategoriesWithSpending() {
   return useQuery<CategoryWithSpending[]>({
     queryKey: ["categories-with-spending"],
     queryFn: async () => {
-      const result = await commands.listCategoriesWithSpending();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listCategoriesWithSpending());
     },
     enabled: isBackendAvailable(),
   });
@@ -192,8 +174,7 @@ export function useSetCategorySpendingType() {
   return useMutation({
     mutationFn: async ({ id, spendingType }: { id: string; spendingType: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setCategorySpendingType(id, spendingType);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setCategorySpendingType(id, spendingType));
     },
     onSuccess: () => {
       invalidateDomains(qc, "categories");
@@ -209,9 +190,7 @@ export function useCreateCategory() {
   return useMutation({
     mutationFn: async ({ label, groupId, color }: { label: string; groupId: string | null; color: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createCategory(label, groupId, color);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createCategory(label, groupId, color));
     },
     onSuccess: () => invalidateCategoryQueries(qc),
   });
@@ -222,8 +201,7 @@ export function useRenameCategory() {
   return useMutation({
     mutationFn: async ({ id, label }: { id: string; label: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.renameCategory(id, label);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.renameCategory(id, label));
     },
     onSuccess: () => invalidateCategoryQueries(qc),
   });
@@ -234,8 +212,7 @@ export function useArchiveCategory() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.archiveCategory(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.archiveCategory(id));
     },
     onSuccess: () => {
       // The categories domain already includes rules (archiving a category can
@@ -250,8 +227,7 @@ export function useSetCategoryGuidance() {
   return useMutation({
     mutationFn: async ({ id, guidance }: { id: string; guidance: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setCategoryGuidance(id, guidance);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setCategoryGuidance(id, guidance));
     },
     onSuccess: () => invalidateCategoryQueries(qc),
   });
@@ -262,8 +238,7 @@ export function useUpdateCategoryColor() {
   return useMutation({
     mutationFn: async ({ id, color }: { id: string; color: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.updateCategoryColor(id, color);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.updateCategoryColor(id, color));
     },
     onSuccess: () => {
       invalidateDomains(qc, "categories");
@@ -275,9 +250,7 @@ export function useCategoryGroups() {
   return useQuery<CategoryGroup[]>({
     queryKey: ["category-groups"],
     queryFn: async () => {
-      const result = await commands.listCategoryGroups();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listCategoryGroups());
     },
     enabled: isBackendAvailable(),
   });
@@ -288,9 +261,7 @@ export function useCreateCategoryGroup() {
   return useMutation({
     mutationFn: async ({ label, hint }: { label: string; hint?: string | null }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createCategoryGroup(label, hint ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createCategoryGroup(label, hint ?? null));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["category-groups"] });
@@ -303,8 +274,7 @@ export function useSetCategoryGroup() {
   return useMutation({
     mutationFn: async ({ categoryId, groupId }: { categoryId: string; groupId: string }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setCategoryGroup(categoryId, groupId);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setCategoryGroup(categoryId, groupId));
     },
     onSuccess: () => invalidateCategoryQueries(qc),
   });
@@ -314,9 +284,7 @@ export function useRulesWithCategories() {
   return useQuery<RuleWithCategory[]>({
     queryKey: ["rules"],
     queryFn: async () => {
-      const result = await commands.listRulesWithCategories();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listRulesWithCategories());
     },
     enabled: isBackendAvailable(),
   });
@@ -327,8 +295,7 @@ export function useToggleRule() {
   return useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.toggleRule(id, enabled);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.toggleRule(id, enabled));
     },
     onSuccess: () => {
       invalidateDomains(qc, "rules");
@@ -341,9 +308,7 @@ export function useSetTransactionFlags() {
   return useMutation({
     mutationFn: async ({ id, isReimbursable, isSplit }: { id: string; isReimbursable: boolean; isSplit: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setTransactionFlags(id, isReimbursable, isSplit);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.setTransactionFlags(id, isReimbursable, isSplit));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -360,9 +325,7 @@ export function useSetTransactionTransfer() {
   return useMutation({
     mutationFn: async ({ id, isTransfer }: { id: string; isTransfer: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setTransactionTransfer(id, isTransfer);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.setTransactionTransfer(id, isTransfer));
     },
     // A transfer verdict moves money in/out of income & spending — every
     // headline number (savings rate, cashflow, budget, inbox) can change.
@@ -380,9 +343,7 @@ export function useApplyTransferVerdictToSimilar() {
   return useMutation({
     mutationFn: async ({ pattern, isTransfer }: { pattern: string; isTransfer: boolean }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.applyTransferVerdictToSimilar(pattern, isTransfer);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.applyTransferVerdictToSimilar(pattern, isTransfer));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -396,9 +357,7 @@ export function useTransactionSplits(txnId: string | undefined) {
     queryKey: ["splits", txnId],
     queryFn: async () => {
       if (!txnId) return [];
-      const result = await commands.getTransactionSplits(txnId);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getTransactionSplits(txnId));
     },
     enabled: !!txnId && isBackendAvailable(),
   });
@@ -412,11 +371,10 @@ export function useSetTransactionSplits() {
       splits: Array<{ categoryId: string | null; amountCents: number }>;
     }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.setTransactionSplits(
+      await unwrap(commands.setTransactionSplits(
         txnId,
         splits.map((s): SplitInputDto => ({ categoryId: s.categoryId, amountCents: s.amountCents }))
-      );
-      if (result.status === "error") throw new Error(result.error.message);
+      ));
     },
     onSuccess: (_data, vars) => {
       // A split reassigns amounts across categories, so it touches both the

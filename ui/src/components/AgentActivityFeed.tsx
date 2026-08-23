@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import {
+  CATEGORIZATION_COMPLETE,
+  CATEGORIZATION_PROGRESS,
+} from "../api/eventNames";
 
 type Progress = { done: number; total: number };
 type Complete = { categorized: number; skipped: number };
@@ -17,7 +21,7 @@ export default function AgentActivityFeed() {
     let cancelled = false;
     const pending: Array<() => void> = [];
 
-    listen<Progress>("categorization.progress", (e) => {
+    listen<Progress>(CATEGORIZATION_PROGRESS, (e) => {
       setState({ kind: "progress", done: e.payload.done, total: e.payload.total });
       if (fadeTimer.current) clearTimeout(fadeTimer.current);
     }).then((fn) => {
@@ -25,7 +29,7 @@ export default function AgentActivityFeed() {
       else pending.push(fn);
     });
 
-    listen<Complete>("categorization.complete", (e) => {
+    listen<Complete>(CATEGORIZATION_COMPLETE, (e) => {
       setState({ kind: "done", categorized: e.payload.categorized });
       fadeTimer.current = setTimeout(() => setState({ kind: "idle" }), 3000);
     }).then((fn) => {

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type NotificationPrefsDto, type Notification } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 const PREFS_KEY = ["notification-prefs"];
@@ -11,9 +12,7 @@ export function useNotificationPrefs() {
   return useQuery<NotificationPrefsDto>({
     queryKey: PREFS_KEY,
     queryFn: async () => {
-      const result = await commands.getNotificationPrefs();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getNotificationPrefs());
     },
     enabled: isBackendAvailable(),
   });
@@ -29,8 +28,7 @@ export function useSetNotificationPrefs() {
       // `local = UTC + offset`. The server has no other way to know the user's
       // clock. Re-stamped on every save, so it tracks travel/DST at save time.
       const stamped: NotificationPrefsDto = { ...prefs, utcOffsetMinutes: -new Date().getTimezoneOffset() };
-      const result = await commands.setNotificationPrefs(stamped);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setNotificationPrefs(stamped));
     },
     // Optimistic: reflect the toggle immediately, roll back on failure.
     onMutate: async (prefs) => {
@@ -51,9 +49,7 @@ export function useNotifications(includeResolved = false) {
   return useQuery<Notification[]>({
     queryKey: [...LIST_KEY, includeResolved],
     queryFn: async () => {
-      const result = await commands.listNotifications(includeResolved);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listNotifications(includeResolved));
     },
     enabled: isBackendAvailable(),
   });
@@ -63,8 +59,7 @@ export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.markNotificationRead(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.markNotificationRead(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY });
@@ -77,8 +72,7 @@ export function useMarkAllNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const result = await commands.markAllNotificationsRead();
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.markAllNotificationsRead());
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY });
@@ -92,9 +86,7 @@ export function useNotificationUnreadCount() {
   return useQuery<number>({
     queryKey: COUNT_KEY,
     queryFn: async () => {
-      const result = await commands.notificationUnreadCount();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.notificationUnreadCount());
     },
     enabled: isBackendAvailable(),
     refetchInterval: 60_000,

@@ -7,6 +7,7 @@ import AccountDrawer from "../components/AccountDrawer";
 vi.mock("react-focus-lock", () => ({ default: ({ children }: { children: ReactNode }) => <>{children}</> }));
 
 vi.mock("../api/client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     createAccount: vi.fn().mockResolvedValue({ status: "ok", data: { id: "a1" } }),
     listAccounts: vi.fn().mockResolvedValue({ status: "ok", data: [] }),

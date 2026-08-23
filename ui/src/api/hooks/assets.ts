@@ -4,6 +4,7 @@ import {
   type ManualAsset, type NewManualAsset, type ManualAssetPatch,
   type DebtPayoffResult,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -11,9 +12,7 @@ export function useManualAssets() {
   return useQuery<ManualAsset[]>({
     queryKey: ["manual-assets"],
     queryFn: async () => {
-      const result = await commands.listManualAssets();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listManualAssets());
     },
     enabled: isBackendAvailable(),
   });
@@ -24,9 +23,7 @@ export function useCreateManualAsset() {
   return useMutation({
     mutationFn: async (input: NewManualAsset) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.createManualAsset(input);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createManualAsset(input));
     },
     onSuccess: () => {
       invalidateDomains(qc, "manualAssets");
@@ -39,9 +36,7 @@ export function useUpdateManualAsset() {
   return useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: ManualAssetPatch }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.updateManualAsset(id, patch);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.updateManualAsset(id, patch));
     },
     onSuccess: () => {
       invalidateDomains(qc, "manualAssets");
@@ -54,8 +49,7 @@ export function useDeleteManualAsset() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a connected FinSight server.");
-      const result = await commands.deleteManualAsset(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.deleteManualAsset(id));
     },
     onSuccess: () => {
       invalidateDomains(qc, "manualAssets");
@@ -67,9 +61,7 @@ export function useDebtPayoff(extraMonthlyCents: number) {
   return useQuery<DebtPayoffResult[]>({
     queryKey: ["debt-payoff", extraMonthlyCents],
     queryFn: async () => {
-      const result = await commands.computeDebtPayoff(extraMonthlyCents);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.computeDebtPayoff(extraMonthlyCents));
     },
     enabled: isBackendAvailable(),
   });
@@ -79,9 +71,7 @@ export function useUncelebratedMilestones() {
   return useQuery<number[]>({
     queryKey: ["networth-milestones"],
     queryFn: async () => {
-      const result = await commands.getUncelebratedMilestones();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getUncelebratedMilestones());
     },
     staleTime: Infinity,
     enabled: isBackendAvailable(),

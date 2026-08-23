@@ -11,6 +11,15 @@ vi.mock("../api/hooks/inbox", () => ({
 }));
 
 vi.mock("../api/hooks/simplefin", () => ({
+  simplefinKeys: {
+    status: ["simplefin", "status"],
+    accounts: ["simplefin", "accounts"],
+    connections: ["simplefin", "connections"],
+    syncSettings: ["simplefin", "syncSettings"],
+    alerts: ["simplefin", "alerts"],
+    transfers: ["simplefin", "transfers"],
+    importReview: ["simplefin", "importReview"],
+  },
   useSimpleFinAlerts: vi.fn(() => ({ data: [] })),
   useAcknowledgeSimpleFinAlert: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useSimpleFinTransferSuggestions: vi.fn(() => ({ data: [] })),

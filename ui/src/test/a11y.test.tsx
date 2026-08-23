@@ -53,6 +53,7 @@ vi.mock("../api/hooks/onboarding", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     listAccounts: vi.fn().mockResolvedValue({ status: "ok", data: [] }),
     listTransactions: vi.fn().mockResolvedValue({ status: "ok", data: [] }),

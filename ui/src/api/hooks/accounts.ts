@@ -8,6 +8,7 @@ import {
   type AccountBalanceTimeline,
   type AccountSparkline,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -15,9 +16,7 @@ export function useAccounts() {
   return useQuery<AccountSummary[]>({
     queryKey: ["accounts"],
     queryFn: async () => {
-      const result = await commands.listAccounts();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAccounts());
     },
     enabled: isBackendAvailable(),
   });
@@ -30,9 +29,7 @@ export function useCreateAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      const result = await commands.createAccount(input);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createAccount(input));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
@@ -51,9 +48,7 @@ export function useUpdateAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      const result = await commands.updateAccount(id, patch);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.updateAccount(id, patch));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");
@@ -67,9 +62,7 @@ export function useAccountBalanceHistory(accountId: string | undefined, days: nu
     queryKey: ["account-balance-history", accountId, days],
     queryFn: async () => {
       if (!accountId) return [];
-      const result = await commands.listAccountBalanceHistory(accountId, days);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAccountBalanceHistory(accountId, days));
     },
     enabled: !!accountId && isBackendAvailable(),
   });
@@ -88,9 +81,7 @@ export function useAccountBalanceTimeline(accountId: string | undefined, since: 
   return useQuery<AccountBalanceTimeline>({
     queryKey: ["account-balance-timeline", accountId, since],
     queryFn: async () => {
-      const result = await commands.getAccountBalanceTimeline(accountId!, since);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getAccountBalanceTimeline(accountId!, since));
     },
     enabled: !!accountId && isBackendAvailable(),
     // Keep the current curve on screen while the range selector's refetch is in
@@ -104,9 +95,7 @@ export function useAccountBalanceSparklines(days: number) {
   return useQuery<AccountSparkline[]>({
     queryKey: ["account-balance-sparklines", days],
     queryFn: async () => {
-      const result = await commands.listAccountBalanceSparklines(days);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAccountBalanceSparklines(days));
     },
     enabled: isBackendAvailable(),
   });
@@ -119,8 +108,7 @@ export function useArchiveAccount() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      const result = await commands.archiveAccount(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.archiveAccount(id));
     },
     onSuccess: () => {
       // Archiving an account removes its transactions from the ledger view
@@ -139,8 +127,7 @@ export function useSetAccountBalance() {
       if (!isBackendAvailable()) {
         throw new Error("This action needs a connected FinSight server.");
       }
-      const result = await commands.setAccountBalance(id, balanceCents);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setAccountBalance(id, balanceCents));
     },
     onSuccess: () => {
       invalidateDomains(qc, "accounts");

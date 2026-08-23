@@ -20,6 +20,7 @@
  *   (an `Event<T>`), which this shim mirrors when dispatching SSE frames.
  */
 import { isTauriRuntime } from "../utils/runtime";
+import { FINSIGHT_AUTH_REQUIRED } from "./eventNames";
 
 type AnyRec = Record<string, unknown>;
 
@@ -126,7 +127,7 @@ export function installHttpBackend(): void {
       // when the app remounts after re-login) calls ensureEventSource()
       // again and reopens it.
       if (res.status === 401 && typeof body === "object" && body !== null && (body as AnyRec).code === "auth.required") {
-        window.dispatchEvent(new CustomEvent("finsight:auth-required"));
+        window.dispatchEvent(new CustomEvent(FINSIGHT_AUTH_REQUIRED));
         es?.close();
         es = null;
       }

@@ -6,6 +6,7 @@ import {
   type FinancialPhilosophyDto,
   type MetricExplanation,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 /**
@@ -20,9 +21,7 @@ export function useFinancialMetrics(memberId?: string | null) {
     // whole household (unchanged behaviour).
     queryKey: ["financial-metrics", memberId ?? null],
     queryFn: async () => {
-      const result = await commands.getFinancialMetrics(memberId ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getFinancialMetrics(memberId ?? null));
     },
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -42,9 +41,8 @@ export function useMetricExplanations(memberId?: string | null) {
   return useQuery<Record<string, MetricExplanation>>({
     queryKey: ["metric-explanations", memberId ?? null],
     queryFn: async () => {
-      const result = await commands.explainFinancialMetrics(memberId ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return Object.fromEntries(result.data.map((e) => [e.key, e]));
+      const explanations = await unwrap(commands.explainFinancialMetrics(memberId ?? null));
+      return Object.fromEntries(explanations.map((e) => [e.key, e]));
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -62,9 +60,8 @@ export function useGoalExplanations() {
   return useQuery<Record<string, MetricExplanation>>({
     queryKey: ["goal-explanations"],
     queryFn: async () => {
-      const result = await commands.explainGoals();
-      if (result.status === "error") throw new Error(result.error.message);
-      return Object.fromEntries(result.data.map((e) => [e.key, e]));
+      const explanations = await unwrap(commands.explainGoals());
+      return Object.fromEntries(explanations.map((e) => [e.key, e]));
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -75,8 +72,7 @@ export function useSetFinancialAssumptions() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: FinancialAssumptionsInput) => {
-      const result = await commands.setFinancialAssumptions(input);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setFinancialAssumptions(input));
     },
     onSuccess: () => {
       // Targets feed the metrics response and the compound projector.
@@ -98,9 +94,7 @@ export function useFinancialPhilosophy() {
   return useQuery<FinancialPhilosophyDto>({
     queryKey: ["financial-philosophy"],
     queryFn: async () => {
-      const result = await commands.getFinancialPhilosophy();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getFinancialPhilosophy());
     },
     staleTime: 60_000,
     enabled: isBackendAvailable(),
@@ -111,8 +105,7 @@ export function useSetFinancialPhilosophy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: FinancialPhilosophyDto) => {
-      const result = await commands.setFinancialPhilosophy(input);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setFinancialPhilosophy(input));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["financial-philosophy"] });

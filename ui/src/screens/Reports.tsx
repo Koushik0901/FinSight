@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { commands, type ReportData } from "../api/client";
+import { unwrap } from "../api/client";
 import { money } from "../utils/format";
 import { useNetWorth, useNetWorthHistory } from "../api/hooks/networth";
 import { useFinancialMetrics } from "../api/hooks/metrics";
@@ -40,9 +41,7 @@ function useReportData(scope: Scope, memberId: string | null) {
     // memberId in the key so switching person refetches; null = whole household.
     queryKey: ["report-data", scope, memberId],
     queryFn: async () => {
-      const result = await commands.getReportData(scope, memberId);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getReportData(scope, memberId));
     },
     staleTime: 60_000,
   });

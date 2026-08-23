@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { commands } from "../../api/client";
+import { unwrap } from "../../api/client";
 import { userErrorMessage } from "../../utils/runtime";
 import { CATEGORY_COLOR_CHOICES, DEFAULT_CATEGORY_COLOR, nextCategoryColor, paletteFor } from "../../utils/categoryColor";
 import Button from "../../components/Button";
@@ -52,8 +53,7 @@ export default function StepCategories({ onNext }: Props) {
     setSaveError(null);
     try {
       const toSave = rows.filter((r) => r.label.trim().length > 0);
-      const result = await commands.commitStarterCategories(toSave);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.commitStarterCategories(toSave));
       onNext();
     } catch (err) {
       setSaveError(userErrorMessage(err, "Could not save categories. Check your FinSight server connection and try again."));

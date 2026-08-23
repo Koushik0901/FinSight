@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type CsvPreview, type CsvImportMapping, type PreparedImportPreview } from "../client";
+import { unwrap } from "../client";
 
 export function usePreviewCsvColumns(path: string | null, skipHeaderRows: number) {
   return useQuery<CsvPreview>({
     queryKey: ["csv-preview", path, skipHeaderRows],
     queryFn: async () => {
-      const result = await commands.previewCsvColumns(path!, skipHeaderRows);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.previewCsvColumns(path!, skipHeaderRows));
     },
     enabled: !!path,
     staleTime: 30_000,
@@ -19,9 +18,7 @@ export function useSavedCsvMapping(accountId: string | null) {
   return useQuery<CsvImportMapping | null>({
     queryKey: ["csv-saved-mapping", accountId],
     queryFn: async () => {
-      const result = await commands.getSavedCsvMapping(accountId!);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getSavedCsvMapping(accountId!));
     },
     enabled: !!accountId,
     staleTime: 30_000,

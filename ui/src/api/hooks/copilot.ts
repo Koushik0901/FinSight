@@ -1,21 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import {
-  commands,
-  type AgentActionBundle,
-  type AgentExecutionEntry,
-  type AgentSession,
-  type ExecutionSummary,
-} from "../client";
+import { commands, type AgentActionBundle, type AgentExecutionEntry, type AgentSession } from "../client";
+import { unwrap } from "../client";
 import { invalidateDomains } from "../invalidation";
 
 export function useAgentSessions() {
   return useQuery<AgentSession[]>({
     queryKey: ["agent-sessions"],
     queryFn: async () => {
-      const result = await commands.listAgentSessions();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listAgentSessions());
     },
   });
 }
@@ -24,9 +16,7 @@ export function useCreateAgentSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ title, taskType }: { title: string; taskType: string }) => {
-      const result = await commands.createAgentSession(title, taskType);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.createAgentSession(title, taskType));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agent-sessions"] });
@@ -38,8 +28,7 @@ export function useCloseAgentSession() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const result = await commands.closeAgentSession(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.closeAgentSession(id));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["agent-sessions"] });
@@ -47,24 +36,33 @@ export function useCloseAgentSession() {
   });
 }
 
+/**
+ * Canonical keys for action-bundle queries. Any other module that needs this
+ * key shape must use these factories — hand-copied literals silently become a
+ * *different* cache entry the day the key gains a segment.
+ */
+export const actionBundleKeys = {
+  /** Root, for prefix invalidation only. */
+  all: ["action-bundles"] as const,
+  /** List shape used by every bundle-list consumer (session slot may be null). */
+  list: (statusFilter?: string | null, sessionId?: string | null, limit?: number) =>
+    ["action-bundles", statusFilter ?? null, sessionId ?? null, limit ?? null] as const,
+};
+
 export function useActionBundles(statusFilter?: string | null, limit?: number) {
   return useQuery<AgentActionBundle[]>({
-    queryKey: ["action-bundles", statusFilter ?? null, null, limit ?? null],
+    queryKey: actionBundleKeys.list(statusFilter, null, limit),
     queryFn: async () => {
-      const result = await commands.listActionBundles(statusFilter ?? null, null, limit ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listActionBundles(statusFilter ?? null, null, limit ?? null));
     },
   });
 }
 
 export function useSessionActionBundles(sessionId?: string | null, statusFilter?: string | null, limit?: number) {
   return useQuery<AgentActionBundle[]>({
-    queryKey: ["action-bundles", statusFilter ?? null, sessionId ?? null, limit ?? null],
+    queryKey: actionBundleKeys.list(statusFilter, sessionId, limit),
     queryFn: async () => {
-      const result = await commands.listActionBundles(statusFilter ?? null, sessionId ?? null, limit ?? null);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listActionBundles(statusFilter ?? null, sessionId ?? null, limit ?? null));
     },
   });
 }
@@ -74,9 +72,7 @@ export function useActionBundle(id: string | null) {
     queryKey: ["action-bundle", id],
     queryFn: async () => {
       if (!id) return null;
-      const result = await commands.getActionBundle(id);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getActionBundle(id));
     },
     enabled: id !== null,
   });
@@ -86,8 +82,7 @@ export function useApproveActionItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => {
-      const result = await commands.approveActionItem(itemId);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.approveActionItem(itemId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "agentActions");
@@ -99,8 +94,7 @@ export function useRejectActionItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (itemId: string) => {
-      const result = await commands.rejectActionItem(itemId);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.rejectActionItem(itemId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "agentActions");
@@ -113,9 +107,7 @@ export function useExecutionLog(bundleId: string | null) {
     queryKey: ["execution-log", bundleId],
     queryFn: async () => {
       if (!bundleId) return [];
-      const result = await commands.listExecutionLog(bundleId);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listExecutionLog(bundleId));
     },
     enabled: bundleId !== null,
   });
@@ -125,7 +117,7 @@ export function useExecuteActionBundle() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (bundleId: string) => {
-      return await invoke<ExecutionSummary>("execute_action_bundle", { bundleId });
+      return unwrap(commands.executeActionBundle(bundleId));
     },
     onSuccess: () => {
       // Applying a bundle mutates the ledger (agentApply = agentActions +

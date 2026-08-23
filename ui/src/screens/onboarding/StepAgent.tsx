@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { commands } from "../../api/client";
+import { unwrap } from "../../api/client";
 import type { OllamaProbeResult } from "../../api/client";
 import { useMarkOnboardingComplete } from "../../api/hooks/onboarding";
 import {
@@ -38,9 +39,7 @@ export default function StepAgent({ onDone }: Props) {
   const { data: probe, refetch, isFetching } = useQuery<OllamaProbeResult>({
     queryKey: ["ollama-probe", probedBaseUrl],
     queryFn: async () => {
-      const result = await commands.probeOllama(probedBaseUrl);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.probeOllama(probedBaseUrl));
     },
     staleTime: 0,
     // probe_ollama is a plain RPC executed server-side, so it works over HTTP —

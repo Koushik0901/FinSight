@@ -6,6 +6,7 @@ import type { NotificationPrefsDto } from "../client";
 
 const setNotificationPrefs = vi.fn();
 vi.mock("../client", () => ({
+  unwrap: async (p: Promise<{ status: "ok" | "error"; data?: unknown; error?: { message: string } }>) => { const r = await p; if (r.status === "error") throw new Error(r.error?.message ?? "command failed"); return r.data; },
   commands: {
     get setNotificationPrefs() {
       return setNotificationPrefs;

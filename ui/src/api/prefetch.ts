@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { commands } from "./client";
+import { unwrapResult } from "./client";
 import { isBackendAvailable } from "../utils/runtime";
 import { prefetchRouteChunk } from "../utils/routePrefetch";
 import { TXN_PAGE_SIZE } from "./hooks/transactions";
@@ -27,10 +28,6 @@ const PREFETCH_STALE_MS = 10_000;
 /** Keep startup-warmed offline data fresh through IndexedDB persistence. */
 const OFFLINE_WARM_STALE_MS = 60_000;
 
-const unwrap = <T>(r: { status: "ok" | "error"; data?: T; error?: { message: string } }): T => {
-  if (r.status === "error") throw new Error(r.error?.message ?? "command failed");
-  return r.data as T;
-};
 
 interface Descriptor {
   readonly key: readonly unknown[];
@@ -42,46 +39,46 @@ interface Descriptor {
  * hook keys it (see the referenced hook in the comment).
  */
 const D = {
-  accounts: { key: ["accounts"], fn: async () => unwrap(await commands.listAccounts()) }, // useAccounts
-  monthTotals: { key: ["month-totals"], fn: async () => unwrap(await commands.getMonthTotals()) }, // useMonthTotals
+  accounts: { key: ["accounts"], fn: async () => unwrapResult(await commands.listAccounts()) }, // useAccounts
+  monthTotals: { key: ["month-totals"], fn: async () => unwrapResult(await commands.getMonthTotals()) }, // useMonthTotals
   categoriesWithSpending: {
     key: ["categories-with-spending"],
-    fn: async () => unwrap(await commands.listCategoriesWithSpending()),
+    fn: async () => unwrapResult(await commands.listCategoriesWithSpending()),
   }, // useCategoriesWithSpending
-  goals: { key: ["goals"], fn: async () => unwrap(await commands.listGoals()) }, // useGoals
-  recurring: { key: ["recurring"], fn: async () => unwrap(await commands.listRecurring()) }, // useRecurring
+  goals: { key: ["goals"], fn: async () => unwrapResult(await commands.listGoals()) }, // useGoals
+  recurring: { key: ["recurring"], fn: async () => unwrapResult(await commands.listRecurring()) }, // useRecurring
   savingsRate: {
     key: ["savings-rate-history"],
-    fn: async () => unwrap(await commands.getSavingsRateHistory()),
+    fn: async () => unwrapResult(await commands.getSavingsRateHistory()),
   }, // useSavingsRateHistory
   needsReview: {
     key: ["needs-review-count"],
-    fn: async () => unwrap(await commands.getNeedsReviewCount()),
+    fn: async () => unwrapResult(await commands.getNeedsReviewCount()),
   }, // useNeedsReviewCount
-  agentStatus: { key: ["agent-status"], fn: async () => unwrap(await commands.getAgentStatus()) }, // useAgentStatus
+  agentStatus: { key: ["agent-status"], fn: async () => unwrapResult(await commands.getAgentStatus()) }, // useAgentStatus
   healthScore: {
     key: ["financial-health-score"],
-    fn: async () => unwrap(await commands.getFinancialHealthScore()),
+    fn: async () => unwrapResult(await commands.getFinancialHealthScore()),
   }, // useHealthScore
   spendingBreakdown: {
     key: ["spending-breakdown"],
-    fn: async () => unwrap(await commands.getSpendingBreakdown()),
+    fn: async () => unwrapResult(await commands.getSpendingBreakdown()),
   }, // Budget.tsx inline
   budgetEnvelopes: {
     key: ["budget-envelopes"],
-    fn: async () => unwrap(await commands.listBudgetEnvelopes()),
+    fn: async () => unwrapResult(await commands.listBudgetEnvelopes()),
   }, // useBudgetEnvelopes
   budgetHistory5: {
     key: ["budget-history", 5],
-    fn: async () => unwrap(await commands.listBudgetHistory(5)),
+    fn: async () => unwrapResult(await commands.listBudgetHistory(5)),
   }, // useBudgetHistory(5)
   householdMembers: {
     key: ["household-members"],
-    fn: async () => unwrap(await commands.listHouseholdMembers()),
+    fn: async () => unwrapResult(await commands.listHouseholdMembers()),
   }, // useHouseholdMembers
   categoryProposals: {
     key: ["category-proposals"],
-    fn: async () => unwrap(await commands.listCategoryProposals()),
+    fn: async () => unwrapResult(await commands.listCategoryProposals()),
   }, // useCategoryProposals
 } as const satisfies Record<string, Descriptor>;
 
@@ -192,7 +189,7 @@ export function prefetchAccountTransactions(qc: QueryClient, accountId: string):
     queryKey: ["transactions-infinite", filter],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
-      unwrap(
+      unwrapResult(
         await commands.listTransactions({
           ...filter,
           limit: TXN_PAGE_SIZE,

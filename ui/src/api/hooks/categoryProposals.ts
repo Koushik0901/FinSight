@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type CategoryProposal, type UpdateTxnResult } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 import { invalidateDomains } from "../invalidation";
 
@@ -17,9 +18,7 @@ export function useCategoryProposals() {
   return useQuery<CategoryProposal[]>({
     queryKey: ["category-proposals"],
     queryFn: async () => {
-      const result = await commands.listCategoryProposals();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listCategoryProposals());
     },
     enabled: isBackendAvailable(),
   });
@@ -51,9 +50,7 @@ export function useAcceptCategoryProposal() {
   return useMutation<UpdateTxnResult, Error, string>({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      const result = await commands.acceptCategoryProposal(id);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.acceptCategoryProposal(id));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -68,9 +65,7 @@ export function useCorrectCategoryProposal() {
   return useMutation<UpdateTxnResult, Error, { id: string; categoryId: string }>({
     mutationFn: async ({ id, categoryId }) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      const result = await commands.correctCategoryProposal(id, categoryId);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.correctCategoryProposal(id, categoryId));
     },
     onSuccess: () => {
       invalidateDomains(qc, "transactions");
@@ -92,8 +87,7 @@ export function useRejectCategoryProposal() {
   return useMutation<void, Error, string>({
     mutationFn: async (id: string) => {
       if (!isBackendAvailable()) throw new Error("This action needs a running FinSight backend.");
-      const result = await commands.rejectCategoryProposal(id);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.rejectCategoryProposal(id));
     },
     onSuccess: () => {
       invalidateQueue(qc);

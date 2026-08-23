@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { commands, type HealthScore } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export function useRecentAgentActivity(limit: number) {
   return useQuery({
     queryKey: ["agent-activity", limit],
     queryFn: async () => {
-      const result = await commands.listRecentAgentActivity(limit);
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listRecentAgentActivity(limit));
     },
     refetchInterval: 30_000,
   });
@@ -18,9 +17,7 @@ export function useHealthScore() {
   return useQuery<HealthScore>({
     queryKey: ["financial-health-score"],
     queryFn: async () => {
-      const result = await commands.getFinancialHealthScore();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.getFinancialHealthScore());
     },
     staleTime: 60_000,
     refetchInterval: 60_000,

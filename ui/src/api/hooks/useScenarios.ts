@@ -7,6 +7,7 @@ import {
   type SavedScenarioDetail,
   type ScenarioPlanProposal,
 } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 const KEY = ["saved-scenarios"];
@@ -20,9 +21,7 @@ export function useSavedScenarios() {
   return useQuery<SavedScenarioDetail[]>({
     queryKey: KEY,
     queryFn: async () => {
-      const result = await commands.listSavedScenarios();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listSavedScenarios());
     },
     enabled: isBackendAvailable(),
   });

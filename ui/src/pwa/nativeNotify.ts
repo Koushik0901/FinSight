@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { COPILOT_ASYNC_ANSWER, IMPORT_COMPLETE } from "../api/eventNames";
 import { notificationPermission } from "./push";
 
 /**
@@ -21,15 +22,15 @@ import { notificationPermission } from "./push";
 
 /** The completion events worth interrupting for, and their copy. */
 const NOTIFIABLE = {
-  "copilot-async-answer": {
+  [COPILOT_ASYNC_ANSWER]: {
     title: "Your analysis is ready",
     body: "FinSight finished the fuller answer.",
-    tag: "copilot-async-answer",
+    tag: COPILOT_ASYNC_ANSWER,
   },
-  "import-complete": {
+  [IMPORT_COMPLETE]: {
     title: "Import finished",
     body: "Your transactions have been imported.",
-    tag: "import-complete",
+    tag: IMPORT_COMPLETE,
   },
 } as const;
 

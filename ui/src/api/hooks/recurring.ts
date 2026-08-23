@@ -1,14 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands, type RecurringItem } from "../client";
+import { unwrap } from "../client";
 import { isBackendAvailable } from "../../utils/runtime";
 
 export function useRecurring() {
   return useQuery<RecurringItem[]>({
     queryKey: ["recurring"],
     queryFn: async () => {
-      const result = await commands.listRecurring();
-      if (result.status === "error") throw new Error(result.error.message);
-      return result.data;
+      return unwrap(commands.listRecurring());
     },
     staleTime: 5 * 60_000,
     enabled: isBackendAvailable(),
@@ -24,8 +23,7 @@ export function useSetSubscriptionVerdict() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { merchantKey: string; verdict: string | null }) => {
-      const result = await commands.setSubscriptionVerdict(vars.merchantKey, vars.verdict);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setSubscriptionVerdict(vars.merchantKey, vars.verdict));
     },
     onMutate: async ({ merchantKey, verdict }) => {
       await qc.cancelQueries({ queryKey: ["recurring"] });
@@ -53,8 +51,7 @@ export function useSetSubscriptionTrial() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { merchantKey: string; label: string; trialEndsAt: string | null }) => {
-      const result = await commands.setSubscriptionTrial(vars.merchantKey, vars.label, vars.trialEndsAt);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.setSubscriptionTrial(vars.merchantKey, vars.label, vars.trialEndsAt));
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: ["recurring"] }),
   });
@@ -68,8 +65,7 @@ export function useMarkSubscriptionCancelled() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { merchantKey: string; label: string; cancelledAt: string }) => {
-      const result = await commands.markSubscriptionCancelled(vars.merchantKey, vars.label, vars.cancelledAt);
-      if (result.status === "error") throw new Error(result.error.message);
+      await unwrap(commands.markSubscriptionCancelled(vars.merchantKey, vars.label, vars.cancelledAt));
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: ["recurring"] }),
   });

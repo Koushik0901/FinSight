@@ -12,6 +12,7 @@ import {
   markSessionEstablished,
 } from "../api/auth";
 import { purgePersistedCache } from "../pwa/persist";
+import { FINSIGHT_AUTH_REQUIRED } from "../api/eventNames";
 import { clearAppBadge } from "../pwa/badge";
 import { purgeSharedFiles } from "../pwa/shareTarget";
 import SetupScreen from "../screens/server/SetupScreen";
@@ -121,8 +122,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       void purgeSharedFiles();
       setState({ kind: "needsLogin" });
     };
-    window.addEventListener("finsight:auth-required", onAuthRequired);
-    return () => window.removeEventListener("finsight:auth-required", onAuthRequired);
+    window.addEventListener(FINSIGHT_AUTH_REQUIRED, onAuthRequired);
+    return () => window.removeEventListener(FINSIGHT_AUTH_REQUIRED, onAuthRequired);
   }, [serverMode, queryClient]);
 
   if (!serverMode || state.kind === "ready") return <>{children}</>;

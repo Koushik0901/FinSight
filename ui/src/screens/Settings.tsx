@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { fetchAuthStatus, isServerMode, logout, signOutOtherSessions } from "../api/auth";
+import { FINSIGHT_AUTH_REQUIRED } from "../api/eventNames";
 import { CLIENT_PROTOCOL, fetchServerAbout, type ServerAbout } from "../api/serverInfo";
 import McpConnectionsSection from "../components/McpConnectionsSection";
 import { useResetOnboarding, useOnboardingState } from "../api/hooks/onboarding";
@@ -555,7 +556,7 @@ export default function Settings() {
       toast.error("Sign out request failed", { description: userErrorMessage(error) });
     } finally {
       setSigningOut(false);
-      window.dispatchEvent(new CustomEvent("finsight:auth-required"));
+      window.dispatchEvent(new CustomEvent(FINSIGHT_AUTH_REQUIRED));
     }
   };
 

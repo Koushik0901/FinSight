@@ -2,7 +2,25 @@
 // All Tauri IPC access in the UI should route through this module so the
 // bindings file remains a generated implementation detail.
 export * from "./bindings";
-import type { AgentResponseBlock, MissingDataItem } from "./bindings";
+import type { AgentResponseBlock, AppError, MissingDataItem, Result } from "./bindings";
+
+/**
+ * Await a generated command call and turn the `Result` envelope into either
+ * the payload or a thrown `Error` — the single shared replacement for the
+ * `if (result.status === "error") throw …` boilerplate that used to be
+ * copy-pasted at every call site.
+ */
+export async function unwrap<T>(call: Promise<Result<T, AppError>>): Promise<T> {
+  const result = await call;
+  if (result.status === "error") throw new Error(result.error.message);
+  return result.data;
+}
+
+/** Value-based sibling of [`unwrap`] for code already holding a `Result`. */
+export function unwrapResult<T>(result: Result<T, AppError>): T {
+  if (result.status === "error") throw new Error(result.error.message);
+  return result.data;
+}
 
 // ── Tauri event payload types (emitted by Rust, not auto-generated) ───────────
 
