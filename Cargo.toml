@@ -9,9 +9,8 @@ members = [
   "crates/finsight-openapi",
   "crates/finsight-eval",
   "crates/finsight-server",
-  "src-tauri",
 ]
-default-members = ["src-tauri"]
+default-members = ["crates/finsight-server"]
 
 # Release builds get cross-crate inlining. `thin` LTO rather than `fat`: on a
 # workspace this size fat LTO costs minutes of link time for the last few
