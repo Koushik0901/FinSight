@@ -168,9 +168,9 @@ pub fn emergency_fund_months(emergency_fund_cents: i64, avg_monthly_expense_cent
 /// member param; household callers pass None.
 pub fn emergency_fund_months_scoped(conn: &Connection, member_id: Option<&str>) -> CoreResult<f64> {
     let ef_cents = ef_eligible_pool_cents(conn, member_id)?;
-    let exp = match robust_monthly_expense_cents(conn)? {
+    let exp = match robust_monthly_expense_cents_scoped(conn, member_id)? {
         Some(v) => v,
-        None => avg_monthly_expense_90d(conn)?,
+        None => avg_monthly_expense_90d_scoped(conn, member_id)?,
     };
     if exp <= 0 {
         return Ok(0.0);
@@ -786,9 +786,16 @@ pub(crate) fn months_in_span(months_with_data: i64, window_days: i64) -> i64 {
 /// conservative recent burn used by safety and cashflow, as opposed to the
 /// robust median used for display surplus.
 pub(crate) fn avg_monthly_expense_90d(conn: &Connection) -> CoreResult<i64> {
+    avg_monthly_expense_90d_scoped(conn, None)
+}
+
+pub(crate) fn avg_monthly_expense_90d_scoped(
+    conn: &Connection,
+    scope: Option<&str>,
+) -> CoreResult<i64> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-    let (_, expense_total) = income_expense_since(conn, &cutoff)?;
-    let (months_with_data, _) = data_coverage_since(conn, &cutoff)?;
+    let (_, expense_total) = income_expense_since_for(conn, &cutoff, scope)?;
+    let (months_with_data, _) = data_coverage_since_scoped(conn, &cutoff, scope)?;
     let months = months_in_span(months_with_data, 90);
     Ok(expense_total / months.max(1))
 }
