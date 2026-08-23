@@ -714,7 +714,7 @@ fn latest_total_balance(conn: &mut Connection) -> i64 {
          )), 0)
          FROM accounts a
          WHERE a.archived_at IS NULL",
-            finsight_core::metrics::balance_snapshot_order("b.", "DESC")
+            finsight_core::repos::balance::balance_snapshot_order("b.", "DESC")
         ),
         [],
         |r| r.get(0),
@@ -1104,7 +1104,7 @@ fn savings_account_context(conn: &mut Connection) -> Vec<SavingsAccountItem> {
                 a.apy_pct
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Savings'",
-        finsight_core::metrics::balance_snapshot_order("", "DESC")
+        finsight_core::repos::balance::balance_snapshot_order("", "DESC")
     )) {
         Ok(stmt) => stmt,
         Err(e) => {
@@ -1154,7 +1154,7 @@ fn loan_context(conn: &mut Connection) -> Vec<LoanDetailItem> {
          FROM accounts a
          WHERE a.archived_at IS NULL AND a.type = 'Loan'
          ORDER BY balance DESC",
-        finsight_core::metrics::balance_snapshot_order("", "DESC")
+        finsight_core::repos::balance::balance_snapshot_order("", "DESC")
     )) {
         Ok(stmt) => stmt,
         Err(e) => {

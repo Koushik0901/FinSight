@@ -129,13 +129,11 @@ pub fn currency_profile(conn: &Connection) -> CoreResult<CurrencyProfile> {
     // Cached because scoping asks for the profile once per aggregate, and a
     // single metrics request runs several — re-preparing this each time is pure
     // overhead on the app's hottest read path.
-    let mut stmt = conn.prepare_cached(
+    let mut stmt = conn.prepare_cached(&format!(
         "SELECT a.currency, \
                 COALESCE((SELECT b.balance_cents FROM account_balances b \
                           WHERE b.account_id = a.id \
-                          ORDER BY b.as_of_date DESC, \
-                            CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 \
-                                          WHEN 'seed' THEN 3 ELSE 1 END \
+                          ORDER BY {} \
                           LIMIT 1), 0) AS balance, \
                 CASE \
                   WHEN EXISTS (SELECT 1 FROM account_balances b \
@@ -145,7 +143,8 @@ pub fn currency_profile(conn: &Connection) -> CoreResult<CurrencyProfile> {
                 END AS balance_known \
          FROM accounts a \
          WHERE a.archived_at IS NULL",
-    )?;
+        crate::repos::balance::balance_snapshot_order("b.", "DESC")
+    ))?;
 
     let mut holdings: Vec<CurrencyHolding> = Vec::new();
     for row in stmt.query_map([], |r| {

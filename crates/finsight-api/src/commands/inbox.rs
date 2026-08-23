@@ -292,19 +292,18 @@ pub async fn get_action_items(state: &ApiState) -> AppResult<Vec<ActionItem>> {
         // strictly inside a lead window so it is actionable rather than
         // ambient.
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare(&format!(
                 "SELECT a.id, a.name, a.apr_pct, a.promo_apr_expires_on, a.post_promo_apr_pct, \
                         COALESCE((SELECT b.balance_cents FROM account_balances b \
                                   WHERE b.account_id = a.id \
-                                  ORDER BY b.as_of_date DESC, \
-                                    CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 \
-                                                  WHEN 'seed' THEN 3 ELSE 1 END \
+                                  ORDER BY {} \
                                   LIMIT 1), 0) AS balance \
                  FROM accounts a \
                  WHERE a.archived_at IS NULL \
                    AND a.type IN ('Credit', 'Loan') \
                    AND a.promo_apr_expires_on IS NOT NULL",
-            )?;
+                finsight_core::repos::balance::balance_snapshot_order("b.", "DESC")
+            ))?;
             let rows = stmt.query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,

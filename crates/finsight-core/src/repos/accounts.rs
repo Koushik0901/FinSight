@@ -101,12 +101,11 @@ pub fn insert(conn: &mut Connection, input: NewAccount) -> CoreResult<Account> {
 }
 
 pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT a.id, a.owner, a.bank, a.type, a.name, a.currency, a.color, \
                 COALESCE((SELECT balance_cents FROM account_balances b \
                           WHERE b.account_id = a.id \
-                          ORDER BY b.as_of_date DESC, \
-                            CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END \
+                          ORDER BY {} \
                           LIMIT 1), 0) AS balance, \
                 a.source, a.liquidity_type, a.emergency_fund_eligible, a.goal_earmark, a.apy_pct, \
                 a.simplefin_account_id, a.last_synced_at, a.nickname, \
@@ -123,14 +122,15 @@ pub fn list_summaries(conn: &mut Connection) -> CoreResult<Vec<AccountSummary>> 
                 a.original_balance_cents, a.started_at, \
                 (SELECT b.source FROM account_balances b \
                    WHERE b.account_id = a.id \
-                   ORDER BY b.as_of_date DESC, \
-                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END \
+                   ORDER BY {} \
                    LIMIT 1) AS balance_source, \
                 a.promo_apr_expires_on, a.post_promo_apr_pct \
          FROM accounts a \
          WHERE a.archived_at IS NULL \
          ORDER BY a.bank, a.name",
-    )?;
+        crate::repos::balance::balance_snapshot_order("b.", "DESC"),
+        crate::repos::balance::balance_snapshot_order("b.", "DESC")
+    ))?;
     let rows = stmt.query_map([], |r| {
         let last_synced_s: Option<String> = r.get(14)?;
         let balance_date_s: Option<String> = r.get(24)?;
@@ -944,14 +944,15 @@ pub fn list_all_balance_sparklines(
     days: u32,
 ) -> CoreResult<Vec<AccountSparkline>> {
     let cutoff = format!("-{} days", days);
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT a.id, b.as_of_date, b.balance_cents, b.source \
          FROM accounts a \
          LEFT JOIN account_balances b \
             ON b.account_id = a.id AND b.as_of_date >= date('now', ?1) \
          WHERE a.archived_at IS NULL \
-         ORDER BY a.id, b.as_of_date ASC, CASE b.source WHEN 'simplefin' THEN 0 ELSE 1 END",
-    )?;
+         ORDER BY a.id, {}",
+        crate::repos::balance::balance_snapshot_order("b.", "ASC")
+    ))?;
     let rows = stmt.query_map(params![cutoff], |r| {
         Ok((
             r.get::<_, String>(0)?,

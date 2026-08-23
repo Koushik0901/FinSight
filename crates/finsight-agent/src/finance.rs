@@ -2611,7 +2611,7 @@ fn accounts(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotAccount>> {
          FROM accounts a
          WHERE a.archived_at IS NULL
          ORDER BY a.bank, a.name",
-         finsight_core::metrics::balance_snapshot_order("", "DESC"),
+         finsight_core::repos::balance::balance_snapshot_order("", "DESC"),
      ))?;
     let rows = stmt.query_map([], |r| {
         Ok(SnapshotAccount {
@@ -2715,7 +2715,7 @@ fn liabilities(conn: &mut Connection) -> rusqlite::Result<Vec<SnapshotLiability>
              WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
          ) WHERE balance > 0
          ORDER BY balance DESC",
-        finsight_core::metrics::balance_snapshot_order("", "DESC")
+        finsight_core::repos::balance::balance_snapshot_order("", "DESC")
     ))?;
     let rows = stmt.query_map([], |r| {
         let account_type: String = r.get(2)?;

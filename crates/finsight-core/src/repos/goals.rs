@@ -294,25 +294,26 @@ pub fn set_priority(
 /// every savings-style goal tracks the positive asset balance. A goal linked
 /// to the wrong side of zero therefore reports 0 instead of inverted progress.
 pub fn sync_linked_accounts(conn: &mut Connection, account_id: &str) -> CoreResult<()> {
+    let order = crate::repos::balance::balance_snapshot_order("b.", "DESC");
     conn.execute(
-        "UPDATE goals
+        &format!(
+            "UPDATE goals
          SET current_cents = CASE
              WHEN type = 'debt-payoff' THEN MAX(0, -COALESCE((
                  SELECT balance_cents FROM account_balances b
                  WHERE b.account_id = ?1
-                 ORDER BY b.as_of_date DESC,
-                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+                 ORDER BY {order}
                  LIMIT 1
              ), 0))
              ELSE MAX(0, COALESCE((
                  SELECT balance_cents FROM account_balances b
                  WHERE b.account_id = ?1
-                 ORDER BY b.as_of_date DESC,
-                     CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END
+                 ORDER BY {order}
                  LIMIT 1
              ), 0))
          END
-         WHERE account_id = ?1",
+         WHERE account_id = ?1"
+        ),
         params![account_id],
     )?;
     Ok(())

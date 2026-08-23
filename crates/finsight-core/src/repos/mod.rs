@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod balance;
 pub mod agent_memory;
 pub mod alerts;
 pub mod budgets;

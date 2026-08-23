@@ -252,12 +252,15 @@ pub async fn get_uncelebrated_milestones(state: &ApiState) -> AppResult<Vec<i64>
         ];
         let total_accounts: i64 = conn
             .query_row(
-                "SELECT COALESCE(SUM(COALESCE(
-                    (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY b.as_of_date DESC, CASE source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),
+                &format!(
+                    "SELECT COALESCE(SUM(COALESCE(
+                    (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1),
                     0
                  )), 0)
                  FROM accounts a
                  WHERE a.archived_at IS NULL",
+                    finsight_core::repos::balance::balance_snapshot_order("b.", "DESC")
+                ),
                 [],
                 |r| r.get(0),
             )

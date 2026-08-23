@@ -107,10 +107,7 @@ pub fn is_liquid_type(t: AccountType) -> bool {
 /// helper and every surface updates together. `alias` qualifies the columns
 /// (`""`, `"b."`, …) to match the surrounding query.
 pub fn balance_snapshot_order(alias: &str, direction: &str) -> String {
-    format!(
-        "{alias}as_of_date {direction}, CASE {alias}source WHEN 'simplefin' THEN 0 \
-         WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END"
-    )
+    crate::repos::balance::balance_snapshot_order(alias, direction)
 }
 pub fn primary_currency_clause(conn: &Connection, alias: &str) -> String {
     let Ok(profile) = crate::currency::currency_profile(conn) else {
@@ -191,12 +188,13 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
         // Use same latest-balance logic as `balance_breakdown` but via direct SQL
         // to stay on &Connection without &mut. For EF-months display, count seed
         // balances even when transactions exist — see household branch.
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT a.id, a.type, a.emergency_fund_eligible, \
                     COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
-                      ORDER BY b.as_of_date DESC, CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),0) AS bal \
+                      ORDER BY {} LIMIT 1),0) AS bal \
              FROM accounts a WHERE a.archived_at IS NULL",
-        )?;
+            crate::repos::balance::balance_snapshot_order("b.", "DESC")
+        ))?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
@@ -222,12 +220,15 @@ fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreRes
     // expense history would read as $0 pool). The broader `balance_breakdown`
     // still surfaces unknown-balance warnings separately.
     let ef: Option<i64> = conn.query_row(
-        "SELECT COALESCE(SUM(latest),0) FROM (
+        &format!(
+            "SELECT COALESCE(SUM(latest),0) FROM (
             SELECT COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
-              ORDER BY b.as_of_date DESC, CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),0) AS latest,
+              ORDER BY {} LIMIT 1),0) AS latest,
                    a.type, a.emergency_fund_eligible
             FROM accounts a WHERE a.archived_at IS NULL
          ) WHERE emergency_fund_eligible=1 AND type NOT IN ('Credit','Loan','Investment')",
+            crate::repos::balance::balance_snapshot_order("b.", "DESC")
+        ),
         [],
         |r| r.get(0),
     )?;

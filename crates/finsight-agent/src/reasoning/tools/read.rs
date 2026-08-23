@@ -26,7 +26,7 @@ pub fn get_account_balances() -> Arc<dyn Tool> {
             let mut stmt = ctx.conn.prepare(&format!(
                 "SELECT a.name, (SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id ORDER BY {} LIMIT 1) AS balance \
                  FROM accounts a WHERE a.archived_at IS NULL ORDER BY a.name",
-                finsight_core::metrics::balance_snapshot_order("", "DESC")
+                finsight_core::repos::balance::balance_snapshot_order("", "DESC")
             ))?;
             let rows: Vec<Value> = stmt
                 .query_map([], |r| {
@@ -940,7 +940,7 @@ pub fn get_liabilities() -> Arc<dyn Tool> {
                      WHERE a.archived_at IS NULL AND a.type IN ('Credit', 'Loan')
                  ) WHERE balance > 0
                  ORDER BY balance DESC",
-                finsight_core::metrics::balance_snapshot_order("", "DESC")
+                finsight_core::repos::balance::balance_snapshot_order("", "DESC")
             ))?;
             let rows: Vec<Value> = stmt.query_map([], |r| {
                 let account_type: String = r.get(2)?;
