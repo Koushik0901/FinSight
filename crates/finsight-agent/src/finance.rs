@@ -1168,13 +1168,9 @@ pub fn build_snapshot(conn: &mut Connection) -> rusqlite::Result<FinancialSnapsh
             avg_monthly_expense_90d_cents
         }
     };
-    // ONE emergency-fund-months definition (EF-eligible balance ÷ avg expense,
-    // capped) from the shared metrics layer, so the snapshot, the drawdown
-    // scenarios below, and every screen report the same number.
-    let emergency_fund_months = finsight_core::metrics::emergency_fund_months(
-        emergency_fund_balance_cents,
-        avg_monthly_expense_90d_cents,
-    );
+    // Single source: EF-eligible pool / robust expense, capped — never total liquid.
+    let emergency_fund_months =
+        finsight_core::metrics::emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
 
     let paycheck_cadence = setting_string(conn, "planning.paycheck_cadence")?;
     let expected_paycheck_cents = setting_i64(conn, "planning.expected_paycheck_cents")?;
@@ -1942,9 +1938,10 @@ pub fn run_emergency_fund_scenarios(
             }
         })
         .collect();
-    // Through the shared metrics layer so this matches the snapshot and every
-    // screen exactly — including the cap — rather than re-deriving the ratio.
-    let current_months = finsight_core::metrics::emergency_fund_months(fund_balance, expense);
+    // Unified single source (EF-eligible, robust) so this matches the snapshot
+    // and screens exactly — including the cap — rather than re-deriving the ratio.
+    let current_months =
+        finsight_core::metrics::emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
 
     let mut assumptions = vec![
         "Emergency fund targets use the 90-day average monthly expense from local transactions."

@@ -887,6 +887,7 @@ mod tests {
             savings_rate_pct: 30,
             data_span_days: 88,
             is_estimated: false,
+            emergency_fund_months: 1.5,
         };
         let safety = SafetyExpenseBasis {
             monthly_expense_cents: 380_000,

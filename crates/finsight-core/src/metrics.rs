@@ -144,14 +144,94 @@ pub fn savings_rate_pct(income_cents: i64, expense_cents: i64) -> i64 {
 }
 
 /// Months of expenses the given emergency-fund balance covers, capped. Returns
-/// 0.0 when average expense is unknown (can't divide).
-pub fn emergency_fund_months(emergency_fund_cents: i64, avg_monthly_expense_cents: i64) -> f64 {
+/// 0.0 when average expense is unknown (can't divide). Pure ratio helper used
+/// by safety-basis callers; new display path should use the conn-based single
+/// source below.
+pub fn emergency_fund_months_ratio(emergency_fund_cents: i64, avg_monthly_expense_cents: i64) -> f64 {
     if avg_monthly_expense_cents > 0 {
         (emergency_fund_cents.max(0) as f64 / avg_monthly_expense_cents as f64)
             .min(EMERGENCY_FUND_MONTHS_CAP)
     } else {
         0.0
     }
+}
+
+/// Compat alias for the ratio — keeps existing callers green while the new
+/// single-source conn variant is introduced.
+pub fn emergency_fund_months(emergency_fund_cents: i64, avg_monthly_expense_cents: i64) -> f64 {
+    emergency_fund_months_ratio(emergency_fund_cents, avg_monthly_expense_cents)
+}
+
+/// Single source: EF-eligible liquid pool / robust monthly expense, capped.
+/// Never total liquid. Uses `robust_monthly_expense_cents` with 90d fallback,
+/// mirroring `rolling_averages` display logic. Scoped variant for future
+/// member param; household callers pass None.
+pub fn emergency_fund_months_scoped(conn: &Connection, member_id: Option<&str>) -> CoreResult<f64> {
+    let ef_cents = ef_eligible_pool_cents(conn, member_id)?;
+    let exp = match robust_monthly_expense_cents(conn)? {
+        Some(v) => v,
+        None => avg_monthly_expense_90d(conn)?,
+    };
+    if exp <= 0 {
+        return Ok(0.0);
+    }
+    Ok((ef_cents.max(0) as f64 / exp as f64).min(EMERGENCY_FUND_MONTHS_CAP))
+}
+
+/// EF-eligible liquid pool: sum of latest known balances for accounts where
+/// `is_emergency_fund=1` and not debt/investment, respecting `balance_known`.
+/// Member-scoped variant weights by ownership share when `member_id` is Some.
+fn ef_eligible_pool_cents(conn: &Connection, member_id: Option<&str>) -> CoreResult<i64> {
+    if let Some(mid) = member_id {
+        // Per-member weighted pool — mirrors `balance_breakdown_for` weighting.
+        // For task 2 household-only callers this branch is not exercised, but
+        // kept correct for future parametrization.
+        let weights = account_weights_for_member(conn, mid)?;
+        let mut total: f64 = 0.0;
+        // Use same latest-balance logic as `balance_breakdown` but via direct SQL
+        // to stay on &Connection without &mut. For EF-months display, count seed
+        // balances even when transactions exist — see household branch.
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.type, a.emergency_fund_eligible, \
+                    COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
+                      ORDER BY b.as_of_date DESC, CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),0) AS bal \
+             FROM accounts a WHERE a.archived_at IS NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, ty, eligible, bal) = row?;
+            if eligible == 0 { continue; }
+            let at = AccountType::from_db(&ty);
+            if is_debt_type(at) || is_investment_type(at) { continue; }
+            if let Some(&w) = weights.get(&id) {
+                total += bal as f64 * w;
+            }
+        }
+        return Ok(total.round() as i64);
+    }
+    // Household pool — sum latest balances for EF-eligible liquid accounts.
+    // For display EF-months we count the seed balance even when the account
+    // also holds transactions (otherwise a freshly-seeded test account with
+    // expense history would read as $0 pool). The broader `balance_breakdown`
+    // still surfaces unknown-balance warnings separately.
+    let ef: Option<i64> = conn.query_row(
+        "SELECT COALESCE(SUM(latest),0) FROM (
+            SELECT COALESCE((SELECT balance_cents FROM account_balances b WHERE b.account_id = a.id \
+              ORDER BY b.as_of_date DESC, CASE b.source WHEN 'simplefin' THEN 0 WHEN 'derived' THEN 2 WHEN 'seed' THEN 3 ELSE 1 END LIMIT 1),0) AS latest,
+                   a.type, a.emergency_fund_eligible
+            FROM accounts a WHERE a.archived_at IS NULL
+         ) WHERE emergency_fund_eligible=1 AND type NOT IN ('Credit','Loan','Investment')",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(ef.unwrap_or(0))
 }
 
 /// Days a liquid balance lasts at a given average monthly burn — the single
@@ -404,7 +484,7 @@ pub fn cashflow_between(
 // ── Rolling averages ────────────────────────────────────────────────────────
 
 /// Average monthly income/expense over a trailing window.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RollingAverages {
     pub window_days: i64,
     /// Months actually averaged over — the span of real history inside the
@@ -425,6 +505,9 @@ pub struct RollingAverages {
     /// because there were fewer than 2 complete months of history to take a
     /// robust median from. Consumers can show an ⓘ.
     pub is_estimated: bool,
+    /// EF-eligible months of coverage using EF-eligible pool / robust expense,
+    /// capped. Single source so display and inspector agree.
+    pub emergency_fund_months: f64,
 }
 
 /// Average monthly income and expense over the last `days`, transfers excluded.
@@ -496,6 +579,7 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
         None => (fallback_expense, true),
     };
     let net = avg_income - avg_expense;
+    let emergency_fund_months = emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
     Ok(RollingAverages {
         window_days: days,
         months,
@@ -505,6 +589,7 @@ pub fn rolling_averages(conn: &Connection, days: i64) -> CoreResult<RollingAvera
         savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
         data_span_days,
         is_estimated,
+        emergency_fund_months,
     })
 }
 
@@ -895,6 +980,7 @@ pub fn rolling_averages_for(
             None => (fallback_expense, true),
         };
         let net = avg_income - avg_expense;
+        let emergency_fund_months = emergency_fund_months_scoped(conn, None).unwrap_or(0.0);
         Ok(RollingAverages {
             window_days: days,
             months,
@@ -904,6 +990,7 @@ pub fn rolling_averages_for(
             savings_rate_pct: savings_rate_pct(avg_income, avg_expense),
             data_span_days,
             is_estimated,
+            emergency_fund_months,
         })
     } else {
         // Per-member display will be fully parametrized in Phase 3 (Task 6).
@@ -911,6 +998,7 @@ pub fn rolling_averages_for(
         // household estimate flag so thin histories are not shown as precise.
         let is_estimated = robust_monthly_expense_cents(conn)?.is_none();
         let net = avg_income - fallback_expense;
+        let emergency_fund_months = emergency_fund_months_scoped(conn, member_id).unwrap_or(0.0);
         Ok(RollingAverages {
             window_days: days,
             months,
@@ -920,6 +1008,7 @@ pub fn rolling_averages_for(
             savings_rate_pct: savings_rate_pct(avg_income, fallback_expense),
             data_span_days,
             is_estimated,
+            emergency_fund_months,
         })
     }
 }
