@@ -228,8 +228,8 @@ rpc_routes!(api, events, cmd, p, c:
         "reconcileBases" => ok(
             c::copilot::reconcile_bases(
                 api,
-                arg(&p, "basisA")?,
-                arg(&p, "basisB")?,
+                arg(&p, "basisA")?, // ExpenseBasis deserializes via serde rename_all camelCase
+                arg(&p, "basisB")?, // ExpenseBasis deserializes via serde rename_all camelCase
                 arg(&p, "scope")?,
             )
             .await?,
