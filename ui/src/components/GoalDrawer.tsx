@@ -54,7 +54,7 @@ export default function GoalDrawer({ open, onClose, goal }: Props) {
     }
   };
 
-  const contributionLabel = (c: { note: string | null; source: string }) =>
+  const contributionLabel = (c: { note?: string | null | undefined; source: string }) =>
     c.note || (c.source === "opening" ? "Opening balance" : c.source === "sweep" ? "Parked surplus" : "Contribution");
 
   useDrawerSeed(open, goal?.id, () => {

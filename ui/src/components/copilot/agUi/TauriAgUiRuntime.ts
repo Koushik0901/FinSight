@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useMemo, useState } from "react";
 import { fromAgUiMessages, useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import type {

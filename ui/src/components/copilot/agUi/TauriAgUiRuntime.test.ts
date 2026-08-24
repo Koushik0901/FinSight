@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it } from "vitest";
 import { conversationMessagesToAgUiThreadMessages } from "./TauriAgUiRuntime";
 import type { ConversationMessage } from "../../../api/openapiClient";

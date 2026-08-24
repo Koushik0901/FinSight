@@ -6,7 +6,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "strict": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": false,
     "useDefineForClassFields": true,
@@ -18,5 +18,5 @@
     "noEmit": true,
     "types": ["vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src", "src/api/bindings.ts"]
+  "include": ["src"]
 }

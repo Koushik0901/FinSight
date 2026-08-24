@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -50,28 +50,26 @@ cd ui && npm run build
 FinSight is a pure self-hosted PWA (`docs/superpowers/specs/2026-08-24-pure-selfhost-openapi-design.md`).
 Every shared command body lives in the Tauri-free **`finsight-api`** crate. The
 browser and installed PWA use **`finsight-server`** over HTTP/SSE; there is no
-native binary. `GET /api/openapi.json` (generated from `finsight-openapi`) is
-the contract for `ui/src/api/openapi.ts` (`openapi-typescript` + `openapi-fetch`);
-`ui/src/api/httpBackend.ts`’s `__TAURI_INTERNALS__` shim is the legacy bridge
-kept for `bindings.ts` compat while hooks migrate. Server events (Copilot
-streaming, import progress) flow through `FrameSink` to SSE `/api/events`. The
-parity tests in `crates/finsight-server/tests/parity.rs` + `crates/finsight-openapi`
-enforce that every `COMMANDS` entry is routed with exactly the camelCase keys
-sent by the generated client.
+native binary. `GET /api/openapi.json` (generated from `finsight-openapi` via
+`utoipa`) is the typed contract for `ui/src/api/openapi.ts` (`openapi-typescript` +
+`openapi-fetch` via `ui/src/api/openapiClient.ts`); every hook is typed through
+that client. Server events (Copilot streaming, import progress) flow through
+`FrameSink` to SSE `/api/events`. The parity tests in
+`crates/finsight-server/tests/parity.rs` + `crates/finsight-openapi` enforce
+that every `COMMANDS` entry is routed with exactly the camelCase keys sent by
+the generated client and that `openapi.json` has no shallow `type: object` schemas.
 
-### Rust workspace (8 crates)
+### Rust workspace (7 crates)
 
-**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store, and the financial engines (`metrics`, `forecast`, `cashflow`, `provenance`). All SQL lives here. No Tauri dependency.
+**`crates/finsight-core`** — domain layer: models, SQLCipher DB pool, migrations, repository functions, settings KV store, and the financial engines (`metrics`, `forecast`, `cashflow`, `provenance`). All SQL lives here. No Tauri dependency. DTOs derive `utoipa::ToSchema` (with `#[schema(rename_all="camelCase")]` where needed) for typed OpenAPI generation.
 
 **`crates/finsight-providers`** — CSV import parsers, LLM provider HTTP clients (`CompletionProvider` trait with Ollama / OpenAI-compat / Anthropic impls).
 
 **`crates/finsight-agent`** — AI layer: Copilot context engine, planner, executor, recipe runner, categorizer pipeline, anomaly detection. Runs on a background Tokio task via `AgentHandle`.
 
-**`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)`. **Command logic changes happen here**, not in the wrappers.
+**`crates/finsight-api`** — transport-agnostic application layer (NO Tauri dependency — guarded by `cargo tree -p finsight-api -i tauri`). `ApiState` (db/agent/provider/sync scheduler/data_dir), `AppError`, the `FrameSink` event-emission trait, provider construction helpers, and EVERY command body as `pub async fn name(state: &ApiState, …)` annotated with `#[utoipa::path]`. **Command logic changes happen here**, not in the wrappers.
 
-**`crates/finsight-bindings`** — legacy codegen-only Tauri wrapper (kept for `bindings.ts` compat while hooks migrate to the OpenAPI client). Each `#[tauri::command]` delegates to `finsight_api::commands::*`; `build_specta_builder()` supplies the contract for `export_bindings`.
-
-**`crates/finsight-openapi`** — OpenAPI spec generation (pure self-hosted contract). `COMMANDS` + `build_openapi()` produce `openapi.json` and `ui/src/api/openapi.json`; `export_openapi` binary + `pnpm openapi:gen` (`openapi-typescript`) generate `ui/src/api/openapi.ts`. No Tauri dep.
+**`crates/finsight-openapi`** — Typed OpenAPI spec generation (`utoipa` `derive(OpenApi)` + `ToSchema`). `COMMANDS` + `build_openapi()` produce `openapi.json` and `ui/src/api/openapi.json`; `export_openapi` binary + `pnpm openapi:gen` (`openapi-typescript`) generate `ui/src/api/openapi.ts` with real `components/schemas` and `paths` `$ref`s. No Tauri dep.
 
 **`crates/finsight-server`** — Axum self-host server: first-run setup, multi-user authentication and recovery, lazy per-user SQLCipher runtimes, admin user management, CSV upload staging, `POST /api/rpc/{cmd}`, `GET /api/events`, `GET /api/openapi.json`, public health/about routes, and static PWA serving with SPA fallback. `tests/parity.rs` + `finsight-openapi` tests machine-check the dispatcher against `COMMANDS`. It also hosts the **MCP server** (`POST /mcp`) — see below.
 
@@ -111,20 +109,21 @@ This offloads blocking I/O to a Tokio blocking thread from the r2d2 pool.
 ### Adding or changing a shared command
 
 1. Write the BODY as `pub async fn my_cmd(state: &ApiState, ...) -> AppResult<T>` in
-   `crates/finsight-api/src/commands/` — command logic lives here.
+   `crates/finsight-api/src/commands/` — command logic lives here. Annotate with
+   `#[utoipa::path(post, path = "/api/rpc/my_cmd", ...)]` and ensure DTOs derive
+   `ToSchema` in `finsight-core`/`finsight-api`.
 2. Add the `finsight-openapi` entry: keep `COMMANDS` in
    `crates/finsight-openapi/src/lib.rs` sorted and identical to `dispatch.rs`
-   `SUPPORTED` (plus ` crates/finsight-bindings` wrapper if `bindings.ts` compat
-   is still needed — `collect_commands!` in `crates/finsight-bindings/src/lib.rs`
-   for the legacy path).
+   `SUPPORTED`; add the handler to the `#[openapi(paths(...))]` list and any new
+   DTOs to `components(schemas(...))`.
 3. **Add a `finsight-server` route**: one arm in
    `crates/finsight-server/src/dispatch.rs` `rpc_routes!(api, events, cmd, p, c: …)`
    using `arg(&p, "camelCase")` (or `UNSUPPORTED` if it can't work over HTTP).
    Skipping this fails `tests/parity.rs` + `finsight-openapi` snapshot.
 4. `pnpm openapi` (`cargo run -p finsight-openapi --bin export_openapi` +
    `pnpm --filter ui openapi:gen`) — regenerates `openapi.json`,
-   `ui/src/api/openapi.json`, `ui/src/api/openapi.ts` (and legacy
-   `bindings.ts` via `pnpm bindings` if you touched the wrapper).
+   `ui/src/api/openapi.json`, `ui/src/api/openapi.ts` — the sole contract
+   regeneration step (no `bindings.ts`).
 
 ### Database migrations
 
@@ -135,10 +134,7 @@ SQL files in `crates/finsight-core/migrations/` named `V00N__description.sql`. R
 ```
 ui/src/api/openapi.ts    ← generated by openapi-typescript from openapi.json, never edit
 ui/src/api/openapi.json  ← generated, never edit (also at repo root openapi.json)
-ui/src/api/openapiClient.ts ← typed fetch client (openapi-fetch) over POST /api/rpc/{cmd}
-ui/src/api/bindings.ts   ← legacy generated (tauri-specta) — kept for compat while hooks migrate
-ui/src/api/client.ts     ← re-exports bindings + openapi client (import from here)
-ui/src/api/httpBackend.ts← HTTP/SSE shim that preserves bindings invoke/event contract
+ui/src/api/openapiClient.ts ← typed fetch client (openapi-fetch) over POST /api/rpc/{cmd}, with Result envelope + 401 handling (sole transport)
 ui/src/api/auth.ts       ← plain REST client for `/api/auth/*`
 ui/src/api/hooks/        ← tanstack-query wrappers (useTransactions, useBudgetEnvelopes, etc.)
 ui/src/pwa/              ← seven-day IndexedDB query persistence (AES-GCM encrypted
@@ -157,7 +153,7 @@ ui/src/state/tweaks.ts   ← zustand store for theme/density/accent/privacy (per
 
 ### Copilot generative-UI blocks
 
-The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs` (the `finsight-bindings` module of the same name only re-exports it); the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
+The Copilot renders **typed, validated finance blocks** natively (not just markdown). The block union is the Rust `AgentResponseBlock` enum (`#[serde(tag="kind")]`) in `crates/finsight-api/src/commands/agent.rs`; the mirror is the Zod `CopilotResponseBlockSchema` in `ui/src/components/copilot/agUi/artifacts.ts`, rendered by one card per kind in `ui/src/components/copilot/cards/`. **When you add or change a block, keep Rust bounds, the Zod schema, and the card in lockstep** (there's a Rust↔Zod parity corpus test). Numbers for grounded blocks (e.g. accountsOverview, spendingReview) are server-synthesized from `finsight-core`, not trusted from the model; the model may also be pushed to structured JSON output on final-answer turns when the provider supports it (probe-gated, with a heal/fallback net).
 
 ### Financial forecasting, cash-flow & scenarios
 
@@ -169,7 +165,7 @@ Money math lives in `finsight-core` so the app and the Copilot compute identical
 
 ### TypeScript type field naming
 
-**Inconsistency to know about:** The `Transaction` type in bindings uses **snake_case** (`t.merchant_raw`, `t.posted_at`, `t.amount_cents`) because its Rust struct lacks `rename_all`. Most other types (e.g. `BudgetEnvelope`, `CategoryWithSpending`, `TxnFilterInput`) use **camelCase** via `#[serde(rename_all = "camelCase")]`. Always check `bindings.ts` when accessing fields on a newly encountered type.
+**Inconsistency to know about:** The `Transaction` type in `openapi.ts` uses **snake_case** (`t.merchant_raw`, `t.posted_at`, `t.amount_cents`) because its Rust struct lacks `rename_all`. Most other types (e.g. `BudgetEnvelope`, `CategoryWithSpending`, `TxnFilterInput`) use **camelCase** via `#[serde(rename_all = "camelCase")]` + `#[schema(rename_all="camelCase")]`. Always check `openapi.ts` when accessing fields on a newly encountered type.
 
 ### CSS conventions
 
@@ -182,7 +178,6 @@ Money math lives in `finsight-core` so the app and the Copilot compute identical
 - **Toasts:** `import { toast } from "sonner"` → `toast.success()`, `toast.error()`, `toast("text", { description, action })`
 - **Slide-in panels:** reuse `ui/src/components/Drawer.tsx`
 - **Privacy mode:** `useTweaks().privacy` — screens must blur amounts with `className="money"` (CSS handles blurring)
-- **Tauri codegen wrappers must be async** even if the underlying work is synchronous; specta requires `pub async fn`
 - **Server auth state:** the prior-session marker contains no credential; logout/401 must clear it and purge both the in-memory QueryClient and IndexedDB cache
 - **Server secrets:** LLM keys and SimpleFIN access URLs belong in the authenticated user's SQLCipher settings through `finsight-api::secrets`, never in a process-global keychain slot
 

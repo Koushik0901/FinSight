@@ -58,6 +58,9 @@ export function unwrapResult<T>(result: Result<T>): T {
 export type CopilotTokenPayload = { conversationId: string; runId: string; token: string };
 export type CopilotDonePayload = { conversationId: string; runId: string; messageId: string; bundleId: string | null; toolTrace: string[]; followUpQuestions: string[]; missingData: unknown[]; actionLabel: string | null; actionPath: string | null };
 
+// Re-exports for generative-UI blocks (typed via openapi.ts)
+export type CopilotResponseBlock = components["schemas"]["AgentResponseBlock"];
+
 export const api = {
   listAccounts: () => wrap<components["schemas"]["AccountSummary"][]>(raw.POST("/api/rpc/list_accounts" as never, {} as never) as never),
   createAccount: (input: components["schemas"]["NewAccount"]) => wrap<components["schemas"]["Account"]>(raw.POST("/api/rpc/create_account" as never, { body: { input } as never } as never) as never),

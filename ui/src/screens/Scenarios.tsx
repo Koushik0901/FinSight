@@ -335,11 +335,11 @@ function PromotePanel({ proposal, onClose }: { proposal: ScenarioPlanProposal; o
               </div>
               <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>{c.detail}</div>
             </div>
-            {c.currentCents !== null && c.proposedCents !== null && (
+            {c.currentCents != null && c.proposedCents != null && (
               <div className="num" style={{ fontSize: 12.5, color: "var(--ink-2)", whiteSpace: "nowrap" }}>
-                <span className="money">{fmt(c.currentCents)}</span>
+                <span className="money">{fmt(c.currentCents as number)}</span>
                 <span style={{ color: "var(--ink-faint)", margin: "0 6px" }}>→</span>
-                <span className="money">{fmt(c.proposedCents)}</span>
+                <span className="money">{fmt(c.proposedCents as number)}</span>
               </div>
             )}
           </div>

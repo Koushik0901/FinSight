@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createElement, useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";

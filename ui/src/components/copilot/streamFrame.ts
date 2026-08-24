@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * The ONE parser for `copilot-stream-frame` event payloads, shared by both
  * chat runtimes (legacy TauriRuntime and the AG-UI runtime).

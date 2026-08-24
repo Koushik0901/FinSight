@@ -516,7 +516,7 @@ function ProviderSection() {
     if (!config) return;
     try {
       const result = await testProvider.mutateAsync({ config, apiKey: apiKey.trim() || undefined });
-      setTestResult(result);
+      setTestResult({ ok: result.ok, latency_ms: result.latency_ms, error: result.error ?? null });
     } catch (error) {
       setTestResult({ ok: false, latency_ms: 0, error: userErrorMessage(error, "Connection failed.") });
     }

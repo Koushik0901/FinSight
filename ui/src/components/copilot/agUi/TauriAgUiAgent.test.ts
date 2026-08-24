@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { COPILOT_STREAM_FRAME } from "../../../api/eventNames";

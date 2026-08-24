@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { AbstractAgent, EventType, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
 

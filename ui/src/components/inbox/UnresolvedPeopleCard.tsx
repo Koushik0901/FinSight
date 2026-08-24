@@ -92,7 +92,7 @@ export default function UnresolvedPeopleCard() {
   const applyVerdict = useApplyCounterpartyVerdict();
   const [removedPatterns, setRemovedPatterns] = useState<Set<string>>(new Set());
 
-  const visible = data.filter((g) => g.pattern === null || !removedPatterns.has(g.pattern));
+  const visible = data.filter((g) => g.pattern == null || !removedPatterns.has(g.pattern as string));
 
   if (isLoading || visible.length === 0) return null;
 

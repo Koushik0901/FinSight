@@ -327,7 +327,7 @@ export default function AccountTransactions() {
                                     : transaction.activity.activityType}
                                 </span>
                               )}
-                              {transaction.ai_confidence !== null && transaction.ai_confidence < 0.6 && <span className="chip warning">Needs review</span>}
+                              {transaction.ai_confidence != null && (transaction.ai_confidence as number) < 0.6 && <span className="chip warning">Needs review</span>}
                               {transaction.is_split && <span className="chip">Split</span>}
                               {transaction.is_reimbursable && <span className="chip accent">Reimbursable</span>}
                             </div>

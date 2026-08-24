@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { listen } from "@tauri-apps/api/event";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";

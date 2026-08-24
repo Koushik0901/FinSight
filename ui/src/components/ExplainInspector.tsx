@@ -122,9 +122,9 @@ export function ExplanationBody({ explanation, currency }: { explanation: Metric
                 {input.label}
                 {input.detail && <span className="explain-hint">{input.detail}</span>}
               </div>
-              {input.amountCents !== null && (
-                <div className={`explain-amt num money${input.amountCents < 0 ? " neg" : ""}`}>
-                  {money(input.amountCents, currency ? { currency } : undefined)}
+              {input.amountCents != null && (
+                <div className={`explain-amt num money${(input.amountCents as number) < 0 ? " neg" : ""}`}>
+                  {money(input.amountCents as number, currency ? { currency } : undefined)}
                 </div>
               )}
             </div>

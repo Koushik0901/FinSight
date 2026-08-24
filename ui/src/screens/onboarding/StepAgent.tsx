@@ -110,7 +110,7 @@ export default function StepAgent({ onDone }: Props) {
       : { kind: "openai_compat" as const, preset: selectedPreset.preset, base_url: selectedPreset.base_url, model: cloudModel };
     try {
       const r = await testProvider.mutateAsync({ config, apiKey: apiKey || undefined });
-      setTestResult(r);
+      setTestResult({ ok: r.ok, latency_ms: r.latency_ms, error: r.error ?? null });
       if (!r.ok) return;
       if (apiKey) {
         await saveKey.mutateAsync({ providerId: isAnthropic ? "anthropic" : selectedPreset.preset, key: apiKey });
