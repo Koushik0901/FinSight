@@ -55,7 +55,7 @@ fn users_db_survives_poisoned_inner_mutex() {
     assert!(db.get_api_token_by_hash(&[7; 32]).unwrap().is_some());
 
     // Session helpers too
-    assert_eq!(db.is_empty().unwrap(), false);
+    assert!(!db.is_empty().unwrap());
 }
 
 #[test]

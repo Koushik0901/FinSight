@@ -98,7 +98,11 @@ pub async fn get_journey_status(state: &ApiState) -> AppResult<JourneyStatus> {
         )?;
 
         let rolling = finsight_core::metrics::rolling_averages(conn, 90)?;
-        let avg_monthly_expense_cents = rolling.avg_monthly_expense_cents;
+        let (avg_monthly_expense_cents, _) = finsight_core::metrics::monthly_expense_cents(
+            conn,
+            finsight_core::metrics::ExpenseBasis::SafetyConservative,
+            None,
+        )?;
         let avg_monthly_income_cents = rolling.avg_monthly_income_cents;
         let avg_savings_rate_pct = rolling.savings_rate_pct;
 

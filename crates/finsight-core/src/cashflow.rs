@@ -12,7 +12,7 @@
 //!   1. **Dated events** on their actual dates — income, bills, subscriptions,
 //!      and user-planned transactions — for timing and lumpiness.
 //!   2. A **residual smooth daily burn** for everyday variable spending
-//!      (groceries, dining, fuel): `avg_monthly_expense` minus the monthly
+//!      (groceries, dining, fuel): `monthly_expense_cents` (`ExpenseBasis::SafetyConservative`) minus the monthly
 //!      equivalent of the dated obligations, spread per day. Without this the
 //!      balance would float up unrealistically between paydays and overstate
 //!      safe-to-spend — the dangerous direction. Subtracting the dated
@@ -295,7 +295,7 @@ pub fn build_forecast(
         metrics::monthly_expense_cents(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
     let items = recurring::detect_recurring(conn, RECURRING_WINDOW_DAYS)?;
     // Only obligations whose last charge lands inside the expense window are
-    // reflected in `avg_monthly_expense`, so only those may be netted out of the
+    // reflected in `monthly_expense_cents` (`ExpenseBasis::SafetyConservative`), so only those may be netted out of the
     // smooth burn (see EXPENSE_WINDOW_DAYS).
     let expense_window_start = as_of - Duration::days(EXPENSE_WINDOW_DAYS);
 
@@ -360,7 +360,7 @@ pub fn build_forecast(
         if is_obligation {
             // Net this bill out of the smooth burn ONLY if its most recent charge
             // is inside the expense window — otherwise it isn't in
-            // `avg_monthly_expense` and subtracting it would understate the burn
+            // `monthly_expense_cents` (`ExpenseBasis::SafetyConservative`) and subtracting it would understate the burn
             // and overstate safe-to-spend. Longer-cadence bills still ride as
             // dated events (in horizon) or the near-horizon warning.
             let in_expense_base = NaiveDate::parse_from_str(&item.last_seen, "%Y-%m-%d")
@@ -810,7 +810,7 @@ mod tests {
     }
 
     /// A lumpy bill (quarterly/annual) whose last charge is OUTSIDE the 90-day
-    /// expense window is NOT in `avg_monthly_expense`, so it must not be netted
+    /// expense window is NOT in `monthly_expense_cents` (`ExpenseBasis::SafetyConservative`), so it must not be netted
     /// out of the smooth burn — doing so would understate the burn and overstate
     /// safe-to-spend, the dangerous direction. It rides as a dated event / near-
     /// horizon warning instead.
@@ -878,7 +878,7 @@ mod tests {
         // Insert 12 monthly lump sums on the 15th of each prior month.
         for m in 1..=12 {
             let mut y = today.year();
-            let mut mon = today.month() as i32 - m as i32;
+            let mut mon = today.month() as i32 - m;
             while mon <= 0 {
                 mon += 12;
                 y -= 1;
@@ -895,7 +895,9 @@ mod tests {
         let (conservative, _) =
             metrics::monthly_expense_cents(&conn, metrics::ExpenseBasis::SafetyConservative, None)
                 .unwrap();
-        let recent_mean = metrics::avg_monthly_expense_90d(&conn).unwrap();
+        let (recent_mean, _) =
+            metrics::monthly_expense_cents(&conn, metrics::ExpenseBasis::RecentMean90, None)
+                .unwrap();
         assert!(
             conservative > recent_mean,
             "fixture must have mean12 > mean90: conservative {} vs recent {}",

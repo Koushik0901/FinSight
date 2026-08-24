@@ -110,3 +110,65 @@ fn pantry_monthly_expense_is_greppable() {
     assert!(cents >= 0);
     let _ = sufficient;
 }
+
+#[test]
+fn no_raw_calls_without_basis() {
+    use std::path::Path;
+    fn walk(dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+                let content = std::fs::read_to_string(&path).unwrap();
+                for (idx, line) in content.lines().enumerate() {
+                    // Only flag actual function calls (name followed by '('), not struct field reads like `.avg_monthly_expense_90d_cents.max(`.
+                    let is_raw_call = line.contains("avg_monthly_expense_90d(")
+                        || line.contains("avg_monthly_expense_90d_scoped(")
+                        || line.contains("robust_monthly_expense_cents(")
+                        || line.contains("robust_monthly_expense_cents_scoped(")
+                        || line.contains("safety_expense_basis(")
+                        || line.contains("safety_expense_basis_scoped(");
+                    if !is_raw_call {
+                        continue;
+                    }
+                    // Pantry dispatch lines are not raw — they contain the basis label.
+                    if line.contains("ExpenseBasis") || line.contains("monthly_expense_cents") {
+                        continue;
+                    }
+                    // This test file itself contains the grep strings in comments.
+                    if path.to_string_lossy().contains("metrics_basis") {
+                        continue;
+                    }
+                    // Snapshot files and metric definitions are allowlisted.
+                    if path.to_string_lossy().contains(".snap") {
+                        continue;
+                    }
+                    // The pantry definitions and its own unit tests live in metrics.rs;
+                    // those tests must call the underlying helpers directly to pin them.
+                    if path.to_string_lossy().ends_with("metrics.rs") {
+                        continue;
+                    }
+                    out.push(format!("{}:{}:{}", path.display(), idx + 1, line.trim()));
+                }
+            }
+        }
+    }
+    let mut raw = Vec::new();
+    // Tests run with cwd = crate dir on some runners; resolve from manifest.
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest.join("../../");
+    let crates_dir = workspace.join("crates");
+    let dir = if crates_dir.exists() {
+        crates_dir
+    } else {
+        Path::new("crates").to_path_buf()
+    };
+    walk(&dir, &mut raw);
+    assert!(
+        raw.is_empty(),
+        "raw expense calls without ExpenseBasis remain (use monthly_expense_cents with a Basis): {:?}",
+        raw
+    );
+}

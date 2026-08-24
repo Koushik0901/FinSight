@@ -983,7 +983,7 @@ mod tests {
             .collect();
         expected.sort();
         assert_eq!(listed, expected);
-        assert_eq!(listed.len(), 48, "43 copilot tools + 5 bundle tools");
+        assert_eq!(listed.len(), 50, "45 copilot tools + 5 bundle tools");
     }
 
     /// `ToolSet` is `HashMap`-backed, so an unsorted list would reorder on every
@@ -1001,7 +1001,7 @@ mod tests {
         let listed = names(SCOPE_READ);
         assert_eq!(
             listed.len(),
-            48 - WRITE_TOOLS.len() - BUNDLE_WRITE_TOOLS.len()
+            50 - WRITE_TOOLS.len() - BUNDLE_WRITE_TOOLS.len()
         );
         for w in WRITE_TOOLS.iter().chain(BUNDLE_WRITE_TOOLS) {
             assert!(
