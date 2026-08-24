@@ -65,3 +65,4 @@ export const api = {
 };
 
 export { raw as openapiClient };
+export const client = raw;

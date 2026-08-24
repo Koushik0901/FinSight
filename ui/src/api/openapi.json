@@ -4675,6 +4675,34 @@
         "summary": "RPC recompute_anomalies"
       }
     },
+    "/api/rpc/reconcileBases": {
+      "post": {
+        "operationId": "reconcileBases",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "RPC reconcileBases"
+      }
+    },
     "/api/rpc/record_net_worth_snapshot": {
       "post": {
         "operationId": "record_net_worth_snapshot",

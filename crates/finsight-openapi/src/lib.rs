@@ -172,6 +172,7 @@ pub const COMMANDS: &[&str] = &[
     "promote_scenario",
     "purge_simplefin_data",
     "recompute_anomalies",
+    "reconcileBases",
     "record_net_worth_snapshot",
     "reject_action_item",
     "reject_category_proposal",

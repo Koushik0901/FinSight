@@ -2843,6 +2843,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rpc/reconcileBases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** RPC reconcileBases */
+        post: operations["reconcileBases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rpc/record_net_worth_snapshot": {
         parameters: {
             query?: never;
@@ -7907,6 +7924,30 @@ export interface operations {
         };
     };
     recompute_anomalies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    reconcileBases: {
         parameters: {
             query?: never;
             header?: never;

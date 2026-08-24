@@ -225,6 +225,15 @@ rpc_routes!(api, events, cmd, p, c:
         "get_needs_review_count" => ok(c::agent::get_needs_review_count(api).await?),
         "trigger_categorize" => ok(c::agent::trigger_categorize(api).await?),
         "recompute_anomalies" => ok(c::agent::recompute_anomalies(api).await?),
+        "reconcileBases" => ok(
+            c::copilot::reconcile_bases(
+                api,
+                arg(&p, "basisA")?,
+                arg(&p, "basisB")?,
+                arg(&p, "scope")?,
+            )
+            .await?,
+        ),
         "set_anomaly_dismissed" => {
             ok(
                 c::agent::set_anomaly_dismissed(api, arg(&p, "txnId")?, arg(&p, "dismissed")?)
