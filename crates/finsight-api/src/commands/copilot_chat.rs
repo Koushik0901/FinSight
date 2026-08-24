@@ -950,8 +950,8 @@ pub async fn stream_copilot_message(
                           Be specific to the financial topic.";
             let prompt = format!(
                 "User asked: {}\nAssistant replied: {}",
-                &text_clone,
-                &prose_clone.chars().take(200).collect::<String>()
+                text_clone,
+                prose_clone.chars().take(200).collect::<String>()
             );
             if let Ok(v) = provider_clone.complete_json(system, &prompt).await {
                 if let Some(title) = v.get("title").and_then(|t| t.as_str()) {

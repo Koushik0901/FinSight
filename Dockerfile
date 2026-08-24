@@ -21,7 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends perl make pkg-c
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
-COPY src-tauri/ src-tauri/
 # Build ONLY the server bin — never the Tauri app (no webkit deps in this image).
 RUN cargo build --release -p finsight-server
 

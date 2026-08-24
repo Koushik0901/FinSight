@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         by_pair.entry((actual, got)).or_default().push(text);
     }
     let mut pairs: Vec<_> = by_pair.into_iter().collect();
-    pairs.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    pairs.sort_by_key(|a| std::cmp::Reverse(a.1.len()));
     for ((actual, got), texts) in pairs.iter().take(12) {
         println!(
             "  {actual} -> {got} ({})  e.g. {}",
