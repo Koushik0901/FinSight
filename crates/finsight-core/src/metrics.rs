@@ -66,12 +66,12 @@ pub fn monthly_expense_cents(
 ) -> CoreResult<(i64, bool)> {
     match basis {
         ExpenseBasis::DisplayMedian => {
-            let cents = match robust_monthly_expense_cents_scoped(conn, scope)? {
+            let robust = robust_monthly_expense_cents_scoped(conn, scope)?;
+            let cents = match robust {
                 Some(v) => v,
                 None => avg_monthly_expense_90d_scoped(conn, scope)?,
             };
-            let robust_existed = robust_monthly_expense_cents_scoped(conn, scope)?.is_some();
-            Ok((cents, robust_existed))
+            Ok((cents, robust.is_some()))
         }
         ExpenseBasis::RecentMean90 => {
             let cents = avg_monthly_expense_90d_scoped(conn, scope)?;
@@ -83,10 +83,7 @@ pub fn monthly_expense_cents(
             Ok((cents, span >= SAFETY_BASIS_MIN_SPAN_DAYS))
         }
         ExpenseBasis::SafetyConservative => {
-            // max(mean12, mean90) — safety must not be flattered.
-            // For now household only; scoped variant added in Task 3.
-            let _ = scope;
-            let basis = safety_expense_basis(conn)?;
+            let basis = safety_expense_basis_scoped(conn, scope)?;
             Ok((basis.monthly_expense_cents, basis.sufficient))
         }
     }
@@ -428,6 +425,113 @@ pub fn safety_expense_basis(conn: &Connection) -> CoreResult<SafetyExpenseBasis>
         sufficient: data_span_days >= SAFETY_BASIS_MIN_SPAN_DAYS,
         months_observed: totals.len() as i64,
         data_span_days,
+    })
+}
+
+pub fn safety_expense_basis_scoped(
+    conn: &Connection,
+    scope: Option<&str>,
+) -> CoreResult<SafetyExpenseBasis> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let (_, expense_total) = income_expense_since_for(conn, &cutoff, scope)?;
+    let (months_with_data, data_span_days) = data_coverage_since_scoped(conn, &cutoff, scope)?;
+    let months = months_in_span(months_with_data, 90);
+    let recent_mean = if months > 0 {
+        expense_total / months
+    } else {
+        0
+    };
+    let pred = non_investment_txn_predicate("t");
+    let cur = primary_currency_clause(conn, "t");
+    let this_month = chrono::Utc::now().format("%Y-%m").to_string();
+    let totals: Vec<i64> = if let Some(member_id) = scope {
+        let sql = format!(
+            "SELECT SUM((CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                              WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                              ELSE 0 END) * t.mw) \
+              FROM ( \
+                  SELECT t.amount_cents AS amount_cents, t.settle_up AS settle_up, \
+                         substr(t.posted_at,1,7) AS ym, \
+                         CASE WHEN t.owner_member_id IS NOT NULL \
+                              THEN (CASE WHEN t.owner_member_id = ?1 THEN 1.0 ELSE 0.0 END) \
+                              ELSE COALESCE(w.weight, 0.0) END AS mw \
+                  FROM transactions t \
+                  LEFT JOIN ({MEMBER_WEIGHT_SUBQUERY}) w ON w.account_id = t.account_id \
+                  WHERE t.is_transfer = 0 AND substr(t.posted_at,1,7) < ?2 \
+                    AND {pred}{cur} \
+              ) t \
+              GROUP BY ym \
+              ORDER BY ym DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![member_id, this_month], |r| {
+            r.get::<_, Option<f64>>(0)
+        })?;
+        rows.filter_map(|r| r.ok().flatten().map(|v| v.round() as i64))
+            .collect()
+    } else {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT SUM(CASE WHEN t.settle_up = 1 THEN -t.amount_cents \
+                              WHEN t.amount_cents < 0 THEN -t.amount_cents \
+                              ELSE 0 END) \
+              FROM transactions t \
+               WHERE t.is_transfer = 0 AND {pred}{cur} AND substr(t.posted_at,1,7) < ?1 \
+               GROUP BY substr(t.posted_at,1,7) \
+               ORDER BY substr(t.posted_at,1,7) DESC LIMIT {SAFETY_BASIS_MAX_MONTHS}"
+        ))?;
+        let mut vals = Vec::new();
+        for row in stmt.query_map(params![this_month], |r| r.get::<_, Option<i64>>(0))? {
+            vals.push(row?.unwrap_or(0));
+        }
+        vals
+    };
+    let long_mean = if totals.is_empty() {
+        0
+    } else {
+        totals.iter().sum::<i64>() / totals.len() as i64
+    };
+    Ok(SafetyExpenseBasis {
+        monthly_expense_cents: long_mean.max(recent_mean),
+        sufficient: data_span_days >= SAFETY_BASIS_MIN_SPAN_DAYS,
+        months_observed: totals.len() as i64,
+        data_span_days,
+    })
+}
+
+pub struct Reconcile {
+    pub delta_cents: i64,
+    pub reason: String,
+}
+
+pub fn reconcile(
+    conn: &Connection,
+    a: ExpenseBasis,
+    b: ExpenseBasis,
+    scope: Option<&str>,
+) -> CoreResult<Reconcile> {
+    let (a_cents, _) = monthly_expense_cents(conn, a, scope)?;
+    let (b_cents, _) = monthly_expense_cents(conn, b, scope)?;
+    let delta = a_cents - b_cents;
+    let reason = match (a, b) {
+        (ExpenseBasis::DisplayMedian, ExpenseBasis::RecentMean90) if delta.abs() > 1000 => format!(
+            "Recent is ${:.0} higher because it caught a step-up this month; Smooth will catch it next month.",
+            (b_cents - a_cents).abs() as f64 / 100.0
+        ),
+        (ExpenseBasis::RecentMean90, ExpenseBasis::SafetyConservative) if delta.abs() > 1000 => format!(
+            "Conservative is ${:.0} higher because it keeps the yearly peak — recent alone would understate safety.",
+            (b_cents - a_cents).abs() as f64 / 100.0
+        ),
+        _ if delta.abs() <= 1000 => "Essentially the same — the buckets agree within $10.".to_string(),
+        _ => format!(
+            "Difference is ${:.0} between {} and {}.",
+            delta.abs() as f64 / 100.0,
+            explain(a),
+            explain(b)
+        ),
+    };
+    Ok(Reconcile {
+        delta_cents: delta,
+        reason,
     })
 }
 
