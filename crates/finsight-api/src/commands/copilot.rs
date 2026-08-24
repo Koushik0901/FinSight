@@ -1,11 +1,20 @@
 use crate::error::{AppError, AppResult};
 use crate::ApiState;
+use finsight_core::cashflow::{self, CashflowForecast, WhatIf};
+use finsight_core::metrics;
 use finsight_core::models::{
     AgentActionBundle, AgentExecutionEntry, AgentNavigationTarget, AgentSession,
 };
 use finsight_core::repos::{copilot_actions, copilot_sessions, run};
 use serde::Serialize;
 use specta::Type;
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcileResult {
+    pub delta_cents: i64,
+    pub reason: String,
+}
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -141,5 +150,48 @@ pub async fn execute_action_bundle(
                 error: item.error,
             })
             .collect(),
+    })
+}
+
+pub async fn get_safe_to_spend(
+    state: &ApiState,
+    horizon_days: Option<i64>,
+    buffer_cents: Option<i64>,
+    extra_expense_cents: Option<i64>,
+) -> AppResult<CashflowForecast> {
+    let db = (*state.db).clone();
+    let horizon = horizon_days.unwrap_or(cashflow::DEFAULT_HORIZON_DAYS);
+    run(&db, move |conn| {
+        let whatif = WhatIf {
+            buffer_cents: buffer_cents.unwrap_or(0).max(0),
+            extra_expense_cents: extra_expense_cents.unwrap_or(0).max(0),
+            extra_expense_date: None,
+            extra_expense_label: None,
+        };
+        cashflow::build_forecast(conn, horizon, &whatif)
+    })
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn explain_basis(_state: &ApiState, basis: metrics::ExpenseBasis) -> AppResult<String> {
+    Ok(metrics::explain(basis).to_string())
+}
+
+pub async fn reconcile_bases(
+    state: &ApiState,
+    basis_a: metrics::ExpenseBasis,
+    basis_b: metrics::ExpenseBasis,
+    scope: Option<String>,
+) -> AppResult<ReconcileResult> {
+    let db = (*state.db).clone();
+    let r = run(&db, move |conn| {
+        metrics::reconcile(conn, basis_a, basis_b, scope.as_deref())
+    })
+    .await
+    .map_err(AppError::from)?;
+    Ok(ReconcileResult {
+        delta_cents: r.delta_cents,
+        reason: r.reason,
     })
 }

@@ -1016,12 +1016,15 @@ fn wellness_context(
     // Conservative basis, matching what the screens show. A short-window mean
     // misses annual obligations, so measuring coverage against it would have the
     // Copilot assert more months of safety than the user actually has.
-    let safety = metrics::safety_expense_basis(conn).unwrap_or_default();
+    // Pantry: SafetyConservative via monthly_expense_cents so Copilot numbers match dashboard.
+    let (safety_cents, sufficient) =
+        metrics::monthly_expense_cents(conn, metrics::ExpenseBasis::SafetyConservative, None)
+            .unwrap_or((0, false));
     let emergency_fund_months = metrics::emergency_fund_months(
         emergency_fund_balance,
-        safety.monthly_expense_cents.max(avg_monthly_expense_cents),
+        safety_cents.max(avg_monthly_expense_cents),
     );
-    let emergency_fund_months_reliable = safety.sufficient;
+    let emergency_fund_months_reliable = sufficient;
     let target_savings_rate_pct = metrics::assumptions(conn).target_savings_rate_pct;
 
     // Debt snowball: active debt-payoff goals ordered by remaining balance ascending

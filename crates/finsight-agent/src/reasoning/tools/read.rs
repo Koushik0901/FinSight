@@ -420,6 +420,125 @@ pub fn get_safe_to_spend() -> Arc<dyn Tool> {
     Arc::new(T)
 }
 
+pub fn explain_basis() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "explain_basis"
+        }
+        fn description(&self) -> &str {
+            "Explain what a given expense basis means — the labeled definition the pantry owns for DisplayMedian (smooth), RecentMean90 (recent), or SafetyConservative (conservative = max of yearly and recent). Use when the user asks why two numbers differ or what a basis covers."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "basis": {
+                        "type": "string",
+                        "enum": ["displayMedian", "recentMean90", "safetyConservative"],
+                        "description": "The basis to explain: displayMedian, recentMean90, or safetyConservative"
+                    }
+                },
+                "required": ["basis"]
+            })
+        }
+        fn execute(&self, _ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let basis_str = args["basis"].as_str().unwrap_or("");
+            let basis = match basis_str {
+                "displayMedian" => finsight_core::metrics::ExpenseBasis::DisplayMedian,
+                "recentMean90" => finsight_core::metrics::ExpenseBasis::RecentMean90,
+                "safetyConservative" => finsight_core::metrics::ExpenseBasis::SafetyConservative,
+                _ => anyhow::bail!("unknown basis '{}', expected displayMedian, recentMean90, or safetyConservative", basis_str),
+            };
+            Ok(json!({
+                "basis": basis_str,
+                "explanation": finsight_core::metrics::explain(basis)
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
+pub fn reconcile_bases() -> Arc<dyn Tool> {
+    struct T;
+    impl Tool for T {
+        fn name(&self) -> &str {
+            "reconcile_bases"
+        }
+        fn description(&self) -> &str {
+            "Explain why two expense bases differ for the same scope — returns the delta in cents and a one-line reason. Use for \"why is Budget $X but Cashflow $Y?\" — call with basisA and basisB (displayMedian, recentMean90, safetyConservative) and an optional member scope."
+        }
+        fn parameters(&self) -> Value {
+            json!({
+                "type": "object",
+                "properties": {
+                    "basis_a": {
+                        "type": "string",
+                        "enum": ["displayMedian", "recentMean90", "safetyConservative"]
+                    },
+                    "basis_b": {
+                        "type": "string",
+                        "enum": ["displayMedian", "recentMean90", "safetyConservative"]
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": "Optional member id or name to scope the comparison; omit for household"
+                    }
+                },
+                "required": ["basis_a", "basis_b"]
+            })
+        }
+        fn execute(&self, ctx: &mut ToolContext, args: Value) -> Result<Value> {
+            let parse = |s: &str| match s {
+                "displayMedian" => Ok(finsight_core::metrics::ExpenseBasis::DisplayMedian),
+                "recentMean90" => Ok(finsight_core::metrics::ExpenseBasis::RecentMean90),
+                "safetyConservative" => {
+                    Ok(finsight_core::metrics::ExpenseBasis::SafetyConservative)
+                }
+                _ => Err(anyhow::anyhow!("unknown basis '{}'", s)),
+            };
+            let a_str = args["basis_a"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("basis_a required"))?;
+            let b_str = args["basis_b"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("basis_b required"))?;
+            let a = parse(a_str)?;
+            let b = parse(b_str)?;
+            let scope = args["scope"].as_str().filter(|s| !s.is_empty());
+            // Resolve member name to id if needed (scope may be a name); try id lookup first, then name.
+            let resolved_scope: Option<String> = match scope {
+                Some(s) => {
+                    // If s matches a member id directly, use it; else try to resolve by name.
+                    let maybe_id = s.to_string();
+                    // Check if s is a known member name — resolve to id.
+                    let members =
+                        finsight_core::repos::household::list_members(ctx.conn).unwrap_or_default();
+                    if let Some(m) = members
+                        .iter()
+                        .find(|m| m.id == s || m.name.eq_ignore_ascii_case(s))
+                    {
+                        Some(m.id.clone())
+                    } else {
+                        Some(maybe_id)
+                    }
+                }
+                None => None,
+            };
+            let r = finsight_core::metrics::reconcile(ctx.conn, a, b, resolved_scope.as_deref())
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            Ok(json!({
+                "basis_a": a_str,
+                "basis_b": b_str,
+                "scope": scope,
+                "delta_cents": r.delta_cents,
+                "reason": r.reason
+            }))
+        }
+    }
+    Arc::new(T)
+}
+
 pub fn explain_metric() -> Arc<dyn Tool> {
     struct T;
     impl Tool for T {

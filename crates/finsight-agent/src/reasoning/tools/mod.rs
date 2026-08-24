@@ -250,6 +250,8 @@ pub fn standard_toolset() -> ToolSet {
     tools.register(read::get_account_balance_history());
     tools.register(read::get_net_worth());
     tools.register(read::explain_metric());
+    tools.register(read::explain_basis());
+    tools.register(read::reconcile_bases());
     tools.register(read::get_safe_to_spend());
     tools.register(read::list_saved_scenarios());
     tools.register(read::get_month_totals());
@@ -470,6 +472,8 @@ mod execution_smoke_tests {
             "classify_spending_period" | "explain_spending_change" => {
                 json!({"period": chrono::Utc::now().format("%Y-%m").to_string()})
             }
+            "explain_basis" => json!({"basis": "displayMedian"}),
+            "reconcile_bases" => json!({"basis_a": "displayMedian", "basis_b": "recentMean90"}),
             _ => json!({}),
         }
     }
