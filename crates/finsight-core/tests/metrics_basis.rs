@@ -145,9 +145,13 @@ fn no_raw_calls_without_basis() {
                     if path.to_string_lossy().contains(".snap") {
                         continue;
                     }
-                    // The pantry definitions and its own unit tests live in metrics.rs;
-                    // those tests must call the underlying helpers directly to pin them.
-                    if path.to_string_lossy().ends_with("metrics.rs") {
+                    // The pantry definitions and its own unit tests live in
+                    // crates/finsight-core/src/metrics.rs; those tests must call the
+                    // underlying helpers directly to pin them. Narrow to that exact
+                    // file so a future raw call in any other metrics.rs is not
+                    // silently allowlisted. Normalize Windows backslashes.
+                    let normalized = path.to_string_lossy().replace('\\', "/");
+                    if normalized.ends_with("finsight-core/src/metrics.rs") {
                         continue;
                     }
                     out.push(format!("{}:{}:{}", path.display(), idx + 1, line.trim()));

@@ -98,7 +98,7 @@ pub async fn get_journey_status(state: &ApiState) -> AppResult<JourneyStatus> {
         )?;
 
         let rolling = finsight_core::metrics::rolling_averages(conn, 90)?;
-        let (avg_monthly_expense_cents, _) = finsight_core::metrics::monthly_expense_cents(
+        let (safety_monthly_expense_cents, _) = finsight_core::metrics::monthly_expense_cents(
             conn,
             finsight_core::metrics::ExpenseBasis::SafetyConservative,
             None,
@@ -200,7 +200,7 @@ pub async fn get_journey_status(state: &ApiState) -> AppResult<JourneyStatus> {
         };
 
         let full_emergency_target_cents =
-            (avg_monthly_expense_cents as f64 * ef_target_months).round() as i64;
+            (safety_monthly_expense_cents as f64 * ef_target_months).round() as i64;
         let stage5_completed =
             full_emergency_target_cents > 0 && liquid_balance_cents >= full_emergency_target_cents;
         let stage5_progress = if full_emergency_target_cents > 0 {

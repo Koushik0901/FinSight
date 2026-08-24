@@ -983,7 +983,10 @@ mod tests {
             .collect();
         expected.sort();
         assert_eq!(listed, expected);
-        assert_eq!(listed.len(), 50, "45 copilot tools + 5 bundle tools");
+        // Derived from the actual toolset + bundle tools so a new Copilot tool
+        // doesn't require updating a literal (see task 6 minor fix).
+        let expected_len = standard_toolset().definitions().len() + bundle_tool_definitions().len();
+        assert_eq!(listed.len(), expected_len, "copilot tools + bundle tools");
     }
 
     /// `ToolSet` is `HashMap`-backed, so an unsorted list would reorder on every
@@ -999,9 +1002,10 @@ mod tests {
     #[test]
     fn read_scope_hides_every_write_tool() {
         let listed = names(SCOPE_READ);
+        let full_len = standard_toolset().definitions().len() + bundle_tool_definitions().len();
         assert_eq!(
             listed.len(),
-            50 - WRITE_TOOLS.len() - BUNDLE_WRITE_TOOLS.len()
+            full_len - WRITE_TOOLS.len() - BUNDLE_WRITE_TOOLS.len()
         );
         for w in WRITE_TOOLS.iter().chain(BUNDLE_WRITE_TOOLS) {
             assert!(

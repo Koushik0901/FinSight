@@ -130,18 +130,10 @@ pub fn explain_financial_metrics(
     // Safety metrics are household-scoped by definition (nobody survives on
     // their share of a joint runway), exactly as get_financial_metrics treats
     // them — so this basis is intentionally NOT member-filtered.
-    // Pantry: SafetyConservative via monthly_expense_cents so Copilot numbers match dashboard.
-    let (safety_cents, safety_sufficient) =
-        metrics::monthly_expense_cents(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
-    // `assemble` still takes a SafetyExpenseBasis for the withheld/span branches;
-    // derive the struct from the pantry rather than calling safety_expense_basis
-    // directly so the grep guard stays green and the two surfaces agree.
-    let safety_basis = metrics::SafetyExpenseBasis {
-        monthly_expense_cents: safety_cents,
-        sufficient: safety_sufficient,
-        months_observed: if safety_sufficient { 3 } else { 0 },
-        data_span_days: if safety_sufficient { 90 } else { 0 },
-    };
+    // Pantry: SafetyConservative via the pantry so Copilot numbers match dashboard
+    // and months_observed / data_span_days are accurate (not hardcoded 3/90).
+    let safety_basis =
+        metrics::safety_basis(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
     let assumptions = metrics::assumptions(conn);
     Ok(assemble(
         &balances,
@@ -820,16 +812,9 @@ mod tests {
 
         let balances = metrics::balance_breakdown_for(&mut conn, None).unwrap();
         let rolling = metrics::rolling_averages_for(&conn, ROLLING_WINDOW_DAYS, None).unwrap();
-        // Pantry: SafetyConservative via monthly_expense_cents
-        let (safety_cents, safety_sufficient) =
-            metrics::monthly_expense_cents(&conn, metrics::ExpenseBasis::SafetyConservative, None)
-                .unwrap();
-        let safety = metrics::SafetyExpenseBasis {
-            monthly_expense_cents: safety_cents,
-            sufficient: safety_sufficient,
-            months_observed: if safety_sufficient { 3 } else { 0 },
-            data_span_days: if safety_sufficient { 90 } else { 0 },
-        };
+        // Pantry: SafetyConservative via the pantry (accurate months_observed / data_span_days)
+        let safety =
+            metrics::safety_basis(&conn, metrics::ExpenseBasis::SafetyConservative, None).unwrap();
 
         let out = explain_financial_metrics(&mut conn, None).unwrap();
         assert_eq!(out.len(), 7);

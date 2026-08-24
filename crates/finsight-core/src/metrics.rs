@@ -89,6 +89,23 @@ pub fn monthly_expense_cents(
     }
 }
 
+/// Full [`SafetyExpenseBasis`] via the pantry, so callers that need
+/// `months_observed` / `data_span_days` don't fabricate them and don't
+/// call the raw `safety_expense_basis_scoped` directly (which the
+/// `metrics_basis` guard forbids outside the pantry).
+pub fn safety_basis(
+    conn: &Connection,
+    basis: ExpenseBasis,
+    scope: Option<&str>,
+) -> CoreResult<SafetyExpenseBasis> {
+    match basis {
+        ExpenseBasis::SafetyConservative => safety_expense_basis_scoped(conn, scope),
+        _ => Err(crate::error::CoreError::Validation(format!(
+            "safety_basis only supports SafetyConservative, got {basis:?}"
+        ))),
+    }
+}
+
 /// Period used to turn an average monthly outflow into a daily burn for runway.
 pub const RUNWAY_PERIOD_DAYS: i64 = 30;
 

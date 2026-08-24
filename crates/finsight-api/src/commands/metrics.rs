@@ -84,15 +84,9 @@ pub async fn get_financial_metrics(
         // Household-scoped by definition — nobody survives on their share of a
         // joint runway — so a member-filtered query withholds rather than
         // inventing a personal figure. (No screen shows per-member runway.)
-        // Pantry: SafetyConservative via monthly_expense_cents so every surface agrees.
-        let (safety_cents, safety_sufficient) =
-            metrics::monthly_expense_cents(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
-        let safety = metrics::SafetyExpenseBasis {
-            monthly_expense_cents: safety_cents,
-            sufficient: safety_sufficient,
-            months_observed: if safety_sufficient { 3 } else { 0 },
-            data_span_days: if safety_sufficient { 90 } else { 0 },
-        };
+        // Pantry: SafetyConservative via the pantry so every surface agrees and
+        // months_observed / data_span_days are accurate (not hardcoded 3/90).
+        let safety = metrics::safety_basis(conn, metrics::ExpenseBasis::SafetyConservative, None)?;
         let (emergency_fund_months, runway_days) = if member.is_some() || !safety.sufficient {
             (None, None)
         } else {
