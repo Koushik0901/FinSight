@@ -33,6 +33,64 @@ use crate::forecast;
 use crate::models::AccountType;
 use crate::repos::{accounts, net_worth};
 use rusqlite::{params, Connection};
+use specta::Type;
+
+// ── ExpenseBasis pantry ─────────────────────────────────────────────────────
+
+/// Labeled expense basis — the single source of truth for "monthly burn".
+/// Every consumer picks a label explicitly so differing buckets can be explained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExpenseBasis {
+    DisplayMedian,
+    RecentMean90,
+    SafetyConservative,
+}
+
+pub fn explain(basis: ExpenseBasis) -> &'static str {
+    match basis {
+        ExpenseBasis::DisplayMedian => {
+            "Smooth average — ignores one-offs so your budget doesn't spike."
+        }
+        ExpenseBasis::RecentMean90 => "Recent average — catches step-ups like rent quickly.",
+        ExpenseBasis::SafetyConservative => {
+            "Conservative — the higher of yearly and recent, so safety is never overstated."
+        }
+    }
+}
+
+pub fn monthly_expense_cents(
+    conn: &Connection,
+    basis: ExpenseBasis,
+    scope: Option<&str>,
+) -> CoreResult<(i64, bool)> {
+    match basis {
+        ExpenseBasis::DisplayMedian => {
+            let cents = match robust_monthly_expense_cents_scoped(conn, scope)? {
+                Some(v) => v,
+                None => avg_monthly_expense_90d_scoped(conn, scope)?,
+            };
+            let robust_existed = robust_monthly_expense_cents_scoped(conn, scope)?.is_some();
+            Ok((cents, robust_existed))
+        }
+        ExpenseBasis::RecentMean90 => {
+            let cents = avg_monthly_expense_90d_scoped(conn, scope)?;
+            let (_, span) = data_coverage_since_scoped(
+                conn,
+                &(chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339(),
+                scope,
+            )?;
+            Ok((cents, span >= SAFETY_BASIS_MIN_SPAN_DAYS))
+        }
+        ExpenseBasis::SafetyConservative => {
+            // max(mean12, mean90) — safety must not be flattered.
+            // For now household only; scoped variant added in Task 3.
+            let _ = scope;
+            let basis = safety_expense_basis(conn)?;
+            Ok((basis.monthly_expense_cents, basis.sufficient))
+        }
+    }
+}
 
 /// Period used to turn an average monthly outflow into a daily burn for runway.
 pub const RUNWAY_PERIOD_DAYS: i64 = 30;
