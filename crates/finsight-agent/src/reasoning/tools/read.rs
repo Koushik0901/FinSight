@@ -506,12 +506,8 @@ pub fn reconcile_bases() -> Arc<dyn Tool> {
             let a = parse(a_str)?;
             let b = parse(b_str)?;
             let scope = args["scope"].as_str().filter(|s| !s.is_empty());
-            // Resolve member name to id if needed (scope may be a name); try id lookup first, then name.
             let resolved_scope: Option<String> = match scope {
                 Some(s) => {
-                    // If s matches a member id directly, use it; else try to resolve by name.
-                    let maybe_id = s.to_string();
-                    // Check if s is a known member name — resolve to id.
                     let members =
                         finsight_core::repos::household::list_members(ctx.conn).unwrap_or_default();
                     if let Some(m) = members
@@ -520,7 +516,7 @@ pub fn reconcile_bases() -> Arc<dyn Tool> {
                     {
                         Some(m.id.clone())
                     } else {
-                        Some(maybe_id)
+                        anyhow::bail!("unknown member '{}'", s);
                     }
                 }
                 None => None,
